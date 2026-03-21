@@ -82,6 +82,10 @@
   max-width: 640px;
 }
 
+.extractedItemTextTracked {
+  color: var(--color-text-tertiary);
+}
+
 .extractedItemMeta {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -350,9 +354,10 @@
 
 .inlineCommitmentRow {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-sm);
-  margin-bottom: 3px;
+  margin-bottom: 8px;
 }
 
 .inlineCommitmentText {
@@ -398,6 +403,115 @@
   color: var(--color-cream);
 }
 
+.commitmentForm {
+  width: 100%;
+  max-width: 420px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-paper) 86%, white 14%);
+}
+
+.commitmentFormCompact {
+  margin-top: -2px;
+}
+
+.commitmentFormInput {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: transparent;
+  padding: 6px 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.commitmentFormRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.commitmentFormActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.commitmentFormSubmit,
+.commitmentFormCancel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.commitmentFormSubmit {
+  color: var(--color-cream);
+  background: var(--color-text-primary);
+  border: 1px solid var(--color-text-primary);
+}
+
+.commitmentFormCancel {
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: 1px solid var(--color-border);
+}
+
+.trackedCommitment {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.trackedCommitmentCompact {
+  margin-top: 0;
+}
+
+.trackedCommitmentBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-garden-sage);
+}
+
+.trackedCommitmentTitle {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.trackedCommitmentLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.trackedCommitmentLink:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
+}
+
 /* -- Gone Quiet Section (I581) ---------------------------------------------- */
 
 .marginLabelQuiet {
@@ -436,12 +550,21 @@
   border-color: var(--color-text-tertiary);
 }
 
-.quietAccountName {
+.quietAccountLink {
   font-family: var(--font-serif);
   font-size: 17px;
   font-weight: 400;
   line-height: 1.4;
   color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.quietAccountLink:hover {
+  color: var(--color-text-primary);
 }
 
 .quietCadenceText {

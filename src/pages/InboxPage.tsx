@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useSearch } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { useInbox } from "@/hooks/useInbox";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
@@ -11,6 +12,7 @@ import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import { GoogleDriveImportModal } from "@/components/inbox/GoogleDriveImportModal";
 import type { CopyToInboxReport, InboxFile, InboxFileType } from "@/types";
+import styles from "./InboxPage.module.css";
 
 // =============================================================================
 // Types
@@ -234,7 +236,10 @@ export default function InboxPage() {
                     refresh();
                   }
                 })
-                .catch((err) => console.error("copy_to_inbox failed:", err));
+                .catch((err) => {
+                  console.error("copy_to_inbox failed:", err);
+                  toast.error("Failed to import dropped files");
+                });
             }
           } else {
             setIsDragging(false);
@@ -243,7 +248,7 @@ export default function InboxPage() {
         .then((fn) => {
           unlisten = fn;
         })
-        .catch((err) => console.error("listen drag-drop failed:", err));
+        .catch((err) => console.error("listen drag-drop failed:", err)); // Expected: system event listener setup
     } catch {
       // Drag-drop not available outside Tauri webview
     }
@@ -555,62 +560,25 @@ export default function InboxPage() {
       atmosphereColor: "olive" as const,
       activePage: "dropbox" as const,
       folioActions: (
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className={styles.folioActions}>
           <button
             onClick={() => setDriveModalOpen(true)}
             disabled={processingAll}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase" as const,
-              color: processingAll ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
-              background: "none",
-              border: "1px solid var(--color-rule-heavy)",
-              borderRadius: 4,
-              padding: "2px 10px",
-              cursor: processingAll ? "default" : "pointer",
-              opacity: processingAll ? 0.5 : 1,
-            }}
+            className={processingAll ? styles.folioButtonDisabled : styles.folioButtonDefault}
           >
             Google Drive
           </button>
           {processingAll ? (
             <button
               onClick={cancelAll}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase" as const,
-                color: "var(--color-spice-terracotta)",
-                background: "none",
-                border: "1px solid var(--color-spice-terracotta)",
-                borderRadius: 4,
-                padding: "2px 10px",
-                cursor: "pointer",
-              }}
+              className={styles.folioButtonCancel}
             >
               Cancel
             </button>
           ) : visibleFiles.length > 0 ? (
             <button
               onClick={processAll}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase" as const,
-                color: "var(--color-text-secondary)",
-                background: "none",
-                border: "1px solid var(--color-rule-heavy)",
-                borderRadius: 4,
-                padding: "2px 10px",
-                cursor: "pointer",
-              }}
+              className={styles.folioButtonDefault}
             >
               Process All
             </button>
@@ -618,20 +586,7 @@ export default function InboxPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing || processingAll}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase" as const,
-              color: refreshing ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
-              background: "none",
-              border: "1px solid var(--color-rule-heavy)",
-              borderRadius: 4,
-              padding: "2px 10px",
-              cursor: refreshing || processingAll ? "default" : "pointer",
-              opacity: refreshing || processingAll ? 0.5 : 1,
-            }}
+            className={refreshing || processingAll ? styles.folioButtonDisabled : styles.folioButtonDefault}
           >
             {refreshing ? "..." : "Refresh"}
           </button>
@@ -661,79 +616,26 @@ export default function InboxPage() {
   // ---------------------------------------------------------------------------
   if (files.length === 0) {
     return (
-      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+      <div className={styles.pageContainer}>
         {/* Hero */}
-        <section style={{ paddingTop: 80, paddingBottom: 24 }}>
-          <h1
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 36,
-              fontWeight: 400,
-              letterSpacing: "-0.02em",
-              color: "var(--color-text-primary)",
-              margin: 0,
-            }}
-          >
-            Inbox
-          </h1>
-          <div style={{ height: 2, background: "var(--color-desk-charcoal)", marginTop: 16 }} />
+        <section className={styles.heroSection}>
+          <h1 className={styles.heroTitle}>Inbox</h1>
+          <div className={styles.heroRule} />
         </section>
 
         {/* Drop zone */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "80px 0",
-            border: `2px dashed ${isDragging ? "var(--color-spice-turmeric)" : "var(--color-rule-heavy)"}`,
-            borderRadius: 8,
-            textAlign: "center",
-            transition: "border-color 0.2s ease, background 0.2s ease",
-            background: isDragging ? "var(--color-spice-turmeric-4)" : "transparent",
-          }}
-        >
-          <p
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 18,
-              fontStyle: "italic",
-              color: isDragging ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
-              margin: 0,
-            }}
-          >
+        <div className={`${styles.dropZoneLarge} ${isDragging ? styles.dropZoneLargeDragging : ""}`}>
+          <p className={`${styles.dropZoneText} ${isDragging ? styles.dropZoneTextDragging : ""}`}>
             {isDragging ? "Drop files here" : getPersonalityCopy("inbox-empty", personality).title}
           </p>
           {!isDragging && (
             <>
-              <p
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 13,
-                  fontWeight: 300,
-                  color: "var(--color-text-tertiary)",
-                  marginTop: 8,
-                }}
-              >
+              <p className={styles.dropZoneHint}>
                 {getPersonalityCopy("inbox-empty", personality).message}
               </p>
               <button
                 onClick={() => setDriveModalOpen(true)}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase" as const,
-                  color: "var(--color-text-secondary)",
-                  background: "none",
-                  border: "1px solid var(--color-rule-heavy)",
-                  borderRadius: 4,
-                  padding: "4px 14px",
-                  cursor: "pointer",
-                  marginTop: 16,
-                }}
+                className={styles.driveImportButton}
               >
                 Import from Google Drive
               </button>
@@ -754,196 +656,78 @@ export default function InboxPage() {
   // File list
   // ---------------------------------------------------------------------------
   return (
-    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+    <div className={styles.pageContainer}>
       {/* Drop result toast */}
       {dropResult && (
-        <div
-          style={{
-            position: "fixed",
-            top: 80,
-            left: "50%",
-            transform: "translateX(-50%)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--color-garden-sage)",
-            background: "var(--color-text-primary)",
-            borderRadius: 6,
-            padding: "8px 16px",
-            zIndex: 50,
-          }}
-        >
+        <div className={styles.dropResultToast}>
           {dropResult.count} file{dropResult.count === 1 ? "" : "s"} added to inbox
         </div>
       )}
 
       {/* Result banner */}
       {resultBanner && !processingAll && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "10px 0",
-            marginBottom: 16,
-            borderBottom: "1px solid var(--color-rule-light)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div className={styles.resultBanner}>
+          <div className={styles.resultBannerStats}>
             {resultBanner.routed > 0 && (
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  color: "var(--color-garden-sage)",
-                }}
-              >
+              <span className={styles.resultStatProcessed}>
                 {resultBanner.routed} processed
               </span>
             )}
             {resultBanner.errors > 0 && (
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  color: "var(--color-spice-terracotta)",
-                }}
-              >
+              <span className={styles.resultStatFailed}>
                 {resultBanner.errors} failed
               </span>
             )}
             {resultBanner.routed === 0 && resultBanner.errors === 0 && (
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  color: "var(--color-text-tertiary)",
-                }}
-              >
+              <span className={styles.resultStatEmpty}>
                 Nothing to process
               </span>
             )}
           </div>
           <button
             onClick={() => setResultBanner(null)}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-            }}
+            className={styles.resultDismiss}
           >
             Dismiss
           </button>
         </div>
       )}
 
-      {/* ═══ HERO ═══ */}
-      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <h1
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 36,
-              fontWeight: 400,
-              letterSpacing: "-0.02em",
-              color: "var(--color-text-primary)",
-              margin: 0,
-            }}
-          >
-            Inbox
-          </h1>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              color: "var(--color-text-tertiary)",
-            }}
-          >
+      {/* HERO */}
+      <section className={styles.heroSection}>
+        <div className={styles.heroRow}>
+          <h1 className={styles.heroTitle}>Inbox</h1>
+          <span className={styles.heroCount}>
             {processingAll
               ? `Processing ${files.length} file${files.length === 1 ? "" : "s"}...`
               : `${visibleFiles.length} file${visibleFiles.length === 1 ? "" : "s"}`}
           </span>
         </div>
-        <div style={{ height: 2, background: "var(--color-desk-charcoal)", marginTop: 16 }} />
+        <div className={styles.heroRule} />
       </section>
 
-      {/* ═══ DROP ZONE ═══ */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "20px 0",
-          marginBottom: 20,
-          border: `1px dashed ${isDragging ? "var(--color-spice-turmeric)" : "var(--color-rule-heavy)"}`,
-          borderRadius: 6,
-          transition: "border-color 0.2s ease, background 0.2s ease",
-          background: isDragging ? "var(--color-spice-turmeric-4)" : "transparent",
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 14,
-            fontStyle: "italic",
-            color: isDragging ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
-          }}
-        >
+      {/* DROP ZONE */}
+      <div className={`${styles.dropZoneCompact} ${isDragging ? styles.dropZoneCompactDragging : ""}`}>
+        <span className={isDragging ? styles.dropZoneTextCompactDragging : styles.dropZoneTextCompact}>
           {isDragging ? "Drop to add" : "Drop files here"}
         </span>
       </div>
 
-      {/* ═══ BATCH PROCESSING BANNER ═══ */}
+      {/* BATCH PROCESSING BANNER */}
       {allProcessing && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            padding: "24px 0",
-            marginBottom: 20,
-          }}
-        >
-          <div
-            style={{
-              width: 160,
-              height: 2,
-              background: "var(--color-rule-light)",
-              borderRadius: 1,
-              overflow: "hidden",
-              marginBottom: 12,
-            }}
-          >
-            <div
-              style={{
-                width: "100%",
-                height: "100%",
-                background: "var(--color-spice-turmeric)",
-                borderRadius: 1,
-                animation: "heartbeat 1.5s ease-in-out infinite",
-              }}
-            />
+        <div className={styles.batchBanner}>
+          <div className={styles.batchProgressTrack}>
+            <div className={styles.batchProgressBar} />
           </div>
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              fontWeight: 300,
-              color: "var(--color-text-tertiary)",
-              margin: 0,
-            }}
-          >
+          <p className={styles.batchQuote}>
             {processingQuote}
           </p>
         </div>
       )}
 
-      {/* ═══ FILE LIST ═══ */}
+      {/* FILE LIST */}
       <section>
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div className={styles.fileList}>
           {visibleFiles.map((file, i) => (
             <InboxRow
               key={file.filename}
@@ -969,7 +753,7 @@ export default function InboxPage() {
         </div>
       </section>
 
-      {/* ═══ END MARK ═══ */}
+      {/* END MARK */}
       <FinisMarker />
 
       <GoogleDriveImportModal
@@ -1035,27 +819,14 @@ function InboxRow({
       onMouseLeave={() => setHovered(false)}
     >
       {/* Row */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "12px 0",
-          borderBottom: !isLast && !state.expanded
-            ? "1px solid var(--color-rule-light)"
-            : "none",
-        }}
-      >
+      <div className={`${styles.rowContainer} ${!isLast && !state.expanded ? styles.rowBorder : ""}`}>
         {/* Colored dot */}
         <span
+          className={styles.rowDot}
           style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
             background: isProcessing
               ? "var(--color-spice-turmeric)"
               : classification.dotColor,
-            flexShrink: 0,
           }}
         />
 
@@ -1064,81 +835,30 @@ function InboxRow({
           type="button"
           onClick={onToggleExpand}
           disabled={isProcessing}
-          style={{
-            display: "flex",
-            flex: 1,
-            minWidth: 0,
-            alignItems: "baseline",
-            gap: 8,
-            textAlign: "left",
-            background: "none",
-            border: "none",
-            padding: 0,
-            cursor: isProcessing ? "default" : "pointer",
-          }}
+          className={styles.rowTitleButton}
         >
-          <span
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 15,
-              fontWeight: 400,
-              color: isProcessing ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <span className={`${styles.rowTitle} ${isProcessing ? styles.rowTitleProcessing : ""}`}>
             {title}
           </span>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              letterSpacing: "0.04em",
-              color: "var(--color-text-tertiary)",
-              flexShrink: 0,
-              opacity: 0.6,
-            }}
-          >
+          <span className={styles.rowClassificationLabel}>
             {classification.label}
           </span>
         </button>
 
         {/* Right side: status dot + label, time, actions */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <div className={styles.rowRight}>
           {/* Status dot + label */}
           {isProcessing ? (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                letterSpacing: "0.04em",
-                color: "var(--color-spice-turmeric)",
-              }}
-            >
+            <span className={styles.statusProcessing}>
               Processing...
             </span>
           ) : (
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span className={styles.statusGroup}>
               <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: statusDotColor(displayStatus),
-                  flexShrink: 0,
-                }}
+                className={styles.statusDot}
+                style={{ background: statusDotColor(displayStatus) }}
               />
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  letterSpacing: "0.04em",
-                  color: isError
-                    ? "var(--color-spice-terracotta)"
-                    : "var(--color-text-tertiary)",
-                }}
-              >
+              <span className={`${styles.statusLabel} ${isError ? styles.statusLabelError : ""}`}>
                 {formatInboxStatus(displayStatus)}
               </span>
             </span>
@@ -1146,14 +866,7 @@ function InboxRow({
 
           {/* Time */}
           {!isProcessing && !isError && time && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                color: "var(--color-text-tertiary)",
-                opacity: 0.5,
-              }}
-            >
+            <span className={styles.rowTime}>
               {time}
             </span>
           )}
@@ -1162,20 +875,7 @@ function InboxRow({
           {isProcessing ? (
             <button
               onClick={onCancel}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase" as const,
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                opacity: hovered ? 1 : 0,
-                transition: "opacity 0.15s ease",
-              }}
+              className={`${styles.rowCancelButton} ${hovered ? styles.rowCancelButtonVisible : ""}`}
             >
               Cancel
             </button>
@@ -1183,38 +883,14 @@ function InboxRow({
             <button
               onClick={(e) => { e.stopPropagation(); onProcess(); }}
               disabled={processingAll}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase" as const,
-                color: hovered ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
-                background: "none",
-                border: `1px solid ${hovered ? "var(--color-rule-heavy)" : "transparent"}`,
-                borderRadius: 4,
-                padding: "2px 8px",
-                cursor: processingAll ? "default" : "pointer",
-                opacity: hovered || processingAll ? 1 : 0,
-                transition: "opacity 0.15s ease, border-color 0.15s ease, color 0.15s ease",
-              }}
+              className={`${styles.rowProcessButton} ${hovered ? styles.rowProcessButtonHovered : ""}`}
             >
               Process
             </button>
           )}
 
           {/* Expand indicator */}
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              color: "var(--color-text-tertiary)",
-              opacity: 0.4,
-              transition: "transform 0.15s ease",
-              display: "inline-block",
-              transform: state.expanded ? "rotate(180deg)" : "rotate(0deg)",
-            }}
-          >
+          <span className={`${styles.expandIndicator} ${state.expanded ? styles.expandIndicatorOpen : ""}`}>
             v
           </span>
         </div>
@@ -1222,39 +898,16 @@ function InboxRow({
 
       {/* Error inline */}
       {isError && state.error && (
-        <div
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 12,
-            color: "var(--color-spice-terracotta)",
-            padding: "4px 0 8px 20px",
-            borderBottom: !isLast ? "1px solid var(--color-rule-light)" : "none",
-          }}
-        >
+        <div className={`${styles.errorInline} ${!isLast ? styles.rowBorder : ""}`}>
           {state.error}
         </div>
       )}
 
       {/* Needs entity — inline picker */}
       {needsEntity && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "6px 0 10px 20px",
-            borderBottom: !isLast ? "1px solid var(--color-rule-light)" : "none",
-          }}
-        >
+        <div className={`${styles.entityPickerRow} ${!isLast ? styles.rowBorder : ""}`}>
           {file.suggestedEntityName && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                letterSpacing: "0.04em",
-                color: "var(--color-spice-turmeric)",
-              }}
-            >
+            <span className={styles.entityPickerSuggestion}>
               Suggested: {file.suggestedEntityName}
             </span>
           )}
@@ -1263,23 +916,14 @@ function InboxRow({
             onChange={(e) => {
               if (e.target.value) onAssignEntity(e.target.value);
             }}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--color-text-secondary)",
-              background: "var(--color-bg-primary)",
-              border: "1px solid var(--color-rule-medium)",
-              borderRadius: 4,
-              padding: "3px 6px",
-              cursor: "pointer",
-            }}
+            className={styles.entityPickerSelect}
           >
             <option value="" disabled>
               Assign to account...
             </option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.parentName ? `${a.parentName} › ${a.name}` : a.name}
+                {a.parentName ? `${a.parentName} > ${a.name}` : a.name}
               </option>
             ))}
           </select>
@@ -1288,53 +932,20 @@ function InboxRow({
 
       {/* Expanded content */}
       {!isProcessing && state.expanded && (
-        <div
-          style={{
-            padding: "12px 0 16px 20px",
-            borderBottom: !isLast ? "1px solid var(--color-rule-light)" : "none",
-          }}
-        >
+        <div className={`${styles.expandedContent} ${!isLast ? styles.rowBorder : ""}`}>
           {state.loadingContent ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  style={{
-                    height: 14,
-                    width: `${100 - i * 25}%`,
-                    background: "var(--color-rule-light)",
-                    borderRadius: 4,
-                    animation: "pulse 1.5s ease-in-out infinite",
-                  }}
-                />
-              ))}
+            <div className={styles.expandedLoadingSkeleton}>
+              <div className={styles.skeletonLine1} />
+              <div className={styles.skeletonLine2} />
+              <div className={styles.skeletonLine3} />
             </div>
           ) : (
             <>
               {/* File metadata line */}
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  color: "var(--color-text-tertiary)",
-                  opacity: 0.6,
-                  marginBottom: 8,
-                }}
-              >
+              <div className={styles.fileMetaLine}>
                 {file.filename}
               </div>
-              <pre
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  lineHeight: 1.6,
-                  color: "var(--color-text-secondary)",
-                  whiteSpace: "pre-wrap",
-                  maxHeight: 256,
-                  overflow: "auto",
-                  margin: 0,
-                }}
-              >
+              <pre className={styles.fileContentPre}>
                 {state.content
                   ? state.content.length > 2000
                     ? state.content.slice(0, 2000) + "\n\n... (truncated)"
@@ -1348,23 +959,8 @@ function InboxRow({
 
       {/* Processing progress bar */}
       {isProcessing && (
-        <div
-          style={{
-            height: 2,
-            width: "100%",
-            background: "var(--color-rule-light)",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              background: "var(--color-spice-turmeric)",
-              borderRadius: 1,
-              animation: "heartbeat 1.5s ease-in-out infinite",
-            }}
-          />
+        <div className={styles.progressTrack}>
+          <div className={styles.progressBar} />
         </div>
       )}
     </div>

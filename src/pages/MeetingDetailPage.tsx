@@ -69,6 +69,15 @@ const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "your-plan", label: "Your Plan", icon: <Target size={18} strokeWidth={1.5} /> },
 ];
 
+const GRANOLA_SYNC_RETRY_ATTEMPTS = 6;
+const GRANOLA_SYNC_RETRY_DELAY_MS = 10_000;
+const GRANOLA_AUTO_REFRESH_WINDOW_MS = 30 * 60 * 1000;
+const GRANOLA_AUTO_REFRESH_INTERVAL_MS = 20_000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 // ── Unified attendee type ──
 
 interface UnifiedAttendee {
@@ -127,6 +136,13 @@ interface TranscriptProgressPayload {
 
 type TranscriptProcessedPayload = MeetingOutcomeData | string;
 
+interface GranolaManualSyncResult {
+  status: "attached" | "not_found" | "already_in_progress" | "already_completed";
+  message: string;
+  documentTitle?: string;
+  contentType?: "transcript" | "notes";
+}
+
 export default function MeetingDetailPage() {
   const { meetingId } = useParams({ strict: false });
   const navigate = useNavigate();
@@ -142,6 +158,7 @@ export default function MeetingDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshingIntel, setRefreshingIntel] = useState(false);
   const transientRetryCount = useRef(0);
+  const granolaAutoCheckInFlight = useRef(false);
 
   // I529: Intelligence quality feedback
   const feedback = useIntelligenceFeedback(meetingId ?? undefined, "meeting");
@@ -152,6 +169,7 @@ export default function MeetingDetailPage() {
   // Transcript attach
   const [attaching, setAttaching] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncingGranola, setSyncingGranola] = useState(false);
   const [retryingExtraction, setRetryingExtraction] = useState(false);
   const draft = useAgendaDraft({ onError: setError });
   const [prefillNotice, setPrefillNotice] = useState(false);
@@ -170,6 +188,16 @@ export default function MeetingDetailPage() {
   // Persisted user overrides
   const [dismissedTopics, setDismissedTopics] = useState<string[]>([]);
   const [hiddenAttendees, setHiddenAttendees] = useState<string[]>([]);
+
+  const invokeGranolaSync = useCallback(async (force: boolean) => {
+    if (!meetingId) {
+      throw new Error("No meeting ID specified");
+    }
+    return invoke<GranolaManualSyncResult>("trigger_granola_sync_for_meeting", {
+      meetingId,
+      force,
+    });
+  }, [meetingId]);
 
   const loadMeetingIntelligence = useCallback(async () => {
     if (!meetingId) {
@@ -278,6 +306,63 @@ export default function MeetingDetailPage() {
       setSyncing(false);
     }
   }, [meetingId]);
+
+  const handleSyncGranolaTranscript = useCallback(async () => {
+    if (!meetingId) return;
+    setSyncingGranola(true);
+    toast.loading("Checking Granola…", { id: "granola-sync" });
+    try {
+      for (let attempt = 0; attempt < GRANOLA_SYNC_RETRY_ATTEMPTS; attempt += 1) {
+        const result = await invokeGranolaSync(true);
+
+        if (result.status === "attached") {
+          toast.success("Granola transcript attached", {
+            id: "granola-sync",
+            description: result.message,
+          });
+          await loadMeetingIntelligence();
+          return;
+        }
+
+        if (result.status === "already_completed") {
+          toast.success("Granola transcript already attached", {
+            id: "granola-sync",
+            description: result.message,
+          });
+          await loadMeetingIntelligence();
+          return;
+        }
+
+        if (result.status === "already_in_progress") {
+          toast.success("Granola sync already in progress", {
+            id: "granola-sync",
+            description: result.message,
+          });
+          return;
+        }
+
+        if (attempt < GRANOLA_SYNC_RETRY_ATTEMPTS - 1) {
+          toast.loading(`Waiting for Granola… ${attempt + 1}/${GRANOLA_SYNC_RETRY_ATTEMPTS}`, {
+            id: "granola-sync",
+            description: "Granola can lag a few minutes after the call. Retrying automatically.",
+          });
+          await sleep(GRANOLA_SYNC_RETRY_DELAY_MS);
+          continue;
+        }
+
+        toast.warning("Granola hasn’t written this meeting to cache yet", {
+          id: "granola-sync",
+          description: "Checked for about a minute. Try again shortly if the transcript just landed.",
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to sync Granola transcript:", msg);
+      toast.error("Granola sync failed", { id: "granola-sync", description: msg });
+    } finally {
+      setSyncingGranola(false);
+    }
+  }, [meetingId, invokeGranolaSync, loadMeetingIntelligence]);
 
   const handleAttachTranscript = useCallback(async () => {
     if (!meetingId || !data) return;
@@ -675,6 +760,50 @@ Thanks!`;
     if (!start) return false;
     return start.getTime() > Date.now() + 3 * 24 * 60 * 60 * 1000;
   }, [meetingMeta?.startTime]);
+  const millisecondsSinceMeetingEnd = useMemo(() => {
+    const raw = meetingMeta?.endTime || meetingMeta?.startTime;
+    if (!raw) return null;
+    const end = parseDate(raw);
+    if (!end) return null;
+    const diff = Date.now() - end.getTime();
+    return diff >= 0 ? diff : null;
+  }, [meetingMeta?.endTime, meetingMeta?.startTime]);
+
+  useEffect(() => {
+    if (
+      !granolaEnabled
+      || !isPastMeeting
+      || !!outcomes?.transcriptPath
+      || millisecondsSinceMeetingEnd == null
+      || millisecondsSinceMeetingEnd > GRANOLA_AUTO_REFRESH_WINDOW_MS
+    ) {
+      return;
+    }
+
+    const runAutoCheck = async () => {
+      if (granolaAutoCheckInFlight.current) return;
+      granolaAutoCheckInFlight.current = true;
+      try {
+        const result = await invokeGranolaSync(false);
+        if (result.status === "attached" || result.status === "already_completed") {
+          await loadMeetingIntelligence();
+        }
+      } catch {
+        // Quiet background retry only.
+      } finally {
+        granolaAutoCheckInFlight.current = false;
+      }
+    };
+
+    void runAutoCheck();
+    const intervalId = window.setInterval(() => {
+      void runAutoCheck();
+    }, GRANOLA_AUTO_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [granolaEnabled, invokeGranolaSync, isPastMeeting, loadMeetingIntelligence, millisecondsSinceMeetingEnd, outcomes?.transcriptPath]);
 
   // Register magazine shell with chapter nav + folio actions
   const shellConfig = useMemo(() => ({
@@ -708,6 +837,17 @@ Thanks!`;
             Draft Agenda
           </button>
         )}
+        {granolaEnabled && isPastMeeting && !outcomes?.transcriptPath && (
+          <button
+            onClick={handleSyncGranolaTranscript}
+            disabled={syncingGranola}
+            className={clsx(styles.folioBtnInline, syncingGranola && styles.folioBtnDisabled)}
+            title="Check Granola and attach the transcript for this meeting"
+          >
+            <RefreshCw className={clsx(styles.iconSm, syncingGranola && "animate-spin")} />
+            {syncingGranola ? "Syncing Granola…" : "Sync Granola"}
+          </button>
+        )}
         {outcomes?.transcriptPath && (
           <button
             onClick={handleReprocessTranscript}
@@ -726,7 +866,7 @@ Thanks!`;
         />
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, refreshingIntel, retryingExtraction, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, handleRefreshIntelligence, handleReprocessTranscript, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, refreshingIntel, retryingExtraction, syncingGranola, granolaEnabled, outcomes?.transcriptPath, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, handleRefreshIntelligence, handleReprocessTranscript, handleDraftAgendaMessage, handleSyncGranolaTranscript, handleShareIntelligence, handleRequestInput]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
@@ -1246,8 +1386,44 @@ Thanks!`;
               </section>
             )}
 
-            {/* Recent Correspondence — email signals for meeting attendees */}
-            {data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
+            {/* Recent Correspondence — bridged pre-meeting email context */}
+            {data.emailDigest && data.emailDigest.threads.length > 0 && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Recent Correspondence" />
+                <div className={styles.sinceLastWrap}>
+                  <p className={styles.sinceLastHeading}>{data.emailDigest.threadSummary}</p>
+                </div>
+                <div className={styles.risksContainer}>
+                  {data.emailDigest.threads.map((thread, i) => (
+                    <div key={`${thread.from}-${thread.date}-${i}`} className={styles.subordinateRisk}>
+                      <Link to="/emails" className={styles.emailSignalLink}>
+                        <div className={styles.emailSignalHeader}>
+                          <span className={styles.emailSignalSender}>{thread.from}</span>
+                          <span className={styles.emailSignalDate}>
+                            {thread.date
+                              ? new Date(thread.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                              : ""}
+                          </span>
+                        </div>
+                        {thread.source && (
+                          <p className={styles.emailSignalMeta}>{thread.source}</p>
+                        )}
+                        <p className={styles.subordinateRiskText}>{thread.snippet}</p>
+                      </Link>
+                      <span className={styles.itemActions}>
+                        <IntelligenceFeedback
+                          value={feedback.getFeedback(`correspondence[${i}]`)}
+                          onFeedback={(type) => feedback.submitFeedback(`correspondence[${i}]`, type)}
+                        />
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Recent Correspondence — fallback email signals for meeting attendees */}
+            {!data.emailDigest && data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
               <section className={clsx("editorial-reveal", styles.chapterSection)}>
                 <ChapterHeading title="Recent Correspondence" />
                 <div className={styles.risksContainer}>
@@ -1335,7 +1511,9 @@ Thanks!`;
               </button>
               {granolaEnabled && (
                 <span className={styles.transcriptCtaLabel}>
-                  Granola transcripts sync automatically
+                  {isPastMeeting && !outcomes?.transcriptPath
+                    ? "Granola usually syncs automatically. If it misses, use Sync Granola in the folio bar."
+                    : "Granola transcripts sync automatically"}
                 </span>
               )}
               {!granolaEnabled && (
@@ -1969,20 +2147,20 @@ function OutcomesSection({
                         await invoke("complete_action", { id: action.id });
                       }
                       onRefresh();
-                    } catch (err) { console.error("Failed to toggle action:", err); }
+                    } catch (err) { console.error("Failed to toggle action:", err); toast.error("Failed to update action"); }
                   }}
                   onAccept={async () => {
                     try { await invoke("accept_proposed_action", { id: action.id }); onRefresh(); }
-                    catch (err) { console.error("Failed to accept action:", err); }
+                    catch (err) { console.error("Failed to accept action:", err); toast.error("Failed to accept action"); }
                   }}
                   onReject={async () => {
                     try { await invoke("reject_proposed_action", { id: action.id, source: "meeting_detail" }); onRefresh(); }
-                    catch (err) { console.error("Failed to reject action:", err); }
+                    catch (err) { console.error("Failed to reject action:", err); toast.error("Failed to dismiss action"); }
                   }}
                   onCyclePriority={async () => {
                     const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
                     try { await invoke("update_action_priority", { id: action.id, priority: cycle[action.priority] || "P2" }); onRefresh(); }
-                    catch (err) { console.error("Failed to update priority:", err); }
+                    catch (err) { console.error("Failed to update priority:", err); toast.error("Failed to update priority"); }
                   }}
                 />
               ))}

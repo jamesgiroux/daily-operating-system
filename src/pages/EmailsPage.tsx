@@ -12,12 +12,15 @@ import { usePersonality } from "@/hooks/usePersonality";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
+import { EntityPicker } from "@/components/ui/entity-picker";
+import { DatePicker } from "@/components/ui/date-picker";
+import { compareEmailRank } from "@/lib/email-ranking";
 import { Archive, Check, Clock, ExternalLink, Pin, X } from "lucide-react";
 import { toast } from "sonner";
 import clsx from "clsx";
 import s from "@/styles/editorial-briefing.module.css";
 import e from "./EmailsPage.module.css";
-import type { EmailBriefingData, EmailSyncStats, EnrichedEmail } from "@/types";
+import type { EmailBriefingData, EmailSyncStats, EnrichedEmail, TrackedEmailCommitment } from "@/types";
 
 // =============================================================================
 // Self-contained so refreshing-state renders don't bubble to the whole page.
@@ -30,6 +33,7 @@ function EmailRefreshButton() {
       await invoke<string>("refresh_emails");
     } catch (err) {
       console.error("Email refresh failed:", err);
+      toast.error("Failed to refresh emails");
     } finally {
       setRefreshing(false);
     }
@@ -43,6 +47,20 @@ function EmailRefreshButton() {
       title={refreshing ? "Refreshing emails..." : "Check for new emails"}
     />
   );
+}
+
+function formatCadenceLabel(normalIntervalDays: number) {
+  if (normalIntervalDays <= 3) return "usually every few days";
+  if (normalIntervalDays <= 9) return "usually weekly";
+  if (normalIntervalDays <= 18) return "usually every other week";
+  return `usually every ${Math.round(normalIntervalDays)} days`;
+}
+
+function formatLastEmailDate(value?: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 // =============================================================================
@@ -201,6 +219,8 @@ export default function EmailsPage() {
     emailType?: string;
     entityName?: string;
     entityId?: string;
+    entityType?: "account" | "project";
+    trackedCommitment?: TrackedEmailCommitment;
   }
   const { allCommitments, allQuestions } = useMemo(() => {
     if (!data) return { allCommitments: [] as ContextualItem[], allQuestions: [] as ContextualItem[] };
@@ -232,18 +252,32 @@ export default function EmailsPage() {
       const subject = email.subject || "";
       const senderDomain = email.senderEmail?.split("@")[1];
       const displayEntity = emailEntityMap.get(email.id);
-      const entityId = email.signals?.find((sig) => sig.entityId)?.entityId;
+      const entityId = email.signals?.find((sig) => sig.entityId)?.entityId ?? email.entityId;
+      const entityType = (email.entityType === "account" || email.entityType === "project")
+        ? email.entityType
+        : undefined;
 
       if (email.commitments) {
         for (const c of email.commitments) {
           if (dismissed.has(`commitment:${c}`)) continue;
-          commitments.push({ text: c, emailId: email.id, sender, senderDomain, subject, emailType: email.emailType, entityName: displayEntity, entityId });
+          commitments.push({
+            text: c,
+            emailId: email.id,
+            sender,
+            senderDomain,
+            subject,
+            emailType: email.emailType,
+            entityName: displayEntity,
+            entityId,
+            entityType,
+            trackedCommitment: email.trackedCommitments?.find((tracked) => tracked.commitmentText === c),
+          });
         }
       }
       if (email.questions) {
         for (const q of email.questions) {
           if (dismissed.has(`question:${q}`)) continue;
-          questions.push({ text: q, emailId: email.id, sender, senderDomain, subject, emailType: email.emailType, entityName: displayEntity, entityId });
+          questions.push({ text: q, emailId: email.id, sender, senderDomain, subject, emailType: email.emailType, entityName: displayEntity, entityId, entityType });
         }
       }
     }
@@ -258,7 +292,7 @@ export default function EmailsPage() {
       .filter((e) => e.summary && e.summary.trim().length > 0)
       .filter((e) => e.isUnread !== false) // only unread (or unknown)
       .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
-      .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0))
+      .sort(compareEmailRank)
       .slice(0, 5);
   }, [data]);
 
@@ -284,6 +318,14 @@ export default function EmailsPage() {
     if (!data?.goneQuiet) return [];
     return data.goneQuiet.filter((a) => !dismissedQuiet.has(a.entityId));
   }, [data, dismissedQuiet]);
+  const inlineGoneQuietAccounts = useMemo(
+    () => goneQuietAccounts.length > 0 && goneQuietAccounts.length < 3 ? goneQuietAccounts : [],
+    [goneQuietAccounts]
+  );
+  const standaloneGoneQuietAccounts = useMemo(
+    () => goneQuietAccounts.length >= 3 ? goneQuietAccounts : [],
+    [goneQuietAccounts]
+  );
 
   // All emails with intelligence for the correspondence section (I395: sorted by relevance score)
   // Excludes locally-archived emails so archive propagates across all sections instantly.
@@ -291,7 +333,7 @@ export default function EmailsPage() {
     if (!data) return [];
     return [...data.highPriority, ...data.mediumPriority, ...data.lowPriority]
       .filter((e) => !archivedIds.has(e.id))
-      .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+      .sort(compareEmailRank);
   }, [data, archivedIds]);
 
   // I395: Group by score bands (only when scores have been computed)
@@ -355,7 +397,7 @@ export default function EmailsPage() {
   })();
 
   const hasExtracted = allCommitments.length > 0 || allQuestions.length > 0;
-  const hasSignals = entityThreads.length > 0;
+  const hasSignals = entityThreads.length > 0 || inlineGoneQuietAccounts.length > 0;
   const hasYourMove = yourMoveEmails.length > 0;
 
   return (
@@ -459,12 +501,20 @@ export default function EmailsPage() {
               <div className={s.marginContent}>
                 {allCommitments.map((c, i) => (
                   <div key={i} className={clsx("group", e.extractedItem, i < allCommitments.length - 1 && e.extractedItemSpacing)}>
-                    <p className={e.extractedItemText}>
+                    <p className={clsx(e.extractedItemText, c.trackedCommitment && e.extractedItemTextTracked)}>
                       {c.text}{!c.text.endsWith(".") ? "." : ""}
                     </p>
                     <span className={e.extractedItemMeta}>
                       {c.entityName ? `${c.entityName} \u00b7 ` : ""}{c.sender}{c.subject ? ` \u00b7 ${c.subject}` : ""}
                     </span>
+                    <CommitmentTrackControl
+                      emailId={c.emailId}
+                      commitmentText={c.text}
+                      defaultEntityId={c.entityId}
+                      defaultEntityType={c.entityType}
+                      defaultOwner={c.sender}
+                      trackedCommitment={c.trackedCommitment}
+                    />
                     <button
                       onClick={() => handleDismiss("commitment", c.emailId, c.text, c.senderDomain, c.emailType, c.entityId)}
                       className={clsx("opacity-0 group-hover:opacity-100 transition-opacity", e.dismissButton)}
@@ -506,36 +556,15 @@ export default function EmailsPage() {
       )}
 
       {/* === GONE QUIET -- Accounts with declining email cadence (I581) === */}
-      {goneQuietAccounts.length > 0 && (
+      {standaloneGoneQuietAccounts.length > 0 && (
         <section className={e.sectionSpacing}>
           <div className={s.marginGrid}>
             <div className={clsx(s.marginLabel, e.marginLabelQuiet)}>
               GONE QUIET
             </div>
             <div className={s.marginContent}>
-              {goneQuietAccounts.map((acct) => (
-                <div key={acct.entityId} className={e.quietItem}>
-                  <div className={e.quietRow}>
-                    <div>
-                      <div className={e.quietAccountName}>{acct.entityName}</div>
-                      <div className={e.quietCadenceText}>
-                        {acct.currentCount === 0
-                          ? `Usually ~${Math.round(acct.rollingAvg)} emails/week, none recently`
-                          : `Usually ~${Math.round(acct.rollingAvg)} emails/week, only ${acct.currentCount} this period`}
-                        {acct.lastEmailAgeDays != null && acct.lastEmailAgeDays > 0 && (
-                          <span> — last update {acct.lastEmailAgeDays}d ago</span>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleDismissQuiet(acct.entityId)}
-                      className={e.quietDismissButton}
-                      title="Acknowledge — won't show again this session"
-                    >
-                      Noted
-                    </button>
-                  </div>
-                </div>
+              {standaloneGoneQuietAccounts.map((acct) => (
+                <GoneQuietItem key={acct.entityId} account={acct} onDismiss={handleDismissQuiet} />
               ))}
             </div>
           </div>
@@ -549,7 +578,7 @@ export default function EmailsPage() {
         const liveThreads = entityThreads.filter((thread) =>
           thread.signals.some((sig) => sig.id != null && !dismissedSignals.has(sig.id))
         );
-        if (liveThreads.length === 0) return null;
+        if (liveThreads.length === 0 && inlineGoneQuietAccounts.length === 0) return null;
         const shown = liveThreads.slice(0, 3);
         const overflow = liveThreads.slice(3);
         return (
@@ -599,6 +628,14 @@ export default function EmailsPage() {
                   {overflow.map((t) => t.entityName).join(", ")}
                   {" -- routine correspondence."}
                 </div>
+              )}
+              {inlineGoneQuietAccounts.length > 0 && (
+                <>
+                  {shown.length > 0 && <div className={clsx(s.sectionRule, e.updateSectionRule)} />}
+                  {inlineGoneQuietAccounts.map((acct) => (
+                    <GoneQuietItem key={acct.entityId} account={acct} onDismiss={handleDismissQuiet} />
+                  ))}
+                </>
               )}
             </div>
           </div>
@@ -664,6 +701,213 @@ export default function EmailsPage() {
 // With triage actions (I579), commitment promotion (I580), meeting linkage (I582)
 // =============================================================================
 
+function GoneQuietItem({
+  account,
+  onDismiss,
+}: {
+  account: NonNullable<EmailBriefingData["goneQuiet"]>[number];
+  onDismiss: (entityId: string) => void;
+}) {
+  const navigate = useNavigate();
+  const lastEmailDate = formatLastEmailDate(account.lastEmailDate);
+
+  return (
+    <div className={e.quietItem}>
+      <div className={e.quietRow}>
+        <div>
+          <button
+            type="button"
+            className={e.quietAccountLink}
+            onClick={() => navigate({ to: "/accounts/$accountId", params: { accountId: account.entityId } })}
+          >
+            {account.entityName}
+          </button>
+          <div className={e.quietCadenceText}>
+            {formatCadenceLabel(account.normalIntervalDays)}.
+            {" "}
+            Last email {account.daysSinceLastEmail} day{account.daysSinceLastEmail === 1 ? "" : "s"} ago
+            {lastEmailDate ? ` (${lastEmailDate})` : ""}
+            {account.lastEmailSender ? ` from ${account.lastEmailSender}` : ""}.
+          </div>
+        </div>
+        <button
+          onClick={() => onDismiss(account.entityId)}
+          className={e.quietDismissButton}
+          title="Acknowledge"
+        >
+          Noted
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CommitmentTrackControl({
+  emailId,
+  commitmentText,
+  defaultEntityId,
+  defaultEntityType,
+  defaultOwner,
+  trackedCommitment,
+  compact = false,
+}: {
+  emailId: string;
+  commitmentText: string;
+  defaultEntityId?: string;
+  defaultEntityType?: "account" | "project";
+  defaultOwner?: string;
+  trackedCommitment?: TrackedEmailCommitment;
+  compact?: boolean;
+}) {
+  const navigate = useNavigate();
+  const [expanded, setExpanded] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [localTracked, setLocalTracked] = useState<TrackedEmailCommitment | undefined>(trackedCommitment);
+  const [title, setTitle] = useState(trackedCommitment?.actionTitle ?? commitmentText);
+  const [entityId, setEntityId] = useState<string | null>(defaultEntityId ?? null);
+  const [entityType, setEntityType] = useState<"account" | "project" | undefined>(defaultEntityType);
+  const [dueDate, setDueDate] = useState(trackedCommitment?.dueDate ?? "");
+  const [owner, setOwner] = useState(trackedCommitment?.owner ?? defaultOwner ?? "");
+
+  useEffect(() => {
+    setLocalTracked(trackedCommitment);
+    if (trackedCommitment) {
+      setExpanded(false);
+      setTitle(trackedCommitment.actionTitle ?? commitmentText);
+      setDueDate(trackedCommitment.dueDate ?? "");
+      setOwner(trackedCommitment.owner ?? defaultOwner ?? "");
+    }
+  }, [trackedCommitment, commitmentText, defaultOwner]);
+
+  const resetForm = useCallback(() => {
+    setTitle(trackedCommitment?.actionTitle ?? commitmentText);
+    setEntityId(defaultEntityId ?? null);
+    setEntityType(defaultEntityType);
+    setDueDate(trackedCommitment?.dueDate ?? "");
+    setOwner(trackedCommitment?.owner ?? defaultOwner ?? "");
+  }, [commitmentText, defaultEntityId, defaultEntityType, defaultOwner, trackedCommitment]);
+
+  const handleSubmit = useCallback(async () => {
+    setSubmitting(true);
+    try {
+      const actionTitle = title.trim() || commitmentText;
+      const actionId = await invoke<string>("promote_commitment_to_action", {
+        emailId,
+        commitmentText,
+        actionTitle,
+        entityId: entityId ?? null,
+        entityType: entityType ?? null,
+        owner: owner.trim() || null,
+        dueDate: dueDate || null,
+      });
+      setLocalTracked({
+        actionId,
+        commitmentText,
+        actionTitle,
+        dueDate: dueDate || undefined,
+        owner: owner.trim() || undefined,
+      });
+      setExpanded(false);
+      toast.success("Commitment tracked as action");
+    } catch (err) {
+      console.error("Promote commitment failed:", err);
+      toast.error("Failed to track commitment");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [commitmentText, dueDate, emailId, entityId, entityType, owner, title]);
+
+  if (localTracked) {
+    return (
+      <div className={clsx(e.trackedCommitment, compact && e.trackedCommitmentCompact)}>
+        <span className={e.trackedCommitmentBadge}>
+          <Check size={12} className={e.inlineCommitmentCheck} />
+          Tracked
+        </span>
+        {!compact && (
+          <span className={e.trackedCommitmentTitle}>{localTracked.actionTitle}</span>
+        )}
+        <button
+          type="button"
+          className={e.trackedCommitmentLink}
+          onClick={() => navigate({ to: "/actions/$actionId", params: { actionId: localTracked.actionId } })}
+          title="Open tracked action"
+        >
+          <ExternalLink size={12} />
+        </button>
+      </div>
+    );
+  }
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className={e.trackButton}
+        title="Track as action"
+      >
+        Track
+      </button>
+    );
+  }
+
+  return (
+    <div className={clsx(e.commitmentForm, compact && e.commitmentFormCompact)}>
+      <input
+        type="text"
+        value={title}
+        onChange={(event) => setTitle(event.target.value)}
+        className={e.commitmentFormInput}
+        placeholder="Action title"
+      />
+      <div className={e.commitmentFormRow}>
+        <EntityPicker
+          value={entityId}
+          onChange={(id, _name, pickedType) => {
+            setEntityId(id);
+            setEntityType(pickedType ?? undefined);
+          }}
+          placeholder="Link entity"
+        />
+        <DatePicker
+          value={dueDate || undefined}
+          onChange={setDueDate}
+          placeholder="Due date"
+        />
+      </div>
+      <input
+        type="text"
+        value={owner}
+        onChange={(event) => setOwner(event.target.value)}
+        className={e.commitmentFormInput}
+        placeholder="Owner"
+      />
+      <div className={e.commitmentFormActions}>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={submitting}
+          className={e.commitmentFormSubmit}
+        >
+          {submitting ? "Saving..." : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            resetForm();
+            setExpanded(false);
+          }}
+          disabled={submitting}
+          className={e.commitmentFormCancel}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function EmailIntelItem({
   email,
   dismissed,
@@ -685,7 +929,10 @@ function EmailIntelItem({
 }) {
   const navigate = useNavigate();
   const [isPinned, setIsPinned] = useState(!!email.pinnedAt);
-  const [promotedCommitments, setPromotedCommitments] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setIsPinned(!!email.pinnedAt);
+  }, [email.pinnedAt]);
 
   const handleArchive = useCallback(async () => {
     // Optimistic: hide immediately via local state so refresh doesn't bring it back
@@ -730,23 +977,6 @@ function EmailIntelItem({
       console.error("Pin failed:", err);
     }
   }, [email.id]);
-
-  const handlePromoteCommitment = useCallback(async (commitmentText: string) => {
-    try {
-      await invoke<string>("promote_commitment_to_action", {
-        emailId: email.id,
-        commitmentText,
-        entityId: email.entityId ?? null,
-        entityType: email.entityType ?? null,
-        dueDate: null,
-      });
-      setPromotedCommitments((prev) => new Set(prev).add(commitmentText));
-      toast.success("Commitment tracked as action");
-    } catch (err) {
-      console.error("Promote commitment failed:", err);
-      toast.error("Failed to track commitment");
-    }
-  }, [email.id, email.entityId, email.entityType]);
 
   const commitments = (email.commitments ?? []).filter(
     (c) => !dismissed.has(`commitment:${c}`)
@@ -795,7 +1025,7 @@ function EmailIntelItem({
           title={`View briefing for ${email.meetingLinked.title}`}
         >
           <Clock size={12} />
-          <span>Briefing: {email.meetingLinked.title}</span>
+          <span>Before: {email.meetingLinked.title}</span>
           <span className={e.meetingLinkTime}>{formatMeetingTime(email.meetingLinked.startTime)}</span>
         </button>
       )}
@@ -812,23 +1042,23 @@ function EmailIntelItem({
           <span className={e.inlineCommitmentsLabel}>COMMITMENTS</span>
           {commitments.map((c, i) => (
             <div key={i} className={e.inlineCommitmentRow}>
-              {promotedCommitments.has(c) ? (
-                <>
-                  <Check size={12} className={e.inlineCommitmentCheck} />
-                  <span className={e.inlineCommitmentTextPromoted}>{c}</span>
-                </>
-              ) : (
-                <>
-                  <span className={e.inlineCommitmentText}>{c}</span>
-                  <button
-                    onClick={() => handlePromoteCommitment(c)}
-                    className={e.trackButton}
-                    title="Track as action"
-                  >
-                    Track
-                  </button>
-                </>
-              )}
+              <span
+                className={clsx(
+                  e.inlineCommitmentText,
+                  email.trackedCommitments?.some((tracked) => tracked.commitmentText === c) && e.inlineCommitmentTextPromoted
+                )}
+              >
+                {c}
+              </span>
+              <CommitmentTrackControl
+                emailId={email.id}
+                commitmentText={c}
+                defaultEntityId={email.entityId}
+                defaultEntityType={email.entityType === "account" || email.entityType === "project" ? email.entityType : undefined}
+                defaultOwner={email.sender || email.senderEmail}
+                trackedCommitment={email.trackedCommitments?.find((tracked) => tracked.commitmentText === c)}
+                compact
+              />
             </div>
           ))}
         </div>

@@ -752,18 +752,12 @@ pub async fn dev_onboarding_scenario(
 pub fn build_outcome_data(
     meeting_id: &str,
     result: &crate::types::TranscriptResult,
-    state: &AppState,
+    _state: &AppState,
 ) -> crate::types::MeetingOutcomeData {
     // Try to get actions from DB for richer data
-    let actions = state
-        .db
-        .lock()
+    let actions = crate::db::ActionDb::open()
         .ok()
-        .and_then(|guard| {
-            guard
-                .as_ref()
-                .and_then(|db| db.get_actions_for_meeting(meeting_id).ok())
-        })
+        .and_then(|db| db.get_actions_for_meeting(meeting_id).ok())
         .unwrap_or_default();
 
     crate::types::MeetingOutcomeData {
@@ -872,10 +866,16 @@ pub async fn clear_intelligence(
 
 #[tauri::command]
 pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let db_path = state.current_sync_db_path()?;
+    // I609: Get DB path from static method, close db_service before deleting.
+    let db_path = crate::db::ActionDb::db_path_public()
+        .map(|p| p.to_string_lossy().to_string())
+        .ok();
 
-    // Close DB connection
-    state.replace_sync_db(None)?;
+    // Close async DB service
+    {
+        let mut db_svc = state.db_service.write().await;
+        *db_svc = None;
+    }
 
     // Delete database file
     if let Some(path) = db_path {
@@ -908,6 +908,20 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
 #[tauri::command]
 pub async fn get_feature_flags() -> Result<crate::types::FeatureFlags, String> {
     Ok(crate::types::FeatureFlags::default())
+}
+
+// =============================================================================
+// I614: DB Growth Monitoring
+// =============================================================================
+
+/// Return DB file size and row counts for key tables (I614).
+#[tauri::command]
+pub async fn get_db_growth_report(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::db::data_lifecycle::DbGrowthReport, String> {
+    state
+        .db_read(|db| Ok(crate::db::data_lifecycle::db_growth_report(db)))
+        .await
 }
 
 // =============================================================================

@@ -840,6 +840,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             score_reason: dbe.score_reason.clone(),
                             is_unread: dbe.is_unread,
                             pinned_at: dbe.pinned_at.clone(),
+                            tracked_commitments: Vec::new(),
                             meeting_linked: None,
                         }
                     })
@@ -848,12 +849,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             .await
             .unwrap_or_default();
 
-        // I395: Sort by relevance score for briefing
-        db_emails.sort_by(|a, b| {
-            let sa = a.relevance_score.unwrap_or(-1.0);
-            let sb = b.relevance_score.unwrap_or(-1.0);
-            sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        db_emails.sort_by(crate::services::emails::compare_email_rank);
 
         // I448: DB is source of truth — no JSON fallback (archived emails
         // have resolved_at set and are correctly filtered by DB queries)

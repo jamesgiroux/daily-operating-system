@@ -215,6 +215,7 @@ pub fn load_emails_json_with_sync(today_dir: &Path) -> Result<LoadedEmailsData, 
                 score_reason: None,
                 is_unread: true,
                 pinned_at: None,
+                tracked_commitments: Vec::new(),
                 meeting_linked: None,
             }
         })
