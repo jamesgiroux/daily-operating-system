@@ -377,8 +377,13 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     }
 
     // ── v1.0.3: Full meeting intelligence mock data ──
-    // Mark historical meetings as transcript-processed (Meeting Record stage)
-    for hist_id in &["demo-mh-acme-7d", "demo-mh-globex-14d", "demo-mh-initech-21d"] {
+    // Mark all customer meetings as transcript-processed (Meeting Record stage)
+    // Today's meetings AND historical meetings get full intelligence so they
+    // show as Meeting Records once their start time passes.
+    for hist_id in &[
+        "demo-mtg-acme", "demo-mtg-globex",
+        "demo-mh-acme-7d", "demo-mh-globex-14d", "demo-mh-initech-21d",
+    ] {
         conn.execute(
             "UPDATE meeting_transcripts SET transcript_processed_at = datetime('now', '-1 hour') \
              WHERE meeting_id = ?1",
@@ -390,6 +395,22 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     // Enriched captures — full schema with speaker, evidence, urgency, impact, sub_type
     conn.execute_batch(
         "INSERT OR IGNORE INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, impact, evidence_quote, speaker, captured_at) VALUES
+         -- Acme today: full intelligence for the weekly sync
+         ('demo-cap-at1', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'win', 'Phase 2 scoping completed with full executive alignment', 'expansion', NULL, 'Sets up Q2 expansion deal worth 6% ARR increase', 'Sarah said: \"Leadership signed off on the Phase 2 scope yesterday. We are ready to move forward.\"', 'Sarah Chen', datetime('now')),
+         ('demo-cap-at2', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'win', 'Support ticket volume down 60% since migration', 'value_realized', NULL, 'Validates platform stability narrative for renewal', 'Alex confirmed: \"We went from 15 tickets a week to about 6. The new platform is much more stable.\"', 'Alex Torres', datetime('now')),
+         ('demo-cap-at3', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'risk', 'Billing team still struggling with custom report builder', NULL, 'yellow', 'Could slow Phase 2 adoption if not addressed', '\"The billing team tried building their monthly reconciliation report and gave up after 20 minutes.\"', 'Alex Torres', datetime('now')),
+         ('demo-cap-at4', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'risk', 'Budget review in April — CFO wants ROI justification', NULL, 'red', 'Renewal at risk without clear ROI story', 'Sarah flagged: \"Our CFO is asking for hard numbers on cost savings before the April budget review.\"', 'Sarah Chen', datetime('now')),
+         ('demo-cap-at5', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'decision', 'Build custom report template for billing team before Phase 2 kickoff', NULL, NULL, NULL, 'Agreed to prioritize a billing-specific report template in the next sprint.', 'Sarah Chen', datetime('now')),
+         ('demo-cap-at6', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'commitment', 'Deliver ROI analysis deck to CFO by end of month', 'deliverable', NULL, NULL, '\"I will put together the ROI deck with the support ticket data and send it over by the 31st.\"', NULL, datetime('now')),
+         ('demo-cap-at7', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'commitment', 'Schedule billing team training session for next week', 'follow_up', NULL, NULL, '\"Let us get a 90-minute session on the calendar for the billing team.\"', NULL, datetime('now')),
+
+         -- Globex today: intelligence for the QBR
+         ('demo-cap-gt1', 'demo-mtg-globex', 'Globex Industries QBR', 'demo-globex', 'win', 'Expansion to 3 teams going well — Team A and C fully adopted', 'adoption', NULL, 'Two of three teams at full utilization', 'Jamie said: \"Teams A and C are all in. Usage is exactly where we want it.\"', 'Jamie Reeves', datetime('now')),
+         ('demo-cap-gt2', 'demo-mtg-globex', 'Globex Industries QBR', 'demo-globex', 'risk', 'Key stakeholder Jamie departing Q2 — champion transition urgent', NULL, 'red', 'Relationship continuity at risk without formal handoff', '\"My last day is May 15th. Casey and I have started the transition but there is a lot to cover.\"', 'Jamie Reeves', datetime('now')),
+         ('demo-cap-gt3', 'demo-mtg-globex', 'Globex Industries QBR', 'demo-globex', 'risk', 'Team B usage declining — 40% drop in logins over last 30 days', NULL, 'yellow', 'Risk of seat reduction at renewal', 'Casey noted: \"Team B is back to spreadsheets. We need to re-engage them before the renewal conversation.\"', 'Casey Kim', datetime('now')),
+         ('demo-cap-gt4', 'demo-mtg-globex', 'Globex Industries QBR', 'demo-globex', 'decision', 'Fast-track champion transition — Casey Kim to be primary contact by April 15', NULL, NULL, NULL, 'Both sides agreed Casey needs full context transfer before Jamie leaves.', 'Casey Kim', datetime('now')),
+         ('demo-cap-gt5', 'demo-mtg-globex', 'Globex Industries QBR', 'demo-globex', 'commitment', 'Create Team B re-engagement plan with usage targets', 'deliverable', NULL, NULL, '\"We will put together a 30-60-90 plan for Team B with specific adoption milestones.\"', NULL, datetime('now')),
+
          -- Acme 7d ago: 2 wins, 2 risks, 1 decision, 1 commitment
          ('demo-cap-a1', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'win', 'Phase 1 migration completed ahead of schedule', 'adoption', NULL, 'Reduced onboarding time by 40%', 'Sarah confirmed: \"We finished the migration two weeks early and the team is already productive.\"', 'Sarah Chen', datetime('now', '-7 days')),
          ('demo-cap-a2', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'win', 'API integration passing all validation checks', 'value_realized', NULL, 'Zero production incidents since go-live', 'Alex noted the integration has been flawless since launch.', 'Alex Torres', datetime('now', '-7 days')),
@@ -407,6 +428,39 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     ).ok();
 
     // Interaction dynamics — talk balance, speaker sentiments, engagement signals
+    // Acme today
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_interaction_dynamics \
+         (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct, \
+          speaker_sentiments_json, question_density, decision_maker_active, \
+          forward_looking, monologue_risk, competitor_mentions_json, \
+          escalation_language_json, created_at) \
+         VALUES (?1, 58, 42, ?2, 'high', 'yes', 'high', 0, ?3, ?4, datetime('now'))",
+        rusqlite::params![
+            "demo-mtg-acme",
+            r#"[{"name":"Sarah Chen","sentiment":"positive","evidence":"Enthusiastic about Phase 2 alignment and eager to show ROI to CFO"},{"name":"Alex Torres","sentiment":"cautious","evidence":"Flagged billing team friction but acknowledged support improvements"}]"#,
+            r#"[]"#,
+            r#"[{"quote":"If we cannot show the CFO hard savings numbers by April, this gets a lot harder","speaker":"Sarah Chen"}]"#,
+        ],
+    ).ok();
+
+    // Globex today
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_interaction_dynamics \
+         (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct, \
+          speaker_sentiments_json, question_density, decision_maker_active, \
+          forward_looking, monologue_risk, competitor_mentions_json, \
+          escalation_language_json, created_at) \
+         VALUES (?1, 50, 50, ?2, 'medium', 'yes', 'high', 0, ?3, ?4, datetime('now'))",
+        rusqlite::params![
+            "demo-mtg-globex",
+            r#"[{"name":"Jamie Reeves","sentiment":"bittersweet","evidence":"Positive about product but open about departure — wants smooth transition"},{"name":"Casey Kim","sentiment":"determined","evidence":"Taking ownership of the relationship, direct about Team B challenges"}]"#,
+            r#"[{"competitor":"Looker","context":"Casey mentioned Team B explored Looker dashboards during the adoption gap"}]"#,
+            r#"[{"quote":"If Team B does not adopt by Q3, we will need to reconsider the seat count","speaker":"Casey Kim"}]"#,
+        ],
+    ).ok();
+
+    // Acme 7d ago
     conn.execute(
         "INSERT OR IGNORE INTO meeting_interaction_dynamics \
          (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct, \
@@ -438,6 +492,27 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     ).ok();
 
     // Champion health assessments
+    // Acme today
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_champion_health \
+         (meeting_id, champion_name, champion_status, champion_evidence, champion_risk, created_at) \
+         VALUES (?1, 'Sarah Chen', 'strong', \
+          'Driving Phase 2 internally. Proactively managing CFO expectations on ROI. Brought Alex to meeting to build multi-threaded relationship.', \
+          'CFO budget review in April could slow momentum if ROI deck is not compelling.', datetime('now'))",
+        rusqlite::params!["demo-mtg-acme"],
+    ).ok();
+
+    // Globex today
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_champion_health \
+         (meeting_id, champion_name, champion_status, champion_evidence, champion_risk, created_at) \
+         VALUES (?1, 'Jamie Reeves', 'weak', \
+          'Departing May 15th. Still fully engaged in transition planning but actively shifting responsibilities to Casey Kim.', \
+          'Champion loss imminent. Casey Kim shows strong potential but needs accelerated context transfer. Competitor evaluation by Team B adds urgency.', datetime('now'))",
+        rusqlite::params!["demo-mtg-globex"],
+    ).ok();
+
+    // Acme 7d ago
     conn.execute(
         "INSERT OR IGNORE INTO meeting_champion_health \
          (meeting_id, champion_name, champion_status, champion_evidence, champion_risk, created_at) \
@@ -457,6 +532,16 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     ).ok();
 
     // Role changes
+    // Globex today
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_role_changes \
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
+         VALUES ('demo-rc-gt1', 'demo-mtg-globex', 'Casey Kim', 'champion_candidate', 'champion', \
+          'Casey is now the primary point of contact. Jamie confirmed the handoff is complete for day-to-day operations.', datetime('now'))",
+        [],
+    ).ok();
+
+    // Globex 14d ago
     conn.execute(
         "INSERT OR IGNORE INTO meeting_role_changes \
          (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
@@ -492,6 +577,13 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     // Transcript-extracted actions for demo meetings
     conn.execute_batch(
         "INSERT OR IGNORE INTO actions (id, title, status, priority, source_type, source_id, account_id, created_at, updated_at, is_demo) VALUES
+         -- Today's meetings
+         ('demo-act-at1', 'Deliver ROI analysis deck to Acme CFO', 'proposed', 'P1', 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1),
+         ('demo-act-at2', 'Build custom billing report template for Acme', 'proposed', 'P1', 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1),
+         ('demo-act-at3', 'Schedule billing team training session', 'proposed', 'P2', 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1),
+         ('demo-act-gt1', 'Create Team B 30-60-90 re-engagement plan', 'proposed', 'P1', 'transcript', 'demo-mtg-globex', 'demo-globex', datetime('now'), datetime('now'), 1),
+         ('demo-act-gt2', 'Complete champion context transfer to Casey Kim', 'proposed', 'P1', 'transcript', 'demo-mtg-globex', 'demo-globex', datetime('now'), datetime('now'), 1),
+         -- Historical meetings
          ('demo-act-a1', 'Send updated ROI analysis to Acme', 'completed', 'P1', 'transcript', 'demo-mh-acme-7d', 'demo-acme', datetime('now', '-7 days'), datetime('now', '-3 days'), 1),
          ('demo-act-a2', 'Schedule billing team feedback session', 'pending', 'P1', 'transcript', 'demo-mh-acme-7d', 'demo-acme', datetime('now', '-7 days'), datetime('now', '-7 days'), 1),
          ('demo-act-g1', 'Coordinate Team B enablement workshop', 'pending', 'P1', 'transcript', 'demo-mh-globex-14d', 'demo-globex', datetime('now', '-14 days'), datetime('now', '-14 days'), 1),
