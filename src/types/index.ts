@@ -31,6 +31,9 @@ export type MeetingType =
   | "external"
   | "personal";
 
+/** I634: Meeting page temporal lifecycle stage. */
+export type MeetingStage = "upcoming" | "in-progress" | "just-ended" | "processed";
+
 /** Feature flags for gating incomplete features (I537). */
 export interface FeatureFlags {
   role_presets_enabled: boolean;
