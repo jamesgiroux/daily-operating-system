@@ -133,29 +133,6 @@ export function PostMeetingIntelligence({ data, getItemFeedback, onItemFeedback 
         </section>
       )}
 
-      {/* Champion Health */}
-      {hasChampion && championHealth && (
-        <section>
-          <ChapterHeading title="Champion Health" />
-          <div className={styles.championCard}>
-            <div className={styles.championHeader}>
-              {championHealth.championName && (
-                <span className={styles.championName}>{championHealth.championName}</span>
-              )}
-              <span className={championStatusClass(championHealth.championStatus)}>
-                {championHealth.championStatus}
-              </span>
-            </div>
-            {championHealth.championEvidence && (
-              <p className={styles.championEvidence}>{championHealth.championEvidence}</p>
-            )}
-            {championHealth.championRisk && (
-              <p className={styles.championRisk}>{championHealth.championRisk}</p>
-            )}
-          </div>
-        </section>
-      )}
-
       {/* Categorized Outcomes — Wins */}
       {hasWins && (
         <section>
@@ -185,6 +162,29 @@ export function PostMeetingIntelligence({ data, getItemFeedback, onItemFeedback 
         <section>
           <ChapterHeading title="Commitments" />
           <CaptureGroup captures={commitments} type="commitment" getItemFeedback={getItemFeedback} onItemFeedback={onItemFeedback} />
+        </section>
+      )}
+
+      {/* Champion Health */}
+      {hasChampion && championHealth && (
+        <section>
+          <ChapterHeading title="Champion Health" />
+          <div className={styles.championCard}>
+            <div className={styles.championHeader}>
+              {championHealth.championName && (
+                <span className={styles.championName}>{championHealth.championName}</span>
+              )}
+              <span className={championStatusClass(championHealth.championStatus)}>
+                {championHealth.championStatus}
+              </span>
+            </div>
+            {championHealth.championEvidence && (
+              <p className={styles.championEvidence}>{championHealth.championEvidence}</p>
+            )}
+            {championHealth.championRisk && (
+              <p className={styles.championRisk}>{championHealth.championRisk}</p>
+            )}
+          </div>
         </section>
       )}
 
@@ -326,14 +326,14 @@ function CaptureItem({
             {formatUrgency(capture.urgency)}
           </span>
         )}
+        {type === "win" && capture.subType && (
+          <span className={styles.subTypeBadge}>{formatSubType(capture.subType)}</span>
+        )}
         {type === "win" && capture.impact && (
           <span className={styles.impactBadge}>{capture.impact}</span>
         )}
         {type === "commitment" && capture.subType && (
           <span className={styles.subTypeBadge}>{capture.subType}</span>
-        )}
-        {capture.speaker && (
-          <span className={styles.captureSpeaker}>{capture.speaker}</span>
         )}
         {hasFeedback && (
           <span className={styles.captureActions}>
@@ -347,6 +347,9 @@ function CaptureItem({
       <p className={styles.captureContent}>{capture.content}</p>
       {capture.evidenceQuote && (
         <p className={styles.captureEvidence}>{capture.evidenceQuote}</p>
+      )}
+      {capture.speaker && (
+        <span className={styles.captureSpeakerAttribution}>{capture.speaker}</span>
       )}
     </div>
   );
