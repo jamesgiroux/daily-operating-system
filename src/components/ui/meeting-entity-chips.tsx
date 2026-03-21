@@ -15,6 +15,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { X, Building2, FolderKanban, User } from "lucide-react";
 import { EntityPicker } from "./entity-picker";
 import type { LinkedEntity } from "@/types";
@@ -83,6 +84,7 @@ export function MeetingEntityChips({
         onEntitiesChanged?.();
       } catch (err) {
         console.error("Failed to add meeting entity:", err);
+        toast.error("Failed to link account");
         // Rollback on failure
         setLocalEntities((prev) => prev.filter((e) => e.id !== entityId));
       }
@@ -105,6 +107,7 @@ export function MeetingEntityChips({
         onEntitiesChanged?.();
       } catch (err) {
         console.error("Failed to remove meeting entity:", err);
+        toast.error("Failed to unlink account");
         // Rollback: re-add the entity on failure with original name
         setLocalEntities((prev) => {
           if (prev.some((e) => e.id === entityId)) return prev;

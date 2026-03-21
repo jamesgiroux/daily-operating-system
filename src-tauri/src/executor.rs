@@ -83,8 +83,8 @@ impl Executor {
     /// Build set of known external domains from account_domains + person emails.
     pub(crate) fn build_known_domains(&self) -> HashSet<String> {
         let mut domains = HashSet::new();
-        if let Ok(guard) = self.state.db.lock() {
-            if let Some(db) = guard.as_ref() {
+        if let Ok(db) = crate::db::ActionDb::open() {
+            {
                 // Account domains
                 if let Ok(rows) = db
                     .conn_ref()
@@ -316,7 +316,7 @@ impl Executor {
                                 .map_err(|e| e.to_string())?;
                             if was_inserted {
                                 inserted += 1;
-                                // I353 Phase 2: Bridge email_signals → signal_events
+                                // I353 Step 2: Bridge email_signals → signal_events
                                 // Emit email_received for person entities to trigger hygiene rules
                                 if entity_type == "person" {
                                     if let Some(ref pid) = person_id {
@@ -511,7 +511,7 @@ impl Executor {
                 .await
         } else {
             // Today workflow: per-operation pipeline (ADR-0042)
-            // Phase 1 (Python) then Rust-native mechanical delivery — no Phase 2/3
+            // Phase 1 (Python) then Rust-native mechanical delivery — no step 2/3
             self.execute_today_pipeline(&workspace, &execution_id, trigger, &record)
                 .await
         };
@@ -633,10 +633,8 @@ impl Executor {
         }
 
         // Step 2: Persist meetings + freeze prep snapshots BEFORE archive cleanup.
-        if let Ok(db_guard) = self.state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                reconcile::persist_meetings(db, &recon, workspace);
-            }
+        if let Ok(db) = crate::db::ActionDb::open() {
+            reconcile::persist_meetings(&db, &recon, workspace);
         }
         // I308: Wake entity resolution trigger for newly-persisted meetings
         self.state.signals.entity_resolution_wake.notify_one();
@@ -871,7 +869,7 @@ impl Executor {
         log::info!("Week pipeline Phase 1: Rust-native prepare");
         crate::prepare::orchestrate::prepare_week(&self.state, workspace).await?;
 
-        // --- Phase 2: Mechanical delivery (instant) ---
+        // --- Step 2: Mechanical delivery (instant) ---
         self.emit_status_event(
             WorkflowId::Week,
             WorkflowStatus::Running {
@@ -881,7 +879,7 @@ impl Executor {
             },
         );
 
-        log::info!("Week pipeline Phase 2: mechanical delivery");
+        log::info!("Week pipeline Step 2: mechanical delivery");
         crate::prepare::orchestrate::deliver_week(workspace)
             .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
         let _ = self.app_handle.emit("operation-delivered", "week-overview");

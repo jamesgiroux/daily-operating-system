@@ -83,7 +83,7 @@ export function PopulateWorkspace({ entityMode, formData, onFormChange, onNext }
     try {
       await invoke("populate_workspace", { accounts, projects });
     } catch (e) {
-      console.error("populate_workspace failed:", e);
+      console.error("populate_workspace failed:", e); // Expected: best-effort workspace population
     }
     onNext();
   }

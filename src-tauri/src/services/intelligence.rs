@@ -8,6 +8,52 @@ use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 use tauri::Emitter;
 
+fn stage_failure_message(stage: &str) -> &str {
+    match stage {
+        "context_gather" => "context gather",
+        "pty_permit" => "PTY permit acquisition",
+        "pty_enrichment" => "Claude PTY enrichment",
+        "write_results" => "result writeback",
+        "relationship_persist" => "relationship persistence",
+        _ => stage,
+    }
+}
+
+fn emit_manual_refresh_failed(
+    app_handle: Option<&tauri::AppHandle>,
+    entity_id: &str,
+    entity_type: &str,
+    entity_label: &str,
+    stage: &str,
+    error: &str,
+) {
+    if let Some(app) = app_handle {
+        let payload = serde_json::json!({
+            "phase": "failed",
+            "message": format!(
+                "Insight refresh failed for {} during {}",
+                entity_label,
+                stage_failure_message(stage)
+            ),
+            "count": 1,
+            "entityId": entity_id,
+            "entityType": entity_type,
+            "stage": stage,
+            "error": error,
+        });
+        let _ = app.emit("background-work-status", payload.clone());
+        let _ = app.emit("intelligence-refresh-failed", payload);
+    }
+}
+
+fn manual_refresh_error(stage: &str, error: &str) -> String {
+    format!(
+        "manual refresh failed during {}: {}",
+        stage_failure_message(stage),
+        error
+    )
+}
+
 /// Enrich an entity via the intelligence queue (split-lock pattern).
 pub async fn enrich_entity(
     entity_id: String,
@@ -58,7 +104,15 @@ pub async fn enrich_entity(
                 request.entity_id,
                 e
             );
-            return Err(e);
+            emit_manual_refresh_failed(
+                app_handle,
+                &request.entity_id,
+                &request.entity_type,
+                &request.entity_id,
+                "context_gather",
+                &e,
+            );
+            return Err(manual_refresh_error("context_gather", &e));
         }
     };
 
@@ -80,12 +134,29 @@ pub async fn enrich_entity(
     .await
     {
         Ok(Ok(permit)) => permit,
-        Ok(Err(_)) => return Err("PTY permit closed".to_string()),
+        Ok(Err(_)) => {
+            let error = "PTY permit closed";
+            emit_manual_refresh_failed(
+                app_handle,
+                &input.entity_id,
+                &input.entity_type,
+                &input.entity_name,
+                "pty_permit",
+                error,
+            );
+            return Err(manual_refresh_error("pty_permit", error));
+        }
         Err(_) => {
-            return Err(
-                "Background work in progress — your refresh is queued and will run shortly"
-                    .to_string(),
-            )
+            let error = "Background work in progress — your refresh is queued and will run shortly";
+            emit_manual_refresh_failed(
+                app_handle,
+                &input.entity_id,
+                &input.entity_type,
+                &input.entity_name,
+                "pty_permit",
+                error,
+            );
+            return Err(manual_refresh_error("pty_permit", error));
         }
     };
 
@@ -151,15 +222,40 @@ pub async fn enrich_entity(
                 let input_for_enrichment = input.clone();
                 let ai_config_for_enrichment = ai_config.clone();
                 let app_handle_clone = app_handle.cloned();
-                tauri::async_runtime::spawn_blocking(move || {
+                let pty_result = tauri::async_runtime::spawn_blocking(move || {
                     run_enrichment(
                         &input_for_enrichment,
                         &ai_config_for_enrichment,
                         app_handle_clone.as_ref(),
                     )
                 })
-                .await
-                .map_err(|e| format!("Enrichment task panicked: {}", e))??
+                .await;
+                match pty_result {
+                    Ok(Ok(parsed)) => parsed,
+                    Ok(Err(e)) => {
+                        emit_manual_refresh_failed(
+                            app_handle,
+                            &input.entity_id,
+                            &input.entity_type,
+                            &input.entity_name,
+                            "pty_enrichment",
+                            &e,
+                        );
+                        return Err(manual_refresh_error("pty_enrichment", &e));
+                    }
+                    Err(e) => {
+                        let error = format!("Enrichment task panicked: {}", e);
+                        emit_manual_refresh_failed(
+                            app_handle,
+                            &input.entity_id,
+                            &input.entity_type,
+                            &input.entity_name,
+                            "pty_enrichment",
+                            &error,
+                        );
+                        return Err(manual_refresh_error("pty_enrichment", &error));
+                    }
+                }
             }
         }
     } else {
@@ -167,32 +263,55 @@ pub async fn enrich_entity(
         let input_for_enrichment = input.clone();
         let ai_config_for_enrichment = ai_config.clone();
         let app_handle_clone = app_handle.cloned();
-        tauri::async_runtime::spawn_blocking(move || {
+        let pty_result = tauri::async_runtime::spawn_blocking(move || {
             run_enrichment(
                 &input_for_enrichment,
                 &ai_config_for_enrichment,
                 app_handle_clone.as_ref(),
             )
         })
-        .await
-        .map_err(|e| format!("Enrichment task panicked: {}", e))??
+        .await;
+        match pty_result {
+            Ok(Ok(parsed)) => parsed,
+            Ok(Err(e)) => {
+                emit_manual_refresh_failed(
+                    app_handle,
+                    &input.entity_id,
+                    &input.entity_type,
+                    &input.entity_name,
+                    "pty_enrichment",
+                    &e,
+                );
+                return Err(manual_refresh_error("pty_enrichment", &e));
+            }
+            Err(e) => {
+                let error = format!("Enrichment task panicked: {}", e);
+                emit_manual_refresh_failed(
+                    app_handle,
+                    &input.entity_id,
+                    &input.entity_type,
+                    &input.entity_name,
+                    "pty_enrichment",
+                    &error,
+                );
+                return Err(manual_refresh_error("pty_enrichment", &error));
+            }
+        }
     };
 
     let final_intel = match write_enrichment_results(state, &input, &parsed.intel, Some(&ai_config))
     {
         Ok(intel) => intel,
         Err(e) => {
-            if let Some(app) = app_handle {
-                let _ = app.emit(
-                    "background-work-status",
-                    serde_json::json!({
-                        "phase": "completed",
-                        "message": format!("Insight refresh failed for {}", input.entity_name),
-                        "count": 1,
-                    }),
-                );
-            }
-            return Err(e);
+            emit_manual_refresh_failed(
+                app_handle,
+                &input.entity_id,
+                &input.entity_type,
+                &input.entity_name,
+                "write_results",
+                &e,
+            );
+            return Err(manual_refresh_error("write_results", &e));
         }
     };
     if !parsed.inferred_relationships.is_empty() {
@@ -211,7 +330,18 @@ pub async fn enrich_entity(
                 )
                 .map(|_| ())
             })
-            .await?;
+            .await
+            .map_err(|e| {
+                emit_manual_refresh_failed(
+                    app_handle,
+                    &input.entity_id,
+                    &input.entity_type,
+                    &input.entity_name,
+                    "relationship_persist",
+                    &e,
+                );
+                manual_refresh_error("relationship_persist", &e)
+            })?;
     }
 
     if let Some(app) = app_handle {
@@ -522,6 +652,20 @@ pub async fn update_stakeholders(
     let engine = state.signals.engine.clone();
     let entity_id = entity_id.to_string();
     let entity_type = entity_type.to_string();
+    let stakeholders = stakeholders
+        .into_iter()
+        .map(|mut stakeholder| {
+            stakeholder.source = Some("user".to_string());
+            stakeholder.item_source = Some(crate::intelligence::ItemSource {
+                source: "user_correction".to_string(),
+                confidence: 1.0,
+                sourced_at: chrono::Utc::now().to_rfc3339(),
+                reference: Some("user stakeholder edit".to_string()),
+            });
+            stakeholder
+        })
+        .collect::<Vec<_>>();
+
     state
         .db_write(move |db| {
             let workspace = Path::new(&workspace_path);
@@ -849,13 +993,8 @@ pub async fn generate_risk_briefing(
 
     let task = tauri::async_runtime::spawn_blocking(move || {
         let input = {
-            let db_guard = app_state
-                .db
-                .lock()
-                .map_err(|_| "Lock poisoned".to_string())?;
-            let db = db_guard
-                .as_ref()
-                .ok_or_else(|| "Database not initialized".to_string())?;
+            let db = crate::db::ActionDb::open()
+                .map_err(|e| format!("Database unavailable: {e}"))?;
 
             let config_guard = app_state
                 .config
@@ -868,7 +1007,7 @@ pub async fn generate_risk_briefing(
             let workspace = std::path::Path::new(&config.workspace_path);
             crate::risk_briefing::gather_risk_input(
                 workspace,
-                db,
+                &db,
                 &account_id,
                 config.user_name.clone(),
                 config.ai_models.clone(),
