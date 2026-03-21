@@ -66,6 +66,7 @@ import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { AddToRecord } from "@/components/entity/AddToRecord";
 import { FileListSection } from "@/components/entity/FileListSection";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
+import { WatchListPrograms } from "@/components/account/WatchListPrograms";
 import { DimensionBar } from "@/components/shared/DimensionBar";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 import shared from "@/styles/entity-detail.module.css";
@@ -798,6 +799,14 @@ export default function AccountDetailEditorial() {
             onUpdateField={handleUpdateIntelField}
             getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
             onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
+            bottomSection={
+              <WatchListPrograms
+                programs={acct.programs}
+                onProgramUpdate={acct.handleProgramUpdate}
+                onProgramDelete={acct.handleProgramDelete}
+                onAddProgram={acct.handleAddProgram}
+              />
+            }
           />
         </div>
       </div>
