@@ -10,6 +10,24 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.0.2 — Scores you can trust
+
+Health scores were telling the wrong story. An account that just renewed with ARR growth was showing "at risk." A CSM who tagged a champion saw the role disappear after the next refresh. Email activity wasn't factoring into health at all. This release fixes all of it.
+
+**Health scores actually make sense now.** Five formula bugs were causing healthy accounts to score low. A recently-renewed account now scores high instead of rock-bottom. Stakeholder coverage rewards what you have instead of penalizing what's missing. Champion engagement is recognized even when you haven't formally tagged someone. Every account's score will recalculate automatically — expect scores to shift upward for healthy accounts.
+
+**Your edits stick.** When you set someone as a champion, technical lead, or executive sponsor, that designation now survives account refreshes. Previously, the AI could reorder stakeholders during a refresh and your role assignments would silently move to the wrong person. Fixed.
+
+**Email activity counts toward health.** Your inbox conversations now factor into account health scores. If you have active email threads with an account's stakeholders, the system sees that engagement. Previously, email signals were collected but never made it to the health scoring engine.
+
+**Actions flow from transcript to triage.** When you process a meeting transcript, extracted actions now appear on the Actions page immediately — no navigation required. The page auto-switches to show new suggestions, and you'll see a notification when they arrive.
+
+**Meeting briefings show your prep.** Expanding any meeting on the daily briefing now shows your prep grid (what to discuss, what to watch, recent wins) and a pre-meeting action checklist. These components existed but weren't connected after a recent redesign.
+
+**Transcripts file to the right place.** Process a 1:1 meeting and the transcript files to that person's folder. Process a project meeting and it goes to the project folder. Previously, only account-linked meetings were routed correctly.
+
+---
+
 ## v1.0.1 — Your inbox, under control
 
 The Correspondent got smarter. DailyOS now understands what's happening in your inbox — not just what arrived, but what needs your attention, what you committed to, and which accounts have gone quiet.
