@@ -5,16 +5,29 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
-## [Unreleased]
+## [1.0.2] — 2026-03-21
 
 ### Fixed
 
 - **Health scoring recalibrated (I633)** — five formula bugs fixed that caused healthy accounts to score at-risk. Financial proximity formula was inverted (just-renewed accounts scored 5/100), confidence regression was too aggressive (40% pull to neutral at 3-4 dimensions), stakeholder coverage required all 3 archetype roles (denominator always 3), champion inference capped at 55 even with 70%+ attendance, and real-time rescores dropped the org baseline blend. All formulas corrected; bulk recompute command added for migration.
+- **Email signals now populate from enrichment** — `email_signals` table was never written to by the enrichment pipeline, causing email engagement to read as zero in health scoring. Enriched emails now write to both `signal_events` and `email_signals`.
+- **Stakeholder roles persist across re-enrichment** — user-set roles (champion, technical, executive) were lost when AI reordered the stakeholder array during enrichment. `preserve_user_edits` now matches by person name instead of array index.
+- **Actions pipeline end-to-end (I620)** — proposed actions from transcript extraction were invisible. Six root causes fixed: event-driven refresh for proposed actions, auto-switch to Proposed tab on new arrivals, dedup guard now logs at debug level, service layer returns write/skip counts, lifecycle feedback on every extraction.
+- **Past-meeting opacity boundary (I622)** — outcomes section now renders at full brightness on past meetings; only pre-meeting prep fades.
+- **MCP query_entity reads from DB (I632)** — `query_entity` now reads intelligence from `entity_assessment` table instead of stale disk files.
 
 ### Added
 
 - **Health score trend tracking (I633)** — `health_score_history` table records each recompute. Real trends computed from last 3-5 data points, replacing hardcoded "stable". Migration 072.
 - **Bulk health recompute command** — `bulk_recompute_health` Tauri command rescores all accounts after formula fixes.
+- **Briefing expansion panels restored (I629)** — PrepGrid and MeetingActionChecklist now render in the expansion panel for non-lead meetings on the daily briefing.
+- **Transcript filing for person + project entities (I631)** — transcripts route to `~/People/{Name}/Call-Transcripts/` for 1:1 meetings and `~/Projects/{Name}/Call-Transcripts/` for project meetings.
+- **WatchListPrograms wired (I630)** — strategic programs component connected to account detail WatchList.
+
+### Changed
+
+- **Transcript output redesign (I621)** — win sub-type badges on individual items, evidence quote borders unified to warm accent, speaker attribution repositioned, champion health section reordered to after commitments.
+- **Reconnection audit (I630)** — stale I377 comment on `rule_meeting_frequency_drop` updated to reflect I555 re-activation. All 12 propagation rules verified active.
 
 
 ## [1.0.1] — 2026-03-21
