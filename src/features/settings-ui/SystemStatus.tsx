@@ -194,7 +194,7 @@ function HealthOneLiner() {
           setLastBriefing(String(schedules.dailyBriefingTime));
         }
       })
-      .catch((err) => console.error("Settings load failed:", err));
+      .catch((err) => console.error("Settings load failed:", err)); // Expected: background settings fetch
 
     invoke<HygieneStatusView>("get_intelligence_hygiene_status")
       .then((status) => {
@@ -211,7 +211,7 @@ function HealthOneLiner() {
           setHealthSummary(parts.join(", "));
         }
       })
-      .catch((err) => console.error("Settings load failed:", err));
+      .catch((err) => console.error("Settings load failed:", err)); // Expected: background settings fetch
   }, []);
 
   return (
@@ -261,7 +261,7 @@ function AiModelsSection() {
           config.aiModels ?? { synthesis: "sonnet", extraction: "haiku", mechanical: "haiku" },
         );
       })
-      .catch((err) => console.error("Settings load failed:", err));
+      .catch((err) => console.error("Settings load failed:", err)); // Expected: background settings fetch
   }, []);
 
   async function handleModelChange(tier: string, model: string) {
@@ -365,7 +365,7 @@ function HygieneSection() {
     }
     invoke<HygieneNarrativeView | null>("get_hygiene_narrative")
       .then(setNarrative)
-      .catch((err) => console.error("Settings load failed:", err));
+      .catch((err) => console.error("Settings load failed:", err)); // Expected: background settings fetch
   }
 
   useEffect(() => {
@@ -378,7 +378,7 @@ function HygieneSection() {
           hygienePreMeetingHours: config.hygienePreMeetingHours ?? 12,
         });
       })
-      .catch((err) => console.error("Settings load failed:", err));
+      .catch((err) => console.error("Settings load failed:", err)); // Expected: background settings fetch
   }, []);
 
   async function runScanNow() {
@@ -388,7 +388,7 @@ function HygieneSection() {
       setStatus(updated);
       invoke<HygieneNarrativeView | null>("get_hygiene_narrative")
         .then(setNarrative)
-        .catch((err) => console.error("Settings load failed:", err));
+        .catch((err) => console.error("Settings load failed:", err)); // Expected: background settings fetch
       toast.success("Hygiene scan complete");
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Failed to run hygiene scan");
@@ -816,7 +816,7 @@ function CaptureSection() {
   useEffect(() => {
     invoke<PostMeetingCaptureConfig>("get_capture_settings")
       .then(setCaptureConfig)
-      .catch((err) => console.error("Settings load failed:", err));
+      .catch((err) => console.error("Settings load failed:", err)); // Expected: background settings fetch
   }, []);
 
   async function toggleCapture() {
@@ -1083,7 +1083,7 @@ function SecuritySection() {
       .then((config) => {
         setLockTimeout(config.appLockTimeoutMinutes ?? 15);
       })
-      .catch((err) => console.error("Failed to load lock config:", err));
+      .catch((err) => console.error("Failed to load lock config:", err)); // Expected: background settings fetch
   }, []);
 
   async function handleChange(value: number) {

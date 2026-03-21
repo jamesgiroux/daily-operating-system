@@ -177,7 +177,7 @@ export default function EbrQbrPage() {
     if (!accountId) return;
     invoke<AccountDetail>("get_account_detail", { accountId })
       .then((detail) => setAccountName(detail.name))
-      .catch((e) => console.error("Failed to load account detail:", e));
+      .catch((e) => console.error("Failed to load account detail:", e)); // Expected: background data fetch on mount
   }, [accountId]);
 
   // Load cached report on mount
@@ -201,6 +201,7 @@ export default function EbrQbrPage() {
       })
       .catch((err) => {
         console.error("get_report (ebr_qbr) failed:", err);
+        toast.error("Failed to load report");
         setReport(null);
         setContent(null);
       })

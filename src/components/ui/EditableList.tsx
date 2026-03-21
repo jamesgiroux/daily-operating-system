@@ -68,7 +68,7 @@ export function EditableList({
         fieldId,
         fromIndex: dragIndex,
         toIndex: targetIdx,
-      }).catch((err) => console.error("editable-list:reorder emit failed:", err));
+      }).catch((err) => console.error("editable-list:reorder emit failed:", err)); // Expected: best-effort event emit
       setDragIndex(null);
       setDragOverIndex(null);
     },

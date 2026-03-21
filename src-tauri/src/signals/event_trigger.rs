@@ -51,8 +51,7 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
     };
     let accounts_dir = workspace.join("Accounts");
 
-    let guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-    let db = guard.as_ref().ok_or("Database unavailable")?;
+    let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
     let meetings = db
         .get_meetings_needing_resolution(30)
@@ -79,7 +78,7 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
         });
 
         let outcomes = crate::prepare::entity_resolver::resolve_meeting_entities(
-            db,
+            &db,
             &meeting.id,
             &meeting_json,
             &accounts_dir,

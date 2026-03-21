@@ -58,7 +58,7 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
         const [status, people] = await Promise.all([
           invoke<SetupStatus>("get_internal_team_setup_status"),
           invoke<PersonListItem[]>("get_people", { relationship: null }).catch((err) => {
-            console.error("get_people failed:", err);
+            console.error("get_people failed:", err); // Expected: background data fetch on mount
             return [];
           }),
         ]);

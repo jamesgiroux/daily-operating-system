@@ -14,7 +14,7 @@ export default function GoogleDriveConnector() {
       const s = await invoke<DriveStatusData>("get_google_drive_status");
       setStatus(s);
     } catch (err) {
-      console.error("get_google_drive_status failed:", err);
+      console.error("get_google_drive_status failed:", err); // Expected: background init on mount
     }
   }, []);
 
@@ -23,7 +23,7 @@ export default function GoogleDriveConnector() {
       const items = await invoke<DriveWatchedSource[]>("get_google_drive_watches");
       setSources(items);
     } catch (err) {
-      console.error("get_google_drive_watches failed:", err);
+      console.error("get_google_drive_watches failed:", err); // Expected: background init on mount
     }
   }, []);
 

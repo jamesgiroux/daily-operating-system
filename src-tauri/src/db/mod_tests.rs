@@ -28,6 +28,41 @@ fn sample_action(id: &str, title: &str) -> DbAction {
     }
 }
 
+fn sample_email(id: &str, thread_id: &str, subject: &str) -> DbEmail {
+    let now = Utc::now().to_rfc3339();
+    DbEmail {
+        email_id: id.to_string(),
+        thread_id: Some(thread_id.to_string()),
+        sender_email: Some("owner@example.com".to_string()),
+        sender_name: Some("Owner".to_string()),
+        subject: Some(subject.to_string()),
+        snippet: Some("snippet".to_string()),
+        priority: Some("high".to_string()),
+        is_unread: true,
+        received_at: Some(now.clone()),
+        enrichment_state: "enriched".to_string(),
+        enrichment_attempts: 0,
+        last_enrichment_at: None,
+        last_seen_at: Some(now.clone()),
+        resolved_at: None,
+        entity_id: Some("acc-1".to_string()),
+        entity_type: Some("account".to_string()),
+        contextual_summary: Some("summary".to_string()),
+        sentiment: None,
+        urgency: None,
+        user_is_last_sender: false,
+        last_sender_email: Some("owner@example.com".to_string()),
+        message_count: 1,
+        created_at: now.clone(),
+        updated_at: now,
+        relevance_score: Some(0.9),
+        score_reason: Some("important".to_string()),
+        pinned_at: None,
+        commitments: None,
+        questions: None,
+    }
+}
+
 #[test]
 fn test_open_creates_tables() {
     let db = test_db();
@@ -115,6 +150,28 @@ fn test_complete_action() {
         )
         .expect("direct query");
     assert!(completed_at.is_some());
+}
+
+#[test]
+fn test_archive_email_archives_entire_thread() {
+    let db = test_db();
+
+    let latest = sample_email("em-thread-1-latest", "thread-1", "Latest");
+    let older = sample_email("em-thread-1-older", "thread-1", "Older");
+    db.upsert_email(&latest).expect("upsert latest");
+    db.upsert_email(&older).expect("upsert older");
+
+    db.archive_email("em-thread-1-latest")
+        .expect("archive thread");
+
+    let active = db.get_all_active_emails().expect("active emails");
+    assert!(active.is_empty(), "thread should be fully hidden once archived");
+
+    db.unarchive_email("em-thread-1-latest")
+        .expect("unarchive thread");
+
+    let active = db.get_all_active_emails().expect("active after undo");
+    assert_eq!(active.len(), 2, "undo should restore the full thread");
 }
 
 #[test]
