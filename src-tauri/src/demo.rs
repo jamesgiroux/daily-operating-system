@@ -376,7 +376,8 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         }
     }
 
-    // I636: Mark historical meetings as transcript-processed so they show as Meeting Records
+    // ── v1.0.3: Full meeting intelligence mock data ──
+    // Mark historical meetings as transcript-processed (Meeting Record stage)
     for hist_id in &["demo-mh-acme-7d", "demo-mh-globex-14d", "demo-mh-initech-21d"] {
         conn.execute(
             "UPDATE meeting_transcripts SET transcript_processed_at = datetime('now', '-1 hour') \
@@ -386,54 +387,97 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         .ok();
     }
 
-    // I635: Seed enriched captures for historical meetings (scorecard + postIntel data)
-    for (meeting_id, captures) in &[
-        (
-            "demo-mh-acme-7d",
-            vec![
-                ("win", "adoption", "Migration completed ahead of schedule"),
-                ("risk", "red", "NPS trending down with 3 detractors"),
-                ("decision", "", "Proceed with Phase 2 scoping next quarter"),
-            ],
-        ),
-        (
-            "demo-mh-globex-14d",
-            vec![
-                ("win", "engagement", "New dashboard features well received"),
-                ("risk", "yellow", "Team B engagement declining — needs intervention"),
-                ("decision", "", "Schedule dedicated Team B enablement session"),
-            ],
-        ),
-    ] {
-        for (i, (capture_type, sub_type, content)) in captures.iter().enumerate() {
-            conn.execute(
-                "INSERT OR IGNORE INTO enriched_captures \
-                 (id, meeting_id, capture_type, sub_type, content, confidence, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, 0.85, datetime('now'))",
-                rusqlite::params![
-                    format!("demo-cap-{}-{}", meeting_id, i),
-                    meeting_id,
-                    capture_type,
-                    if sub_type.is_empty() { None } else { Some(sub_type) },
-                    content,
-                ],
-            )
-            .ok();
-        }
-    }
+    // Enriched captures — full schema with speaker, evidence, urgency, impact, sub_type
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, impact, evidence_quote, speaker, captured_at) VALUES
+         -- Acme 7d ago: 2 wins, 2 risks, 1 decision, 1 commitment
+         ('demo-cap-a1', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'win', 'Phase 1 migration completed ahead of schedule', 'adoption', NULL, 'Reduced onboarding time by 40%', 'Sarah confirmed: \"We finished the migration two weeks early and the team is already productive.\"', 'Sarah Chen', datetime('now', '-7 days')),
+         ('demo-cap-a2', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'win', 'API integration passing all validation checks', 'value_realized', NULL, 'Zero production incidents since go-live', 'Alex noted the integration has been flawless since launch.', 'Alex Torres', datetime('now', '-7 days')),
+         ('demo-cap-a3', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'risk', 'NPS trending down — 3 detractors in latest survey', NULL, 'red', 'Churn risk if sentiment continues declining', 'Sarah flagged: \"We''re seeing some frustration from the billing team about the reporting interface.\"', 'Sarah Chen', datetime('now', '-7 days')),
+         ('demo-cap-a4', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'risk', 'Billing team unhappy with reporting interface', NULL, 'yellow', 'Could block Phase 2 expansion', '\"The reports don''t match what they see in their legacy system.\"', 'Alex Torres', datetime('now', '-7 days')),
+         ('demo-cap-a5', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'decision', 'Proceed with Phase 2 scoping next quarter', NULL, NULL, NULL, 'Both sides agreed to begin Phase 2 discovery in April.', 'Sarah Chen', datetime('now', '-7 days')),
+         ('demo-cap-a6', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'commitment', 'Send updated ROI analysis by Friday', 'deliverable', NULL, NULL, '\"I''ll have the updated numbers to you by end of week.\"', NULL, datetime('now', '-7 days')),
 
-    // I637: Seed meeting attendees for continuity thread "new attendees" detection
+         -- Globex 14d ago: 1 win, 2 risks, 1 decision, 1 commitment
+         ('demo-cap-g1', 'demo-mh-globex-14d', 'Globex Sprint Demo', 'demo-globex', 'win', 'New dashboard features received enthusiastic response', 'engagement', NULL, 'Drove 30% increase in daily active usage', 'Jamie said: \"The team loved the new filtering — usage jumped the day we deployed.\"', 'Jamie Reeves', datetime('now', '-14 days')),
+         ('demo-cap-g2', 'demo-mh-globex-14d', 'Globex Sprint Demo', 'demo-globex', 'risk', 'Team B engagement declining — may need dedicated enablement', NULL, 'yellow', 'Team B represents 35% of seats', 'Casey raised concern: \"Team B hasn''t logged in since the UI refresh. They''re still using spreadsheets.\"', 'Casey Kim', datetime('now', '-14 days')),
+         ('demo-cap-g3', 'demo-mh-globex-14d', 'Globex Sprint Demo', 'demo-globex', 'risk', 'Key stakeholder Jamie departing in Q2', NULL, 'red', 'Champion loss — relationship continuity at risk', 'Jamie mentioned: \"I''m moving to a new role in May. We should start transitioning Casey as your main point of contact.\"', 'Jamie Reeves', datetime('now', '-14 days')),
+         ('demo-cap-g4', 'demo-mh-globex-14d', 'Globex Sprint Demo', 'demo-globex', 'decision', 'Schedule dedicated Team B enablement session', NULL, NULL, NULL, 'Agreed to run a 2-hour hands-on workshop for Team B next sprint.', 'Casey Kim', datetime('now', '-14 days')),
+         ('demo-cap-g5', 'demo-mh-globex-14d', 'Globex Sprint Demo', 'demo-globex', 'commitment', 'Coordinate Team B workshop logistics with Casey', 'follow_up', NULL, NULL, '\"Casey will send the invite, we''ll bring the training materials.\"', NULL, datetime('now', '-14 days'));"
+    ).ok();
+
+    // Interaction dynamics — talk balance, speaker sentiments, engagement signals
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_interaction_dynamics \
+         (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct, \
+          speaker_sentiments_json, question_density, decision_maker_active, \
+          forward_looking, monologue_risk, competitor_mentions_json, \
+          escalation_language_json, created_at) \
+         VALUES (?1, 62, 38, ?2, 'high', 'yes', 'high', 0, ?3, ?4, datetime('now'))",
+        rusqlite::params![
+            "demo-mh-acme-7d",
+            r#"[{"name":"Sarah Chen","sentiment":"positive","evidence":"Expressed satisfaction with migration timeline and team productivity"},{"name":"Alex Torres","sentiment":"cautious","evidence":"Raised concerns about billing team frustration but acknowledged integration success"}]"#,
+            r#"[{"competitor":"Gainsight","context":"Sarah mentioned they evaluated Gainsight before choosing us"}]"#,
+            r#"[]"#,
+        ],
+    ).ok();
+
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_interaction_dynamics \
+         (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct, \
+          speaker_sentiments_json, question_density, decision_maker_active, \
+          forward_looking, monologue_risk, competitor_mentions_json, \
+          escalation_language_json, created_at) \
+         VALUES (?1, 55, 45, ?2, 'medium', 'yes', 'medium', 0, ?3, ?4, datetime('now'))",
+        rusqlite::params![
+            "demo-mh-globex-14d",
+            r#"[{"name":"Jamie Reeves","sentiment":"positive","evidence":"Enthusiastic about dashboard improvements and transparent about departure timeline"},{"name":"Casey Kim","sentiment":"concerned","evidence":"Raised Team B engagement issues and wants more enablement support"}]"#,
+            r#"[]"#,
+            r#"[{"quote":"If Team B doesn't adopt by Q3, we'll need to reconsider the seat count","speaker":"Casey Kim"}]"#,
+        ],
+    ).ok();
+
+    // Champion health assessments
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_champion_health \
+         (meeting_id, champion_name, champion_status, champion_evidence, champion_risk, created_at) \
+         VALUES (?1, 'Sarah Chen', 'strong', \
+          'Actively advocating for Phase 2 expansion. Provided executive sponsorship for migration acceleration.', \
+          'No immediate risk — strong alignment and engagement.', datetime('now'))",
+        rusqlite::params!["demo-mh-acme-7d"],
+    ).ok();
+
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_champion_health \
+         (meeting_id, champion_name, champion_status, champion_evidence, champion_risk, created_at) \
+         VALUES (?1, 'Jamie Reeves', 'weak', \
+          'Departing in Q2. Still engaged but transitioning responsibilities to Casey Kim.', \
+          'Champion loss imminent. Casey Kim is the succession candidate but hasn''t been formally onboarded as champion.', datetime('now'))",
+        rusqlite::params!["demo-mh-globex-14d"],
+    ).ok();
+
+    // Role changes
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_role_changes \
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
+         VALUES ('demo-rc-g1', 'demo-mh-globex-14d', 'Jamie Reeves', 'champion', 'departing', \
+          'I''m moving to a new role in May. We should start transitioning Casey.', datetime('now'))",
+        [],
+    ).ok();
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_role_changes \
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
+         VALUES ('demo-rc-g2', 'demo-mh-globex-14d', 'Casey Kim', 'stakeholder', 'champion_candidate', \
+          'Casey will be your main point of contact going forward.', datetime('now'))",
+        [],
+    ).ok();
+
+    // Meeting attendees for continuity thread
     for (meeting_id, attendees) in &[
-        ("demo-mh-acme-7d", vec![("demo-sarah", "sarah@acme.com")]),
-        (
-            "demo-mtg-acme",
-            vec![
-                ("demo-sarah", "sarah@acme.com"),
-                ("demo-alex", "alex@acme.com"),
-            ],
-        ),
-        ("demo-mh-globex-14d", vec![("demo-jamie", "jamie@globex.com")]),
-        ("demo-mtg-globex", vec![("demo-jamie", "jamie@globex.com")]),
+        ("demo-mh-acme-7d", vec![("demo-sarah", "sarah@acme.com"), ("demo-alex", "alex@acme.com")]),
+        ("demo-mtg-acme", vec![("demo-sarah", "sarah@acme.com"), ("demo-alex", "alex@acme.com"), ("demo-newface", "jordan@acme.com")]),
+        ("demo-mh-globex-14d", vec![("demo-jamie", "jamie@globex.com"), ("demo-casey", "casey@globex.com")]),
+        ("demo-mtg-globex", vec![("demo-jamie", "jamie@globex.com"), ("demo-casey", "casey@globex.com")]),
     ] {
         for (person_id, email) in attendees {
             conn.execute(
@@ -444,6 +488,15 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
             .ok();
         }
     }
+
+    // Transcript-extracted actions for demo meetings
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO actions (id, title, status, priority, source_type, source_id, account_id, created_at, updated_at, is_demo) VALUES
+         ('demo-act-a1', 'Send updated ROI analysis to Acme', 'completed', 'P1', 'transcript', 'demo-mh-acme-7d', 'demo-acme', datetime('now', '-7 days'), datetime('now', '-3 days'), 1),
+         ('demo-act-a2', 'Schedule billing team feedback session', 'pending', 'P1', 'transcript', 'demo-mh-acme-7d', 'demo-acme', datetime('now', '-7 days'), datetime('now', '-7 days'), 1),
+         ('demo-act-g1', 'Coordinate Team B enablement workshop', 'pending', 'P1', 'transcript', 'demo-mh-globex-14d', 'demo-globex', datetime('now', '-14 days'), datetime('now', '-14 days'), 1),
+         ('demo-act-g2', 'Draft champion transition plan for Casey Kim', 'pending', 'P2', 'transcript', 'demo-mh-globex-14d', 'demo-globex', datetime('now', '-14 days'), datetime('now', '-14 days'), 1);"
+    ).ok();
 
     // I633: Seed health score history for trend computation demo
     for (acct, scores) in &[
@@ -494,6 +547,18 @@ pub fn clear_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), String>
         [],
     )
     .map_err(|e| format!("Clear demo health history: {}", e))?;
+
+    // Clean up v1.0.3 meeting intelligence tables for demo meetings
+    conn.execute("DELETE FROM captures WHERE meeting_id LIKE 'demo-%'", [])
+        .map_err(|e| format!("Clear demo captures: {}", e))?;
+    conn.execute("DELETE FROM meeting_interaction_dynamics WHERE meeting_id LIKE 'demo-%'", [])
+        .map_err(|e| format!("Clear demo interaction dynamics: {}", e))?;
+    conn.execute("DELETE FROM meeting_champion_health WHERE meeting_id LIKE 'demo-%'", [])
+        .map_err(|e| format!("Clear demo champion health: {}", e))?;
+    conn.execute("DELETE FROM meeting_role_changes WHERE meeting_id LIKE 'demo-%'", [])
+        .map_err(|e| format!("Clear demo role changes: {}", e))?;
+    conn.execute("DELETE FROM meeting_attendees WHERE meeting_id LIKE 'demo-%'", [])
+        .map_err(|e| format!("Clear demo meeting attendees: {}", e))?;
 
     // Clean up account_stakeholders links for demo people
     conn.execute(
