@@ -116,7 +116,7 @@ export function useWorkflow(options: UseWorkflowOptions = {}): UseWorkflowReturn
       });
       setStatus(result);
     } catch (err) {
-      console.error("Failed to fetch workflow status:", err);
+      console.error("Failed to fetch workflow status:", err); // Expected: background status poll
     }
   }, [workflow]);
 
@@ -128,7 +128,7 @@ export function useWorkflow(options: UseWorkflowOptions = {}): UseWorkflowReturn
       });
       setHistory(result);
     } catch (err) {
-      console.error("Failed to fetch execution history:", err);
+      console.error("Failed to fetch execution history:", err); // Expected: background data fetch
     }
   }, []);
 
@@ -140,7 +140,7 @@ export function useWorkflow(options: UseWorkflowOptions = {}): UseWorkflowReturn
       });
       setNextRunTime(result);
     } catch (err) {
-      console.error("Failed to fetch next run time:", err);
+      console.error("Failed to fetch next run time:", err); // Expected: background data fetch
     }
   }, [workflow]);
 
@@ -156,7 +156,7 @@ export function useWorkflow(options: UseWorkflowOptions = {}): UseWorkflowReturn
       // Immediately fetch status to show running state
       await fetchStatus();
     } catch (err) {
-      console.error("Failed to run workflow:", err);
+      console.error("Failed to run workflow:", err); // Re-thrown for caller to handle
       throw err;
     }
   }, [workflow, fetchStatus]);

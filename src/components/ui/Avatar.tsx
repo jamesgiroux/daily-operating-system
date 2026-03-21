@@ -20,7 +20,7 @@ export function Avatar({ name, personId, photoUrl, size = 32, className }: Avata
       .then((dataUrl) => {
         if (dataUrl) setAvatarDataUrl(dataUrl);
       })
-      .catch((err) => console.error("get_person_avatar failed:", err));
+      .catch((err) => console.error("get_person_avatar failed:", err)); // Expected: background avatar fetch
   }, [personId]);
 
   const initials = name.charAt(0).toUpperCase();

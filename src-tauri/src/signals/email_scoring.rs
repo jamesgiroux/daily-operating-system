@@ -152,6 +152,9 @@ mod tests {
             updated_at: chrono::Utc::now().to_rfc3339(),
             relevance_score: None,
             score_reason: None,
+            pinned_at: None,
+            commitments: None,
+            questions: None,
         }
     }
 

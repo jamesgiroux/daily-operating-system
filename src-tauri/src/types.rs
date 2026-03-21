@@ -177,7 +177,7 @@ fn default_synthesis_model() -> String {
 }
 
 fn default_extraction_model() -> String {
-    "haiku".to_string()
+    "sonnet".to_string()
 }
 
 fn default_mechanical_model() -> String {
@@ -931,6 +931,9 @@ pub struct Email {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<String>,
     pub priority: EmailPriority,
+    /// Whether this email is unread in Gmail
+    #[serde(default)]
+    pub is_unread: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
     /// AI-generated one-line summary of the email
@@ -972,6 +975,37 @@ pub struct Email {
     /// Human-readable score reason (I395)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score_reason: Option<String>,
+    /// When this email was pinned for triage sort boost (I579)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned_at: Option<String>,
+    /// Actions created from commitments extracted from this email (I580)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub tracked_commitments: Vec<TrackedEmailCommitment>,
+    /// Meeting this email's sender is attending (upcoming only) (I582)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_linked: Option<LinkedMeeting>,
+}
+
+/// An upcoming meeting linked to an email via sender-attendee match (I582).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkedMeeting {
+    pub meeting_id: String,
+    pub title: String,
+    pub start_time: String,
+}
+
+/// A tracked action created from a commitment extracted from an email (I580).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackedEmailCommitment {
+    pub action_id: String,
+    pub commitment_text: String,
+    pub action_title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 /// Complete dashboard data payload
@@ -1399,6 +1433,43 @@ pub struct EmailBriefingStats {
     pub needs_action: usize,
 }
 
+/// A single reply-debt item: an email where the ball is in the user's court.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplyDebtItem {
+    pub email_id: String,
+    pub sender_name: String,
+    pub sender_email: String,
+    pub subject: String,
+    /// AI-generated contextual summary of the email
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    pub entity_id: Option<String>,
+    pub entity_name: Option<String>,
+    pub entity_type: Option<String>,
+    pub age_hours: f64,
+    /// "today", "1-2 days", "3-5 days", "overdue" (>5 days)
+    pub age_bucket: String,
+    pub urgency: Option<String>,
+    pub sentiment: Option<String>,
+}
+
+/// An account whose email cadence has gone quiet (I581).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoneQuietAccount {
+    pub entity_id: String,
+    pub entity_name: String,
+    pub entity_type: String,
+    pub normal_interval_days: f64,
+    pub days_since_last_email: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_email_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_email_sender: Option<String>,
+    pub historical_email_count: i64,
+}
+
 /// Full enriched email briefing data returned by get_emails_enriched.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1415,6 +1486,12 @@ pub struct EmailBriefingData {
     /// Threads awaiting user reply from directive (I318/I355)
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded>,
+    /// Reply debt: entity-linked emails where someone else sent the last message (I577)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub reply_debt: Vec<ReplyDebtItem>,
+    /// Accounts whose email cadence has dropped significantly (I581)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub gone_quiet: Vec<GoneQuietAccount>,
 }
 
 // =============================================================================
@@ -1506,12 +1583,32 @@ pub struct FullMeetingPrep {
     /// Recent email signals linked to this meeting's entity context.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
+    /// Structured digest of linked recent correspondence (I582 / I317).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_digest: Option<MeetingEmailDigest>,
     /// I527: Consistency status derived from deterministic contradiction checks.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consistency_status: Option<crate::intelligence::ConsistencyStatus>,
     /// I527: Findings retained for transparency in prep surfaces.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consistency_findings: Vec<crate::intelligence::ConsistencyFinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingEmailDigest {
+    pub thread_summary: String,
+    pub sender_count: usize,
+    pub threads: Vec<MeetingEmailDigestThread>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingEmailDigestThread {
+    pub from: String,
+    pub snippet: String,
+    pub date: String,
+    pub source: String,
 }
 
 /// Unified meeting detail payload (ADR-0066).

@@ -299,6 +299,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 70,
         sql: include_str!("migrations/070_captures_metadata.sql"),
     },
+    Migration {
+        version: 71,
+        sql: include_str!("migrations/071_email_triage_columns.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -1335,13 +1339,13 @@ mod tests {
         // Run migrations — should bootstrap v1 and apply v2 through the latest migration.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 69,
-            "bootstrap should mark v1, then apply 69 pending migrations (v2-v70)"
+            applied, 70,
+            "bootstrap should mark v1, then apply 70 pending migrations (v2-v71)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 70);
+        assert_eq!(version, 71);
 
         // Verify existing data is untouched
         let title: String = conn

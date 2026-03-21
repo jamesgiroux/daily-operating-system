@@ -122,7 +122,7 @@ impl PropagationEngine {
             }
         }
 
-        // I353 Phase 2: Evaluate signal-driven hygiene actions
+        // I353 Step 2: Evaluate signal-driven hygiene actions
         super::rules::evaluate_hygiene_actions(source_signal, db);
 
         // Signal-driven prep invalidation: queue affected meetings for regeneration
@@ -168,10 +168,7 @@ pub fn default_engine() -> PropagationEngine {
         super::rules::rule_person_profile_discovered,
     );
     // I535/ADR-0100: Glean-sourced signal propagation
-    engine.register(
-        "rule_glean_org_change",
-        super::rules::rule_glean_org_change,
-    );
+    engine.register("rule_glean_org_change", super::rules::rule_glean_org_change);
     engine.register(
         "rule_glean_champion_departed",
         super::rules::rule_glean_champion_departed,

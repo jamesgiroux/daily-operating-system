@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import type {
   CalendarEvent,
   CapturedOutcome,
@@ -49,6 +50,7 @@ export function usePostMeetingCapture() {
         await invoke("capture_meeting_outcome", { outcome });
       } catch (err) {
         console.error("Failed to capture outcome:", err);
+        toast.error("Failed to save meeting outcome");
       }
       setState({ visible: false, meeting: null, isFallback: false, processing: false });
     },
@@ -62,7 +64,7 @@ export function usePostMeetingCapture() {
           meetingId: state.meeting.id,
         });
       } catch (err) {
-        console.error("Failed to dismiss prompt:", err);
+        console.error("Failed to dismiss prompt:", err); // Expected: best-effort dismiss
       }
     }
     setState({ visible: false, meeting: null, isFallback: false, processing: false });
@@ -88,6 +90,7 @@ export function usePostMeetingCapture() {
         return result;
       } catch (err) {
         console.error("Failed to attach transcript:", err);
+        toast.error("Failed to attach transcript");
         setState((prev) => ({ ...prev, processing: false }));
         return null;
       }

@@ -613,10 +613,7 @@ fn parse_risk_metadata(raw: &str) -> (&str, Option<String>, Option<&str>) {
             let urgency_raw = &rest[..end];
             let content = rest[end + 1..].trim();
             let urgency_lower = urgency_raw.to_lowercase();
-            let valid = matches!(
-                urgency_lower.as_str(),
-                "red" | "yellow" | "green_watch"
-            );
+            let valid = matches!(urgency_lower.as_str(), "red" | "yellow" | "green_watch");
             if valid {
                 return (content, Some(urgency_lower), evidence);
             }
@@ -874,8 +871,15 @@ mod tests {
         let db = test_db();
 
         // upsert_signal_weight passes alpha_delta and beta_delta to Bayesian weights
-        upsert_signal_weight(&db, "calendar_sync", "account", "meeting_upserted", 0.5, 0.2)
-            .expect("upsert_signal_weight");
+        upsert_signal_weight(
+            &db,
+            "calendar_sync",
+            "account",
+            "meeting_upserted",
+            0.5,
+            0.2,
+        )
+        .expect("upsert_signal_weight");
 
         // signal_weights stores alpha/beta (Bayesian priors), starting at 1.0 + delta
         let alpha: f64 = db
@@ -886,7 +890,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("query signal_weights alpha");
-        assert!((alpha - 1.5).abs() < f64::EPSILON, "Alpha should be 1.0 + 0.5 = 1.5");
+        assert!(
+            (alpha - 1.5).abs() < f64::EPSILON,
+            "Alpha should be 1.0 + 0.5 = 1.5"
+        );
 
         let update_count: i64 = db
             .conn_ref()
@@ -919,8 +926,17 @@ mod tests {
             .unwrap();
 
         upsert_person_relationship(
-            &db, &engine, "rel-1", "p1", "p2", "peer", "symmetric", 0.8,
-            Some("acc-1"), Some("account"), "user_action",
+            &db,
+            &engine,
+            "rel-1",
+            "p1",
+            "p2",
+            "peer",
+            "symmetric",
+            0.8,
+            Some("acc-1"),
+            Some("account"),
+            "user_action",
         )
         .expect("upsert_person_relationship");
 

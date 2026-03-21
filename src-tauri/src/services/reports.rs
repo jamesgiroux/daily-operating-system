@@ -42,8 +42,7 @@ pub async fn generate_report(
         }
 
         let mut input = {
-            let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-            let db = db_guard.as_ref().ok_or("Database not initialized")?;
+            let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
             let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
             let config = config_guard.as_ref().ok_or("Config not initialized")?;
@@ -56,7 +55,7 @@ pub async fn generate_report(
             match report_type_str.as_str() {
                 "swot" => gather_swot_input(
                     workspace,
-                    db,
+                    &db,
                     &entity_id,
                     &entity_type,
                     ai_models,
@@ -66,7 +65,7 @@ pub async fn generate_report(
                     let active_preset = config.role.clone();
                     crate::reports::account_health::gather_account_health_input(
                         workspace,
-                        db,
+                        &db,
                         &entity_id,
                         ai_models,
                         &active_preset,
@@ -77,7 +76,7 @@ pub async fn generate_report(
                     let active_preset = config.role.clone();
                     crate::reports::weekly_impact::gather_weekly_impact_input(
                         workspace,
-                        db,
+                        &db,
                         ai_models,
                         &active_preset,
                     )?
@@ -86,7 +85,7 @@ pub async fn generate_report(
                     let active_preset = config.role.clone();
                     crate::reports::monthly_wrapped::gather_monthly_wrapped_input(
                         workspace,
-                        db,
+                        &db,
                         ai_models,
                         &active_preset,
                     )?
@@ -95,7 +94,7 @@ pub async fn generate_report(
                     let active_preset = config.role.clone();
                     crate::reports::ebr_qbr::gather_ebr_qbr_input(
                         workspace,
-                        db,
+                        &db,
                         &entity_id,
                         ai_models,
                         &active_preset,
@@ -116,7 +115,7 @@ pub async fn generate_report(
             );
         }
 
-        // Phase 2: Run PTY (no DB lock held)
+        // Step 2: Run PTY (no DB lock held)
         let stdout = run_report_generation(&input)?;
 
         // Parse report-type-specific response
@@ -152,11 +151,10 @@ pub async fn generate_report(
         };
 
         // Phase 3: Write to DB
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
         let report_id = upsert_report(
-            db,
+            &db,
             &input.entity_id,
             &input.entity_type,
             &input.report_type,
@@ -164,7 +162,7 @@ pub async fn generate_report(
             &input.intel_hash,
         )?;
 
-        get_report(db, &input.entity_id, &input.entity_type, &input.report_type)?
+        get_report(&db, &input.entity_id, &input.entity_type, &input.report_type)?
             .ok_or_else(|| format!("Report {} not found after insert", report_id))
     });
 
@@ -181,8 +179,7 @@ fn generate_swot_report(
     app_handle: Option<&AppHandle>,
 ) -> Result<ReportRow, String> {
     let gathered = {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
         let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
         let config = config_guard.as_ref().ok_or("Config not initialized")?;
@@ -193,7 +190,7 @@ fn generate_swot_report(
 
         crate::reports::swot::gather_swot_data(
             workspace,
-            db,
+            &db,
             entity_id,
             entity_type,
             ai_models,
@@ -205,11 +202,10 @@ fn generate_swot_report(
     let content_json =
         serde_json::to_string(&content).map_err(|e| format!("Failed to serialize SWOT: {}", e))?;
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
     let report_id = upsert_report(
-        db,
+        &db,
         &gathered.entity_id,
         &gathered.entity_type,
         "swot",
@@ -217,14 +213,14 @@ fn generate_swot_report(
         &gathered.intel_hash,
     )?;
 
-    get_report(db, &gathered.entity_id, &gathered.entity_type, "swot")?
+    get_report(&db, &gathered.entity_id, &gathered.entity_type, "swot")?
         .ok_or_else(|| format!("Report {} not found after insert", report_id))
 }
 
 /// I547: Parallel Book of Business generation pipeline.
 ///
 /// Phase 1: Gather data (DB lock)
-/// Phase 2: Glean pre-fetch (no lock, when connected)
+/// Step 2: Glean pre-fetch (no lock, when connected)
 /// Phase 3: Wave 1 — 6 sections in parallel
 /// Phase 4: Wave 2 — executiveSummary sequential
 /// Phase 5: Merge + write to DB
@@ -237,8 +233,7 @@ fn generate_book_of_business(
 
     // Phase 1: Gather data under brief DB lock
     let mut gather = {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
         let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
         let config = config_guard.as_ref().ok_or("Config not initialized")?;
@@ -248,7 +243,7 @@ fn generate_book_of_business(
 
         gather_book_of_business_data(
             workspace,
-            db,
+            &db,
             ai_models,
             &active_preset,
             spotlight_account_ids,
@@ -268,7 +263,7 @@ fn generate_book_of_business(
         gather.user_context_block = ctx_buf;
     }
 
-    // Phase 2: Glean pre-fetch (no DB lock)
+    // Step 2: Glean pre-fetch (no DB lock)
     let glean_ctx = {
         let ctx_arc = state.context_provider();
         if ctx_arc.is_remote() {
@@ -339,11 +334,10 @@ fn generate_book_of_business(
         &content_json,
     );
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
     let report_id = upsert_report(
-        db,
+        &db,
         &gather.user_entity_id,
         "user",
         "book_of_business",
@@ -351,7 +345,7 @@ fn generate_book_of_business(
         &gather.intel_hash,
     )?;
 
-    get_report(db, &gather.user_entity_id, "user", "book_of_business")?
+    get_report(&db, &gather.user_entity_id, "user", "book_of_business")?
         .ok_or_else(|| format!("Report {} not found after insert", report_id))
 }
 
@@ -384,8 +378,7 @@ pub async fn generate_monthly_wrapped_if_needed(
     let intel_hash_key = format!("month-{}", month_start.format("%Y-%m"));
 
     let already_exists = {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("DB not initialized")?;
+        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
         let user_id: String = db
             .conn_ref()
@@ -396,7 +389,7 @@ pub async fn generate_monthly_wrapped_if_needed(
             )
             .unwrap_or_else(|_| "1".to_string());
 
-        crate::reports::get_report(db, &user_id, "user", "monthly_wrapped")?
+        crate::reports::get_report(&db, &user_id, "user", "monthly_wrapped")?
             .map(|r| r.intel_hash == intel_hash_key)
             .unwrap_or(false)
     };
@@ -439,8 +432,7 @@ pub async fn generate_weekly_impact_if_needed(
 
     // Check if we already have a report for this week
     let already_exists = {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("DB not initialized")?;
+        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
         // Get user entity ID as string
         let user_id: String = db
@@ -452,7 +444,7 @@ pub async fn generate_weekly_impact_if_needed(
             )
             .unwrap_or_else(|_| "1".to_string());
 
-        crate::reports::get_report(db, &user_id, "user", "weekly_impact")?
+        crate::reports::get_report(&db, &user_id, "user", "weekly_impact")?
             .map(|r| r.intel_hash == intel_hash_key)
             .unwrap_or(false)
     };

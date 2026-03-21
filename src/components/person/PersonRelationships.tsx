@@ -7,6 +7,7 @@
 import { useState, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { Plus, X, Check } from "lucide-react";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import {
@@ -140,6 +141,7 @@ export function PersonRelationships({
       onRelationshipsChanged?.();
     } catch (err) {
       console.error("Failed to add relationship:", err);
+      toast.error("Failed to add relationship");
     } finally {
       setSaving(false);
     }
@@ -151,6 +153,7 @@ export function PersonRelationships({
       onRelationshipsChanged?.();
     } catch (err) {
       console.error("Failed to delete relationship:", err);
+      toast.error("Failed to remove relationship");
     }
   }, [onRelationshipsChanged]);
 
@@ -181,6 +184,7 @@ export function PersonRelationships({
       onRelationshipsChanged?.();
     } catch (err) {
       console.error("Failed to confirm relationship:", err);
+      toast.error("Failed to confirm relationship");
     }
   }, [personId, onRelationshipsChanged]);
 

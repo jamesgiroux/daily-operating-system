@@ -62,7 +62,7 @@ export default function WeekPage() {
         apply();
       }
     } catch (err) {
-      console.error("[WeekPage] Timeline failed:", err);
+      console.error("[WeekPage] Timeline failed:", err); // Expected: background data fetch on mount
       setError(err instanceof Error ? err.message : "Failed to load timeline");
     } finally {
       setLoading(false);

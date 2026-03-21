@@ -27,7 +27,7 @@ function CoworkPluginsSubsection() {
         }
         setExported(initial);
       })
-      .catch((err) => console.error("Claude Desktop status check failed:", err));
+      .catch((err) => console.error("Claude Desktop status check failed:", err)); // Expected: background init on mount
   }, []);
 
   const handleExport = async (pluginName: string) => {
@@ -156,7 +156,7 @@ export default function ClaudeDesktopConnection() {
           binaryPath: res.binaryPath ?? undefined,
         });
       })
-      .catch((err) => console.error("Claude Desktop status check failed:", err));
+      .catch((err) => console.error("Claude Desktop status check failed:", err)); // Expected: background init on mount
   }, []);
 
   const handleConfigure = async () => {

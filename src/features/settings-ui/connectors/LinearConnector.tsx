@@ -93,7 +93,7 @@ export default function LinearConnection() {
           loadEntityLinks();
         }
       })
-      .catch((err) => console.error("get_linear_status failed:", err));
+      .catch((err) => console.error("get_linear_status failed:", err)); // Expected: background init on mount
   }, [loadRecentIssues, loadEntityLinks]);
 
   async function toggleEnabled() {
@@ -104,6 +104,7 @@ export default function LinearConnection() {
       setStatus({ ...status, enabled: newEnabled });
     } catch (err) {
       console.error("Failed to toggle Linear:", err);
+      toast.error("Failed to toggle Linear");
     }
   }
 

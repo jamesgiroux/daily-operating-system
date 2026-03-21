@@ -87,7 +87,7 @@ export function useInboxCount(): number {
     invoke<InboxResult>("get_inbox_files")
       .then((result) => setCount(result.count))
       .catch((err) => {
-        console.error("get_inbox_files (count) failed:", err);
+        console.error("get_inbox_files (count) failed:", err); // Expected: background init on mount
       });
   }, []);
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -65,6 +66,7 @@ export function ProfileSelector({ open, onProfileSet }: ProfileSelectorProps) {
       onProfileSet(profileId);
     } catch (err) {
       console.error("Failed to set profile:", err);
+      toast.error("Failed to set profile");
       setSelected(null);
     } finally {
       setSaving(false);

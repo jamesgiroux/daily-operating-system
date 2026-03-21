@@ -3,8 +3,8 @@ use chrono::{Duration, Utc};
 use crate::db::ActionDb;
 use crate::state::AppState;
 use crate::types::{
-    AccountMilestone, AccountObjective, MilestoneCandidate, StatedObjective, SuggestedMilestone,
-    SuggestedObjective, SuccessPlanSignals, SuccessPlanTemplate, TemplateMilestone,
+    AccountMilestone, AccountObjective, MilestoneCandidate, StatedObjective, SuccessPlanSignals,
+    SuccessPlanTemplate, SuggestedMilestone, SuggestedObjective, TemplateMilestone,
     TemplateObjective,
 };
 
@@ -20,27 +20,63 @@ fn default_template_catalog() -> Vec<SuccessPlanTemplate> {
                     title: "Technical Setup & Integration".to_string(),
                     description: "Get the implementation running cleanly.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "Kickoff completed".to_string(), offset_days: 0, auto_detect_signal: Some("kickoff".to_string()) },
-                        TemplateMilestone { title: "Integration configured".to_string(), offset_days: 14, auto_detect_signal: None },
-                        TemplateMilestone { title: "Go-live achieved".to_string(), offset_days: 30, auto_detect_signal: Some("go_live".to_string()) },
+                        TemplateMilestone {
+                            title: "Kickoff completed".to_string(),
+                            offset_days: 0,
+                            auto_detect_signal: Some("kickoff".to_string()),
+                        },
+                        TemplateMilestone {
+                            title: "Integration configured".to_string(),
+                            offset_days: 14,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Go-live achieved".to_string(),
+                            offset_days: 30,
+                            auto_detect_signal: Some("go_live".to_string()),
+                        },
                     ],
                 },
                 TemplateObjective {
                     title: "Initial Value Delivery".to_string(),
                     description: "Get the first meaningful outcome live.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "First use case live".to_string(), offset_days: 45, auto_detect_signal: None },
-                        TemplateMilestone { title: "Initial value report shared".to_string(), offset_days: 60, auto_detect_signal: None },
-                        TemplateMilestone { title: "Customer confirms value".to_string(), offset_days: 90, auto_detect_signal: Some("onboarding_complete".to_string()) },
+                        TemplateMilestone {
+                            title: "First use case live".to_string(),
+                            offset_days: 45,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Initial value report shared".to_string(),
+                            offset_days: 60,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Customer confirms value".to_string(),
+                            offset_days: 90,
+                            auto_detect_signal: Some("onboarding_complete".to_string()),
+                        },
                     ],
                 },
                 TemplateObjective {
                     title: "Relationship Foundation".to_string(),
                     description: "Build the right sponsor and operating rhythm.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "Key stakeholders identified".to_string(), offset_days: 7, auto_detect_signal: None },
-                        TemplateMilestone { title: "Executive sponsor confirmed".to_string(), offset_days: 14, auto_detect_signal: Some("executive_sponsor_change".to_string()) },
-                        TemplateMilestone { title: "Regular cadence established".to_string(), offset_days: 30, auto_detect_signal: None },
+                        TemplateMilestone {
+                            title: "Key stakeholders identified".to_string(),
+                            offset_days: 7,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Executive sponsor confirmed".to_string(),
+                            offset_days: 14,
+                            auto_detect_signal: Some("executive_sponsor_change".to_string()),
+                        },
+                        TemplateMilestone {
+                            title: "Regular cadence established".to_string(),
+                            offset_days: 30,
+                            auto_detect_signal: None,
+                        },
                     ],
                 },
             ],
@@ -55,27 +91,63 @@ fn default_template_catalog() -> Vec<SuccessPlanTemplate> {
                     title: "Deepen Product Adoption".to_string(),
                     description: "Grow into new product behavior and usage.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "Usage review completed".to_string(), offset_days: 30, auto_detect_signal: None },
-                        TemplateMilestone { title: "Expansion opportunities identified".to_string(), offset_days: 45, auto_detect_signal: None },
-                        TemplateMilestone { title: "New use case proposed".to_string(), offset_days: 60, auto_detect_signal: None },
+                        TemplateMilestone {
+                            title: "Usage review completed".to_string(),
+                            offset_days: 30,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Expansion opportunities identified".to_string(),
+                            offset_days: 45,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "New use case proposed".to_string(),
+                            offset_days: 60,
+                            auto_detect_signal: None,
+                        },
                     ],
                 },
                 TemplateObjective {
                     title: "Expand Stakeholder Footprint".to_string(),
                     description: "Broaden the relationship beyond the current team.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "Map additional teams".to_string(), offset_days: 14, auto_detect_signal: None },
-                        TemplateMilestone { title: "Executive business review scheduled".to_string(), offset_days: 30, auto_detect_signal: Some("ebr_completed".to_string()) },
-                        TemplateMilestone { title: "Cross-functional champions identified".to_string(), offset_days: 60, auto_detect_signal: None },
+                        TemplateMilestone {
+                            title: "Map additional teams".to_string(),
+                            offset_days: 14,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Executive business review scheduled".to_string(),
+                            offset_days: 30,
+                            auto_detect_signal: Some("ebr_completed".to_string()),
+                        },
+                        TemplateMilestone {
+                            title: "Cross-functional champions identified".to_string(),
+                            offset_days: 60,
+                            auto_detect_signal: None,
+                        },
                     ],
                 },
                 TemplateObjective {
                     title: "Drive Measurable Outcomes".to_string(),
                     description: "Tie usage to business results the customer can see.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "Baseline metrics documented".to_string(), offset_days: 14, auto_detect_signal: None },
-                        TemplateMilestone { title: "QBR with ROI data".to_string(), offset_days: 90, auto_detect_signal: Some("qbr_completed".to_string()) },
-                        TemplateMilestone { title: "Case study candidate identified".to_string(), offset_days: 120, auto_detect_signal: None },
+                        TemplateMilestone {
+                            title: "Baseline metrics documented".to_string(),
+                            offset_days: 14,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "QBR with ROI data".to_string(),
+                            offset_days: 90,
+                            auto_detect_signal: Some("qbr_completed".to_string()),
+                        },
+                        TemplateMilestone {
+                            title: "Case study candidate identified".to_string(),
+                            offset_days: 120,
+                            auto_detect_signal: None,
+                        },
                     ],
                 },
             ],
@@ -90,27 +162,63 @@ fn default_template_catalog() -> Vec<SuccessPlanTemplate> {
                     title: "Secure Renewal Decision".to_string(),
                     description: "Drive the decision process to signature.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "Renewal timeline confirmed".to_string(), offset_days: 0, auto_detect_signal: Some("renewal".to_string()) },
-                        TemplateMilestone { title: "Decision-maker engaged".to_string(), offset_days: 14, auto_detect_signal: None },
-                        TemplateMilestone { title: "Contract signed".to_string(), offset_days: 90, auto_detect_signal: Some("contract_signed".to_string()) },
+                        TemplateMilestone {
+                            title: "Renewal timeline confirmed".to_string(),
+                            offset_days: 0,
+                            auto_detect_signal: Some("renewal".to_string()),
+                        },
+                        TemplateMilestone {
+                            title: "Decision-maker engaged".to_string(),
+                            offset_days: 14,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Contract signed".to_string(),
+                            offset_days: 90,
+                            auto_detect_signal: Some("contract_signed".to_string()),
+                        },
                     ],
                 },
                 TemplateObjective {
                     title: "Demonstrate Value".to_string(),
                     description: "Give the customer a clear renewal case.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "ROI summary prepared".to_string(), offset_days: 14, auto_detect_signal: None },
-                        TemplateMilestone { title: "Customer success stories compiled".to_string(), offset_days: 30, auto_detect_signal: None },
-                        TemplateMilestone { title: "Executive review completed".to_string(), offset_days: 45, auto_detect_signal: Some("ebr_completed".to_string()) },
+                        TemplateMilestone {
+                            title: "ROI summary prepared".to_string(),
+                            offset_days: 14,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Customer success stories compiled".to_string(),
+                            offset_days: 30,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Executive review completed".to_string(),
+                            offset_days: 45,
+                            auto_detect_signal: Some("ebr_completed".to_string()),
+                        },
                     ],
                 },
                 TemplateObjective {
                     title: "Mitigate Risks".to_string(),
                     description: "Reduce preventable friction before the close.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "Risk assessment completed".to_string(), offset_days: 7, auto_detect_signal: None },
-                        TemplateMilestone { title: "Competitive threats addressed".to_string(), offset_days: 30, auto_detect_signal: None },
-                        TemplateMilestone { title: "Open issues resolved".to_string(), offset_days: 60, auto_detect_signal: None },
+                        TemplateMilestone {
+                            title: "Risk assessment completed".to_string(),
+                            offset_days: 7,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Competitive threats addressed".to_string(),
+                            offset_days: 30,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Open issues resolved".to_string(),
+                            offset_days: 60,
+                            auto_detect_signal: None,
+                        },
                     ],
                 },
             ],
@@ -118,34 +226,71 @@ fn default_template_catalog() -> Vec<SuccessPlanTemplate> {
         SuccessPlanTemplate {
             id: "at-risk-recovery".to_string(),
             name: "At-Risk Recovery Plan".to_string(),
-            description: "A short-cycle recovery plan for accounts that need intervention.".to_string(),
+            description: "A short-cycle recovery plan for accounts that need intervention."
+                .to_string(),
             lifecycle_trigger: "at_risk".to_string(),
             objectives: vec![
                 TemplateObjective {
                     title: "Stabilize the Relationship".to_string(),
                     description: "Get the account back onto an agreed recovery path.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "Escalation acknowledged".to_string(), offset_days: 0, auto_detect_signal: Some("escalation".to_string()) },
-                        TemplateMilestone { title: "Recovery meeting scheduled".to_string(), offset_days: 3, auto_detect_signal: None },
-                        TemplateMilestone { title: "Recovery plan agreed".to_string(), offset_days: 14, auto_detect_signal: Some("escalation_resolved".to_string()) },
+                        TemplateMilestone {
+                            title: "Escalation acknowledged".to_string(),
+                            offset_days: 0,
+                            auto_detect_signal: Some("escalation".to_string()),
+                        },
+                        TemplateMilestone {
+                            title: "Recovery meeting scheduled".to_string(),
+                            offset_days: 3,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Recovery plan agreed".to_string(),
+                            offset_days: 14,
+                            auto_detect_signal: Some("escalation_resolved".to_string()),
+                        },
                     ],
                 },
                 TemplateObjective {
                     title: "Address Root Causes".to_string(),
                     description: "Move the blockers causing instability.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "Issues catalogued".to_string(), offset_days: 3, auto_detect_signal: None },
-                        TemplateMilestone { title: "Technical blockers resolved".to_string(), offset_days: 30, auto_detect_signal: None },
-                        TemplateMilestone { title: "Process gaps addressed".to_string(), offset_days: 45, auto_detect_signal: None },
+                        TemplateMilestone {
+                            title: "Issues catalogued".to_string(),
+                            offset_days: 3,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Technical blockers resolved".to_string(),
+                            offset_days: 30,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Process gaps addressed".to_string(),
+                            offset_days: 45,
+                            auto_detect_signal: None,
+                        },
                     ],
                 },
                 TemplateObjective {
                     title: "Rebuild Confidence".to_string(),
                     description: "Re-establish positive momentum with the customer.".to_string(),
                     milestones: vec![
-                        TemplateMilestone { title: "Quick win delivered".to_string(), offset_days: 14, auto_detect_signal: None },
-                        TemplateMilestone { title: "Health review completed".to_string(), offset_days: 30, auto_detect_signal: Some("health_review".to_string()) },
-                        TemplateMilestone { title: "Regular check-in cadence restored".to_string(), offset_days: 45, auto_detect_signal: None },
+                        TemplateMilestone {
+                            title: "Quick win delivered".to_string(),
+                            offset_days: 14,
+                            auto_detect_signal: None,
+                        },
+                        TemplateMilestone {
+                            title: "Health review completed".to_string(),
+                            offset_days: 30,
+                            auto_detect_signal: Some("health_review".to_string()),
+                        },
+                        TemplateMilestone {
+                            title: "Regular check-in cadence restored".to_string(),
+                            offset_days: 45,
+                            auto_detect_signal: None,
+                        },
                     ],
                 },
             ],
@@ -153,7 +298,9 @@ fn default_template_catalog() -> Vec<SuccessPlanTemplate> {
     ]
 }
 
-fn milestone_candidates_to_suggestions(candidates: &[MilestoneCandidate]) -> Vec<SuggestedMilestone> {
+fn milestone_candidates_to_suggestions(
+    candidates: &[MilestoneCandidate],
+) -> Vec<SuggestedMilestone> {
     candidates
         .iter()
         .take(4)
@@ -171,7 +318,10 @@ fn stated_objective_to_suggestion(
 ) -> SuggestedObjective {
     SuggestedObjective {
         title: stated.objective.clone(),
-        description: stated.owner.clone().map(|owner| format!("Primary owner: {owner}")),
+        description: stated
+            .owner
+            .clone()
+            .map(|owner| format!("Primary owner: {owner}")),
         confidence: stated.confidence.clone(),
         source_evidence: stated.source.clone(),
         milestones: milestone_candidates_to_suggestions(milestone_candidates),
@@ -202,13 +352,17 @@ pub fn get_suggested_templates_for_account(
         .into_iter()
         .filter(|template| {
             template.lifecycle_trigger == lifecycle.unwrap_or_default()
-                || (template.id == "at-risk-recovery" && matches!(health_band, Some("red" | "at_risk" | "at-risk")))
+                || (template.id == "at-risk-recovery"
+                    && matches!(health_band, Some("red" | "at_risk" | "at-risk")))
                 || (template.id == "renewal-preparation" && renewal_near)
         })
         .collect()
 }
 
-pub fn get_objective_suggestions(db: &ActionDb, account_id: &str) -> Result<Vec<SuggestedObjective>, String> {
+pub fn get_objective_suggestions(
+    db: &ActionDb,
+    account_id: &str,
+) -> Result<Vec<SuggestedObjective>, String> {
     let mut suggestions = Vec::new();
 
     if let Some(raw) = db
@@ -254,10 +408,18 @@ pub fn get_objective_suggestions(db: &ActionDb, account_id: &str) -> Result<Vec<
         {
             // Parse success_metrics → candidate objectives
             if let Some(raw) = metrics_json {
-                if let Ok(metrics) = serde_json::from_str::<Vec<crate::intelligence::io::SuccessMetric>>(&raw) {
-                    for metric in metrics.iter().filter(|m| m.status.as_deref() != Some("achieved")).take(2) {
+                if let Ok(metrics) =
+                    serde_json::from_str::<Vec<crate::intelligence::io::SuccessMetric>>(&raw)
+                {
+                    for metric in metrics
+                        .iter()
+                        .filter(|m| m.status.as_deref() != Some("achieved"))
+                        .take(2)
+                    {
                         let desc = match (&metric.target, &metric.current) {
-                            (Some(target), Some(current)) => Some(format!("Current: {current} → Target: {target}")),
+                            (Some(target), Some(current)) => {
+                                Some(format!("Current: {current} → Target: {target}"))
+                            }
                             (Some(target), None) => Some(format!("Target: {target}")),
                             _ => None,
                         };
@@ -274,15 +436,25 @@ pub fn get_objective_suggestions(db: &ActionDb, account_id: &str) -> Result<Vec<
             }
             // Parse open_commitments → candidate objectives
             if let Some(raw) = commitments_json {
-                if let Ok(commitments) = serde_json::from_str::<Vec<crate::intelligence::io::OpenCommitment>>(&raw) {
-                    for commitment in commitments.iter().filter(|c| c.status.as_deref() != Some("completed")).take(2) {
-                        let milestones = commitment.due_date.as_ref().map(|date| {
-                            vec![SuggestedMilestone {
-                                title: "Target date reached".to_string(),
-                                target_date: Some(date.clone()),
-                                auto_detect_event: None,
-                            }]
-                        }).unwrap_or_default();
+                if let Ok(commitments) =
+                    serde_json::from_str::<Vec<crate::intelligence::io::OpenCommitment>>(&raw)
+                {
+                    for commitment in commitments
+                        .iter()
+                        .filter(|c| c.status.as_deref() != Some("completed"))
+                        .take(2)
+                    {
+                        let milestones = commitment
+                            .due_date
+                            .as_ref()
+                            .map(|date| {
+                                vec![SuggestedMilestone {
+                                    title: "Target date reached".to_string(),
+                                    target_date: Some(date.clone()),
+                                    auto_detect_event: None,
+                                }]
+                            })
+                            .unwrap_or_default();
                         suggestions.push(SuggestedObjective {
                             title: commitment.description.clone(),
                             description: commitment.owner.as_ref().map(|o| format!("Owner: {o}")),
@@ -296,8 +468,14 @@ pub fn get_objective_suggestions(db: &ActionDb, account_id: &str) -> Result<Vec<
             }
             // Parse risks_json → mitigation objectives (critical/watch only)
             if let Some(raw) = risks_json {
-                if let Ok(risks) = serde_json::from_str::<Vec<crate::intelligence::io::IntelRisk>>(&raw) {
-                    for risk in risks.iter().filter(|r| r.urgency == "critical" || r.urgency == "red").take(1) {
+                if let Ok(risks) =
+                    serde_json::from_str::<Vec<crate::intelligence::io::IntelRisk>>(&raw)
+                {
+                    for risk in risks
+                        .iter()
+                        .filter(|r| r.urgency == "critical" || r.urgency == "red")
+                        .take(1)
+                    {
                         suggestions.push(SuggestedObjective {
                             title: format!("Mitigate: {}", risk.text),
                             description: None,
@@ -429,7 +607,10 @@ pub fn complete_milestone(
             &milestone.account_id,
             "milestone_completed",
             "user_action",
-            Some(&format!("{{\"milestone_id\":\"{}\",\"objective_id\":\"{}\"}}", milestone.id, milestone.objective_id)),
+            Some(&format!(
+                "{{\"milestone_id\":\"{}\",\"objective_id\":\"{}\"}}",
+                milestone.id, milestone.objective_id
+            )),
             0.9,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
@@ -573,9 +754,10 @@ pub fn apply_success_plan_template(
                 )
                 .map_err(|e: crate::db::DbError| e.to_string())?;
             for milestone in &objective.milestones {
-                let target_date = (Utc::now().date_naive() + Duration::days(milestone.offset_days as i64))
-                    .format("%Y-%m-%d")
-                    .to_string();
+                let target_date = (Utc::now().date_naive()
+                    + Duration::days(milestone.offset_days as i64))
+                .format("%Y-%m-%d")
+                .to_string();
                 tx.create_milestone(
                     &created_objective.id,
                     &milestone.title,
@@ -615,8 +797,15 @@ mod tests {
         let db = test_db();
         seed_account(&db, "acc-sp");
 
-        let obj = create_objective(&db, "acc-sp", "Onboard customer", Some("Get them live"), None, "user")
-            .expect("create_objective");
+        let obj = create_objective(
+            &db,
+            "acc-sp",
+            "Onboard customer",
+            Some("Get them live"),
+            None,
+            "user",
+        )
+        .expect("create_objective");
         assert_eq!(obj.title, "Onboard customer");
         assert_eq!(obj.account_id, "acc-sp");
         assert_eq!(obj.status, "active");
@@ -641,11 +830,18 @@ mod tests {
         let objectives = apply_success_plan_template(&db, "acc-tmpl", "onboarding-standard")
             .expect("apply_success_plan_template");
         // Onboarding template has 3 objectives
-        assert_eq!(objectives.len(), 3, "Onboarding template should create 3 objectives");
+        assert_eq!(
+            objectives.len(),
+            3,
+            "Onboarding template should create 3 objectives"
+        );
 
         // Each objective should have milestones
         for obj in &objectives {
-            assert!(!obj.milestones.is_empty(), "Each objective should have milestones");
+            assert!(
+                !obj.milestones.is_empty(),
+                "Each objective should have milestones"
+            );
         }
 
         // Verify total milestone count in DB (3 objectives x 3 milestones each = 9)
@@ -657,7 +853,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(milestone_count, 9, "Onboarding template should create 9 milestones total");
+        assert_eq!(
+            milestone_count, 9,
+            "Onboarding template should create 9 milestones total"
+        );
     }
 
     #[test]
@@ -732,11 +931,91 @@ mod tests {
         seed_account(&db, "acc-ms");
 
         let obj = create_objective(&db, "acc-ms", "Goal", None, None, "user").unwrap();
-        let ms = create_milestone(&db, &obj.id, "Kickoff done", Some("2026-04-01"), Some("kickoff"))
-            .expect("create_milestone");
+        let ms = create_milestone(
+            &db,
+            &obj.id,
+            "Kickoff done",
+            Some("2026-04-01"),
+            Some("kickoff"),
+        )
+        .expect("create_milestone");
 
         assert_eq!(ms.title, "Kickoff done");
         assert_eq!(ms.objective_id, obj.id);
         assert_eq!(ms.status, "pending");
+    }
+
+    #[test]
+    fn test_complete_all_milestones_auto_completes_objective() {
+        let db = test_db();
+        seed_account(&db, "acc-auto");
+        let engine = crate::signals::propagation::PropagationEngine::default();
+
+        let obj = create_objective(&db, "acc-auto", "Onboard", None, None, "user").unwrap();
+        let ms1 = create_milestone(&db, &obj.id, "Kickoff", None, None).unwrap();
+        let ms2 = create_milestone(&db, &obj.id, "Go-live", None, None).unwrap();
+
+        // Complete first milestone — objective should stay active
+        db.with_transaction(|tx| {
+            let (_, auto_obj) = tx
+                .complete_milestone(&ms1.id)
+                .map_err(|e: crate::db::DbError| e.to_string())?;
+            assert!(
+                auto_obj.is_none(),
+                "Objective should not auto-complete with pending milestones"
+            );
+            Ok(())
+        })
+        .unwrap();
+
+        // Complete second (last) milestone — objective should auto-complete
+        db.with_transaction(|tx| {
+            let (_, auto_obj) = tx
+                .complete_milestone(&ms2.id)
+                .map_err(|e: crate::db::DbError| e.to_string())?;
+            assert!(
+                auto_obj.is_some(),
+                "Objective should auto-complete when all milestones done"
+            );
+            let completed_obj = auto_obj.unwrap();
+            assert_eq!(completed_obj.status, "completed");
+
+            // Emit signal as the service layer would
+            crate::services::signals::emit_and_propagate(
+                tx,
+                &engine,
+                "account",
+                "acc-auto",
+                "objective_completed",
+                "user_action",
+                Some(&format!("{{\"objective_id\":\"{}\"}}", completed_obj.id)),
+                0.95,
+            )
+            .map_err(|e| format!("{e}"))?;
+            Ok(())
+        })
+        .unwrap();
+
+        // Verify objective status in DB
+        let status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT status FROM account_objectives WHERE id = ?1",
+                params![obj.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "completed", "Objective should be completed in DB");
+
+        // Verify signal emitted
+        let signal_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE entity_id = 'acc-auto' AND signal_type = 'objective_completed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        assert!(signal_count > 0, "Expected objective_completed signal");
     }
 }

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32};
-use std::sync::{Arc, Mutex, RwLock, TryLockError};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
@@ -117,6 +117,29 @@ pub struct IntegrationState {
     pub embedding_queue_wake: Arc<tokio::sync::Notify>,
 }
 
+/// Consolidated app lock state (I610).
+///
+/// All lock-related fields behind a single `Mutex` so lock/unlock/check
+/// operations are atomic -- no inconsistent reads between `is_locked` and
+/// `failed_unlock_count`.
+pub struct AppLockState {
+    pub is_locked: bool,
+    pub last_activity: Instant,
+    pub last_failed_unlock: Option<Instant>,
+    pub failed_unlock_count: u32,
+}
+
+impl Default for AppLockState {
+    fn default() -> Self {
+        Self {
+            is_locked: false,
+            last_activity: Instant::now(),
+            last_failed_unlock: None,
+            failed_unlock_count: 0,
+        }
+    }
+}
+
 /// Signal bus state (I405).
 pub struct SignalState {
     pub engine: Arc<crate::signals::propagation::PropagationEngine>,
@@ -197,11 +220,9 @@ impl ResourcePermits {
 pub struct AppState {
     pub config: RwLock<Option<Config>>,
     pub workflow: WorkflowState,
-    pub db: Mutex<Option<crate::db::ActionDb>>,
     /// Async database service with read/write separation. Initialized async
     /// in Tauri setup after `AppState::new()`. Use `db_read()` / `db_write()`
-    /// helpers for new code; old code can continue using `with_db_read()` etc.
-    /// during incremental migration.
+    /// for async code, or `with_db_read()` / `with_db_write()` for sync code.
     ///
     /// `RwLock<Option<>>` instead of `OnceCell` so dev mode can reinitialize
     /// the service to point at `dailyos-dev.db`.
@@ -227,15 +248,8 @@ pub struct AppState {
     pub signals: SignalState,
     /// Integration poller wake signals (I405).
     pub integrations: IntegrationState,
-    /// Whether the app is currently locked (I465).
-    pub is_locked: AtomicBool,
-    /// Last user activity timestamp for idle lock timer (I465).
-    /// Updated on window focus AND user interaction (click/keypress).
-    pub last_activity: Mutex<Instant>,
-    /// Timestamp of last failed unlock attempt for cooldown tracking (I465).
-    pub last_failed_unlock: Mutex<Option<Instant>>,
-    /// Count of consecutive failed unlock attempts (I465).
-    pub failed_unlock_count: AtomicU32,
+    /// App lock state consolidated into a single mutex (I610).
+    pub lock_state: Mutex<AppLockState>,
     /// True if the encryption key was not found in the Keychain on startup (I462).
     /// When set, the frontend shows a recovery screen instead of normal UI.
     pub encryption_key_missing: AtomicBool,
@@ -255,14 +269,6 @@ pub struct AppState {
     context_provider: std::sync::RwLock<Arc<dyn crate::context_provider::ContextProvider>>,
     /// Shared app handle for service-layer Tauri event emission.
     app_handle: std::sync::RwLock<Option<tauri::AppHandle>>,
-}
-
-/// Non-blocking DB read outcome for hot command paths.
-pub enum DbTryRead<T> {
-    Ok(T),
-    Busy,
-    Unavailable,
-    Poisoned,
 }
 
 fn recovery_status_from_db_error(err: &crate::db::DbError) -> DatabaseRecoveryStatus {
@@ -313,7 +319,10 @@ impl AppState {
 
         let mut encryption_key_missing = false;
         let mut database_recovery_status = DatabaseRecoveryStatus::not_required();
-        let db = match crate::db::ActionDb::open() {
+        // I609: Open DB for startup validation and context_mode reading only.
+        // The connection is NOT stored in AppState -- all runtime DB access goes
+        // through `db_service` (async) or `ActionDb::open()` (sync helpers).
+        let startup_db = match crate::db::ActionDb::open() {
             Ok(db) => {
                 // Distinguish key generation (fresh install) from access (existing DB)
                 let event = if crate::db::encryption::was_key_generated() {
@@ -399,7 +408,7 @@ impl AppState {
             "app_started",
             serde_json::json!({
                 "version": env!("CARGO_PKG_VERSION"),
-                "db_encrypted": !encryption_key_missing && db.is_some(),
+                "db_encrypted": !encryption_key_missing && startup_db.is_some(),
                 "db_recovery_required": database_recovery_status.required,
             }),
         );
@@ -413,7 +422,7 @@ impl AppState {
             .map(|c| std::path::PathBuf::from(&c.workspace_path))
             .unwrap_or_default();
 
-        let context_mode = db.as_ref().and_then(|db| {
+        let context_mode = startup_db.as_ref().and_then(|db| {
             db.conn_ref()
                 .query_row(
                     "SELECT mode_json FROM context_mode_config WHERE id = 1",
@@ -471,7 +480,6 @@ impl AppState {
                 history: Mutex::new(history),
                 last_scheduled_run: RwLock::new(HashMap::new()),
             },
-            db: Mutex::new(db),
             db_service: tokio::sync::RwLock::new(None),
             activity: Arc::new(crate::activity::ActivityMonitor::new()),
             calendar: CalendarState {
@@ -512,10 +520,7 @@ impl AppState {
                 prep_queue_wake: Arc::new(tokio::sync::Notify::new()),
                 embedding_queue_wake: Arc::new(tokio::sync::Notify::new()),
             },
-            is_locked: AtomicBool::new(false),
-            last_activity: Mutex::new(Instant::now()),
-            last_failed_unlock: Mutex::new(None),
-            failed_unlock_count: AtomicU32::new(0),
+            lock_state: Mutex::new(AppLockState::default()),
             encryption_key_missing: AtomicBool::new(encryption_key_missing),
             database_recovery_status: Mutex::new(database_recovery_status),
             audit_log,
@@ -524,22 +529,6 @@ impl AppState {
             permits: ResourcePermits::new(),
             context_provider: std::sync::RwLock::new(context_provider),
             app_handle: std::sync::RwLock::new(None),
-        }
-    }
-
-    /// I573: Lock DB with poison recovery. Returns the MutexGuard or an error if
-    /// the DB is None. If the mutex was poisoned by a panicked thread, recovers
-    /// by clearing the poison and returns the inner data (with a logged warning).
-    /// Does NOT recover audit_log — integrity > availability for audit chains.
-    pub fn db_lock_or_recover(
-        &self,
-    ) -> Result<std::sync::MutexGuard<'_, Option<crate::db::ActionDb>>, String> {
-        match self.db.lock() {
-            Ok(guard) => Ok(guard),
-            Err(poisoned) => {
-                log::warn!("I573: DB mutex poisoned, recovering inner data");
-                Ok(poisoned.into_inner())
-            }
         }
     }
 
@@ -558,12 +547,20 @@ impl AppState {
 
     /// Get a snapshot of the current context provider (cheap Arc clone).
     pub fn context_provider(&self) -> Arc<dyn crate::context_provider::ContextProvider> {
-        Arc::clone(&self.context_provider.read().expect("context_provider lock poisoned"))
+        Arc::clone(
+            &self
+                .context_provider
+                .read()
+                .expect("context_provider lock poisoned"),
+        )
     }
 
     /// Hot-swap the context provider at runtime (ADR-0095 dynamic mode switch).
     pub fn swap_context_provider(&self, new: Arc<dyn crate::context_provider::ContextProvider>) {
-        let mut guard = self.context_provider.write().expect("context_provider lock poisoned");
+        let mut guard = self
+            .context_provider
+            .write()
+            .expect("context_provider lock poisoned");
         *guard = new;
         log::info!("Context provider swapped to: {}", guard.provider_name());
     }
@@ -588,7 +585,10 @@ impl AppState {
         let workspace_path = self
             .config_read_or_recover()
             .ok()
-            .and_then(|c| c.as_ref().map(|cfg| std::path::PathBuf::from(&cfg.workspace_path)))
+            .and_then(|c| {
+                c.as_ref()
+                    .map(|cfg| std::path::PathBuf::from(&cfg.workspace_path))
+            })
             .unwrap_or_default();
 
         let local_provider = crate::context_provider::local::LocalContextProvider::new(
@@ -677,77 +677,29 @@ impl AppState {
             .and_then(|guard| guard.get(&workflow).cloned())
     }
 
-    /// Hot-path DB read helper.
+    /// Sync DB read helper (I609).
     ///
-    /// Uses `try_lock()` so UI-facing read commands can degrade gracefully under
-    /// contention instead of blocking the render path.
-    pub fn with_db_try_read<T, F>(&self, f: F) -> DbTryRead<T>
-    where
-        F: FnOnce(&crate::db::ActionDb) -> T,
-    {
-        match self.db.try_lock() {
-            Ok(guard) => {
-                if let Some(db) = guard.as_ref() {
-                    DbTryRead::Ok(f(db))
-                } else {
-                    DbTryRead::Unavailable
-                }
-            }
-            Err(TryLockError::WouldBlock) => DbTryRead::Busy,
-            Err(TryLockError::Poisoned(_)) => DbTryRead::Poisoned,
-        }
-    }
-
-    /// Standard DB read helper for non-hot paths.
-    ///
-    /// Keep lock scope short: gather data, release lock, then do compute/network/IO.
+    /// Opens a fresh `ActionDb` connection for the closure. Each call gets its
+    /// own connection -- no shared mutex, no contention with async `db_service`.
     pub fn with_db_read<T, F>(&self, f: F) -> Result<T, String>
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {
-        let guard = self.db_lock_or_recover()?;
-        let db = guard
-            .as_ref()
-            .ok_or_else(|| "Database unavailable".to_string())?;
-        f(db)
+        let db = crate::db::ActionDb::open()
+            .map_err(|e| format!("Database unavailable: {e}"))?;
+        f(&db)
     }
 
-    /// Standard DB write helper for non-hot paths.
+    /// Sync DB write helper (I609).
     ///
-    /// Keep lock scope short: gather -> compute -> persist.
+    /// Opens a fresh `ActionDb` connection for the closure.
     pub fn with_db_write<T, F>(&self, f: F) -> Result<T, String>
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {
-        let guard = self.db_lock_or_recover()?;
-        let db = guard
-            .as_ref()
-            .ok_or_else(|| "Database unavailable".to_string())?;
-        f(db)
-    }
-
-    /// Replace the legacy sync DB handle. Used by lifecycle commands that must
-    /// swap or clear the on-disk database without leaking the mutex outside.
-    pub fn replace_sync_db(
-        &self,
-        db: Option<crate::db::ActionDb>,
-    ) -> Result<(), String> {
-        let mut guard = self.db_lock_or_recover()?;
-        *guard = db;
-        Ok(())
-    }
-
-    /// Read the on-disk database path from the legacy sync DB handle.
-    pub fn current_sync_db_path(&self) -> Result<Option<String>, String> {
-        let guard = self.db_lock_or_recover()?;
-        let Some(action_db) = guard.as_ref() else {
-            return Ok(None);
-        };
-        let path: String = action_db
-            .conn_ref()
-            .query_row("PRAGMA database_list", [], |row| row.get(2))
-            .map_err(|e| e.to_string())?;
-        Ok(Some(path))
+        let db = crate::db::ActionDb::open()
+            .map_err(|e| format!("Database unavailable: {e}"))?;
+        f(&db)
     }
 
     /// Get startup database recovery status for the UI.
@@ -843,28 +795,14 @@ impl AppState {
             }
         }
 
-        // Startup fallback: DbService initialization runs in background.
-        // Keep commands working by using the legacy sync connection until
-        // DbService is ready.
-        let mut guard = self.db_lock_or_recover()?;
-        if guard.is_none() {
-            match crate::db::ActionDb::open() {
-                Ok(db) => {
-                    log::warn!("db_read: sync DB was unavailable; reopened on demand");
-                    *guard = Some(db);
-                }
-                Err(e) => {
-                    return Err(format!("Database unavailable: failed to open DB ({e})"));
-                }
-            }
-        }
-        let db = guard
-            .as_ref()
-            .ok_or_else(|| "Database unavailable".to_string())?;
-        f(db)
+        // Startup fallback: DbService not yet initialized. Open a fresh
+        // connection directly (I609 -- no persistent sync handle).
+        let db = crate::db::ActionDb::open()
+            .map_err(|e| format!("Database unavailable: failed to open DB ({e})"))?;
+        f(&db)
     }
 
-    /// Run a mutating closure on the writer connection. Serialized — only one
+    /// Run a mutating closure on the writer connection. Serialized -- only one
     /// write runs at a time, preventing WAL contention.
     pub async fn db_write<T, F>(&self, f: F) -> Result<T, String>
     where
@@ -895,23 +833,11 @@ impl AppState {
             }
         }
 
-        // Startup fallback: DbService initialization runs in background.
-        let mut guard = self.db_lock_or_recover()?;
-        if guard.is_none() {
-            match crate::db::ActionDb::open() {
-                Ok(db) => {
-                    log::warn!("db_write: sync DB was unavailable; reopened on demand");
-                    *guard = Some(db);
-                }
-                Err(e) => {
-                    return Err(format!("Database unavailable: failed to open DB ({e})"));
-                }
-            }
-        }
-        let db = guard
-            .as_ref()
-            .ok_or_else(|| "Database unavailable".to_string())?;
-        f(db)
+        // Startup fallback: DbService not yet initialized. Open a fresh
+        // connection directly (I609 -- no persistent sync handle).
+        let db = crate::db::ActionDb::open()
+            .map_err(|e| format!("Database unavailable: failed to open DB ({e})"))?;
+        f(&db)
     }
 
     /// Save execution history to disk
@@ -1589,26 +1515,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_with_db_try_read_busy_returns_busy() {
-        let state = AppState::new();
-        let _held = state.db.lock().expect("lock db");
-
-        match state.with_db_try_read(|_| 1_u8) {
-            DbTryRead::Busy => {}
-            _ => panic!("expected busy try-read result"),
-        }
-    }
-
-    #[test]
-    fn test_with_db_read_unavailable_maps_error() {
-        let state = AppState::new();
-        {
-            let mut guard = state.db.lock().expect("lock db");
-            *guard = None;
-        }
-        let err = state
-            .with_db_read(|_| Ok::<u8, String>(1))
-            .expect_err("db should be unavailable");
-        assert_eq!(err, "Database unavailable");
+    fn test_app_lock_state_default() {
+        let lock_state = AppLockState::default();
+        assert!(!lock_state.is_locked);
+        assert_eq!(lock_state.failed_unlock_count, 0);
+        assert!(lock_state.last_failed_unlock.is_none());
     }
 }
