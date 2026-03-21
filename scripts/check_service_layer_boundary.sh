@@ -9,7 +9,7 @@ HOTSPOT_FILES=(
   "src-tauri/src/processor/transcript.rs"
   "src-tauri/src/workflow/deliver.rs"
   "src-tauri/src/workflow/reconcile.rs"
-  "src-tauri/src/hygiene.rs"
+  "src-tauri/src/hygiene/mod.rs"
 )
 
 while IFS= read -r command_file; do
