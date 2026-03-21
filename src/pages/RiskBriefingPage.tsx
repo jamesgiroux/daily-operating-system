@@ -3,6 +3,10 @@
  * Uses the magazine shell with terracotta atmosphere.
  * Keyboard navigation: arrow keys for next/prev, number keys 1-6 for direct jump.
  * Scroll-snap settles on slide boundaries.
+ *
+ * I600: Migrated to reports framework. Uses get_report for reading cached data
+ * and generate_risk_briefing for generation (risk briefing has its own PTY pipeline).
+ * Route: /accounts/$accountId/reports/risk_briefing
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
@@ -40,6 +44,29 @@ import type {
   RiskThePlan,
   RiskTheAsk,
 } from "@/types";
+import type { ReportRow } from "@/types/reports";
+import slides from "./report-slides.module.css";
+
+// =============================================================================
+// Normalization — guards against schema changes between report versions
+// =============================================================================
+
+function normalizeRiskBriefing(raw: Record<string, unknown>): RiskBriefing {
+  return {
+    accountId: (raw.accountId as string) ?? "",
+    generatedAt: (raw.generatedAt as string) ?? "",
+    cover: (raw.cover as RiskBriefing["cover"]) ?? { accountName: "", date: "" },
+    bottomLine: (raw.bottomLine as RiskBriefing["bottomLine"]) ?? { headline: "" },
+    whatHappened: (raw.whatHappened as RiskBriefing["whatHappened"]) ?? { narrative: "" },
+    stakes: (raw.stakes as RiskBriefing["stakes"]) ?? {},
+    thePlan: (raw.thePlan as RiskBriefing["thePlan"]) ?? { strategy: "" },
+    theAsk: (raw.theAsk as RiskBriefing["theAsk"]) ?? {},
+  };
+}
+
+// =============================================================================
+// Slide manifest
+// =============================================================================
 
 const SLIDES = [
   { id: "cover", label: "Cover", icon: <AlignLeft size={18} strokeWidth={1.5} /> },
@@ -50,9 +77,33 @@ const SLIDES = [
   { id: "the-ask", label: "The Ask", icon: <Hand size={18} strokeWidth={1.5} /> },
 ];
 
+const ANALYSIS_PHASES = [
+  { key: "gathering", label: "Gathering context", detail: "Reading account data, meeting history, and stakeholder updates" },
+  { key: "reading", label: "Reading the room", detail: "Analyzing stakeholder dynamics and relationship patterns" },
+  { key: "building", label: "Building the story", detail: "Synthesizing situation, complication, and decline arc" },
+  { key: "mapping", label: "Mapping stakes", detail: "Assessing financial exposure and decision-maker landscape" },
+  { key: "planning", label: "Developing the plan", detail: "Building recovery strategy and action steps" },
+  { key: "finalizing", label: "Finalizing", detail: "Assembling executive briefing and resource asks" },
+];
+
+const EDITORIAL_QUOTES = [
+  "The first step in solving a problem is recognizing there is one.",
+  "Strategy without tactics is the slowest route to victory.",
+  "In the middle of difficulty lies opportunity.",
+  "The best way to predict the future is to create it.",
+  "What gets measured gets managed.",
+  "The most dangerous phrase is: we've always done it this way.",
+];
+
+// =============================================================================
+// Page component
+// =============================================================================
+
 export default function RiskBriefingPage() {
   const { accountId } = useParams({ strict: false });
   const navigate = useNavigate();
+
+  const [report, setReport] = useState<ReportRow | null>(null);
   const [briefing, setBriefing] = useState<RiskBriefing | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -61,6 +112,7 @@ export default function RiskBriefingPage() {
   const [completedSections, setCompletedSections] = useState<Set<string>>(new Set());
   const [currentPhaseKey, setCurrentPhaseKey] = useState<string>("gathering");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,7 +120,7 @@ export default function RiskBriefingPage() {
   // Slide-level feedback (matches AccountHealthPage/SwotPage pattern)
   const feedback = useIntelligenceFeedback(accountId ?? undefined, "account");
 
-  // Debounced save — persists edited briefing to disk
+  // Debounced save — persists edited briefing via reports framework
   const debouncedSave = useCallback(
     (updated: RiskBriefing) => {
       if (!accountId) return;
@@ -109,26 +161,43 @@ export default function RiskBriefingPage() {
 
   useRevealObserver(!loading && !!briefing);
 
-  // Load cached briefing on mount
+  // Load cached report on mount — uses reports framework (get_report)
   useEffect(() => {
     if (!accountId) return;
     setLoading(true);
-    invoke<RiskBriefing>("get_risk_briefing", { accountId })
+    invoke<ReportRow | null>("get_report", {
+      entityId: accountId,
+      entityType: "account",
+      reportType: "risk_briefing",
+    })
       .then((data) => {
-        setBriefing(data);
+        if (data) {
+          setReport(data);
+          try {
+            setBriefing(normalizeRiskBriefing(JSON.parse(data.contentJson)));
+          } catch (e) {
+            console.error("Failed to parse risk briefing content:", e); // Expected: corrupted report JSON
+            setBriefing(null);
+          }
+        } else {
+          setReport(null);
+          setBriefing(null);
+        }
         setError(null);
       })
       .catch((err) => {
-        console.error("get_risk_briefing failed:", err);
+        console.error("get_report (risk_briefing) failed:", err); // Expected: background data fetch on mount
+        setReport(null);
         setBriefing(null);
       })
       .finally(() => setLoading(false));
   }, [accountId]);
 
-  // Generate handler
+  // Generate handler — uses dedicated risk briefing pipeline
   const handleGenerate = useCallback(async () => {
     if (!accountId || generating) return;
     setBriefing(null);
+    setReport(null);
     setGenerating(true);
     setGenSeconds(0);
     setError(null);
@@ -141,6 +210,14 @@ export default function RiskBriefingPage() {
     try {
       const data = await invoke<RiskBriefing>("generate_risk_briefing", { accountId });
       setBriefing(data);
+      // Re-fetch the report row to get updated metadata (generatedAt, etc.)
+      invoke<ReportRow | null>("get_report", {
+        entityId: accountId,
+        entityType: "account",
+        reportType: "risk_briefing",
+      }).then((row) => {
+        if (row) setReport(row);
+      }).catch(() => {});
     } catch (e) {
       setError(typeof e === "string" ? e : "Failed to generate risk briefing");
     } finally {
@@ -179,7 +256,7 @@ export default function RiskBriefingPage() {
 
   useTauriEvent("risk-briefing-progress", handleRiskProgress);
 
-  // Register magazine shell (after handleGenerate so folioActions can reference it)
+  // Register magazine shell
   const shellConfig = useMemo(
     () => ({
       folioLabel: "Risk Briefing",
@@ -187,28 +264,22 @@ export default function RiskBriefingPage() {
       activePage: "accounts" as const,
       backLink: {
         label: "Back",
-        onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts/$accountId", params: { accountId: accountId! } }),
+        onClick: () =>
+          window.history.length > 1
+            ? window.history.back()
+            : navigate({
+                to: "/accounts/$accountId",
+                params: { accountId: accountId! },
+              }),
       },
       chapters: briefing ? SLIDES : undefined,
-      folioStatusText: saveStatus === "saved" ? "✓ Saved" : undefined,
+      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: briefing ? (
         <button
           onClick={handleGenerate}
           disabled={generating}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase" as const,
-            color: generating ? "var(--color-text-tertiary)" : "var(--color-spice-terracotta)",
-            background: "none",
-            border: `1px solid ${generating ? "var(--color-rule-light)" : "var(--color-spice-terracotta)"}`,
-            borderRadius: 4,
-            padding: "2px 10px",
-            cursor: generating ? "not-allowed" : "pointer",
-            opacity: generating ? 0.5 : 1,
-          }}
+          className={`${slides.folioAction} ${generating ? slides.folioActionDisabled : ""}`}
+          style={{ "--report-accent": "var(--color-spice-terracotta)" } as React.CSSProperties}
         >
           {generating ? "Generating..." : "Regenerate"}
         </button>
@@ -268,10 +339,10 @@ export default function RiskBriefingPage() {
   // Loading state
   if (loading) {
     return (
-      <div style={{ padding: "120px 120px 80px" }}>
-        <Skeleton className="mb-4 h-4 w-24" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="mb-2 h-12 w-96" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="mb-8 h-5 w-full max-w-2xl" style={{ background: "var(--color-rule-light)" }} />
+      <div className={slides.loadingSkeleton}>
+        <Skeleton className={`mb-4 h-4 w-24 ${slides.skeletonBg}`} />
+        <Skeleton className={`mb-2 h-12 w-96 ${slides.skeletonBg}`} />
+        <Skeleton className={`mb-8 h-5 w-full max-w-2xl ${slides.skeletonBg}`} />
       </div>
     );
   }
@@ -280,61 +351,20 @@ export default function RiskBriefingPage() {
   if (!briefing && !generating) {
     return (
       <div
-        style={{
-          padding: "120px 120px 80px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "60vh",
-          textAlign: "center",
-        }}
+        className={slides.emptyState}
+        style={{ "--report-accent": "var(--color-spice-terracotta)" } as React.CSSProperties}
       >
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "var(--color-spice-terracotta)",
-            marginBottom: 24,
-          }}
-        >
+        <div className={slides.emptyOverline}>
           Risk Briefing
         </div>
-        <h2
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 32,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            margin: "0 0 16px",
-          }}
-        >
+        <h2 className={slides.emptyTitle}>
           No briefing generated yet
         </h2>
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 15,
-            color: "var(--color-text-secondary)",
-            maxWidth: 420,
-            lineHeight: 1.6,
-            marginBottom: 32,
-          }}
-        >
+        <p className={slides.emptyDescription}>
           Generate a 6-slide executive briefing. This will analyze all available intelligence, meeting history, and stakeholder data.
         </p>
         {error && (
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-spice-terracotta)",
-              marginBottom: 16,
-            }}
-          >
+          <p className={slides.emptyError}>
             {error}
           </p>
         )}
@@ -372,9 +402,9 @@ export default function RiskBriefingPage() {
 
   // Render the 6-slide briefing with scroll-snap
   return (
-    <div style={{ scrollSnapType: "y proximity" }}>
+    <div className={slides.slideContainer}>
       {/* Slide 1: Cover */}
-      <section id="cover" style={{ scrollMarginTop: 60 }}>
+      <section id="cover" className={slides.slideSection}>
         <RiskCover
           data={briefing!.cover}
           onUpdate={(v) => updateSlide("cover", v)}
@@ -443,30 +473,8 @@ export default function RiskBriefingPage() {
 
       {/* Finis marker */}
       <div className="editorial-reveal">
-        <FinisMarker enrichedAt={briefing!.generatedAt?.split("T")[0]} />
+        <FinisMarker enrichedAt={report?.generatedAt?.split("T")[0]} />
       </div>
     </div>
   );
 }
-
-// =============================================================================
-// Generating Progress Splash
-// =============================================================================
-
-const ANALYSIS_PHASES = [
-  { key: "gathering", label: "Gathering context", detail: "Reading account data, meeting history, and stakeholder updates" },
-  { key: "reading", label: "Reading the room", detail: "Analyzing stakeholder dynamics and relationship patterns" },
-  { key: "building", label: "Building the story", detail: "Synthesizing situation, complication, and decline arc" },
-  { key: "mapping", label: "Mapping stakes", detail: "Assessing financial exposure and decision-maker landscape" },
-  { key: "planning", label: "Developing the plan", detail: "Building recovery strategy and action steps" },
-  { key: "finalizing", label: "Finalizing", detail: "Assembling executive briefing and resource asks" },
-];
-
-const EDITORIAL_QUOTES = [
-  "The first step in solving a problem is recognizing there is one.",
-  "Strategy without tactics is the slowest route to victory.",
-  "In the middle of difficulty lies opportunity.",
-  "The best way to predict the future is to create it.",
-  "What gets measured gets managed.",
-  "The most dangerous phrase is: we've always done it this way.",
-];
