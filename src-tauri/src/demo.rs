@@ -3,6 +3,7 @@
 //! Seeds a curated dataset into the live database with `is_demo = 1` markers
 //! so it can be cleanly removed when the user connects real data.
 //! Unlike devtools, this runs in release builds and writes to the real workspace.
+//! I633: health_score_history seeds + email_signals populated via enrichment pipeline.
 
 use std::path::Path;
 
@@ -369,6 +370,21 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         }
     }
 
+    // I633: Seed health score history for trend computation demo
+    for (acct, scores) in &[
+        ("demo-acme", vec![(72.0, "green"), (68.0, "yellow"), (75.0, "green")]),
+        ("demo-globex", vec![(45.0, "yellow"), (42.0, "yellow"), (38.0, "red")]),
+    ] {
+        for (i, (score, band)) in scores.iter().enumerate() {
+            conn.execute(
+                "INSERT OR IGNORE INTO health_score_history (account_id, score, band, confidence, computed_at) \
+                 VALUES (?1, ?2, ?3, 0.75, datetime('now', ?4))",
+                rusqlite::params![acct, score, band, format!("-{} days", (scores.len() - i) * 7)],
+            )
+            .map_err(|e| format!("Demo health history: {}", e))?;
+        }
+    }
+
     // Set demo mode active
     conn.execute("UPDATE app_state SET demo_mode_active = 1 WHERE id = 1", [])
         .map_err(|e| format!("Set demo_mode_active: {}", e))?;
@@ -396,6 +412,13 @@ pub fn clear_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), String>
         [],
     )
     .map_err(|e| format!("Clear demo meeting-entity links: {}", e))?;
+
+    // Clean up health score history for demo accounts
+    conn.execute(
+        "DELETE FROM health_score_history WHERE account_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo health history: {}", e))?;
 
     // Clean up account_stakeholders links for demo people
     conn.execute(
