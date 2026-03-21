@@ -95,10 +95,7 @@ impl ActionDb {
     }
 
     /// Get the champion's person_id for an account from account_stakeholders (I555).
-    pub fn get_champion_person_id(
-        &self,
-        account_id: &str,
-    ) -> Result<Option<String>, DbError> {
+    pub fn get_champion_person_id(&self, account_id: &str) -> Result<Option<String>, DbError> {
         let result = self.conn.query_row(
             "SELECT person_id FROM account_stakeholders
              WHERE account_id = ?1 AND role = 'champion'
@@ -950,17 +947,20 @@ impl ActionDb {
                 meeting_id: row.get(0)?,
                 talk_balance_customer_pct: row.get(1)?,
                 talk_balance_internal_pct: row.get(2)?,
-                speaker_sentiments: row.get::<_, Option<String>>(3)?
+                speaker_sentiments: row
+                    .get::<_, Option<String>>(3)?
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
                 question_density: row.get(4)?,
                 decision_maker_active: row.get(5)?,
                 forward_looking: row.get(6)?,
                 monologue_risk: row.get::<_, Option<i32>>(7)?.unwrap_or(0) != 0,
-                competitor_mentions: row.get::<_, Option<String>>(8)?
+                competitor_mentions: row
+                    .get::<_, Option<String>>(8)?
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
-                escalation_language: row.get::<_, Option<String>>(9)?
+                escalation_language: row
+                    .get::<_, Option<String>>(9)?
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
             })
