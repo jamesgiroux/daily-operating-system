@@ -6,6 +6,7 @@ pub mod glean_provider;
 pub mod health_scoring;
 pub mod io;
 pub mod lifecycle;
+pub mod predictions;
 pub mod prompts;
 pub mod reconcile_stakeholders;
 pub mod relationships;
