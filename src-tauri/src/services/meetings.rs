@@ -324,6 +324,7 @@ pub fn load_meeting_prep_from_sources(
                     entity_readiness: None,
                     stakeholder_insights: None,
                     recent_email_signals: None,
+                    email_digest: None,
                     consistency_status: None,
                     consistency_findings: Vec::new(),
                 };
@@ -1425,24 +1426,21 @@ pub async fn get_meeting_intelligence(
 
     if !exists {
         // Look for matching event in the live calendar cache
-        let live_event = state
-            .calendar
-            .events
-            .read()
-            .ok()
-            .and_then(|events| {
-                let raw_id = meeting_id.replace("_at_", "@");
-                events.iter().find(|e| e.id == raw_id || e.id == meeting_id).cloned()
-            });
+        let live_event = state.calendar.events.read().ok().and_then(|events| {
+            let raw_id = meeting_id.replace("_at_", "@");
+            events
+                .iter()
+                .find(|e| e.id == raw_id || e.id == meeting_id)
+                .cloned()
+        });
 
         if let Some(event) = live_event {
-            let primary_id =
-                crate::workflow::deliver::meeting_primary_id(
-                    Some(&event.id),
-                    &event.title,
-                    &event.start.to_rfc3339(),
-                    event.meeting_type.as_str(),
-                );
+            let primary_id = crate::workflow::deliver::meeting_primary_id(
+                Some(&event.id),
+                &event.title,
+                &event.start.to_rfc3339(),
+                event.meeting_type.as_str(),
+            );
             let attendees_json = serde_json::to_string(&event.attendees).unwrap_or_default();
             let start_rfc = event.start.to_rfc3339();
             let end_rfc = event.end.to_rfc3339();
@@ -1583,7 +1581,7 @@ pub async fn get_meeting_intelligence(
         })
         .await?;
 
-    // Phase 2: Lightweight writes — mark reviewed + clear new-signal flag
+    // Step 2: Lightweight writes — mark reviewed + clear new-signal flag
     let write_meeting_id = intel.meeting.id.clone();
     let write_prep_event_id = intel
         .prep
@@ -1936,7 +1934,10 @@ pub fn update_meeting_prep_field(
                 &entity.id,
                 signal_type,
                 source,
-                Some(&format!("{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}", field_path, meeting_id)),
+                Some(&format!(
+                    "{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}",
+                    field_path, meeting_id
+                )),
                 confidence,
             )
             .map_err(|e| format!("signal emit failed: {e}"))?;
@@ -1951,7 +1952,10 @@ pub fn update_meeting_prep_field(
                 person_id,
                 signal_type,
                 source,
-                Some(&format!("{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}", field_path, meeting_id)),
+                Some(&format!(
+                    "{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}",
+                    field_path, meeting_id
+                )),
                 confidence,
             )
             .map_err(|e| format!("signal emit failed: {e}"))?;
@@ -2061,9 +2065,7 @@ fn parse_field_path(path: &str) -> Result<Vec<PathSegment>, String> {
             remaining = &remaining[end + 1..];
         } else {
             // Parse key: up to next '[' or '.' or end
-            let end = remaining
-                .find(['[', '.'])
-                .unwrap_or(remaining.len());
+            let end = remaining.find(['[', '.']).unwrap_or(remaining.len());
             if end == 0 {
                 return Err(format!("Empty key segment in path: {}", path));
             }
@@ -2320,7 +2322,7 @@ pub async fn refresh_meeting_briefing_full(
         );
     }
 
-    // Phase 2: refresh linked entity intelligence synchronously.
+    // Step 2: refresh linked entity intelligence synchronously.
     let mut refreshed_entities = 0u32;
     let mut failed_entities: Vec<(String, String)> = Vec::new();
 
@@ -2868,7 +2870,13 @@ pub async fn attach_meeting_transcript(
                 let role_changes_data: Vec<(String, Option<String>, Option<String>)> = result
                     .role_changes
                     .iter()
-                    .map(|rc| (rc.person_name.clone(), rc.old_status.clone(), rc.new_status.clone()))
+                    .map(|rc| {
+                        (
+                            rc.person_name.clone(),
+                            rc.old_status.clone(),
+                            rc.new_status.clone(),
+                        )
+                    })
                     .collect();
                 let risk_strings: Vec<String> = result.risks.clone();
                 let meeting_title = meeting.title.clone();

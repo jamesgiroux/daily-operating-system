@@ -31,7 +31,7 @@ export function useGoogleAuth() {
 
   useEffect(() => {
     invoke<GoogleAuthStatus>("get_google_auth_status").then(setStatus).catch((err) => {
-      console.error("get_google_auth_status failed:", err);
+      console.error("get_google_auth_status failed:", err); // Expected: background auth check on mount
     });
 
     const unlistenChanged = listen<GoogleAuthStatus>("google-auth-changed", (event) => {

@@ -8,6 +8,7 @@ import { User, Target, FileText, Paperclip, Upload } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { getPortfolioReportLabel } from "@/lib/report-config";
 
 import { useMe } from "@/hooks/useMe";
@@ -462,6 +463,7 @@ function AttachmentsSection() {
       setFiles((prev) => [...prev, { name, path: result }]);
     } catch (err) {
       console.error("Failed to process attachment:", err);
+      toast.error("Failed to process file");
     }
   }, []);
 

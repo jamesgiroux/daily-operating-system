@@ -178,36 +178,17 @@ pub async fn restore_database_from_backup(
         }
     };
 
-    // Drop existing DB handles before swapping files on disk.
+    // I609: Drop async DB service before swapping files on disk.
     {
         let mut db_service_guard = state.db_service.write().await;
         *db_service_guard = None;
-        state.replace_sync_db(None)?;
     }
 
     if let Err(e) = crate::db_backup::restore_database_from_backup(Path::new(&backup_path)) {
-        // Best-effort recovery: re-open original DB handles if restore failed.
-        if let Ok(db) = crate::db::ActionDb::open() {
-            let _ = state.replace_sync_db(Some(db));
-            let _ = state.init_db_service().await;
-        } else {
-            state.set_database_recovery_required(
-                "restore_failed",
-                format!("Restore failed and database reopen failed: {e}"),
-            );
-        }
+        // Best-effort recovery: re-init DB service if restore failed.
+        let _ = state.init_db_service().await;
         return Err(e);
     }
-
-    let reopened = match crate::db::ActionDb::open() {
-        Ok(db) => db,
-        Err(e) => {
-            let detail = format!("Restore applied but database reopen failed: {e}");
-            state.set_database_recovery_required("restore_reopen_failed", detail.clone());
-            return Err(detail);
-        }
-    };
-    state.replace_sync_db(Some(reopened))?;
 
     if let Err(e) = state.init_db_service().await {
         state.set_database_recovery_required("restore_reopen_failed", e.clone());
@@ -222,11 +203,10 @@ pub async fn restore_database_from_backup(
 
 #[tauri::command]
 pub async fn start_fresh_database(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
-    // Drop DB handles before deleting files.
+    // I609: Drop async DB service before deleting files.
     {
         let mut db_service_guard = state.db_service.write().await;
         *db_service_guard = None;
-        state.replace_sync_db(None)?;
     }
     crate::db_backup::start_fresh_database()
 }

@@ -58,7 +58,7 @@ export default function MonthlyWrappedPage() {
     invoke<{ id: string | number }>("get_user_entity")
       .then((u) => setUserId(String(u.id)))
       .catch((err) => {
-        console.error("get_user_entity failed:", err);
+        console.error("get_user_entity failed:", err); // Expected: background init on mount
         setLoading(false);
       });
   }, []);
@@ -76,13 +76,14 @@ export default function MonthlyWrappedPage() {
         try {
           setContent(normalizeMonthlyWrapped(JSON.parse(data.contentJson)));
         } catch (e) {
-          console.error("Failed to parse monthly_wrapped content:", e);
+          console.error("Failed to parse monthly_wrapped content:", e); // Expected: corrupted report JSON
           setContent(null);
         }
         setError(null);
       })
       .catch((err) => {
         console.error("get_report (monthly_wrapped) failed:", err);
+        toast.error("Failed to load report");
         setContent(null);
       })
       .finally(() => setLoading(false));

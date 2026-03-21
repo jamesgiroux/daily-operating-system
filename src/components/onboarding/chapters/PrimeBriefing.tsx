@@ -52,7 +52,7 @@ export function PrimeBriefing({ importedAccountNames = [], onComplete }: PrimeBr
         .then((fn) => {
           unlisten = fn;
         })
-        .catch((err) => console.error("listen drag-drop failed:", err));
+        .catch((err) => console.error("listen drag-drop failed:", err)); // Expected: system event listener setup
     } catch {
       // Drag-drop not available outside Tauri webview
     }
@@ -73,7 +73,7 @@ export function PrimeBriefing({ importedAccountNames = [], onComplete }: PrimeBr
         console.warn("No files were copied — they may be outside permitted directories");
       }
     } catch (err) {
-      console.error("Failed to copy files to inbox:", err);
+      console.error("Failed to copy files to inbox:", err); // Expected: best-effort file copy during onboarding
     }
 
     setProcessing(false);
@@ -112,7 +112,7 @@ export function PrimeBriefing({ importedAccountNames = [], onComplete }: PrimeBr
         }
       } catch (err) {
         if (!cancelled) {
-          console.error("Failed to load onboarding enrichment status:", err);
+          console.error("Failed to load onboarding enrichment status:", err); // Expected: background poll during onboarding
         }
       }
     }

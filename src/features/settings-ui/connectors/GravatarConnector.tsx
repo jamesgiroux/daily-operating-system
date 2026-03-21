@@ -16,7 +16,7 @@ export default function GravatarConnection() {
         setStatus(s);
         if (s.apiKeySet) setApiKey("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
       })
-      .catch((err) => console.error("get_gravatar_status failed:", err));
+      .catch((err) => console.error("get_gravatar_status failed:", err)); // Expected: background init on mount
   }, []);
 
   async function toggleEnabled() {
@@ -27,6 +27,7 @@ export default function GravatarConnection() {
       setStatus({ ...status, enabled: newEnabled });
     } catch (err) {
       console.error("Failed to toggle Gravatar:", err);
+      toast.error("Failed to toggle Gravatar");
     }
   }
 

@@ -14,7 +14,7 @@ export function useActivePreset(): RolePreset | null {
     invoke<RolePreset | null>("get_active_preset")
       .then((p) => setPreset(p ?? null))
       .catch((err) => {
-        console.error("get_active_preset failed:", err);
+        console.error("get_active_preset failed:", err); // Expected: background init on mount
         setPreset(null);
       });
   }, []);

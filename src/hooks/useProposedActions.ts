@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import type { DbAction } from "@/types";
 
 interface UseProposedActionsReturn {
@@ -19,7 +20,7 @@ export function useProposedActions(): UseProposedActionsReturn {
       const result = await invoke<DbAction[]>("get_proposed_actions");
       setProposedActions(result);
     } catch (err) {
-      console.error("Failed to load proposed actions:", err);
+      console.error("Failed to load proposed actions:", err); // Expected: background data fetch on mount
       setProposedActions([]);
     } finally {
       setIsLoading(false);
@@ -37,6 +38,7 @@ export function useProposedActions(): UseProposedActionsReturn {
         setProposedActions((prev) => prev.filter((a) => a.id !== id));
       } catch (err) {
         console.error("Failed to accept action:", err);
+        toast.error("Failed to accept action");
       }
     },
     []
@@ -52,6 +54,7 @@ export function useProposedActions(): UseProposedActionsReturn {
         setProposedActions((prev) => prev.filter((a) => a.id !== id));
       } catch (err) {
         console.error("Failed to reject action:", err);
+        toast.error("Failed to dismiss action");
       }
     },
     []

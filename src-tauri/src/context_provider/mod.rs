@@ -33,9 +33,7 @@ pub enum ContextMode {
     /// Enterprise: Glean as primary context source.
     /// DCR handles client registration — no user-provided client_id needed.
     /// Always additive: Glean primary + local signals merged (Gmail/Linear/Calendar still active).
-    Glean {
-        endpoint: String,
-    },
+    Glean { endpoint: String },
 }
 
 // ---------------------------------------------------------------------------
