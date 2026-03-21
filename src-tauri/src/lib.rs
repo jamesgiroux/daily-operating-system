@@ -815,6 +815,8 @@ pub fn run() {
             commands::get_feature_flags,
             // I614: DB Growth Monitoring
             commands::get_db_growth_report,
+            // I633: Health Scoring Recalibration
+            commands::bulk_recompute_health,
             // I529: Intelligence Quality Feedback
             commands::submit_intelligence_feedback,
             commands::get_entity_feedback,

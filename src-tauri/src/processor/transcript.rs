@@ -5,7 +5,7 @@
 //! proper workspace location.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -16,8 +16,8 @@ use crate::pty::{ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use crate::types::{
     CalendarEvent, CapturedAction, ChampionHealth, CompetitorMention, EngagementSignals,
-    EscalationSignal, InteractionDynamics, RoleChange, SpeakerSentiment, TranscriptCommitment,
-    TranscriptResult, TranscriptSentiment,
+    EscalationSignal, InteractionDynamics, MeetingType, RoleChange, SpeakerSentiment,
+    TranscriptCommitment, TranscriptResult, TranscriptSentiment,
 };
 use crate::util::{
     encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE,
@@ -180,6 +180,7 @@ pub fn process_transcript_with_kind(
     let slug = slugify(&meeting.title);
     let dest_filename = format!("{}-{}-transcript.md", date, slug);
 
+    // I631: Priority-ordered routing: account > project > person (1:1) > archive
     let destination = if let Some(ref account) = meeting.account {
         // Validate account exists in DB before routing to its folder
         let account_exists = db
@@ -199,6 +200,10 @@ pub fn process_transcript_with_kind(
             );
             workspace.join("_archive").join(&date).join(&dest_filename)
         }
+    } else if let Some(dest) = route_to_project(meeting, db, workspace, &dest_filename) {
+        dest
+    } else if let Some(dest) = route_to_person(meeting, db, workspace, &dest_filename) {
+        dest
     } else {
         workspace.join("_archive").join(&date).join(&dest_filename)
     };
@@ -1067,7 +1072,9 @@ fn extract_transcript_actions(
     account_fallback: Option<&str>,
 ) {
     let now = Utc::now().to_rfc3339();
-    let mut count = 0;
+    let mut attempted = 0;
+    let mut written = 0;
+    let mut skipped = 0;
 
     for line in actions_text.lines() {
         let Some(raw_title) = parse_action_line(line) else {
@@ -1094,8 +1101,10 @@ fn extract_transcript_actions(
             .and_then(|tag| resolve_account_id(db, tag))
             .or_else(|| account_fallback.and_then(|fallback| resolve_account_id(db, fallback)));
 
+        attempted += 1;
+
         let action = crate::db::DbAction {
-            id: format!("transcript-{}-{}", meeting_id, count),
+            id: format!("transcript-{}-{}", meeting_id, attempted - 1),
             title: meta.clean_title,
             priority: meta.priority.unwrap_or_else(|| "P2".to_string()),
             status,
@@ -1120,20 +1129,26 @@ fn extract_transcript_actions(
             next_meeting_start: None,
         };
 
-        if let Err(e) = crate::services::mutations::upsert_action_if_not_completed(db, &action) {
-            log::warn!("Failed to insert transcript action: {}", e);
-        } else {
-            count += 1;
+        match crate::services::mutations::upsert_action_if_not_completed(db, &action) {
+            Err(e) => {
+                log::warn!("Failed to insert transcript action: {}", e);
+            }
+            Ok(true) => {
+                written += 1;
+            }
+            Ok(false) => {
+                skipped += 1;
+            }
         }
     }
 
-    if count > 0 {
-        log::info!(
-            "Extracted {} actions from transcript for '{}'",
-            count,
-            meeting_title
-        );
-    }
+    log::info!(
+        "Transcript action extraction for '{}': {} attempted, {} written, {} dedup-skipped",
+        meeting_title,
+        attempted,
+        written,
+        skipped
+    );
 }
 
 /// Persist I555 enriched transcript data (interaction dynamics, champion health,
@@ -2493,6 +2508,83 @@ fn sanitize_account_dir(name: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("-")
+}
+
+/// I631: Route transcript to a project entity directory if a linked project exists.
+fn route_to_project(
+    meeting: &CalendarEvent,
+    db: Option<&ActionDb>,
+    workspace: &Path,
+    dest_filename: &str,
+) -> Option<PathBuf> {
+    let entities = meeting.linked_entities.as_ref()?;
+    let project_entity = entities.iter().find(|e| e.entity_type == "project")?;
+    let db = db?;
+
+    // Validate project exists in DB
+    match db.get_project(&project_entity.id) {
+        Ok(Some(_)) => {
+            let project_dir = sanitize_account_dir(&project_entity.name);
+            let path = workspace
+                .join("Projects")
+                .join(&project_dir)
+                .join("Call-Transcripts")
+                .join(dest_filename);
+            log::info!(
+                "Routing transcript to project '{}' directory",
+                project_entity.name
+            );
+            Some(path)
+        }
+        _ => {
+            log::debug!(
+                "Project '{}' not found in DB — skipping project routing",
+                project_entity.name
+            );
+            None
+        }
+    }
+}
+
+/// I631: Route transcript to a person entity directory for 1:1 meetings.
+fn route_to_person(
+    meeting: &CalendarEvent,
+    db: Option<&ActionDb>,
+    workspace: &Path,
+    dest_filename: &str,
+) -> Option<PathBuf> {
+    // Only route to people for 1:1 meetings
+    if meeting.meeting_type != MeetingType::OneOnOne {
+        return None;
+    }
+
+    let entities = meeting.linked_entities.as_ref()?;
+    let person_entity = entities.iter().find(|e| e.entity_type == "person")?;
+    let db = db?;
+
+    // Validate person exists in DB
+    match db.get_person(&person_entity.id) {
+        Ok(Some(_)) => {
+            let person_dir = sanitize_account_dir(&person_entity.name);
+            let path = workspace
+                .join("People")
+                .join(&person_dir)
+                .join("Call-Transcripts")
+                .join(dest_filename);
+            log::info!(
+                "Routing transcript to person '{}' directory (1:1 meeting)",
+                person_entity.name
+            );
+            Some(path)
+        }
+        _ => {
+            log::debug!(
+                "Person '{}' not found in DB — skipping person routing",
+                person_entity.name
+            );
+            None
+        }
+    }
 }
 
 impl Default for TranscriptResult {

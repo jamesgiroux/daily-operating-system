@@ -942,8 +942,14 @@ pub fn recompute_entity_health(
         None => return Ok(()), // No intelligence yet, nothing to recompute
     };
 
-    // Recompute health
-    let health = crate::intelligence::health_scoring::compute_account_health(db, &account, None);
+    // I633: Pass org_health from existing intelligence so the 40/60 baseline
+    // blend fires consistently (previously passed None, diverging from enrichment scores)
+    let org_health_ref = intel.org_health.as_ref();
+    let health = crate::intelligence::health_scoring::compute_account_health(
+        db,
+        &account,
+        org_health_ref,
+    );
 
     intel.health = Some(health.clone());
 
@@ -979,6 +985,28 @@ pub fn recompute_entity_health(
     );
 
     Ok(())
+}
+
+/// I633: Bulk recompute health scores for all accounts.
+/// Called once after deploying formula fixes to ensure consistency.
+pub fn bulk_recompute_health(db: &crate::db::ActionDb) -> Result<usize, String> {
+    let accounts = db.get_all_accounts().map_err(|e| e.to_string())?;
+    let mut recomputed = 0;
+
+    for account in &accounts {
+        if let Err(e) = recompute_entity_health(db, &account.id, "account") {
+            log::warn!("Health recompute failed for {}: {}", account.id, e);
+            continue;
+        }
+        recomputed += 1;
+    }
+
+    log::info!(
+        "Bulk health recompute complete: {}/{} accounts rescored",
+        recomputed,
+        accounts.len()
+    );
+    Ok(recomputed)
 }
 
 /// Generate a risk briefing for an account (async, PTY enrichment).

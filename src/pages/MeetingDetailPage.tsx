@@ -1054,7 +1054,7 @@ Thanks!`;
         )}
 
         {(hasAnyContent || outcomes || postIntel) && (
-          <div className={isPastMeeting && outcomes ? styles.pastMeetingOpacity : undefined}>
+          <div className={isPastMeeting && (outcomes || postIntel) ? styles.pastMeetingOpacity : undefined}>
 
             {/* ================================================================
                 ACT I: "Ground Me" — visible immediately, NO editorial-reveal

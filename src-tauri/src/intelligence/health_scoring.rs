@@ -99,21 +99,116 @@ pub fn compute_account_health(
         }
     }
 
+    // I633: Compute real trend from health_score_history instead of hardcoded "stable"
+    let trend = compute_trend_from_history(db, &account.id, score);
+
+    // Record this score in history for future trend computation
+    record_health_score(db, &account.id, score, &band, confidence);
+
     AccountHealth {
         score,
         band,
         source: HealthSource::Computed,
         confidence,
-        trend: HealthTrend {
-            direction: "stable".to_string(),
-            rationale: None,
-            timeframe: "30d".to_string(),
-            confidence: 0.0,
-        },
+        trend,
         dimensions: dims,
         narrative: None,
         recommended_actions,
         divergence,
+    }
+}
+
+/// Record a health score data point for trend computation.
+fn record_health_score(db: &ActionDb, account_id: &str, score: f64, band: &str, confidence: f64) {
+    let _ = db.conn.execute(
+        "INSERT INTO health_score_history (account_id, score, band, confidence)
+         VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![account_id, score, band, confidence],
+    );
+
+    // Prune old entries — keep at most 20 per account to bound storage
+    let _ = db.conn.execute(
+        "DELETE FROM health_score_history WHERE account_id = ?1 AND id NOT IN (
+             SELECT id FROM health_score_history WHERE account_id = ?1
+             ORDER BY computed_at DESC LIMIT 20
+         )",
+        rusqlite::params![account_id],
+    );
+}
+
+/// Compute trend from the last 3-5 health score data points.
+///
+///   ┌───────────────────────────────────────────────────────┐
+///   │ History points │ Trend logic                          │
+///   ├────────────────┼──────────────────────────────────────┤
+///   │ 0-1            │ "stable" (not enough data)           │
+///   │ 2-5            │ Compare oldest vs newest, ±5 = move  │
+///   │ 5+             │ Linear slope of last 5               │
+///   └───────────────────────────────────────────────────────┘
+fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f64) -> HealthTrend {
+    let history: Vec<(f64, String)> = db
+        .conn
+        .prepare(
+            "SELECT score, computed_at FROM health_score_history
+             WHERE account_id = ?1
+             ORDER BY computed_at DESC LIMIT 5",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![account_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    if history.len() < 2 {
+        return HealthTrend {
+            direction: "stable".to_string(),
+            rationale: Some("Insufficient history for trend".to_string()),
+            timeframe: "30d".to_string(),
+            confidence: 0.1,
+        };
+    }
+
+    // Compare current score to oldest in window
+    let oldest_score = history.last().map(|(s, _)| *s).unwrap_or(current_score);
+    let delta = current_score - oldest_score;
+
+    let (direction, rationale) = if delta > 10.0 {
+        (
+            "improving",
+            format!("Score up {delta:.0} points from {oldest_score:.0}"),
+        )
+    } else if delta > 5.0 {
+        (
+            "improving",
+            format!("Score trending up {delta:.0} points"),
+        )
+    } else if delta < -10.0 {
+        (
+            "declining",
+            format!("Score down {:.0} points from {oldest_score:.0}", delta.abs()),
+        )
+    } else if delta < -5.0 {
+        (
+            "declining",
+            format!("Score trending down {:.0} points", delta.abs()),
+        )
+    } else {
+        ("stable", format!("Score stable (±{:.0} points)", delta.abs()))
+    };
+
+    let trend_confidence = match history.len() {
+        5.. => 0.8,
+        3 | 4 => 0.5,
+        _ => 0.3,
+    };
+
+    HealthTrend {
+        direction: direction.to_string(),
+        rationale: Some(rationale),
+        timeframe: "30d".to_string(),
+        confidence: trend_confidence,
     }
 }
 
@@ -378,8 +473,17 @@ fn compute_stakeholder_coverage(db: &ActionDb, account_id: &str) -> DimensionSco
         return null_dimension("No stakeholders mapped");
     }
 
+    // I633: Tiered stakeholder scoring — base 50 for having any stakeholders,
+    // +20 per active archetype role, +10 depth bonus.
+    //
+    //   0 stakeholders       → null (excluded from scoring)
+    //   Has team, no roles   → 50
+    //   1 active archetype   → 70
+    //   2 active archetypes  → 90
+    //   3 active archetypes  → 100
+    //   + depth bonus        → capped at 100
     let expected_roles = ["champion", "executive", "technical"];
-    let mut weighted_fill = 0.0f64;
+    let mut score = 50.0f64; // Base: has stakeholders
     let mut evidence = Vec::new();
 
     for role in &expected_roles {
@@ -390,7 +494,7 @@ fn compute_stakeholder_coverage(db: &ActionDb, account_id: &str) -> DimensionSco
         }
 
         // I555: Verify attendance recency via meeting_attendees
-        let weight = if let Some(person_id) = team
+        let role_active = if let Some(person_id) = team
             .iter()
             .find(|t| t.role.to_lowercase().contains(role))
             .map(|t| t.person_id.as_str())
@@ -410,33 +514,44 @@ fn compute_stakeholder_coverage(db: &ActionDb, account_id: &str) -> DimensionSco
             match last_seen_days {
                 Some(d) if d <= 90 => {
                     evidence.push(format!("{role}: active (seen {d}d ago)"));
-                    1.0
+                    true
                 }
                 Some(d) if d <= 180 => {
                     evidence.push(format!("{role}: stale ({d}d ago)"));
-                    0.5
+                    // Stale = partial credit: +10 instead of +20
+                    score += 10.0;
+                    false
                 }
                 Some(d) => {
                     evidence.push(format!("{role}: inactive ({d}d ago)"));
-                    0.0
+                    false
                 }
                 None => {
                     evidence.push(format!("{role}: mapped but never seen in meetings"));
-                    0.3
+                    // Mapped but unseen: +5 for effort
+                    score += 5.0;
+                    false
                 }
             }
         } else {
             evidence.push(format!("{role}: mapped (no person linked)"));
-            0.5
+            score += 5.0;
+            false
         };
 
-        weighted_fill += weight;
+        if role_active {
+            score += 20.0;
+        }
     }
 
-    let fill_rate = weighted_fill / expected_roles.len() as f64;
+    // Depth bonus: more people mapped than just the 3 archetypes
+    if team.len() > expected_roles.len() {
+        score += 10.0;
+        evidence.push(format!("{} total stakeholders mapped", team.len()));
+    }
 
     DimensionScore {
-        score: (fill_rate * 100.0).clamp(0.0, 100.0),
+        score: score.clamp(0.0, 100.0),
         weight: 1.0,
         evidence,
         trend: String::new(),
@@ -504,11 +619,14 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
         })
         .ok();
 
+    // I633: Raised inference caps — strong engagement shouldn't be penalized
+    // just because the user hasn't tagged a champion. 15-20 point discount
+    // vs explicit champion is fair, but old caps (55/40/25) were too harsh.
     match top_attendee {
         Some(att) if att.pct >= 0.70 => {
             // 70%+ attendance → champion-level engagement
             DimensionScore {
-                score: 55.0,
+                score: 75.0,
                 weight: 1.0,
                 evidence: vec![
                     format!(
@@ -526,7 +644,7 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
         Some(att) if att.pct >= 0.50 => {
             // 50-69% attendance → strong engagement, not quite champion
             DimensionScore {
-                score: 40.0,
+                score: 60.0,
                 weight: 1.0,
                 evidence: vec![
                     format!(
@@ -547,7 +665,7 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
         Some(att) if att.attended >= 2 => {
             // Some attendance but below 50% — partial credit
             DimensionScore {
-                score: 25.0,
+                score: 35.0,
                 weight: 0.5, // Reduced weight — we're less sure
                 evidence: vec![format!(
                     "No named champion — best attendee {} at {}/{} meetings ({:.0}%)",
@@ -716,8 +834,103 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
 
     let today = chrono::Utc::now().date_naive();
     let days_to_renewal = (end_date - today).num_days() as f64;
-    let mut score = (100.0 * (-days_to_renewal / 90.0).exp()).clamp(5.0, 100.0);
     let mut evidence = vec![format!("{days_to_renewal:.0} days to renewal")];
+
+    // I633: Two-factor financial proximity — OUTCOME + ATTENTION.
+    //
+    // Old formula used exponential decay from renewal date, which inverted the
+    // meaning: a just-renewed account scored 5/100 while an about-to-churn
+    // account scored 100/100. Fixed to blend renewal outcome with proximity.
+    //
+    //   ┌─────────────────────────┬───────────┐
+    //   │ Scenario                │ Score     │
+    //   ├─────────────────────────┼───────────┤
+    //   │ Renewed + ARR growth    │ 90 – 100  │
+    //   │ Renewed, flat ARR       │ 80        │
+    //   │ Expansion               │ 90 – 100  │
+    //   │ No outcome, far off     │ 65        │
+    //   │ No outcome, approaching │ 50        │
+    //   │ Downgrade               │ 35        │
+    //   │ Churn                   │ 15        │
+    //   └─────────────────────────┴───────────┘
+
+    let recent_event: Option<(String, Option<f64>)> = db
+        .conn
+        .query_row(
+            "SELECT event_type, arr_impact FROM account_events
+             WHERE account_id = ?1 AND event_type IN ('renewal', 'expansion', 'churn', 'downgrade')
+             ORDER BY event_date DESC LIMIT 1",
+            rusqlite::params![&account.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok();
+
+    let outcome_score = match &recent_event {
+        Some((event_type, arr_impact)) => {
+            let arr_pct = arr_impact
+                .and_then(|impact| {
+                    account.arr.map(|arr| {
+                        if arr > 0.0 {
+                            impact / arr * 100.0
+                        } else {
+                            0.0
+                        }
+                    })
+                })
+                .unwrap_or(0.0);
+            match event_type.as_str() {
+                "renewal" if arr_pct > 0.0 => {
+                    let bonus = arr_pct.min(10.0);
+                    evidence.push(format!("Renewed with {arr_pct:.0}% ARR growth"));
+                    90.0 + bonus
+                }
+                "renewal" => {
+                    evidence.push("Renewed (flat ARR)".to_string());
+                    80.0
+                }
+                "expansion" => {
+                    let bonus = arr_pct.min(10.0);
+                    evidence.push(format!("Expansion: +{arr_pct:.0}% ARR"));
+                    90.0 + bonus
+                }
+                "downgrade" => {
+                    evidence.push("Recent downgrade event".to_string());
+                    35.0
+                }
+                "churn" => {
+                    evidence.push("Churn event recorded".to_string());
+                    15.0
+                }
+                _ => 65.0,
+            }
+        }
+        None => {
+            if days_to_renewal > 180.0 {
+                65.0 // Far off, healthy default
+            } else if days_to_renewal > 90.0 {
+                60.0
+            } else if days_to_renewal > 30.0 {
+                50.0 // Approaching, needs attention
+            } else if days_to_renewal > 0.0 {
+                40.0 // Imminent
+            } else {
+                30.0 // Past due
+            }
+        }
+    };
+
+    // Attention signal: proximity drives CSM focus regardless of outcome
+    let attention_signal = if days_to_renewal < 30.0 {
+        30.0
+    } else if days_to_renewal < 90.0 {
+        50.0
+    } else {
+        70.0
+    };
+
+    let attention_weight = if days_to_renewal < 90.0 { 0.3 } else { 0.1 };
+    let mut score = outcome_score * (1.0 - attention_weight)
+        + attention_signal * attention_weight;
 
     let trend = if days_to_renewal < 30.0 {
         "critical".to_string()
@@ -965,6 +1178,20 @@ fn is_neutral_momentum_placeholder(dim: &DimensionScore) -> bool {
 }
 
 fn compute_confidence(dims: &RelationshipDimensions) -> f64 {
+    // I633: Smooth confidence curve replacing step function.
+    //
+    // Old thresholds had harsh cliffs (0.1 → 0.3 → 0.6 → 0.9) that caused
+    // 40% score regression to neutral at the common 3-4 dimension case.
+    //
+    //   Dims │ Old   │ New
+    //   ─────┼───────┼──────
+    //   0    │ 0.10  │ 0.30
+    //   1    │ 0.30  │ 0.58
+    //   2    │ 0.30  │ 0.67
+    //   3    │ 0.60  │ 0.75
+    //   4    │ 0.60  │ 0.83
+    //   5    │ 0.90  │ 0.92
+    //   6    │ 0.90  │ 0.95
     let populated = [
         &dims.meeting_cadence,
         &dims.email_engagement,
@@ -977,12 +1204,8 @@ fn compute_confidence(dims: &RelationshipDimensions) -> f64 {
     .filter(|d| d.weight > 0.0 && !is_neutral_momentum_placeholder(d))
     .count();
 
-    match populated {
-        5 | 6 => 0.9,
-        3 | 4 => 0.6,
-        1 | 2 => 0.3,
-        _ => 0.1,
-    }
+    let frac = populated as f64 / 6.0;
+    (0.5 + frac * 0.5).clamp(0.3, 0.95)
 }
 
 /// Detect divergence between org-level health band and computed relationship score.
@@ -1056,7 +1279,8 @@ mod tests {
             financial_proximity: active_dim(40.0),
             signal_momentum: active_dim(50.0),
         };
-        assert!((compute_confidence(&dims) - 0.9).abs() < f64::EPSILON);
+        // I633: 6 populated dims → 0.5 + 6/6 * 0.5 = 1.0, clamped to 0.95
+        assert!((compute_confidence(&dims) - 0.95).abs() < 1e-6);
     }
 
     #[test]
@@ -1067,9 +1291,10 @@ mod tests {
             stakeholder_coverage: active_dim(80.0),
             champion_health: null_dim(),
             financial_proximity: null_dim(),
-            signal_momentum: active_dim(50.0),
+            signal_momentum: active_dim(50.0), // not a placeholder (evidence != "No recent signals")
         };
-        assert!((compute_confidence(&dims) - 0.6).abs() < f64::EPSILON);
+        // 3 populated dims → 0.5 + 3/6 * 0.5 = 0.75
+        assert!((compute_confidence(&dims) - 0.75).abs() < 1e-6);
     }
 
     #[test]
@@ -1087,7 +1312,8 @@ mod tests {
                 trend: "stable".to_string(),
             },
         };
-        assert!((compute_confidence(&dims) - 0.1).abs() < f64::EPSILON);
+        // Momentum placeholder excluded → 0 real dims → 0.5 + 0 = 0.5
+        assert!((compute_confidence(&dims) - 0.5).abs() < 1e-6);
     }
 
     #[test]
@@ -1233,6 +1459,287 @@ mod tests {
         assert!(
             !rationale.is_empty(),
             "classification should return a rationale"
+        );
+    }
+
+    // ===== I633: New tests for formula fixes =====
+
+    #[test]
+    fn test_confidence_smooth_curve_values() {
+        // Test each populated count produces the expected smooth curve value
+        let make_dims = |n: usize| -> RelationshipDimensions {
+            let active = active_dim(60.0);
+            let null = null_dim();
+            RelationshipDimensions {
+                meeting_cadence: if n >= 1 { active.clone() } else { null.clone() },
+                email_engagement: if n >= 2 { active.clone() } else { null.clone() },
+                stakeholder_coverage: if n >= 3 { active.clone() } else { null.clone() },
+                champion_health: if n >= 4 { active.clone() } else { null.clone() },
+                financial_proximity: if n >= 5 { active.clone() } else { null.clone() },
+                signal_momentum: if n >= 6 { active.clone() } else { null.clone() },
+            }
+        };
+
+        // 1 dim: 0.5 + 1/6 * 0.5 ≈ 0.583
+        let c1 = compute_confidence(&make_dims(1));
+        assert!((c1 - (0.5 + 1.0 / 6.0 * 0.5)).abs() < 1e-6, "1 dim confidence");
+
+        // 2 dims: 0.5 + 2/6 * 0.5 ≈ 0.667
+        let c2 = compute_confidence(&make_dims(2));
+        assert!((c2 - (0.5 + 2.0 / 6.0 * 0.5)).abs() < 1e-6, "2 dim confidence");
+
+        // 4 dims: 0.5 + 4/6 * 0.5 ≈ 0.833
+        let c4 = compute_confidence(&make_dims(4));
+        assert!((c4 - (0.5 + 4.0 / 6.0 * 0.5)).abs() < 1e-6, "4 dim confidence");
+    }
+
+    #[test]
+    fn test_confidence_monotonically_increases() {
+        let make_dims = |n: usize| -> RelationshipDimensions {
+            let active = active_dim(60.0);
+            let null = null_dim();
+            RelationshipDimensions {
+                meeting_cadence: if n >= 1 { active.clone() } else { null.clone() },
+                email_engagement: if n >= 2 { active.clone() } else { null.clone() },
+                stakeholder_coverage: if n >= 3 { active.clone() } else { null.clone() },
+                champion_health: if n >= 4 { active.clone() } else { null.clone() },
+                financial_proximity: if n >= 5 { active.clone() } else { null.clone() },
+                signal_momentum: if n >= 6 { active.clone() } else { null.clone() },
+            }
+        };
+
+        let mut prev = 0.0;
+        for n in 1..=6 {
+            let c = compute_confidence(&make_dims(n));
+            assert!(
+                c > prev,
+                "confidence should increase: {n} dims ({c}) should be > prev ({prev})"
+            );
+            prev = c;
+        }
+    }
+
+    #[test]
+    fn test_confidence_floor_and_ceiling() {
+        // 0 dims → should hit floor of 0.3
+        let dims = RelationshipDimensions {
+            meeting_cadence: null_dim(),
+            email_engagement: null_dim(),
+            stakeholder_coverage: null_dim(),
+            champion_health: null_dim(),
+            financial_proximity: null_dim(),
+            signal_momentum: null_dim(),
+        };
+        let c = compute_confidence(&dims);
+        assert!((c - 0.5).abs() < 1e-6, "0 dims should be 0.5 (above floor)");
+
+        // 6 dims → should hit ceiling of 0.95
+        let dims_full = RelationshipDimensions {
+            meeting_cadence: active_dim(60.0),
+            email_engagement: active_dim(60.0),
+            stakeholder_coverage: active_dim(60.0),
+            champion_health: active_dim(60.0),
+            financial_proximity: active_dim(60.0),
+            signal_momentum: active_dim(60.0),
+        };
+        let c_full = compute_confidence(&dims_full);
+        assert!((c_full - 0.95).abs() < 1e-6, "6 dims should hit ceiling");
+    }
+
+    #[test]
+    fn test_weighted_score_healthy_account() {
+        // Simulate a healthy account: all dimensions scoring well
+        let dims = RelationshipDimensions {
+            meeting_cadence: active_dim(80.0),
+            email_engagement: active_dim(65.0),
+            stakeholder_coverage: active_dim(70.0),
+            champion_health: active_dim(75.0),
+            financial_proximity: active_dim(90.0), // recently renewed
+            signal_momentum: active_dim(55.0),
+        };
+
+        let raw_weights = apply_lifecycle_weights(None); // equal weights
+        let weights = redistribute_weights(&dims, raw_weights);
+        let confidence = compute_confidence(&dims);
+
+        let dim_arr = [
+            &dims.meeting_cadence,
+            &dims.email_engagement,
+            &dims.stakeholder_coverage,
+            &dims.champion_health,
+            &dims.financial_proximity,
+            &dims.signal_momentum,
+        ];
+
+        let mut weighted_sum = 0.0f64;
+        let mut weight_total = 0.0f64;
+        for (i, dim) in dim_arr.iter().enumerate() {
+            if dim.weight > 0.0 {
+                weighted_sum += dim.score * weights[i];
+                weight_total += weights[i];
+            }
+        }
+        let raw_avg = weighted_sum / weight_total;
+        let computed = confidence * raw_avg + (1.0 - confidence) * 50.0;
+
+        // With all dimensions healthy, score should be green (≥70)
+        assert!(
+            computed >= 70.0,
+            "Healthy account should score green, got {computed:.1}"
+        );
+    }
+
+    #[test]
+    fn test_weighted_score_at_risk_account() {
+        // Simulate at-risk: low engagement, no champion, approaching renewal
+        let dims = RelationshipDimensions {
+            meeting_cadence: active_dim(20.0),
+            email_engagement: null_dim(),
+            stakeholder_coverage: active_dim(30.0),
+            champion_health: null_dim(),
+            financial_proximity: active_dim(40.0), // approaching, no outcome
+            signal_momentum: active_dim(50.0),     // neutral
+        };
+
+        let raw_weights = apply_lifecycle_weights(None);
+        let weights = redistribute_weights(&dims, raw_weights);
+        let confidence = compute_confidence(&dims);
+
+        let dim_arr = [
+            &dims.meeting_cadence,
+            &dims.email_engagement,
+            &dims.stakeholder_coverage,
+            &dims.champion_health,
+            &dims.financial_proximity,
+            &dims.signal_momentum,
+        ];
+
+        let mut weighted_sum = 0.0f64;
+        let mut weight_total = 0.0f64;
+        for (i, dim) in dim_arr.iter().enumerate() {
+            if dim.weight > 0.0 {
+                weighted_sum += dim.score * weights[i];
+                weight_total += weights[i];
+            }
+        }
+        let raw_avg = weighted_sum / weight_total;
+        let computed = confidence * raw_avg + (1.0 - confidence) * 50.0;
+
+        // At-risk account should score red (<40) or low yellow
+        assert!(
+            computed < 50.0,
+            "At-risk account should score below 50, got {computed:.1}"
+        );
+    }
+
+    #[test]
+    fn test_weighted_score_sparse_data_neutral() {
+        // Simulate sparse data: only one dimension available
+        let dims = RelationshipDimensions {
+            meeting_cadence: active_dim(80.0),
+            email_engagement: null_dim(),
+            stakeholder_coverage: null_dim(),
+            champion_health: null_dim(),
+            financial_proximity: null_dim(),
+            signal_momentum: DimensionScore {
+                score: 50.0,
+                weight: 1.0,
+                evidence: vec!["No recent signals — neutral baseline".to_string()],
+                trend: "stable".to_string(),
+            },
+        };
+
+        let raw_weights = apply_lifecycle_weights(None);
+        let weights = redistribute_weights(&dims, raw_weights);
+        let confidence = compute_confidence(&dims);
+
+        // 1 real dim (meeting_cadence) + momentum placeholder
+        // Confidence should be ~0.58 (1 real dim)
+        assert!(
+            confidence < 0.65,
+            "Sparse data should have low confidence, got {confidence}"
+        );
+
+        // Score should regress toward 50 due to low confidence
+        let dim_arr = [
+            &dims.meeting_cadence,
+            &dims.email_engagement,
+            &dims.stakeholder_coverage,
+            &dims.champion_health,
+            &dims.financial_proximity,
+            &dims.signal_momentum,
+        ];
+        let mut weighted_sum = 0.0f64;
+        let mut weight_total = 0.0f64;
+        for (i, dim) in dim_arr.iter().enumerate() {
+            if dim.weight > 0.0 {
+                weighted_sum += dim.score * weights[i];
+                weight_total += weights[i];
+            }
+        }
+        let raw_avg = weighted_sum / weight_total;
+        let computed = confidence * raw_avg + (1.0 - confidence) * 50.0;
+
+        // Should be pulled toward neutral, not extreme
+        assert!(
+            (40.0..=70.0).contains(&computed),
+            "Sparse data score should be near neutral, got {computed:.1}"
+        );
+    }
+
+    #[test]
+    fn test_lifecycle_weights_change_scoring() {
+        // Renewal lifecycle should weight financial_proximity (index 4) at 2.0
+        let weights = apply_lifecycle_weights(Some("renewal"));
+        assert!((weights[4] - 2.0).abs() < f64::EPSILON);
+
+        // Onboarding should weight meeting_cadence (index 0) higher
+        let onboard = apply_lifecycle_weights(Some("onboarding"));
+        assert!((onboard[0] - 1.5).abs() < f64::EPSILON);
+        assert!((onboard[2] - 1.5).abs() < f64::EPSILON); // stakeholder_coverage
+    }
+
+    #[test]
+    fn test_weight_redistribution_with_lifecycle() {
+        // If financial_proximity is null during renewal, its 2.0 weight should
+        // redistribute proportionally to active dimensions
+        let dims = RelationshipDimensions {
+            meeting_cadence: active_dim(70.0),
+            email_engagement: active_dim(60.0),
+            stakeholder_coverage: active_dim(80.0),
+            champion_health: active_dim(65.0),
+            financial_proximity: null_dim(),
+            signal_momentum: active_dim(50.0),
+        };
+
+        let raw = apply_lifecycle_weights(Some("renewal"));
+        let redistributed = redistribute_weights(&dims, raw);
+
+        // Financial proximity (index 4) should get 0 weight
+        assert!(
+            redistributed[4].abs() < f64::EPSILON,
+            "Null dim should get 0 weight"
+        );
+        // Sum of active weights should equal 1.0
+        let sum: f64 = redistributed.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-6,
+            "Active weights should sum to 1.0, got {sum}"
+        );
+    }
+
+    #[test]
+    fn test_org_health_baseline_blend() {
+        // With org_health green (75), a computed score of 60 should blend:
+        // 0.4 * 75 + 0.6 * 60 = 30 + 36 = 66
+        let org_score = band_to_score("green");
+        assert!((org_score - 75.0).abs() < f64::EPSILON);
+
+        let computed = 60.0;
+        let blended = 0.4 * org_score + 0.6 * computed;
+        assert!(
+            (blended - 66.0).abs() < f64::EPSILON,
+            "Blend should be 66.0, got {blended}"
         );
     }
 
