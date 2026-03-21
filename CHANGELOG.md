@@ -5,6 +5,18 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [Unreleased]
+
+### Fixed
+
+- **Health scoring recalibrated (I633)** — five formula bugs fixed that caused healthy accounts to score at-risk. Financial proximity formula was inverted (just-renewed accounts scored 5/100), confidence regression was too aggressive (40% pull to neutral at 3-4 dimensions), stakeholder coverage required all 3 archetype roles (denominator always 3), champion inference capped at 55 even with 70%+ attendance, and real-time rescores dropped the org baseline blend. All formulas corrected; bulk recompute command added for migration.
+
+### Added
+
+- **Health score trend tracking (I633)** — `health_score_history` table records each recompute. Real trends computed from last 3-5 data points, replacing hardcoded "stable". Migration 072.
+- **Bulk health recompute command** — `bulk_recompute_health` Tauri command rescores all accounts after formula fixes.
+
+
 ## [1.0.1] — 2026-03-21
 
 ### Added
