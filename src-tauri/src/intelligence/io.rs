@@ -1534,18 +1534,100 @@ pub fn preserve_user_edits(new_intel: &mut IntelligenceJson, existing: &Intellig
         Err(_) => return,
     };
 
+    let mut updated_edits = Vec::new();
+
     for edit in &existing.user_edits {
-        // Read the user-edited value from existing
+        // I633: Array-indexed paths like "stakeholderInsights[0].role" break when
+        // enrichment reorders the array. Match by identity ("name") instead of index.
+        if let Some(resolved) =
+            resolve_array_path_by_identity(&existing_val, &new_val, &edit.field_path)
+        {
+            // Read the user-edited value from existing at the original path
+            if let Some(val) = get_json_path(&existing_val, &edit.field_path) {
+                if set_json_path(&mut new_val, &resolved, val.clone()).is_ok() {
+                    // Update the stored path to the new index
+                    updated_edits.push(crate::intelligence::io::UserEdit {
+                        field_path: resolved,
+                        edited_at: edit.edited_at.clone(),
+                    });
+                    continue;
+                }
+            }
+        }
+
+        // Fallback: direct path restoration (non-array or identity match failed)
         if let Some(val) = get_json_path(&existing_val, &edit.field_path) {
             let _ = set_json_path(&mut new_val, &edit.field_path, val.clone());
         }
+        updated_edits.push(edit.clone());
     }
 
-    // Re-parse and carry forward user_edits
+    // Re-parse and carry forward user_edits (with updated paths)
     if let Ok(mut restored) = serde_json::from_value::<IntelligenceJson>(new_val) {
-        restored.user_edits = existing.user_edits.clone();
+        restored.user_edits = updated_edits;
         *new_intel = restored;
     }
+}
+
+/// For array-indexed paths, resolve the correct index in the new array by matching
+/// the element's identity field ("name" for stakeholders, "title" for risks/wins).
+///
+/// Example: "stakeholderInsights[0].role" where existing[0].name = "Alice"
+/// → finds Alice in new array at index 2 → returns "stakeholderInsights[2].role"
+fn resolve_array_path_by_identity(
+    existing: &serde_json::Value,
+    new: &serde_json::Value,
+    path: &str,
+) -> Option<String> {
+    let segments = parse_path_segments(path).ok()?;
+
+    // Find the first Index segment
+    let (seg_idx, arr_name, old_index) = segments.iter().enumerate().find_map(|(i, seg)| {
+        if let PathSegment::Index(name, idx) = seg {
+            Some((i, name.clone(), *idx))
+        } else {
+            None
+        }
+    })?;
+
+    // Identity key lookup: "name" for stakeholderInsights, "title" for risks/wins
+    let identity_key = match arr_name.as_str() {
+        "stakeholderInsights" => "name",
+        "risks" => "title",
+        "recentWins" => "title",
+        _ => return None, // Unknown array type — fall back to index
+    };
+
+    // Get the identity value from the old array element
+    let old_arr = existing.get(&arr_name)?.as_array()?;
+    let old_element = old_arr.get(old_index)?;
+    let identity_val = old_element.get(identity_key)?;
+
+    // Find the matching element in the new array
+    let new_arr = new.get(&arr_name)?.as_array()?;
+    let new_index = new_arr
+        .iter()
+        .position(|elem| elem.get(identity_key) == Some(identity_val))?;
+
+    if new_index == old_index {
+        return None; // Same index — no remapping needed, use direct path
+    }
+
+    // Rebuild the path with the new index
+    let mut new_segments = Vec::new();
+    for (i, seg) in segments.iter().enumerate() {
+        if i == seg_idx {
+            new_segments.push(format!("{}[{}]", arr_name, new_index));
+        } else {
+            match seg {
+                PathSegment::Field(name) => new_segments.push(name.clone()),
+                PathSegment::Index(name, idx) => {
+                    new_segments.push(format!("{}[{}]", name, idx))
+                }
+            }
+        }
+    }
+    Some(new_segments.join("."))
 }
 
 /// Read a value at a JSON path (for preserve_user_edits).
@@ -3428,5 +3510,93 @@ mod tests {
         assert_eq!(files[0].content_type, "dashboard"); // priority 10
         assert_eq!(files[1].content_type, "notes"); // priority 7
         assert_eq!(files[2].content_type, "general"); // priority 5
+    }
+
+    #[test]
+    fn test_resolve_array_path_identity_reorder() {
+        // Existing: [Alice, Bob]  New: [Bob, Alice] — path should remap
+        let existing = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Alice", "role": "champion"},
+                {"name": "Bob", "role": "technical"}
+            ]
+        });
+        let new = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Bob", "role": "from_ai"},
+                {"name": "Alice", "role": "from_ai"}
+            ]
+        });
+
+        let result = resolve_array_path_by_identity(
+            &existing,
+            &new,
+            "stakeholderInsights[0].role",
+        );
+        // Alice was at [0] in existing, now at [1] in new
+        assert_eq!(result, Some("stakeholderInsights[1].role".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_array_path_identity_same_index() {
+        // Same order → returns None (no remap needed)
+        let existing = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Alice", "role": "champion"},
+                {"name": "Bob", "role": "technical"}
+            ]
+        });
+        let new = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Alice", "role": "from_ai"},
+                {"name": "Bob", "role": "from_ai"}
+            ]
+        });
+
+        let result = resolve_array_path_by_identity(
+            &existing,
+            &new,
+            "stakeholderInsights[0].role",
+        );
+        // Same index → None (fallback to direct path)
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_array_path_identity_missing_element() {
+        // Element removed in new array → returns None
+        let existing = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Alice", "role": "champion"},
+                {"name": "Bob", "role": "technical"}
+            ]
+        });
+        let new = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Charlie", "role": "from_ai"}
+            ]
+        });
+
+        let result = resolve_array_path_by_identity(
+            &existing,
+            &new,
+            "stakeholderInsights[0].role",
+        );
+        // Alice not in new → None (fallback)
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_array_path_identity_non_array_path() {
+        // Non-array path → returns None
+        let existing = serde_json::json!({"executiveAssessment": "text"});
+        let new = serde_json::json!({"executiveAssessment": "new text"});
+
+        let result = resolve_array_path_by_identity(
+            &existing,
+            &new,
+            "executiveAssessment",
+        );
+        assert_eq!(result, None);
     }
 }
