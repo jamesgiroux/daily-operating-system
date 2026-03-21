@@ -3,6 +3,7 @@
 //! Seeds a curated dataset into the live database with `is_demo = 1` markers
 //! so it can be cleanly removed when the user connects real data.
 //! Unlike devtools, this runs in release builds and writes to the real workspace.
+//! I633: health_score_history seeds + email_signals populated via enrichment pipeline.
 
 use std::path::Path;
 
