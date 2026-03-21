@@ -827,5 +827,128 @@ pub async fn update_action(
 }
 
 // =============================================================================
+// Meeting Intelligence (I635 + I637)
+// =============================================================================
+
+/// Get meeting-to-meeting continuity thread: what changed between this meeting
+/// and the previous one with the same entity (I637).
+#[tauri::command]
+pub async fn get_meeting_continuity_thread(
+    meeting_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<crate::db::types::ContinuityThread>, String> {
+    state
+        .db_read(move |db| {
+            let meeting = match db
+                .get_meeting_by_id(&meeting_id)
+                .map_err(|e| e.to_string())?
+            {
+                Some(m) => m,
+                None => return Ok(None),
+            };
+            let entities = db
+                .get_meeting_entities(&meeting_id)
+                .map_err(|e| e.to_string())?;
+            let entity = match entities.first() {
+                Some(e) => e,
+                None => return Ok(None),
+            };
+            let entity_type_str = match entity.entity_type {
+                crate::entity::EntityType::Account => "account",
+                crate::entity::EntityType::Project => "project",
+                crate::entity::EntityType::Person => "person",
+                crate::entity::EntityType::Other => return Ok(None),
+            };
+            let prev = db
+                .get_previous_meeting_for_entity(
+                    &entity.id,
+                    entity_type_str,
+                    &meeting.start_time,
+                )
+                .map_err(|e| e.to_string())?;
+            match prev {
+                None => Ok(Some(crate::db::types::ContinuityThread {
+                    previous_meeting_date: None,
+                    previous_meeting_title: None,
+                    entity_name: Some(entity.name.clone()),
+                    actions_completed: vec![],
+                    actions_open: vec![],
+                    health_delta: None,
+                    new_attendees: vec![],
+                    is_first_meeting: true,
+                })),
+                Some(prev_meeting) => {
+                    let mut thread = db
+                        .get_continuity_thread(
+                            &entity.id,
+                            &meeting_id,
+                            &prev_meeting.id,
+                            &prev_meeting.start_time,
+                            &meeting.start_time,
+                        )
+                        .map_err(|e| e.to_string())?;
+                    thread.previous_meeting_title = Some(prev_meeting.title);
+                    thread.entity_name = Some(entity.name.clone());
+                    Ok(Some(thread))
+                }
+            }
+        })
+        .await
+}
+
+/// I635: Get prediction scorecard — compare pre-meeting prep predictions against
+/// transcript outcomes. Returns `None` when no frozen prep or no captures.
+#[tauri::command]
+pub async fn get_prediction_scorecard(
+    meeting_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<crate::intelligence::predictions::PredictionScorecard>, String> {
+    state
+        .db_read(move |db| {
+            let meeting = match db
+                .get_meeting_by_id(&meeting_id)
+                .map_err(|e| e.to_string())?
+            {
+                Some(m) => m,
+                None => return Ok(None),
+            };
+            let frozen_json = match meeting.prep_frozen_json {
+                Some(ref json) if !json.is_empty() => json,
+                _ => return Ok(None),
+            };
+            let captures = db
+                .get_enriched_captures(&meeting_id)
+                .map_err(|e| e.to_string())?;
+            if captures.is_empty() {
+                return Ok(None);
+            }
+            let prep_risks =
+                crate::intelligence::predictions::extract_prep_risks(frozen_json);
+            let prep_wins =
+                crate::intelligence::predictions::extract_prep_wins(frozen_json);
+            if prep_risks.is_empty() && prep_wins.is_empty() {
+                return Ok(None);
+            }
+            let (outcome_risks, outcome_wins) =
+                crate::intelligence::predictions::extract_outcome_items(&captures);
+            let scorecard = crate::intelligence::predictions::compute_scorecard(
+                &prep_risks,
+                &prep_wins,
+                &outcome_risks,
+                &outcome_wins,
+            );
+            crate::intelligence::predictions::emit_prediction_feedback(
+                db, &scorecard, &meeting_id,
+            );
+            if scorecard.has_data {
+                Ok(Some(scorecard))
+            } else {
+                Ok(None)
+            }
+        })
+        .await
+}
+
+// =============================================================================
 // Processing History (I6)
 // =============================================================================
