@@ -22,7 +22,7 @@ export default function DataPrivacySection() {
   useEffect(() => {
     invoke<DataSummary>("get_data_summary")
       .then(setSummary)
-      .catch((e) => console.error("Failed to load data summary:", e));
+      .catch((e) => console.error("Failed to load data summary:", e)); // Expected: background data fetch on mount
   }, []);
 
   // ── Export ──────────────────────────────────────────────────────────────

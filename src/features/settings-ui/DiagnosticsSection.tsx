@@ -9,6 +9,7 @@ import {
   Building2,
   FolderKanban,
   Layers,
+  HardDrive,
 } from "lucide-react";
 import type { EntityMode, FeatureFlags } from "@/types";
 import { styles } from "@/components/settings/styles";
@@ -524,6 +525,159 @@ function MeetingBackfillCard() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// DatabaseStorageCard (I614)
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface DbGrowthReport {
+  fileSizeBytes: number;
+  fileSizeDisplay: string;
+  tableCounts: { tableName: string; rowCount: number }[];
+  reportedAt: string;
+}
+
+const TABLE_LABELS: Record<string, string> = {
+  signal_events: "Signals",
+  email_signals: "Email signals",
+  emails: "Emails",
+  entity_assessment: "Assessments",
+  captured_commitments: "Commitments",
+  content_embeddings: "Embeddings",
+  person_relationships: "Relationships",
+  meetings: "Meetings",
+};
+
+function DatabaseStorageCard() {
+  const [report, setReport] = useState<DbGrowthReport | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    invoke<DbGrowthReport>("get_db_growth_report")
+      .then(setReport)
+      .catch((err) => console.warn("get_db_growth_report failed:", err));
+  }, []);
+
+  if (!report) return null;
+
+  const isWarning = report.fileSizeBytes >= 300_000_000;
+  const isDanger = report.fileSizeBytes >= 500_000_000;
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <HardDrive
+          size={14}
+          style={{
+            color: isDanger
+              ? "var(--color-terracotta)"
+              : isWarning
+                ? "var(--color-turmeric)"
+                : "var(--color-text-tertiary)",
+          }}
+        />
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            fontWeight: 500,
+            textTransform: "uppercase" as const,
+            letterSpacing: "0.06em",
+            color: "var(--color-text-tertiary)",
+          }}
+        >
+          Database Storage
+        </span>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 13,
+            fontWeight: 600,
+            color: isDanger
+              ? "var(--color-terracotta)"
+              : isWarning
+                ? "var(--color-turmeric)"
+                : "var(--color-text-primary)",
+            marginLeft: "auto",
+          }}
+        >
+          {report.fileSizeDisplay}
+        </span>
+      </div>
+
+      {isDanger && (
+        <p
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 12,
+            color: "var(--color-terracotta)",
+            marginBottom: 8,
+          }}
+        >
+          Database exceeds 500 MB. Old data is automatically purged daily.
+        </p>
+      )}
+
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--color-text-tertiary)",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            width: 12,
+            height: 12,
+            transform: expanded ? "rotate(180deg)" : "none",
+            transition: "transform 0.2s ease",
+          }}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+        Table details
+      </button>
+
+      {expanded && (
+        <div style={{ marginTop: 8 }}>
+          {report.tableCounts.map((tc) => (
+            <div
+              key={tc.tableName}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                padding: "3px 0",
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+              }}
+            >
+              <span style={{ color: "var(--color-text-secondary)" }}>
+                {TABLE_LABELS[tc.tableName] ?? tc.tableName}
+              </span>
+              <span style={{ color: "var(--color-text-tertiary)" }}>
+                {tc.rowCount.toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ArchivedAccountsSection
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -548,6 +702,7 @@ function ArchivedAccountsSection() {
       await loadArchivedAccounts();
     } catch (e) {
       console.error("Failed to restore account:", e);
+      toast.error("Failed to restore account");
     } finally {
       setRestoringId(null);
     }
@@ -716,6 +871,8 @@ export default function DiagnosticsSection() {
       <ManualRunSection running={running} onRun={handleRunWorkflow} />
       <hr style={styles.thinRule} />
       <MeetingBackfillCard />
+      <hr style={styles.thinRule} />
+      <DatabaseStorageCard />
       <hr style={styles.thinRule} />
       <ArchivedAccountsSection />
     </div>

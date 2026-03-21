@@ -19,7 +19,7 @@ export function EntityMode({ onNext }: EntityModeProps) {
     invoke<[string, string, string][]>("get_available_presets")
       .then(setPresets)
       .catch((err) => {
-        console.error("get_available_presets failed:", err);
+        console.error("get_available_presets failed:", err); // Expected: background init on mount
         setPresets([]);
       });
   }, []);

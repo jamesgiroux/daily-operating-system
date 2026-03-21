@@ -5,15 +5,15 @@ import { toast } from "sonner";
 /**
  * Shared hook for updating intelligence fields via Tauri invoke (I352).
  *
- * Text edits show locally via EditableText. Dismissals (empty string) trigger
- * `onDismiss` callback to refresh the parent data so removed items disappear.
+ * Text edits show locally via EditableText. Successful saves trigger a parent
+ * refresh callback so authoritative detail state catches up after async writes.
  *
  * Returns `saveStatus` for wiring into the folio bar status text.
  */
 export function useIntelligenceFieldUpdate(
   entityType: string,
   entityId: string | undefined,
-  onDismiss?: () => void,
+  onSaved?: () => void,
 ) {
   const [updatingField, setUpdatingField] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -43,10 +43,8 @@ export function useIntelligenceFieldUpdate(
           setSaveStatus("idle");
           savedTimerRef.current = null;
         }, 2000);
-        // Dismiss (empty value) = item removed from intelligence JSON.
-        // Trigger refresh so it disappears from the UI.
-        if (!value.trim() && onDismiss) {
-          onDismiss();
+        if (onSaved) {
+          void Promise.resolve(onSaved());
         }
       } catch (e) {
         console.error(`Failed to update ${fieldPath}:`, e);
@@ -56,7 +54,7 @@ export function useIntelligenceFieldUpdate(
         setUpdatingField(null);
       }
     },
-    [entityType, entityId, onDismiss],
+    [entityType, entityId, onSaved],
   );
 
   return { updateField, updatingField, saveStatus, setSaveStatus };

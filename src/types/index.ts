@@ -234,6 +234,8 @@ export interface Email {
   subject: string;
   snippet?: string;
   priority: EmailPriority;
+  /** Whether this email is unread in Gmail */
+  isUnread?: boolean;
   avatarUrl?: string;
   /** AI-generated one-line summary of the email */
   summary?: string;
@@ -261,6 +263,27 @@ export interface Email {
   relevanceScore?: number;
   /** Human-readable score reason (I395) */
   scoreReason?: string;
+  /** When this email was pinned for triage sort boost (I579) */
+  pinnedAt?: string;
+  /** Actions created from commitments extracted from this email (I580) */
+  trackedCommitments?: TrackedEmailCommitment[];
+  /** Meeting this email's sender is attending (upcoming only) (I582) */
+  meetingLinked?: LinkedMeeting;
+}
+
+/** An upcoming meeting linked to an email via sender-attendee match (I582). */
+export interface LinkedMeeting {
+  meetingId: string;
+  title: string;
+  startTime: string;
+}
+
+export interface TrackedEmailCommitment {
+  actionId: string;
+  commitmentText: string;
+  actionTitle: string;
+  dueDate?: string;
+  owner?: string;
 }
 
 export type InboxFileType =
@@ -296,6 +319,24 @@ export interface ReplyNeeded {
   from: string;
   date?: string;
   waitDuration?: string;
+}
+
+/** I577: Reply debt item — an email where the ball is in the user's court. */
+export interface ReplyDebtItem {
+  emailId: string;
+  senderName: string;
+  senderEmail: string;
+  subject: string;
+  /** AI-generated contextual summary */
+  summary?: string;
+  entityId?: string;
+  entityName?: string;
+  entityType?: string;
+  ageHours: number;
+  /** "today", "1-2 days", "3-5 days", "overdue" */
+  ageBucket: string;
+  urgency?: string;
+  sentiment?: string;
 }
 
 export interface DashboardData {
@@ -566,6 +607,22 @@ export interface EmailBriefingData {
   emailNarrative?: string;
   /** Threads awaiting user reply — "ball in your court" (I355) */
   repliesNeeded?: ReplyNeeded[];
+  /** I577: Reply debt — entity-linked emails awaiting user reply. */
+  replyDebt?: ReplyDebtItem[];
+  /** Accounts whose email cadence has dropped significantly (I581) */
+  goneQuiet?: GoneQuietAccount[];
+}
+
+/** An account whose email cadence has gone quiet (I581). */
+export interface GoneQuietAccount {
+  entityId: string;
+  entityName: string;
+  entityType: string;
+  normalIntervalDays: number;
+  daysSinceLastEmail: number;
+  lastEmailDate?: string;
+  lastEmailSender?: string;
+  historicalEmailCount: number;
 }
 
 // =============================================================================
@@ -1043,10 +1100,25 @@ export interface FullMeetingPrep {
   stakeholderInsights?: StakeholderInsight[];
   /** Recent email-derived signals linked to meeting entity context (I215) */
   recentEmailSignals?: EmailSignal[];
+  /** Structured digest of linked recent correspondence (I582 / I317). */
+  emailDigest?: MeetingEmailDigest;
   /** I527: Deterministic consistency status from intelligence checks. */
   consistencyStatus?: ConsistencyStatus;
   /** I527: Deterministic consistency findings for trust transparency. */
   consistencyFindings?: ConsistencyFinding[];
+}
+
+export interface MeetingEmailDigest {
+  threadSummary: string;
+  senderCount: number;
+  threads: MeetingEmailDigestThread[];
+}
+
+export interface MeetingEmailDigestThread {
+  from: string;
+  snippet: string;
+  date: string;
+  source: string;
 }
 
 /** Account snapshot item for intelligence-enriched Quick Context (I186) */

@@ -3,18 +3,16 @@
 //! Piggybacks on the hygiene scanner's timing — runs after each hygiene scan
 //! completes, and also before `prepare_today()` runs.
 
+use crate::db::ActionDb;
 use crate::state::AppState;
 
 use super::engine::{self, DetectorContext};
 
 /// Run a proactive scan using the default engine.
 ///
-/// Called from hygiene loop and pre-briefing hook. Acquires DB lock internally.
+/// Called from hygiene loop and pre-briefing hook.
 pub fn run_proactive_scan(state: &AppState) -> Result<usize, String> {
-    let db_guard = state.db.lock().map_err(|e| format!("DB lock: {}", e))?;
-    let db = db_guard
-        .as_ref()
-        .ok_or_else(|| "Database not initialized".to_string())?;
+    let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
     let (profile, user_domains) = {
         let config_guard = state.config.read().ok();
@@ -36,5 +34,5 @@ pub fn run_proactive_scan(state: &AppState) -> Result<usize, String> {
     };
 
     let engine = engine::default_engine();
-    engine.run_scan(db, &ctx)
+    engine.run_scan(&db, &ctx)
 }

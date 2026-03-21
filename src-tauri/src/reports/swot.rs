@@ -101,18 +101,28 @@ fn build_swot_section_prompt(context_prompt: &str, section: &str) -> String {
             ));
             prompt.push_str("\n\nRules:\n");
             prompt.push_str("- Return 2-5 items. No padding.\n");
-            prompt.push_str("- Every item must cite a real meeting, signal, or event when possible.\n");
+            prompt.push_str(
+                "- Every item must cite a real meeting, signal, or event when possible.\n",
+            );
             prompt.push_str("- Be specific. No generic consulting filler.\n");
             match section {
                 "strengths" => prompt.push_str("- Focus on current internal advantages.\n"),
-                "weaknesses" => prompt.push_str("- Focus on internal gaps, fragility, or coverage issues.\n"),
-                "opportunities" => prompt.push_str("- Focus on future upside and growth openings.\n"),
-                "threats" => prompt.push_str("- Focus on future downside, competition, churn, or risk.\n"),
+                "weaknesses" => {
+                    prompt.push_str("- Focus on internal gaps, fragility, or coverage issues.\n")
+                }
+                "opportunities" => {
+                    prompt.push_str("- Focus on future upside and growth openings.\n")
+                }
+                "threats" => {
+                    prompt.push_str("- Focus on future downside, competition, churn, or risk.\n")
+                }
                 _ => {}
             }
         }
         "summary" => {
-            prompt.push_str(r#"{ "summary": "One paragraph executive summary, max 50 words, or null" }"#);
+            prompt.push_str(
+                r#"{ "summary": "One paragraph executive summary, max 50 words, or null" }"#,
+            );
             prompt.push_str("\n\nRules:\n");
             prompt.push_str("- Summarize the strategic posture in one short paragraph.\n");
             prompt.push_str("- Mention the main leverage point and the main threat.\n");
@@ -121,7 +131,9 @@ fn build_swot_section_prompt(context_prompt: &str, section: &str) -> String {
     }
 
     prompt.push_str("- If the data is sparse, return fewer items rather than inventing detail.\n");
-    prompt.push_str("- If an Entity Intelligence Assessment is present, treat it as the primary source.\n");
+    prompt.push_str(
+        "- If an Entity Intelligence Assessment is present, treat it as the primary source.\n",
+    );
     prompt
 }
 
@@ -218,7 +230,13 @@ pub fn run_parallel_swot_generation(
     input: &SwotGatherInput,
     app_handle: Option<&AppHandle>,
 ) -> Result<SwotContent, String> {
-    let sections = ["strengths", "weaknesses", "opportunities", "threats", "summary"];
+    let sections = [
+        "strengths",
+        "weaknesses",
+        "opportunities",
+        "threats",
+        "summary",
+    ];
     let total = sections.len() as u32;
     let (tx, rx) = std::sync::mpsc::channel();
 
@@ -237,7 +255,9 @@ pub fn run_parallel_swot_generation(
                 .map_err(|e| format!("Claude Code error for {}: {}", section_name, e))
                 .and_then(|output| {
                     let json_str = crate::risk_briefing::extract_json_object(&output.stdout)
-                        .ok_or_else(|| format!("No valid JSON object found in {} response", section_name))?;
+                        .ok_or_else(|| {
+                            format!("No valid JSON object found in {} response", section_name)
+                        })?;
                     let value = serde_json::from_str::<serde_json::Value>(&json_str)
                         .map_err(|e| format!("Failed to parse {} JSON: {}", section_name, e))?;
                     Ok((section_name, value, output.stdout))
@@ -295,7 +315,10 @@ pub fn run_parallel_swot_generation(
                         }
                     }
                     "summary" => {
-                        content.summary = value.get("summary").and_then(|v| v.as_str()).map(|v| v.to_string());
+                        content.summary = value
+                            .get("summary")
+                            .and_then(|v| v.as_str())
+                            .map(|v| v.to_string());
                     }
                     _ => {}
                 }

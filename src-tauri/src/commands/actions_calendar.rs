@@ -92,6 +92,94 @@ pub async fn reject_proposed_action(
         .await
 }
 
+// =============================================================================
+// I579: Per-email triage actions
+// =============================================================================
+
+/// Archive an email — sets resolved_at locally + archives in Gmail. Returns email ID for undo.
+/// Emits `emails-updated` so all pages (dashboard, emails) refresh.
+#[tauri::command]
+pub async fn archive_email(
+    email_id: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    let result = crate::services::emails::archive_email(&state, &email_id).await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(result)
+}
+
+/// Unarchive an email — clears resolved_at + moves back to Gmail inbox (undo for archive).
+/// Emits `emails-updated` so all pages refresh.
+#[tauri::command]
+pub async fn unarchive_email(
+    email_id: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    crate::services::emails::unarchive_email(&state, &email_id).await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(())
+}
+
+/// Toggle pin on an email. Returns the new pinned state (true = pinned).
+#[tauri::command]
+pub async fn pin_email(
+    email_id: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<bool, String> {
+    let engine = state.signals.engine.clone();
+    let result = state
+        .db_write(move |db| crate::services::emails::pin_email(db, &engine, &email_id))
+        .await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(result)
+}
+
+// =============================================================================
+// I580: Commitment -> Action promotion
+// =============================================================================
+
+/// Promote an email commitment to a tracked action.
+/// Returns the new action ID.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn promote_commitment_to_action(
+    email_id: String,
+    commitment_text: String,
+    action_title: Option<String>,
+    entity_id: Option<String>,
+    entity_type: Option<String>,
+    owner: Option<String>,
+    due_date: Option<String>,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    let engine = state.signals.engine.clone();
+    let action_id = state
+        .db_write(move |db| {
+            crate::services::emails::promote_commitment_to_action(
+                db,
+                &engine,
+                &email_id,
+                &commitment_text,
+                action_title.as_deref(),
+                entity_id.as_deref(),
+                entity_type.as_deref(),
+                owner.as_deref(),
+                due_date.as_deref(),
+            )
+        })
+        .await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(action_id)
+}
+
+// =============================================================================
+// Email dismissals
+// =============================================================================
+
 /// Dismiss an email-extracted item (commitment, question, reply_needed) from
 /// The Correspondent. Records the dismissal in SQLite for relevance learning.
 #[tauri::command]
@@ -595,6 +683,18 @@ pub async fn attach_meeting_transcript(
         app_handle,
     )
     .await
+}
+
+/// Reprocess an already-attached transcript: clear all extraction data then
+/// re-run the full 3-phase pipeline as if the transcript were freshly attached.
+#[tauri::command]
+pub async fn reprocess_meeting_transcript(
+    meeting_id: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::types::TranscriptResult, String> {
+    crate::services::meetings::reprocess_meeting_transcript(&meeting_id, state.inner(), app_handle)
+        .await
 }
 
 /// Get meeting outcomes (from transcript processing or manual capture).

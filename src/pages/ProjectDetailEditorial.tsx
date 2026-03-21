@@ -228,7 +228,7 @@ export default function ProjectDetailEditorial() {
         try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); }
       })
       .catch((err) => {
-        console.error("get_entity_metadata (project) failed:", err);
+        console.error("get_entity_metadata (project) failed:", err); // Expected: background data fetch on mount
         setMetadataValues({});
       });
   }, [projectId]);
@@ -240,7 +240,7 @@ export default function ProjectDetailEditorial() {
     invoke<{ id: string; name: string }[]>("get_project_ancestors", { projectId })
       .then(setAncestors)
       .catch((err) => {
-        console.error("get_project_ancestors failed:", err);
+        console.error("get_project_ancestors failed:", err); // Expected: background data fetch on mount
         setAncestors([]);
       });
   }, [projectId]);

@@ -199,16 +199,12 @@ pub async fn enrich_inbox_file(
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
-        let entity_tracker_path = state
-            .db
-            .lock()
+        let entity_tracker_path = crate::db::ActionDb::open()
             .ok()
-            .and_then(|g| {
-                g.as_ref().and_then(|db| {
-                    entity_id
-                        .as_deref()
-                        .and_then(|eid| db.get_entity(eid).ok().flatten())
-                })
+            .and_then(|db| {
+                entity_id
+                    .as_deref()
+                    .and_then(|eid| db.get_entity(eid).ok().flatten())
             })
             .and_then(|e| e.tracker_path);
         crate::processor::enrich::enrich_file(
@@ -470,6 +466,7 @@ pub async fn update_email_entity(
     email_id: String,
     entity_id: Option<String>,
     entity_type: Option<String>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     state
         .db_write(move |db| {
@@ -480,7 +477,9 @@ pub async fn update_email_entity(
                 entity_type.as_deref(),
             )
         })
-        .await
+        .await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(())
 }
 
 /// Dismiss a single email signal by ID. Sets `deactivated_at` to now.
@@ -492,6 +491,36 @@ pub async fn dismiss_email_signal(
 ) -> Result<(), String> {
     state
         .db_write(move |db| crate::services::emails::dismiss_email_signal(db, signal_id))
+        .await
+}
+
+/// Mark an email as replied to (I577 reply debt).
+/// Sets `user_is_last_sender = 1` and emits a `reply_debt_cleared` signal.
+#[tauri::command]
+pub async fn mark_reply_sent(
+    state: State<'_, Arc<AppState>>,
+    email_id: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| crate::services::emails::mark_reply_sent(db, &email_id))
+        .await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(())
+}
+
+/// Dismiss a gone-quiet cadence alert for an account (I581).
+/// Emits a signal via propagation that feeds the engagement dimension.
+#[tauri::command]
+pub async fn dismiss_gone_quiet(
+    state: State<'_, Arc<AppState>>,
+    entity_id: String,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| {
+            let engine = crate::signals::propagation::PropagationEngine::new();
+            crate::services::emails::dismiss_gone_quiet(db, &engine, &entity_id)
+        })
         .await
 }
 
@@ -665,7 +694,11 @@ pub fn dismiss_icloud_warning(state: State<'_, Arc<AppState>>) -> Result<(), Str
 /// Get whether the app is currently locked.
 #[tauri::command]
 pub fn get_lock_status(state: State<'_, Arc<AppState>>) -> bool {
-    state.is_locked.load(std::sync::atomic::Ordering::Relaxed)
+    state
+        .lock_state
+        .lock()
+        .map(|g| g.is_locked)
+        .unwrap_or(false)
 }
 
 /// Check if the encryption key is missing (I462 recovery screen).
@@ -682,9 +715,9 @@ pub async fn lock_app(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    state
-        .is_locked
-        .store(true, std::sync::atomic::Ordering::Relaxed);
+    if let Ok(mut guard) = state.lock_state.lock() {
+        guard.is_locked = true;
+    }
     let _ = app.emit("app-locked", ());
     Ok(())
 }
@@ -695,13 +728,12 @@ pub async fn unlock_app(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    use std::sync::atomic::Ordering;
-
+    // I610: All lock state operations go through a single mutex acquisition.
     // Check cooldown: 30s after 3 consecutive failures
-    let failed_count = state.failed_unlock_count.load(Ordering::Relaxed);
-    if failed_count >= 3 {
-        if let Ok(guard) = state.last_failed_unlock.lock() {
-            if let Some(last) = *guard {
+    {
+        let mut ls = state.lock_state.lock().expect("lock_state poisoned");
+        if ls.failed_unlock_count >= 3 {
+            if let Some(last) = ls.last_failed_unlock {
                 if last.elapsed().as_secs() < 30 {
                     let remaining = 30 - last.elapsed().as_secs();
                     return Err(format!(
@@ -710,19 +742,19 @@ pub async fn unlock_app(
                     ));
                 }
             }
+            // Cooldown expired, reset counter
+            ls.failed_unlock_count = 0;
         }
-        // Cooldown expired, reset counter
-        state.failed_unlock_count.store(0, Ordering::Relaxed);
     }
 
     // Attempt system authentication (Touch ID / password)
     match attempt_system_auth().await {
         Ok(true) => {
-            state.is_locked.store(false, Ordering::Relaxed);
-            state.failed_unlock_count.store(0, Ordering::Relaxed);
-            // Reset activity timer so the user gets a fresh idle window
-            if let Ok(mut guard) = state.last_activity.lock() {
-                *guard = std::time::Instant::now();
+            {
+                let mut ls = state.lock_state.lock().expect("lock_state poisoned");
+                ls.is_locked = false;
+                ls.failed_unlock_count = 0;
+                ls.last_activity = std::time::Instant::now();
             }
             if let Ok(mut audit) = state.audit_log.lock() {
                 let _ = audit.append("security", "app_unlock_succeeded", serde_json::json!({}));
@@ -731,16 +763,19 @@ pub async fn unlock_app(
             Ok(())
         }
         Ok(false) => {
-            let new_count = state.failed_unlock_count.fetch_add(1, Ordering::Relaxed) + 1;
+            let new_count;
+            {
+                let mut ls = state.lock_state.lock().expect("lock_state poisoned");
+                ls.failed_unlock_count += 1;
+                new_count = ls.failed_unlock_count;
+                ls.last_failed_unlock = Some(std::time::Instant::now());
+            }
             if let Ok(mut audit) = state.audit_log.lock() {
                 let _ = audit.append(
                     "security",
                     "app_unlock_failed",
                     serde_json::json!({"consecutive_failures": new_count}),
                 );
-            }
-            if let Ok(mut guard) = state.last_failed_unlock.lock() {
-                *guard = Some(std::time::Instant::now());
             }
             if new_count >= 3 {
                 Err(
@@ -777,8 +812,8 @@ pub fn set_lock_timeout(
 /// Signal user activity (click/keypress) to reset the idle lock timer.
 #[tauri::command]
 pub fn signal_user_activity(state: State<'_, Arc<AppState>>) {
-    if let Ok(mut guard) = state.last_activity.lock() {
-        *guard = std::time::Instant::now();
+    if let Ok(mut ls) = state.lock_state.lock() {
+        ls.last_activity = std::time::Instant::now();
     }
 }
 
@@ -786,8 +821,8 @@ pub fn signal_user_activity(state: State<'_, Arc<AppState>>) {
 #[tauri::command]
 pub fn signal_window_focus(focused: bool, state: State<'_, Arc<AppState>>) {
     if focused {
-        if let Ok(mut guard) = state.last_activity.lock() {
-            *guard = std::time::Instant::now();
+        if let Ok(mut ls) = state.lock_state.lock() {
+            ls.last_activity = std::time::Instant::now();
         }
     }
 }

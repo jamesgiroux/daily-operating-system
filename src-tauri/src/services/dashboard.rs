@@ -762,10 +762,12 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
     let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) = {
         let mut db_emails: Vec<crate::types::Email> = state
             .db_read(|db| {
-                let rows = db.get_all_active_emails().map_err(|e| e.to_string())?;
-                if rows.is_empty() {
+                let all_rows = db.get_all_active_emails().map_err(|e| e.to_string())?;
+                if all_rows.is_empty() {
                     return Ok(Vec::new());
                 }
+                // Collapse to latest email per thread — matches EmailsPage behavior
+                let rows = crate::services::emails::collapse_to_latest_thread_emails(&all_rows);
                 // Batch-resolve entity names (same approach as emails service)
                 let entity_ids: std::collections::HashSet<String> =
                     rows.iter().filter_map(|e| e.entity_id.clone()).collect();
@@ -819,8 +821,16 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             recommended_action: None,
                             conversation_arc: None,
                             email_type: None,
-                            commitments: Vec::new(),
-                            questions: Vec::new(),
+                            commitments: dbe
+                                .commitments
+                                .as_ref()
+                                .and_then(|c| serde_json::from_str::<Vec<String>>(c).ok())
+                                .unwrap_or_default(),
+                            questions: dbe
+                                .questions
+                                .as_ref()
+                                .and_then(|q| serde_json::from_str::<Vec<String>>(q).ok())
+                                .unwrap_or_default(),
                             sentiment: dbe.sentiment.clone(),
                             urgency: dbe.urgency.clone(),
                             entity_id: dbe.entity_id.clone(),
@@ -828,6 +838,10 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             entity_name,
                             relevance_score: dbe.relevance_score,
                             score_reason: dbe.score_reason.clone(),
+                            is_unread: dbe.is_unread,
+                            pinned_at: dbe.pinned_at.clone(),
+                            tracked_commitments: Vec::new(),
+                            meeting_linked: None,
                         }
                     })
                     .collect())
@@ -835,12 +849,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             .await
             .unwrap_or_default();
 
-        // I395: Sort by relevance score for briefing
-        db_emails.sort_by(|a, b| {
-            let sa = a.relevance_score.unwrap_or(-1.0);
-            let sb = b.relevance_score.unwrap_or(-1.0);
-            sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        db_emails.sort_by(crate::services::emails::compare_email_rank);
 
         // I448: DB is source of truth — no JSON fallback (archived emails
         // have resolved_at set and are correctly filtered by DB queries)
@@ -1219,15 +1228,18 @@ pub fn get_week_data(_state: &AppState) -> WeekResult {
     }
 
     // Action summary from DB
-    let action_summary = db.get_pending_action_counts().ok().map(
-        |(total, _p1, _p2, overdue)| crate::types::WeekActionSummary {
-            overdue_count: overdue as usize,
-            due_this_week: total as usize,
-            critical_items: Vec::new(),
-            overdue: None,
-            due_this_week_items: None,
-        },
-    );
+    let action_summary = db
+        .get_pending_action_counts()
+        .ok()
+        .map(
+            |(total, _p1, _p2, overdue)| crate::types::WeekActionSummary {
+                overdue_count: overdue as usize,
+                due_this_week: total as usize,
+                critical_items: Vec::new(),
+                overdue: None,
+                due_this_week_items: None,
+            },
+        );
 
     let mut week = WeekOverview {
         week_number,

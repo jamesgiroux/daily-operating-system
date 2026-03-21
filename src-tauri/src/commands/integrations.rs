@@ -559,6 +559,15 @@ pub struct GranolaStatus {
     pub poll_interval_minutes: u32,
 }
 
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GranolaManualSyncResponse {
+    pub status: String,
+    pub message: String,
+    pub document_title: Option<String>,
+    pub content_type: Option<String>,
+}
+
 /// Get the current status of the Granola integration.
 #[tauri::command]
 pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<GranolaStatus, String> {
@@ -619,6 +628,49 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
         completed_syncs: completed,
         last_sync_at: last_sync,
         poll_interval_minutes: granola_config.poll_interval_minutes,
+    })
+}
+
+/// Attempt an immediate Granola sync for a single meeting.
+#[tauri::command]
+pub async fn trigger_granola_sync_for_meeting(
+    meeting_id: String,
+    force: Option<bool>,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<GranolaManualSyncResponse, String> {
+    let force = force.unwrap_or(false);
+    let state = state.inner().clone();
+    let app_handle = app_handle.clone();
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::granola::poller::trigger_granola_sync_for_meeting(
+            &state,
+            &app_handle,
+            &meeting_id,
+            force,
+        )
+    })
+    .await
+    .map_err(|e| format!("Granola sync task failed: {}", e))??;
+
+    let status = match result.status {
+        crate::granola::poller::ManualGranolaSyncStatus::Attached => "attached",
+        crate::granola::poller::ManualGranolaSyncStatus::NotFound => "not_found",
+        crate::granola::poller::ManualGranolaSyncStatus::AlreadyInProgress => "already_in_progress",
+        crate::granola::poller::ManualGranolaSyncStatus::AlreadyCompleted => "already_completed",
+    };
+
+    let content_type = result.content_type.map(|kind| match kind {
+        crate::granola::cache::GranolaContentType::Transcript => "transcript".to_string(),
+        crate::granola::cache::GranolaContentType::Notes => "notes".to_string(),
+    });
+
+    Ok(GranolaManualSyncResponse {
+        status: status.to_string(),
+        message: result.message,
+        document_title: result.document_title,
+        content_type,
     })
 }
 
@@ -710,14 +762,9 @@ pub fn get_gravatar_status(state: State<'_, Arc<AppState>>) -> GravatarStatus {
 
     let gravatar_config = config.unwrap_or_default();
 
-    let cached_count = state
-        .db
-        .lock()
+    let cached_count = crate::db::ActionDb::open()
         .ok()
-        .and_then(|g| {
-            g.as_ref()
-                .map(|db| crate::gravatar::cache::count_cached(db.conn_ref()))
-        })
+        .map(|db| crate::gravatar::cache::count_cached(db.conn_ref()))
         .unwrap_or(0);
 
     GravatarStatus {
@@ -1417,28 +1464,24 @@ pub fn get_linear_status(state: State<'_, Arc<AppState>>) -> LinearStatusData {
 
     let linear_config = config.unwrap_or_default();
 
-    let (issue_count, project_count, last_sync) = state
-        .db
-        .lock()
+    let (issue_count, project_count, last_sync) = crate::db::ActionDb::open()
         .ok()
-        .and_then(|g| {
-            g.as_ref().map(|db| {
-                let issues: i64 = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM linear_issues", [], |row| row.get(0))
-                    .unwrap_or(0);
-                let projects: i64 = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM linear_projects", [], |row| row.get(0))
-                    .unwrap_or(0);
-                let last: Option<String> = db
-                    .conn_ref()
-                    .query_row("SELECT MAX(synced_at) FROM linear_issues", [], |row| {
-                        row.get(0)
-                    })
-                    .unwrap_or(None);
-                (issues, projects, last)
-            })
+        .map(|db| {
+            let issues: i64 = db
+                .conn_ref()
+                .query_row("SELECT COUNT(*) FROM linear_issues", [], |row| row.get(0))
+                .unwrap_or(0);
+            let projects: i64 = db
+                .conn_ref()
+                .query_row("SELECT COUNT(*) FROM linear_projects", [], |row| row.get(0))
+                .unwrap_or(0);
+            let last: Option<String> = db
+                .conn_ref()
+                .query_row("SELECT MAX(synced_at) FROM linear_issues", [], |row| {
+                    row.get(0)
+                })
+                .unwrap_or(None);
+            (issues, projects, last)
         })
         .unwrap_or((0, 0, None));
 
