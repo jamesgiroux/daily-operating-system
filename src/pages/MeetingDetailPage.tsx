@@ -20,6 +20,7 @@ import type {
   StakeholderInsight,
   ApplyPrepPrefillResult,
   LinkedEntity,
+  MeetingStage,
 } from "@/types";
 import { parseDate, formatRelativeDateLong, stripHtml } from "@/lib/utils";
 import { getPrimaryEntityName } from "@/lib/entity-helpers";
@@ -76,6 +77,24 @@ const GRANOLA_AUTO_REFRESH_INTERVAL_MS = 20_000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+// ── I634: Meeting stage detection ──
+
+function getMeetingStage(
+  meetingMeta: MeetingIntelligence["meeting"] | null,
+  hasProcessedTranscript: boolean,
+): MeetingStage {
+  if (hasProcessedTranscript) return "processed";
+  if (!meetingMeta) return "upcoming";
+  const now = Date.now();
+  const start = new Date(meetingMeta.startTime).getTime();
+  const end = meetingMeta.endTime
+    ? new Date(meetingMeta.endTime).getTime()
+    : start + 60 * 60 * 1000;
+  if (now > end) return "just-ended";
+  if (now >= start) return "in-progress";
+  return "upcoming";
 }
 
 // ── Unified attendee type ──
@@ -729,9 +748,14 @@ Thanks!`;
     return diff > 0 && diff <= 120 ? diff : null;
   }, [meetingMeta?.startTime]);
 
-  // Determine meeting time state for editability (I194)
-  const isPastMeeting = !canEditUserLayer;
-  const isEditable = canEditUserLayer;
+  // I634: Determine meeting stage (4-stage lifecycle)
+  const hasProcessedTranscript = Boolean(outcomes?.processedAt || postIntel);
+  const stage: MeetingStage = useMemo(
+    () => getMeetingStage(meetingMeta, hasProcessedTranscript),
+    [meetingMeta, hasProcessedTranscript],
+  );
+  const isPastMeeting = stage !== "upcoming";
+  const isEditable = stage === "upcoming";
 
   // Save a single field in prep_frozen_json (I548 — inline editing for briefing sections)
   const savePrepField = useCallback(async (fieldPath: string, value: string, targetPersonId?: string) => {
@@ -752,7 +776,7 @@ Thanks!`;
   }, [meetingId, isEditable]);
 
   // Collaboration action visibility
-  const isFutureMeeting = !isPastMeeting;
+  const isFutureMeeting = stage === "upcoming";
   const isReadyOrFresh = intelligenceQuality?.level === "ready" || intelligenceQuality?.level === "fresh";
   const isThreeDaysOut = useMemo(() => {
     if (!meetingMeta?.startTime) return false;
@@ -805,9 +829,15 @@ Thanks!`;
     };
   }, [granolaEnabled, invokeGranolaSync, isPastMeeting, loadMeetingIntelligence, millisecondsSinceMeetingEnd, outcomes?.transcriptPath]);
 
+  // I634: Stage-aware folio label
+  const folioLabel = stage === "upcoming" ? "Briefing"
+    : stage === "in-progress" ? "In Progress"
+    : stage === "just-ended" ? "Processing..."
+    : "Meeting Record";
+
   // Register magazine shell with chapter nav + folio actions
   const shellConfig = useMemo(() => ({
-    folioLabel: "Meeting Briefing",
+    folioLabel,
     atmosphereColor: "turmeric" as const,
     activePage: "today" as const,
     backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/" }) },
@@ -866,7 +896,7 @@ Thanks!`;
         />
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, refreshingIntel, retryingExtraction, syncingGranola, granolaEnabled, outcomes?.transcriptPath, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, handleRefreshIntelligence, handleReprocessTranscript, handleDraftAgendaMessage, handleSyncGranolaTranscript, handleShareIntelligence, handleRequestInput]);
+  }), [navigate, saveStatus, data, refreshingIntel, retryingExtraction, syncingGranola, granolaEnabled, outcomes?.transcriptPath, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, handleRefreshIntelligence, handleReprocessTranscript, handleDraftAgendaMessage, handleSyncGranolaTranscript, handleShareIntelligence, handleRequestInput, folioLabel]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
@@ -969,43 +999,293 @@ Thanks!`;
   return (
     <>
       <div className={styles.pageContainer}>
-        {/* Post-meeting intelligence — replaces flat outcomes when available */}
-        {postIntel && (
+        {/* I634: Stage-specific leading content */}
+
+        {/* PROCESSED — Meeting Record layout: outcomes first, prep collapsed */}
+        {stage === "processed" && (
           <>
-            <div className={styles.outcomesWrap}>
-              <PostMeetingIntelligence
-                data={postIntel}
-                getItemFeedback={feedback.getFeedback}
-                onItemFeedback={feedback.submitFeedback}
-              />
+            {/* Record Header */}
+            <section className={styles.recordHeader}>
+              <p className={styles.monoOverline}>Meeting Record</p>
+              <h1 className={styles.heroTitle}>{data.title}</h1>
+              <div className={styles.recordMetadata}>
+                {data.timeRange && <span>{data.timeRange}</span>}
+                {meetingType && <span>{meetingType}</span>}
+                {unifiedAttendees.length > 0 && (
+                  <span>{unifiedAttendees.length} attendee{unifiedAttendees.length !== 1 ? "s" : ""}</span>
+                )}
+                {getPrimaryEntityName(linkedEntities) && (
+                  <span>{getPrimaryEntityName(linkedEntities)}</span>
+                )}
+              </div>
+            </section>
+
+            {/* Executive Summary */}
+            {outcomes?.summary && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Executive Summary" />
+                <p className={styles.outcomesSummary}>{outcomes.summary}</p>
+              </section>
+            )}
+
+            {/* The Thread placeholder — I637 */}
+            {data.sinceLast && data.sinceLast.length > 0 ? (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Since Last Meeting" />
+                <ul className={styles.sinceLastList}>
+                  {data.sinceLast.map((item, i) => (
+                    <li key={i} className={styles.sinceLastItem}>
+                      <span className={styles.bulletDotTurmericMuted} />
+                      <span>{sanitizeInlineText(item)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {/* Key Findings — PostMeetingIntelligence */}
+            {postIntel && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Key Findings" />
+                <PostMeetingIntelligence
+                  data={postIntel}
+                  getItemFeedback={feedback.getFeedback}
+                  onItemFeedback={feedback.submitFeedback}
+                />
+              </section>
+            )}
+
+            {/* Flat outcomes fallback — shown only when no post-meeting intelligence */}
+            {outcomes && !postIntel && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <OutcomesSection
+                  outcomes={outcomes}
+                  onRefresh={loadMeetingIntelligence}
+                  onSaveStatus={setSaveStatus}
+                  onRetryTranscriptExtraction={handleRetryTranscriptExtraction}
+                  retryingExtraction={retryingExtraction}
+                />
+              </section>
+            )}
+
+            {/* Commitments & Actions */}
+            {outcomes && outcomes.actions.length > 0 && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Commitments & Actions" />
+                <div className={styles.outcomeActionsList}>
+                  {outcomes.actions.map((action) => (
+                    <ActionRow
+                      key={action.id}
+                      variant="outcome"
+                      action={action}
+                      onComplete={async () => {
+                        try {
+                          if (action.status === "completed") {
+                            await invoke("reopen_action", { id: action.id });
+                          } else {
+                            await invoke("complete_action", { id: action.id });
+                          }
+                          loadMeetingIntelligence();
+                        } catch (err) { console.error("Failed to toggle action:", err); toast.error("Failed to update action"); }
+                      }}
+                      onAccept={async () => {
+                        try { await invoke("accept_proposed_action", { id: action.id }); loadMeetingIntelligence(); }
+                        catch (err) { console.error("Failed to accept action:", err); toast.error("Failed to accept action"); }
+                      }}
+                      onReject={async () => {
+                        try { await invoke("reject_proposed_action", { id: action.id, source: "meeting_detail" }); loadMeetingIntelligence(); }
+                        catch (err) { console.error("Failed to reject action:", err); toast.error("Failed to dismiss action"); }
+                      }}
+                      onCyclePriority={async () => {
+                        const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
+                        try { await invoke("update_action_priority", { id: action.id, priority: cycle[action.priority] || "P2" }); loadMeetingIntelligence(); }
+                        catch (err) { console.error("Failed to update priority:", err); toast.error("Failed to update priority"); }
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* The Room — attendees */}
+            {hasRoom && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="The Room" />
+                <UnifiedAttendeeList
+                  attendees={unifiedAttendees}
+                  isEditable={false}
+                  initialHiddenNames={hiddenAttendees}
+                  meetingId={meetingId ?? undefined}
+                  onSaveStatus={setSaveStatus}
+                  onSavePrepField={savePrepField}
+                />
+              </section>
+            )}
+
+            {/* Transcript CTA for processed meetings */}
+            <div className={clsx("editorial-reveal", styles.transcriptCta)}>
+              <button
+                onClick={handleAttachTranscript}
+                disabled={attaching}
+                className={clsx(styles.transcriptCtaBtn, attaching && styles.transcriptCtaBtnDisabled)}
+              >
+                {attaching ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <Paperclip className={styles.iconMd} />}
+                {attaching ? "Processing..." : "Reattach Transcript"}
+              </button>
             </div>
-            <div className={styles.outcomesDivider} />
-            <p className={styles.preMeetingLabel}>
-              {isPastMeeting ? "Pre-Meeting Context" : "Meeting Briefing"}
-            </p>
+
+            <div className={styles.finisWrap}>
+              <FinisMarker />
+            </div>
           </>
         )}
 
-        {/* Flat outcomes — shown only when no post-meeting intelligence is available */}
-        {outcomes && !postIntel && (
+        {/* JUST-ENDED — Processing progress UI */}
+        {stage === "just-ended" && (
           <>
-            <div className={styles.outcomesWrap}>
-              <OutcomesSection
-                outcomes={outcomes}
-                onRefresh={loadMeetingIntelligence}
-                onSaveStatus={setSaveStatus}
-                onRetryTranscriptExtraction={handleRetryTranscriptExtraction}
-                retryingExtraction={retryingExtraction}
-              />
+            <section className={styles.justEndedContainer}>
+              <p className={styles.monoOverline}>Meeting Record</p>
+              <h1 className={styles.heroTitle}>{data.title}</h1>
+              <div className={styles.recordMetadata}>
+                {data.timeRange && <span>{data.timeRange}</span>}
+                {meetingType && <span>{meetingType}</span>}
+              </div>
+
+              <div className={styles.justEndedStatus}>
+                <p className={styles.justEndedHeading}>
+                  Meeting ended {millisecondsSinceMeetingEnd != null
+                    ? `${Math.round(millisecondsSinceMeetingEnd / 60000)} minute${Math.round(millisecondsSinceMeetingEnd / 60000) !== 1 ? "s" : ""} ago`
+                    : "recently"}
+                </p>
+
+                {outcomes?.transcriptPath ? (
+                  <div className={styles.processingPhases}>
+                    <div className={styles.processingPhase}>
+                      <Check size={14} className={styles.processingPhaseDone} />
+                      <span>Summary & actions</span>
+                    </div>
+                    <div className={styles.processingPhase}>
+                      {postIntel ? (
+                        <Check size={14} className={styles.processingPhaseDone} />
+                      ) : (
+                        <Loader2 size={14} className={styles.processingPhaseActive} />
+                      )}
+                      <span>Intelligence extraction</span>
+                    </div>
+                    <div className={styles.processingPhase}>
+                      {postIntel ? (
+                        <Loader2 size={14} className={styles.processingPhaseActive} />
+                      ) : (
+                        <Clock size={14} className={styles.processingPhasePending} />
+                      )}
+                      <span>Deep analysis</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className={styles.justEndedWaiting}>
+                    Waiting for transcript...
+                  </p>
+                )}
+              </div>
+            </section>
+
+            {/* Show existing outcomes if available during just-ended */}
+            {postIntel && (
+              <div className={styles.outcomesWrap}>
+                <PostMeetingIntelligence
+                  data={postIntel}
+                  getItemFeedback={feedback.getFeedback}
+                  onItemFeedback={feedback.submitFeedback}
+                />
+              </div>
+            )}
+            {outcomes && !postIntel && (
+              <div className={styles.outcomesWrap}>
+                <OutcomesSection
+                  outcomes={outcomes}
+                  onRefresh={loadMeetingIntelligence}
+                  onSaveStatus={setSaveStatus}
+                  onRetryTranscriptExtraction={handleRetryTranscriptExtraction}
+                  retryingExtraction={retryingExtraction}
+                />
+              </div>
+            )}
+
+            {/* Transcript CTA for just-ended */}
+            <div className={clsx("editorial-reveal", styles.transcriptCta)}>
+              {quillEnabled && (
+                <button
+                  onClick={handleSyncTranscript}
+                  disabled={syncing}
+                  className={clsx(styles.transcriptCtaBtn, syncing && styles.transcriptCtaBtnDisabled)}
+                >
+                  {syncing ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <RefreshCw className={styles.iconMd} />}
+                  {syncing ? "Syncing..." : "Sync Transcript"}
+                </button>
+              )}
+              <button
+                onClick={handleAttachTranscript}
+                disabled={attaching}
+                className={clsx(styles.transcriptCtaBtn, attaching && styles.transcriptCtaBtnDisabled)}
+              >
+                {attaching ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <Paperclip className={styles.iconMd} />}
+                {attaching ? "Processing..." : "Attach Transcript"}
+              </button>
+              {granolaEnabled && (
+                <span className={styles.transcriptCtaLabel}>
+                  Granola usually syncs automatically. If it misses, use Sync Granola in the folio bar.
+                </span>
+              )}
             </div>
-            <div className={styles.outcomesDivider} />
-            <p className={styles.preMeetingLabel}>
-              {isPastMeeting ? "Pre-Meeting Context" : "Meeting Briefing"}
-            </p>
+
+            <div className={styles.finisWrap}>
+              <FinisMarker />
+            </div>
           </>
         )}
 
-        {!hasAnyContent && !outcomes && !postIntel && (
+        {/* UPCOMING / IN-PROGRESS — standard briefing layout */}
+        {(stage === "upcoming" || stage === "in-progress") && (
+          <>
+            {/* Post-meeting intelligence — replaces flat outcomes when available */}
+            {postIntel && (
+              <>
+                <div className={styles.outcomesWrap}>
+                  <PostMeetingIntelligence
+                    data={postIntel}
+                    getItemFeedback={feedback.getFeedback}
+                    onItemFeedback={feedback.submitFeedback}
+                  />
+                </div>
+                <div className={styles.outcomesDivider} />
+                <p className={styles.preMeetingLabel}>
+                  Meeting Briefing
+                </p>
+              </>
+            )}
+
+            {/* Flat outcomes — shown only when no post-meeting intelligence is available */}
+            {outcomes && !postIntel && (
+              <>
+                <div className={styles.outcomesWrap}>
+                  <OutcomesSection
+                    outcomes={outcomes}
+                    onRefresh={loadMeetingIntelligence}
+                    onSaveStatus={setSaveStatus}
+                    onRetryTranscriptExtraction={handleRetryTranscriptExtraction}
+                    retryingExtraction={retryingExtraction}
+                  />
+                </div>
+                <div className={styles.outcomesDivider} />
+                <p className={styles.preMeetingLabel}>
+                  Meeting Briefing
+                </p>
+              </>
+            )}
+          </>
+        )}
+
+        {(stage === "upcoming" || stage === "in-progress") && !hasAnyContent && !outcomes && !postIntel && (
           <div className={clsx(styles.emptyState, !hasLinkedEntities && styles.emptyStateActionable)}>
             {hasLinkedEntities && <Clock className={styles.emptyIcon} />}
             {!hasLinkedEntities ? (
@@ -1053,13 +1333,22 @@ Thanks!`;
           </div>
         )}
 
-        {(hasAnyContent || outcomes || postIntel) && (
-          <div className={isPastMeeting && (outcomes || postIntel) ? styles.pastMeetingOpacity : undefined}>
+        {/* I634: Prep content — rendered inline for upcoming/in-progress, in collapsed details for processed */}
+        {(stage === "upcoming" || stage === "in-progress") && (hasAnyContent || outcomes || postIntel) && (
+          <div>
 
             {/* ================================================================
                 ACT I: "Ground Me" — visible immediately, NO editorial-reveal
                ================================================================ */}
             <section id="headline" className={styles.heroSection}>
+              {/* I634: In-progress badge */}
+              {stage === "in-progress" && (
+                <div className={styles.inProgressBadge}>
+                  <span className={styles.inProgressDot} />
+                  Meeting in progress
+                </div>
+              )}
+
               {/* Time-aware urgency banner */}
               {minutesUntilMeeting != null && (
                 <div className={clsx(styles.urgencyBanner, minutesUntilMeeting <= 15 ? styles.urgencyUrgent : styles.urgencySoon)}>
@@ -1530,7 +1819,100 @@ Thanks!`;
               <FinisMarker />
             </div>
 
+
           </div>
+        )}
+
+        {/* I634: Processed stage — pre-meeting context as collapsed appendix */}
+        {stage === "processed" && hasAnyContent && (
+          <details className={styles.preMeetingAppendix}>
+            <summary className={styles.preMeetingAppendixSummary}>
+              <ChevronRight className={clsx(styles.iconMd, styles.detailsChevron)} />
+              Pre-Meeting Context
+            </summary>
+            <div className={styles.pastMeetingOpacity}>
+              {/* Key Insight */}
+              {keyInsight && (
+                <blockquote className={styles.keyInsight}>
+                  <p className={styles.keyInsightText}>{keyInsight}</p>
+                </blockquote>
+              )}
+
+              {/* Since Last Meeting */}
+              {data.sinceLast && data.sinceLast.length > 0 && (
+                <div className={styles.sinceLastWrap}>
+                  <p className={styles.sinceLastHeading}>Since Last Meeting</p>
+                  <ul className={styles.sinceLastList}>
+                    {data.sinceLast.map((item, i) => (
+                      <li key={i} className={styles.sinceLastItem}>
+                        <span className={styles.bulletDotTurmericMuted} />
+                        <span>{sanitizeInlineText(item)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Account Pulse */}
+              {data.currentState && data.currentState.length > 0 && (
+                <div className={styles.currentStateWrap}>
+                  <p className={styles.currentStateHeading}>Account Pulse</p>
+                  <div className={styles.currentStateGrid}>
+                    {data.currentState.map((item, i) => (
+                      <span key={i} className={styles.currentStateItem}>
+                        {sanitizeInlineText(item)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Risks */}
+              {hasRisks && (
+                <section className={styles.chapterSection}>
+                  <ChapterHeading title="The Risks" />
+                  <div className={styles.risksContainer}>
+                    {topRisks.map((risk, i) => (
+                      <div key={i} className={i === 0 ? styles.featuredRisk : styles.subordinateRisk}>
+                        <p className={i === 0 ? styles.featuredRiskText : styles.subordinateRiskText}>{risk}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* The Room */}
+              {hasRoom && (
+                <section className={styles.chapterSection}>
+                  <ChapterHeading title="The Room" />
+                  <UnifiedAttendeeList
+                    attendees={unifiedAttendees}
+                    isEditable={false}
+                    initialHiddenNames={hiddenAttendees}
+                    meetingId={meetingId ?? undefined}
+                    onSaveStatus={setSaveStatus}
+                    onSavePrepField={savePrepField}
+                  />
+                </section>
+              )}
+
+              {/* Your Plan */}
+              {hasPlan && (
+                <section className={styles.chapterSection}>
+                  <ChapterHeading title="Your Plan" />
+                  <UnifiedPlanEditor
+                    proposedItems={agendaDisplayItems}
+                    userAgenda={data.userAgenda}
+                    meetingId={meetingId ?? undefined}
+                    isEditable={false}
+                    calendarNotes={calendarNotes}
+                    initialDismissedTopics={dismissedTopics}
+                    onSaveStatus={setSaveStatus}
+                  />
+                </section>
+              )}
+            </div>
+          </details>
         )}
 
       </div>
