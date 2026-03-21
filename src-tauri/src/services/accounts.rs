@@ -1319,8 +1319,7 @@ mod tests {
         let account = make_account("acc-new", "New Corp");
 
         // Use the mutations service which wraps upsert + signal
-        crate::services::mutations::upsert_account(&db, &engine, &account)
-            .expect("upsert_account");
+        crate::services::mutations::upsert_account(&db, &engine, &account).expect("upsert_account");
 
         let name: String = db
             .conn_ref()
@@ -1435,6 +1434,16 @@ mod tests {
             signal_count(&db, "acc-tm", "team_member_added") > 0,
             "Expected team_member_added signal"
         );
+        let source: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT COALESCE(data_source, '') FROM account_stakeholders
+                 WHERE account_id = 'acc-tm' AND person_id = 'p-tm'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(source, "user", "Team member link should be user-owned");
 
         // Remove
         db.with_transaction(|tx| {
@@ -1479,8 +1488,14 @@ mod tests {
         db.upsert_account(&account).unwrap();
 
         db.with_transaction(|tx| {
-            tx.record_account_event("acc-ev", "renewal", "2026-06-15", Some(50000.0), Some("Renewed for 1 year"))
-                .map_err(|e| e.to_string())?;
+            tx.record_account_event(
+                "acc-ev",
+                "renewal",
+                "2026-06-15",
+                Some(50000.0),
+                Some("Renewed for 1 year"),
+            )
+            .map_err(|e| e.to_string())?;
             crate::services::signals::emit_and_propagate(
                 tx,
                 &engine,
@@ -1545,8 +1560,8 @@ mod tests {
             "Alpha Corp".to_string(), // duplicate
         ];
 
-        let created = super::bulk_create_accounts(&db, workspace, &names)
-            .expect("bulk_create_accounts");
+        let created =
+            super::bulk_create_accounts(&db, workspace, &names).expect("bulk_create_accounts");
 
         // First call: 2 unique accounts created, duplicate skipped
         assert_eq!(created.len(), 2, "Should create 2 unique accounts");

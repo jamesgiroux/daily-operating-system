@@ -265,6 +265,8 @@ export interface Email {
   scoreReason?: string;
   /** When this email was pinned for triage sort boost (I579) */
   pinnedAt?: string;
+  /** Actions created from commitments extracted from this email (I580) */
+  trackedCommitments?: TrackedEmailCommitment[];
   /** Meeting this email's sender is attending (upcoming only) (I582) */
   meetingLinked?: LinkedMeeting;
 }
@@ -274,6 +276,14 @@ export interface LinkedMeeting {
   meetingId: string;
   title: string;
   startTime: string;
+}
+
+export interface TrackedEmailCommitment {
+  actionId: string;
+  commitmentText: string;
+  actionTitle: string;
+  dueDate?: string;
+  owner?: string;
 }
 
 export type InboxFileType =
@@ -608,11 +618,11 @@ export interface GoneQuietAccount {
   entityId: string;
   entityName: string;
   entityType: string;
-  currentCount: number;
-  rollingAvg: number;
-  /** Higher means more quiet — rolling_avg / max(current_count, 0.1) */
-  silenceRatio: number;
-  lastEmailAgeDays?: number;
+  normalIntervalDays: number;
+  daysSinceLastEmail: number;
+  lastEmailDate?: string;
+  lastEmailSender?: string;
+  historicalEmailCount: number;
 }
 
 // =============================================================================
@@ -1090,10 +1100,25 @@ export interface FullMeetingPrep {
   stakeholderInsights?: StakeholderInsight[];
   /** Recent email-derived signals linked to meeting entity context (I215) */
   recentEmailSignals?: EmailSignal[];
+  /** Structured digest of linked recent correspondence (I582 / I317). */
+  emailDigest?: MeetingEmailDigest;
   /** I527: Deterministic consistency status from intelligence checks. */
   consistencyStatus?: ConsistencyStatus;
   /** I527: Deterministic consistency findings for trust transparency. */
   consistencyFindings?: ConsistencyFinding[];
+}
+
+export interface MeetingEmailDigest {
+  threadSummary: string;
+  senderCount: number;
+  threads: MeetingEmailDigestThread[];
+}
+
+export interface MeetingEmailDigestThread {
+  from: string;
+  snippet: string;
+  date: string;
+  source: string;
 }
 
 /** Account snapshot item for intelligence-enriched Quick Context (I186) */

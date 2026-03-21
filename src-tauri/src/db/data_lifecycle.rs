@@ -1,6 +1,7 @@
 //! ADR-0098 data lifecycle primitives.
 //!
 //! Source-aware purge infrastructure used when connector credentials are revoked.
+//! Also provides DB growth monitoring and age-based purge (I614).
 
 use std::collections::HashMap;
 
@@ -10,6 +11,244 @@ use serde::{Deserialize, Serialize};
 
 use super::{ActionDb, DbError};
 use crate::db::people::FieldSource;
+
+// =============================================================================
+// I614: DB growth monitoring
+// =============================================================================
+
+/// Row count for a single monitored table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableRowCount {
+    pub table_name: String,
+    pub row_count: i64,
+}
+
+/// DB growth report: file size + row counts for key tables.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbGrowthReport {
+    /// DB file size in bytes.
+    pub file_size_bytes: u64,
+    /// Human-readable file size (e.g. "152 MB").
+    pub file_size_display: String,
+    /// Row counts for monitored tables.
+    pub table_counts: Vec<TableRowCount>,
+    /// Timestamp of this report.
+    pub reported_at: String,
+}
+
+/// Tables to monitor for growth.
+const MONITORED_TABLES: &[&str] = &[
+    "signal_events",
+    "email_signals",
+    "emails",
+    "entity_assessment",
+    "captured_commitments",
+    "content_embeddings",
+    "person_relationships",
+    "meetings",
+];
+
+fn format_file_size(bytes: u64) -> String {
+    if bytes >= 1_073_741_824 {
+        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    } else if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.0} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// Get DB file size and row counts for key tables.
+pub fn db_growth_report(db: &ActionDb) -> DbGrowthReport {
+    let file_size_bytes = ActionDb::db_path_public()
+        .ok()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let table_counts: Vec<TableRowCount> = MONITORED_TABLES
+        .iter()
+        .filter_map(|table| {
+            if !table_exists(db, table) {
+                return None;
+            }
+            // Table name is from a static list, not user input -- safe to interpolate.
+            let sql = format!("SELECT COUNT(*) FROM {table}");
+            let count = db
+                .conn_ref()
+                .query_row(&sql, [], |row| row.get::<_, i64>(0))
+                .unwrap_or(0);
+            Some(TableRowCount {
+                table_name: table.to_string(),
+                row_count: count,
+            })
+        })
+        .collect();
+
+    DbGrowthReport {
+        file_size_bytes,
+        file_size_display: format_file_size(file_size_bytes),
+        table_counts,
+        reported_at: Utc::now().to_rfc3339(),
+    }
+}
+
+/// Log DB size at startup. Warn at 300MB, error at 500MB.
+/// Returns the size in bytes for further action (e.g. Tauri event at 500MB+).
+pub fn log_db_size_at_startup() -> u64 {
+    let size = ActionDb::db_path_public()
+        .ok()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let display = format_file_size(size);
+
+    if size >= 500_000_000 {
+        log::error!("DB size: {} -- exceeds 500MB threshold, consider purging", display);
+    } else if size >= 300_000_000 {
+        log::warn!("DB size: {} -- approaching 500MB threshold", display);
+    } else {
+        log::info!("DB size: {}", display);
+    }
+
+    size
+}
+
+// =============================================================================
+// I614: Age-based purge
+// =============================================================================
+
+/// Result of an age-based purge run.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgePurgeReport {
+    pub signals_purged: usize,
+    pub email_signals_purged: usize,
+    pub emails_purged: usize,
+    pub embeddings_purged: usize,
+}
+
+impl AgePurgeReport {
+    pub fn total(&self) -> usize {
+        self.signals_purged
+            + self.email_signals_purged
+            + self.emails_purged
+            + self.embeddings_purged
+    }
+}
+
+/// Purge signal_events older than `days`, preserving user corrections.
+///
+/// User corrections (source = 'user_correction') are never purged regardless
+/// of age because they represent explicit user intent with confidence 1.0.
+pub fn purge_aged_signals(db: &ActionDb, days: i64) -> Result<usize, DbError> {
+    if !table_exists(db, "signal_events") {
+        return Ok(0);
+    }
+    db.conn_ref()
+        .execute(
+            "DELETE FROM signal_events
+             WHERE created_at < datetime('now', ?1)
+               AND source != 'user_correction'",
+            params![format!("-{days} days")],
+        )
+        .map_err(|e| DbError::Migration(format!("purge_aged_signals: {e}")))
+}
+
+/// Purge deactivated email_signals older than `days`.
+pub fn purge_aged_email_signals(db: &ActionDb, days: i64) -> Result<usize, DbError> {
+    if !table_exists(db, "email_signals") {
+        return Ok(0);
+    }
+    db.conn_ref()
+        .execute(
+            "DELETE FROM email_signals
+             WHERE deactivated_at IS NOT NULL
+               AND deactivated_at < datetime('now', ?1)",
+            params![format!("-{days} days")],
+        )
+        .map_err(|e| DbError::Migration(format!("purge_aged_email_signals: {e}")))
+}
+
+/// Purge resolved emails older than `days`.
+pub fn purge_aged_emails(db: &ActionDb, days: i64) -> Result<usize, DbError> {
+    if !table_exists(db, "emails") {
+        return Ok(0);
+    }
+    db.conn_ref()
+        .execute(
+            "DELETE FROM emails
+             WHERE resolved_at IS NOT NULL
+               AND resolved_at < datetime('now', ?1)",
+            params![format!("-{days} days")],
+        )
+        .map_err(|e| DbError::Migration(format!("purge_aged_emails: {e}")))
+}
+
+/// Purge content_embeddings for content_files that no longer exist.
+pub fn purge_orphaned_embeddings(db: &ActionDb) -> Result<usize, DbError> {
+    if !table_exists(db, "content_embeddings") || !table_exists(db, "content_index") {
+        return Ok(0);
+    }
+    db.conn_ref()
+        .execute(
+            "DELETE FROM content_embeddings
+             WHERE content_file_id NOT IN (SELECT id FROM content_index)",
+            [],
+        )
+        .map_err(|e| DbError::Migration(format!("purge_orphaned_embeddings: {e}")))
+}
+
+/// Run all age-based purge operations. Returns a report of what was purged.
+///
+/// Retention defaults (from I614 spec):
+/// - signal_events: 180 days (user corrections preserved)
+/// - email_signals (deactivated): 30 days
+/// - emails (resolved): 60 days
+/// - content_embeddings: orphans only
+pub fn run_age_based_purge(db: &ActionDb) -> AgePurgeReport {
+    let signals_purged = purge_aged_signals(db, 180).unwrap_or_else(|e| {
+        log::warn!("Age purge: signal_events failed: {e}");
+        0
+    });
+
+    let email_signals_purged = purge_aged_email_signals(db, 30).unwrap_or_else(|e| {
+        log::warn!("Age purge: email_signals failed: {e}");
+        0
+    });
+
+    let emails_purged = purge_aged_emails(db, 60).unwrap_or_else(|e| {
+        log::warn!("Age purge: emails failed: {e}");
+        0
+    });
+
+    let embeddings_purged = purge_orphaned_embeddings(db).unwrap_or_else(|e| {
+        log::warn!("Age purge: content_embeddings failed: {e}");
+        0
+    });
+
+    AgePurgeReport {
+        signals_purged,
+        email_signals_purged,
+        emails_purged,
+        embeddings_purged,
+    }
+}
+
+/// Check DB file size and return bytes. Used by the hygiene loop to
+/// decide whether to emit a `db-size-warning` Tauri event.
+pub fn db_file_size_bytes() -> u64 {
+    ActionDb::db_path_public()
+        .ok()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .unwrap_or(0)
+}
 
 /// Provenance source for persisted data with purge semantics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -409,6 +648,182 @@ mod tests {
             )
             .expect("count user signals");
         assert_eq!(remaining_user_signals, 1);
+    }
+
+    // --- I614: Age-based purge tests ---
+
+    #[test]
+    fn purge_aged_signals_preserves_user_corrections() {
+        let db = test_db();
+
+        // Insert an old signal (200 days ago) from a regular source
+        db.conn_ref()
+            .execute(
+                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, created_at)
+                 VALUES ('s-old', 'account', 'a1', 'profile_update', 'email_enrichment', 0.7,
+                         datetime('now', '-200 days'))",
+                [],
+            )
+            .expect("seed old signal");
+
+        // Insert an old user_correction (200 days ago) -- must be preserved
+        db.conn_ref()
+            .execute(
+                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, created_at)
+                 VALUES ('s-correction', 'account', 'a1', 'entity_correction', 'user_correction', 1.0,
+                         datetime('now', '-200 days'))",
+                [],
+            )
+            .expect("seed old user correction");
+
+        // Insert a recent signal (10 days ago) -- must be preserved
+        db.conn_ref()
+            .execute(
+                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, created_at)
+                 VALUES ('s-recent', 'account', 'a1', 'profile_update', 'email_enrichment', 0.7,
+                         datetime('now', '-10 days'))",
+                [],
+            )
+            .expect("seed recent signal");
+
+        let purged = purge_aged_signals(&db, 180).expect("purge");
+        assert_eq!(purged, 1, "only the old non-correction signal should be purged");
+
+        // Verify user_correction is still there
+        let correction_exists: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM signal_events WHERE id = 's-correction')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("check correction");
+        assert!(correction_exists, "user corrections must never be purged");
+
+        // Verify recent signal is still there
+        let recent_exists: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM signal_events WHERE id = 's-recent')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("check recent");
+        assert!(recent_exists, "recent signals must not be purged");
+
+        // Verify old signal is gone
+        let old_exists: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM signal_events WHERE id = 's-old')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("check old");
+        assert!(!old_exists, "old non-correction signal should be purged");
+    }
+
+    #[test]
+    fn purge_aged_email_signals_only_removes_deactivated() {
+        let db = test_db();
+
+        // Insert a deactivated email signal from 60 days ago
+        db.conn_ref()
+            .execute(
+                "INSERT INTO email_signals (email_id, entity_id, entity_type, signal_type, signal_text, detected_at, deactivated_at)
+                 VALUES ('e1', 'a1', 'account', 'risk', 'test', datetime('now', '-60 days'), datetime('now', '-60 days'))",
+                [],
+            )
+            .expect("seed old deactivated");
+
+        // Insert an active email signal from 60 days ago -- must be preserved
+        db.conn_ref()
+            .execute(
+                "INSERT INTO email_signals (email_id, entity_id, entity_type, signal_type, signal_text, detected_at)
+                 VALUES ('e2', 'a1', 'account', 'win', 'test', datetime('now', '-60 days'))",
+                [],
+            )
+            .expect("seed old active");
+
+        let purged = purge_aged_email_signals(&db, 30).expect("purge");
+        assert_eq!(purged, 1, "only the deactivated signal should be purged");
+
+        let remaining: i64 = db
+            .conn_ref()
+            .query_row("SELECT COUNT(*) FROM email_signals", [], |row| row.get(0))
+            .expect("count remaining");
+        assert_eq!(remaining, 1, "active signal must remain");
+    }
+
+    #[test]
+    fn purge_aged_emails_only_removes_resolved() {
+        let db = test_db();
+
+        // Insert a resolved email from 90 days ago
+        db.conn_ref()
+            .execute(
+                "INSERT INTO emails (email_id, resolved_at, received_at)
+                 VALUES ('em1', datetime('now', '-90 days'), datetime('now', '-90 days'))",
+                [],
+            )
+            .expect("seed old resolved");
+
+        // Insert an unresolved email from 90 days ago -- must be preserved
+        db.conn_ref()
+            .execute(
+                "INSERT INTO emails (email_id, received_at)
+                 VALUES ('em2', datetime('now', '-90 days'))",
+                [],
+            )
+            .expect("seed old unresolved");
+
+        let purged = purge_aged_emails(&db, 60).expect("purge");
+        assert_eq!(purged, 1, "only the old resolved email should be purged");
+
+        let remaining: i64 = db
+            .conn_ref()
+            .query_row("SELECT COUNT(*) FROM emails", [], |row| row.get(0))
+            .expect("count remaining");
+        assert_eq!(remaining, 1, "unresolved email must remain");
+    }
+
+    #[test]
+    fn db_growth_report_returns_table_counts() {
+        let db = test_db();
+
+        // Insert some signals
+        db.conn_ref()
+            .execute(
+                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence)
+                 VALUES ('s1', 'account', 'a1', 'test', 'test', 0.5)",
+                [],
+            )
+            .expect("seed signal");
+
+        let report = db_growth_report(&db);
+        // Should have entries for existing tables
+        assert!(!report.table_counts.is_empty(), "should have table counts");
+
+        // signal_events should show 1 row
+        let signal_count = report
+            .table_counts
+            .iter()
+            .find(|tc| tc.table_name == "signal_events")
+            .expect("signal_events entry");
+        assert_eq!(signal_count.row_count, 1);
+    }
+
+    #[test]
+    fn run_age_based_purge_is_idempotent() {
+        let db = test_db();
+
+        // Run purge on empty tables -- should not error
+        let report1 = run_age_based_purge(&db);
+        assert_eq!(report1.total(), 0);
+
+        // Run again -- still no error, still 0
+        let report2 = run_age_based_purge(&db);
+        assert_eq!(report2.total(), 0);
     }
 
     #[test]

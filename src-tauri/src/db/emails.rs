@@ -402,28 +402,82 @@ impl ActionDb {
         Ok(entity_info)
     }
 
-    /// Archive a single email by setting resolved_at to now (I579).
+    /// Archive an email thread by setting resolved_at on every row in the thread.
+    /// The inbox UI is thread-collapsed, so archiving only one message can let an
+    /// older unresolved message in the same thread leak back into view.
     pub fn archive_email(&self, email_id: &str) -> Result<(), String> {
         let now = Utc::now().to_rfc3339();
+        let thread_id = self.get_thread_id(email_id)?;
+
         self.conn
             .execute(
-                "UPDATE emails SET resolved_at = ?1, updated_at = ?1 WHERE email_id = ?2",
-                params![now, email_id],
+                "UPDATE emails
+                 SET resolved_at = ?1, updated_at = ?1
+                 WHERE email_id = ?2
+                    OR (thread_id IS NOT NULL AND thread_id = ?3)",
+                params![now, email_id, thread_id],
             )
             .map_err(|e| format!("Failed to archive email {email_id}: {e}"))?;
         Ok(())
     }
 
-    /// Unarchive a single email by clearing resolved_at (I579 — undo).
+    /// Unarchive an email thread by clearing resolved_at on every row in the thread.
     pub fn unarchive_email(&self, email_id: &str) -> Result<(), String> {
         let now = Utc::now().to_rfc3339();
+        let thread_id = self.get_thread_id(email_id)?;
+
         self.conn
             .execute(
-                "UPDATE emails SET resolved_at = NULL, updated_at = ?1 WHERE email_id = ?2",
-                params![now, email_id],
+                "UPDATE emails
+                 SET resolved_at = NULL, updated_at = ?1
+                 WHERE email_id = ?2
+                    OR (thread_id IS NOT NULL AND thread_id = ?3)",
+                params![now, email_id, thread_id],
             )
             .map_err(|e| format!("Failed to unarchive email {email_id}: {e}"))?;
         Ok(())
+    }
+
+    /// Return all known email IDs in the same thread as the given email.
+    /// Falls back to the single email ID when thread metadata is absent.
+    pub fn get_thread_email_ids(&self, email_id: &str) -> Result<Vec<String>, String> {
+        let thread_id = self.get_thread_id(email_id)?;
+        let Some(thread_id) = thread_id.filter(|id| !id.trim().is_empty()) else {
+            return Ok(vec![email_id.to_string()]);
+        };
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT email_id
+                 FROM emails
+                 WHERE email_id = ?1 OR thread_id = ?2
+                 ORDER BY received_at DESC",
+            )
+            .map_err(|e| format!("Failed to prepare thread email lookup for {email_id}: {e}"))?;
+
+        let rows = stmt
+            .query_map(params![email_id, thread_id], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("Failed to query thread email IDs for {email_id}: {e}"))?;
+
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row.map_err(|e| format!("Failed to read thread email ID: {e}"))?);
+        }
+        if ids.is_empty() {
+            ids.push(email_id.to_string());
+        }
+        Ok(ids)
+    }
+
+    fn get_thread_id(&self, email_id: &str) -> Result<Option<String>, String> {
+        self.conn
+            .query_row(
+                "SELECT thread_id FROM emails WHERE email_id = ?1",
+                params![email_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to load thread for {email_id}: {e}"))
     }
 
     /// Toggle pin on an email (I579). If pinned, clears; if not pinned, sets to now.

@@ -1164,6 +1164,14 @@ details[open] .detailsChevron {
   color: var(--color-text-tertiary);
 }
 
+.emailSignalMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 4px;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    ATTENDEE COLOR VARIANTS — Avatar, temperature, engagement
    ───────────────────────────────────────────────────────────────────────────── */

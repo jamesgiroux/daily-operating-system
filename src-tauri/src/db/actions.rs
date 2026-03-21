@@ -628,6 +628,46 @@ impl ActionDb {
         Ok(actions)
     }
 
+    /// Query actions by source type + source IDs.
+    pub fn get_actions_by_source_type_and_ids(
+        &self,
+        source_type: &str,
+        source_ids: &[String],
+    ) -> Result<Vec<DbAction>, DbError> {
+        if source_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders: Vec<String> = (2..=(source_ids.len() + 1))
+            .map(|i| format!("?{i}"))
+            .collect();
+        let sql = format!(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             WHERE actions.source_type = ?1
+               AND actions.source_id IN ({})
+             ORDER BY created_at DESC",
+            placeholders.join(", ")
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut params_vec: Vec<&dyn rusqlite::types::ToSql> = Vec::with_capacity(source_ids.len() + 1);
+        params_vec.push(&source_type);
+        for source_id in source_ids {
+            params_vec.push(source_id as &dyn rusqlite::types::ToSql);
+        }
+
+        let rows = stmt.query_map(params_vec.as_slice(), Self::map_action_row)?;
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
     /// Update an action's priority.
     pub fn update_action_priority(&self, id: &str, priority: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
