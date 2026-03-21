@@ -978,6 +978,9 @@ pub struct Email {
     /// When this email was pinned for triage sort boost (I579)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pinned_at: Option<String>,
+    /// Actions created from commitments extracted from this email (I580)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub tracked_commitments: Vec<TrackedEmailCommitment>,
     /// Meeting this email's sender is attending (upcoming only) (I582)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meeting_linked: Option<LinkedMeeting>,
@@ -990,6 +993,19 @@ pub struct LinkedMeeting {
     pub meeting_id: String,
     pub title: String,
     pub start_time: String,
+}
+
+/// A tracked action created from a commitment extracted from an email (I580).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackedEmailCommitment {
+    pub action_id: String,
+    pub commitment_text: String,
+    pub action_title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 /// Complete dashboard data payload
@@ -1445,11 +1461,13 @@ pub struct GoneQuietAccount {
     pub entity_id: String,
     pub entity_name: String,
     pub entity_type: String,
-    pub current_count: i32,
-    pub rolling_avg: f64,
-    /// rolling_avg / max(current_count, 0.1) — higher means more quiet
-    pub silence_ratio: f64,
-    pub last_email_age_days: Option<i64>,
+    pub normal_interval_days: f64,
+    pub days_since_last_email: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_email_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_email_sender: Option<String>,
+    pub historical_email_count: i64,
 }
 
 /// Full enriched email briefing data returned by get_emails_enriched.
@@ -1565,12 +1583,32 @@ pub struct FullMeetingPrep {
     /// Recent email signals linked to this meeting's entity context.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
+    /// Structured digest of linked recent correspondence (I582 / I317).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_digest: Option<MeetingEmailDigest>,
     /// I527: Consistency status derived from deterministic contradiction checks.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consistency_status: Option<crate::intelligence::ConsistencyStatus>,
     /// I527: Findings retained for transparency in prep surfaces.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consistency_findings: Vec<crate::intelligence::ConsistencyFinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingEmailDigest {
+    pub thread_summary: String,
+    pub sender_count: usize,
+    pub threads: Vec<MeetingEmailDigestThread>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingEmailDigestThread {
+    pub from: String,
+    pub snippet: String,
+    pub date: String,
+    pub source: String,
 }
 
 /// Unified meeting detail payload (ADR-0066).

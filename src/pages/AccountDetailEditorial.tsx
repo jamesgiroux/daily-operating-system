@@ -302,8 +302,8 @@ export default function AccountDetailEditorial() {
                   key={item.label}
                   onClick={() => {
                     setReportsOpen(false);
-                    if (item.reportType === null) {
-                      navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
+                    if (item.reportType === "risk_briefing") {
+                      navigate({ to: "/accounts/$accountId/reports/risk_briefing", params: { accountId: accountId! } } as any);
                     } else if (item.reportType === "account_health") {
                       navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
                     } else if (item.reportType === "ebr_qbr") {
@@ -387,7 +387,7 @@ export default function AccountDetailEditorial() {
         try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); }
       })
       .catch((err) => {
-        console.error("get_entity_metadata (account) failed:", err);
+        console.error("get_entity_metadata (account) failed:", err); // Expected: background data fetch on mount
         setMetadataValues({});
       });
   }, [accountId]);
@@ -399,7 +399,7 @@ export default function AccountDetailEditorial() {
     invoke<{ id: string; name: string }[]>("get_account_ancestors", { accountId })
       .then(setAncestors)
       .catch((err) => {
-        console.error("get_account_ancestors failed:", err);
+        console.error("get_account_ancestors failed:", err); // Expected: background data fetch on mount
         setAncestors([]);
       });
   }, [accountId]);
@@ -870,8 +870,8 @@ export default function AccountDetailEditorial() {
           <div className={styles.reportsChapter}>
             {getAccountReports(preset?.id).map((item) => {
               const handleClick = () => {
-                if (item.reportType === null) {
-                  navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
+                if (item.reportType === "risk_briefing") {
+                  navigate({ to: "/accounts/$accountId/reports/risk_briefing", params: { accountId: accountId! } } as any);
                 } else if (item.reportType === "account_health") {
                   navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
                 } else if (item.reportType === "ebr_qbr") {
