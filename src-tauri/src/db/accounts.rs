@@ -368,7 +368,10 @@ impl ActionDb {
 
     /// Get account team members filtered to internal people only (for UI display).
     /// Health scoring uses `get_account_team` which includes all stakeholders.
-    pub fn get_account_team_internal(&self, account_id: &str) -> Result<Vec<DbAccountTeamMember>, DbError> {
+    pub fn get_account_team_internal(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<DbAccountTeamMember>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT as_.account_id, as_.person_id, p.name, p.email, as_.role, as_.created_at
              FROM account_stakeholders as_
@@ -397,12 +400,14 @@ impl ActionDb {
         role: &str,
     ) -> Result<(), DbError> {
         let role = role.trim().to_lowercase();
+        let now = Utc::now().to_rfc3339();
         self.conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type, created_at)
-             VALUES (?1, ?2, ?3, 'associated', ?4)
+            "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type, data_source, created_at)
+             VALUES (?1, ?2, ?3, 'associated', 'user', ?4)
              ON CONFLICT(account_id, person_id) DO UPDATE SET
-                role = excluded.role",
-            params![account_id, person_id, role, Utc::now().to_rfc3339()],
+                role = excluded.role,
+                data_source = 'user'",
+            params![account_id, person_id, role, now],
         )?;
         Ok(())
     }

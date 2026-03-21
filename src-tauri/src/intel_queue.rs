@@ -344,22 +344,36 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
 
         // I571: Emit background work status for frontend indicator.
         // Look up display names from DB for a descriptive toast.
-        let display_names: Vec<String> = if let Ok(guard) = state.db.lock() {
-            if let Some(db) = guard.as_ref() {
-                batch.iter().filter_map(|r| {
+        let display_names: Vec<String> = if let Ok(db) = crate::db::ActionDb::open() {
+            batch
+                .iter()
+                .filter_map(|r| {
                     // Try accounts first (most common), then projects, then people
-                    db.get_account(&r.entity_id).ok().flatten().map(|a| a.name)
+                    db.get_account(&r.entity_id)
+                        .ok()
+                        .flatten()
+                        .map(|a| a.name)
                         .or_else(|| db.get_project(&r.entity_id).ok().flatten().map(|p| p.name))
                         .or_else(|| db.get_person(&r.entity_id).ok().flatten().map(|p| p.name))
-                }).collect()
-            } else { vec![] }
-        } else { vec![] };
-        let started_msg = if display_names.is_empty() {
-            format!("Updating {} account{}…", batch.len(), if batch.len() == 1 { "" } else { "s" })
-        } else if display_names.len() == 1 {
-            format!("Updating {}…", display_names[0])
+                })
+                .collect()
         } else {
-            format!("Updating {} and {} other{}…", display_names[0], display_names.len() - 1, if display_names.len() == 2 { "" } else { "s" })
+            vec![]
+        };
+        let started_msg = if display_names.is_empty() {
+            format!(
+                "Updating {} account{}...",
+                batch.len(),
+                if batch.len() == 1 { "" } else { "s" }
+            )
+        } else if display_names.len() <= 3 {
+            format!("Updating {}...", display_names.join(", "))
+        } else {
+            format!(
+                "Updating {} and {} more...",
+                display_names[..2].join(", "),
+                display_names.len() - 2
+            )
         };
         let _ = app.emit(
             "background-work-status",
@@ -416,7 +430,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             continue;
         }
 
-        // Phase 2: Run PTY enrichment (no DB lock held)
+        // Step 2: Run PTY enrichment (no DB lock held)
         // Acquire heavy-work semaphore — limits concurrent expensive operations
         // (PTY subprocess, embedding inference) to one at a time.
         let _permit = match state.permits.pty.acquire().await {
@@ -509,17 +523,15 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     });
                 } else if !succeeded.contains(original.entity_id.as_str()) {
                     // I428: Record claude_code sync failure
-                    if let Ok(db_guard) = state.db.lock() {
-                        if let Some(db) = db_guard.as_ref() {
-                            let _ = crate::connectivity::record_sync_failure(
-                                db.conn_ref(),
-                                "claude_code",
-                                &format!(
-                                    "Enrichment failed after {} retries for {}",
-                                    original.retry_count, original.entity_id
-                                ),
-                            );
-                        }
+                    if let Ok(db) = crate::db::ActionDb::open() {
+                        let _ = crate::connectivity::record_sync_failure(
+                            db.conn_ref(),
+                            "claude_code",
+                            &format!(
+                                "Enrichment failed after {} retries for {}",
+                                original.retry_count, original.entity_id
+                            ),
+                        );
                     }
                     log::warn!(
                         "IntelProcessor: {} failed after {} retries, dropping from queue",
@@ -666,29 +678,25 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
 
             // Self-healing: record success + post-enrichment coherence check (I409/I410)
             {
-                if let Ok(db_guard) = state.db.lock() {
-                    if let Some(db) = db_guard.as_ref() {
-                        crate::self_healing::feedback::record_enrichment_success(
-                            db,
-                            &request.entity_id,
-                        );
-                        let _ = crate::self_healing::scheduler::on_enrichment_complete(
-                            db,
-                            Some(state.embedding_model.as_ref()),
-                            &request.entity_id,
-                            &request.entity_type,
-                            &state.intel_queue,
-                            Some(state.signals.engine.as_ref()),
-                        );
-                    }
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    crate::self_healing::feedback::record_enrichment_success(
+                        &db,
+                        &request.entity_id,
+                    );
+                    let _ = crate::self_healing::scheduler::on_enrichment_complete(
+                        &db,
+                        Some(state.embedding_model.as_ref()),
+                        &request.entity_id,
+                        &request.entity_type,
+                        &state.intel_queue,
+                        Some(state.signals.engine.as_ref()),
+                    );
                 }
             }
 
             // I428: Record successful claude_code sync
-            if let Ok(db_guard) = state.db.lock() {
-                if let Some(db) = db_guard.as_ref() {
-                    let _ = crate::connectivity::record_sync_success(db.conn_ref(), "claude_code");
-                }
+            if let Ok(db) = crate::db::ActionDb::open() {
+                let _ = crate::connectivity::record_sync_success(db.conn_ref(), "claude_code");
             }
 
             log::info!(
@@ -700,22 +708,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         }
 
         // I571: Emit completion status for frontend indicator
-        let completed_names: Vec<&str> = results
-            .iter()
-            .map(|(_, input, _)| input.entity_name.as_str())
-            .collect();
-        let completed_msg = if completed_names.is_empty() {
-            "Insights updated".to_string()
-        } else if completed_names.len() == 1 {
-            format!("{} updated", completed_names[0])
-        } else {
-            format!("{} and {} other{} updated", completed_names[0], completed_names.len() - 1, if completed_names.len() == 2 { "" } else { "s" })
-        };
         let _ = app.emit(
             "background-work-status",
             serde_json::json!({
                 "phase": "completed",
-                "message": completed_msg,
+                "message": "Insights updated",
                 "count": results.len(),
             }),
         );
@@ -1132,7 +1129,7 @@ fn categorize_enrichment_error(error: &str) -> &'static str {
     }
 }
 
-/// Phase 2: Run PTY enrichment (no DB lock held).
+/// Step 2: Run PTY enrichment (no DB lock held).
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
 ///
 /// I574: Tries parallel per-dimension fan-out first (if `intelligence_context` is available),

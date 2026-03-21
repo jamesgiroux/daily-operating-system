@@ -1,0 +1,30 @@
+{
+  "surfaceId": "settings_data",
+  "commands": {
+    "get_database_info": {
+      "path": "/Users/example/.dailyos/dailyos.db",
+      "sizeBytes": 1048576,
+      "modifiedAt": "2026-03-10T08:00:00Z"
+    },
+    "list_database_backups": [
+      {
+        "path": "/Users/example/.dailyos/dailyos.db.bak",
+        "createdAt": "2026-03-10T07:00:00Z",
+        "sizeBytes": 1048576,
+        "kind": "manual"
+      }
+    ],
+    "get_database_recovery_status": {
+      "required": false,
+      "reason": "",
+      "detail": ""
+    }
+  },
+  "errors": {
+    "list_database_backups": {
+      "code": "BACKUP_LIST_FAILED",
+      "message": "Failed to read backups",
+      "retryable": true
+    }
+  }
+}
