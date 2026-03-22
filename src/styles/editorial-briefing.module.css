@@ -245,6 +245,10 @@
   font-size: 12px;
 }
 
+.theRoomRoleTentative {
+  font-style: italic;
+}
+
 .theRoomCompany {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -493,6 +497,17 @@
 
 .meetingLinkPrimary:hover {
   opacity: 0.75;
+}
+
+.capturedSummary {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.capturedSummaryReview {
+  color: var(--color-spice-turmeric);
 }
 
 .meetingLinkSecondary {
@@ -747,6 +762,17 @@
 .expansionInner {
   padding: 24px 0 20px 0;
   border-top: 1px solid var(--color-rule-light);
+}
+
+.expansionDescription {
+  margin: 0 0 20px;
+  max-width: 560px;
+  white-space: pre-line;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--color-text-primary);
 }
 
 /* Tint variants */

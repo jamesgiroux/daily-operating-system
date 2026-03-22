@@ -12,8 +12,8 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::ActionDb;
 use crate::db::types::EnrichedCapture;
+use crate::db::ActionDb;
 
 /// Complete scorecard comparing pre-meeting predictions against outcomes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,8 +48,16 @@ pub enum PredictionCategory {
 
 /// Jaccard similarity between two strings based on lowercased word tokens.
 fn jaccard_similarity(a: &str, b: &str) -> f64 {
-    let set_a: HashSet<String> = a.to_lowercase().split_whitespace().map(String::from).collect();
-    let set_b: HashSet<String> = b.to_lowercase().split_whitespace().map(String::from).collect();
+    let set_a: HashSet<String> = a
+        .to_lowercase()
+        .split_whitespace()
+        .map(String::from)
+        .collect();
+    let set_b: HashSet<String> = b
+        .to_lowercase()
+        .split_whitespace()
+        .map(String::from)
+        .collect();
     let intersection = set_a.intersection(&set_b).count() as f64;
     let union_count = set_a.union(&set_b).count() as f64;
     if union_count == 0.0 {
@@ -59,8 +67,11 @@ fn jaccard_similarity(a: &str, b: &str) -> f64 {
     }
 }
 
-/// Similarity threshold for matching predictions against outcomes.
-const MATCH_THRESHOLD: f64 = 0.3;
+/// Keyword-overlap threshold for matching predictions against outcomes.
+///
+/// We use a stricter fallback threshold so loosely-related phrases do not
+/// appear as confirmed predictions in the Meeting Record.
+const MATCH_THRESHOLD: f64 = 0.5;
 
 /// A prep item extracted from frozen prep JSON.
 #[derive(Debug, Clone)]
@@ -180,7 +191,10 @@ pub fn extract_prep_risks(frozen_json: &str) -> Vec<PrepItem> {
         for risk in entity_risks {
             if let Some(text) = risk.get("text").and_then(|v| v.as_str()) {
                 if !text.is_empty() {
-                    let source = risk.get("source").and_then(|v| v.as_str()).map(String::from);
+                    let source = risk
+                        .get("source")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
                     items.push(PrepItem {
                         text: text.to_string(),
                         source,
@@ -252,11 +266,7 @@ pub fn extract_outcome_items(captures: &[EnrichedCapture]) -> (Vec<String>, Vec<
 ///
 /// For each confirmed prediction with a source, reward that source
 /// by incrementing its alpha (success count) in signal_weights.
-pub fn emit_prediction_feedback(
-    db: &ActionDb,
-    scorecard: &PredictionScorecard,
-    meeting_id: &str,
-) {
+pub fn emit_prediction_feedback(db: &ActionDb, scorecard: &PredictionScorecard, meeting_id: &str) {
     let all_predictions = scorecard
         .risk_predictions
         .iter()

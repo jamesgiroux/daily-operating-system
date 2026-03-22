@@ -948,11 +948,8 @@ pub fn recompute_entity_health(
     // I633: Pass org_health from existing intelligence so the 40/60 baseline
     // blend fires consistently (previously passed None, diverging from enrichment scores)
     let org_health_ref = intel.org_health.as_ref();
-    let health = crate::intelligence::health_scoring::compute_account_health(
-        db,
-        &account,
-        org_health_ref,
-    );
+    let health =
+        crate::intelligence::health_scoring::compute_account_health(db, &account, org_health_ref);
 
     intel.health = Some(health.clone());
 
@@ -1024,8 +1021,8 @@ pub async fn generate_risk_briefing(
 
     let task = tauri::async_runtime::spawn_blocking(move || {
         let input = {
-            let db = crate::db::ActionDb::open()
-                .map_err(|e| format!("Database unavailable: {e}"))?;
+            let db =
+                crate::db::ActionDb::open().map_err(|e| format!("Database unavailable: {e}"))?;
 
             let config_guard = app_state
                 .config

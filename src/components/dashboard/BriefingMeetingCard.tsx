@@ -180,7 +180,7 @@ export function KeyPeopleFlow({
           <span className={s.theRoomCompany}>{a.domain}</span>
         )}
         {a.rsvp === "tentative" && (
-          <span className={s.theRoomRole} style={{ fontStyle: "italic" }}>tentative</span>
+          <span className={`${s.theRoomRole} ${s.theRoomRoleTentative}`}>tentative</span>
         )}
       </div>
     );
@@ -465,17 +465,10 @@ export function BriefingMeetingCard({
         </>}
       >
         {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--color-text-tertiary)",
-              marginTop: 2,
-            }}
-          >
+          <div className={s.capturedSummary}>
             {capturedActionCount} action{capturedActionCount !== 1 ? "s" : ""} captured
             {suggestedActionCount != null && suggestedActionCount > 0 && (
-              <span style={{ color: "var(--color-spice-turmeric)" }}>
+              <span className={s.capturedSummaryReview}>
                 {" \u00B7 "}{suggestedActionCount} needs review
               </span>
             )}
@@ -492,35 +485,13 @@ export function BriefingMeetingCard({
           <div ref={innerRef} className={s.expansionInner}>
             {/* Meeting context: calendar description (organizer's words) or AI brief */}
             {cleanDescription ? (
-              <p
-                style={{
-                  fontFamily: "var(--font-body)",
-                  fontSize: 14,
-                  fontWeight: 400,
-                  color: "var(--color-text-primary)",
-                  margin: "0 0 20px 0",
-                  lineHeight: 1.55,
-                  maxWidth: 560,
-                  whiteSpace: "pre-line",
-                }}
-              >
+              <p className={s.expansionDescription}>
                 {cleanDescription.length > 400
                   ? `${cleanDescription.slice(0, 400)}…`
                   : cleanDescription}
               </p>
             ) : meeting.prep?.context ? (
-              <p
-                style={{
-                  fontFamily: "var(--font-serif)",
-                  fontSize: 15,
-                  fontWeight: 300,
-                  fontStyle: "italic",
-                  color: "var(--color-text-secondary)",
-                  margin: "0 0 20px 0",
-                  lineHeight: 1.55,
-                  maxWidth: 560,
-                }}
-              >
+              <p className={s.expansionNarrative}>
                 {meeting.prep.context.length > 320
                   ? `${meeting.prep.context.slice(0, 320)}…`
                   : meeting.prep.context}

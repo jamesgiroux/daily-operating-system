@@ -180,14 +180,14 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
             format!("Score up {delta:.0} points from {oldest_score:.0}"),
         )
     } else if delta > 5.0 {
-        (
-            "improving",
-            format!("Score trending up {delta:.0} points"),
-        )
+        ("improving", format!("Score trending up {delta:.0} points"))
     } else if delta < -10.0 {
         (
             "declining",
-            format!("Score down {:.0} points from {oldest_score:.0}", delta.abs()),
+            format!(
+                "Score down {:.0} points from {oldest_score:.0}",
+                delta.abs()
+            ),
         )
     } else if delta < -5.0 {
         (
@@ -195,7 +195,10 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
             format!("Score trending down {:.0} points", delta.abs()),
         )
     } else {
-        ("stable", format!("Score stable (±{:.0} points)", delta.abs()))
+        (
+            "stable",
+            format!("Score stable (±{:.0} points)", delta.abs()),
+        )
     };
 
     let trend_confidence = match history.len() {
@@ -869,13 +872,9 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
         Some((event_type, arr_impact)) => {
             let arr_pct = arr_impact
                 .and_then(|impact| {
-                    account.arr.map(|arr| {
-                        if arr > 0.0 {
-                            impact / arr * 100.0
-                        } else {
-                            0.0
-                        }
-                    })
+                    account
+                        .arr
+                        .map(|arr| if arr > 0.0 { impact / arr * 100.0 } else { 0.0 })
                 })
                 .unwrap_or(0.0);
             match event_type.as_str() {
@@ -929,8 +928,7 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
     };
 
     let attention_weight = if days_to_renewal < 90.0 { 0.3 } else { 0.1 };
-    let mut score = outcome_score * (1.0 - attention_weight)
-        + attention_signal * attention_weight;
+    let mut score = outcome_score * (1.0 - attention_weight) + attention_signal * attention_weight;
 
     let trend = if days_to_renewal < 30.0 {
         "critical".to_string()
@@ -1482,15 +1480,24 @@ mod tests {
 
         // 1 dim: 0.5 + 1/6 * 0.5 ≈ 0.583
         let c1 = compute_confidence(&make_dims(1));
-        assert!((c1 - (0.5 + 1.0 / 6.0 * 0.5)).abs() < 1e-6, "1 dim confidence");
+        assert!(
+            (c1 - (0.5 + 1.0 / 6.0 * 0.5)).abs() < 1e-6,
+            "1 dim confidence"
+        );
 
         // 2 dims: 0.5 + 2/6 * 0.5 ≈ 0.667
         let c2 = compute_confidence(&make_dims(2));
-        assert!((c2 - (0.5 + 2.0 / 6.0 * 0.5)).abs() < 1e-6, "2 dim confidence");
+        assert!(
+            (c2 - (0.5 + 2.0 / 6.0 * 0.5)).abs() < 1e-6,
+            "2 dim confidence"
+        );
 
         // 4 dims: 0.5 + 4/6 * 0.5 ≈ 0.833
         let c4 = compute_confidence(&make_dims(4));
-        assert!((c4 - (0.5 + 4.0 / 6.0 * 0.5)).abs() < 1e-6, "4 dim confidence");
+        assert!(
+            (c4 - (0.5 + 4.0 / 6.0 * 0.5)).abs() < 1e-6,
+            "4 dim confidence"
+        );
     }
 
     #[test]

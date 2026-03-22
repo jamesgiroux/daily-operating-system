@@ -1,3 +1,5 @@
+import styles from "./MeetingRow.module.css";
+
 /**
  * MeetingRow — Entity meeting row (grid layout with date, title, type badge).
  *
@@ -48,38 +50,10 @@ export function MeetingRow({
   typeBadgeStyle = defaultTypeBadgeStyle as (t: string) => React.CSSProperties,
 }: MeetingRowProps) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "90px 1fr auto",
-        gap: 16,
-        padding: "14px 0",
-        borderBottom: "1px solid var(--color-rule-light)",
-        alignItems: "baseline",
-      }}
-    >
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 12,
-          fontWeight: 500,
-          color: "var(--color-text-primary)",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {formatDate(meeting.startTime)}
-      </span>
-      <span
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: 14,
-          fontWeight: 400,
-          color: "var(--color-text-primary)",
-        }}
-      >
-        {meeting.title}
-      </span>
-      <span style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+    <div className={styles.row}>
+      <span className={styles.date}>{formatDate(meeting.startTime)}</span>
+      <span className={styles.title}>{meeting.title}</span>
+      <span className={styles.badgeWrap}>
         <span style={typeBadgeStyle(meeting.meetingType)}>
           {formatType(meeting.meetingType)}
         </span>

@@ -1,0 +1,165 @@
+@import "../../../styles/design-tokens.css";
+
+.intro {
+  margin-bottom: var(--space-md);
+}
+
+.introDescription {
+  margin-top: var(--space-sm);
+  margin-bottom: 0;
+}
+
+.settingCopy {
+  min-width: 0;
+}
+
+.settingTitle {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.settingDescription {
+  margin-top: 2px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+}
+
+.callout {
+  margin-bottom: var(--space-md);
+  padding: 12px 16px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  background: var(--color-paper-linen);
+}
+
+.calloutLabel {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.calloutText {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.calloutTextSpaced {
+  margin-top: var(--space-sm);
+}
+
+.inlineCode {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.statusSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--connector-status-color, var(--color-text-tertiary));
+}
+
+.statusText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.statsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-top: var(--space-sm);
+}
+
+.statsLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.statsSynced {
+  color: var(--color-garden-olive);
+}
+
+.statsPending {
+  color: var(--color-spice-turmeric);
+}
+
+.statsFailed {
+  color: var(--color-spice-terracotta);
+}
+
+.statsAbandoned {
+  color: var(--color-text-tertiary);
+}
+
+.selectControl {
+  padding: 4px 8px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-warm-white);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.bridgePathValue {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  word-break: break-all;
+}
+
+.setupList {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.errorRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+}
+
+.errorText {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-spice-terracotta);
+}
+
+.errorTimestamp {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.disabledButton {
+  opacity: 0.5;
+}
