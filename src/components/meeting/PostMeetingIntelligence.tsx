@@ -392,11 +392,11 @@ export function PostMeetingIntelligence({
                   {action.status === "suggested" && (
                     <span className={styles.suggestedPill}>Suggested</span>
                   )}
-                  {action.status === "pending" && (
-                    <span className={styles.pendingPill}>Pending</span>
-                  )}
                   {action.status === "completed" && (
                     <Check size={14} className={styles.completedIcon} />
+                  )}
+                  {action.status !== "suggested" && action.status !== "completed" && (
+                    <span className={styles.pendingPill}>Pending</span>
                   )}
 
                   {/* Action content */}
