@@ -996,7 +996,7 @@ pub async fn capture_meeting_outcome(
                     id: uuid::Uuid::new_v4().to_string(),
                     title: action.title.clone(),
                     priority: "P2".to_string(),
-                    status: "proposed".to_string(),
+                    status: "suggested".to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,

@@ -144,8 +144,8 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
                 return Ok(None);
             }
 
-            // 2. Get actions
-            let actions = db.get_non_briefing_pending_actions().unwrap_or_default();
+            // 2. Get actions — use get_due_actions(90) to match Actions page counts
+            let actions = db.get_due_actions(90).unwrap_or_default();
             let focus_candidates = db.get_focus_candidate_actions(7).unwrap_or_default();
 
             // 3. Get entity map and intelligence qualities
@@ -587,7 +587,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                 reviewed: db.get_reviewed_preps().ok(),
                 entity_map: db.get_meeting_entity_map(&meeting_ids_clone).ok(),
                 accounts_with_domains: db.get_all_accounts_with_domains(true).ok(),
-                non_briefing_actions: db.get_non_briefing_pending_actions().ok(),
+                non_briefing_actions: db.get_due_actions(90).ok(),
                 focus_candidates: db.get_focus_candidate_actions(7).ok(),
                 intelligence_qualities: iq_map,
             })

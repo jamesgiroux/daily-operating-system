@@ -39,8 +39,8 @@ interface BriefingMeetingCardProps {
   onEntitiesChanged?: () => void;
   /** Number of total actions captured from this meeting (for past meetings) */
   capturedActionCount?: number;
-  /** Number of proposed actions needing review from this meeting */
-  proposedActionCount?: number;
+  /** Number of suggested actions needing review from this meeting */
+  suggestedActionCount?: number;
   /** When true, this is the next upcoming meeting — renders expanded by default with richer context */
   isUpNext?: boolean;
   /** User's org domain for internal/external attendee grouping */
@@ -373,7 +373,7 @@ export function BriefingMeetingCard({
   completedIds,
   onEntitiesChanged: _onEntitiesChanged,
   capturedActionCount,
-  proposedActionCount,
+  suggestedActionCount,
   isUpNext = false,
   userDomain,
 }: BriefingMeetingCardProps) {
@@ -474,9 +474,9 @@ export function BriefingMeetingCard({
             }}
           >
             {capturedActionCount} action{capturedActionCount !== 1 ? "s" : ""} captured
-            {proposedActionCount != null && proposedActionCount > 0 && (
+            {suggestedActionCount != null && suggestedActionCount > 0 && (
               <span style={{ color: "var(--color-spice-turmeric)" }}>
-                {" \u00B7 "}{proposedActionCount} needs review
+                {" \u00B7 "}{suggestedActionCount} needs review
               </span>
             )}
           </div>
