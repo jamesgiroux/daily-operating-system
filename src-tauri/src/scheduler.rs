@@ -215,17 +215,17 @@ impl Scheduler {
         .await;
     }
 
-    /// Auto-archive stale proposed and pending actions on the daily scheduler sweep.
+    /// Auto-archive stale suggested and pending actions on the daily scheduler sweep.
     fn auto_archive_stale_actions(&self) {
         match crate::db::ActionDb::open() {
             Ok(db) => {
-                match db.auto_archive_old_proposed(7) {
+                match db.auto_archive_old_suggested(7) {
                     Ok(count) if count > 0 => {
-                        log::info!("Auto-archived {} stale proposed actions", count);
+                        log::info!("Auto-archived {} stale suggested actions", count);
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        log::warn!("Failed to auto-archive proposed actions: {}", e);
+                        log::warn!("Failed to auto-archive suggested actions: {}", e);
                     }
                 }
 

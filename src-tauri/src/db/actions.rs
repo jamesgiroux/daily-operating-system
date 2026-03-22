@@ -51,7 +51,7 @@ impl ActionDb {
         Ok(actions)
     }
 
-    /// Query pending + waiting actions for focus prioritization.
+    /// Query pending actions for focus prioritization.
     ///
     /// Includes actions with no due date so the ranker can decide feasibility.
     /// Ordered by urgency first, then priority/due date.
@@ -62,7 +62,7 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status IN ('pending', 'waiting')
+             WHERE status = 'pending'
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
                CASE
@@ -85,7 +85,7 @@ impl ActionDb {
         Ok(actions)
     }
 
-    /// Query proposed, pending, and waiting actions for a specific account.
+    /// Query suggested and pending actions for a specific account.
     pub fn get_account_actions(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
@@ -94,7 +94,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE account_id = ?1
-               AND status IN ('proposed', 'pending', 'waiting')
+               AND status IN ('suggested', 'pending')
              ORDER BY priority, due_date",
         )?;
 
@@ -439,7 +439,7 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status IN ('pending', 'waiting')
+             WHERE status = 'pending'
                AND source_type IN ('post_meeting', 'inbox', 'ai-inbox', 'transcript', 'import', 'manual')
              ORDER BY priority, created_at DESC",
         )?;
@@ -506,18 +506,18 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Proposed Actions (I256)
+    // Suggested Actions (I256)
     // =========================================================================
 
-    /// Get all proposed actions.
-    pub fn get_proposed_actions(&self) -> Result<Vec<DbAction>, DbError> {
+    /// Get all suggested actions.
+    pub fn get_suggested_actions(&self) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'proposed'
+             WHERE status = 'suggested'
              ORDER BY priority, created_at DESC",
         )?;
 
@@ -530,12 +530,12 @@ impl ActionDb {
         Ok(actions)
     }
 
-    /// Accept a proposed action, moving it to pending status.
-    pub fn accept_proposed_action(&self, id: &str) -> Result<(), DbError> {
+    /// Accept a suggested action, moving it to pending status.
+    pub fn accept_suggested_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let changed = self.conn.execute(
             "UPDATE actions SET status = 'pending', updated_at = ?1
-             WHERE id = ?2 AND status = 'proposed'",
+             WHERE id = ?2 AND status = 'suggested'",
             params![now, id],
         )?;
         if changed == 0 {
@@ -544,13 +544,13 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Reject a proposed action by archiving it and recording the rejection signal.
-    pub fn reject_proposed_action(&self, id: &str) -> Result<(), DbError> {
-        self.reject_proposed_action_with_source(id, "unknown")
+    /// Reject a suggested action by archiving it and recording the rejection signal.
+    pub fn reject_suggested_action(&self, id: &str) -> Result<(), DbError> {
+        self.reject_suggested_action_with_source(id, "unknown")
     }
 
-    /// Reject a proposed action, recording the source surface for correction learning.
-    pub fn reject_proposed_action_with_source(
+    /// Reject a suggested action, recording the source surface for correction learning.
+    pub fn reject_suggested_action_with_source(
         &self,
         id: &str,
         source: &str,
@@ -559,7 +559,7 @@ impl ActionDb {
         let changed = self.conn.execute(
             "UPDATE actions SET status = 'archived', updated_at = ?1,
              rejected_at = ?1, rejection_source = ?3
-             WHERE id = ?2 AND status = 'proposed'",
+             WHERE id = ?2 AND status = 'suggested'",
             params![now, id, source],
         )?;
         if changed == 0 {
@@ -598,14 +598,14 @@ impl ActionDb {
         Ok(changed)
     }
 
-    /// Auto-archive proposed actions older than N days.
+    /// Auto-archive suggested actions older than N days.
     /// Returns the number of actions archived.
-    pub fn auto_archive_old_proposed(&self, days: i64) -> Result<usize, DbError> {
+    pub fn auto_archive_old_suggested(&self, days: i64) -> Result<usize, DbError> {
         let now = Utc::now().to_rfc3339();
         let cutoff_param = format!("-{} days", days);
         let changed = self.conn.execute(
             "UPDATE actions SET status = 'archived', updated_at = ?1
-             WHERE status = 'proposed'
+             WHERE status = 'suggested'
                AND created_at < datetime('now', ?2)",
             params![now, cutoff_param],
         )?;
@@ -688,7 +688,7 @@ impl ActionDb {
     // Intelligence Queries (I42 — Executive Intelligence)
     // =========================================================================
 
-    /// Get actions in `waiting` status that are older than `stale_days`.
+    /// Get pending actions with `waiting_on` set that are older than `stale_days`.
     ///
     /// These represent stale delegations — things handed off to someone else
     /// that haven't been resolved. Ordered by staleness (oldest first).
@@ -699,7 +699,8 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'waiting'
+             WHERE status = 'pending'
+               AND waiting_on IS NOT NULL
                AND created_at <= datetime('now', ?1 || ' days')
              ORDER BY created_at ASC",
         )?;
@@ -923,18 +924,18 @@ mod tests {
     }
 
     #[test]
-    fn reject_proposed_action_with_source_persists_surface() {
+    fn reject_suggested_action_with_source_persists_surface() {
         let db = test_db();
         db.conn
             .execute(
                 "INSERT INTO actions (
                     id, title, priority, status, created_at, updated_at
-                 ) VALUES (?1, ?2, 'P2', 'proposed', datetime('now'), datetime('now'))",
+                 ) VALUES (?1, ?2, 'P2', 'suggested', datetime('now'), datetime('now'))",
                 params!["action-1", "Follow up"],
             )
             .expect("insert action");
 
-        db.reject_proposed_action_with_source("action-1", "daily_briefing")
+        db.reject_suggested_action_with_source("action-1", "daily_briefing")
             .expect("reject action");
 
         let row: (String, Option<String>) = db

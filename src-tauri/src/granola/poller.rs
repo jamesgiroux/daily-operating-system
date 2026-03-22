@@ -291,8 +291,9 @@ fn process_granola_document(
                 );
             }
 
-            // Write extracted actions as proposed actions
+            // Write extracted actions as suggested actions
             let now = chrono::Utc::now().to_rfc3339();
+            let mut written = 0usize;
             for (i, action) in tr.actions.iter().enumerate() {
                 let action_account_id = action
                     .account
@@ -321,7 +322,7 @@ fn process_granola_document(
                     id: format!("granola-{}-{}", meeting_id, i),
                     title: action.title.clone(),
                     priority: action.priority.clone().unwrap_or_else(|| "P2".to_string()),
-                    status: "proposed".to_string(),
+                    status: "suggested".to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,
@@ -338,7 +339,15 @@ fn process_granola_document(
                     next_meeting_title: None,
                     next_meeting_start: None,
                 };
-                let _ = db.upsert_action_if_not_completed(&db_action);
+                match db.upsert_action_if_not_completed(&db_action) {
+                    Ok(()) => written += 1,
+                    Err(e) => {
+                        log::warn!("Granola: failed to write action '{}': {}", db_action.title, e);
+                    }
+                }
+            }
+            if !tr.actions.is_empty() {
+                log::info!("Granola: wrote {}/{} suggested actions for '{}'", written, tr.actions.len(), calendar_event.title);
             }
 
             // Transition sync state to completed

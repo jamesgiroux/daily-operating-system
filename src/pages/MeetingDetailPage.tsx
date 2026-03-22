@@ -2161,11 +2161,11 @@ function OutcomesSection({
                     } catch (err) { console.error("Failed to toggle action:", err); toast.error("Failed to update action"); }
                   }}
                   onAccept={async () => {
-                    try { await invoke("accept_proposed_action", { id: action.id }); onRefresh(); }
+                    try { await invoke("accept_suggested_action", { id: action.id }); onRefresh(); }
                     catch (err) { console.error("Failed to accept action:", err); toast.error("Failed to accept action"); }
                   }}
                   onReject={async () => {
-                    try { await invoke("reject_proposed_action", { id: action.id, source: "meeting_detail" }); onRefresh(); }
+                    try { await invoke("reject_suggested_action", { id: action.id, source: "meeting_detail" }); onRefresh(); }
                     catch (err) { console.error("Failed to reject action:", err); toast.error("Failed to dismiss action"); }
                   }}
                   onCyclePriority={async () => {

@@ -25,9 +25,9 @@ interface PostMeetingIntelligenceProps {
   getItemFeedback?: (fieldPath: string) => "positive" | "negative" | null;
   /** Per-item feedback submit. */
   onItemFeedback?: (fieldPath: string, type: "positive" | "negative") => void;
-  /** Callback when a proposed action is accepted */
+  /** Callback when a suggested action is accepted */
   onAcceptAction?: (captureId: string) => void;
-  /** Callback when a proposed action is dismissed */
+  /** Callback when a suggested action is dismissed */
   onDismissAction?: (captureId: string) => void;
 }
 
@@ -248,7 +248,7 @@ export function PostMeetingIntelligence({
             ))}
           </div>
 
-          {/* Proposed actions — accept/dismiss pattern */}
+          {/* Suggested actions — accept/dismiss pattern */}
           {commitments.some((c) => c.capture.impact) && (
             <>
               <p className={styles.actionsSublabel}>Suggested Actions</p>
@@ -256,8 +256,8 @@ export function PostMeetingIntelligence({
                 {commitments
                   .filter((c) => c.capture.impact)
                   .map((c) => (
-                    <div key={`action-${c.capture.id}`} className={styles.actionItemProposed}>
-                      <span className={styles.proposedPill}>Proposed</span>
+                    <div key={`action-${c.capture.id}`} className={styles.actionItemSuggested}>
+                      <span className={styles.suggestedPill}>Suggested</span>
                       <div className={styles.actionText}>
                         {c.capture.content}
                         {c.capture.urgency && (
