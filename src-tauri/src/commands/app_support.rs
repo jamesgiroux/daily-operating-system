@@ -930,9 +930,7 @@ pub async fn get_db_growth_report(
 
 /// Bulk recompute health scores for all accounts after formula fixes.
 #[tauri::command]
-pub async fn bulk_recompute_health(
-    state: State<'_, Arc<AppState>>,
-) -> Result<usize, String> {
+pub async fn bulk_recompute_health(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     state
         .db_write(crate::services::intelligence::bulk_recompute_health)
         .await

@@ -236,29 +236,48 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
 
     // Build prep_frozen_json — must include risks/recentWins arrays for I635 scorecard.
     // Structure: { "prep": { "risks": [...], "recentWins": [...], ... } }
-    let build_prep_json = |meeting_id: &str, account_name: Option<&str>, summary: Option<&str>| -> Option<String> {
-        let acct = account_name?;
-        let sum = summary?;
-        let (risks, wins) = match meeting_id {
-            "demo-mtg-acme" => (
-                vec!["Billing team struggling with custom report builder", "Budget review in April — CFO wants ROI justification"],
-                vec!["Phase 2 scoping completed with full executive alignment", "Support ticket volume down 60% since migration"],
-            ),
-            "demo-mtg-globex" => (
-                vec!["Key stakeholder Jamie departing in Q2", "Team B usage declining — may need dedicated enablement"],
-                vec!["Expansion to 3 teams going well — Team A and C fully adopted"],
-            ),
-            "demo-mh-acme-7d" => (
-                vec!["NPS trending down — 3 detractors in latest survey", "Billing team unhappy with reporting interface"],
-                vec!["Phase 1 migration completed ahead of schedule", "API integration passing all validation checks"],
-            ),
-            "demo-mh-globex-14d" => (
-                vec!["Team B engagement declining — needs intervention", "Key stakeholder Jamie departing Q2"],
-                vec!["New dashboard features well received"],
-            ),
-            _ => (vec![], vec![]),
-        };
-        Some(
+    let build_prep_json =
+        |meeting_id: &str, account_name: Option<&str>, summary: Option<&str>| -> Option<String> {
+            let acct = account_name?;
+            let sum = summary?;
+            let (risks, wins) = match meeting_id {
+                "demo-mtg-acme" => (
+                    vec![
+                        "Billing team struggling with custom report builder",
+                        "Budget review in April — CFO wants ROI justification",
+                    ],
+                    vec![
+                        "Phase 2 scoping completed with full executive alignment",
+                        "Support ticket volume down 60% since migration",
+                    ],
+                ),
+                "demo-mtg-globex" => (
+                    vec![
+                        "Key stakeholder Jamie departing in Q2",
+                        "Team B usage declining — may need dedicated enablement",
+                    ],
+                    vec!["Expansion to 3 teams going well — Team A and C fully adopted"],
+                ),
+                "demo-mh-acme-7d" => (
+                    vec![
+                        "NPS trending down — 3 detractors in latest survey",
+                        "Billing team unhappy with reporting interface",
+                    ],
+                    vec![
+                        "Phase 1 migration completed ahead of schedule",
+                        "API integration passing all validation checks",
+                    ],
+                ),
+                "demo-mh-globex-14d" => (
+                    vec![
+                        "Team B engagement declining — needs intervention",
+                        "Key stakeholder Jamie departing Q2",
+                    ],
+                    vec!["New dashboard features well received"],
+                ),
+                _ => (vec![], vec![]),
+            };
+            Some(
             serde_json::json!({
                 "prep": {
                     "account_context": format!("{} — active customer relationship", acct),
@@ -271,7 +290,7 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
             })
             .to_string(),
         )
-    };
+        };
 
     let account_names: std::collections::HashMap<&str, &str> = [
         ("demo-acme", "Acme Corp"),
@@ -289,8 +308,12 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
 
         // Populate meetings.attendees JSON for The Room section
         let attendees_json = match *id {
-            "demo-mtg-acme" => Some(r#"[{"name":"Sarah Chen","email":"sarah@acme.com"},{"name":"Alex Torres","email":"alex@acme.com"},{"name":"Jordan Park","email":"jordan@acme.com"}]"#),
-            "demo-mtg-globex" => Some(r#"[{"name":"Jamie Reeves","email":"jamie@globex.com"},{"name":"Casey Kim","email":"casey@globex.com"}]"#),
+            "demo-mtg-acme" => Some(
+                r#"[{"name":"Sarah Chen","email":"sarah@acme.com"},{"name":"Alex Torres","email":"alex@acme.com"},{"name":"Jordan Park","email":"jordan@acme.com"}]"#,
+            ),
+            "demo-mtg-globex" => Some(
+                r#"[{"name":"Jamie Reeves","email":"jamie@globex.com"},{"name":"Casey Kim","email":"casey@globex.com"}]"#,
+            ),
             "demo-mtg-initech" => Some(r#"[{"name":"Dana Whitfield","email":"dana@initech.com"}]"#),
             _ => None,
         };
@@ -375,9 +398,15 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
 
     for (id, title, mtype, start_time, account_id, summary) in &historical {
         let hist_attendees = match *id {
-            "demo-mh-acme-7d" => Some(r#"[{"name":"Sarah Chen","email":"sarah@acme.com"},{"name":"Alex Torres","email":"alex@acme.com"}]"#),
-            "demo-mh-globex-14d" => Some(r#"[{"name":"Jamie Reeves","email":"jamie@globex.com"},{"name":"Casey Kim","email":"casey@globex.com"}]"#),
-            "demo-mh-initech-21d" => Some(r#"[{"name":"Dana Whitfield","email":"dana@initech.com"}]"#),
+            "demo-mh-acme-7d" => Some(
+                r#"[{"name":"Sarah Chen","email":"sarah@acme.com"},{"name":"Alex Torres","email":"alex@acme.com"}]"#,
+            ),
+            "demo-mh-globex-14d" => Some(
+                r#"[{"name":"Jamie Reeves","email":"jamie@globex.com"},{"name":"Casey Kim","email":"casey@globex.com"}]"#,
+            ),
+            "demo-mh-initech-21d" => {
+                Some(r#"[{"name":"Dana Whitfield","email":"dana@initech.com"}]"#)
+            }
             _ => None,
         };
 
@@ -420,8 +449,11 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     // Today's meetings AND historical meetings get full intelligence so they
     // show as Meeting Records once their start time passes.
     for hist_id in &[
-        "demo-mtg-acme", "demo-mtg-globex",
-        "demo-mh-acme-7d", "demo-mh-globex-14d", "demo-mh-initech-21d",
+        "demo-mtg-acme",
+        "demo-mtg-globex",
+        "demo-mh-acme-7d",
+        "demo-mh-globex-14d",
+        "demo-mh-initech-21d",
     ] {
         conn.execute(
             "UPDATE meeting_transcripts SET transcript_processed_at = datetime('now', '-1 hour') \
@@ -616,10 +648,35 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
 
     // Meeting attendees for continuity thread
     for (meeting_id, attendees) in &[
-        ("demo-mh-acme-7d", vec![("demo-sarah", "sarah@acme.com"), ("demo-alex", "alex@acme.com")]),
-        ("demo-mtg-acme", vec![("demo-sarah", "sarah@acme.com"), ("demo-alex", "alex@acme.com"), ("demo-newface", "jordan@acme.com")]),
-        ("demo-mh-globex-14d", vec![("demo-jamie", "jamie@globex.com"), ("demo-casey", "casey@globex.com")]),
-        ("demo-mtg-globex", vec![("demo-jamie", "jamie@globex.com"), ("demo-casey", "casey@globex.com")]),
+        (
+            "demo-mh-acme-7d",
+            vec![
+                ("demo-sarah", "sarah@acme.com"),
+                ("demo-alex", "alex@acme.com"),
+            ],
+        ),
+        (
+            "demo-mtg-acme",
+            vec![
+                ("demo-sarah", "sarah@acme.com"),
+                ("demo-alex", "alex@acme.com"),
+                ("demo-newface", "jordan@acme.com"),
+            ],
+        ),
+        (
+            "demo-mh-globex-14d",
+            vec![
+                ("demo-jamie", "jamie@globex.com"),
+                ("demo-casey", "casey@globex.com"),
+            ],
+        ),
+        (
+            "demo-mtg-globex",
+            vec![
+                ("demo-jamie", "jamie@globex.com"),
+                ("demo-casey", "casey@globex.com"),
+            ],
+        ),
     ] {
         for (person_id, email) in attendees {
             conn.execute(
@@ -649,8 +706,14 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
 
     // I633: Seed health score history for trend computation demo
     for (acct, scores) in &[
-        ("demo-acme", vec![(72.0, "green"), (68.0, "yellow"), (75.0, "green")]),
-        ("demo-globex", vec![(45.0, "yellow"), (42.0, "yellow"), (38.0, "red")]),
+        (
+            "demo-acme",
+            vec![(72.0, "green"), (68.0, "yellow"), (75.0, "green")],
+        ),
+        (
+            "demo-globex",
+            vec![(45.0, "yellow"), (42.0, "yellow"), (38.0, "red")],
+        ),
     ] {
         for (i, (score, band)) in scores.iter().enumerate() {
             conn.execute(
@@ -700,14 +763,26 @@ pub fn clear_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), String>
     // Clean up v1.0.3 meeting intelligence tables for demo meetings
     conn.execute("DELETE FROM captures WHERE meeting_id LIKE 'demo-%'", [])
         .map_err(|e| format!("Clear demo captures: {}", e))?;
-    conn.execute("DELETE FROM meeting_interaction_dynamics WHERE meeting_id LIKE 'demo-%'", [])
-        .map_err(|e| format!("Clear demo interaction dynamics: {}", e))?;
-    conn.execute("DELETE FROM meeting_champion_health WHERE meeting_id LIKE 'demo-%'", [])
-        .map_err(|e| format!("Clear demo champion health: {}", e))?;
-    conn.execute("DELETE FROM meeting_role_changes WHERE meeting_id LIKE 'demo-%'", [])
-        .map_err(|e| format!("Clear demo role changes: {}", e))?;
-    conn.execute("DELETE FROM meeting_attendees WHERE meeting_id LIKE 'demo-%'", [])
-        .map_err(|e| format!("Clear demo meeting attendees: {}", e))?;
+    conn.execute(
+        "DELETE FROM meeting_interaction_dynamics WHERE meeting_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo interaction dynamics: {}", e))?;
+    conn.execute(
+        "DELETE FROM meeting_champion_health WHERE meeting_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo champion health: {}", e))?;
+    conn.execute(
+        "DELETE FROM meeting_role_changes WHERE meeting_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo role changes: {}", e))?;
+    conn.execute(
+        "DELETE FROM meeting_attendees WHERE meeting_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo meeting attendees: {}", e))?;
 
     // Clean up account_stakeholders links for demo people
     conn.execute(

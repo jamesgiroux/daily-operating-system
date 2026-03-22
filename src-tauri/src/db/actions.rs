@@ -660,7 +660,8 @@ impl ActionDb {
         );
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let mut params_vec: Vec<&dyn rusqlite::types::ToSql> = Vec::with_capacity(source_ids.len() + 1);
+        let mut params_vec: Vec<&dyn rusqlite::types::ToSql> =
+            Vec::with_capacity(source_ids.len() + 1);
         params_vec.push(&source_type);
         for source_id in source_ids {
             params_vec.push(source_id as &dyn rusqlite::types::ToSql);
