@@ -1,7 +1,7 @@
 /* SettingsPage — CSS Module (I541) */
 
 .container {
-  max-width: 900px;
+  max-width: var(--page-content-width-standard);
   margin-left: auto;
   margin-right: auto;
 }
@@ -47,28 +47,6 @@
 
 .bannerDismiss:hover {
   color: var(--color-text-secondary);
-}
-
-/* ── Hero ── */
-
-.hero {
-  padding-top: 80px;
-  padding-bottom: 40px;
-}
-
-.heroTitle {
-  font-family: var(--font-serif);
-  font-size: 42px;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.heroRule {
-  height: 2px;
-  background: var(--color-desk-charcoal);
-  margin-top: 16px;
 }
 
 /* ── Sections ── */

@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "./styles/fonts.css";
 @import "./styles/design-tokens.css";
+@import "./styles/report-surfaces.css";
 
 @custom-variant dark (&:is(.dark *));
 

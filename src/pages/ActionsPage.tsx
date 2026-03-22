@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -243,19 +244,13 @@ export default function ActionsPage() {
 
   return (
     <div className={s.pageContainer}>
-      {/* ═══ PAGE HEADER ═══ */}
-      <section className={s.headerSection}>
-        <div className={s.headerRow}>
-          <h1 className={s.pageTitle}>Actions</h1>
-          <span className={s.itemCount}>
-            {actions.length} item{actions.length !== 1 ? "s" : ""}
-          </span>
-        </div>
-
-        {/* Section rule */}
-        <div className={s.sectionRule} />
-
-        {/* Status filter toggles */}
+      <EditorialPageHeader
+        title="Actions"
+        scale="standard"
+        width="standard"
+        rule="subtle"
+        meta={`${actions.length} item${actions.length !== 1 ? "s" : ""}`}
+      >
         <div className={s.tabRow}>
           {statusTabs.map((tab) => (
             <button
@@ -276,7 +271,6 @@ export default function ActionsPage() {
           ))}
         </div>
 
-        {/* Priority filter toggles */}
         <div className={s.tabRowPriority}>
           {priorityTabs.map((tab) => (
             <button
@@ -289,7 +283,6 @@ export default function ActionsPage() {
           ))}
         </div>
 
-        {/* Search */}
         <input
           type="text"
           value={searchQuery}
@@ -297,7 +290,7 @@ export default function ActionsPage() {
           placeholder="⌘  Search actions..."
           className={s.searchInput}
         />
-      </section>
+      </EditorialPageHeader>
 
       {/* ═══ CREATE FORM ═══ */}
       {showCreate && (
