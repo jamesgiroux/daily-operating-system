@@ -105,9 +105,12 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 
 - [ ] All checks pass on a clean branch (not just locally)
 - [ ] Release workflow dry-run: verify `release.yml` steps match current build requirements
+- [ ] **Validate workflow YAML** — `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml')); print('valid')"`. GitHub silently refuses to start jobs if the YAML is unparseable. Common trap: `---` inside a heredoc in a `run: |` block is parsed as a YAML document separator, not shell content. Use `printf` instead of heredocs containing `---`.
+- [ ] **Verify tag triggers release workflow** — after pushing a tag, check `gh run list --workflow=release.yml --limit 3` within 30 seconds. The run must show `headBranch: "vX.Y.Z"` (not `main`). If missing, the YAML is likely broken (see above) or GitHub deduplicated the push event (create a new commit before re-tagging).
 - [ ] Apple certificate and notarization secrets are current (not expired)
 - [ ] `DAILYOS_GOOGLE_SECRET` repo secret is set
 - [ ] `TAURI_SIGNING_PRIVATE_KEY` repo secret is set (for updater signatures)
+- [ ] **Service layer boundary check** — `bash scripts/check_service_layer_boundary.sh` passes. Script uses `grep` (not `rg`) for CI compatibility. The script skips `#[cfg(test)]` blocks — verify the cutoff works by checking the script uses `grep -n`, not `rg -n`. If adding new hotspot files to the script, use the actual path (e.g., `hygiene/mod.rs` not `hygiene.rs`).
 - [ ] **No uncommitted files referenced by committed code** — `git stash && cargo check --manifest-path src-tauri/Cargo.toml --lib && git stash pop` to verify committed code compiles independently. Partial commits (e.g., calling `crate::foo` without committing `foo.rs`) pass locally but fail in CI.
 - [ ] **Sidecar build script is intact** — `build-mcp.sh` must create a stub file BEFORE `cargo build` (Tauri's build.rs validates externalBin paths during any cargo build from that Cargo.toml, including the sidecar itself). Verify `touch src-tauri/build.rs` runs after sidecar creation in both `test.yml` and `release.yml` to force re-evaluation during the Tauri build step.
 
@@ -142,6 +145,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 cargo audit --file src-tauri/Cargo.lock
 pnpm audit
+bash scripts/check_service_layer_boundary.sh
 ```
 
 ```bash
