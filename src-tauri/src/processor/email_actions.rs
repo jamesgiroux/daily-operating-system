@@ -86,14 +86,14 @@ pub fn extract_email_commitments(
         }
     };
 
-    // Persist each commitment as a proposed action
+    // Persist each commitment as a suggested action
     let now = chrono::Utc::now().to_rfc3339();
     for (i, commitment) in commitments.iter().enumerate() {
         let action = crate::db::DbAction {
             id: format!("email-{}-{}", email_id, i),
             title: commitment.title.clone(),
             priority: "P2".to_string(),
-            status: "proposed".to_string(),
+            status: "suggested".to_string(),
             created_at: now.clone(),
             due_date: commitment.due_date.clone(),
             completed_at: None,

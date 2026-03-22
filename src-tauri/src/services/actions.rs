@@ -78,14 +78,14 @@ pub fn reopen_action(
     Ok(())
 }
 
-/// Accept a proposed action, moving it to pending (I256).
-pub fn accept_proposed_action(
+/// Accept a suggested action, moving it to pending (I256).
+pub fn accept_suggested_action(
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
 ) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
-    db.accept_proposed_action(id).map_err(|e| e.to_string())?;
+    db.accept_suggested_action(id).map_err(|e| e.to_string())?;
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
@@ -108,15 +108,15 @@ pub fn accept_proposed_action(
     Ok(())
 }
 
-/// Reject a proposed action by archiving it (I256).
-pub fn reject_proposed_action(
+/// Reject a suggested action by archiving it (I256).
+pub fn reject_suggested_action(
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
     source: &str,
 ) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
-    db.reject_proposed_action_with_source(id, source)
+    db.reject_suggested_action_with_source(id, source)
         .map_err(|e| e.to_string())?;
 
     // Emit rejection signal for correction learning (I307)
@@ -456,7 +456,7 @@ pub fn get_actions_from_db(db: &ActionDb, days_ahead: i32) -> Result<Vec<ActionL
     Ok(items)
 }
 
-/// Get all proposed (AI-suggested) actions (I256).
-pub fn get_proposed_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, String> {
-    db.get_proposed_actions().map_err(|e| e.to_string())
+/// Get all suggested (AI-suggested) actions (I256).
+pub fn get_suggested_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, String> {
+    db.get_suggested_actions().map_err(|e| e.to_string())
 }
