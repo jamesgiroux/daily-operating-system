@@ -1514,7 +1514,7 @@ fn get_captures_for_account(db: &crate::db::ActionDb, account_id: &str, days_bac
     json!(result)
 }
 
-/// Get pending/waiting actions linked to a person — by `person_id` directly,
+/// Get pending actions linked to a person — by `person_id` directly,
 /// or by shared accounts (via `account_stakeholders`). Up to 10 results.
 fn get_person_actions(db: &crate::db::ActionDb, person_id: &str) -> Value {
     let result: Vec<Value> = (|| {
@@ -1523,7 +1523,7 @@ fn get_person_actions(db: &crate::db::ActionDb, person_id: &str) -> Value {
             .prepare(
                 "SELECT DISTINCT a.id, a.title, a.priority, a.status, a.due_date
                  FROM actions a
-                 WHERE a.status IN ('pending', 'waiting')
+                 WHERE a.status = 'pending'
                    AND (
                      a.person_id = ?1
                      OR a.account_id IN (
@@ -1559,7 +1559,7 @@ fn get_account_actions(db: &crate::db::ActionDb, account_id: &str) -> Value {
                 "SELECT id, title, priority, status, due_date
              FROM actions
              WHERE account_id = ?1
-               AND status IN ('pending', 'waiting')
+               AND status = 'pending'
              ORDER BY priority, due_date",
             )
             .ok()?;
@@ -1698,7 +1698,7 @@ fn get_all_pending_actions(db: &crate::db::ActionDb, limit: usize) -> Value {
             .prepare(
                 "SELECT id, title, priority, status, due_date
              FROM actions
-             WHERE status IN ('pending', 'waiting')
+             WHERE status = 'pending'
              ORDER BY priority, due_date
              LIMIT ?1",
             )
