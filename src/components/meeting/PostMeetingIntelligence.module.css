@@ -741,6 +741,20 @@
   border: 1px solid var(--color-rule-light);
 }
 
+.btnComplete {
+  composes: actionBtn;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: 1px solid var(--color-rule-light);
+}
+
+.btnReopen {
+  composes: actionBtn;
+  color: var(--color-text-quaternary);
+  background: transparent;
+  border: none;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    ROLE CHANGES
    ───────────────────────────────────────────────────────────────────────────── */
