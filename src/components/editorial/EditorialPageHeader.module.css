@@ -1,0 +1,126 @@
+@import "../../styles/design-tokens.css";
+
+.header {
+  --editorial-header-width: var(--page-content-width-standard);
+  --editorial-header-rule-color: var(--color-desk-charcoal);
+  --editorial-header-rule-height: 2px;
+  max-width: var(--editorial-header-width);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.widthStandard {
+  --editorial-header-width: var(--page-content-width-standard);
+}
+
+.widthReading {
+  --editorial-header-width: var(--page-content-width-reading);
+}
+
+.scaleStandard {
+  padding-top: var(--space-5xl);
+  padding-bottom: var(--space-lg);
+}
+
+.scalePage {
+  padding-top: var(--space-5xl);
+  padding-bottom: 40px;
+}
+
+.scaleProfile {
+  padding-top: var(--space-5xl);
+  padding-bottom: var(--space-2xl);
+}
+
+.ruleStandard {
+  --editorial-header-rule-height: 2px;
+}
+
+.ruleSubtle {
+  --editorial-header-rule-color: var(--color-rule-heavy);
+  --editorial-header-rule-height: 1px;
+}
+
+.topRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-lg);
+}
+
+.titleBlock {
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.scaleStandard .title {
+  font-size: 36px;
+}
+
+.scalePage .title {
+  font-size: 42px;
+}
+
+.scaleProfile .title {
+  font-size: 52px;
+  line-height: 1.06;
+}
+
+.subtitle {
+  margin: var(--space-sm) 0 0;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.meta {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.rule {
+  height: var(--editorial-header-rule-height);
+  margin-top: var(--space-md);
+  background: var(--editorial-header-rule-color);
+}
+
+.after {
+  margin-top: var(--space-md);
+}
+
+@media (max-width: 768px) {
+  .topRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+
+  .meta {
+    white-space: normal;
+  }
+
+  .scaleStandard .title {
+    font-size: 32px;
+  }
+
+  .scalePage .title {
+    font-size: 38px;
+  }
+
+  .scaleProfile .title {
+    font-size: 44px;
+  }
+}
