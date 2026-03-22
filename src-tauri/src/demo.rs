@@ -234,16 +234,40 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         ),
     ];
 
-    // Build prep_frozen_json for meetings with prep content
-    let build_prep_json = |account_name: Option<&str>, summary: Option<&str>| -> Option<String> {
+    // Build prep_frozen_json — must include risks/recentWins arrays for I635 scorecard.
+    // Structure: { "prep": { "risks": [...], "recentWins": [...], ... } }
+    let build_prep_json = |meeting_id: &str, account_name: Option<&str>, summary: Option<&str>| -> Option<String> {
         let acct = account_name?;
         let sum = summary?;
+        let (risks, wins) = match meeting_id {
+            "demo-mtg-acme" => (
+                vec!["Billing team struggling with custom report builder", "Budget review in April — CFO wants ROI justification"],
+                vec!["Phase 2 scoping completed with full executive alignment", "Support ticket volume down 60% since migration"],
+            ),
+            "demo-mtg-globex" => (
+                vec!["Key stakeholder Jamie departing in Q2", "Team B usage declining — may need dedicated enablement"],
+                vec!["Expansion to 3 teams going well — Team A and C fully adopted"],
+            ),
+            "demo-mh-acme-7d" => (
+                vec!["NPS trending down — 3 detractors in latest survey", "Billing team unhappy with reporting interface"],
+                vec!["Phase 1 migration completed ahead of schedule", "API integration passing all validation checks"],
+            ),
+            "demo-mh-globex-14d" => (
+                vec!["Team B engagement declining — needs intervention", "Key stakeholder Jamie departing Q2"],
+                vec!["New dashboard features well received"],
+            ),
+            _ => (vec![], vec![]),
+        };
         Some(
             serde_json::json!({
-                "account_context": format!("{} — active customer relationship", acct),
-                "meeting_narrative": sum,
-                "recommended_actions": ["Review recent activity", "Prepare discussion points"],
-                "attendee_context": format!("Key stakeholders from {}", acct)
+                "prep": {
+                    "account_context": format!("{} — active customer relationship", acct),
+                    "meeting_narrative": sum,
+                    "risks": risks,
+                    "recentWins": wins,
+                    "recommended_actions": ["Review recent activity", "Prepare discussion points"],
+                    "attendee_context": format!("Key stakeholders from {}", acct)
+                }
             })
             .to_string(),
         )
@@ -260,13 +284,21 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     for (id, title, mtype, start_time, account_id, summary) in &meetings {
         let prep_json = account_id.and_then(|acct| {
             let acct_name = account_names.get(acct).copied();
-            build_prep_json(acct_name, *summary)
+            build_prep_json(id, acct_name, *summary)
         });
 
+        // Populate meetings.attendees JSON for The Room section
+        let attendees_json = match *id {
+            "demo-mtg-acme" => Some(r#"[{"name":"Sarah Chen","email":"sarah@acme.com"},{"name":"Alex Torres","email":"alex@acme.com"},{"name":"Jordan Park","email":"jordan@acme.com"}]"#),
+            "demo-mtg-globex" => Some(r#"[{"name":"Jamie Reeves","email":"jamie@globex.com"},{"name":"Casey Kim","email":"casey@globex.com"}]"#),
+            "demo-mtg-initech" => Some(r#"[{"name":"Dana Whitfield","email":"dana@initech.com"}]"#),
+            _ => None,
+        };
+
         conn.execute(
-            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![id, title, mtype, start_time, &today],
+            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, attendees, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, title, mtype, start_time, attendees_json, &today],
         )
         .map_err(|e| format!("Demo meeting insert: {}", e))?;
 
@@ -342,10 +374,17 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     ];
 
     for (id, title, mtype, start_time, account_id, summary) in &historical {
+        let hist_attendees = match *id {
+            "demo-mh-acme-7d" => Some(r#"[{"name":"Sarah Chen","email":"sarah@acme.com"},{"name":"Alex Torres","email":"alex@acme.com"}]"#),
+            "demo-mh-globex-14d" => Some(r#"[{"name":"Jamie Reeves","email":"jamie@globex.com"},{"name":"Casey Kim","email":"casey@globex.com"}]"#),
+            "demo-mh-initech-21d" => Some(r#"[{"name":"Dana Whitfield","email":"dana@initech.com"}]"#),
+            _ => None,
+        };
+
         conn.execute(
-            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![id, title, mtype, start_time, &today],
+            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, attendees, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, title, mtype, start_time, hist_attendees, &today],
         )
         .map_err(|e| format!("Demo historical meeting: {}", e))?;
 
@@ -357,7 +396,7 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         // I635: Historical meetings need prep_frozen_json for prediction scorecard
         let hist_prep = account_id.and_then(|acct| {
             let acct_name = account_names.get(acct).copied();
-            build_prep_json(acct_name, *summary)
+            build_prep_json(id, acct_name, *summary)
         });
         conn.execute(
             "INSERT OR REPLACE INTO meeting_prep (meeting_id, prep_frozen_json, prep_frozen_at) \
@@ -538,6 +577,24 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
          (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
          VALUES ('demo-rc-gt1', 'demo-mtg-globex', 'Casey Kim', 'champion_candidate', 'champion', \
           'Casey is now the primary point of contact. Jamie confirmed the handoff is complete for day-to-day operations.', datetime('now'))",
+        [],
+    ).ok();
+
+    // Acme today — Alex Torres elevated
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_role_changes \
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
+         VALUES ('demo-rc-at1', 'demo-mtg-acme', 'Alex Torres', 'stakeholder', 'technical_contact', \
+          'Alex brought to meeting to build multi-threaded relationship and validate billing team friction.', datetime('now'))",
+        [],
+    ).ok();
+
+    // Acme 7d ago — Alex Torres joined
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_role_changes \
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
+         VALUES ('demo-rc-a1', 'demo-mh-acme-7d', 'Alex Torres', NULL, 'stakeholder', \
+          'Alex provided technical perspective on API integration and flagged billing team friction.', datetime('now'))",
         [],
     ).ok();
 
