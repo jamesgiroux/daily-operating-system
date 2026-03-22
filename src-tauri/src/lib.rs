@@ -458,8 +458,8 @@ pub fn run() {
             commands::get_actions_from_db,
             commands::complete_action,
             commands::reopen_action,
-            commands::accept_proposed_action,
-            commands::reject_proposed_action,
+            commands::accept_suggested_action,
+            commands::reject_suggested_action,
             commands::mark_reply_sent,
             commands::dismiss_gone_quiet,
             commands::archive_email,
@@ -469,7 +469,7 @@ pub fn run() {
             commands::dismiss_email_item,
             commands::list_dismissed_email_items,
             commands::reset_email_preferences,
-            commands::get_proposed_actions,
+            commands::get_suggested_actions,
             commands::get_meeting_history,
             commands::get_meeting_history_detail,
             commands::search_meetings,
@@ -817,6 +817,9 @@ pub fn run() {
             commands::get_db_growth_report,
             // I633: Health Scoring Recalibration
             commands::bulk_recompute_health,
+            // I635 + I637: Meeting Intelligence
+            commands::get_prediction_scorecard,
+            commands::get_meeting_continuity_thread,
             // I529: Intelligence Quality Feedback
             commands::submit_intelligence_feedback,
             commands::get_entity_feedback,

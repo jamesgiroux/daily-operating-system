@@ -167,6 +167,12 @@
   flex-shrink: 0;
 }
 
+.linkReset {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
 .pastArrow {
   font-family: var(--font-sans);
   font-size: 13px;

@@ -7,6 +7,7 @@ import { useInbox } from "@/hooks/useInbox";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
+import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
@@ -617,11 +618,7 @@ export default function InboxPage() {
   if (files.length === 0) {
     return (
       <div className={styles.pageContainer}>
-        {/* Hero */}
-        <section className={styles.heroSection}>
-          <h1 className={styles.heroTitle}>Inbox</h1>
-          <div className={styles.heroRule} />
-        </section>
+        <EditorialPageHeader title="Inbox" scale="standard" width="standard" />
 
         {/* Drop zone */}
         <div className={`${styles.dropZoneLarge} ${isDragging ? styles.dropZoneLargeDragging : ""}`}>
@@ -693,18 +690,16 @@ export default function InboxPage() {
         </div>
       )}
 
-      {/* HERO */}
-      <section className={styles.heroSection}>
-        <div className={styles.heroRow}>
-          <h1 className={styles.heroTitle}>Inbox</h1>
-          <span className={styles.heroCount}>
-            {processingAll
-              ? `Processing ${files.length} file${files.length === 1 ? "" : "s"}...`
-              : `${visibleFiles.length} file${visibleFiles.length === 1 ? "" : "s"}`}
-          </span>
-        </div>
-        <div className={styles.heroRule} />
-      </section>
+      <EditorialPageHeader
+        title="Inbox"
+        scale="standard"
+        width="standard"
+        meta={
+          processingAll
+            ? `Processing ${files.length} file${files.length === 1 ? "" : "s"}...`
+            : `${visibleFiles.length} file${visibleFiles.length === 1 ? "" : "s"}`
+        }
+      />
 
       {/* DROP ZONE */}
       <div className={`${styles.dropZoneCompact} ${isDragging ? styles.dropZoneCompactDragging : ""}`}>

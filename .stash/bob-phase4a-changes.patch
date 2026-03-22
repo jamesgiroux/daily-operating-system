@@ -1,0 +1,2837 @@
+diff --git a/src/components/book-of-business/AppendixSlide.tsx b/src/components/book-of-business/AppendixSlide.tsx
+new file mode 100644
+index 0000000..a0b9907
+--- /dev/null
++++ b/src/components/book-of-business/AppendixSlide.tsx
+@@ -0,0 +1,89 @@
++import { formatArr, formatShortDate } from "@/lib/utils";
++import type { AccountSnapshotRow, BookOfBusinessContent } from "@/types/reports";
++import s from "./BookOfBusinessSlides.module.css";
++
++interface AppendixSlideProps {
++  content: BookOfBusinessContent;
++}
++
++function healthTone(band: string | null | undefined): string {
++  switch (band) {
++    case "healthy":
++      return `${s.healthPill} ${s.healthHealthy}`;
++    case "watch":
++      return `${s.healthPill} ${s.healthWatch}`;
++    case "at-risk":
++      return `${s.healthPill} ${s.healthRisk}`;
++    default:
++      return s.healthPill;
++  }
++}
++
++function appendixAccounts(content: BookOfBusinessContent): AccountSnapshotRow[] {
++  const deepDiveIds = new Set(content.deepDives.map((item) => item.accountId));
++  return content.accountSnapshot.filter((account) => !deepDiveIds.has(account.accountId));
++}
++
++export function AppendixSlide({ content }: AppendixSlideProps) {
++  const appendix = appendixAccounts(content);
++
++  return (
++    <section id="appendix" className={s.slideTight}>
++      <div className={s.sectionHeader}>
++        <div>
++          <div className={s.overline}>Appendix</div>
++          <p className={s.subtitle}>
++            Lightweight account cards for the rest of the portfolio.
++          </p>
++        </div>
++        <div className={s.sourceNote}>Data-sourced</div>
++      </div>
++
++      {appendix.length === 0 ? (
++        <div className={s.emptyBlock}>
++          <p className={s.emptyMessage}>Every active account is already represented in the spotlight section.</p>
++        </div>
++      ) : (
++        <div className={s.appendixGrid}>
++          {appendix.map((account) => (
++            <article key={account.accountId} className={s.appendixCard}>
++              <div className={s.appendixHead}>
++                <h3 className={s.appendixTitle}>{account.accountName}</h3>
++                <span className={healthTone(account.healthBand)}>
++                  {account.healthBand ? account.healthBand.replace("-", " ") : "unknown"}
++                </span>
++              </div>
++
++              <div className={s.appendixMeta}>
++                <div>
++                  <span className={s.appendixMetaLabel}>ARR</span>
++                  <span className={s.appendixValue}>
++                    {account.arr != null ? `$${formatArr(account.arr)}` : "—"}
++                  </span>
++                </div>
++                <div>
++                  <span className={s.appendixMetaLabel}>Lifecycle</span>
++                  <span className={s.appendixValue}>{account.lifecycle ?? "—"}</span>
++                </div>
++                <div>
++                  <span className={s.appendixMetaLabel}>Renewal</span>
++                  <span className={s.appendixValue}>
++                    {account.renewalDate ? formatShortDate(account.renewalDate) : "—"}
++                  </span>
++                </div>
++                <div>
++                  <span className={s.appendixMetaLabel}>Key Contact</span>
++                  <span className={s.appendixValue}>{account.keyContact ?? "—"}</span>
++                </div>
++                <div>
++                  <span className={s.appendixMetaLabel}>Meetings (90d)</span>
++                  <span className={s.appendixValue}>{account.meetingCount90d}</span>
++                </div>
++              </div>
++            </article>
++          ))}
++        </div>
++      )}
++    </section>
++  );
++}
+diff --git a/src/components/book-of-business/AskSlide.tsx b/src/components/book-of-business/AskSlide.tsx
+index 1152f13..fd6fadb 100644
+--- a/src/components/book-of-business/AskSlide.tsx
++++ b/src/components/book-of-business/AskSlide.tsx
+@@ -1,10 +1,6 @@
+-/**
+- * AskSlide — Leadership asks.
+- * Same editorial pattern as the risk briefing's TheAskSlide.
+- */
+-import { useState } from "react";
+ import { EditableText } from "@/components/ui/EditableText";
+ import type { BookOfBusinessContent } from "@/types/reports";
++import s from "./BookOfBusinessSlides.module.css";
+ 
+ interface AskSlideProps {
+   content: BookOfBusinessContent;
+@@ -12,154 +8,86 @@ interface AskSlideProps {
+ }
+ 
+ export function AskSlide({ content, onUpdate }: AskSlideProps) {
+-  const [hoveredAsk, setHoveredAsk] = useState<number | null>(null);
+-
+-  if (content.leadershipAsks.length === 0) return null;
++  const addAsk = () =>
++    onUpdate({
++      ...content,
++      leadershipAsks: [
++        ...content.leadershipAsks,
++        {
++          ask: "Add the decision or support needed.",
++          context: "Explain why this matters now.",
++          impactedAccounts: [],
++          status: "new",
++        },
++      ],
++      hasLeadershipAsks: true,
++    });
+ 
+   return (
+-    <section
+-      id="the-ask"
+-      style={{
+-        scrollMarginTop: 60,
+-        minHeight: "100vh",
+-        display: "flex",
+-        flexDirection: "column",
+-        justifyContent: "center",
+-        padding: "120px 120px 80px",
+-        scrollSnapAlign: "start",
+-      }}
+-    >
+-      {/* Overline */}
+-      <div
+-        style={{
+-          fontFamily: "var(--font-mono)",
+-          fontSize: 12,
+-          fontWeight: 600,
+-          textTransform: "uppercase",
+-          letterSpacing: "0.12em",
+-          color: "var(--color-spice-turmeric)",
+-          marginBottom: 24,
+-        }}
+-      >
+-        The Ask
++    <section id="the-ask" className={s.slideTight}>
++      <div className={s.sectionHeader}>
++        <div className={s.overline}>Leadership Asks</div>
++        <button type="button" className={`${s.button} ${s.buttonPrimary}`} onClick={addAsk}>
++          Add Ask
++        </button>
+       </div>
+ 
+-      <div style={{ maxWidth: 800 }}>
+-        {content.leadershipAsks.map((ask, ai) => (
+-          <div
+-            key={ai}
+-            onMouseEnter={() => setHoveredAsk(ai)}
+-            onMouseLeave={() => setHoveredAsk(null)}
+-            style={{
+-              display: "flex",
+-              alignItems: "baseline",
+-              gap: 16,
+-              padding: "16px 0",
+-              borderBottom: "1px solid var(--color-rule-light)",
+-            }}
+-          >
+-            <span
+-              style={{
+-                fontFamily: "var(--font-mono)",
+-                fontSize: 20,
+-                fontWeight: 600,
+-                color: "var(--color-spice-turmeric)",
+-                minWidth: 24,
+-                flexShrink: 0,
+-              }}
+-            >
+-              {ai + 1}
+-            </span>
+-            <div style={{ flex: 1 }}>
+-              <EditableText
+-                value={ask.ask}
+-                onChange={(v) => {
+-                  const next = [...content.leadershipAsks];
+-                  next[ai] = { ...next[ai], ask: v };
+-                  onUpdate({ ...content, leadershipAsks: next });
+-                }}
+-                multiline={false}
+-                style={{
+-                  fontFamily: "var(--font-sans)",
+-                  fontSize: 17,
+-                  color: "var(--color-text-primary)",
+-                }}
+-              />
+-              <EditableText
+-                as="div"
+-                value={ask.context}
+-                onChange={(v) => {
+-                  const next = [...content.leadershipAsks];
+-                  next[ai] = { ...next[ai], context: v };
+-                  onUpdate({ ...content, leadershipAsks: next });
+-                }}
+-                multiline={false}
+-                style={{
+-                  fontFamily: "var(--font-sans)",
+-                  fontSize: 14,
+-                  color: "var(--color-text-secondary)",
+-                  marginTop: 4,
+-                }}
+-              />
+-              {ask.impactedAccounts.length > 0 && (
+-                <div
+-                  style={{
+-                    fontFamily: "var(--font-mono)",
+-                    fontSize: 11,
+-                    color: "var(--color-text-tertiary)",
+-                    marginTop: 6,
++      {content.leadershipAsks.length === 0 ? (
++        <div className={s.emptyBlock}>
++          <p className={s.emptyMessage}>No leadership asks are captured yet.</p>
++        </div>
++      ) : (
++        <div className={s.sectionBlock}>
++          {content.leadershipAsks.map((ask, index) => (
++            <div key={`${ask.ask}-${index}`} className={s.itemRow}>
++              <span className={s.itemIndex}>{index + 1}</span>
++              <div className={s.itemBody}>
++                <EditableText
++                  value={ask.ask}
++                  onChange={(value) => {
++                    const next = [...content.leadershipAsks];
++                    next[index] = { ...next[index], ask: value };
++                    onUpdate({ ...content, leadershipAsks: next });
++                  }}
++                  multiline={false}
++                  className={`${s.itemText} ${s.itemTextStrong}`}
++                />
++                <EditableText
++                  as="div"
++                  value={ask.context}
++                  onChange={(value) => {
++                    const next = [...content.leadershipAsks];
++                    next[index] = { ...next[index], context: value };
++                    onUpdate({ ...content, leadershipAsks: next });
++                  }}
++                  multiline={false}
++                  className={`${s.itemText} ${s.itemTextMuted}`}
++                />
++                {ask.impactedAccounts.length > 0 && (
++                  <div className={s.themeCitations}>{ask.impactedAccounts.join(" · ")}</div>
++                )}
++              </div>
++              <div className={s.itemActions}>
++                {ask.status && <span className={s.statusBadge}>{ask.status}</span>}
++                <button
++                  type="button"
++                  className={`${s.button} ${s.buttonDanger}`}
++                  onClick={() => {
++                    const next = content.leadershipAsks.filter((_, itemIndex) => itemIndex !== index);
++                    onUpdate({
++                      ...content,
++                      leadershipAsks: next,
++                      hasLeadershipAsks: next.length > 0,
++                    });
+                   }}
+                 >
+-                  {ask.impactedAccounts.join(" \u00b7 ")}
+-                </div>
+-              )}
++                  Remove
++                </button>
++              </div>
+             </div>
+-            {ask.status && (
+-              <span
+-                style={{
+-                  fontFamily: "var(--font-mono)",
+-                  fontSize: 10,
+-                  fontWeight: 600,
+-                  textTransform: "uppercase",
+-                  letterSpacing: "0.06em",
+-                  color: "var(--color-text-tertiary)",
+-                  background: "var(--color-rule-light)",
+-                  padding: "2px 8px",
+-                  borderRadius: 3,
+-                  flexShrink: 0,
+-                }}
+-              >
+-                {ask.status}
+-              </span>
+-            )}
+-            {content.leadershipAsks.length > 1 && (
+-              <button
+-                onClick={(e) => {
+-                  e.stopPropagation();
+-                  onUpdate({
+-                    ...content,
+-                    leadershipAsks: content.leadershipAsks.filter((_, j) => j !== ai),
+-                  });
+-                }}
+-                style={{
+-                  opacity: hoveredAsk === ai ? 0.6 : 0,
+-                  transition: "opacity 0.15s",
+-                  background: "none",
+-                  border: "none",
+-                  cursor: "pointer",
+-                  padding: "4px 6px",
+-                  fontSize: 14,
+-                  color: "var(--color-text-tertiary)",
+-                  flexShrink: 0,
+-                }}
+-                aria-label="Remove"
+-              >
+-                ✕
+-              </button>
+-            )}
+-          </div>
+-        ))}
+-      </div>
++          ))}
++        </div>
++      )}
+     </section>
+   );
+ }
+diff --git a/src/components/book-of-business/AttentionSlide.tsx b/src/components/book-of-business/AttentionSlide.tsx
+index 3fe7cad..c5db818 100644
+--- a/src/components/book-of-business/AttentionSlide.tsx
++++ b/src/components/book-of-business/AttentionSlide.tsx
+@@ -1,111 +1,117 @@
+-/**
+- * AttentionSlide — Portfolio risks and opportunities.
+- * Slide 2: what needs attention, presented as editorial callouts.
+- */
+ import { EditableText } from "@/components/ui/EditableText";
+ import { formatArr } from "@/lib/utils";
+-import type { BookOfBusinessContent, BookRiskItem, BookOpportunityItem } from "@/types/reports";
++import type { AccountSnapshotRow, BookOfBusinessContent, BookOpportunityItem, BookRiskItem } from "@/types/reports";
++import s from "./BookOfBusinessSlides.module.css";
+ 
+ interface AttentionSlideProps {
+   content: BookOfBusinessContent;
+   onUpdate: (content: BookOfBusinessContent) => void;
+ }
+ 
++function nextAccount(snapshot: AccountSnapshotRow[], usedNames: string[]): AccountSnapshotRow | null {
++  return snapshot.find((account) => !usedNames.includes(account.accountName)) ?? snapshot[0] ?? null;
++}
++
+ export function AttentionSlide({ content, onUpdate }: AttentionSlideProps) {
++  const addRisk = () => {
++    const account = nextAccount(content.accountSnapshot, content.topRisks.map((item) => item.accountName));
++    if (!account) return;
++    onUpdate({
++      ...content,
++      topRisks: [
++        ...content.topRisks,
++        {
++          accountName: account.accountName,
++          arr: account.arr,
++          risk: "Add the portfolio risk to call out.",
++        },
++      ],
++    });
++  };
++
++  const addOpportunity = () => {
++    const account = nextAccount(
++      content.accountSnapshot,
++      content.topOpportunities.map((item) => item.accountName),
++    );
++    if (!account) return;
++    onUpdate({
++      ...content,
++      topOpportunities: [
++        ...content.topOpportunities,
++        {
++          accountName: account.accountName,
++          estimatedValue: account.arr != null ? `$${formatArr(account.arr)}` : null,
++          opportunity: "Add the expansion or growth motion.",
++        },
++      ],
++    });
++  };
++
+   return (
+-    <section
+-      id="attention"
+-      style={{
+-        scrollMarginTop: 60,
+-        minHeight: "100vh",
+-        display: "flex",
+-        flexDirection: "column",
+-        justifyContent: "center",
+-        padding: "120px 120px 80px",
+-        scrollSnapAlign: "start",
+-      }}
+-    >
+-      {/* Overline */}
+-      <div
+-        style={{
+-          fontFamily: "var(--font-mono)",
+-          fontSize: 12,
+-          fontWeight: 600,
+-          textTransform: "uppercase",
+-          letterSpacing: "0.12em",
+-          color: "var(--color-spice-turmeric)",
+-          marginBottom: 24,
+-        }}
+-      >
+-        What Needs Attention
++    <section id="attention" className={s.slideTight}>
++      <div className={s.sectionHeader}>
++        <div className={s.overline}>What Needs Attention</div>
++        <div className={s.sectionActions}>
++          <button type="button" className={`${s.button} ${s.buttonPrimary}`} onClick={addRisk}>
++            Add Risk
++          </button>
++          <button type="button" className={`${s.button} ${s.buttonPrimary}`} onClick={addOpportunity}>
++            Add Opportunity
++          </button>
++        </div>
+       </div>
+ 
+-      <div style={{ display: "flex", gap: 80, maxWidth: 900 }}>
+-        {/* Risks */}
+-        <div style={{ flex: 1 }}>
+-          <div
+-            style={{
+-              fontFamily: "var(--font-mono)",
+-              fontSize: 11,
+-              fontWeight: 600,
+-              textTransform: "uppercase",
+-              letterSpacing: "0.1em",
+-              color: "var(--color-spice-terracotta)",
+-              marginBottom: 16,
+-            }}
+-          >
+-            Risks
+-          </div>
+-          {content.topRisks.map((item, i) => (
+-            <RiskItem
+-              key={i}
+-              index={i + 1}
+-              item={item}
+-              onUpdate={(updated) => {
+-                const next = [...content.topRisks];
+-                next[i] = updated;
+-                onUpdate({ ...content, topRisks: next });
+-              }}
+-            />
+-          ))}
+-          {content.topRisks.length === 0 && (
+-            <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--color-text-tertiary)" }}>
+-              No risks identified.
++      <div className={s.twoColumn}>
++        <div className={s.column}>
++          <div className={`${s.columnLabel} ${s.columnLabelRisk}`}>Risks</div>
++          {content.topRisks.length === 0 ? (
++            <div className={s.emptyBlock}>
++              <p className={s.emptyMessage}>No portfolio risks have been called out yet.</p>
+             </div>
++          ) : (
++            content.topRisks.map((item, index) => (
++              <RiskItem
++                key={`${item.accountName}-${index}`}
++                index={index + 1}
++                item={item}
++                onUpdate={(updated) => {
++                  const next = [...content.topRisks];
++                  next[index] = updated;
++                  onUpdate({ ...content, topRisks: next });
++                }}
++                onRemove={() => onUpdate({
++                  ...content,
++                  topRisks: content.topRisks.filter((_, itemIndex) => itemIndex !== index),
++                })}
++              />
++            ))
+           )}
+         </div>
+ 
+-        {/* Opportunities */}
+-        <div style={{ flex: 1 }}>
+-          <div
+-            style={{
+-              fontFamily: "var(--font-mono)",
+-              fontSize: 11,
+-              fontWeight: 600,
+-              textTransform: "uppercase",
+-              letterSpacing: "0.1em",
+-              color: "var(--color-garden-sage)",
+-              marginBottom: 16,
+-            }}
+-          >
+-            Opportunities
+-          </div>
+-          {content.topOpportunities.map((item, i) => (
+-            <OppItem
+-              key={i}
+-              index={i + 1}
+-              item={item}
+-              onUpdate={(updated) => {
+-                const next = [...content.topOpportunities];
+-                next[i] = updated;
+-                onUpdate({ ...content, topOpportunities: next });
+-              }}
+-            />
+-          ))}
+-          {content.topOpportunities.length === 0 && (
+-            <div style={{ fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--color-text-tertiary)" }}>
+-              No opportunities identified.
++        <div className={s.column}>
++          <div className={`${s.columnLabel} ${s.columnLabelOpportunity}`}>Opportunities</div>
++          {content.topOpportunities.length === 0 ? (
++            <div className={s.emptyBlock}>
++              <p className={s.emptyMessage}>No portfolio opportunities have been called out yet.</p>
+             </div>
++          ) : (
++            content.topOpportunities.map((item, index) => (
++              <OpportunityItem
++                key={`${item.accountName}-${index}`}
++                index={index + 1}
++                item={item}
++                onUpdate={(updated) => {
++                  const next = [...content.topOpportunities];
++                  next[index] = updated;
++                  onUpdate({ ...content, topOpportunities: next });
++                }}
++                onRemove={() => onUpdate({
++                  ...content,
++                  topOpportunities: content.topOpportunities.filter((_, itemIndex) => itemIndex !== index),
++                })}
++              />
++            ))
+           )}
+         </div>
+       </div>
+@@ -117,124 +123,68 @@ function RiskItem({
+   index,
+   item,
+   onUpdate,
++  onRemove,
+ }: {
+   index: number;
+   item: BookRiskItem;
+   onUpdate: (item: BookRiskItem) => void;
++  onRemove: () => void;
+ }) {
+   return (
+-    <div
+-      style={{
+-        display: "flex",
+-        alignItems: "baseline",
+-        gap: 12,
+-        padding: "12px 0",
+-        borderBottom: "1px solid var(--color-rule-light)",
+-      }}
+-    >
+-      <span
+-        style={{
+-          fontFamily: "var(--font-mono)",
+-          fontSize: 18,
+-          fontWeight: 600,
+-          color: "var(--color-spice-terracotta)",
+-          minWidth: 20,
+-          flexShrink: 0,
+-        }}
+-      >
+-        {index}
+-      </span>
+-      <div style={{ flex: 1 }}>
+-        <div
+-          style={{
+-            fontFamily: "var(--font-mono)",
+-            fontSize: 10,
+-            fontWeight: 600,
+-            textTransform: "uppercase",
+-            letterSpacing: "0.08em",
+-            color: "var(--color-text-tertiary)",
+-            marginBottom: 4,
+-          }}
+-        >
+-          {item.accountName}
+-          {item.arr != null && (
+-            <span style={{ marginLeft: 8, fontWeight: 400 }}>${formatArr(item.arr)}</span>
+-          )}
++    <div className={s.itemRow}>
++      <span className={`${s.itemIndex} ${s.itemIndexRisk}`}>{index}</span>
++      <div className={s.itemBody}>
++        <div className={s.itemMeta}>
++          <span>{item.accountName}</span>
++          {item.arr != null && <span>${formatArr(item.arr)}</span>}
+         </div>
+         <EditableText
+           value={item.risk}
+-          onChange={(v) => onUpdate({ ...item, risk: v })}
++          onChange={(value) => onUpdate({ ...item, risk: value })}
+           multiline={false}
+-          style={{
+-            fontFamily: "var(--font-sans)",
+-            fontSize: 16,
+-            color: "var(--color-text-primary)",
+-          }}
++          className={s.itemText}
+         />
+       </div>
++      <div className={s.itemActions}>
++        <button type="button" className={`${s.button} ${s.buttonDanger}`} onClick={onRemove}>
++          Remove
++        </button>
++      </div>
+     </div>
+   );
+ }
+ 
+-function OppItem({
++function OpportunityItem({
+   index,
+   item,
+   onUpdate,
++  onRemove,
+ }: {
+   index: number;
+   item: BookOpportunityItem;
+   onUpdate: (item: BookOpportunityItem) => void;
++  onRemove: () => void;
+ }) {
+   return (
+-    <div
+-      style={{
+-        display: "flex",
+-        alignItems: "baseline",
+-        gap: 12,
+-        padding: "12px 0",
+-        borderBottom: "1px solid var(--color-rule-light)",
+-      }}
+-    >
+-      <span
+-        style={{
+-          fontFamily: "var(--font-mono)",
+-          fontSize: 18,
+-          fontWeight: 600,
+-          color: "var(--color-garden-sage)",
+-          minWidth: 20,
+-          flexShrink: 0,
+-        }}
+-      >
+-        {index}
+-      </span>
+-      <div style={{ flex: 1 }}>
+-        <div
+-          style={{
+-            fontFamily: "var(--font-mono)",
+-            fontSize: 10,
+-            fontWeight: 600,
+-            textTransform: "uppercase",
+-            letterSpacing: "0.08em",
+-            color: "var(--color-text-tertiary)",
+-            marginBottom: 4,
+-          }}
+-        >
+-          {item.accountName}
+-          {item.estimatedValue && (
+-            <span style={{ marginLeft: 8, fontWeight: 400 }}>{item.estimatedValue}</span>
+-          )}
++    <div className={s.itemRow}>
++      <span className={`${s.itemIndex} ${s.itemIndexOpportunity}`}>{index}</span>
++      <div className={s.itemBody}>
++        <div className={s.itemMeta}>
++          <span>{item.accountName}</span>
++          {item.estimatedValue && <span>{item.estimatedValue}</span>}
+         </div>
+         <EditableText
+           value={item.opportunity}
+-          onChange={(v) => onUpdate({ ...item, opportunity: v })}
++          onChange={(value) => onUpdate({ ...item, opportunity: value })}
+           multiline={false}
+-          style={{
+-            fontFamily: "var(--font-sans)",
+-            fontSize: 16,
+-            color: "var(--color-text-primary)",
+-          }}
++          className={s.itemText}
+         />
+       </div>
++      <div className={s.itemActions}>
++        <button type="button" className={`${s.button} ${s.buttonDanger}`} onClick={onRemove}>
++          Remove
++        </button>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/components/book-of-business/BookOfBusinessSlides.module.css b/src/components/book-of-business/BookOfBusinessSlides.module.css
+new file mode 100644
+index 0000000..cb81245
+--- /dev/null
++++ b/src/components/book-of-business/BookOfBusinessSlides.module.css
+@@ -0,0 +1,619 @@
++.slide {
++  min-height: 100vh;
++  display: flex;
++  flex-direction: column;
++  justify-content: center;
++  padding: 120px 120px 80px;
++  scroll-snap-align: start;
++  scroll-margin-top: 60px;
++}
++
++.slideTight {
++  min-height: 100vh;
++  display: flex;
++  flex-direction: column;
++  justify-content: center;
++  padding: 108px 120px 72px;
++  scroll-snap-align: start;
++  scroll-margin-top: 60px;
++}
++
++.overline {
++  font-family: var(--font-mono);
++  font-size: 12px;
++  font-weight: 600;
++  text-transform: uppercase;
++  letter-spacing: 0.12em;
++  color: var(--color-spice-turmeric);
++  margin-bottom: 24px;
++}
++
++.title {
++  font-family: var(--font-serif);
++  font-size: 52px;
++  font-weight: 400;
++  line-height: 1.08;
++  letter-spacing: -0.03em;
++  color: var(--color-text-primary);
++  margin: 0 0 28px;
++  max-width: 760px;
++}
++
++.subtitle {
++  font-family: var(--font-sans);
++  font-size: 15px;
++  line-height: 1.6;
++  color: var(--color-text-secondary);
++  max-width: 760px;
++  margin: 0 0 20px;
++}
++
++.staleBanner {
++  display: flex;
++  align-items: center;
++  gap: 16px;
++  font-family: var(--font-sans);
++  font-size: 13px;
++  color: var(--color-spice-saffron);
++  background: color-mix(in srgb, var(--color-spice-saffron) 8%, transparent);
++  border: 1px solid color-mix(in srgb, var(--color-spice-saffron) 18%, transparent);
++  border-radius: 8px;
++  padding: 10px 14px;
++  margin-bottom: 28px;
++  max-width: 820px;
++}
++
++.staleAction {
++  margin-left: auto;
++}
++
++.vitalsStrip {
++  display: grid;
++  grid-template-columns: repeat(4, minmax(0, 1fr));
++  gap: 20px;
++  margin-bottom: 34px;
++  max-width: 920px;
++}
++
++.vitalCard {
++  border-top: 1px solid var(--color-rule-light);
++  padding-top: 12px;
++}
++
++.vitalLabel {
++  display: block;
++  font-family: var(--font-mono);
++  font-size: 10px;
++  font-weight: 600;
++  text-transform: uppercase;
++  letter-spacing: 0.1em;
++  color: var(--color-text-tertiary);
++  margin-bottom: 6px;
++}
++
++.vitalValue {
++  display: block;
++  font-family: var(--font-serif);
++  font-size: 28px;
++  font-weight: 400;
++  letter-spacing: -0.03em;
++  color: var(--color-text-primary);
++}
++
++.vitalValueDanger {
++  color: var(--color-spice-terracotta);
++}
++
++.vitalValueSmall {
++  font-size: 22px;
++}
++
++.heroSummary {
++  font-family: var(--font-serif);
++  font-size: 22px;
++  font-weight: 400;
++  line-height: 1.5;
++  letter-spacing: -0.01em;
++  color: var(--color-text-primary);
++  max-width: 820px;
++  margin: 0;
++}
++
++.sourceNote {
++  font-family: var(--font-mono);
++  font-size: 10px;
++  font-weight: 600;
++  letter-spacing: 0.08em;
++  text-transform: uppercase;
++  color: var(--color-text-tertiary);
++}
++
++.sectionHeader {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 20px;
++  margin-bottom: 20px;
++}
++
++.sectionActions {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++}
++
++.twoColumn {
++  display: grid;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  gap: 72px;
++  max-width: 1040px;
++}
++
++.column {
++  min-width: 0;
++}
++
++.columnLabel {
++  font-family: var(--font-mono);
++  font-size: 11px;
++  font-weight: 600;
++  text-transform: uppercase;
++  letter-spacing: 0.1em;
++  color: var(--color-text-tertiary);
++  margin-bottom: 14px;
++}
++
++.columnLabelRisk {
++  color: var(--color-spice-terracotta);
++}
++
++.columnLabelOpportunity {
++  color: var(--color-garden-sage);
++}
++
++.itemRow {
++  display: flex;
++  align-items: flex-start;
++  gap: 12px;
++  padding: 14px 0;
++  border-bottom: 1px solid var(--color-rule-light);
++}
++
++.itemIndex {
++  font-family: var(--font-mono);
++  font-size: 18px;
++  font-weight: 600;
++  min-width: 22px;
++  flex-shrink: 0;
++}
++
++.itemIndexRisk {
++  color: var(--color-spice-terracotta);
++}
++
++.itemIndexOpportunity {
++  color: var(--color-garden-sage);
++}
++
++.itemBody {
++  flex: 1;
++  min-width: 0;
++}
++
++.itemMeta {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 8px;
++  align-items: center;
++  font-family: var(--font-mono);
++  font-size: 10px;
++  font-weight: 600;
++  text-transform: uppercase;
++  letter-spacing: 0.08em;
++  color: var(--color-text-tertiary);
++  margin-bottom: 6px;
++}
++
++.itemText {
++  font-family: var(--font-sans);
++  font-size: 16px;
++  line-height: 1.55;
++  color: var(--color-text-primary);
++}
++
++.itemTextStrong {
++  font-weight: 500;
++}
++
++.itemTextMuted {
++  font-size: 14px;
++  color: var(--color-text-secondary);
++}
++
++.itemActions {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  flex-shrink: 0;
++}
++
++.heroCallout {
++  border-left: 3px solid var(--color-spice-turmeric);
++  padding-left: 16px;
++  margin: 0 0 32px;
++  max-width: 840px;
++}
++
++.detailColumns {
++  display: grid;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  gap: 48px;
++  max-width: 900px;
++}
++
++.detailList {
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++}
++
++.bulletRow {
++  display: flex;
++  align-items: flex-start;
++  gap: 10px;
++}
++
++.bullet {
++  width: 6px;
++  height: 6px;
++  border-radius: 999px;
++  background: var(--color-spice-turmeric);
++  margin-top: 8px;
++  flex-shrink: 0;
++}
++
++.bulletRisk {
++  background: var(--color-spice-terracotta);
++}
++
++.listActionRow {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  margin-top: 10px;
++}
++
++.sectionBlock {
++  max-width: 920px;
++  margin-bottom: 40px;
++}
++
++.themeBlock {
++  padding: 0 0 24px;
++  border-bottom: 1px solid var(--color-rule-light);
++  margin-bottom: 24px;
++}
++
++.themeTitle {
++  font-family: var(--font-serif);
++  font-size: 24px;
++  font-weight: 400;
++  color: var(--color-text-primary);
++  margin: 0 0 8px;
++}
++
++.themeCitations {
++  font-family: var(--font-mono);
++  font-size: 11px;
++  color: var(--color-text-tertiary);
++  margin-top: 8px;
++}
++
++.tableWrap {
++  max-width: 1100px;
++  overflow-x: auto;
++}
++
++.table {
++  width: 100%;
++  border-collapse: collapse;
++}
++
++.tableHead {
++  font-family: var(--font-mono);
++  font-size: 10px;
++  font-weight: 600;
++  text-transform: uppercase;
++  letter-spacing: 0.08em;
++  color: var(--color-text-tertiary);
++}
++
++.tableHead th {
++  text-align: left;
++  padding: 0 14px 10px 0;
++  border-bottom: 1px solid var(--color-rule-light);
++}
++
++.tableRow td {
++  padding: 12px 14px 12px 0;
++  border-bottom: 1px solid var(--color-rule-light);
++  font-family: var(--font-sans);
++  font-size: 14px;
++  color: var(--color-text-primary);
++  vertical-align: top;
++}
++
++.tableName {
++  font-weight: 500;
++}
++
++.healthPill {
++  display: inline-flex;
++  align-items: center;
++  gap: 6px;
++  padding: 3px 8px;
++  border-radius: 999px;
++  font-family: var(--font-mono);
++  font-size: 10px;
++  font-weight: 600;
++  letter-spacing: 0.06em;
++  text-transform: uppercase;
++  background: var(--color-rule-light);
++}
++
++.healthHealthy {
++  color: var(--color-garden-sage);
++  background: color-mix(in srgb, var(--color-garden-sage) 10%, transparent);
++}
++
++.healthWatch {
++  color: var(--color-spice-saffron);
++  background: color-mix(in srgb, var(--color-spice-saffron) 11%, transparent);
++}
++
++.healthRisk {
++  color: var(--color-spice-terracotta);
++  background: color-mix(in srgb, var(--color-spice-terracotta) 10%, transparent);
++}
++
++.appendixGrid {
++  display: grid;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  gap: 18px;
++  max-width: 1040px;
++}
++
++.appendixCard {
++  border: 1px solid var(--color-rule-light);
++  border-radius: 14px;
++  padding: 18px 18px 16px;
++  background:
++    linear-gradient(180deg, color-mix(in srgb, var(--color-spice-turmeric) 4%, transparent), transparent 44%),
++    var(--color-bg-page);
++}
++
++.appendixHead {
++  display: flex;
++  align-items: flex-start;
++  justify-content: space-between;
++  gap: 12px;
++  margin-bottom: 10px;
++}
++
++.appendixTitle {
++  font-family: var(--font-serif);
++  font-size: 24px;
++  font-weight: 400;
++  color: var(--color-text-primary);
++  margin: 0;
++}
++
++.appendixMeta {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 8px 14px;
++  font-family: var(--font-sans);
++  font-size: 14px;
++  line-height: 1.5;
++  color: var(--color-text-secondary);
++}
++
++.appendixMetaLabel {
++  font-family: var(--font-mono);
++  font-size: 10px;
++  font-weight: 600;
++  text-transform: uppercase;
++  letter-spacing: 0.08em;
++  color: var(--color-text-tertiary);
++  display: block;
++  margin-bottom: 2px;
++}
++
++.appendixValue {
++  color: var(--color-text-primary);
++}
++
++.emptyState {
++  width: 100%;
++  max-width: 520px;
++  max-height: 400px;
++  overflow-y: auto;
++  border: 1px solid var(--color-rule-light);
++  border-radius: 12px;
++  margin-bottom: 24px;
++}
++
++.pickerRow {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++  width: 100%;
++  padding: 10px 12px;
++  border: none;
++  border-bottom: 1px solid var(--color-rule-light);
++  background: transparent;
++  cursor: pointer;
++  text-align: left;
++  transition: background 0.12s ease;
++}
++
++.pickerRowSelected {
++  background: var(--color-cream-hover);
++}
++
++.pickerRowIndented {
++  padding-left: 36px;
++}
++
++.pickerCheck {
++  width: 20px;
++  height: 20px;
++  border-radius: 4px;
++  border: 2px solid var(--color-rule-light);
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  flex-shrink: 0;
++}
++
++.pickerCheckSelected {
++  border-color: var(--color-spice-turmeric);
++  background: var(--color-spice-turmeric);
++}
++
++.pickerHealth {
++  width: 8px;
++  height: 8px;
++  border-radius: 999px;
++  flex-shrink: 0;
++}
++
++.pickerHealthGreen {
++  background: var(--color-garden-sage);
++}
++
++.pickerHealthYellow {
++  background: var(--color-spice-saffron);
++}
++
++.pickerHealthRed {
++  background: var(--color-spice-terracotta);
++}
++
++.pickerHealthNeutral {
++  background: var(--color-text-tertiary);
++}
++
++.pickerName {
++  font-family: var(--font-sans);
++  font-size: 14px;
++  color: var(--color-text-primary);
++  flex: 1;
++}
++
++.pickerMeta {
++  font-family: var(--font-mono);
++  font-size: 11px;
++  color: var(--color-text-tertiary);
++}
++
++.pickerSelection {
++  font-family: var(--font-mono);
++  font-size: 11px;
++  color: var(--color-text-tertiary);
++  margin: 0 0 16px;
++}
++
++.emptyCopy {
++  width: 100%;
++  max-width: 720px;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++}
++
++.emptyMessage {
++  font-family: var(--font-sans);
++  font-size: 15px;
++  line-height: 1.6;
++  color: var(--color-text-secondary);
++  margin: 0;
++}
++
++.button {
++  border: 1px solid var(--color-rule-light);
++  background: transparent;
++  color: var(--color-text-secondary);
++  border-radius: 999px;
++  padding: 6px 12px;
++  font-family: var(--font-mono);
++  font-size: 11px;
++  font-weight: 600;
++  letter-spacing: 0.06em;
++  text-transform: uppercase;
++  cursor: pointer;
++}
++
++.button:hover {
++  border-color: var(--color-text-tertiary);
++  color: var(--color-text-primary);
++}
++
++.buttonPrimary {
++  border-color: var(--color-spice-turmeric);
++  color: var(--color-spice-turmeric);
++}
++
++.buttonDanger {
++  border-color: color-mix(in srgb, var(--color-spice-terracotta) 30%, transparent);
++  color: var(--color-spice-terracotta);
++}
++
++.buttonDisabled,
++.button:disabled {
++  opacity: 0.5;
++  cursor: not-allowed;
++}
++
++.statusBadge {
++  display: inline-flex;
++  align-items: center;
++  padding: 4px 8px;
++  border-radius: 999px;
++  background: var(--color-rule-light);
++  font-family: var(--font-mono);
++  font-size: 10px;
++  font-weight: 600;
++  text-transform: uppercase;
++  letter-spacing: 0.08em;
++  color: var(--color-text-tertiary);
++}
++
++.emptyBlock {
++  border-top: 1px solid var(--color-rule-light);
++  padding-top: 12px;
++  max-width: 820px;
++}
++
++.emptyBlock p {
++  margin: 0;
++}
++
++@media (max-width: 980px) {
++  .slide,
++  .slideTight {
++    padding: 104px 28px 56px;
++    min-height: auto;
++  }
++
++  .vitalsStrip,
++  .twoColumn,
++  .detailColumns,
++  .appendixGrid {
++    grid-template-columns: 1fr;
++  }
++
++  .tableWrap {
++    max-width: 100%;
++  }
++}
+diff --git a/src/components/book-of-business/CoverSlide.tsx b/src/components/book-of-business/CoverSlide.tsx
+index 1dcc362..76b4472 100644
+--- a/src/components/book-of-business/CoverSlide.tsx
++++ b/src/components/book-of-business/CoverSlide.tsx
+@@ -1,119 +1,53 @@
+-/**
+- * CoverSlide — Full-viewport hero with title, vitals strip, executive summary.
+- * Slide 1 of the Book of Business presentation.
+- */
+ import { EditableText } from "@/components/ui/EditableText";
+ import { formatArr } from "@/lib/utils";
+ import type { BookOfBusinessContent } from "@/types/reports";
++import s from "./BookOfBusinessSlides.module.css";
+ 
+ interface CoverSlideProps {
+   content: BookOfBusinessContent;
++  reportLabel: string;
+   isStale?: boolean;
+   onRegenerate?: () => void;
+   generating?: boolean;
+   onUpdate: (content: BookOfBusinessContent) => void;
+ }
+ 
+-export function CoverSlide({ content, isStale, onRegenerate, generating, onUpdate }: CoverSlideProps) {
++export function CoverSlide({
++  content,
++  reportLabel,
++  isStale,
++  onRegenerate,
++  generating,
++  onUpdate,
++}: CoverSlideProps) {
+   return (
+-    <div
+-      style={{
+-        minHeight: "100vh",
+-        display: "flex",
+-        flexDirection: "column",
+-        justifyContent: "center",
+-        padding: "120px 120px 80px",
+-        scrollSnapAlign: "start",
+-      }}
+-    >
+-      {/* Overline */}
+-      <div
+-        style={{
+-          fontFamily: "var(--font-mono)",
+-          fontSize: 11,
+-          fontWeight: 600,
+-          textTransform: "uppercase",
+-          letterSpacing: "0.12em",
+-          color: "var(--color-spice-turmeric)",
+-          marginBottom: 24,
+-        }}
+-      >
+-        {content.periodLabel || "Book of Business"}
+-      </div>
+-
+-      {/* Title */}
+-      <h1
+-        style={{
+-          fontFamily: "var(--font-serif)",
+-          fontSize: 52,
+-          fontWeight: 400,
+-          lineHeight: 1.1,
+-          letterSpacing: "-0.02em",
+-          color: "var(--color-text-primary)",
+-          margin: "0 0 32px",
+-          maxWidth: 700,
+-        }}
+-      >
+-        Book of Business
+-      </h1>
++    <div className={s.slide}>
++      <div className={s.overline}>{content.periodLabel || reportLabel}</div>
++      <h1 className={s.title}>{reportLabel}</h1>
+ 
+-      {/* Staleness banner */}
+       {isStale && (
+-        <div
+-          style={{
+-            fontFamily: "var(--font-sans)",
+-            fontSize: 13,
+-            color: "var(--color-spice-saffron)",
+-            background: "color-mix(in srgb, var(--color-spice-saffron) 8%, transparent)",
+-            border: "1px solid color-mix(in srgb, var(--color-spice-saffron) 20%, transparent)",
+-            borderRadius: 4,
+-            padding: "8px 16px",
+-            marginBottom: 24,
+-            display: "flex",
+-            alignItems: "center",
+-            gap: 16,
+-          }}
+-        >
+-          Account data has changed since this review was generated.
++        <div className={s.staleBanner}>
++          <span>Account intelligence changed after this review was generated.</span>
+           <button
++            type="button"
+             onClick={onRegenerate}
+             disabled={generating}
+-            style={{
+-              fontFamily: "var(--font-mono)",
+-              fontSize: 11,
+-              fontWeight: 600,
+-              letterSpacing: "0.06em",
+-              textTransform: "uppercase",
+-              color: "var(--color-spice-saffron)",
+-              background: "none",
+-              border: "1px solid var(--color-spice-saffron)",
+-              borderRadius: 4,
+-              padding: "2px 10px",
+-              cursor: "pointer",
+-              marginLeft: "auto",
+-            }}
++            className={`${s.button} ${s.buttonPrimary} ${s.staleAction}`}
+           >
+-            Regenerate
++            {generating ? "Generating" : "Regenerate"}
+           </button>
+         </div>
+       )}
+ 
+-      {/* Vitals strip */}
+-      <div
+-        style={{
+-          display: "flex",
+-          gap: 48,
+-          marginBottom: 40,
+-        }}
+-      >
++      <div className={s.vitalsStrip}>
+         <VitalStat label="Accounts" value={String(content.totalAccounts)} />
+         <VitalStat
+           label="Total ARR"
+-          value={content.totalArr != null ? `$${formatArr(content.totalArr)}` : "\u2014"}
++          value={content.totalArr != null ? `$${formatArr(content.totalArr)}` : "—"}
+         />
+         <VitalStat
+           label="At-Risk ARR"
+-          value={content.atRiskArr != null ? `$${formatArr(content.atRiskArr)}` : "\u2014"}
++          value={content.atRiskArr != null ? `$${formatArr(content.atRiskArr)}` : "—"}
+           danger={(content.atRiskArr ?? 0) > 0}
+         />
+         <VitalStat
+@@ -123,23 +57,13 @@ export function CoverSlide({ content, isStale, onRegenerate, generating, onUpdat
+         />
+       </div>
+ 
+-      {/* Executive summary */}
+       <EditableText
+         as="p"
+         value={content.executiveSummary}
+-        onChange={(v) => onUpdate({ ...content, executiveSummary: v })}
++        onChange={(value) => onUpdate({ ...content, executiveSummary: value })}
+         multiline
+-        placeholder="Executive summary..."
+-        style={{
+-          fontFamily: "var(--font-serif)",
+-          fontSize: 22,
+-          fontWeight: 400,
+-          lineHeight: 1.5,
+-          letterSpacing: "-0.01em",
+-          color: "var(--color-text-primary)",
+-          maxWidth: 800,
+-          margin: 0,
+-        }}
++        placeholder="Summarize the state of the book."
++        className={s.heroSummary}
+       />
+     </div>
+   );
+@@ -157,27 +81,16 @@ function VitalStat({
+   small?: boolean;
+ }) {
+   return (
+-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+-      <span
+-        style={{
+-          fontFamily: "var(--font-mono)",
+-          fontSize: 10,
+-          fontWeight: 600,
+-          textTransform: "uppercase",
+-          letterSpacing: "0.1em",
+-          color: "var(--color-text-tertiary)",
+-        }}
+-      >
+-        {label}
+-      </span>
++    <div className={s.vitalCard}>
++      <span className={s.vitalLabel}>{label}</span>
+       <span
+-        style={{
+-          fontFamily: "var(--font-serif)",
+-          fontSize: small ? 22 : 28,
+-          fontWeight: 400,
+-          color: danger ? "var(--color-spice-terracotta)" : "var(--color-text-primary)",
+-          letterSpacing: "-0.02em",
+-        }}
++        className={[
++          s.vitalValue,
++          danger ? s.vitalValueDanger : "",
++          small ? s.vitalValueSmall : "",
++        ]
++          .filter(Boolean)
++          .join(" ")}
+       >
+         {value}
+       </span>
+diff --git a/src/components/book-of-business/SnapshotSlide.tsx b/src/components/book-of-business/SnapshotSlide.tsx
+new file mode 100644
+index 0000000..a0f3bb5
+--- /dev/null
++++ b/src/components/book-of-business/SnapshotSlide.tsx
+@@ -0,0 +1,95 @@
++import { formatArr, formatShortDate } from "@/lib/utils";
++import type { BookOfBusinessContent } from "@/types/reports";
++import s from "./BookOfBusinessSlides.module.css";
++
++interface SnapshotSlideProps {
++  content: BookOfBusinessContent;
++  onAddSpotlight?: () => void;
++  canAddSpotlight?: boolean;
++}
++
++function healthClass(band: string | null | undefined): string {
++  switch (band) {
++    case "healthy":
++      return `${s.healthPill} ${s.healthHealthy}`;
++    case "watch":
++      return `${s.healthPill} ${s.healthWatch}`;
++    case "at-risk":
++      return `${s.healthPill} ${s.healthRisk}`;
++    default:
++      return s.healthPill;
++  }
++}
++
++function formatHealth(band: string | null | undefined): string {
++  if (!band) return "Unknown";
++  if (band === "at-risk") return "At Risk";
++  return band.charAt(0).toUpperCase() + band.slice(1);
++}
++
++export function SnapshotSlide({ content, onAddSpotlight, canAddSpotlight = false }: SnapshotSlideProps) {
++  return (
++    <section id="snapshot" className={s.slideTight}>
++      <div className={s.sectionHeader}>
++        <div>
++          <div className={s.overline}>Account Snapshot</div>
++          <p className={s.subtitle}>
++            Portfolio facts are regenerated from the workspace. These rows stay read-only.
++          </p>
++        </div>
++        <div className={s.sectionActions}>
++          {onAddSpotlight && (
++            <button
++              type="button"
++              className={`${s.button} ${s.buttonPrimary}`}
++              onClick={onAddSpotlight}
++              disabled={!canAddSpotlight}
++            >
++              Add Spotlight
++            </button>
++          )}
++          <div className={s.sourceNote}>Data-sourced</div>
++        </div>
++      </div>
++
++      {content.accountSnapshot.length === 0 ? (
++        <div className={s.emptyBlock}>
++          <p className={s.emptyMessage}>No active accounts are available in this portfolio yet.</p>
++        </div>
++      ) : (
++        <div className={s.tableWrap}>
++          <table className={s.table}>
++            <thead className={s.tableHead}>
++              <tr>
++                <th>Account</th>
++                <th>ARR</th>
++                <th>Health</th>
++                <th>Trend</th>
++                <th>Lifecycle</th>
++                <th>Renewal</th>
++                <th>Key Contact</th>
++                <th>Meetings (90d)</th>
++              </tr>
++            </thead>
++            <tbody>
++              {content.accountSnapshot.map((account) => (
++                <tr key={account.accountId} className={s.tableRow}>
++                  <td className={s.tableName}>{account.accountName}</td>
++                  <td>{account.arr != null ? `$${formatArr(account.arr)}` : "—"}</td>
++                  <td>
++                    <span className={healthClass(account.healthBand)}>{formatHealth(account.healthBand)}</span>
++                  </td>
++                  <td>{account.healthTrend ?? "—"}</td>
++                  <td>{account.lifecycle ?? "—"}</td>
++                  <td>{account.renewalDate ? formatShortDate(account.renewalDate) : "—"}</td>
++                  <td>{account.keyContact ?? "—"}</td>
++                  <td>{account.meetingCount90d}</td>
++                </tr>
++              ))}
++            </tbody>
++          </table>
++        </div>
++      )}
++    </section>
++  );
++}
+diff --git a/src/components/book-of-business/SpotlightSlide.tsx b/src/components/book-of-business/SpotlightSlide.tsx
+index 252e75d..a40e82a 100644
+--- a/src/components/book-of-business/SpotlightSlide.tsx
++++ b/src/components/book-of-business/SpotlightSlide.tsx
+@@ -1,10 +1,7 @@
+-/**
+- * SpotlightSlide — One account deep dive per slide.
+- * Each notable account gets a full-viewport editorial treatment.
+- */
+ import { EditableText } from "@/components/ui/EditableText";
+ import { formatArr } from "@/lib/utils";
+ import type { AccountDeepDive, BookOfBusinessContent } from "@/types/reports";
++import s from "./BookOfBusinessSlides.module.css";
+ 
+ interface SpotlightSlideProps {
+   dive: AccountDeepDive;
+@@ -15,263 +12,151 @@ interface SpotlightSlideProps {
+ }
+ 
+ export function SpotlightSlide({ dive, index, total, content, onUpdate }: SpotlightSlideProps) {
+-  const di = content.deepDives.findIndex((d) => d.accountId === dive.accountId);
++  const diveIndex = content.deepDives.findIndex((item) => item.accountId === dive.accountId);
++  if (diveIndex < 0) return null;
+ 
+-  return (
+-    <section
+-      id={`spotlight-${index}`}
+-      style={{
+-        scrollMarginTop: 60,
+-        minHeight: "100vh",
+-        display: "flex",
+-        flexDirection: "column",
+-        justifyContent: "center",
+-        padding: "120px 120px 80px",
+-        scrollSnapAlign: "start",
+-      }}
+-    >
+-      {/* Overline */}
+-      <div
+-        style={{
+-          fontFamily: "var(--font-mono)",
+-          fontSize: 12,
+-          fontWeight: 600,
+-          textTransform: "uppercase",
+-          letterSpacing: "0.12em",
+-          color: "var(--color-text-secondary)",
+-          marginBottom: 24,
+-        }}
+-      >
+-        Account Spotlight {index} of {total}
+-      </div>
++  const updateDive = (nextDive: AccountDeepDive) => {
++    const next = [...content.deepDives];
++    next[diveIndex] = nextDive;
++    onUpdate({ ...content, deepDives: next });
++  };
+ 
+-      {/* Account name — large serif */}
+-      <h2
+-        style={{
+-          fontFamily: "var(--font-serif)",
+-          fontSize: 40,
+-          fontWeight: 400,
+-          lineHeight: 1.15,
+-          letterSpacing: "-0.02em",
+-          color: "var(--color-text-primary)",
+-          margin: "0 0 16px",
+-          maxWidth: 700,
+-        }}
+-      >
+-        {dive.accountName}
+-      </h2>
++  const addWorkstream = () => updateDive({
++    ...dive,
++    activeWorkstreams: [...dive.activeWorkstreams, "Add an active workstream."],
++  });
+ 
+-      {/* ARR + Renewal callout */}
+-      <div
+-        style={{
+-          display: "flex",
+-          gap: 24,
+-          alignItems: "baseline",
+-          marginBottom: 32,
+-        }}
+-      >
+-        {dive.arr != null && (
+-          <span
+-            style={{
+-              fontFamily: "var(--font-mono)",
+-              fontSize: 22,
+-              fontWeight: 600,
+-              color: "var(--color-spice-turmeric)",
+-            }}
+-          >
+-            ${formatArr(dive.arr)}
+-          </span>
+-        )}
+-        {dive.renewalDate && (
+-          <span
+-            style={{
+-              fontFamily: "var(--font-mono)",
+-              fontSize: 14,
+-              color: "var(--color-text-secondary)",
+-              letterSpacing: "0.04em",
+-            }}
++  const addRisk = () => updateDive({
++    ...dive,
++    risksAndGaps: [...dive.risksAndGaps, "Add a portfolio gap or risk."],
++  });
++
++  return (
++    <section id={`spotlight-${index}`} className={s.slide}>
++      <div className={s.sectionHeader}>
++        <div className={s.overline}>Account Spotlight {index} of {total}</div>
++        <div className={s.sectionActions}>
++          <button
++            type="button"
++            className={`${s.button} ${s.buttonDanger}`}
++            onClick={() => onUpdate({
++              ...content,
++              deepDives: content.deepDives.filter((_, itemIndex) => itemIndex !== diveIndex),
++            })}
+           >
+-            Renewal: {dive.renewalDate}
+-          </span>
+-        )}
++            Remove Spotlight
++          </button>
++        </div>
++      </div>
++
++      <h2 className={s.title}>{dive.accountName}</h2>
++      <div className={s.itemMeta}>
++        {dive.arr != null && <span>${formatArr(dive.arr)}</span>}
++        {dive.renewalDate && <span>Renewal {dive.renewalDate}</span>}
+       </div>
+ 
+-      {/* Status narrative */}
+       <EditableText
+         as="p"
+         value={dive.statusNarrative}
+-        onChange={(v) => {
+-          if (di < 0) return;
+-          const next = [...content.deepDives];
+-          next[di] = { ...next[di], statusNarrative: v };
+-          onUpdate({ ...content, deepDives: next });
+-        }}
++        onChange={(value) => updateDive({ ...dive, statusNarrative: value })}
+         multiline
+-        style={{
+-          fontFamily: "var(--font-serif)",
+-          fontSize: 20,
+-          fontWeight: 400,
+-          lineHeight: 1.5,
+-          color: "var(--color-text-primary)",
+-          maxWidth: 800,
+-          margin: "0 0 32px",
+-        }}
++        className={s.heroSummary}
+       />
+ 
+-      {/* Renewal / Growth Impact */}
+-      <div
+-        style={{
+-          borderLeft: "3px solid var(--color-spice-turmeric)",
+-          paddingLeft: 16,
+-          marginBottom: 32,
+-          maxWidth: 800,
+-        }}
+-      >
+-        <div
+-          style={{
+-            fontFamily: "var(--font-mono)",
+-            fontSize: 10,
+-            fontWeight: 600,
+-            textTransform: "uppercase",
+-            letterSpacing: "0.1em",
+-            color: "var(--color-text-tertiary)",
+-            marginBottom: 6,
+-          }}
+-        >
+-          Revenue Impact
+-        </div>
++      <div className={s.heroCallout}>
++        <div className={s.sourceNote}>Revenue Impact</div>
+         <EditableText
+           value={dive.renewalOrGrowthImpact}
+-          onChange={(v) => {
+-            if (di < 0) return;
+-            const next = [...content.deepDives];
+-            next[di] = { ...next[di], renewalOrGrowthImpact: v };
+-            onUpdate({ ...content, deepDives: next });
+-          }}
++          onChange={(value) => updateDive({ ...dive, renewalOrGrowthImpact: value })}
+           multiline={false}
+-          style={{
+-            fontFamily: "var(--font-sans)",
+-            fontSize: 17,
+-            color: "var(--color-text-primary)",
+-          }}
++          className={`${s.itemText} ${s.itemTextStrong}`}
+         />
+       </div>
+ 
+-      {/* Workstreams + Risks side by side */}
+-      <div style={{ display: "flex", gap: 64, maxWidth: 800 }}>
+-        {dive.activeWorkstreams.length > 0 && (
+-          <div style={{ flex: 1 }}>
+-            <div
+-              style={{
+-                fontFamily: "var(--font-mono)",
+-                fontSize: 10,
+-                fontWeight: 600,
+-                textTransform: "uppercase",
+-                letterSpacing: "0.1em",
+-                color: "var(--color-text-tertiary)",
+-                marginBottom: 12,
+-              }}
+-            >
+-              Active Workstreams
+-            </div>
+-            {dive.activeWorkstreams.map((ws, wi) => (
+-              <div
+-                key={wi}
+-                style={{
+-                  display: "flex",
+-                  alignItems: "baseline",
+-                  gap: 10,
+-                  paddingBottom: 8,
+-                }}
+-              >
+-                <span
+-                  style={{
+-                    width: 4,
+-                    height: 4,
+-                    borderRadius: "50%",
+-                    background: "var(--color-spice-turmeric)",
+-                    flexShrink: 0,
+-                    marginTop: 8,
+-                  }}
+-                />
+-                <EditableText
+-                  value={ws}
+-                  onChange={(v) => {
+-                    if (di < 0) return;
+-                    const next = [...content.deepDives];
+-                    const nextWs = [...next[di].activeWorkstreams];
+-                    nextWs[wi] = v;
+-                    next[di] = { ...next[di], activeWorkstreams: nextWs };
+-                    onUpdate({ ...content, deepDives: next });
+-                  }}
+-                  multiline={false}
+-                  style={{
+-                    fontFamily: "var(--font-sans)",
+-                    fontSize: 15,
+-                    color: "var(--color-text-primary)",
+-                  }}
+-                />
+-              </div>
+-            ))}
++      <div className={s.detailColumns}>
++        <div className={s.column}>
++          <div className={s.sectionHeader}>
++            <div className={s.columnLabel}>Active Workstreams</div>
++            <button type="button" className={`${s.button} ${s.buttonPrimary}`} onClick={addWorkstream}>
++              Add
++            </button>
+           </div>
+-        )}
+-
+-        {dive.risksAndGaps.length > 0 && (
+-          <div style={{ flex: 1 }}>
+-            <div
+-              style={{
+-                fontFamily: "var(--font-mono)",
+-                fontSize: 10,
+-                fontWeight: 600,
+-                textTransform: "uppercase",
+-                letterSpacing: "0.1em",
+-                color: "var(--color-text-tertiary)",
+-                marginBottom: 12,
+-              }}
+-            >
+-              Risks & Gaps
++          {dive.activeWorkstreams.length === 0 ? (
++            <p className={s.emptyMessage}>No workstreams captured yet.</p>
++          ) : (
++            <div className={s.detailList}>
++              {dive.activeWorkstreams.map((item, itemIndex) => (
++                <div key={`${dive.accountId}-workstream-${itemIndex}`} className={s.bulletRow}>
++                  <span className={s.bullet} />
++                  <div className={s.itemBody}>
++                    <EditableText
++                      value={item}
++                      onChange={(value) => {
++                        const nextItems = [...dive.activeWorkstreams];
++                        nextItems[itemIndex] = value;
++                        updateDive({ ...dive, activeWorkstreams: nextItems });
++                      }}
++                      multiline={false}
++                      className={s.itemText}
++                    />
++                  </div>
++                  <button
++                    type="button"
++                    className={`${s.button} ${s.buttonDanger}`}
++                    onClick={() => updateDive({
++                      ...dive,
++                      activeWorkstreams: dive.activeWorkstreams.filter((_, idx) => idx !== itemIndex),
++                    })}
++                  >
++                    Remove
++                  </button>
++                </div>
++              ))}
+             </div>
+-            {dive.risksAndGaps.map((rg, ri) => (
+-              <div
+-                key={ri}
+-                style={{
+-                  display: "flex",
+-                  alignItems: "baseline",
+-                  gap: 10,
+-                  paddingBottom: 8,
+-                }}
+-              >
+-                <span
+-                  style={{
+-                    width: 4,
+-                    height: 4,
+-                    borderRadius: "50%",
+-                    background: "var(--color-spice-terracotta)",
+-                    flexShrink: 0,
+-                    marginTop: 8,
+-                  }}
+-                />
+-                <EditableText
+-                  value={rg}
+-                  onChange={(v) => {
+-                    if (di < 0) return;
+-                    const next = [...content.deepDives];
+-                    const nextRg = [...next[di].risksAndGaps];
+-                    nextRg[ri] = v;
+-                    next[di] = { ...next[di], risksAndGaps: nextRg };
+-                    onUpdate({ ...content, deepDives: next });
+-                  }}
+-                  multiline={false}
+-                  style={{
+-                    fontFamily: "var(--font-sans)",
+-                    fontSize: 15,
+-                    color: "var(--color-text-primary)",
+-                  }}
+-                />
+-              </div>
+-            ))}
++          )}
++        </div>
++
++        <div className={s.column}>
++          <div className={s.sectionHeader}>
++            <div className={s.columnLabel}>Risks & Gaps</div>
++            <button type="button" className={`${s.button} ${s.buttonPrimary}`} onClick={addRisk}>
++              Add
++            </button>
+           </div>
+-        )}
++          {dive.risksAndGaps.length === 0 ? (
++            <p className={s.emptyMessage}>No portfolio gaps captured yet.</p>
++          ) : (
++            <div className={s.detailList}>
++              {dive.risksAndGaps.map((item, itemIndex) => (
++                <div key={`${dive.accountId}-risk-${itemIndex}`} className={s.bulletRow}>
++                  <span className={`${s.bullet} ${s.bulletRisk}`} />
++                  <div className={s.itemBody}>
++                    <EditableText
++                      value={item}
++                      onChange={(value) => {
++                        const nextItems = [...dive.risksAndGaps];
++                        nextItems[itemIndex] = value;
++                        updateDive({ ...dive, risksAndGaps: nextItems });
++                      }}
++                      multiline={false}
++                      className={s.itemText}
++                    />
++                  </div>
++                  <button
++                    type="button"
++                    className={`${s.button} ${s.buttonDanger}`}
++                    onClick={() => updateDive({
++                      ...dive,
++                      risksAndGaps: dive.risksAndGaps.filter((_, idx) => idx !== itemIndex),
++                    })}
++                  >
++                    Remove
++                  </button>
++                </div>
++              ))}
++            </div>
++          )}
++        </div>
+       </div>
+     </section>
+   );
+diff --git a/src/components/book-of-business/ValueThemesSlide.tsx b/src/components/book-of-business/ValueThemesSlide.tsx
+index 1d6b19f..eac59a6 100644
+--- a/src/components/book-of-business/ValueThemesSlide.tsx
++++ b/src/components/book-of-business/ValueThemesSlide.tsx
+@@ -1,9 +1,6 @@
+-/**
+- * ValueThemesSlide — Value delivered + cross-portfolio themes.
+- * Combined into one slide for presentation flow.
+- */
+ import { EditableText } from "@/components/ui/EditableText";
+ import type { BookOfBusinessContent } from "@/types/reports";
++import s from "./BookOfBusinessSlides.module.css";
+ 
+ interface ValueThemesSlideProps {
+   content: BookOfBusinessContent;
+@@ -11,182 +8,155 @@ interface ValueThemesSlideProps {
+ }
+ 
+ export function ValueThemesSlide({ content, onUpdate }: ValueThemesSlideProps) {
++  const addValueItem = () => {
++    const account = content.accountSnapshot.find(
++      (item) => !content.valueDelivered.some((value) => value.accountName === item.accountName),
++    ) ?? content.accountSnapshot[0];
++    if (!account) return;
++    onUpdate({
++      ...content,
++      valueDelivered: [
++        ...content.valueDelivered,
++        {
++          accountName: account.accountName,
++          headlineOutcome: "Add the customer outcome delivered.",
++          whyItMatters: "Add why it mattered to the account or business.",
++          source: null,
++        },
++      ],
++    });
++  };
++
++  const addTheme = () =>
++    onUpdate({
++      ...content,
++      keyThemes: [
++        ...content.keyThemes,
++        {
++          title: "Add a cross-book theme",
++          narrative: "Describe the pattern across the portfolio.",
++          citedAccounts: [],
++        },
++      ],
++    });
++
+   return (
+-    <section
+-      id="value-themes"
+-      style={{
+-        scrollMarginTop: 60,
+-        minHeight: "100vh",
+-        display: "flex",
+-        flexDirection: "column",
+-        justifyContent: "center",
+-        padding: "120px 120px 80px",
+-        scrollSnapAlign: "start",
+-      }}
+-    >
+-      {/* Value Delivered */}
+-      {content.valueDelivered.length > 0 && (
+-        <>
+-          <div
+-            style={{
+-              fontFamily: "var(--font-mono)",
+-              fontSize: 12,
+-              fontWeight: 600,
+-              textTransform: "uppercase",
+-              letterSpacing: "0.12em",
+-              color: "var(--color-spice-turmeric)",
+-              marginBottom: 24,
+-            }}
+-          >
+-            Value Delivered
+-          </div>
++    <section id="value-themes" className={s.slideTight}>
++      <div className={s.sectionBlock}>
++        <div className={s.sectionHeader}>
++          <div className={s.overline}>Value Delivered</div>
++          <button type="button" className={`${s.button} ${s.buttonPrimary}`} onClick={addValueItem}>
++            Add Outcome
++          </button>
++        </div>
+ 
+-          <div style={{ marginBottom: 48, maxWidth: 800 }}>
+-            {content.valueDelivered.map((item, vi) => (
+-              <div
+-                key={vi}
+-                style={{
+-                  display: "flex",
+-                  gap: 16,
+-                  alignItems: "baseline",
+-                  padding: "14px 0",
+-                  borderBottom: "1px solid var(--color-rule-light)",
+-                }}
+-              >
+-                <span
+-                  style={{
+-                    fontFamily: "var(--font-mono)",
+-                    fontSize: 10,
+-                    fontWeight: 600,
+-                    textTransform: "uppercase",
+-                    letterSpacing: "0.08em",
+-                    color: "var(--color-text-tertiary)",
+-                    minWidth: 100,
+-                    flexShrink: 0,
++        {content.valueDelivered.length === 0 ? (
++          <div className={s.emptyBlock}>
++            <p className={s.emptyMessage}>No outcomes captured yet.</p>
++          </div>
++        ) : (
++          content.valueDelivered.map((item, index) => (
++            <div key={`${item.accountName}-${index}`} className={s.itemRow}>
++              <div className={s.itemBody}>
++                <div className={s.itemMeta}>
++                  <span>{item.accountName}</span>
++                  {item.source && <span>{item.source}</span>}
++                </div>
++                <EditableText
++                  value={item.headlineOutcome}
++                  onChange={(value) => {
++                    const next = [...content.valueDelivered];
++                    next[index] = { ...next[index], headlineOutcome: value };
++                    onUpdate({ ...content, valueDelivered: next });
+                   }}
++                  multiline={false}
++                  className={`${s.itemText} ${s.itemTextStrong}`}
++                />
++                <EditableText
++                  as="div"
++                  value={item.whyItMatters}
++                  onChange={(value) => {
++                    const next = [...content.valueDelivered];
++                    next[index] = { ...next[index], whyItMatters: value };
++                    onUpdate({ ...content, valueDelivered: next });
++                  }}
++                  multiline={false}
++                  className={`${s.itemText} ${s.itemTextMuted}`}
++                />
++              </div>
++              <div className={s.itemActions}>
++                <button
++                  type="button"
++                  className={`${s.button} ${s.buttonDanger}`}
++                  onClick={() => onUpdate({
++                    ...content,
++                    valueDelivered: content.valueDelivered.filter((_, itemIndex) => itemIndex !== index),
++                  })}
+                 >
+-                  {item.accountName}
+-                </span>
+-                <div style={{ flex: 1 }}>
+-                  <EditableText
+-                    value={item.headlineOutcome}
+-                    onChange={(v) => {
+-                      const next = [...content.valueDelivered];
+-                      next[vi] = { ...next[vi], headlineOutcome: v };
+-                      onUpdate({ ...content, valueDelivered: next });
+-                    }}
+-                    multiline={false}
+-                    style={{
+-                      fontFamily: "var(--font-sans)",
+-                      fontSize: 17,
+-                      fontWeight: 500,
+-                      color: "var(--color-text-primary)",
+-                    }}
+-                  />
+-                  <EditableText
+-                    as="div"
+-                    value={item.whyItMatters}
+-                    onChange={(v) => {
+-                      const next = [...content.valueDelivered];
+-                      next[vi] = { ...next[vi], whyItMatters: v };
+-                      onUpdate({ ...content, valueDelivered: next });
+-                    }}
+-                    multiline={false}
+-                    style={{
+-                      fontFamily: "var(--font-sans)",
+-                      fontSize: 14,
+-                      color: "var(--color-text-secondary)",
+-                      marginTop: 4,
+-                    }}
+-                  />
+-                </div>
++                  Remove
++                </button>
+               </div>
+-            ))}
+-          </div>
+-        </>
+-      )}
++            </div>
++          ))
++        )}
++      </div>
+ 
+-      {/* Key Themes */}
+-      {content.keyThemes.length > 0 && (
+-        <>
+-          <div
+-            style={{
+-              fontFamily: "var(--font-mono)",
+-              fontSize: 12,
+-              fontWeight: 600,
+-              textTransform: "uppercase",
+-              letterSpacing: "0.12em",
+-              color: "var(--color-text-secondary)",
+-              marginBottom: 24,
+-            }}
+-          >
+-            Portfolio Themes
+-          </div>
++      <div className={s.sectionBlock}>
++        <div className={s.sectionHeader}>
++          <div className={s.overline}>Portfolio Themes</div>
++          <button type="button" className={`${s.button} ${s.buttonPrimary}`} onClick={addTheme}>
++            Add Theme
++          </button>
++        </div>
+ 
+-          <div style={{ maxWidth: 800 }}>
+-            {content.keyThemes.map((theme, ti) => (
+-              <div
+-                key={ti}
+-                style={{
+-                  marginBottom: 28,
+-                  paddingBottom: 28,
+-                  borderBottom:
+-                    ti < content.keyThemes.length - 1
+-                      ? "1px solid var(--color-rule-light)"
+-                      : "none",
+-                }}
+-              >
++        {content.keyThemes.length === 0 ? (
++          <div className={s.emptyBlock}>
++            <p className={s.emptyMessage}>No cross-book themes have been written yet.</p>
++          </div>
++        ) : (
++          content.keyThemes.map((theme, index) => (
++            <div key={`${theme.title}-${index}`} className={s.themeBlock}>
++              <div className={s.sectionHeader}>
+                 <EditableText
+                   as="h2"
+                   value={theme.title}
+-                  onChange={(v) => {
++                  onChange={(value) => {
+                     const next = [...content.keyThemes];
+-                    next[ti] = { ...next[ti], title: v };
++                    next[index] = { ...next[index], title: value };
+                     onUpdate({ ...content, keyThemes: next });
+                   }}
+                   multiline={false}
+-                  style={{
+-                    fontFamily: "var(--font-serif)",
+-                    fontSize: 22,
+-                    fontWeight: 400,
+-                    color: "var(--color-text-primary)",
+-                    margin: "0 0 8px",
+-                  }}
+-                />
+-                <EditableText
+-                  as="p"
+-                  value={theme.narrative}
+-                  onChange={(v) => {
+-                    const next = [...content.keyThemes];
+-                    next[ti] = { ...next[ti], narrative: v };
+-                    onUpdate({ ...content, keyThemes: next });
+-                  }}
+-                  multiline
+-                  style={{
+-                    fontFamily: "var(--font-sans)",
+-                    fontSize: 16,
+-                    lineHeight: 1.5,
+-                    color: "var(--color-text-primary)",
+-                    margin: 0,
+-                  }}
++                  className={s.themeTitle}
+                 />
+-                {theme.citedAccounts.length > 0 && (
+-                  <div
+-                    style={{
+-                      fontFamily: "var(--font-mono)",
+-                      fontSize: 11,
+-                      color: "var(--color-text-tertiary)",
+-                      marginTop: 8,
+-                    }}
+-                  >
+-                    {theme.citedAccounts.join(" \u00b7 ")}
+-                  </div>
+-                )}
++                <button
++                  type="button"
++                  className={`${s.button} ${s.buttonDanger}`}
++                  onClick={() => onUpdate({
++                    ...content,
++                    keyThemes: content.keyThemes.filter((_, itemIndex) => itemIndex !== index),
++                  })}
++                >
++                  Remove
++                </button>
+               </div>
+-            ))}
+-          </div>
+-        </>
+-      )}
++              <EditableText
++                as="p"
++                value={theme.narrative}
++                onChange={(value) => {
++                  const next = [...content.keyThemes];
++                  next[index] = { ...next[index], narrative: value };
++                  onUpdate({ ...content, keyThemes: next });
++                }}
++                multiline
++                className={s.itemText}
++              />
++              {theme.citedAccounts.length > 0 && (
++                <div className={s.themeCitations}>{theme.citedAccounts.join(" · ")}</div>
++              )}
++            </div>
++          ))
++        )}
++      </div>
+     </section>
+   );
+ }
+diff --git a/src/pages/BookOfBusinessPage.tsx b/src/pages/BookOfBusinessPage.tsx
+index f696dc8..610c7f3 100644
+--- a/src/pages/BookOfBusinessPage.tsx
++++ b/src/pages/BookOfBusinessPage.tsx
+@@ -6,11 +6,13 @@
+ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+ import { useNavigate } from "@tanstack/react-router";
+ import { invoke } from "@tauri-apps/api/core";
++import { toast } from "sonner";
+ import { FileText, AlertTriangle, Search, Layers, MessageSquare, Check } from "lucide-react";
+ import { Button } from "@/components/ui/button";
+ import { Skeleton } from "@/components/ui/skeleton";
+ import type { AccountListItem } from "@/types";
+ import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
++import { useActivePreset } from "@/hooks/useActivePreset";
+ import { useRevealObserver } from "@/hooks/useRevealObserver";
+ import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+ import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+@@ -18,9 +20,12 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
+ import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
+ import { CoverSlide } from "@/components/book-of-business/CoverSlide";
+ import { AttentionSlide } from "@/components/book-of-business/AttentionSlide";
++import { SnapshotSlide } from "@/components/book-of-business/SnapshotSlide";
+ import { SpotlightSlide } from "@/components/book-of-business/SpotlightSlide";
+ import { ValueThemesSlide } from "@/components/book-of-business/ValueThemesSlide";
+ import { AskSlide } from "@/components/book-of-business/AskSlide";
++import { AppendixSlide } from "@/components/book-of-business/AppendixSlide";
++import { getPortfolioReportLabel } from "@/lib/report-config";
+ import type {
+   ReportRow,
+   BookOfBusinessContent,
+@@ -33,6 +38,7 @@ import type {
+   LeadershipAsk,
+ } from "@/types/reports";
+ import slides from "./report-slides.module.css";
++import bob from "@/components/book-of-business/BookOfBusinessSlides.module.css";
+ 
+ // =============================================================================
+ // Normalization — guards against cached reports with old schema
+@@ -86,6 +92,8 @@ const EDITORIAL_QUOTES = [
+ 
+ export default function BookOfBusinessPage() {
+   const navigate = useNavigate();
++  const preset = useActivePreset();
++  const reportLabel = getPortfolioReportLabel(preset?.id);
+ 
+   const [userId, setUserId] = useState<string | null>(null);
+   const [report, setReport] = useState<ReportRow | null>(null);
+@@ -94,7 +102,7 @@ export default function BookOfBusinessPage() {
+   const [generating, setGenerating] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+   const [genSeconds, setGenSeconds] = useState(0);
+-  const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
++  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
+   const [selectedSpotlights, setSelectedSpotlights] = useState<Set<string>>(new Set());
+ 
+@@ -135,6 +143,7 @@ export default function BookOfBusinessPage() {
+   const debouncedSave = useCallback((updated: BookOfBusinessContent) => {
+     if (!userId) return;
+     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
++    setSaveStatus("saving");
+     saveTimerRef.current = setTimeout(() => {
+       invoke("save_report", {
+         entityId: userId,
+@@ -147,7 +156,11 @@ export default function BookOfBusinessPage() {
+           if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+           fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
+         })
+-        .catch((e) => console.error("Failed to save book of business report:", e));
++        .catch((e) => {
++          console.error("Failed to save book of business report:", e);
++          setSaveStatus("idle");
++          toast.error("Failed to save portfolio review");
++        });
+     }, 500);
+   }, [userId]);
+ 
+@@ -163,17 +176,18 @@ export default function BookOfBusinessPage() {
+ 
+   useRevealObserver(!loading && !!content);
+ 
++  const appendixCount = useMemo(() => {
++    if (!content) return 0;
++    const spotlightIds = new Set(content.deepDives.map((dive) => dive.accountId));
++    return content.accountSnapshot.filter((row) => !spotlightIds.has(row.accountId)).length;
++  }, [content]);
++
+   // Build dynamic slide/chapter list based on content
+   const slideIds = useMemo(() => {
+     if (!content) return [];
+-    const ids: string[] = ["cover", "attention"];
++    const ids: string[] = ["cover", "attention", "snapshot"];
+     content.deepDives.forEach((_, i) => ids.push(`spotlight-${i + 1}`));
+-    if (content.valueDelivered.length > 0 || content.keyThemes.length > 0) {
+-      ids.push("value-themes");
+-    }
+-    if (content.leadershipAsks.length > 0) {
+-      ids.push("the-ask");
+-    }
++    ids.push("value-themes", "the-ask", "appendix");
+     return ids;
+   }, [content]);
+ 
+@@ -182,6 +196,7 @@ export default function BookOfBusinessPage() {
+     const ch: { id: string; label: string; icon: React.ReactNode }[] = [
+       { id: "cover", label: "Cover", icon: <FileText size={18} strokeWidth={1.5} /> },
+       { id: "attention", label: "Attention", icon: <AlertTriangle size={18} strokeWidth={1.5} /> },
++      { id: "snapshot", label: "Snapshot", icon: <Layers size={18} strokeWidth={1.5} /> },
+     ];
+     content.deepDives.forEach((dive, i) => {
+       ch.push({
+@@ -190,14 +205,11 @@ export default function BookOfBusinessPage() {
+         icon: <Search size={18} strokeWidth={1.5} />,
+       });
+     });
+-    if (content.valueDelivered.length > 0 || content.keyThemes.length > 0) {
+-      ch.push({ id: "value-themes", label: "Value & Themes", icon: <Layers size={18} strokeWidth={1.5} /> });
+-    }
+-    if (content.leadershipAsks.length > 0) {
+-      ch.push({ id: "the-ask", label: "The Ask", icon: <MessageSquare size={18} strokeWidth={1.5} /> });
+-    }
++    ch.push({ id: "value-themes", label: "Value & Themes", icon: <Layers size={18} strokeWidth={1.5} /> });
++    ch.push({ id: "the-ask", label: "Leadership", icon: <MessageSquare size={18} strokeWidth={1.5} /> });
++    ch.push({ id: "appendix", label: appendixCount > 0 ? `Appendix (${appendixCount})` : "Appendix", icon: <FileText size={18} strokeWidth={1.5} /> });
+     return ch;
+-  }, [content]);
++  }, [appendixCount, content]);
+ 
+   // Load cached report once userId is available
+   useEffect(() => {
+@@ -275,10 +287,33 @@ export default function BookOfBusinessPage() {
+     window.scrollTo({ top: 0, behavior: "instant" });
+   }, [content]);
+ 
++  const handleAddDeepDive = useCallback(() => {
++    if (!content) return;
++    const spotlightIds = new Set(content.deepDives.map((dive) => dive.accountId));
++    const nextAccount = content.accountSnapshot.find((account) => !spotlightIds.has(account.accountId));
++    if (!nextAccount) return;
++    updateContent({
++      ...content,
++      deepDives: [
++        ...content.deepDives,
++        {
++          accountId: nextAccount.accountId,
++          accountName: nextAccount.accountName,
++          arr: nextAccount.arr,
++          renewalDate: nextAccount.renewalDate,
++          statusNarrative: "Add the current account narrative.",
++          renewalOrGrowthImpact: "Add the revenue impact for this account.",
++          activeWorkstreams: [],
++          risksAndGaps: [],
++        },
++      ],
++    });
++  }, [content, updateContent]);
++
+   // Register magazine shell
+   const shellConfig = useMemo(
+     () => ({
+-      folioLabel: "Book of Business",
++      folioLabel: reportLabel,
+       atmosphereColor: "turmeric" as const,
+       activePage: "me" as const,
+       backLink: {
+@@ -289,19 +324,28 @@ export default function BookOfBusinessPage() {
+             : navigate({ to: "/me" }),
+       },
+       chapters,
+-      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
++      folioStatusText:
++        saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
+       folioActions: content ? (
+-        <button
+-          onClick={handleRegenerate}
+-          disabled={generating}
+-          className={`${slides.folioAction} ${generating ? slides.folioActionDisabled : ""}`}
+-          style={{ "--report-accent": "var(--color-spice-turmeric)" } as React.CSSProperties}
+-        >
+-          {generating ? "Generating..." : "Regenerate"}
+-        </button>
++        <div className={bob.sectionActions}>
++          <button
++            onClick={handleAddDeepDive}
++            disabled={generating || content.accountSnapshot.length <= content.deepDives.length}
++            className={`${bob.button} ${bob.buttonPrimary} ${generating || content.accountSnapshot.length <= content.deepDives.length ? bob.buttonDisabled : ""}`}
++          >
++            Add Spotlight
++          </button>
++          <button
++            onClick={handleRegenerate}
++            disabled={generating}
++            className={`${bob.button} ${bob.buttonPrimary} ${generating ? bob.buttonDisabled : ""}`}
++          >
++            {generating ? "Generating..." : "Regenerate"}
++          </button>
++        </div>
+       ) : undefined,
+     }),
+-    [navigate, content, chapters, saveStatus, handleRegenerate, generating],
++    [navigate, reportLabel, content, chapters, saveStatus, handleRegenerate, handleAddDeepDive, generating],
+   );
+   useRegisterMagazineShell(shellConfig);
+ 
+@@ -361,12 +405,6 @@ export default function BookOfBusinessPage() {
+ 
+   // ── Empty state with spotlight picker ─────────────────────────────────
+   if (!content && !generating) {
+-    const healthDotColor: Record<string, string> = {
+-      green: "var(--color-garden-sage)",
+-      yellow: "var(--color-spice-saffron)",
+-      red: "var(--color-spice-terracotta)",
+-    };
+-
+     // Group accounts: parents first (with children indented), then standalone
+     const parentAccounts = accounts.filter((a) => a.isParent);
+     const childrenOf = new Map<string, AccountListItem[]>();
+@@ -381,102 +419,48 @@ export default function BookOfBusinessPage() {
+ 
+     const renderAccountRow = (acct: AccountListItem, indent = false) => {
+       const selected = selectedSpotlights.has(acct.id);
++      const healthClass =
++        acct.health === "green"
++          ? bob.pickerHealthGreen
++          : acct.health === "yellow"
++            ? bob.pickerHealthYellow
++            : acct.health === "red"
++              ? bob.pickerHealthRed
++              : bob.pickerHealthNeutral;
+       return (
+         <button
+           key={acct.id}
+           onClick={() => toggleSpotlight(acct.id)}
+-          style={{
+-            display: "flex",
+-            alignItems: "center",
+-            gap: 12,
+-            width: "100%",
+-            padding: "10px 12px",
+-            paddingLeft: indent ? 36 : 12,
+-            background: selected ? "var(--color-cream-hover)" : "transparent",
+-            border: "none",
+-            borderBottom: "1px solid var(--color-rule-light)",
+-            cursor: "pointer",
+-            textAlign: "left",
+-            transition: "background 0.1s",
+-          }}
++          className={[
++            bob.pickerRow,
++            selected ? bob.pickerRowSelected : "",
++            indent ? bob.pickerRowIndented : "",
++          ]
++            .filter(Boolean)
++            .join(" ")}
+         >
+-          <span
+-            style={{
+-              width: 20,
+-              height: 20,
+-              borderRadius: 4,
+-              border: selected
+-                ? "2px solid var(--color-spice-turmeric)"
+-                : "2px solid var(--color-rule-light)",
+-              background: selected ? "var(--color-spice-turmeric)" : "transparent",
+-              display: "flex",
+-              alignItems: "center",
+-              justifyContent: "center",
+-              flexShrink: 0,
+-              transition: "all 0.1s",
+-            }}
+-          >
++          <span className={`${bob.pickerCheck} ${selected ? bob.pickerCheckSelected : ""}`}>
+             {selected && <Check size={12} strokeWidth={3} color="white" />}
+           </span>
+           {acct.health && (
+-            <span
+-              style={{
+-                width: 8,
+-                height: 8,
+-                borderRadius: "50%",
+-                background: healthDotColor[acct.health] ?? "var(--color-text-tertiary)",
+-                flexShrink: 0,
+-              }}
+-            />
++            <span className={`${bob.pickerHealth} ${healthClass}`} />
+           )}
+-          <span
+-            style={{
+-              fontFamily: "var(--font-sans)",
+-              fontSize: 14,
+-              color: "var(--color-text-primary)",
+-              flex: 1,
+-            }}
+-          >
+-            {acct.name}
+-          </span>
++          <span className={bob.pickerName}>{acct.name}</span>
+           {acct.arr != null && acct.arr > 0 && (
+-            <span
+-              style={{
+-                fontFamily: "var(--font-mono)",
+-                fontSize: 11,
+-                color: "var(--color-text-tertiary)",
+-              }}
+-            >
+-              ${(acct.arr / 1000).toFixed(0)}k
+-            </span>
++            <span className={bob.pickerMeta}>${(acct.arr / 1000).toFixed(0)}k</span>
+           )}
+           {acct.renewalDate && (
+-            <span
+-              style={{
+-                fontFamily: "var(--font-mono)",
+-                fontSize: 10,
+-                color: "var(--color-text-tertiary)",
+-                textTransform: "uppercase",
+-              }}
+-            >
+-              {acct.renewalDate}
+-            </span>
++            <span className={bob.pickerMeta}>{acct.renewalDate}</span>
+           )}
+         </button>
+       );
+     };
+ 
+     return (
+-      <div
+-        className={slides.emptyState}
+-        style={{
+-          "--report-accent": "var(--color-spice-turmeric)",
+-          alignItems: accounts.length > 0 ? "center" : "center",
+-        } as React.CSSProperties}
+-      >
+-        <div className={slides.emptyOverline}>Book of Business</div>
++      <div className={slides.emptyState}>
++        <div className={bob.overline}>{reportLabel}</div>
+         <h2 className={slides.emptyTitle}>
+-          {report ? "Select accounts to spotlight" : "No portfolio review yet"}
++          {report ? "Select accounts to spotlight" : `No ${reportLabel.toLowerCase()} yet`}
+         </h2>
+         <p className={slides.emptyDescription}>
+           {accounts.length > 0
+@@ -485,17 +469,7 @@ export default function BookOfBusinessPage() {
+         </p>
+ 
+         {accounts.length > 0 && (
+-          <div
+-            style={{
+-              width: "100%",
+-              maxWidth: 520,
+-              maxHeight: 400,
+-              overflowY: "auto",
+-              border: "1px solid var(--color-rule-light)",
+-              borderRadius: 8,
+-              marginBottom: 24,
+-            }}
+-          >
++          <div className={bob.emptyState}>
+             {parentAccounts.map((parent) => (
+               <div key={parent.id}>
+                 {renderAccountRow(parent)}
+@@ -509,16 +483,8 @@ export default function BookOfBusinessPage() {
+         )}
+ 
+         {selectedSpotlights.size > 0 && (
+-          <p
+-            style={{
+-              fontFamily: "var(--font-mono)",
+-              fontSize: 11,
+-              color: "var(--color-text-tertiary)",
+-              marginBottom: 16,
+-            }}
+-          >
+-            {selectedSpotlights.size} account{selectedSpotlights.size !== 1 ? "s" : ""} selected for
+-            spotlight
++          <p className={bob.pickerSelection}>
++            {selectedSpotlights.size} account{selectedSpotlights.size !== 1 ? "s" : ""} selected for spotlight
+           </p>
+         )}
+ 
+@@ -534,7 +500,7 @@ export default function BookOfBusinessPage() {
+   if (generating) {
+     return (
+       <GeneratingProgress
+-        title="Building Portfolio Review"
++        title={`Building ${reportLabel}`}
+         accentColor="var(--color-spice-turmeric)"
+         phases={ANALYSIS_PHASES}
+         currentPhaseKey={
+@@ -555,6 +521,7 @@ export default function BookOfBusinessPage() {
+       <section id="cover" className={slides.slideSection}>
+         <CoverSlide
+           content={c}
++          reportLabel={reportLabel}
+           isStale={report?.isStale}
+           onRegenerate={handleRegenerate}
+           generating={generating}
+@@ -575,6 +542,14 @@ export default function BookOfBusinessPage() {
+         />
+       </div>
+ 
++      <div className="editorial-reveal">
++        <SnapshotSlide
++          content={c}
++          onAddSpotlight={handleAddDeepDive}
++          canAddSpotlight={c.accountSnapshot.length > c.deepDives.length}
++        />
++      </div>
++
+       {/* Slides 3-N: Account Spotlights — one per deep dive */}
+       {c.deepDives.map((dive, i) => (
+         <div key={dive.accountId} className="editorial-reveal">
+@@ -593,26 +568,26 @@ export default function BookOfBusinessPage() {
+       ))}
+ 
+       {/* Value Delivered + Themes */}
+-      {(c.valueDelivered.length > 0 || c.keyThemes.length > 0) && (
+-        <div className="editorial-reveal">
+-          <ValueThemesSlide content={c} onUpdate={updateContent} />
+-          <IntelligenceFeedback
+-            value={feedback.getFeedback("value_themes")}
+-            onFeedback={(type) => feedback.submitFeedback("value_themes", type)}
+-          />
+-        </div>
+-      )}
++      <div className="editorial-reveal">
++        <ValueThemesSlide content={c} onUpdate={updateContent} />
++        <IntelligenceFeedback
++          value={feedback.getFeedback("value_themes")}
++          onFeedback={(type) => feedback.submitFeedback("value_themes", type)}
++        />
++      </div>
+ 
+       {/* The Ask — leadership asks (conditional) */}
+-      {c.leadershipAsks.length > 0 && (
+-        <div className="editorial-reveal">
+-          <AskSlide content={c} onUpdate={updateContent} />
+-          <IntelligenceFeedback
+-            value={feedback.getFeedback("leadership_asks")}
+-            onFeedback={(type) => feedback.submitFeedback("leadership_asks", type)}
+-          />
+-        </div>
+-      )}
++      <div className="editorial-reveal">
++        <AskSlide content={c} onUpdate={updateContent} />
++        <IntelligenceFeedback
++          value={feedback.getFeedback("leadership_asks")}
++          onFeedback={(type) => feedback.submitFeedback("leadership_asks", type)}
++        />
++      </div>
++
++      <div className="editorial-reveal">
++        <AppendixSlide content={c} />
++      </div>
+ 
+       {/* Finis marker */}
+       <div className="editorial-reveal">
