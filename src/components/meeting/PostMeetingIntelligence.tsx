@@ -374,10 +374,10 @@ export function PostMeetingIntelligence({
             </div>
           )}
 
-          {/* Actions — each shows its lifecycle status */}
-          {actions.length > 0 && (
+          {/* Actions — each shows its lifecycle status. Archived/dismissed are hidden. */}
+          {actions.filter(a => a.status !== "archived" && a.status !== "cancelled").length > 0 && (
             <div className={styles.actionsList}>
-              {actions.map((action) => (
+              {actions.filter(a => a.status !== "archived" && a.status !== "cancelled").map((action) => (
                 <div
                   key={action.id}
                   className={
