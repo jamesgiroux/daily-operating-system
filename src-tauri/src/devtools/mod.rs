@@ -2663,7 +2663,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // Phase 3: Proposed Actions + Completed Actions
     // =========================================================================
 
-    // 3a. Proposed actions (status = 'proposed') surfaced from meeting prep
+    // 3a. Suggested actions (status = 'suggested') surfaced from meeting prep
     let acme_mtg_id = format!("mock-mtg-acme-weekly-{}", today_str);
     let globex_mtg_id = format!("mock-mtg-globex-qbr-{}", today_str);
     let initech_mtg_id = format!("mock-mtg-initech-kickoff-{}", today_str);
@@ -2711,9 +2711,9 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     for (id, title, priority, account_id, source_type, source_id, context) in &proposed_actions {
         conn.execute(
             "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, account_id, source_type, source_id, context, updated_at) \
-             VALUES (?1, ?2, ?3, 'proposed', ?4, ?5, ?6, ?7, ?8, ?9)",
+             VALUES (?1, ?2, ?3, 'suggested', ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![id, title, priority, &today, account_id, source_type, source_id, context, &today],
-        ).map_err(|e| format!("Proposed action insert: {}", e))?;
+        ).map_err(|e| format!("Suggested action insert: {}", e))?;
     }
 
     // 3b. Completed actions for history

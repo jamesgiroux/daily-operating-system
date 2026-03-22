@@ -761,11 +761,7 @@ pub fn extract_actions_from_ai(
 
         let meta = metadata::parse_action_metadata(raw_title);
 
-        let status = if meta.is_waiting {
-            "waiting".to_string()
-        } else {
-            "pending".to_string()
-        };
+        let status = "pending".to_string();
 
         let account_id = meta
             .account
