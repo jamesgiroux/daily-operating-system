@@ -396,12 +396,21 @@ async fn process_sync_row(
                         match db.upsert_action_if_not_completed(&db_action) {
                             Ok(()) => written += 1,
                             Err(e) => {
-                                log::warn!("Quill: failed to write action '{}': {}", db_action.title, e);
+                                log::warn!(
+                                    "Quill: failed to write action '{}': {}",
+                                    db_action.title,
+                                    e
+                                );
                             }
                         }
                     }
                     if !tr.actions.is_empty() {
-                        log::info!("Quill: wrote {}/{} suggested actions for '{}'", written, tr.actions.len(), calendar_event.title);
+                        log::info!(
+                            "Quill: wrote {}/{} suggested actions for '{}'",
+                            written,
+                            tr.actions.len(),
+                            calendar_event.title
+                        );
                     }
 
                     let capture_count =
