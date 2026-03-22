@@ -170,7 +170,7 @@ function StartupWelcomeOverlay({ fading }: { fading: boolean }) {
 function RootLayout() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
   useNotifications();
-  useBackgroundStatus();
+  const backgroundWork = useBackgroundStatus();
   const navigate = useNavigate();
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [checkingConfig, setCheckingConfig] = useState(true);
@@ -436,6 +436,7 @@ function RootLayout() {
                 onNavigate={handleNavNavigate}
                 onNavHome={() => navigate({ to: "/" })}
                 onWhatsNew={() => setWhatsNewOpen(true)}
+                backgroundWork={backgroundWork}
               >
                 <Outlet />
               </MagazinePageLayout>
@@ -462,7 +463,7 @@ function RootLayout() {
           <SidebarProvider defaultOpen={false}>
             <SidebarInset>
               <UpdateBanner onWhatsNew={() => setWhatsNewOpen(true)} />
-              <Header onCommandMenuOpen={() => setCommandOpen(true)} />
+              <Header onCommandMenuOpen={() => setCommandOpen(true)} backgroundWork={backgroundWork} />
               <Outlet />
             </SidebarInset>
             <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
