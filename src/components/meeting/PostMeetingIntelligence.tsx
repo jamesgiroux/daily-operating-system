@@ -357,9 +357,9 @@ export function PostMeetingIntelligence({
         <section className={styles.chapter}>
           <ChapterHeading title="Commitments & Actions" />
 
-          {/* Commitment items (explicit commitments from transcript captures) */}
+          {/* Commitments — strategic commitments from the transcript (no overlap with actions) */}
           {hasCommitments && (
-            <div>
+            <div className={styles.commitmentsList}>
               {commitments.map((c) => (
                 <div key={c.capture.id} className={styles.commitmentItem}>
                   <ArrowRight size={14} className={styles.commitmentIcon} />
@@ -374,49 +374,65 @@ export function PostMeetingIntelligence({
             </div>
           )}
 
-          {/* Suggested actions — from the actions table, accept/dismiss wired */}
+          {/* Actions — each shows its lifecycle status */}
           {actions.length > 0 && (
-            <>
-              <p className={styles.actionsSublabel}>Suggested Actions</p>
-              <div>
-                {actions.map((action) => (
-                  <div
-                    key={action.id}
-                    className={action.status === "suggested" ? styles.actionItemSuggested : styles.actionItem}
-                  >
-                    {action.status === "suggested" && (
-                      <span className={styles.suggestedPill}>Suggested</span>
-                    )}
-                    <div className={styles.actionText}>
+            <div className={styles.actionsList}>
+              {actions.map((action) => (
+                <div
+                  key={action.id}
+                  className={
+                    action.status === "suggested"
+                      ? styles.actionItemSuggested
+                      : action.status === "completed"
+                        ? styles.actionItemCompleted
+                        : styles.actionItemPending
+                  }
+                >
+                  {/* Status indicator */}
+                  {action.status === "suggested" && (
+                    <span className={styles.suggestedPill}>Suggested</span>
+                  )}
+                  {action.status === "pending" && (
+                    <span className={styles.pendingPill}>Pending</span>
+                  )}
+                  {action.status === "completed" && (
+                    <Check size={14} className={styles.completedIcon} />
+                  )}
+
+                  {/* Action content */}
+                  <div className={styles.actionText}>
+                    <span className={action.status === "completed" ? styles.actionTitleCompleted : undefined}>
                       {action.title}
-                      <span className={`${styles.actionMeta} ${action.priority === "P1" ? styles.priorityP1 : styles.priorityP2}`}>
-                        {action.priority}
-                        {action.dueDate && <> &middot; due {action.dueDate}</>}
-                      </span>
-                      {action.context && (
-                        <span className={styles.actionContext}>{action.context}</span>
-                      )}
-                    </div>
-                    {action.status === "suggested" && (
-                      <div className={styles.actionControls}>
-                        <button
-                          className={styles.btnAccept}
-                          onClick={() => onAcceptAction?.(action.id)}
-                        >
-                          <Check size={12} /> Accept
-                        </button>
-                        <button
-                          className={styles.btnDismiss}
-                          onClick={() => onDismissAction?.(action.id)}
-                        >
-                          <X size={12} /> Dismiss
-                        </button>
-                      </div>
+                    </span>
+                    <span className={`${styles.actionMeta} ${action.priority === "P1" ? styles.priorityP1 : styles.priorityP2}`}>
+                      {action.priority}
+                      {action.dueDate && <> &middot; due {action.dueDate}</>}
+                    </span>
+                    {action.context && (
+                      <span className={styles.actionContext}>{action.context}</span>
                     )}
                   </div>
-                ))}
-              </div>
-            </>
+
+                  {/* Accept/Dismiss for suggested actions */}
+                  {action.status === "suggested" && (
+                    <div className={styles.actionControls}>
+                      <button
+                        className={styles.btnAccept}
+                        onClick={() => onAcceptAction?.(action.id)}
+                      >
+                        <Check size={12} /> Accept
+                      </button>
+                      <button
+                        className={styles.btnDismiss}
+                        onClick={() => onDismissAction?.(action.id)}
+                      >
+                        <X size={12} /> Dismiss
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </section>
       )}
