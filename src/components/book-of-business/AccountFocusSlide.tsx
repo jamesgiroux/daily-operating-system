@@ -99,15 +99,8 @@ export function AccountFocusSlide({ content, onUpdate }: AccountFocusSlideProps)
   return (
     <section
       id="account-focus"
-      style={{
-        scrollMarginTop: 60,
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        padding: "120px 120px 80px",
-        scrollSnapAlign: "start",
-      }}
+      className="report-surface-slide"
+      style={{ scrollMarginTop: 60 }}
     >
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--color-spice-turmeric)", marginBottom: 32 }}>
         Top Account Focus

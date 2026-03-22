@@ -16,25 +16,9 @@ export function ReportSection({
 }: ReportSectionProps) {
   return (
     <section
-      className={`report-section${className ? ` ${className}` : ""}`}
-      style={{
-        marginBottom: "2.5rem",
-      }}
+      className={["report-surface-section", className].filter(Boolean).join(" ")}
     >
-      <h2
-        style={{
-          fontFamily: "var(--font-editorial)",
-          fontSize: "1.25rem",
-          fontWeight: 400,
-          color: "var(--color-desk-charcoal)",
-          borderBottom: "2px solid var(--color-spice-turmeric)",
-          paddingBottom: "0.4rem",
-          marginBottom: "1rem",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
+      <h2 className="report-surface-heading">
         {heading}
         {feedbackSlot}
       </h2>

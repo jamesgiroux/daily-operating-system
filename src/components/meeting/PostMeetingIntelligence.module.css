@@ -1,5 +1,6 @@
 /* =============================================================================
-   PostMeetingIntelligence — Post-meeting analysis section (I558)
+   PostMeetingIntelligence — Meeting Record editorial layout
+   Matches .docs/mockups/meeting-record.html design
    ============================================================================= */
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -9,485 +10,915 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2xl);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   ENGAGEMENT DYNAMICS
+   EXECUTIVE SUMMARY (pull quote)
    ───────────────────────────────────────────────────────────────────────────── */
 
-.dynamicsSection {
+.summaryBlock {
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding: 24px 0 24px 32px;
+  margin-top: 48px;
+}
+
+.summaryText {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  max-width: 640px;
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CHAPTER SECTIONS (80px padding-top)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.chapter {
+  padding-top: 80px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MONO LABEL (sub-labels within chapters)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.monoLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0 0 16px;
+}
+
+.monoLabelSage {
+  composes: monoLabel;
+  color: var(--color-garden-sage);
+}
+
+.monoLabelTerracotta {
+  composes: monoLabel;
+  color: var(--color-spice-terracotta);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE THREAD
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.threadIntro {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  margin: 0 0 24px;
+}
+
+.threadList {
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);
+  gap: 14px;
+  margin: 0;
+  padding: 0;
 }
 
-.talkBalanceWrap {
-  max-width: 400px;
+.threadItem {
+  display: flex;
+  align-items: first baseline;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
-/* Speaker sentiment cards */
-.speakerList {
+.threadIcon {
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.threadIconConfirmed {
+  composes: threadIcon;
+  color: var(--color-garden-sage);
+}
+
+.threadIconOpen {
+  composes: threadIcon;
+  color: var(--color-spice-turmeric);
+}
+
+.threadIconNeutral {
+  composes: threadIcon;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.threadIconNewFace {
+  composes: threadIcon;
+  color: var(--color-spice-saffron, #deb841);
+}
+
+.threadDetail {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-quaternary);
+  margin-left: 4px;
+  letter-spacing: 0.02em;
+}
+
+.threadDeltaUp {
+  color: var(--color-garden-sage);
+  font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PREDICTIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.predictionGroup {
+  margin-bottom: 32px;
+}
+
+.predictionGroup:last-child {
+  margin-bottom: 0;
+}
+
+.predictionItem {
+  display: flex;
+  align-items: first baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.predictionItemConfirmed {
+  composes: predictionItem;
+  background: var(--color-garden-sage-8, rgba(126, 170, 123, 0.07));
+}
+
+.predictionItemSurprise {
+  composes: predictionItem;
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+}
+
+.predictionItemNotRaised {
+  composes: predictionItem;
+  opacity: 0.5;
+}
+
+.predictionIcon {
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.predictionIconConfirmed {
+  composes: predictionIcon;
+  color: var(--color-garden-sage);
+  font-weight: 600;
+}
+
+.predictionIconSurprise {
+  composes: predictionIcon;
+  color: var(--color-spice-turmeric);
+  font-weight: 600;
+}
+
+.predictionIconNotRaised {
+  composes: predictionIcon;
+  color: var(--color-text-quaternary);
+}
+
+.predictionMatch {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin: 4px 0 0;
+  line-height: 1.45;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ENGAGEMENT
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.talkBalance {
+  margin-bottom: 40px;
+}
+
+.speakerSentiments {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: 28px;
+  margin-bottom: 40px;
 }
 
-.speakerCard {
+.speakerHeader {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-rule-light);
-}
-
-.speakerCard:last-child {
-  border-bottom: none;
+  margin-bottom: 6px;
 }
 
 .speakerName {
-  font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
-  color: var(--color-text-primary);
-  margin: 0;
-  white-space: nowrap;
-  min-width: 100px;
 }
 
-.sentimentBadge {
+.speakerSentiment {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  border-radius: 3px;
-  padding: 2px 8px;
-  white-space: nowrap;
 }
 
 .sentimentPositive {
-  composes: sentimentBadge;
+  composes: speakerSentiment;
   color: var(--color-garden-sage);
-  background: var(--color-garden-sage-12);
-}
-
-.sentimentNeutral {
-  composes: sentimentBadge;
-  color: var(--color-text-tertiary);
-  background: var(--color-rule-light);
 }
 
 .sentimentCautious {
-  composes: sentimentBadge;
+  composes: speakerSentiment;
   color: var(--color-spice-turmeric);
-  background: var(--color-spice-turmeric-12);
 }
 
 .sentimentNegative {
-  composes: sentimentBadge;
+  composes: speakerSentiment;
   color: var(--color-spice-terracotta);
-  background: var(--color-spice-terracotta-12);
+}
+
+.sentimentNeutral {
+  composes: speakerSentiment;
+  color: var(--color-text-tertiary);
 }
 
 .speakerEvidence {
   font-family: var(--font-serif);
-  font-size: 13px;
+  font-size: 15px;
   font-style: italic;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
   margin: 0;
-  flex: 1;
-  min-width: 0;
 }
 
-/* Engagement signals strip */
-.signalStrip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
+/* Engagement signal grid */
+.signalGrid {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 8px 32px;
+  margin-bottom: 40px;
 }
 
-.signalBadge {
+.signalKey {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
-  border: 1px solid var(--color-rule-light);
-  border-radius: 3px;
-  padding: 3px 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  text-align: right;
+  padding-top: 2px;
 }
 
-.signalBadgeActive {
-  composes: signalBadge;
-  color: var(--color-garden-sage);
-  border-color: var(--color-garden-sage-30);
-  background: var(--color-garden-sage-8);
+.signalValue {
+  font-size: 15px;
+  font-weight: 400;
 }
 
-.signalBadgeWarning {
-  composes: signalBadge;
-  color: var(--color-spice-terracotta);
-  border-color: var(--color-spice-terracotta-30);
-  background: var(--color-spice-terracotta-8);
+/* Escalation block */
+.escalationBlock {
+  border-left: 2px solid var(--color-spice-terracotta);
+  padding: 16px 0 16px 24px;
+  margin-bottom: 32px;
+}
+
+.escalationQuote {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.escalationAttribution {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin-top: 8px;
+  letter-spacing: 0.02em;
+}
+
+/* Competitor mention */
+.competitorMention {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
+.competitorMention:last-child {
+  margin-bottom: 0;
+}
+
+.competitorName {
+  font-weight: 500;
+  color: var(--color-text-secondary);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
    CHAMPION HEALTH
    ───────────────────────────────────────────────────────────────────────────── */
 
-.championCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-
 .championHeader {
   display: flex;
   align-items: center;
   gap: 10px;
+  margin-bottom: 12px;
 }
 
 .championName {
-  font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 500;
-  color: var(--color-text-primary);
 }
 
-.championStatusBadge {
+.championBadge {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  padding: 3px 10px;
   border-radius: 3px;
-  padding: 2px 10px;
 }
 
-.championStrong {
-  composes: championStatusBadge;
+.championBadgeStrong {
+  composes: championBadge;
   color: var(--color-garden-sage);
-  background: var(--color-garden-sage-12);
+  background: var(--color-garden-sage-8, rgba(126, 170, 123, 0.07));
 }
 
-.championWeak {
-  composes: championStatusBadge;
+.championBadgeWeak {
+  composes: championBadge;
   color: var(--color-spice-turmeric);
-  background: var(--color-spice-turmeric-12);
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
 }
 
-.championLost {
-  composes: championStatusBadge;
+.championBadgeLost {
+  composes: championBadge;
   color: var(--color-spice-terracotta);
-  background: var(--color-spice-terracotta-12);
+  background: var(--color-spice-terracotta-8, rgba(196, 101, 74, 0.06));
 }
 
-.championNone {
-  composes: championStatusBadge;
+.championBadgeNone {
+  composes: championBadge;
   color: var(--color-text-tertiary);
   background: var(--color-rule-light);
 }
 
 .championEvidence {
   font-family: var(--font-serif);
-  font-size: 14px;
+  font-size: 16px;
   font-style: italic;
   line-height: 1.55;
   color: var(--color-text-secondary);
-  margin: 0;
+  margin: 0 0 12px;
 }
 
 .championRisk {
-  font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
-  color: var(--color-spice-terracotta);
+  color: var(--color-text-tertiary);
   margin: 0;
-  padding-left: 12px;
-  border-left: 2px solid var(--color-spice-terracotta-30);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   CATEGORIZED OUTCOMES
+   KEY FINDINGS
    ───────────────────────────────────────────────────────────────────────────── */
 
-.outcomeGroup {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
+.findingsGroup {
+  margin-bottom: 40px;
 }
 
-.outcomeGroupTitle {
-  font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-primary);
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.findingsGroup:last-child {
+  margin-bottom: 0;
 }
 
-.outcomeGroupCount {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-}
-
-.captureList {
+.findingItem {
   display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.captureItem {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 0;
+  gap: 16px;
+  padding: 20px 0;
   border-bottom: 1px solid var(--color-rule-light);
 }
 
-.captureItem:last-child {
+.findingItem:last-child {
   border-bottom: none;
 }
 
-.captureHeader {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+.findingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 9px;
 }
 
-/* Hover-reveal feedback actions on capture items */
-.captureActions {
-  margin-left: auto;
-  opacity: 0;
-  transition: opacity 0.15s ease;
+.findingDotSage {
+  composes: findingDot;
+  background: var(--color-garden-sage);
 }
 
-.captureItem:hover .captureActions {
-  opacity: 1;
+.findingDotTerracotta {
+  composes: findingDot;
+  background: var(--color-spice-terracotta);
 }
 
-.captureActions:focus-within {
-  opacity: 1;
+.findingDotTurmeric {
+  composes: findingDot;
+  background: var(--color-spice-turmeric);
 }
 
-.captureContent {
+.findingDotCharcoal {
+  composes: findingDot;
+  background: var(--color-text-tertiary);
+}
+
+.findingContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.findingTitle {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.45;
+  margin: 0 0 6px;
+}
+
+.findingBadge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: 8px;
+  vertical-align: 2px;
+}
+
+.badgeExpansion {
+  composes: findingBadge;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-8, rgba(126, 170, 123, 0.07));
+}
+
+.badgeValue {
+  composes: findingBadge;
+  color: var(--color-garden-olive, #6b7c52);
+  background: rgba(107, 124, 82, 0.08);
+}
+
+.badgeRed {
+  composes: findingBadge;
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8, rgba(196, 101, 74, 0.06));
+}
+
+.badgeYellow {
+  composes: findingBadge;
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+}
+
+.findingImpact {
   font-size: 14px;
-  line-height: 1.55;
-  color: var(--color-text-primary);
-  margin: 0;
+  color: var(--color-text-tertiary);
+  margin: 0 0 10px;
+  line-height: 1.5;
 }
 
-.captureEvidence {
+.evidenceBlock {
+  border-left: 2px solid var(--color-spice-saffron, #deb841);
+  padding: 8px 0 8px 20px;
+  margin: 10px 0 6px;
+}
+
+.evidenceBlockRed {
+  composes: evidenceBlock;
+  border-left-color: var(--color-spice-terracotta);
+}
+
+.evidenceBlockYellow {
+  composes: evidenceBlock;
+  border-left-color: var(--color-spice-turmeric);
+}
+
+.evidenceText {
   font-family: var(--font-serif);
-  font-size: 13px;
+  font-size: 15px;
   font-style: italic;
   line-height: 1.5;
   color: var(--color-text-secondary);
   margin: 0;
-  padding-left: 12px;
-  border-left: 2px solid var(--color-spice-saffron-30);
 }
 
-.captureSpeaker {
+.attribution {
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.04em;
+  color: var(--color-text-quaternary);
+  margin-top: 6px;
+  letter-spacing: 0.02em;
 }
 
-/* Speaker attribution — positioned after content/evidence */
-.captureSpeakerAttribution {
+/* ─────────────────────────────────────────────────────────────────────────────
+   COMMITMENTS & ACTIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.commitmentItem {
+  display: flex;
+  align-items: first baseline;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.commitmentItem:last-child {
+  border-bottom: none;
+}
+
+.commitmentIcon {
+  flex-shrink: 0;
+  width: 18px;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+.commitmentTag {
   font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--color-text-tertiary);
+  font-size: 9px;
+  font-weight: 600;
   letter-spacing: 0.04em;
-  display: block;
-  margin-top: 2px;
+  text-transform: uppercase;
+  color: var(--color-text-quaternary);
+  margin-left: 8px;
 }
 
-/* Sub-type badge */
-.subTypeBadge {
+.actionsSublabel {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-quaternary);
+  margin: 32px 0 12px;
+}
+
+.actionItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.actionItemSuggested {
+  composes: actionItem;
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+  border: 1px solid rgba(201, 162, 39, 0.12);
+}
+
+.actionItemPending {
+  composes: actionItem;
+  background: transparent;
+  border-bottom: 1px solid var(--color-rule-light);
+  border-radius: 0;
+  padding: 14px 0;
+  margin-bottom: 0;
+}
+
+.actionItemCompleted {
+  composes: actionItem;
+  background: transparent;
+  border-bottom: 1px solid var(--color-rule-light);
+  border-radius: 0;
+  padding: 14px 0;
+  margin-bottom: 0;
+  opacity: 0.55;
+}
+
+.pendingPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
-  border: 1px solid var(--color-rule-light);
+  background: var(--color-rule-light);
+  padding: 3px 8px;
   border-radius: 3px;
-  padding: 1px 6px;
+  flex-shrink: 0;
 }
 
-/* Urgency badges */
-.urgencyRed {
-  composes: subTypeBadge;
-  color: var(--color-spice-terracotta);
-  border-color: var(--color-spice-terracotta-30);
-  background: var(--color-spice-terracotta-8);
+.completedIcon {
+  color: var(--color-garden-sage);
+  flex-shrink: 0;
 }
 
-.urgencyYellow {
-  composes: subTypeBadge;
+.actionTitleCompleted {
+  text-decoration: line-through;
+  color: var(--color-text-tertiary);
+}
+
+.commitmentsList {
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--color-rule-heavy);
+  padding-bottom: 8px;
+}
+
+.actionsList {
+  margin-top: 0;
+}
+
+.suggestedPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--color-spice-turmeric);
-  border-color: var(--color-spice-turmeric-30);
-  background: var(--color-spice-turmeric-8);
+  background: rgba(201, 162, 39, 0.12);
+  padding: 3px 8px;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
-.urgencyGreen {
-  composes: subTypeBadge;
+.actionText {
+  flex: 1;
+  min-width: 0;
+}
+
+.actionContext {
+  display: block;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+
+.actionMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-quaternary);
+  margin-left: 6px;
+}
+
+.priorityP1 {
+  color: var(--color-spice-terracotta);
+}
+
+.priorityP2 {
+  color: var(--color-text-tertiary);
+}
+
+.actionControls {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.actionBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 3px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.actionBtn:hover {
+  opacity: 0.75;
+}
+
+.btnAccept {
+  composes: actionBtn;
   color: var(--color-garden-sage);
-  border-color: var(--color-garden-sage-30);
-  background: var(--color-garden-sage-8);
+  background: var(--color-garden-sage-8, rgba(126, 170, 123, 0.07));
+  border: 1px solid rgba(126, 170, 123, 0.15);
 }
 
-/* Impact badge */
-.impactBadge {
-  composes: subTypeBadge;
-  color: var(--color-garden-sage);
-  border-color: var(--color-garden-sage-30);
+.btnDismiss {
+  composes: actionBtn;
+  color: var(--color-text-quaternary);
+  background: transparent;
+  border: 1px solid var(--color-rule-light);
 }
 
-/* Risk items with left border accent */
-.captureItemRiskRed {
-  border-left: 3px solid var(--color-spice-terracotta);
-  padding-left: var(--space-md);
+.btnComplete {
+  composes: actionBtn;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: 1px solid var(--color-rule-light);
 }
 
-.captureItemRiskYellow {
-  border-left: 3px solid var(--color-spice-turmeric);
-  padding-left: var(--space-md);
-}
-
-.captureItemRiskGreen {
-  border-left: 3px solid var(--color-garden-sage);
-  padding-left: var(--space-md);
+.btnReopen {
+  composes: actionBtn;
+  color: var(--color-text-quaternary);
+  background: transparent;
+  border: none;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
    ROLE CHANGES
    ───────────────────────────────────────────────────────────────────────────── */
 
-.roleChangeList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-
-.roleChangeItem {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 0;
+.roleChange {
+  padding: 20px 0;
   border-bottom: 1px solid var(--color-rule-light);
 }
 
-.roleChangeItem:last-child {
+.roleChange:last-child {
   border-bottom: none;
 }
 
-.roleChangeHeader {
+.roleHeader {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  margin-bottom: 10px;
 }
 
-.roleChangeName {
-  font-family: var(--font-sans);
-  font-size: 14px;
+.roleName {
+  font-size: 16px;
   font-weight: 500;
   color: var(--color-text-primary);
 }
 
-.roleChangeArrow {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-}
-
-.roleChangeStatus {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: var(--color-text-secondary);
-}
-
-.roleChangeEvidence {
-  font-family: var(--font-serif);
-  font-size: 13px;
-  font-style: italic;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   COMPETITOR MENTIONS & ESCALATION
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.mentionList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.mentionItem {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-}
-
-.mentionLabel {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--color-spice-terracotta);
-  white-space: nowrap;
-  padding-top: 1px;
-}
-
-.escalationItem {
-  composes: mentionItem;
-  border-left: 2px solid var(--color-spice-terracotta-30);
-  padding-left: var(--space-sm);
-}
-
-.escalationQuote {
-  font-family: var(--font-serif);
-  font-style: italic;
-  color: var(--color-text-secondary);
-}
-
-.escalationSpeaker {
+.roleTransition {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--color-text-tertiary);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   SECTION SUBHEADING
-   ───────────────────────────────────────────────────────────────────────────── */
+.roleStatus {
+  color: var(--color-text-secondary);
+}
 
-.sectionSubheading {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+.roleArrow {
+  color: var(--color-text-quaternary);
+  flex-shrink: 0;
+}
+
+.roleEvidenceBlock {
+  border-left: 2px solid var(--color-spice-saffron, #deb841);
+  padding: 6px 0 6px 20px;
+}
+
+.roleEvidence {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.5;
   color: var(--color-text-tertiary);
   margin: 0;
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE ROOM
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.roomGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+}
+
+.roomSideLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.roomPerson {
+  padding: 8px 0;
+}
+
+.roomName {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.roomRole {
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-secondary);
+}
+
+.roomNewTag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-spice-saffron, #deb841);
+  margin-left: 6px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PRE-MEETING CONTEXT (collapsible)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.preMeetingDetails {
+  margin-top: 80px;
+}
+
+.preMeetingSummary {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preMeetingSummary::-webkit-details-marker {
+  display: none;
+}
+
+.preMeetingChevron {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--color-text-quaternary);
+  transition: transform 0.2s ease;
+}
+
+.preMeetingDetails[open] .preMeetingChevron {
+  transform: rotate(90deg);
+}
+
+.preMeetingContent {
+  margin-top: 24px;
+  padding: 24px;
+  background: var(--color-warm-white, #faf8f6);
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+  opacity: 0.7;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   HOVER-REVEAL FEEDBACK
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.feedbackSlot {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.findingItem:hover .feedbackSlot,
+.feedbackSlot:focus-within {
+  opacity: 1;
 }

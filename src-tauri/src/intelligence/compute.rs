@@ -501,7 +501,7 @@ mod tests {
             id: "wait-old".to_string(),
             title: "Stale delegation".to_string(),
             priority: "P2".to_string(),
-            status: "waiting".to_string(),
+            status: "pending".to_string(),
             created_at: "2020-01-01T00:00:00Z".to_string(),
             due_date: None,
             completed_at: None,

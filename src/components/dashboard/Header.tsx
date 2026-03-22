@@ -6,14 +6,17 @@ import { Separator } from "@/components/ui/separator";
 
 import { StatusIndicator } from "./StatusIndicator";
 import { RunNowIconButton } from "./RunNowButton";
+import { BackgroundWorkIndicator } from "@/components/shared/BackgroundWorkIndicator";
 import { useWorkflow } from "@/hooks/useWorkflow";
 import { useClaudeStatus } from "@/hooks/useClaudeStatus";
+import type { BackgroundWorkState } from "@/hooks/useBackgroundStatus";
 
 interface HeaderProps {
   onCommandMenuOpen: () => void;
+  backgroundWork?: BackgroundWorkState;
 }
 
-export function Header({ onCommandMenuOpen }: HeaderProps) {
+export function Header({ onCommandMenuOpen, backgroundWork }: HeaderProps) {
   const { status, nextRunTime, runNow, isRunning } = useWorkflow();
   const { aiUnavailable, checking } = useClaudeStatus();
   const showBasePrep = !checking && aiUnavailable;
@@ -34,6 +37,7 @@ export function Header({ onCommandMenuOpen }: HeaderProps) {
             nextRunTime={nextRunTime}
             aiUnavailable={showBasePrep}
           />
+          {backgroundWork && <BackgroundWorkIndicator state={backgroundWork} />}
           {showBasePrep && (
             <Badge variant="outline" className="text-xs text-muted-foreground">
               Base Prep

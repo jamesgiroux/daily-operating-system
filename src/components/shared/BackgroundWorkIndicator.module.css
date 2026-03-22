@@ -1,0 +1,45 @@
+/* BackgroundWorkIndicator — ambient status dot */
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.active {
+  background: var(--color-spice-saffron);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.done {
+  background: var(--color-garden-sage);
+  animation: fade-out 2s ease-out forwards;
+  animation-delay: 1s;
+}
+
+.failed {
+  background: var(--color-spice-terracotta);
+  animation: fade-out 2s ease-out forwards;
+  animation-delay: 1s;
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
