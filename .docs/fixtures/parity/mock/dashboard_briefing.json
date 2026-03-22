@@ -1,0 +1,51 @@
+{
+  "surfaceId": "dashboard_briefing",
+  "commands": {
+    "get_dashboard_data": {
+      "overview": {
+        "greeting": "Good morning",
+        "date": "Tuesday, March 10",
+        "summary": "3 meetings, 5 actions"
+      },
+      "meetings": [
+        {
+          "id": "m-1",
+          "title": "Acme QBR",
+          "time": "09:00",
+          "type": "customer",
+          "hasPrep": true
+        }
+      ],
+      "actions": [
+        {
+          "id": "a-1",
+          "title": "Finalize QBR deck",
+          "priority": "P1",
+          "status": "pending"
+        }
+      ],
+      "freshness": {
+        "freshness": "fresh",
+        "generatedAt": "2026-03-10T08:00:00Z"
+      }
+    },
+    "get_week_data": {
+      "weekNumber": "11",
+      "dateRange": "Mar 10 - Mar 14",
+      "days": [
+        {
+          "date": "2026-03-10",
+          "dayName": "Tuesday",
+          "meetings": []
+        }
+      ]
+    }
+  },
+  "errors": {
+    "get_dashboard_data": {
+      "code": "DASHBOARD_UNAVAILABLE",
+      "message": "Dashboard data unavailable",
+      "retryable": true
+    }
+  }
+}
