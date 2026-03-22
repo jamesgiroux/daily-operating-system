@@ -135,7 +135,13 @@ pub async fn enrich_project(
     project_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
-    crate::services::intelligence::enrich_entity(project_id, "project".to_string(), &state, Some(&app_handle)).await
+    crate::services::intelligence::enrich_entity(
+        project_id,
+        "project".to_string(),
+        &state,
+        Some(&app_handle),
+    )
+    .await
 }
 
 // ── I76: Database Backup & Rebuild ──────────────────────────────────
@@ -171,11 +177,7 @@ pub async fn restore_database_from_backup(
     {
         Ok(Ok(permit)) => permit,
         Ok(Err(_)) => return Err("PTY permit closed".to_string()),
-        Err(_) => {
-            return Err(
-                "Background work in progress — please try again shortly".to_string(),
-            )
-        }
+        Err(_) => return Err("Background work in progress — please try again shortly".to_string()),
     };
 
     // I609: Drop async DB service before swapping files on disk.
