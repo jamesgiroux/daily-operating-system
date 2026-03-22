@@ -14,14 +14,7 @@ interface AccountHealthCoverProps {
 export function AccountHealthCover({ accountName, content, onUpdate }: AccountHealthCoverProps) {
   return (
     <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        padding: "120px 120px 80px",
-        scrollSnapAlign: "start",
-      }}
+      className="report-surface-slide"
     >
       {/* Overline */}
       <div

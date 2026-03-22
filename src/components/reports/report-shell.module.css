@@ -5,20 +5,20 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: var(--color-spice-turmeric);
-  color: white;
+  background: var(--color-spice-turmeric-15);
+  color: var(--color-text-primary);
   font-size: 0.85rem;
   border-bottom: 1px solid var(--color-paper-linen);
 }
 
 .staleBannerButton {
   margin-left: auto;
-  color: white;
+  color: var(--color-text-primary);
 }
 
 .errorBanner {
   padding: 1rem;
-  background: #fff5f5;
+  background: var(--color-spice-terracotta-8);
   color: var(--color-spice-terracotta);
   font-size: 0.875rem;
   border-bottom: 1px solid var(--color-paper-linen);
