@@ -1,11 +1,16 @@
 import type {
   MeetingPostIntelligence as PostIntelData,
+  ContinuityThread,
+  DbAction,
   EnrichedCapture,
+  PredictionResult,
+  PredictionScorecard,
   SpeakerSentiment,
 } from "@/types";
 import {
   ArrowRight,
   Check,
+  CircleDot,
   X,
 } from "lucide-react";
 import { TalkBalanceBar } from "@/components/shared/TalkBalanceBar";
@@ -19,16 +24,24 @@ import styles from "./PostMeetingIntelligence.module.css";
 
 interface PostMeetingIntelligenceProps {
   data: PostIntelData;
+  continuityThread?: ContinuityThread | null;
+  predictionScorecard?: PredictionScorecard | null;
   /** Flat outcomes summary (executive summary text) */
   summary?: string;
+  /** Extracted actions from transcript processing */
+  actions?: DbAction[];
   /** Per-item feedback value getter. Field path like "captures[0].content". */
   getItemFeedback?: (fieldPath: string) => "positive" | "negative" | null;
   /** Per-item feedback submit. */
   onItemFeedback?: (fieldPath: string, type: "positive" | "negative") => void;
-  /** Callback when a suggested action is accepted */
-  onAcceptAction?: (captureId: string) => void;
-  /** Callback when a suggested action is dismissed */
-  onDismissAction?: (captureId: string) => void;
+  /** Accept a suggested action (moves to pending) */
+  onAcceptAction?: (actionId: string) => void;
+  /** Dismiss a suggested action */
+  onDismissAction?: (actionId: string) => void;
+  /** Complete/reopen an accepted action */
+  onToggleAction?: (actionId: string) => void;
+  /** Cycle action priority P1→P2→P3→P1 */
+  onCyclePriority?: (actionId: string) => void;
 }
 
 // =============================================================================
@@ -37,11 +50,16 @@ interface PostMeetingIntelligenceProps {
 
 export function PostMeetingIntelligence({
   data,
+  continuityThread,
+  predictionScorecard,
   summary,
+  actions = [],
   getItemFeedback,
   onItemFeedback,
   onAcceptAction,
   onDismissAction,
+  onToggleAction: _onToggleAction,
+  onCyclePriority: _onCyclePriority,
 }: PostMeetingIntelligenceProps) {
   const { interactionDynamics, championHealth, roleChanges, enrichedCaptures } = data;
 
@@ -64,6 +82,8 @@ export function PostMeetingIntelligence({
   const hasRoleChanges = roleChanges.length > 0;
   const hasCompetitorMentions = (interactionDynamics?.competitorMentions?.length ?? 0) > 0;
   const hasEscalation = (interactionDynamics?.escalationLanguage?.length ?? 0) > 0;
+  const hasThread = !!continuityThread;
+  const hasPredictions = !!predictionScorecard?.hasData;
 
   return (
     <div className={styles.container}>
@@ -72,6 +92,110 @@ export function PostMeetingIntelligence({
         <div className={styles.summaryBlock}>
           <p className={styles.summaryText}>{summary}</p>
         </div>
+      )}
+
+      {/* ═══════ THE THREAD ═══════ */}
+      {hasThread && continuityThread && (
+        <section className={styles.chapter}>
+          <ChapterHeading title="The Thread" />
+          <p className={styles.threadIntro}>
+            {buildThreadIntro(continuityThread)}
+          </p>
+          {!continuityThread.isFirstMeeting && (
+            <ul className={styles.threadList}>
+              {continuityThread.actionsCompleted.map((action, index) => (
+                <li key={`completed-${action.title}-${index}`} className={styles.threadItem}>
+                  <span className={styles.threadIconConfirmed}>✓</span>
+                  <span>
+                    {action.title}
+                    <span className={styles.threadDetail}>
+                      closed since the last meeting
+                    </span>
+                  </span>
+                </li>
+              ))}
+
+              {continuityThread.actionsOpen.map((action, index) => (
+                <li key={`open-${action.title}-${index}`} className={styles.threadItem}>
+                  <span className={styles.threadIconOpen}>○</span>
+                  <span>
+                    {action.title}
+                    {action.date && (
+                      <span className={styles.threadDetail}>
+                        due {formatShortDate(action.date)}
+                        {action.isOverdue ? " · overdue" : ""}
+                      </span>
+                    )}
+                    {!action.date && action.isOverdue && (
+                      <span className={styles.threadDetail}>overdue</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+
+              {continuityThread.healthDelta && (
+                <li className={styles.threadItem}>
+                  <span className={styles.threadIconNeutral}>
+                    <CircleDot size={12} />
+                  </span>
+                  <span>
+                    Health moved from {continuityThread.healthDelta.previous} to{" "}
+                    <span
+                      className={
+                        continuityThread.healthDelta.current > continuityThread.healthDelta.previous
+                          ? styles.threadDeltaUp
+                          : undefined
+                      }
+                    >
+                      {continuityThread.healthDelta.current}
+                    </span>
+                  </span>
+                </li>
+              )}
+
+              {continuityThread.newAttendees.map((attendee, index) => (
+                <li key={`attendee-${attendee}-${index}`} className={styles.threadItem}>
+                  <span className={styles.threadIconNewFace}>+</span>
+                  <span>
+                    {attendee}
+                    <span className={styles.threadDetail}>new attendee</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* ═══════ WHAT WE PREDICTED VS WHAT HAPPENED ═══════ */}
+      {hasPredictions && predictionScorecard && (
+        <section className={styles.chapter}>
+          <ChapterHeading title="What We Predicted vs What Happened" />
+
+          {predictionScorecard.riskPredictions.length > 0 && (
+            <div className={styles.predictionGroup}>
+              <p className={styles.monoLabelTerracotta}>Risks</p>
+              {predictionScorecard.riskPredictions.map((prediction, index) => (
+                <PredictionItem
+                  key={`risk-${prediction.text}-${index}`}
+                  prediction={prediction}
+                />
+              ))}
+            </div>
+          )}
+
+          {predictionScorecard.winPredictions.length > 0 && (
+            <div className={styles.predictionGroup}>
+              <p className={styles.monoLabelSage}>Wins</p>
+              {predictionScorecard.winPredictions.map((prediction, index) => (
+                <PredictionItem
+                  key={`win-${prediction.text}-${index}`}
+                  prediction={prediction}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {/* ═══════ ENGAGEMENT ═══════ */}
@@ -149,27 +273,6 @@ export function PostMeetingIntelligence({
         </section>
       )}
 
-      {/* ═══════ CHAMPION HEALTH ═══════ */}
-      {hasChampion && championHealth && (
-        <section className={styles.chapter}>
-          <ChapterHeading title="Champion Health" />
-          <div className={styles.championHeader}>
-            {championHealth.championName && (
-              <span className={styles.championName}>{championHealth.championName}</span>
-            )}
-            <span className={championStatusBadgeClass(championHealth.championStatus)}>
-              {championHealth.championStatus}
-            </span>
-          </div>
-          {championHealth.championEvidence && (
-            <p className={styles.championEvidence}>{championHealth.championEvidence}</p>
-          )}
-          {championHealth.championRisk && (
-            <p className={styles.championRisk}>{championHealth.championRisk}</p>
-          )}
-        </section>
-      )}
-
       {/* ═══════ KEY FINDINGS ═══════ */}
       {hasFindings && (
         <section className={styles.chapter}>
@@ -228,65 +331,90 @@ export function PostMeetingIntelligence({
         </section>
       )}
 
+      {/* ═══════ CHAMPION HEALTH ═══════ */}
+      {hasChampion && championHealth && (
+        <section className={styles.chapter}>
+          <ChapterHeading title="Champion Health" />
+          <div className={styles.championHeader}>
+            {championHealth.championName && (
+              <span className={styles.championName}>{championHealth.championName}</span>
+            )}
+            <span className={championStatusBadgeClass(championHealth.championStatus)}>
+              {championHealth.championStatus}
+            </span>
+          </div>
+          {championHealth.championEvidence && (
+            <p className={styles.championEvidence}>{championHealth.championEvidence}</p>
+          )}
+          {championHealth.championRisk && (
+            <p className={styles.championRisk}>{championHealth.championRisk}</p>
+          )}
+        </section>
+      )}
+
       {/* ═══════ COMMITMENTS & ACTIONS ═══════ */}
-      {hasCommitments && (
+      {(hasCommitments || actions.length > 0) && (
         <section className={styles.chapter}>
           <ChapterHeading title="Commitments & Actions" />
 
-          {/* Commitment items (explicit commitments from transcript) */}
-          <div>
-            {commitments.map((c) => (
-              <div key={c.capture.id} className={styles.commitmentItem}>
-                <ArrowRight size={14} className={styles.commitmentIcon} />
-                <span>
-                  {c.capture.content}
-                  {c.capture.subType && (
-                    <span className={styles.commitmentTag}>{c.capture.subType}</span>
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>
+          {/* Commitment items (explicit commitments from transcript captures) */}
+          {hasCommitments && (
+            <div>
+              {commitments.map((c) => (
+                <div key={c.capture.id} className={styles.commitmentItem}>
+                  <ArrowRight size={14} className={styles.commitmentIcon} />
+                  <span>
+                    {c.capture.content}
+                    {c.capture.subType && (
+                      <span className={styles.commitmentTag}>{c.capture.subType}</span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
 
-          {/* Suggested actions — accept/dismiss pattern */}
-          {commitments.some((c) => c.capture.impact) && (
+          {/* Suggested actions — from the actions table, accept/dismiss wired */}
+          {actions.length > 0 && (
             <>
               <p className={styles.actionsSublabel}>Suggested Actions</p>
               <div>
-                {commitments
-                  .filter((c) => c.capture.impact)
-                  .map((c) => (
-                    <div key={`action-${c.capture.id}`} className={styles.actionItemSuggested}>
+                {actions.map((action) => (
+                  <div
+                    key={action.id}
+                    className={action.status === "suggested" ? styles.actionItemSuggested : styles.actionItem}
+                  >
+                    {action.status === "suggested" && (
                       <span className={styles.suggestedPill}>Suggested</span>
-                      <div className={styles.actionText}>
-                        {c.capture.content}
-                        {c.capture.urgency && (
-                          <span className={`${styles.actionMeta} ${priorityClass(c.capture.urgency)}`}>
-                            {c.capture.urgency}
-                          </span>
-                        )}
-                        {c.capture.evidenceQuote && (
-                          <span className={styles.actionContext}>
-                            {c.capture.evidenceQuote}
-                          </span>
-                        )}
-                      </div>
+                    )}
+                    <div className={styles.actionText}>
+                      {action.title}
+                      <span className={`${styles.actionMeta} ${action.priority === "P1" ? styles.priorityP1 : styles.priorityP2}`}>
+                        {action.priority}
+                        {action.dueDate && <> &middot; due {action.dueDate}</>}
+                      </span>
+                      {action.context && (
+                        <span className={styles.actionContext}>{action.context}</span>
+                      )}
+                    </div>
+                    {action.status === "suggested" && (
                       <div className={styles.actionControls}>
                         <button
                           className={styles.btnAccept}
-                          onClick={() => onAcceptAction?.(c.capture.id)}
+                          onClick={() => onAcceptAction?.(action.id)}
                         >
                           <Check size={12} /> Accept
                         </button>
                         <button
                           className={styles.btnDismiss}
-                          onClick={() => onDismissAction?.(c.capture.id)}
+                          onClick={() => onDismissAction?.(action.id)}
                         >
                           <X size={12} /> Dismiss
                         </button>
                       </div>
-                    </div>
-                  ))}
+                    )}
+                  </div>
+                ))}
               </div>
             </>
           )}
@@ -401,9 +529,66 @@ function SpeakerSentimentBlock({ speaker }: { speaker: SpeakerSentiment }) {
   );
 }
 
+function PredictionItem({ prediction }: { prediction: PredictionResult }) {
+  const itemClass =
+    prediction.category === "confirmed"
+      ? styles.predictionItemConfirmed
+      : prediction.category === "surprise"
+      ? styles.predictionItemSurprise
+      : styles.predictionItemNotRaised;
+  const iconClass =
+    prediction.category === "confirmed"
+      ? styles.predictionIconConfirmed
+      : prediction.category === "surprise"
+      ? styles.predictionIconSurprise
+      : styles.predictionIconNotRaised;
+  const icon =
+    prediction.category === "confirmed"
+      ? "✓"
+      : prediction.category === "surprise"
+      ? "⚡"
+      : "✗";
+
+  return (
+    <div className={itemClass}>
+      <span className={iconClass}>{icon}</span>
+      <div>
+        <p>{prediction.text}</p>
+        {(prediction.matchText || prediction.source) && (
+          <p className={styles.predictionMatch}>
+            {prediction.matchText ?? prediction.source}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================
+
+function buildThreadIntro(thread: ContinuityThread): string {
+  if (thread.isFirstMeeting) {
+    return thread.entityName
+      ? `This is the first recorded meeting with ${thread.entityName}.`
+      : "This is the first recorded meeting in the thread.";
+  }
+
+  const meetingLabel = thread.previousMeetingTitle ?? "the previous meeting";
+  if (thread.previousMeetingDate) {
+    return `Since ${meetingLabel} on ${formatShortDate(thread.previousMeetingDate)}, here’s what changed.`;
+  }
+  return `Since ${meetingLabel}, here’s what changed.`;
+}
+
+function formatShortDate(date: string): string {
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) {
+    return date;
+  }
+  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 function sentimentClass(sentiment: string): string {
   const s = sentiment.toLowerCase();
@@ -461,12 +646,6 @@ function captureBadgeClass(capture: EnrichedCapture): { className: string; label
     return null;
   }
   return null;
-}
-
-function priorityClass(urgency: string): string {
-  const u = urgency.toLowerCase();
-  if (u === "red" || u === "p1") return styles.priorityP1;
-  return styles.priorityP2;
 }
 
 function formatSubType(subType: string): string {
