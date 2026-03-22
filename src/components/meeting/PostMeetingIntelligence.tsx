@@ -3,6 +3,11 @@ import type {
   EnrichedCapture,
   SpeakerSentiment,
 } from "@/types";
+import {
+  ArrowRight,
+  Check,
+  X,
+} from "lucide-react";
 import { TalkBalanceBar } from "@/components/shared/TalkBalanceBar";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
@@ -232,7 +237,7 @@ export function PostMeetingIntelligence({
           <div>
             {commitments.map((c) => (
               <div key={c.capture.id} className={styles.commitmentItem}>
-                <span className={styles.commitmentIcon}>&rarr;</span>
+                <ArrowRight size={14} className={styles.commitmentIcon} />
                 <span>
                   {c.capture.content}
                   {c.capture.subType && (
@@ -271,13 +276,13 @@ export function PostMeetingIntelligence({
                           className={styles.btnAccept}
                           onClick={() => onAcceptAction?.(c.capture.id)}
                         >
-                          Accept
+                          <Check size={12} /> Accept
                         </button>
                         <button
                           className={styles.btnDismiss}
                           onClick={() => onDismissAction?.(c.capture.id)}
                         >
-                          Dismiss
+                          <X size={12} /> Dismiss
                         </button>
                       </div>
                     </div>
@@ -298,7 +303,7 @@ export function PostMeetingIntelligence({
                 <span className={styles.roleName}>{rc.personName}</span>
                 {rc.newStatus && (
                   <>
-                    <span className={styles.roleArrow}>&rarr;</span>
+                    <ArrowRight size={14} className={styles.roleArrow} />
                     {rc.newStatus}
                   </>
                 )}
