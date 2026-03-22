@@ -122,7 +122,7 @@ export function MeetingCard({
       <Link
         to="/meeting/$meetingId"
         params={{ meetingId: id }}
-        style={{ textDecoration: "none", color: "inherit" }}
+        className={s.linkReset}
       >
         {cardContent}
       </Link>

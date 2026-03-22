@@ -1621,9 +1621,7 @@ fn resolve_array_path_by_identity(
         } else {
             match seg {
                 PathSegment::Field(name) => new_segments.push(name.clone()),
-                PathSegment::Index(name, idx) => {
-                    new_segments.push(format!("{}[{}]", name, idx))
-                }
+                PathSegment::Index(name, idx) => new_segments.push(format!("{}[{}]", name, idx)),
             }
         }
     }
@@ -3528,11 +3526,7 @@ mod tests {
             ]
         });
 
-        let result = resolve_array_path_by_identity(
-            &existing,
-            &new,
-            "stakeholderInsights[0].role",
-        );
+        let result = resolve_array_path_by_identity(&existing, &new, "stakeholderInsights[0].role");
         // Alice was at [0] in existing, now at [1] in new
         assert_eq!(result, Some("stakeholderInsights[1].role".to_string()));
     }
@@ -3553,11 +3547,7 @@ mod tests {
             ]
         });
 
-        let result = resolve_array_path_by_identity(
-            &existing,
-            &new,
-            "stakeholderInsights[0].role",
-        );
+        let result = resolve_array_path_by_identity(&existing, &new, "stakeholderInsights[0].role");
         // Same index → None (fallback to direct path)
         assert_eq!(result, None);
     }
@@ -3577,11 +3567,7 @@ mod tests {
             ]
         });
 
-        let result = resolve_array_path_by_identity(
-            &existing,
-            &new,
-            "stakeholderInsights[0].role",
-        );
+        let result = resolve_array_path_by_identity(&existing, &new, "stakeholderInsights[0].role");
         // Alice not in new → None (fallback)
         assert_eq!(result, None);
     }
@@ -3592,11 +3578,7 @@ mod tests {
         let existing = serde_json::json!({"executiveAssessment": "text"});
         let new = serde_json::json!({"executiveAssessment": "new text"});
 
-        let result = resolve_array_path_by_identity(
-            &existing,
-            &new,
-            "executiveAssessment",
-        );
+        let result = resolve_array_path_by_identity(&existing, &new, "executiveAssessment");
         assert_eq!(result, None);
     }
 }
