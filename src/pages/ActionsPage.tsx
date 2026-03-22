@@ -160,7 +160,8 @@ export default function ActionsPage() {
 
   // Computed stats
   const suggestedCount = suggestedActions.length;
-  const pendingCount = allActions.filter((a) => a.status === "pending").length;
+  const pendingCount = allActions.filter((a) => a.status === "pending" || a.status === "waiting").length;
+  const completedCount = allActions.filter((a) => a.status === "completed").length;
   const overdueCount = allActions.filter(
     (a) => a.status === "pending" && a.dueDate && new Date(a.dueDate) < new Date()
   ).length;
@@ -265,6 +266,12 @@ export default function ActionsPage() {
                 {statusTabLabels[tab]}
                 {tab === "suggested" && suggestedCount > 0 && (
                   <span className={s.suggestedBadge}>{suggestedCount}</span>
+                )}
+                {tab === "pending" && pendingCount > 0 && (
+                  <span className={s.countBadge}>{pendingCount}</span>
+                )}
+                {tab === "completed" && completedCount > 0 && (
+                  <span className={s.countBadge}>{completedCount}</span>
                 )}
               </span>
             </button>
