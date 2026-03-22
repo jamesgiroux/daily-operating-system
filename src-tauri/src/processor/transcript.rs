@@ -1438,6 +1438,7 @@ fn generate_and_persist_meeting_record(
         priority: 8, // High priority — intelligence output
     };
 
+    // DIRECT_DB_ALLOWED: content indexing (read-only registration, same pattern as processor/mod.rs:352)
     if let Err(e) = db.upsert_content_file(&record) {
         log::warn!(
             "I636: Failed to index meeting record for {}: {}",
