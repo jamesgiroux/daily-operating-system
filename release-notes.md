@@ -10,6 +10,24 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.0.3 — The Meeting Record
+
+After a meeting, the page used to show your prep with outcomes stacked on top. Now it becomes something you'd actually send to your VP.
+
+**Your meetings write their own report.** Process a transcript and the page transforms into a Meeting Record — a structured executive document with a headline, summary, engagement dynamics, champion health, categorized findings with direct quotes, and action items. Pre-meeting prep slides into a collapsed appendix at the bottom. Every section earns its space.
+
+**See what changed since last time.** "The Thread" shows what happened between this meeting and the previous one with the same account: actions you completed, actions still open, how the health score moved, and who's new in the room. First meetings get a clean introduction instead.
+
+**Know which predictions landed.** "What We Predicted vs What Happened" compares what your briefing warned you about against what actually came up. Confirmed predictions build your confidence in the system. Surprises highlight blind spots. The system learns from both — correct predictions make their source more trusted next time.
+
+**Act on what you heard.** Suggested actions extracted from the transcript appear with Accept and Dismiss buttons right in the record. Accept moves them to your pending queue. Dismiss removes them. Pending actions show a Done button. Everything stays in place when you click — no page jumps.
+
+**The meeting page knows what time it is.** Before the meeting: full editable briefing. During: read-only prep with a live "in progress" indicator. After: processing progress with phase-by-phase updates. Once processed: the Meeting Record. The folio bar tells you exactly which stage you're in.
+
+**A record for Claude, too.** After processing, a structured markdown file lands in your account's Meeting Records folder. Ask Claude Code "what happened in the Acme QBR?" and it finds the answer from a single document.
+
+---
+
 ## v1.0.2 — Scores you can trust
 
 Health scores were telling the wrong story. An account that just renewed with ARR growth was showing "at risk." A CSM who tagged a champion saw the role disappear after the next refresh. Email activity wasn't factoring into health at all. This release fixes all of it.
