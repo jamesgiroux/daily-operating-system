@@ -599,13 +599,13 @@
   line-height: 1.5;
 }
 
-.actionItemProposed {
+.actionItemSuggested {
   composes: actionItem;
   background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
   border: 1px solid rgba(201, 162, 39, 0.12);
 }
 
-.proposedPill {
+.suggestedPill {
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;

@@ -1446,9 +1446,9 @@ fn extract_transcript_actions(
         let meta = super::metadata::parse_action_metadata(raw_title);
 
         let status = if meta.is_waiting {
-            "waiting".to_string()
+            "pending".to_string()
         } else {
-            "proposed".to_string()
+            "suggested".to_string()
         };
 
         // Resolve @Tag to a real account ID; fall back to meeting-level account.

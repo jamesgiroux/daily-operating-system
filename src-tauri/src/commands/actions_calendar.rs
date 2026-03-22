@@ -54,21 +54,21 @@ pub async fn reopen_action(id: String, state: State<'_, Arc<AppState>>) -> Resul
         .await
 }
 
-/// Accept a proposed action, moving it to pending (I256).
+/// Accept a suggested action, moving it to pending (I256).
 #[tauri::command]
-pub async fn accept_proposed_action(
+pub async fn accept_suggested_action(
     id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let engine = state.signals.engine.clone();
     state
-        .db_write(move |db| crate::services::actions::accept_proposed_action(db, &engine, &id))
+        .db_write(move |db| crate::services::actions::accept_suggested_action(db, &engine, &id))
         .await
 }
 
-/// Reject a proposed action by archiving it (I256).
+/// Reject a suggested action by archiving it (I256).
 #[tauri::command]
-pub async fn reject_proposed_action(
+pub async fn reject_suggested_action(
     id: String,
     source: Option<String>,
     state: State<'_, Arc<AppState>>,
@@ -87,7 +87,7 @@ pub async fn reject_proposed_action(
     let engine = state.signals.engine.clone();
     state
         .db_write(move |db| {
-            crate::services::actions::reject_proposed_action(db, &engine, &id, &source)
+            crate::services::actions::reject_suggested_action(db, &engine, &id, &source)
         })
         .await
 }
@@ -240,13 +240,13 @@ pub async fn reset_email_preferences(
         .await
 }
 
-/// Get all proposed (AI-suggested) actions (I256).
+/// Get all suggested (AI-suggested) actions (I256).
 #[tauri::command]
-pub async fn get_proposed_actions(
+pub async fn get_suggested_actions(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAction>, String> {
     state
-        .db_read(crate::services::actions::get_proposed_actions)
+        .db_read(crate::services::actions::get_suggested_actions)
         .await
 }
 

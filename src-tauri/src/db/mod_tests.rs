@@ -186,24 +186,22 @@ fn test_get_account_actions() {
     action2.account_id = Some("beta-inc".to_string());
     db.upsert_action(&action2).expect("upsert 2");
 
-    let mut action3 = sample_action("act-012", "Acme waiting");
+    let mut action3 = sample_action("act-012", "Acme pending-delegated");
     action3.account_id = Some("acme-corp".to_string());
-    action3.status = "waiting".to_string();
     action3.waiting_on = Some("John".to_string());
     db.upsert_action(&action3).expect("upsert 3");
 
-    let mut action4 = sample_action("act-013", "Acme proposed");
+    let mut action4 = sample_action("act-013", "Acme suggested");
     action4.account_id = Some("acme-corp".to_string());
-    action4.status = "proposed".to_string();
+    action4.status = "suggested".to_string();
     db.upsert_action(&action4).expect("upsert 4");
 
     let results = db.get_account_actions("acme-corp").expect("account query");
     assert_eq!(results.len(), 3);
-    // Proposed, pending, and waiting should appear
+    // Suggested and pending should appear
     let statuses: Vec<&str> = results.iter().map(|a| a.status.as_str()).collect();
-    assert!(statuses.contains(&"proposed"));
+    assert!(statuses.contains(&"suggested"));
     assert!(statuses.contains(&"pending"));
-    assert!(statuses.contains(&"waiting"));
 }
 
 #[test]
@@ -558,7 +556,7 @@ fn test_upsert_action_transcript_dedup_is_meeting_scoped() {
     let mut first = sample_action("transcript-m1-0", "Send recap");
     first.source_type = Some("transcript".to_string());
     first.source_id = Some("meeting-1".to_string());
-    first.status = "proposed".to_string();
+    first.status = "suggested".to_string();
     first.account_id = None;
     db.upsert_action_if_not_completed(&first)
         .expect("insert first transcript action");
@@ -567,7 +565,7 @@ fn test_upsert_action_transcript_dedup_is_meeting_scoped() {
     let mut second = sample_action("transcript-m2-0", "Send recap");
     second.source_type = Some("transcript".to_string());
     second.source_id = Some("meeting-2".to_string());
-    second.status = "proposed".to_string();
+    second.status = "suggested".to_string();
     second.account_id = None;
     db.upsert_action_if_not_completed(&second)
         .expect("insert second transcript action");
@@ -584,7 +582,7 @@ fn test_upsert_action_transcript_dedup_is_meeting_scoped() {
     let mut duplicate_same_meeting = sample_action("transcript-m1-1", "Send recap");
     duplicate_same_meeting.source_type = Some("transcript".to_string());
     duplicate_same_meeting.source_id = Some("meeting-1".to_string());
-    duplicate_same_meeting.status = "proposed".to_string();
+    duplicate_same_meeting.status = "suggested".to_string();
     duplicate_same_meeting.account_id = None;
     db.upsert_action_if_not_completed(&duplicate_same_meeting)
         .expect("attempt duplicate transcript action");
@@ -623,10 +621,9 @@ fn test_get_non_briefing_pending_actions() {
     db.upsert_action(&completed).expect("insert");
     db.complete_action("pm-002").expect("complete");
 
-    // Insert a waiting inbox action (SHOULD appear)
+    // Insert a pending inbox action with waiting_on (SHOULD appear)
     let mut waiting_action = sample_action("inbox-wait", "Waiting on legal");
     waiting_action.source_type = Some("inbox".to_string());
-    waiting_action.status = "waiting".to_string();
     waiting_action.waiting_on = Some("true".to_string());
     db.upsert_action(&waiting_action).expect("insert");
 
@@ -989,16 +986,14 @@ fn test_idempotent_schema_application() {
 fn test_get_stale_delegations() {
     let db = test_db();
 
-    // Insert a waiting action created 10 days ago (should be stale at 3-day threshold)
+    // Insert a pending action with waiting_on created 10 days ago (should be stale at 3-day threshold)
     let mut stale = sample_action("wait-001", "Waiting on legal review");
-    stale.status = "waiting".to_string();
     stale.waiting_on = Some("Legal".to_string());
     stale.created_at = "2020-01-01T00:00:00Z".to_string(); // very old
     db.upsert_action(&stale).expect("insert stale");
 
-    // Insert a waiting action created now (should NOT be stale)
+    // Insert a pending action with waiting_on created now (should NOT be stale)
     let mut fresh = sample_action("wait-002", "Fresh delegation");
-    fresh.status = "waiting".to_string();
     fresh.waiting_on = Some("Bob".to_string());
     db.upsert_action(&fresh).expect("insert fresh");
 
@@ -2491,15 +2486,15 @@ fn test_get_project_actions() {
     db.upsert_action(&pending_action)
         .expect("upsert pending action");
 
-    // Insert proposed action linked to project
-    let proposed_action = DbAction {
+    // Insert suggested action linked to project
+    let suggested_action = DbAction {
         id: "act-proj-2".to_string(),
         title: "Draft rollout plan".to_string(),
-        status: "proposed".to_string(),
+        status: "suggested".to_string(),
         ..pending_action.clone()
     };
-    db.upsert_action(&proposed_action)
-        .expect("upsert proposed action");
+    db.upsert_action(&suggested_action)
+        .expect("upsert suggested action");
 
     let actions = db.get_project_actions("proj-actions").expect("get");
     assert_eq!(actions.len(), 2);

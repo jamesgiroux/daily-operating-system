@@ -94,7 +94,7 @@ export interface DatabaseInfo {
 
 export type Priority = "P1" | "P2" | "P3";
 
-export type ActionStatus = "pending" | "completed" | "proposed" | "archived";
+export type ActionStatus = "pending" | "completed" | "suggested" | "archived";
 
 export type PrepStatus =
   | "prep_needed"
