@@ -1546,10 +1546,13 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             format!("mock-cal-all-hands-{}", today_str),
         ),
     ];
-    for (id, title, mtype, start_time, _account_id, cal_event_id) in &today_meetings {
+    for (id, title, mtype, start_time, _account_id, _cal_event_id) in &today_meetings {
+        // Don't set calendar_event_id — mock meetings have no live calendar
+        // counterpart. If set, calendar_merge marks them Cancelled because
+        // no matching event exists in the Google Calendar cache.
         conn.execute(
-            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, calendar_event_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![id, title, mtype, start_time, cal_event_id, &today],
+            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![id, title, mtype, start_time, &today],
         ).map_err(|e| format!("Today meeting insert: {}", e))?;
         conn.execute(
             "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
