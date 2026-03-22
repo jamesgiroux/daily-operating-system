@@ -140,6 +140,17 @@
   line-height: 16px;
 }
 
+.countBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  background: var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  padding: 1px 6px;
+  line-height: 16px;
+}
+
 /* =============================================================================
    SEARCH INPUT
    ============================================================================= */
