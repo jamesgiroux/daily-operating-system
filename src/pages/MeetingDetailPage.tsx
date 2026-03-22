@@ -20,6 +20,8 @@ import type {
   StakeholderInsight,
   ApplyPrepPrefillResult,
   LinkedEntity,
+  ContinuityThread,
+  PredictionScorecard,
 } from "@/types";
 import { parseDate, formatRelativeDateLong, stripHtml } from "@/lib/utils";
 import { getPrimaryEntityName } from "@/lib/entity-helpers";
@@ -154,6 +156,8 @@ export default function MeetingDetailPage() {
   const [entityHealthMap, setEntityHealthMap] = useState<MeetingIntelligence["entityHealthMap"]>({});
   const [intelligenceQuality, setIntelligenceQuality] = useState<MeetingIntelligence["intelligenceQuality"]>();
   const [postIntel, setPostIntel] = useState<MeetingPostIntelligence | null>(null);
+  const [continuityThread, setContinuityThread] = useState<ContinuityThread | null>(null);
+  const [predictionScorecard, setPredictionScorecard] = useState<PredictionScorecard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshingIntel, setRefreshingIntel] = useState(false);
@@ -246,21 +250,34 @@ export default function MeetingDetailPage() {
 
       // Fetch post-meeting intelligence (non-blocking — only relevant for past meetings with transcripts)
       if (intel.outcomes || intel.transcriptProcessedAt) {
-        invoke<MeetingPostIntelligence>("get_meeting_post_intelligence", { meetingId })
-          .then((pi) => {
+        void Promise.allSettled([
+          invoke<MeetingPostIntelligence>("get_meeting_post_intelligence", { meetingId }),
+          invoke<ContinuityThread | null>("get_meeting_continuity_thread", { meetingId }),
+          invoke<PredictionScorecard | null>("get_prediction_scorecard", { meetingId }),
+        ]).then(([postIntelResult, continuityResult, predictionResult]) => {
+          if (postIntelResult.status === "fulfilled") {
+            const pi = postIntelResult.value;
             const hasPostIntelData =
               pi.interactionDynamics != null ||
               pi.championHealth != null ||
               pi.roleChanges.length > 0 ||
               pi.enrichedCaptures.length > 0;
             setPostIntel(hasPostIntelData ? pi : null);
-          })
-          .catch(() => {
-            // Non-critical — silently fail
+          } else {
             setPostIntel(null);
-          });
+          }
+
+          setContinuityThread(
+            continuityResult.status === "fulfilled" ? continuityResult.value : null,
+          );
+          setPredictionScorecard(
+            predictionResult.status === "fulfilled" ? predictionResult.value : null,
+          );
+        });
       } else {
         setPostIntel(null);
+        setContinuityThread(null);
+        setPredictionScorecard(null);
       }
 
       transientRetryCount.current = 0;
@@ -973,7 +990,6 @@ Thanks!`;
         {postIntel && (
           <>
             <div className={styles.outcomesWrap}>
-              {/* Record header — overline, headline, metadata */}
               <p className={styles.recordOverline}>Meeting Record</p>
               <h1 className={styles.recordHeadline}>{data.title}</h1>
               <p className={styles.metadataText}>
@@ -985,9 +1001,34 @@ Thanks!`;
               </p>
               <PostMeetingIntelligence
                 data={postIntel}
+                continuityThread={continuityThread}
+                predictionScorecard={predictionScorecard}
                 summary={outcomes?.summary}
+                actions={outcomes?.actions ?? []}
                 getItemFeedback={feedback.getFeedback}
                 onItemFeedback={feedback.submitFeedback}
+                onAcceptAction={async (id) => {
+                  try { await invoke("accept_suggested_action", { id }); loadMeetingIntelligence(); }
+                  catch { toast.error("Failed to accept action"); }
+                }}
+                onDismissAction={async (id) => {
+                  try { await invoke("reject_suggested_action", { id, source: "meeting_detail" }); loadMeetingIntelligence(); }
+                  catch { toast.error("Failed to dismiss action"); }
+                }}
+                onToggleAction={async (id) => {
+                  try {
+                    const action = outcomes?.actions.find(a => a.id === id);
+                    if (action?.status === "completed") { await invoke("reopen_action", { id }); }
+                    else { await invoke("complete_action", { id }); }
+                    loadMeetingIntelligence();
+                  } catch { toast.error("Failed to update action"); }
+                }}
+                onCyclePriority={async (id) => {
+                  const action = outcomes?.actions.find(a => a.id === id);
+                  const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
+                  try { await invoke("update_action_priority", { id, priority: cycle[action?.priority ?? "P2"] || "P2" }); loadMeetingIntelligence(); }
+                  catch { toast.error("Failed to update priority"); }
+                }}
               />
             </div>
             <div className={styles.outcomesDivider} />
