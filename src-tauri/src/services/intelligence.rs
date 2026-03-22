@@ -36,6 +36,7 @@ fn emit_manual_refresh_failed(
                 stage_failure_message(stage)
             ),
             "count": 1,
+            "manual": true,
             "entityId": entity_id,
             "entityType": entity_type,
             "stage": stage,
@@ -83,6 +84,7 @@ pub async fn enrich_entity(
                 "phase": "started",
                 "message": format!("Updating insights for {}…", manual_entity_id),
                 "count": 1,
+                "manual": true,
             }),
         );
     }
@@ -351,6 +353,7 @@ pub async fn enrich_entity(
                 "phase": "completed",
                 "message": format!("Insights updated for {}", input.entity_name),
                 "count": 1,
+                "manual": true,
             }),
         );
     }
