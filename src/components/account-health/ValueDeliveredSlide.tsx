@@ -17,15 +17,8 @@ export function ValueDeliveredSlide({ content, onUpdate }: ValueDeliveredSlidePr
   return (
     <section
       id="value-delivered"
-      style={{
-        scrollMarginTop: 60,
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        padding: "120px 120px 80px",
-        scrollSnapAlign: "start",
-      }}
+      className="report-surface-slide"
+      style={{ scrollMarginTop: 60 }}
     >
       {/* Overline */}
       <div

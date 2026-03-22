@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { ReportSection } from "./ReportSection";
 
 interface EbrQbrMetric {
@@ -50,36 +51,28 @@ interface EbrQbrReportProps {
 
 export function EbrQbrReport({ content }: EbrQbrReportProps) {
   return (
-    <div className="report-customer-facing" style={{ padding: "2rem", maxWidth: "800px" }}>
+    <div className="report-surface-page report-customer-facing">
       {/* Header */}
-      <div style={{ marginBottom: "2.5rem", borderBottom: "2px solid var(--color-spice-turmeric)", paddingBottom: "1rem" }}>
-        <h1 style={{
-          fontFamily: "var(--font-editorial)",
-          fontSize: "2rem",
-          fontWeight: 400,
-          color: "var(--color-desk-charcoal)",
-          margin: 0,
-        }}>
+      <div className="report-surface-section" style={{ borderBottom: "2px solid var(--color-spice-turmeric)", paddingBottom: "1rem" }}>
+        <h1 className="report-surface-slide-title" style={{ fontSize: "2rem", marginBottom: 0, maxWidth: "none" }}>
           Executive Business Review
         </h1>
-        <p style={{ margin: "0.25rem 0 0", fontSize: "1rem", color: "var(--color-desk-charcoal)", opacity: 0.7 }}>
+        <p className="report-surface-body-muted" style={{ marginTop: "0.25rem" }}>
           {content.quarterLabel}
         </p>
       </div>
 
       {/* 1. Executive Summary */}
       <ReportSection heading="Executive Summary">
-        <p style={{ fontFamily: "var(--font-editorial)", fontSize: "1.1rem", lineHeight: 1.7, color: "var(--color-desk-charcoal)", maxWidth: "65ch" }}>
-          {content.executiveSummary}
-        </p>
+        <p className="report-surface-body-lg">{content.executiveSummary}</p>
       </ReportSection>
 
       {/* 2. Story Bullets */}
       {content.storyBullets.length > 0 && (
         <ReportSection heading="Quarter in Brief">
-          <ul style={{ paddingLeft: "1.25rem", fontSize: "0.9rem", lineHeight: 1.8, color: "var(--color-desk-charcoal)" }}>
+          <ul className="report-surface-list">
             {content.storyBullets.map((bullet, i) => (
-              <li key={i} style={{ marginBottom: "0.25rem" }}>{bullet}</li>
+              <li key={i} className="report-surface-list-item">{bullet}</li>
             ))}
           </ul>
         </ReportSection>
@@ -88,7 +81,7 @@ export function EbrQbrReport({ content }: EbrQbrReportProps) {
       {/* 3. Customer Quote */}
       {content.customerQuote && (
         <ReportSection heading="Customer Voice">
-          <p style={{ fontFamily: "var(--font-editorial)", fontStyle: "italic", fontSize: "1rem", lineHeight: 1.7, color: "var(--color-desk-charcoal)" }}>
+          <p className="report-surface-quote">
             "{content.customerQuote}"
           </p>
         </ReportSection>
@@ -97,18 +90,16 @@ export function EbrQbrReport({ content }: EbrQbrReportProps) {
       {/* 4. Value Delivered */}
       {content.valueDelivered.length > 0 && (
         <ReportSection heading="Value Delivered">
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <div className="report-surface-stack" style={{ gap: "0.75rem" }}>
             {content.valueDelivered.map((item, i) => (
-              <div key={i} style={{
-                padding: "0.75rem 1rem",
-                borderLeft: "3px solid var(--color-garden-sage)",
-                background: "var(--color-paper-warm-white)",
-              }}>
-                <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--color-desk-charcoal)", fontWeight: 500 }}>
-                  {item.outcome}
-                </p>
+              <div
+                key={i}
+                className="report-surface-callout"
+                style={{ "--report-surface-callout-accent": "var(--color-garden-sage)" } as CSSProperties}
+              >
+                <p className="report-surface-callout-title">{item.outcome}</p>
                 {item.impact && (
-                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "var(--color-garden-rosemary)" }}>
+                  <p className="report-surface-callout-impact">
                     {item.impact}
                   </p>
                 )}
@@ -121,34 +112,21 @@ export function EbrQbrReport({ content }: EbrQbrReportProps) {
       {/* 5. Success Metrics — table format */}
       {content.successMetrics.length > 0 && (
         <ReportSection heading="Success Metrics">
-          <table style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            fontSize: "0.875rem",
-          }}>
+          <table className="report-surface-table">
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--color-paper-linen)" }}>
+              <tr className="report-surface-table-row">
                 {["Metric", "Baseline", "Current", "Trend"].map(h => (
-                  <th key={h} style={{
-                    textAlign: "left",
-                    padding: "0.5rem 0.75rem",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "0.75rem",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    color: "var(--color-desk-charcoal)",
-                    opacity: 0.6,
-                  }}>{h}</th>
+                  <th key={h} className="report-surface-table-head">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {content.successMetrics.map((m, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid var(--color-paper-linen)" }}>
-                  <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-desk-charcoal)" }}>{m.metric}</td>
-                  <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-desk-charcoal)", opacity: 0.7 }}>{m.baseline ?? "—"}</td>
-                  <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-desk-charcoal)", fontWeight: 500 }}>{m.current}</td>
-                  <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-desk-charcoal)" }}>
+                <tr key={i} className="report-surface-table-row">
+                  <td className="report-surface-table-cell">{m.metric}</td>
+                  <td className="report-surface-table-cell report-surface-table-cellMuted">{m.baseline ?? "—"}</td>
+                  <td className="report-surface-table-cell report-surface-table-cellStrong">{m.current}</td>
+                  <td className="report-surface-table-cell">
                     {m.trend ? TREND_ICONS[m.trend] ?? m.trend : "—"}
                   </td>
                 </tr>
@@ -161,27 +139,25 @@ export function EbrQbrReport({ content }: EbrQbrReportProps) {
       {/* 6. Challenges & Resolutions */}
       {content.challengesAndResolutions.length > 0 && (
         <ReportSection heading="Challenges & Resolutions">
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <div className="report-surface-stack">
             {content.challengesAndResolutions.map((r, i) => (
-              <div key={i} style={{
-                padding: "0.75rem 1rem",
-                borderLeft: `3px solid ${STATUS_COLORS[r.status] ?? "var(--color-paper-linen)"}`,
-                background: "var(--color-paper-warm-white)",
-              }}>
-                <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--color-desk-charcoal)" }}>
+              <div
+                key={i}
+                className="report-surface-callout"
+                style={{ "--report-surface-callout-accent": STATUS_COLORS[r.status] ?? "var(--color-paper-linen)" } as CSSProperties}
+              >
+                <p className="report-surface-callout-text">
                   <strong>{r.risk}</strong>
                 </p>
                 {r.resolution && (
-                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "var(--color-desk-charcoal)", opacity: 0.8 }}>
+                  <p className="report-surface-callout-meta">
                     → {r.resolution}
                   </p>
                 )}
-                <span style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.7rem",
-                  textTransform: "uppercase",
-                  color: STATUS_COLORS[r.status] ?? "var(--color-desk-charcoal)",
-                }}>
+                <span
+                  className="report-surface-tag"
+                  style={{ "--report-surface-status-color": STATUS_COLORS[r.status] ?? "var(--color-desk-charcoal)" } as CSSProperties}
+                >
                   {r.status}
                 </span>
               </div>
@@ -192,7 +168,7 @@ export function EbrQbrReport({ content }: EbrQbrReportProps) {
 
       {/* 7. Strategic Roadmap */}
       <ReportSection heading="Strategic Roadmap">
-        <p style={{ fontSize: "0.9rem", lineHeight: 1.7, color: "var(--color-desk-charcoal)" }}>
+        <p className="report-surface-body">
           {content.strategicRoadmap}
         </p>
       </ReportSection>
@@ -200,37 +176,14 @@ export function EbrQbrReport({ content }: EbrQbrReportProps) {
       {/* 8. Next Steps */}
       {content.nextSteps.length > 0 && (
         <ReportSection heading="Next Steps">
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <div className="report-surface-stack">
             {content.nextSteps.map((step, i) => (
-              <div key={i} style={{
-                display: "flex",
-                gap: "1rem",
-                alignItems: "flex-start",
-                padding: "0.5rem 0",
-                borderBottom: "1px solid var(--color-paper-linen)",
-              }}>
-                <span style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.75rem",
-                  color: "var(--color-spice-turmeric)",
-                  minWidth: "80px",
-                  paddingTop: "1px",
-                }}>
-                  {step.owner}
-                </span>
-                <span style={{ fontSize: "0.875rem", color: "var(--color-desk-charcoal)", flex: 1 }}>
+              <div key={i} className="report-surface-next-step">
+                <span className="report-surface-owner">{step.owner}</span>
+                <span className="report-surface-callout-text" style={{ flex: 1 }}>
                   {step.action}
                 </span>
-                <span style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.7rem",
-                  color: "var(--color-desk-charcoal)",
-                  opacity: 0.5,
-                  minWidth: "90px",
-                  textAlign: "right",
-                }}>
-                  {step.timeline}
-                </span>
+                <span className="report-surface-timeline">{step.timeline}</span>
               </div>
             ))}
           </div>
