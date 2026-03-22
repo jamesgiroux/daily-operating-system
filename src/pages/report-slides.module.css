@@ -2,7 +2,7 @@
    AccountHealthPage, EbrQbrPage, SwotPage, WeeklyImpactPage */
 
 .loadingSkeleton {
-  padding: 120px 120px 80px;
+  padding: var(--page-padding-horizontal) var(--page-padding-horizontal) var(--space-5xl);
 }
 
 .skeletonBg {
@@ -10,7 +10,7 @@
 }
 
 .emptyState {
-  padding: 120px 120px 80px;
+  padding: var(--page-padding-horizontal) var(--page-padding-horizontal) var(--space-5xl);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -70,7 +70,7 @@
   color: var(--report-accent);
   background: none;
   border: 1px solid var(--report-accent);
-  border-radius: 4px;
+  border-radius: var(--radius-editorial-sm);
   padding: 2px 10px;
   cursor: pointer;
   opacity: 1;

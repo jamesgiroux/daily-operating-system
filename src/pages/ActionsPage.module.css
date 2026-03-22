@@ -14,7 +14,7 @@
    ============================================================================= */
 
 .pageContainer {
-  max-width: 900px;
+  max-width: var(--page-content-width-standard);
   margin-left: auto;
   margin-right: auto;
 }
@@ -24,7 +24,7 @@
    ============================================================================= */
 
 .loadingContainer {
-  max-width: 900px;
+  max-width: var(--page-content-width-standard);
   margin-left: auto;
   margin-right: auto;
   padding-top: var(--space-5xl);
@@ -43,7 +43,7 @@
    ============================================================================= */
 
 .errorContainer {
-  max-width: 900px;
+  max-width: var(--page-content-width-standard);
   margin-left: auto;
   margin-right: auto;
   padding-top: var(--space-5xl);
@@ -66,43 +66,6 @@
   padding: var(--space-xs) 12px;
   cursor: pointer;
   margin-top: 12px;
-}
-
-/* =============================================================================
-   PAGE HEADER
-   ============================================================================= */
-
-.headerSection {
-  padding-top: var(--space-5xl);
-  padding-bottom: var(--space-lg);
-}
-
-.headerRow {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.pageTitle {
-  font-family: var(--font-serif);
-  font-size: 36px;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.itemCount {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--color-text-tertiary);
-}
-
-.sectionRule {
-  height: 1px;
-  background: var(--color-rule-heavy);
-  margin-top: var(--space-md);
-  margin-bottom: var(--space-md);
 }
 
 /* =============================================================================

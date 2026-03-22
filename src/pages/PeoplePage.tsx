@@ -26,6 +26,8 @@ import {
   ArchiveToggle,
   FilterTabs,
 } from "@/components/entity/EntityListShell";
+import shellStyles from "@/components/entity/EntityListShell.module.css";
+import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { EntityRow } from "@/components/entity/EntityRow";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { Avatar } from "@/components/ui/Avatar";
@@ -287,10 +289,8 @@ export default function PeoplePage() {
   // Empty
   if (!isArchived && people.length === 0) {
     return (
-      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
-        <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, letterSpacing: "-0.02em", color: "var(--color-text-primary)", margin: "0 0 24px 0" }}>
-          The Room
-        </h1>
+      <div className={shellStyles.pageShell}>
+        <EditorialPageHeader title="The Room" scale="standard" width="standard" />
         {(() => {
           const copy = getPersonalityCopy("people-empty", personality);
           return (
@@ -307,7 +307,7 @@ export default function PeoplePage() {
   }
 
   return (
-    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+    <div className={shellStyles.pageShell}>
       <EntityListHeader
         headline="The Room"
         count={isArchived ? filteredArchived.length : filtered.length}
