@@ -97,15 +97,7 @@ export function ProjectHero({
           {ledeTruncated && (
             <button
               onClick={() => setShowFullLede(true)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "0 0 0 4px",
-              }}
+              className={styles.readMore}
             >
               Read more
             </button>
@@ -114,7 +106,7 @@ export function ProjectHero({
       )}
 
       {/* Badges row — read-only display (editing happens via VitalsStrip) */}
-      <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>
+      <div className={`${styles.badges} ${lede ? styles.badgesWithTopMargin : ""}`}>
         {(editStatus ?? detail.status) && (
           <span
             className={`${styles.badge} ${statusClass[editStatus ?? detail.status ?? ""] ?? styles.statusDefault}`}
@@ -130,7 +122,7 @@ export function ProjectHero({
       </div>
 
       {/* Meta row */}
-      <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
+      <div className={`${styles.meta} ${styles.metaRow}`}>
         {onEnrich && (
           <FolioRefreshButton
             onClick={onEnrich}

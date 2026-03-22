@@ -14,6 +14,8 @@ import {
   EntityListEndMark,
   ArchiveToggle,
 } from "@/components/entity/EntityListShell";
+import shellStyles from "@/components/entity/EntityListShell.module.css";
+import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { EntityRow } from "@/components/entity/EntityRow";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { usePersonality } from "@/hooks/usePersonality";
@@ -260,10 +262,8 @@ export default function ProjectsPage() {
   // Empty
   if (!isArchived && projects.length === 0) {
     return (
-      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
-        <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, letterSpacing: "-0.02em", color: "var(--color-text-primary)", margin: "0 0 24px 0" }}>
-          Projects
-        </h1>
+      <div className={shellStyles.pageShell}>
+        <EditorialPageHeader title="Projects" scale="standard" width="standard" />
         {(() => {
           const copy = getPersonalityCopy("projects-empty", personality);
           return (
@@ -292,7 +292,7 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+    <div className={shellStyles.pageShell}>
       <EntityListHeader
         headline="Projects"
         count={isArchived ? filteredArchived.length : filtered.length}
