@@ -7,7 +7,7 @@
  * router doesn't need to import page internals like CHAPTERS constants.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import type { ChapterItem } from "@/components/layout/FloatingNavIsland";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 
@@ -127,13 +127,13 @@ export function useUpdateFolioVolatile(
   ctx.volatileRef.current = state;
 
   // Repaint when entity identity changes (e.g., account-to-account navigation)
-  useEffect(() => {
+  useLayoutEffect(() => {
     ctx.requestFolioRepaint();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repaintKey]);
 
   // Repaint when status text changes (save/enrich transitions)
-  useEffect(() => {
+  useLayoutEffect(() => {
     ctx.requestFolioRepaint();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.folioStatusText]);
