@@ -314,6 +314,7 @@ pub fn emit_prediction_feedback(db: &ActionDb, scorecard: &PredictionScorecard, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_jaccard_similarity_identical() {
@@ -475,5 +476,90 @@ mod tests {
         assert_eq!(wins.len(), 1);
         assert_eq!(risks[0], "API latency issues");
         assert_eq!(wins[0], "Customer praised the new dashboard");
+    }
+
+    #[test]
+    fn test_emit_prediction_feedback_rewards_confirmed_sources_only() {
+        let db = test_db();
+        let scorecard = PredictionScorecard {
+            has_data: true,
+            risk_predictions: vec![
+                PredictionResult {
+                    text: "Security review delays signature".to_string(),
+                    category: PredictionCategory::Confirmed,
+                    source: Some("prep-risk-source".to_string()),
+                    match_text: Some("Security review delayed signature".to_string()),
+                },
+                PredictionResult {
+                    text: "Budget concerns do not surface".to_string(),
+                    category: PredictionCategory::NotRaised,
+                    source: Some("prep-risk-source".to_string()),
+                    match_text: None,
+                },
+            ],
+            win_predictions: vec![
+                PredictionResult {
+                    text: "Champion expands rollout".to_string(),
+                    category: PredictionCategory::Confirmed,
+                    source: Some("prep-win-source".to_string()),
+                    match_text: Some("Champion approved rollout expansion".to_string()),
+                },
+                PredictionResult {
+                    text: "Unexpected procurement blocker".to_string(),
+                    category: PredictionCategory::Surprise,
+                    source: None,
+                    match_text: None,
+                },
+            ],
+        };
+
+        emit_prediction_feedback(&db, &scorecard, "mtg-feedback");
+
+        let (risk_alpha, risk_beta, risk_updates): (f64, f64, i32) = db
+            .conn_ref()
+            .query_row(
+                "SELECT alpha, beta, update_count
+                 FROM signal_weights
+                 WHERE source = 'prep-risk-source'
+                   AND entity_type = 'meeting'
+                   AND signal_type = 'prediction_confirmed'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("query confirmed risk feedback row");
+        assert!((risk_alpha - 2.0).abs() < 0.01);
+        assert!((risk_beta - 1.0).abs() < 0.01);
+        assert_eq!(risk_updates, 1);
+
+        let (win_alpha, win_beta, win_updates): (f64, f64, i32) = db
+            .conn_ref()
+            .query_row(
+                "SELECT alpha, beta, update_count
+                 FROM signal_weights
+                 WHERE source = 'prep-win-source'
+                   AND entity_type = 'meeting'
+                   AND signal_type = 'prediction_confirmed'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("query confirmed win feedback row");
+        assert!((win_alpha - 2.0).abs() < 0.01);
+        assert!((win_beta - 1.0).abs() < 0.01);
+        assert_eq!(win_updates, 1);
+
+        let unrelated_rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM signal_weights
+                 WHERE source = 'prep-risk-source'
+                   AND entity_type = 'meeting'
+                   AND signal_type = 'prediction_confirmed'
+                   AND beta > 1.0",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query unrelated feedback rows");
+        assert_eq!(unrelated_rows, 0);
     }
 }

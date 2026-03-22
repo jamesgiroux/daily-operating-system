@@ -63,20 +63,24 @@
       "label": "Reports",
       "routes": [
         "/accounts/$accountId/reports/risk_briefing",
+        "/accounts/$accountId/reports/swot",
         "/accounts/$accountId/reports/$reportType",
         "/accounts/$accountId/reports/account_health",
         "/accounts/$accountId/reports/ebr_qbr",
         "/me/reports/$reportType",
         "/me/reports/weekly_impact",
-        "/me/reports/monthly_wrapped"
+        "/me/reports/monthly_wrapped",
+        "/me/reports/book_of_business"
       ],
       "owners": [
         "pages/RiskBriefingPage.tsx",
+        "pages/SwotPage.tsx",
         "pages/ReportPage.tsx",
         "pages/AccountHealthPage.tsx",
         "pages/EbrQbrPage.tsx",
         "pages/WeeklyImpactPage.tsx",
-        "pages/monthly-wrapped/MonthlyWrappedPage.tsx"
+        "pages/monthly-wrapped/MonthlyWrappedPage.tsx",
+        "pages/BookOfBusinessPage.tsx"
       ],
       "notes": "Report routes are split by report type, but all Phase 3 report command contracts flow through these routed pages."
     }
