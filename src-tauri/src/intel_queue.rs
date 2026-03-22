@@ -375,12 +375,14 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 display_names.len() - 2
             )
         };
+        let batch_has_manual = batch.iter().any(|r| r.priority == IntelPriority::Manual);
         let _ = app.emit(
             "background-work-status",
             serde_json::json!({
                 "phase": "started",
                 "message": started_msg,
                 "count": batch.len(),
+                "manual": batch_has_manual,
             }),
         );
 
@@ -714,6 +716,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 "phase": "completed",
                 "message": "Insights updated",
                 "count": results.len(),
+                "manual": batch_has_manual,
             }),
         );
     }

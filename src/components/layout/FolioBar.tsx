@@ -11,6 +11,13 @@ import React from 'react';
 import { Link } from '@tanstack/react-router';
 import { BrandMark } from '../ui/BrandMark';
 import { capitalize } from '@/lib/utils';
+import type { BackgroundWorkState } from '@/hooks/useBackgroundStatus';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import styles from './FolioBar.module.css';
 
 export interface ReadinessStat {
@@ -59,6 +66,12 @@ export interface FolioBarProps {
    * Used for page-specific actions like enrichment buttons.
    */
   actions?: React.ReactNode;
+
+  /**
+   * Background work state — when active, the brand mark asterisk
+   * pulses to indicate background intelligence processing.
+   */
+  backgroundWork?: BackgroundWorkState;
 }
 
 export const FolioBar: React.FC<FolioBarProps> = ({
@@ -69,7 +82,11 @@ export const FolioBar: React.FC<FolioBarProps> = ({
   onSearchClick,
   backLink,
   actions,
+  backgroundWork,
 }) => {
+  const markClass = backgroundWork?.phase === 'started'
+    ? `${styles.folioMark} ${styles.folioMarkPulsing}`
+    : styles.folioMark;
   return (
     <header className={styles.folio}>
       {/* LEFT: Back link OR Brand mark + Publication label */}
@@ -81,9 +98,24 @@ export const FolioBar: React.FC<FolioBarProps> = ({
           </button>
         ) : (
           <>
-            <Link to="/" className={styles.folioHomeLink}>
-              <BrandMark className={styles.folioMark} size={18} />
-            </Link>
+            {backgroundWork?.phase === 'started' ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link to="/" className={styles.folioHomeLink}>
+                      <BrandMark className={markClass} size={18} />
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    {backgroundWork.message || 'Updating…'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <Link to="/" className={styles.folioHomeLink}>
+                <BrandMark className={markClass} size={18} />
+              </Link>
+            )}
             <span className={styles.folioPub}>{publicationLabel}</span>
           </>
         )}
