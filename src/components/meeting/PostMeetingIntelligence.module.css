@@ -760,33 +760,60 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .roleChange {
-  margin-bottom: 20px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--color-rule-light);
 }
 
 .roleChange:last-child {
-  margin-bottom: 0;
+  border-bottom: none;
 }
 
 .roleHeader {
-  font-size: 15px;
-  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .roleName {
+  font-size: 16px;
   font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.roleTransition {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.roleStatus {
+  color: var(--color-text-secondary);
 }
 
 .roleArrow {
-  color: var(--color-text-tertiary);
-  margin: 0 6px;
+  color: var(--color-text-quaternary);
+  flex-shrink: 0;
+}
+
+.roleEvidenceBlock {
+  border-left: 2px solid var(--color-spice-saffron, #deb841);
+  padding: 6px 0 6px 20px;
 }
 
 .roleEvidence {
   font-family: var(--font-serif);
-  font-size: 14px;
+  font-size: 15px;
   font-style: italic;
   line-height: 1.5;
   color: var(--color-text-tertiary);
+  margin: 0;
   margin: 0;
 }
 
