@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** v0.15.2 shipped. v0.16.0 mostly done (onboarding). v0.16.2 dissolved; v0.16.1 remains tracked as a hardening addendum for trust-critical work (I527). **v1.0.0 is the GA release (rescoped 2026-03-03):** local rearchitecture (schema decomp, ServiceLayer, workspace elimination, module decomp, pipeline reliability) + intelligence foundation (6-dimension schema, health scoring, relationships) + CS report suite + GA readiness (search, offline, data export, privacy, editorial polish, vocabulary). ADR-0099 (remote-first) withdrawn. v1.1.0: publication + portfolio + Glean Agents. See `.docs/research/2026-03-03-architecture-first-principles-review.md`.
+**Current state:** v1.0.0 GA shipped (2026-03-16). **v1.0.1 shipping today:** email intelligence for CS + post-GA hardening. Roadmap reorganized 2026-03-21: v1.0.2 (fix & reconnect) → v1.0.3 (the meeting record) → v1.1.0 (lifecycle intelligence) → v1.2.0 (actions & loops) → v1.3.0 (report engine) → v1.4.0 (publication + portfolio). See version briefs in `.docs/plans/`.
 
 ---
 
@@ -12,19 +12,10 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
+| **I620** | Actions pipeline audit & repair — 6 root causes, end-to-end fix | P0 | Backend + Frontend / Actions |
+| **I621** | Meeting transcript output redesign — rendering completeness + report layout | P1 | Frontend / Meeting Detail |
+| **I622** | Fix past-meeting opacity — outcomes full brightness, prep faded | P1 | Frontend / Meeting Detail |
 | **I56** | Onboarding: educational redesign — demo data, guided tour | P0 | Onboarding |
-| **I600** | Migrate RiskBriefingPage to reports framework — unified route, renderer, feedback | P2 | Frontend / Reports |
-| **I615** | Migration schema integrity checks + 068 rebuild | P0 | Backend / Migrations |
-| **I616** | Background task restart wrapper with backoff | P0 | Backend / Infrastructure |
-| **I617** | Top 20 console.error → toast.error for user-facing actions | P1 | Frontend / UX |
-| **I618** | Smoke tests for top 5 mutation services | P1 | Backend / Testing |
-| **I619** | Prompt evaluation suite — golden fixture tests | P1 | Backend / Testing / Intelligence |
-| **I609** | Retire sync DB path from AppState — remove legacy Mutex<Option<ActionDb>> | P2 | Code Quality / Backend |
-| **I610** | Consolidate AppLockState — 4 fields into single struct | P2 | Code Quality / Backend |
-| **I611** | Full console.error → toast sweep — remaining ~136 instances | P1 | Frontend / UX |
-| **I612** | InboxPage + AccountsPage inline style migration to CSS modules | P2 | Frontend / Code Quality |
-| **I613** | hygiene.rs decomposition — 3,463 lines into 4 sub-modules | P2 | Code Quality / Backend |
-| **I614** | DB growth monitoring + age-based purge scheduler | P2 | Backend / Data Lifecycle |
 | **I57** | Onboarding: add accounts/projects + user domain configuration | P0 | Onboarding |
 | **I199** | Archived account recovery UX — restore + relink | P2 | Entity |
 | **I258** | Report Mode — export account detail as leadership-ready deck/PDF | P2 | UX |
@@ -428,18 +419,110 @@ Dissolved 2026-03-02. I494, I495 moved to v1.1.0 (Teams + Portfolio). See ADR-00
 
 ---
 
-### v1.1.0 — Publication + Portfolio + Glean Agents [PLANNED]
+### v1.0.2 — Fix & Reconnect [PLANNED]
 
-**Theme:** Intelligence flows upward via governed publication, not shared databases. IC's DailyOS publishes curated outputs (reports, health summaries) to Google Drive Shared folder. VP consumes via Glean or a lightweight portfolio reader. Glean Agents provide org-level analysis (call analysis, account health baselines) that DailyOS synthesizes with personal context. Governance is Google Workspace + Glean, not a custom auth/sync layer. See `.docs/research/2026-03-03-architecture-first-principles-review.md`.
+**Theme:** Fix what's broken before building more. Actions pipeline doesn't surface extracted actions. Briefing expansion panels lost prep previews. Past meetings fade the wrong content. Reconnection audit sweeps for other built-but-not-wired components. Coherence work, not feature work. Origin: planning reorganization 2026-03-21.
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| I533 | Publication engine — Google Drive output layer, auto-publish, Glean auto-indexed. Spec: `.docs/issues/i533.md` | P1 | Backend / Publication |
-| I534 | Portfolio reader — cross-IC intelligence from Shared Drive, JSON sidecar. Spec: `.docs/issues/i534.md` | P1 | Backend + Frontend |
-| I492 | Portfolio Health page — editorial aggregate, exception list, renewal timeline | P1 | Frontend / Pages |
-| I532 | Intelligence surfacing threshold model — when to tap the user on the shoulder vs stay quiet. Spec: `.docs/issues/i532.md` | P1 | Backend / Signals + Frontend / Briefing |
+| I620 | Actions pipeline audit & repair — 6 root causes, end-to-end fix | P0 | Backend + Frontend / Actions |
+| I621 | Meeting transcript output redesign — rendering completeness + report layout | P1 | Frontend / Meeting Detail |
+| I622 | Fix past-meeting opacity — outcomes full brightness, prep faded | P1 | Frontend / Meeting Detail |
+| I629 | Briefing expansion panel restoration — reconnect PrepGrid + action checklist (regression fix) | P1 | Frontend / Briefing |
+| I630 | Reconnection audit — sweep for built-but-not-wired components | P2 | Code Quality |
+| I631 | Transcript filing for person + project entities — extend routing beyond accounts | P2 | Backend / Transcripts |
+| I632 | MCP query_entity reads intelligence from DB — replace stale intelligence.json reads | P2 | Backend / MCP |
 
-Version brief: `.docs/plans/v1.1.0.md`. Research: `.docs/research/2026-03-01-portfolio-intelligence-architecture.md`, `.docs/research/2026-03-03-architecture-first-principles-review.md`.
+Version brief: `.docs/plans/v1.0.2.md`.
+
+---
+
+### v1.0.3 — The Meeting Record [PLANNED]
+
+**Theme:** The meeting page transforms through 4 temporal stages: upcoming (prep) → in-progress (locked) → just-ended (processing progress) → processed (meeting record). After transcript processing, the page becomes a polished executive brief with prediction scorecard, structured outcomes, and meeting-to-meeting continuity. A consolidated meeting record markdown is generated for MCP consumption. Health scoring accuracy fix ensures scores update post-meeting. Origin: CEO plan review SCOPE EXPANSION 2026-03-21.
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I633 | Health scoring real-time accuracy — scores must update post-meeting | P0 | Backend / Health Scoring |
+| I634 | Meeting page temporal transformation — 4-stage lifecycle | P0 | Frontend / Meeting Detail |
+| I635 | Prep prediction scorecard — what we predicted vs what happened | P1 | Backend / Intelligence + Frontend |
+| I636 | Consolidated meeting record markdown — structured output for MCP | P1 | Backend / Transcripts |
+| I637 | Meeting-to-meeting continuity thread | P1 | Backend + Frontend |
+
+Version brief: `.docs/plans/v1.0.3.md`. Umbrella spec: `.docs/issues/i634.md`.
+
+---
+
+### v1.1.0 — Lifecycle Intelligence + Briefing Depth [PLANNED]
+
+**Theme:** AI-native lifecycle management. The system detects lifecycle transitions from signals and acts automatically — then reports in the daily briefing. No management UI, no pipeline, no workbench. "It should just know." Products discovered by Glean/AI, not managed. Provenance shows data sources. Origin: CEO plan review + product philosophy challenge 2026-03-21.
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I623 | Lifecycle intelligence engine — automatic signal-driven transitions + briefing reporting | P0 | Backend / Services + Frontend / Briefing |
+| I624 | Product intelligence — AI-discovered products from Glean + transcript/email inference (no CRUD) | P1 | Backend / DB + Frontend |
+| I625 | Provenance inline markers — editorial attribution scoped to Glean sub-sources | P1 | Frontend / Components |
+| I628 | Success plan milestone auto-completion — lifecycle events auto-complete matching milestones | P2 | Backend / Success Plans |
+
+Killed: ~~I626 (breadcrumb bar — management artifact)~~, ~~I627 (briefing quick actions — replaced by automatic detection)~~.
+
+Version brief: `.docs/plans/v1.1.0.md`. Umbrella spec: `.docs/issues/i623.md`.
+
+---
+
+### v1.2.0 — Actions & Success Plans: Closing the Loop [PLANNED]
+
+**Theme:** Close broken loops. Actions feed health scoring. Milestones advance when work is done. Value persists. Stale actions age out (zero-guilt). Proposed actions learn from rejection. Origin: moved from v1.0.2 during planning reorganization 2026-03-21.
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I597 | Action & success plan mock data expansion | P0 | Backend / Mock Data |
+| I583 | Action aging & zero-guilt cleanup | P0 | Backend / Actions |
+| I584 | Action completion feeds health scoring | P0 | Backend / Health Scoring |
+| I585 | Persist value delivered | P0 | Backend / Intelligence |
+| I586 | Action completion → milestone advancement | P1 | Backend / Success Plans |
+| I587 | Action context in meeting prep | P1 | Backend / Intelligence |
+| I588 | Recommended actions from intelligence | P1 | Backend / Intelligence |
+| I589 | Completion momentum surface | P1 | Frontend / Actions |
+| I590 | Waiting-on as first-class status | P1 | Backend + Frontend |
+| I591 | Unify AI objectives with user objectives | P2 | Backend / Intelligence |
+| I592 | Auto-link actions to objectives | P2 | Backend / Intelligence |
+| I593 | Captured commitments → milestone candidates | P2 | Backend / Intelligence |
+| I594 | Decision-requiring actions | P2 | Backend / Intelligence |
+| I595 | Rejection learning for proposed actions | P2 | Backend / Intelligence |
+
+Version brief: `.docs/plans/v1.2.0.md`.
+
+---
+
+### v1.3.0 — Report Engine Rebuild [PLANNED]
+
+**Theme:** Reports become assembly surfaces that render pre-computed intelligence, not independent AI targets. Display-only by default. No generation step, no spinner. Origin: moved from v1.0.3 during planning reorganization 2026-03-21.
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I604 | Schema + assembly engine (foundation) | P0 | Backend / Reports |
+| I605 | Account reports display-only | P1 | Backend + Frontend / Reports |
+| I606 | Book of Business rebuild | P1 | Backend + Frontend / Reports |
+| I607 | Weekly Impact with delight | P1 | Backend + Frontend / Reports |
+| I608 | Monthly Wrapped with delight | P1 | Backend + Frontend / Reports |
+
+Version brief: `.docs/plans/v1.3.0.md`.
+
+---
+
+### v1.4.0 — Publication + Portfolio + Intelligence Quality [PLANNED]
+
+**Theme:** Intelligence flows upward via governed publication. ICs publish curated narrative to Google Drive. VPs consume via portfolio page. Surfacing model learns when to interrupt vs stay quiet. Origin: moved from v1.2.0 during planning reorganization 2026-03-21.
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I533 | Publication engine — Google Drive output layer, auto-publish | P1 | Backend / Publication |
+| I534 | Portfolio reader — cross-IC intelligence from Shared Drive | P1 | Backend + Frontend |
+| I492 | Portfolio Health page — editorial aggregate, exception list | P1 | Frontend / Pages |
+| I532 | Intelligence surfacing threshold model | P1 | Backend / Signals + Frontend |
+
+Version brief: `.docs/plans/v1.4.0.md`.
 
 ---
 
@@ -587,10 +670,15 @@ Final pass before tagging v1.0.0. No beach balls, no silent failures, no securit
 | I572 | Audit log for OAuth token lifecycle | P2 | Backend / Security |
 | I573 | Mutex poisoning recovery for critical state | P2 | Backend / Stability |
 
-**v1.0.1 — Email Intelligence for CS (The Correspondent enhancements):**
+**v1.0.1 — Email Intelligence + Post-GA Hardening (The Correspondent enhancements):**
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
+| I615 | Migration schema integrity checks + 068 rebuild | P0 | Backend / Migrations |
+| I616 | Background task restart wrapper with backoff | P0 | Backend / Infrastructure |
+| I617 | Top 20 console.error → toast.error for user-facing actions | P1 | Frontend / UX |
+| I618 | Smoke tests for top 5 mutation services | P1 | Backend / Testing |
+| I619 | Prompt evaluation suite — golden fixture tests | P1 | Backend / Testing / Intelligence |
 | I596 | Email mock data foundation — seed 15-20 emails, signals, cadence, relevance scores for dev/verification | P0 | Backend / Dev Tools |
 | I577 | Reply debt surface — unanswered customer emails as first-class signal | P1 | Backend + Frontend / Email |
 | I578 | Render `repliesNeeded` from existing `EmailBriefingData` | P1 | Frontend / Email |
@@ -598,6 +686,13 @@ Final pass before tagging v1.0.0. No beach balls, no silent failures, no securit
 | I580 | Commitment → Action promotion from email extraction | P1 | Backend + Frontend / Email |
 | I581 | Email cadence awareness — silence detection for tracked accounts | P1 | Backend + Frontend / Email |
 | I582 | Email-meeting linkage — surface `pre_meeting_context` on Correspondent + Meeting Detail | P1 | Frontend / Email |
+| I600 | Migrate RiskBriefingPage to reports framework | P2 | Frontend / Reports |
+| I609 | Retire sync DB path from AppState | P2 | Code Quality / Backend |
+| I610 | Consolidate AppLockState into single struct | P2 | Code Quality / Backend |
+| I611 | Full console.error → toast sweep (~136 remaining) | P1 | Frontend / UX |
+| I612 | InboxPage + AccountsPage inline style migration | P2 | Frontend / Code Quality |
+| I613 | hygiene.rs decomposition into sub-modules | P2 | Code Quality / Backend |
+| I614 | DB growth monitoring + age-based purge scheduler | P2 | Backend / Infrastructure |
 
 **v1.0.2 — Actions & Success Plans: Closing the Loop:**
 

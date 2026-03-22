@@ -56,3 +56,4 @@ src-tauri/Accounts/
 .dailyos-setup-complete
 .dailyos-test
 tauri-dev.log
+.gstack/
