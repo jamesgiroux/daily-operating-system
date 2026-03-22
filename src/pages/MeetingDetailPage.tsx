@@ -1008,26 +1008,34 @@ Thanks!`;
                 getItemFeedback={feedback.getFeedback}
                 onItemFeedback={feedback.submitFeedback}
                 onAcceptAction={async (id) => {
-                  try { await invoke("accept_suggested_action", { id }); loadMeetingIntelligence(); }
+                  const y = window.scrollY;
+                  try { await invoke("accept_suggested_action", { id }); await loadMeetingIntelligence(); }
                   catch { toast.error("Failed to accept action"); }
+                  requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
                 onDismissAction={async (id) => {
-                  try { await invoke("reject_suggested_action", { id, source: "meeting_detail" }); loadMeetingIntelligence(); }
+                  const y = window.scrollY;
+                  try { await invoke("reject_suggested_action", { id, source: "meeting_detail" }); await loadMeetingIntelligence(); }
                   catch { toast.error("Failed to dismiss action"); }
+                  requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
                 onToggleAction={async (id) => {
+                  const y = window.scrollY;
                   try {
                     const action = outcomes?.actions.find(a => a.id === id);
                     if (action?.status === "completed") { await invoke("reopen_action", { id }); }
                     else { await invoke("complete_action", { id }); }
-                    loadMeetingIntelligence();
+                    await loadMeetingIntelligence();
                   } catch { toast.error("Failed to update action"); }
+                  requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
                 onCyclePriority={async (id) => {
+                  const y = window.scrollY;
                   const action = outcomes?.actions.find(a => a.id === id);
                   const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
-                  try { await invoke("update_action_priority", { id, priority: cycle[action?.priority ?? "P2"] || "P2" }); loadMeetingIntelligence(); }
+                  try { await invoke("update_action_priority", { id, priority: cycle[action?.priority ?? "P2"] || "P2" }); await loadMeetingIntelligence(); }
                   catch { toast.error("Failed to update priority"); }
+                  requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
               />
             </div>
