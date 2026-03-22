@@ -24,8 +24,8 @@ export function TalkBalanceBar({ customerPct, internalPct }: TalkBalanceBarProps
         <div className={styles.segmentInternal} />
       </div>
       <div className={styles.labels}>
-        <span className={styles.labelCustomer}>Customer {normalizedCustomer}%</span>
-        <span className={styles.labelInternal}>Internal {normalizedInternal}%</span>
+        <span className={styles.labelCustomer}>{normalizedCustomer}% Customer</span>
+        <span className={styles.labelInternal}>{normalizedInternal}% Internal</span>
       </div>
     </div>
   );
