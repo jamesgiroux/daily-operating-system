@@ -22,9 +22,11 @@ use crate::types::Config;
 
 // Re-export the full public API so callers can use `crate::hygiene::*` unchanged.
 // Some re-exports are not directly referenced but maintain the public API contract.
-pub use detectors::{check_upcoming_meeting_readiness, detect_duplicate_people, DuplicateCandidate};
 #[allow(unused_imports)]
 pub use detectors::score_name_similarity;
+pub use detectors::{
+    check_upcoming_meeting_readiness, detect_duplicate_people, DuplicateCandidate,
+};
 #[allow(unused_imports)]
 pub use matcher::{auto_link_people_by_domain, resolve_names_from_emails};
 pub use narrative::{
@@ -33,8 +35,8 @@ pub use narrative::{
 };
 #[allow(unused_imports)]
 pub use narrative::{
-    run_overnight_scan, HygieneBudgetView, HygieneFixView, HygieneGapActionView,
-    HygieneGapSummary, HygieneGapView,
+    run_overnight_scan, HygieneBudgetView, HygieneFixView, HygieneGapActionView, HygieneGapSummary,
+    HygieneGapView,
 };
 
 /// How long to wait after startup before the first scan.
@@ -228,7 +230,10 @@ pub fn run_hygiene_scan(
     })) {
         Ok(()) => {}
         Err(e) => {
-            log::error!("Hygiene phase 2 (name resolution + linking) panicked: {:?}", e);
+            log::error!(
+                "Hygiene phase 2 (name resolution + linking) panicked: {:?}",
+                e
+            );
         }
     }
 
@@ -243,7 +248,10 @@ pub fn run_hygiene_scan(
     })) {
         Ok(()) => {}
         Err(e) => {
-            log::error!("Hygiene phase 2b (low-confidence matches) panicked: {:?}", e);
+            log::error!(
+                "Hygiene phase 2b (low-confidence matches) panicked: {:?}",
+                e
+            );
         }
     }
 
@@ -274,7 +282,10 @@ pub fn run_hygiene_scan(
     })) {
         Ok(()) => {}
         Err(e) => {
-            log::error!("Hygiene phase 2d (self-healing intelligence) panicked: {:?}", e);
+            log::error!(
+                "Hygiene phase 2d (self-healing intelligence) panicked: {:?}",
+                e
+            );
         }
     }
 

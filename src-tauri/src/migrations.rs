@@ -307,6 +307,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 72,
         sql: include_str!("migrations/072_health_score_history.sql"),
     },
+    Migration {
+        version: 73,
+        sql: include_str!("migrations/073_meeting_record_path.sql"),
+    },
+    Migration {
+        version: 74,
+        sql: include_str!("migrations/074_action_status_vocabulary.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -866,13 +874,13 @@ mod tests {
         )
         .expect("chat_turns table should exist");
 
-        // Verify proposed/archived action statuses work (migration 011)
+        // Verify suggested/archived action statuses work (migration 074)
         conn.execute(
             "INSERT INTO actions (id, title, status, created_at, updated_at)
-             VALUES ('proposed-1', 'Proposed action', 'proposed', '2025-01-01', '2025-01-01')",
+             VALUES ('suggested-1', 'Suggested action', 'suggested', '2025-01-01', '2025-01-01')",
             [],
         )
-        .expect("proposed status should be accepted");
+        .expect("suggested status should be accepted");
 
         conn.execute(
             "INSERT INTO actions (id, title, status, created_at, updated_at)
@@ -1055,7 +1063,7 @@ mod tests {
         conn.execute(
             "UPDATE actions SET rejected_at = '2026-01-15T10:00:00Z',
              rejection_source = 'actions_page'
-             WHERE id = 'proposed-1'",
+             WHERE id = 'suggested-1'",
             [],
         )
         .expect("actions should have rejected_at and rejection_source columns");

@@ -112,12 +112,10 @@ fn score_action(action: DbAction, today: NaiveDate) -> ScoredAction {
     }
 
     let customer_points = if action.account_id.is_some() { 15 } else { 0 };
-    let blocked = action.status == "waiting"
-        || action
-            .waiting_on
-            .as_deref()
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
+    let blocked = action
+        .waiting_on
+        .as_ref()
+        .is_some_and(|w| !w.trim().is_empty());
     let blocked_penalty = if blocked { -25 } else { 0 };
 
     let score = base + urgency_points + customer_points + blocked_penalty;

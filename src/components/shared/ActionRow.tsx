@@ -266,7 +266,7 @@ function FullActionRow({
   );
 }
 
-/** Outcome variant: compact triage row with accept/reject for proposed, checkbox + priority cycling (MeetingDetailPage style) */
+/** Outcome variant: compact triage row with accept/reject for suggested, checkbox + priority cycling (MeetingDetailPage style) */
 function OutcomeActionRow({
   action,
   onComplete,
@@ -275,7 +275,7 @@ function OutcomeActionRow({
   onCyclePriority,
 }: ActionRowOutcomeProps) {
   const isCompleted = action.status === "completed";
-  const isProposed = action.status === "proposed";
+  const isSuggested = action.status === "suggested";
 
   const priorityColor: Record<string, string> = {
     P1: "var(--color-spice-terracotta)",
@@ -289,11 +289,11 @@ function OutcomeActionRow({
         alignItems: "center",
         gap: 8,
         padding: "3px 4px",
-        borderLeft: isProposed ? "2px dashed var(--color-spice-turmeric)" : "none",
-        paddingLeft: isProposed ? 8 : 4,
+        borderLeft: isSuggested ? "2px dashed var(--color-spice-turmeric)" : "none",
+        paddingLeft: isSuggested ? 8 : 4,
       }}
     >
-      {isProposed ? (
+      {isSuggested ? (
         <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
           <button
             onClick={onAccept}
@@ -343,7 +343,7 @@ function OutcomeActionRow({
         </button>
       )}
 
-      {isProposed ? (
+      {isSuggested ? (
         <span style={{
           fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600,
           letterSpacing: "0.06em", textTransform: "uppercase",

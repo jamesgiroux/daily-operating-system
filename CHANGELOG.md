@@ -5,6 +5,31 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.0.3] — 2026-03-22
+
+### Added
+
+- **Meeting Record (I634)** — after a transcript is processed, the meeting page transforms into a polished executive document: headline, executive summary, engagement dynamics (talk balance, speaker sentiments, escalation language), champion health, categorized key findings with evidence quotes, commitments & actions with lifecycle controls, role changes, and The Room. Pre-meeting prep collapses into an appendix.
+- **4-stage meeting lifecycle (I634)** — meeting pages now flow through upcoming (editable briefing), in-progress (read-only with live indicator), just-ended (processing progress), and processed (Meeting Record). Folio bar reflects each stage.
+- **Prediction scorecard (I635)** — "What We Predicted vs What Happened" compares frozen prep predictions against transcript outcomes. Confirmed predictions (Lucide Check, sage), surprises (Zap, turmeric), not raised (X, muted). Correct predictions emit Bayesian feedback to improve source confidence.
+- **Meeting continuity thread (I637)** — "The Thread" shows what changed since the last meeting with the same entity: completed actions, open actions with overdue flags, health score delta, new attendees. First meetings show a clean introduction.
+- **Meeting record markdown (I636)** — after processing, generates a structured markdown file at `{EntityDir}/Meeting-Records/` for MCP `search_content`. YAML frontmatter + executive summary + outcomes + actions + attendees. Migration 073 adds `record_path` column.
+- **Action lifecycle in Meeting Record** — suggested actions show accept/dismiss buttons, pending actions show Done button, completed actions show Reopen. Dismissed actions are hidden. Scroll position preserved on all interactions.
+- **Action count badges** — Pending and Completed tabs on the Actions page now show count badges alongside the existing Suggested count.
+
+### Changed
+
+- **Meeting Record editorial redesign** — ChapterHeading pattern (28px Newsreader serif, 1px rule, 80px section spacing) matching account detail pages. Evidence blocks with saffron left borders. Engagement signals as margin-grid key-value pairs. Role changes with flex layout and transition badges.
+- **Lucide icons replace unicode** — Check, Circle, Zap, X, UserPlus, ArrowRight, CircleDot replace all unicode symbols (checkmarks, lightning bolts, arrows) for visual consistency with the rest of the app.
+- **Talk balance bar** — customer segment now turmeric, internal segment larkspur. Labels reformatted to "58% Customer / 42% Internal".
+- **Commitments deduplication** — commitments section hidden when extracted actions exist (they overlap in content). Actions are the actionable version with lifecycle controls.
+
+### Fixed
+
+- **Mock meetings showing as Cancelled** — devtools full mock scenario set `calendar_event_id` without injecting matching live calendar events. Calendar merge marked them Cancelled. Fixed by omitting `calendar_event_id` on mock meetings.
+- **Action buttons preserved scroll position** — accept, dismiss, done, reopen, and cycle priority no longer jump to top of page.
+
+
 ## [1.0.2] — 2026-03-21
 
 ### Fixed
