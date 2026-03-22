@@ -162,8 +162,13 @@ pub async fn generate_report(
             &input.intel_hash,
         )?;
 
-        get_report(&db, &input.entity_id, &input.entity_type, &input.report_type)?
-            .ok_or_else(|| format!("Report {} not found after insert", report_id))
+        get_report(
+            &db,
+            &input.entity_id,
+            &input.entity_type,
+            &input.report_type,
+        )?
+        .ok_or_else(|| format!("Report {} not found after insert", report_id))
     });
 
     match task.await {
@@ -302,18 +307,14 @@ fn generate_book_of_business(
     };
 
     // Phase 3: Mechanical builders + single synthesis call
-    let ai_response = run_bob_generation(
-        &gather,
-        &glean_ctx,
-        &gather.metrics,
-        app_handle,
-    )?;
+    let ai_response = run_bob_generation(&gather, &glean_ctx, &gather.metrics, app_handle)?;
 
     // Phase 4: Assemble mechanical + synthesis into final content
     let health_overview = build_health_overview(&gather.snapshot);
     let risk_accounts = build_risk_accounts(&gather.snapshot, &gather.raw_accounts);
     let expansion_accounts = build_expansion_accounts(&gather.snapshot, &gather.raw_accounts);
-    let year_end_outlook = build_year_end_outlook(gather.metrics.total_arr, gather.metrics.at_risk_arr);
+    let year_end_outlook =
+        build_year_end_outlook(gather.metrics.total_arr, gather.metrics.at_risk_arr);
 
     let content = assemble_book_content(
         ai_response,
@@ -486,12 +487,22 @@ mod tests {
         .expect("save_report should not fail on missing row (no-op update)");
 
         // Insert via upsert_report first, then retrieve
-        upsert_report(&db, "acc-1", "account", "account_health", r#"{"score": 75}"#, "hash-1")
-            .expect("upsert_report");
+        upsert_report(
+            &db,
+            "acc-1",
+            "account",
+            "account_health",
+            r#"{"score": 75}"#,
+            "hash-1",
+        )
+        .expect("upsert_report");
 
         let cached = get_report_cached(&db, "acc-1", "account", "account_health")
             .expect("get_report_cached");
-        assert!(cached.is_some(), "Report should be retrievable after upsert");
+        assert!(
+            cached.is_some(),
+            "Report should be retrievable after upsert"
+        );
         let report = cached.unwrap();
         assert_eq!(report.entity_id, "acc-1");
         assert_eq!(report.report_type, "account_health");
@@ -504,10 +515,24 @@ mod tests {
     fn test_get_all_reports_for_entity() {
         let db = test_db();
 
-        upsert_report(&db, "acc-2", "account", "account_health", r#"{"score": 80}"#, "h1")
-            .expect("upsert health");
-        upsert_report(&db, "acc-2", "account", "swot", r#"{"strengths": []}"#, "h2")
-            .expect("upsert swot");
+        upsert_report(
+            &db,
+            "acc-2",
+            "account",
+            "account_health",
+            r#"{"score": 80}"#,
+            "h1",
+        )
+        .expect("upsert health");
+        upsert_report(
+            &db,
+            "acc-2",
+            "account",
+            "swot",
+            r#"{"strengths": []}"#,
+            "h2",
+        )
+        .expect("upsert swot");
 
         let reports = get_all_reports_for_entity(&db, "acc-2", "account")
             .expect("get_all_reports_for_entity");
@@ -522,15 +547,32 @@ mod tests {
     fn test_save_report_overwrites_existing() {
         let db = test_db();
 
-        upsert_report(&db, "acc-3", "account", "account_health", r#"{"score": 60}"#, "h-old")
-            .expect("first upsert");
-        upsert_report(&db, "acc-3", "account", "account_health", r#"{"score": 90}"#, "h-new")
-            .expect("second upsert");
+        upsert_report(
+            &db,
+            "acc-3",
+            "account",
+            "account_health",
+            r#"{"score": 60}"#,
+            "h-old",
+        )
+        .expect("first upsert");
+        upsert_report(
+            &db,
+            "acc-3",
+            "account",
+            "account_health",
+            r#"{"score": 90}"#,
+            "h-new",
+        )
+        .expect("second upsert");
 
         let report = get_report_cached(&db, "acc-3", "account", "account_health")
             .expect("get")
             .expect("should exist");
-        assert_eq!(report.content_json, r#"{"score": 90}"#, "Content should be updated");
+        assert_eq!(
+            report.content_json, r#"{"score": 90}"#,
+            "Content should be updated"
+        );
         assert_eq!(report.intel_hash, "h-new", "Hash should be updated");
     }
 
@@ -540,8 +582,7 @@ mod tests {
 
         upsert_report(&db, "acc-4", "account", "swot", r#"{"old": true}"#, "h1")
             .expect("initial upsert");
-        save_report(&db, "acc-4", "account", "swot", r#"{"edited": true}"#)
-            .expect("save_report");
+        save_report(&db, "acc-4", "account", "swot", r#"{"edited": true}"#).expect("save_report");
 
         let report = get_report_cached(&db, "acc-4", "account", "swot")
             .expect("get")

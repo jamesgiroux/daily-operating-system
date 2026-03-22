@@ -32,14 +32,7 @@ export function SwotCover({ accountName, content, onUpdate, generatedAt }: SwotC
 
   return (
     <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        padding: "120px 120px 80px",
-        scrollSnapAlign: "start",
-      }}
+      className="report-surface-slide"
     >
       {/* Overline */}
       <div

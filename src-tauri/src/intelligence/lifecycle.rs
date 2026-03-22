@@ -110,7 +110,7 @@ pub fn assess_intelligence_quality(db: &ActionDb, meeting_id: &str) -> Intellige
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM actions a
-                 WHERE a.status IN ('pending', 'waiting')
+                 WHERE a.status = 'pending'
                  AND (
                      a.account_id IN (SELECT entity_id FROM meeting_entities WHERE meeting_id = ?1)
                      OR a.project_id IN (SELECT entity_id FROM meeting_entities WHERE meeting_id = ?1)
