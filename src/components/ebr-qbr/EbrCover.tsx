@@ -31,14 +31,7 @@ export function EbrCover({ accountName, content, onUpdate, generatedAt }: EbrCov
 
   return (
     <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        padding: "120px 120px 80px",
-        scrollSnapAlign: "start",
-      }}
+      className="report-surface-slide"
     >
       {/* Overline */}
       <div

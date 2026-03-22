@@ -390,7 +390,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Get proposed/pending/waiting actions for a project.
+    /// Get suggested/pending actions for a project.
     pub fn get_project_actions(&self, project_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
@@ -399,7 +399,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE project_id = ?1
-               AND status IN ('proposed', 'pending', 'waiting')
+               AND status IN ('suggested', 'pending')
              ORDER BY priority, due_date",
         )?;
         let rows = stmt.query_map(params![project_id], Self::map_action_row)?;

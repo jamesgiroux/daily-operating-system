@@ -19,14 +19,7 @@ interface CoverSlideProps {
 export function CoverSlide({ content, isStale, onRegenerate, generating, onUpdate }: CoverSlideProps) {
   return (
     <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        padding: "120px 120px 80px",
-        scrollSnapAlign: "start",
-      }}
+      className="report-surface-slide"
     >
       {/* Overline */}
       <div

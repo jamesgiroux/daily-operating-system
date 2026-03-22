@@ -3,6 +3,8 @@ import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
+import styles from "./EntityListShell.module.css";
 
 // ─── Loading Skeleton ────────────────────────────────────────────────────────
 
@@ -55,48 +57,24 @@ export function EntityListHeader({
   children?: ReactNode;
 }) {
   return (
-    <section style={{ paddingTop: 80, paddingBottom: 24 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <h1
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 36,
-            fontWeight: 400,
-            letterSpacing: "-0.02em",
-            color: "var(--color-text-primary)",
-            margin: 0,
-          }}
-        >
-          {headline}
-        </h1>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)" }}>
-          {count} {countLabel}
-        </span>
+    <EditorialPageHeader
+      title={headline}
+      meta={`${count} ${countLabel}`}
+      scale="standard"
+      width="standard"
+      rule="subtle"
+    >
+      <div className={styles.headerContent}>
+        {children}
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder={searchPlaceholder}
+          className={styles.searchInput}
+        />
       </div>
-
-      <div style={{ height: 1, background: "var(--color-rule-heavy)", marginTop: 16, marginBottom: 16 }} />
-
-      {/* Slot for entity-specific filters (archive tabs, status tabs, etc.) */}
-      {children}
-
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => onSearchChange(e.target.value)}
-        placeholder={searchPlaceholder}
-        style={{
-          width: "100%",
-          fontFamily: "var(--font-sans)",
-          fontSize: 14,
-          color: "var(--color-text-primary)",
-          background: "none",
-          border: "none",
-          borderBottom: "1px solid var(--color-rule-light)",
-          padding: "8px 0",
-          outline: "none",
-        }}
-      />
-    </section>
+    </EditorialPageHeader>
   );
 }
 
@@ -111,25 +89,12 @@ export function ArchiveToggle({
 }) {
   const tabs: Array<"active" | "archived"> = ["active", "archived"];
   return (
-    <div style={{ display: "flex", gap: 20, marginBottom: 12 }}>
+    <div className={styles.tabs}>
       {tabs.map((tab) => (
         <button
           key={tab}
           onClick={() => onTabChange(tab)}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            fontWeight: 500,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: archiveTab === tab ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-            textDecoration: archiveTab === tab ? "underline" : "none",
-            textUnderlineOffset: "4px",
-            background: "none",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
-          }}
+          className={`${styles.tabButton} ${archiveTab === tab ? styles.tabButtonActive : ""}`}
         >
           {tab}
         </button>
@@ -152,25 +117,12 @@ export function FilterTabs<T extends string>({
   labelMap?: Partial<Record<T, string>>;
 }) {
   return (
-    <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+    <div className={styles.tabs}>
       {tabs.map((tab) => (
         <button
           key={tab}
           onClick={() => onChange(tab)}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            fontWeight: 500,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: active === tab ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-            textDecoration: active === tab ? "underline" : "none",
-            textUnderlineOffset: "4px",
-            background: "none",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
-          }}
+          className={`${styles.tabButton} ${active === tab ? styles.tabButtonActive : ""}`}
         >
           {labelMap?.[tab] ?? tab}
         </button>

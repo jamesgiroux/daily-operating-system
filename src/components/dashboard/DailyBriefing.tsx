@@ -14,8 +14,8 @@ import { useState, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { useProposedActions } from "@/hooks/useProposedActions";
-import { ProposedActionRow } from "@/components/shared/ProposedActionRow";
+import { useSuggestedActions } from "@/hooks/useSuggestedActions";
+import { SuggestedActionRow } from "@/components/shared/SuggestedActionRow";
 import clsx from "clsx";
 import { useCalendar } from "@/hooks/useCalendar";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -248,7 +248,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   }, []);
 
   // Proposed actions for triage
-  const { proposedActions, acceptAction, rejectAction } = useProposedActions();
+  const { suggestedActions, acceptAction, rejectAction } = useSuggestedActions();
 
   // Meeting actions helper: find actions related to a specific meeting
   const getActionsForMeeting = useCallback((meetingId: string) => {
@@ -260,9 +260,9 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
     return actions.filter((a) => a.source === meetingId).length;
   }, [actions]);
 
-  const getProposedActionCount = useCallback((meetingId: string) => {
-    return proposedActions.filter((a) => a.sourceId === meetingId).length;
-  }, [proposedActions]);
+  const getSuggestedActionCount = useCallback((meetingId: string) => {
+    return suggestedActions.filter((a) => a.sourceId === meetingId).length;
+  }, [suggestedActions]);
 
   // Schedule stats
   const activeMeetings = meetings.filter((m) => m.overlayStatus !== "cancelled");
@@ -353,7 +353,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                         completedIds={completedIds}
                         onEntitiesChanged={onRefresh}
                         capturedActionCount={getCapturedActionCount(meeting.id)}
-                        proposedActionCount={getProposedActionCount(meeting.id)}
+                        suggestedActionCount={getSuggestedActionCount(meeting.id)}
                         isUpNext={upNext?.id === meeting.id}
                         userDomain={data.userDomains?.[0]}
                       />
@@ -385,7 +385,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
       {/* ═══ ATTENTION ═══ */}
       {/* When stale, only show attention section if we have actions (emails/narrative won't exist yet) */}
       <AttentionSection
-        proposedActions={proposedActions}
+        suggestedActions={suggestedActions}
         acceptAction={acceptAction}
         rejectAction={rejectAction}
         focus={data.focus}
@@ -405,10 +405,10 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   );
 }
 
-// ─── Attention Section (unified: proposed + actions + emails) ─────────────────
+// ─── Attention Section (unified: suggested + actions + emails) ─────────────────
 
 function AttentionSection({
-  proposedActions,
+  suggestedActions,
   acceptAction,
   rejectAction,
   focus,
@@ -421,7 +421,7 @@ function AttentionSection({
   todayMeetingIds,
   emailSyncTimestamp,
 }: {
-  proposedActions: Array<{ id: string; title: string; sourceLabel?: string; sourceId?: string }>;
+  suggestedActions: Array<{ id: string; title: string; sourceLabel?: string; sourceId?: string }>;
   acceptAction: (id: string) => void;
   rejectAction: (
     id: string,
@@ -465,10 +465,10 @@ function AttentionSection({
     return [...overdueRaw, ...meetingRaw].slice(0, 3);
   }, [focus, pendingActions, todayMeetingIds]);
 
-  const hasProposed = proposedActions.length > 0;
+  const hasSuggested = suggestedActions.length > 0;
   const hasActions = attentionActions.length > 0;
   const hasEmails = briefingEmails.length > 0;
-  const hasAnything = hasProposed || hasActions || hasEmails;
+  const hasAnything = hasSuggested || hasActions || hasEmails;
 
   if (!hasAnything) return null;
 
@@ -486,22 +486,22 @@ function AttentionSection({
           <div className={s.sectionRule} />
 
 
-          {/* Proposed action triage (max 3) */}
-          {hasProposed && (
+          {/* Suggested action triage (max 3) */}
+          {hasSuggested && (
             <>
               <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                {proposedActions.slice(0, 3).map((action, i) => (
-                  <ProposedActionRow
+                {suggestedActions.slice(0, 3).map((action, i) => (
+                  <SuggestedActionRow
                     key={action.id}
                     action={action}
                     onAccept={() => acceptAction(action.id)}
                     onReject={() => rejectAction(action.id, "daily_briefing")}
-                    showBorder={i < Math.min(proposedActions.length, 3) - 1}
+                    showBorder={i < Math.min(suggestedActions.length, 3) - 1}
                     compact
                   />
                 ))}
               </div>
-              {proposedActions.length > 3 && (
+              {suggestedActions.length > 3 && (
                 <button
                   onClick={() => navigate({ to: "/actions", search: { search: undefined } })}
                   style={{
@@ -516,7 +516,7 @@ function AttentionSection({
                     padding: "8px 0 0 14px",
                   }}
                 >
-                  See all {proposedActions.length} suggestions &rarr;
+                  See all {suggestedActions.length} suggestions &rarr;
                 </button>
               )}
             </>
@@ -524,7 +524,7 @@ function AttentionSection({
 
           {/* Actions: meeting-relevant + overdue (max 3) */}
           {hasActions && (
-            <div style={{ marginTop: hasProposed ? 28 : 0 }}>
+            <div style={{ marginTop: hasSuggested ? 28 : 0 }}>
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
                 Actions
               </div>

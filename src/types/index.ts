@@ -31,6 +31,37 @@ export type MeetingType =
   | "external"
   | "personal";
 
+/** I634: Meeting page temporal lifecycle stage. */
+export type MeetingStage = "upcoming" | "in-progress" | "just-ended" | "processed";
+
+/** I637: Meeting-to-meeting continuity thread. */
+export interface ThreadAction { title: string; date?: string; isOverdue: boolean; }
+export interface HealthDelta { previous: number; current: number; }
+export interface ContinuityThread {
+  previousMeetingDate?: string;
+  previousMeetingTitle?: string;
+  entityName?: string;
+  actionsCompleted: ThreadAction[];
+  actionsOpen: ThreadAction[];
+  healthDelta?: HealthDelta;
+  newAttendees: string[];
+  isFirstMeeting: boolean;
+}
+
+/** I635: Prediction scorecard. */
+export type PredictionCategory = "confirmed" | "notRaised" | "surprise";
+export interface PredictionResult {
+  text: string;
+  category: PredictionCategory;
+  source?: string;
+  matchText?: string;
+}
+export interface PredictionScorecard {
+  riskPredictions: PredictionResult[];
+  winPredictions: PredictionResult[];
+  hasData: boolean;
+}
+
 /** Feature flags for gating incomplete features (I537). */
 export interface FeatureFlags {
   role_presets_enabled: boolean;
@@ -63,7 +94,7 @@ export interface DatabaseInfo {
 
 export type Priority = "P1" | "P2" | "P3";
 
-export type ActionStatus = "pending" | "completed" | "proposed" | "archived";
+export type ActionStatus = "pending" | "completed" | "suggested" | "archived";
 
 export type PrepStatus =
   | "prep_needed"

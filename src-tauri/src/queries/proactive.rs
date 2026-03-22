@@ -28,7 +28,11 @@ fn estimate_effort_minutes(action: &DbAction) -> u32 {
         "P2" => 45,
         _ => 30,
     };
-    if action.status == "waiting" {
+    if action
+        .waiting_on
+        .as_ref()
+        .is_some_and(|w| !w.trim().is_empty())
+    {
         effort = effort.saturating_sub(10);
     }
     effort.max(20)

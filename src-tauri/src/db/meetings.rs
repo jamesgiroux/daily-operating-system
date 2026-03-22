@@ -1174,6 +1174,145 @@ impl ActionDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
+    /// Find the most recent meeting linked to an entity before a given date (I637).
+    pub fn get_previous_meeting_for_entity(
+        &self,
+        entity_id: &str,
+        entity_type: &str,
+        before_date: &str,
+    ) -> Result<Option<DbMeeting>, DbError> {
+        let sql = format!(
+            "{} INNER JOIN meeting_entities me2 ON m.id = me2.meeting_id
+             WHERE me2.entity_id = ?1 AND me2.entity_type = ?2 AND m.start_time < ?3
+             ORDER BY m.start_time DESC LIMIT 1",
+            full_meeting_join_sql()
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut rows = stmt.query_map(
+            params![entity_id, entity_type, before_date],
+            map_full_meeting_row,
+        )?;
+        match rows.next() {
+            Some(Ok(meeting)) => Ok(Some(meeting)),
+            Some(Err(e)) => Err(DbError::Sqlite(e)),
+            None => Ok(None),
+        }
+    }
+
+    /// Build a continuity thread between two meetings for the same entity (I637).
+    ///
+    /// Shows actions completed/open, health score delta, and new attendees
+    /// between the previous and current meetings.
+    pub fn get_continuity_thread(
+        &self,
+        entity_id: &str,
+        current_meeting_id: &str,
+        prev_meeting_id: &str,
+        prev_meeting_date: &str,
+        current_meeting_date: &str,
+    ) -> Result<super::types::ContinuityThread, DbError> {
+        // Actions completed between the two meetings
+        let mut completed_stmt = self.conn.prepare(
+            "SELECT title, completed_at FROM actions
+             WHERE account_id = ?1 AND status = 'completed'
+               AND completed_at >= ?2 AND completed_at <= ?3
+             ORDER BY completed_at DESC",
+        )?;
+        let completed_rows = completed_stmt.query_map(
+            params![entity_id, prev_meeting_date, current_meeting_date],
+            |row| {
+                Ok(super::types::ThreadAction {
+                    title: row.get(0)?,
+                    date: row.get(1)?,
+                    is_overdue: false,
+                })
+            },
+        )?;
+        let actions_completed: Vec<_> = completed_rows.collect::<Result<Vec<_>, _>>()?;
+
+        // Open actions for this entity
+        let mut open_stmt = self.conn.prepare(
+            "SELECT title, due_date FROM actions
+             WHERE account_id = ?1 AND status = 'pending'
+             ORDER BY due_date ASC NULLS LAST",
+        )?;
+        let open_rows = open_stmt.query_map(params![entity_id], |row| {
+            let title: String = row.get(0)?;
+            let due_date: Option<String> = row.get(1)?;
+            let is_overdue = due_date
+                .as_deref()
+                .map(|d| d < current_meeting_date)
+                .unwrap_or(false);
+            Ok(super::types::ThreadAction {
+                title,
+                date: due_date,
+                is_overdue,
+            })
+        })?;
+        let actions_open: Vec<_> = open_rows.collect::<Result<Vec<_>, _>>()?;
+
+        // Health score delta — closest scores to each meeting date
+        let health_delta = {
+            let prev_score: Option<f64> = self
+                .conn
+                .query_row(
+                    "SELECT score FROM health_score_history
+                     WHERE account_id = ?1 AND computed_at <= ?2
+                     ORDER BY computed_at DESC LIMIT 1",
+                    params![entity_id, prev_meeting_date],
+                    |row| row.get(0),
+                )
+                .ok();
+            let current_score: Option<f64> = self
+                .conn
+                .query_row(
+                    "SELECT score FROM health_score_history
+                     WHERE account_id = ?1 AND computed_at <= ?2
+                     ORDER BY computed_at DESC LIMIT 1",
+                    params![entity_id, current_meeting_date],
+                    |row| row.get(0),
+                )
+                .ok();
+            match (prev_score, current_score) {
+                (Some(p), Some(c)) if (p - c).abs() > f64::EPSILON => {
+                    Some(super::types::HealthDelta {
+                        previous: p,
+                        current: c,
+                    })
+                }
+                _ => None,
+            }
+        };
+
+        // New attendees — people in current meeting but not previous
+        let mut new_att_stmt = self.conn.prepare(
+            "SELECT p.name FROM meeting_attendees ma
+             JOIN people p ON p.id = ma.person_id
+             WHERE ma.meeting_id = ?1
+               AND ma.person_id NOT IN (
+                   SELECT ma2.person_id FROM meeting_attendees ma2
+                   WHERE ma2.meeting_id = ?2
+               )
+             ORDER BY p.name",
+        )?;
+        let new_att_rows = new_att_stmt
+            .query_map(params![current_meeting_id, prev_meeting_id], |row| {
+                row.get::<_, String>(0)
+            })?;
+        let new_attendees: Vec<_> = new_att_rows.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(super::types::ContinuityThread {
+            previous_meeting_date: Some(prev_meeting_date.to_string()),
+            previous_meeting_title: None, // filled by caller
+            entity_name: None,            // filled by caller
+            actions_completed,
+            actions_open,
+            health_delta,
+            new_attendees,
+            is_first_meeting: false,
+        })
+    }
+
     /// Get post-meeting intelligence bundle (I558).
     pub fn get_meeting_post_intelligence(
         &self,

@@ -11,44 +11,9 @@
    PAGE CONTAINER
    ───────────────────────────────────────────────────────────────────────── */
 .page {
-  max-width: 900px;
+  max-width: var(--page-content-width-standard);
   margin-left: auto;
   margin-right: auto;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   HERO SECTION
-   ───────────────────────────────────────────────────────────────────────── */
-.hero {
-  padding-top: var(--space-5xl);
-  padding-bottom: var(--space-2xl);
-}
-
-.heroTitle {
-  font-family: var(--font-serif);
-  font-size: 52px;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  line-height: 1.06;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.heroSubtitle {
-  font-family: var(--font-sans);
-  font-size: 15px;
-  font-weight: 300;
-  color: var(--color-text-secondary);
-  margin-top: var(--space-sm);
-  margin-bottom: 0;
-}
-
-.heroRule {
-  height: 2px;
-  border: none;
-  /* Eucalyptus accent — from --color-garden-eucalyptus #6ba8a4 */
-  background: var(--color-garden-eucalyptus);
-  margin-top: var(--space-md);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

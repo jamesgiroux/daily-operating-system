@@ -630,11 +630,9 @@ pub fn process_transcript_with_kind(
                     champion_evidence: health.champion_evidence.clone(),
                     champion_risk: health.champion_risk.clone(),
                 };
-                if let Err(e) = crate::services::mutations::persist_champion_health(
-                    db,
-                    &meeting.id,
-                    &db_health,
-                ) {
+                if let Err(e) =
+                    crate::services::mutations::persist_champion_health(db, &meeting.id, &db_health)
+                {
                     log::warn!(
                         "Failed to persist reviewed champion health for {}: {}",
                         meeting.id,
@@ -699,6 +697,14 @@ pub fn process_transcript_with_kind(
                         eid,
                         e
                     );
+                } else if let Some(app_handle) = app_handle {
+                    let _ = app_handle.emit(
+                        "intelligence-updated",
+                        serde_json::json!({
+                            "entityId": eid,
+                            "entityType": "account",
+                        }),
+                    );
                 }
             }
         }
@@ -748,6 +754,24 @@ pub fn process_transcript_with_kind(
         }
     }
 
+    // I636: Generate structured meeting record markdown
+    if let Some(db) = db {
+        generate_and_persist_meeting_record(
+            workspace,
+            meeting,
+            &summary,
+            &destination,
+            &wins,
+            &risks,
+            &decisions,
+            &extracted_actions,
+            &commitments,
+            interaction_dynamics.as_ref(),
+            champion_health.as_ref(),
+            db,
+        );
+    }
+
     // Append wins to impact log
     if !wins.is_empty() {
         append_to_impact_log(workspace, meeting, &wins);
@@ -781,6 +805,646 @@ pub fn process_transcript_with_kind(
         champion_health,
         role_changes,
         commitments,
+    }
+}
+
+fn build_meeting_thread_markdown(
+    meeting: &CalendarEvent,
+    db: &crate::db::ActionDb,
+) -> Option<String> {
+    let entity = meeting.linked_entities.as_ref()?.first()?;
+    let entity_type = match entity.entity_type.as_str() {
+        "account" | "project" | "person" => entity.entity_type.as_str(),
+        _ => return None,
+    };
+    let current_meeting_date = meeting.start.to_rfc3339();
+    let previous = db
+        .get_previous_meeting_for_entity(&entity.id, entity_type, &current_meeting_date)
+        .ok()
+        .flatten();
+
+    let mut md = String::new();
+    md.push_str("## The Thread\n\n");
+
+    let Some(previous) = previous else {
+        md.push_str(&format!("First meeting with {}.\n\n", entity.name));
+        return Some(md);
+    };
+
+    let thread = db
+        .get_continuity_thread(
+            &entity.id,
+            &meeting.id,
+            &previous.id,
+            &previous.start_time,
+            &current_meeting_date,
+        )
+        .ok()?;
+
+    md.push_str(&format!(
+        "Since your last meeting with {} on {}:\n\n",
+        entity.name,
+        previous
+            .start_time
+            .split('T')
+            .next()
+            .unwrap_or(previous.start_time.as_str())
+    ));
+
+    let mut wrote_item = false;
+    if !thread.actions_completed.is_empty() {
+        wrote_item = true;
+        md.push_str(&format!(
+            "- {} action{} completed\n",
+            thread.actions_completed.len(),
+            if thread.actions_completed.len() == 1 {
+                ""
+            } else {
+                "s"
+            }
+        ));
+    }
+    if !thread.actions_open.is_empty() {
+        wrote_item = true;
+        let overdue_count = thread
+            .actions_open
+            .iter()
+            .filter(|action| action.is_overdue)
+            .count();
+        if overdue_count > 0 {
+            md.push_str(&format!(
+                "- {} action{} still open ({} overdue)\n",
+                thread.actions_open.len(),
+                if thread.actions_open.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                },
+                overdue_count
+            ));
+        } else {
+            md.push_str(&format!(
+                "- {} action{} still open\n",
+                thread.actions_open.len(),
+                if thread.actions_open.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ));
+        }
+    }
+    if let Some(delta) = thread.health_delta {
+        wrote_item = true;
+        md.push_str(&format!(
+            "- Health score changed from {:.0} to {:.0}\n",
+            delta.previous, delta.current
+        ));
+    }
+    if !thread.new_attendees.is_empty() {
+        wrote_item = true;
+        md.push_str(&format!(
+            "- New attendee{}: {}\n",
+            if thread.new_attendees.len() == 1 {
+                ""
+            } else {
+                "s"
+            },
+            thread.new_attendees.join(", ")
+        ));
+    }
+    if !wrote_item {
+        md.push_str("- No major changes captured since the previous meeting\n");
+    }
+    md.push('\n');
+    Some(md)
+}
+
+fn build_prediction_scorecard_markdown(
+    meeting: &CalendarEvent,
+    db: &crate::db::ActionDb,
+) -> Option<String> {
+    let meeting_row = db.get_meeting_by_id(&meeting.id).ok().flatten()?;
+    let frozen_json = meeting_row.prep_frozen_json?;
+    let captures = db.get_enriched_captures(&meeting.id).ok()?;
+    if captures.is_empty() {
+        return None;
+    }
+
+    let prep_risks = crate::intelligence::predictions::extract_prep_risks(&frozen_json);
+    let prep_wins = crate::intelligence::predictions::extract_prep_wins(&frozen_json);
+    if prep_risks.is_empty() && prep_wins.is_empty() {
+        return None;
+    }
+
+    let (outcome_risks, outcome_wins) =
+        crate::intelligence::predictions::extract_outcome_items(&captures);
+    let scorecard = crate::intelligence::predictions::compute_scorecard(
+        &prep_risks,
+        &prep_wins,
+        &outcome_risks,
+        &outcome_wins,
+    );
+    if !scorecard.has_data {
+        return None;
+    }
+
+    let mut md = String::new();
+    md.push_str("## What We Predicted vs What Happened\n\n");
+
+    if !scorecard.risk_predictions.is_empty() {
+        md.push_str("### Risks\n\n");
+        for item in &scorecard.risk_predictions {
+            md.push_str(&format!(
+                "- {} {}\n",
+                prediction_category_symbol(&item.category),
+                item.text
+            ));
+        }
+        md.push('\n');
+    }
+
+    if !scorecard.win_predictions.is_empty() {
+        md.push_str("### Wins\n\n");
+        for item in &scorecard.win_predictions {
+            md.push_str(&format!(
+                "- {} {}\n",
+                prediction_category_symbol(&item.category),
+                item.text
+            ));
+        }
+        md.push('\n');
+    }
+
+    Some(md)
+}
+
+fn build_engagement_markdown(interaction_dynamics: Option<&InteractionDynamics>) -> Option<String> {
+    let dynamics = interaction_dynamics?;
+    let mut items = Vec::new();
+
+    if let Some(ref talk_balance) = dynamics.talk_balance {
+        items.push(format!("Talk balance: {}", talk_balance));
+    }
+    if let Some(ref signals) = dynamics.engagement_signals {
+        if let Some(ref density) = signals.question_density {
+            items.push(format!("Question density: {}", density));
+        }
+        if let Some(ref decision_maker) = signals.decision_maker_active {
+            items.push(format!("Decision maker active: {}", decision_maker));
+        }
+        if let Some(ref forward) = signals.forward_looking {
+            items.push(format!("Forward looking: {}", forward));
+        }
+        if signals.monologue_risk.unwrap_or(false) {
+            items.push("Monologue risk detected".to_string());
+        }
+    }
+    if !dynamics.competitor_mentions.is_empty() {
+        let competitors = dynamics
+            .competitor_mentions
+            .iter()
+            .map(|mention| mention.competitor.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        items.push(format!("Competitors mentioned: {}", competitors));
+    }
+
+    if items.is_empty() {
+        return None;
+    }
+
+    let mut md = String::new();
+    md.push_str("## Engagement\n\n");
+    for item in items {
+        md.push_str(&format!("- {}\n", item));
+    }
+    md.push('\n');
+    Some(md)
+}
+
+fn build_champion_markdown(champion_health: Option<&ChampionHealth>) -> Option<String> {
+    let champion = champion_health?;
+    if champion.champion_status.eq_ignore_ascii_case("none") {
+        return None;
+    }
+
+    let mut md = String::new();
+    md.push_str("## Champion Health\n\n");
+    if !champion.champion_name.trim().is_empty() {
+        md.push_str(&format!("- Champion: {}\n", champion.champion_name));
+    }
+    md.push_str(&format!("- Status: {}\n", champion.champion_status));
+    if let Some(ref evidence) = champion.champion_evidence {
+        md.push_str(&format!("- Evidence: {}\n", evidence));
+    }
+    if let Some(ref risk) = champion.champion_risk {
+        md.push_str(&format!("- Risk: {}\n", risk));
+    }
+    md.push('\n');
+    Some(md)
+}
+
+fn prediction_category_symbol(
+    category: &crate::intelligence::predictions::PredictionCategory,
+) -> &'static str {
+    match category {
+        crate::intelligence::predictions::PredictionCategory::Confirmed => "✓",
+        crate::intelligence::predictions::PredictionCategory::NotRaised => "✗",
+        crate::intelligence::predictions::PredictionCategory::Surprise => "⚡",
+    }
+}
+
+/// I636: Generate a structured meeting record markdown file.
+///
+/// Data needed to generate a meeting record markdown file.
+struct MeetingRecordData<'a> {
+    meeting: &'a CalendarEvent,
+    summary: &'a str,
+    wins: &'a [String],
+    risks: &'a [String],
+    decisions: &'a [String],
+    actions: &'a [CapturedAction],
+    commitments: &'a [TranscriptCommitment],
+    interaction_dynamics: Option<&'a InteractionDynamics>,
+    champion_health: Option<&'a ChampionHealth>,
+    db: &'a crate::db::ActionDb,
+}
+
+/// Produces a consolidated intelligence output document with YAML frontmatter,
+/// executive summary, key findings, commitments, actions, and attendees.
+fn generate_meeting_record_markdown(data: &MeetingRecordData<'_>) -> String {
+    let meeting = data.meeting;
+    let summary = data.summary;
+    let wins = data.wins;
+    let risks = data.risks;
+    let decisions = data.decisions;
+    let actions = data.actions;
+    let commitments = data.commitments;
+    let interaction_dynamics = data.interaction_dynamics;
+    let champion_health = data.champion_health;
+    let db = data.db;
+    let date = meeting.end.format("%Y-%m-%d").to_string();
+    let time = meeting.start.format("%H:%M").to_string();
+    let duration_mins = (meeting.end - meeting.start).num_minutes();
+    let meeting_type = format!("{:?}", meeting.meeting_type).to_lowercase();
+    let now = Utc::now().to_rfc3339();
+
+    let entity_name = meeting
+        .linked_entities
+        .as_ref()
+        .and_then(|entities| entities.first())
+        .map(|entity| entity.name.as_str())
+        .or(meeting.account.as_deref())
+        .unwrap_or("");
+    let entity_type = meeting
+        .linked_entities
+        .as_ref()
+        .and_then(|entities| entities.first())
+        .map(|entity| entity.entity_type.as_str())
+        .unwrap_or("account");
+    let attendees_yaml = if meeting.attendees.is_empty() {
+        "  - (none recorded)".to_string()
+    } else {
+        meeting
+            .attendees
+            .iter()
+            .map(|a| format!("  - \"{}\"", a.replace('"', "\\\"")))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let mut md = String::with_capacity(2048);
+
+    // YAML frontmatter
+    md.push_str("---\n");
+    md.push_str(&format!("meeting_id: \"{}\"\n", meeting.id));
+    md.push_str(&format!(
+        "title: \"{}\"\n",
+        meeting.title.replace('"', "\\\"")
+    ));
+    if !entity_name.is_empty() {
+        md.push_str(&format!(
+            "entity: \"{}\"\n",
+            entity_name.replace('"', "\\\"")
+        ));
+        md.push_str(&format!("entity_type: \"{}\"\n", entity_type));
+    }
+    md.push_str(&format!("date: \"{}\"\n", date));
+    md.push_str(&format!("time: \"{}\"\n", time));
+    md.push_str(&format!("duration_minutes: {}\n", duration_mins));
+    md.push_str(&format!("type: \"{}\"\n", meeting_type));
+    md.push_str("attendees:\n");
+    md.push_str(&attendees_yaml);
+    md.push('\n');
+    md.push_str(&format!("generated_at: \"{}\"\n", now));
+    md.push_str("---\n\n");
+
+    // Title heading
+    let entity_suffix = if entity_name.is_empty() {
+        String::new()
+    } else {
+        format!(" | {}", entity_name)
+    };
+    md.push_str(&format!(
+        "# {}\n\n{} {} UTC{}\n\n",
+        meeting.title, date, time, entity_suffix
+    ));
+
+    // Summary
+    md.push_str("## Summary\n\n");
+    if summary.is_empty() {
+        md.push_str("*No summary available.*\n\n");
+    } else {
+        md.push_str(summary);
+        md.push_str("\n\n");
+    }
+
+    if let Some(thread_markdown) = build_meeting_thread_markdown(meeting, db) {
+        md.push_str(&thread_markdown);
+    }
+
+    if let Some(scorecard_markdown) = build_prediction_scorecard_markdown(meeting, db) {
+        md.push_str(&scorecard_markdown);
+    }
+
+    // Key Findings (grouped by type)
+    let has_findings = !wins.is_empty() || !risks.is_empty() || !decisions.is_empty();
+    if has_findings {
+        md.push_str("## Key Findings\n\n");
+
+        if !wins.is_empty() {
+            md.push_str("### Wins\n\n");
+            for win in wins {
+                md.push_str(&format!("- {}\n", win));
+            }
+            md.push('\n');
+        }
+
+        if !risks.is_empty() {
+            md.push_str("### Risks\n\n");
+            for risk in risks {
+                md.push_str(&format!("- {}\n", risk));
+            }
+            md.push('\n');
+        }
+
+        if !decisions.is_empty() {
+            md.push_str("### Decisions\n\n");
+            for decision in decisions {
+                md.push_str(&format!("- {}\n", decision));
+            }
+            md.push('\n');
+        }
+    }
+
+    if let Some(engagement_markdown) = build_engagement_markdown(interaction_dynamics) {
+        md.push_str(&engagement_markdown);
+    }
+
+    if let Some(champion_markdown) = build_champion_markdown(champion_health) {
+        md.push_str(&champion_markdown);
+    }
+
+    // Commitments
+    if !commitments.is_empty() {
+        md.push_str("## Commitments\n\n");
+        for c in commitments {
+            let mut line = format!("- {}", c.commitment);
+            if let Some(ref owner) = c.owned_by {
+                line.push_str(&format!(" ({})", owner));
+            }
+            if let Some(ref target) = c.target_date {
+                line.push_str(&format!(" — by {}", target));
+            }
+            md.push_str(&line);
+            md.push('\n');
+            if let Some(ref criteria) = c.success_criteria {
+                md.push_str(&format!("  - Success criteria: {}\n", criteria));
+            }
+        }
+        md.push('\n');
+    }
+
+    // Actions
+    if !actions.is_empty() {
+        md.push_str("## Actions\n\n");
+        for action in actions {
+            let mut line = format!("- [ ] {}", action.title);
+            if let Some(ref owner) = action.owner {
+                line.push_str(&format!(" @{}", owner));
+            }
+            if let Some(ref due) = action.due_date {
+                line.push_str(&format!(" (due: {})", due));
+            }
+            md.push_str(&line);
+            md.push('\n');
+        }
+        md.push('\n');
+    }
+
+    // Attendees
+    md.push_str("## Attendees\n\n");
+    if meeting.attendees.is_empty() {
+        md.push_str("*No attendees recorded.*\n");
+    } else {
+        for attendee in &meeting.attendees {
+            md.push_str(&format!("- {}\n", attendee));
+        }
+    }
+
+    md
+}
+
+/// I636: Determine the meeting record destination path, mirroring transcript
+/// routing (account > project > person > archive) but under `Meeting-Records/`.
+fn compute_meeting_record_path(
+    workspace: &Path,
+    meeting: &CalendarEvent,
+    db: &crate::db::ActionDb,
+) -> PathBuf {
+    let date = meeting.end.format("%Y-%m-%d").to_string();
+    let slug = crate::util::slugify(&meeting.title);
+    let record_filename = format!("{}-{}-record.md", date, slug);
+
+    // Same priority routing as transcript: account > project > person > archive
+    if let Some(ref account) = meeting.account {
+        let account_exists = db.get_account_by_name(account).ok().flatten().is_some();
+        if account_exists {
+            let account_dir = sanitize_account_dir(account);
+            return workspace
+                .join("Accounts")
+                .join(&account_dir)
+                .join("Meeting-Records")
+                .join(&record_filename);
+        }
+    }
+
+    // Project routing
+    if let Some(ref entities) = meeting.linked_entities {
+        if let Some(project) = entities.iter().find(|e| e.entity_type == "project") {
+            if db.get_project(&project.id).ok().flatten().is_some() {
+                let project_dir = sanitize_account_dir(&project.name);
+                return workspace
+                    .join("Projects")
+                    .join(&project_dir)
+                    .join("Meeting-Records")
+                    .join(&record_filename);
+            }
+        }
+    }
+
+    // Person routing (1:1 only)
+    if meeting.meeting_type == MeetingType::OneOnOne {
+        if let Some(ref entities) = meeting.linked_entities {
+            if let Some(person) = entities.iter().find(|e| e.entity_type == "person") {
+                if db.get_person(&person.id).ok().flatten().is_some() {
+                    let person_dir = sanitize_account_dir(&person.name);
+                    return workspace
+                        .join("People")
+                        .join(&person_dir)
+                        .join("Meeting-Records")
+                        .join(&record_filename);
+                }
+            }
+        }
+    }
+
+    // Archive fallback
+    workspace
+        .join("_archive")
+        .join(&date)
+        .join(&record_filename)
+}
+
+/// I636: Generate, write, persist, and index the meeting record.
+#[allow(clippy::too_many_arguments)]
+fn generate_and_persist_meeting_record(
+    workspace: &Path,
+    meeting: &CalendarEvent,
+    summary: &str,
+    _transcript_destination: &Path,
+    wins: &[String],
+    risks: &[String],
+    decisions: &[String],
+    actions: &[CapturedAction],
+    commitments: &[TranscriptCommitment],
+    interaction_dynamics: Option<&InteractionDynamics>,
+    champion_health: Option<&ChampionHealth>,
+    db: &crate::db::ActionDb,
+) {
+    let record_path = compute_meeting_record_path(workspace, meeting, db);
+
+    // Generate markdown content
+    let markdown = generate_meeting_record_markdown(&MeetingRecordData {
+        meeting,
+        summary,
+        wins,
+        risks,
+        decisions,
+        actions,
+        commitments,
+        interaction_dynamics,
+        champion_health,
+        db,
+    });
+
+    // Create directory and write file
+    if let Some(parent) = record_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            log::warn!(
+                "I636: Failed to create Meeting-Records dir for {}: {}",
+                meeting.id,
+                e
+            );
+            return;
+        }
+    }
+
+    if let Err(e) = std::fs::write(&record_path, &markdown) {
+        log::warn!(
+            "I636: Failed to write meeting record for {}: {}",
+            meeting.id,
+            e
+        );
+        return;
+    }
+
+    let record_path_str = record_path.display().to_string();
+    log::info!(
+        "I636: Meeting record for '{}' written to '{}'",
+        meeting.title,
+        record_path_str
+    );
+
+    // Store record_path in DB
+    // DIRECT_DB_ALLOWED: Transcript processor pipeline owns meeting record persistence.
+    if let Err(e) = db.conn.execute(
+        "UPDATE meeting_transcripts SET record_path = ?1 WHERE meeting_id = ?2",
+        rusqlite::params![record_path_str, meeting.id],
+    ) {
+        log::warn!(
+            "I636: Failed to persist record_path for {}: {}",
+            meeting.id,
+            e
+        );
+    }
+
+    // Content indexing for MCP search_content
+    let entity_type = meeting
+        .linked_entities
+        .as_ref()
+        .and_then(|e| e.first())
+        .map(|e| e.entity_type.as_str())
+        .unwrap_or("account");
+    let entity_id = meeting
+        .linked_entities
+        .as_ref()
+        .and_then(|e| e.first())
+        .map(|e| e.id.as_str())
+        .or(meeting.account.as_deref())
+        .unwrap_or(&meeting.id);
+
+    let now = Utc::now().to_rfc3339();
+    let file_size = markdown.len() as i64;
+    let filename = record_path
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let relative_path = record_path
+        .strip_prefix(workspace)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| record_path_str.clone());
+
+    let record = crate::db::types::DbContentFile {
+        id: format!("meeting-record-{}", meeting.id),
+        entity_id: entity_id.to_string(),
+        entity_type: entity_type.to_string(),
+        filename,
+        relative_path,
+        absolute_path: record_path_str,
+        format: "Markdown".to_string(),
+        file_size,
+        modified_at: now.clone(),
+        indexed_at: now.clone(),
+        extracted_at: Some(now),
+        summary: if summary.is_empty() {
+            None
+        } else {
+            Some(summary.to_string())
+        },
+        embeddings_generated_at: None,
+        content_type: "meeting_record".to_string(),
+        priority: 8, // High priority — intelligence output
+    };
+
+    // DIRECT_DB_ALLOWED: content indexing (read-only registration, same pattern as processor/mod.rs:352)
+    if let Err(e) = db.upsert_content_file(&record) {
+        log::warn!(
+            "I636: Failed to index meeting record for {}: {}",
+            meeting.id,
+            e
+        );
     }
 }
 
@@ -1088,9 +1752,9 @@ fn extract_transcript_actions(
         let meta = super::metadata::parse_action_metadata(raw_title);
 
         let status = if meta.is_waiting {
-            "waiting".to_string()
+            "pending".to_string()
         } else {
-            "proposed".to_string()
+            "suggested".to_string()
         };
 
         // Resolve @Tag to a real account ID; fall back to meeting-level account.
@@ -3303,8 +3967,7 @@ mod eval_tests {
 
     #[test]
     fn eval_transcript_wins_have_subtypes() {
-        let response =
-            include_str!("../intelligence/fixtures/transcript_extraction_full.txt");
+        let response = include_str!("../intelligence/fixtures/transcript_extraction_full.txt");
         let parsed = parse_enrichment_response(response);
 
         assert!(
@@ -3325,18 +3988,13 @@ mod eval_tests {
             let has_subtype = valid_subtypes
                 .iter()
                 .any(|st| win.contains(&format!("[{}]", st)));
-            assert!(
-                has_subtype,
-                "Win must have a valid sub-type tag: {}",
-                win
-            );
+            assert!(has_subtype, "Win must have a valid sub-type tag: {}", win);
         }
     }
 
     #[test]
     fn eval_transcript_risks_have_urgency_tiers() {
-        let response =
-            include_str!("../intelligence/fixtures/transcript_extraction_full.txt");
+        let response = include_str!("../intelligence/fixtures/transcript_extraction_full.txt");
         let parsed = parse_enrichment_response(response);
 
         assert!(
@@ -3350,11 +4008,7 @@ mod eval_tests {
             let has_urgency = valid_urgencies
                 .iter()
                 .any(|u| risk.contains(&format!("[{}]", u)));
-            assert!(
-                has_urgency,
-                "Risk must have urgency tier tag: {}",
-                risk
-            );
+            assert!(has_urgency, "Risk must have urgency tier tag: {}", risk);
         }
 
         // Verify we have at least one of each tier
@@ -3374,8 +4028,7 @@ mod eval_tests {
 
     #[test]
     fn eval_champion_departure_flagged_as_lost() {
-        let response =
-            include_str!("../intelligence/fixtures/transcript_champion_departure.txt");
+        let response = include_str!("../intelligence/fixtures/transcript_champion_departure.txt");
 
         let champion = parse_champion_health_block(response);
         assert!(
@@ -3403,8 +4056,7 @@ mod eval_tests {
 
     #[test]
     fn eval_generic_sentiment_not_extracted_as_win() {
-        let response =
-            include_str!("../intelligence/fixtures/transcript_generic_sentiment.txt");
+        let response = include_str!("../intelligence/fixtures/transcript_generic_sentiment.txt");
         let parsed = parse_enrichment_response(response);
 
         // The generic sentiment fixture should produce zero wins
@@ -3417,8 +4069,7 @@ mod eval_tests {
 
     #[test]
     fn eval_transcript_sentiment_parsing() {
-        let response =
-            include_str!("../intelligence/fixtures/transcript_extraction_full.txt");
+        let response = include_str!("../intelligence/fixtures/transcript_extraction_full.txt");
         let sentiment = parse_sentiment_block(response);
         assert!(
             sentiment.is_some(),
@@ -3427,10 +4078,7 @@ mod eval_tests {
         let s = sentiment.unwrap();
 
         // Verify core fields
-        assert!(
-            s.overall.is_some(),
-            "Sentiment must have overall rating"
-        );
+        assert!(s.overall.is_some(), "Sentiment must have overall rating");
         assert!(
             s.engagement.is_some(),
             "Sentiment must have engagement level"
@@ -3453,8 +4101,7 @@ mod eval_tests {
 
     #[test]
     fn eval_transcript_phase3_dynamics_parsing() {
-        let response =
-            include_str!("../intelligence/fixtures/transcript_phase3_dynamics.txt");
+        let response = include_str!("../intelligence/fixtures/transcript_phase3_dynamics.txt");
 
         // Commitments
         let commitments = parse_commitments_block(response);
@@ -3493,15 +4140,9 @@ mod eval_tests {
 
         // Interaction dynamics
         let dynamics = parse_interaction_dynamics(response);
-        assert!(
-            dynamics.is_some(),
-            "Must parse interaction dynamics"
-        );
+        assert!(dynamics.is_some(), "Must parse interaction dynamics");
         let d = dynamics.unwrap();
-        assert!(
-            d.talk_balance.is_some(),
-            "Must have talk balance"
-        );
+        assert!(d.talk_balance.is_some(), "Must have talk balance");
         assert!(
             !d.speaker_sentiment.is_empty(),
             "Must have speaker sentiment entries"

@@ -909,7 +909,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 6c: Person intelligence enrichment triggers (I338)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
-            let n = queue_person_intelligence(&meeting_contexts, workspace, &db, &state.intel_queue);
+            let n =
+                queue_person_intelligence(&meeting_contexts, workspace, &db, &state.intel_queue);
             if n > 0 {
                 log::info!(
                     "prepare_today: queued {} person intelligence enrichments",
@@ -1305,7 +1306,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
     // Person intelligence enrichment triggers (I338)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
-            let n = queue_person_intelligence(&meeting_contexts, workspace, &db, &state.intel_queue);
+            let n =
+                queue_person_intelligence(&meeting_contexts, workspace, &db, &state.intel_queue);
             if n > 0 {
                 log::info!("prepare_week: queued {} person intelligence enrichments", n);
             }
@@ -2249,7 +2251,6 @@ fn reconcile_inbox_emails(raw_emails: &[google_api::gmail::RawEmail], db: &crate
             _ => {}
         }
     }
-
 }
 
 /// Extract display name from a From header like "Jane Doe <jane@example.com>".

@@ -18,6 +18,7 @@ import type { AnnualPriority, QuarterlyPriority, FeatureFlags } from "@/types";
 
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
+import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { EditableText } from "@/components/ui/EditableText";
@@ -285,18 +286,17 @@ export default function MePage() {
 
   return (
     <div className={s.page}>
-      {/* ═══ HERO ═══ */}
-      <section className={s.hero}>
-        <h1 className={s.heroTitle}>
-          {entity.name || "Your Profile"}
-        </h1>
-        {(entity.title || entity.company) && (
-          <p className={s.heroSubtitle}>
-            {[entity.title, entity.company].filter(Boolean).join(" at ")}
-          </p>
-        )}
-        <hr className={s.heroRule} />
-      </section>
+      <EditorialPageHeader
+        title={entity.name || "Your Profile"}
+        subtitle={
+          entity.title || entity.company
+            ? [entity.title, entity.company].filter(Boolean).join(" at ")
+            : undefined
+        }
+        scale="profile"
+        width="standard"
+        ruleColor="var(--color-garden-eucalyptus)"
+      />
 
       {/* Activity indicator */}
       {hasContent && (
@@ -539,4 +539,3 @@ function AttachmentsSection() {
     </div>
   );
 }
-

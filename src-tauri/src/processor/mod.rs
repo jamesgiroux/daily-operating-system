@@ -459,11 +459,9 @@ fn extract_and_sync_actions(
 
         let meta = metadata::parse_action_metadata(raw_title);
 
-        // Determine status: explicit completion > waiting > pending
+        // Determine status: explicit completion > pending
         let status = if is_completed {
             "completed".to_string()
-        } else if meta.is_waiting {
-            "waiting".to_string()
         } else {
             "pending".to_string()
         };

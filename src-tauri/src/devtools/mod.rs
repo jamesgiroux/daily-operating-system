@@ -1546,10 +1546,13 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             format!("mock-cal-all-hands-{}", today_str),
         ),
     ];
-    for (id, title, mtype, start_time, _account_id, cal_event_id) in &today_meetings {
+    for (id, title, mtype, start_time, _account_id, _cal_event_id) in &today_meetings {
+        // Don't set calendar_event_id — mock meetings have no live calendar
+        // counterpart. If set, calendar_merge marks them Cancelled because
+        // no matching event exists in the Google Calendar cache.
         conn.execute(
-            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, calendar_event_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![id, title, mtype, start_time, cal_event_id, &today],
+            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![id, title, mtype, start_time, &today],
         ).map_err(|e| format!("Today meeting insert: {}", e))?;
         conn.execute(
             "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
@@ -2660,7 +2663,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // Phase 3: Proposed Actions + Completed Actions
     // =========================================================================
 
-    // 3a. Proposed actions (status = 'proposed') surfaced from meeting prep
+    // 3a. Suggested actions (status = 'suggested') surfaced from meeting prep
     let acme_mtg_id = format!("mock-mtg-acme-weekly-{}", today_str);
     let globex_mtg_id = format!("mock-mtg-globex-qbr-{}", today_str);
     let initech_mtg_id = format!("mock-mtg-initech-kickoff-{}", today_str);
@@ -2708,9 +2711,9 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     for (id, title, priority, account_id, source_type, source_id, context) in &proposed_actions {
         conn.execute(
             "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, account_id, source_type, source_id, context, updated_at) \
-             VALUES (?1, ?2, ?3, 'proposed', ?4, ?5, ?6, ?7, ?8, ?9)",
+             VALUES (?1, ?2, ?3, 'suggested', ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![id, title, priority, &today, account_id, source_type, source_id, context, &today],
-        ).map_err(|e| format!("Proposed action insert: {}", e))?;
+        ).map_err(|e| format!("Suggested action insert: {}", e))?;
     }
 
     // 3b. Completed actions for history
@@ -3484,13 +3487,21 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     // ── Pinned emails ──
     conn.execute(
-        &format!("UPDATE emails SET pinned_at = '{}' WHERE email_id = 'mock-email-acme-4'", &ago_0),
+        &format!(
+            "UPDATE emails SET pinned_at = '{}' WHERE email_id = 'mock-email-acme-4'",
+            &ago_0
+        ),
         [],
-    ).map_err(|e| format!("Pin acme-4: {}", e))?;
+    )
+    .map_err(|e| format!("Pin acme-4: {}", e))?;
     conn.execute(
-        &format!("UPDATE emails SET pinned_at = '{}' WHERE email_id = 'mock-email-globex-3'", &ago_2),
+        &format!(
+            "UPDATE emails SET pinned_at = '{}' WHERE email_id = 'mock-email-globex-3'",
+            &ago_2
+        ),
         [],
-    ).map_err(|e| format!("Pin globex-3: {}", e))?;
+    )
+    .map_err(|e| format!("Pin globex-3: {}", e))?;
 
     // ── Commitments ──
     conn.execute(
@@ -3592,7 +3603,18 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ),
     ];
 
-    for (id, account_id, title, description, status, target_date, completed_at, source, sort_order) in &objective_rows {
+    for (
+        id,
+        account_id,
+        title,
+        description,
+        status,
+        target_date,
+        completed_at,
+        source,
+        sort_order,
+    ) in &objective_rows
+    {
         conn.execute(
             "INSERT OR REPLACE INTO account_objectives (id, account_id, title, description, status, target_date, completed_at, source, sort_order, created_at, updated_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -3601,7 +3623,17 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     }
 
     // --- Account Milestones ---
-    let milestone_rows: Vec<(&str, &str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>, i32)> = vec![
+    let milestone_rows: Vec<(
+        &str,
+        &str,
+        &str,
+        &str,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+        i32,
+    )> = vec![
         // Acme TTV objective: 2 completed, 1 pending
         (
             "mock-milestone-acme-ttv-1",
@@ -3774,7 +3806,18 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ),
     ];
 
-    for (id, objective_id, account_id, title, status, target_date, completed_at, auto_detect_signal, sort_order) in &milestone_rows {
+    for (
+        id,
+        objective_id,
+        account_id,
+        title,
+        status,
+        target_date,
+        completed_at,
+        auto_detect_signal,
+        sort_order,
+    ) in &milestone_rows
+    {
         conn.execute(
             "INSERT OR REPLACE INTO account_milestones (id, objective_id, account_id, title, status, target_date, completed_at, auto_detect_signal, sort_order, created_at, updated_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -3786,7 +3829,10 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // Link existing mock actions to objectives
     let action_links: Vec<(&str, &str)> = vec![
         ("mock-act-nps-acme", "mock-objective-acme-ttv"),
-        ("mock-act-transcript-phase2-scope", "mock-objective-acme-eng-expand"),
+        (
+            "mock-act-transcript-phase2-scope",
+            "mock-objective-acme-eng-expand",
+        ),
         ("mock-act-qbr-deck-globex", "mock-objective-globex-pipeline"),
     ];
 
@@ -3818,87 +3864,145 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     // Enriched captures: RED risks
     let enriched_captures: Vec<(
-        &str, &str, &str, Option<&str>, &str, &str,
-        Option<&str>, Option<&str>, Option<&str>,
+        &str,
+        &str,
+        &str,
+        Option<&str>,
+        &str,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
     )> = vec![
         // (id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, evidence_quote)
         (
-            "mock-cap-enr-red-1", "mock-mh-acme-7d", "Acme Corp Weekly Sync",
-            Some("mock-acme-corp"), "risk",
+            "mock-cap-enr-red-1",
+            "mock-mh-acme-7d",
+            "Acme Corp Weekly Sync",
+            Some("mock-acme-corp"),
+            "risk",
             "Champion Sarah Chen considering departure",
-            None, Some("red"),
+            None,
+            Some("red"),
             Some("I'm exploring other opportunities"),
         ),
         (
-            "mock-cap-enr-red-2", "mock-mh-globex-3d", "Globex Check-in",
-            Some("mock-globex-industries"), "risk",
+            "mock-cap-enr-red-2",
+            "mock-mh-globex-3d",
+            "Globex Check-in",
+            Some("mock-globex-industries"),
+            "risk",
             "Active competitor evaluation with Salesforce",
-            Some("displacement"), Some("red"),
+            Some("displacement"),
+            Some("red"),
             Some("We've been piloting Salesforce for the last two weeks"),
         ),
         // YELLOW risks
         (
-            "mock-cap-enr-yellow-1", "mock-mh-acme-7d", "Acme Corp Weekly Sync",
-            Some("mock-acme-corp"), "risk",
+            "mock-cap-enr-yellow-1",
+            "mock-mh-acme-7d",
+            "Acme Corp Weekly Sync",
+            Some("mock-acme-corp"),
+            "risk",
             "Declining feature adoption in Q1",
-            Some("adoption_decline"), Some("yellow"),
+            Some("adoption_decline"),
+            Some("yellow"),
             Some("Usage dropped 20% month-over-month"),
         ),
         (
-            "mock-cap-enr-yellow-2", "mock-mh-globex-3d", "Globex Check-in",
-            Some("mock-globex-industries"), "risk",
+            "mock-cap-enr-yellow-2",
+            "mock-mh-globex-3d",
+            "Globex Check-in",
+            Some("mock-globex-industries"),
+            "risk",
             "Budget review scheduled for next quarter",
-            None, Some("yellow"),
+            None,
+            Some("yellow"),
             None,
         ),
         // GREEN_WATCH risk
         (
-            "mock-cap-enr-green-1", "mock-mh-acme-2d", "Acme Corp Status Call",
-            Some("mock-acme-corp"), "risk",
+            "mock-cap-enr-green-1",
+            "mock-mh-acme-2d",
+            "Acme Corp Status Call",
+            Some("mock-acme-corp"),
+            "risk",
             "Minor integration frustration mentioned",
-            None, Some("green_watch"),
+            None,
+            Some("green_watch"),
             Some("The API latency has been a bit annoying"),
         ),
         // Sub-typed wins
         (
-            "mock-cap-enr-win-adoption", "mock-mh-acme-2d", "Acme Corp Status Call",
-            Some("mock-acme-corp"), "win",
+            "mock-cap-enr-win-adoption",
+            "mock-mh-acme-2d",
+            "Acme Corp Status Call",
+            Some("mock-acme-corp"),
+            "win",
             "Engineering team onboarded 15 new users",
-            Some("ADOPTION"), None,
+            Some("ADOPTION"),
+            None,
             Some("We just hit 100 active users this week"),
         ),
         (
-            "mock-cap-enr-win-expansion", "mock-mh-globex-3d", "Globex Check-in",
-            Some("mock-globex-industries"), "win",
+            "mock-cap-enr-win-expansion",
+            "mock-mh-globex-3d",
+            "Globex Check-in",
+            Some("mock-globex-industries"),
+            "win",
             "Evaluating enterprise tier for APAC region",
-            Some("EXPANSION"), None,
+            Some("EXPANSION"),
+            None,
             Some("Singapore team wants to start a pilot next month"),
         ),
         (
-            "mock-cap-enr-win-value", "mock-mh-acme-7d", "Acme Corp Weekly Sync",
-            Some("mock-acme-corp"), "win",
+            "mock-cap-enr-win-value",
+            "mock-mh-acme-7d",
+            "Acme Corp Weekly Sync",
+            Some("mock-acme-corp"),
+            "win",
             "Reported 40% reduction in deployment time",
-            Some("VALUE_REALIZED"), None,
+            Some("VALUE_REALIZED"),
+            None,
             Some("Our deployment cycle went from 2 hours to 72 minutes"),
         ),
         // Commitment captures (dual-write to captures table)
         (
-            "mock-cap-enr-commit-1", "mock-mh-acme-2d", "Acme Corp Status Call",
-            Some("mock-acme-corp"), "commitment",
+            "mock-cap-enr-commit-1",
+            "mock-mh-acme-2d",
+            "Acme Corp Status Call",
+            Some("mock-acme-corp"),
+            "commitment",
             "Achieve 50% adoption across engineering by Q3",
-            None, None,
+            None,
+            None,
             Some("We need at least half the team using it daily"),
         ),
         (
-            "mock-cap-enr-commit-2", "mock-mh-globex-3d", "Globex Check-in",
-            Some("mock-globex-industries"), "commitment",
+            "mock-cap-enr-commit-2",
+            "mock-mh-globex-3d",
+            "Globex Check-in",
+            Some("mock-globex-industries"),
+            "commitment",
             "Deliver integration performance report by end of month",
-            None, None,
+            None,
+            None,
             None,
         ),
     ];
 
-    for (id, meeting_id, meeting_title, account_id, ctype, content, sub_type, urgency, evidence_quote) in &enriched_captures {
+    for (
+        id,
+        meeting_id,
+        meeting_title,
+        account_id,
+        ctype,
+        content,
+        sub_type,
+        urgency,
+        evidence_quote,
+    ) in &enriched_captures
+    {
         conn.execute(
             "INSERT OR REPLACE INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, evidence_quote, captured_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -3937,12 +4041,16 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     let champion_rows: Vec<(&str, &str, &str, &str, Option<&str>)> = vec![
         // (meeting_id, champion_name, status, evidence, risk)
         (
-            "mock-mh-acme-2d", "Sarah Chen", "strong",
+            "mock-mh-acme-2d",
+            "Sarah Chen",
+            "strong",
             "Proactively shared roadmap feedback and secured Phase 2 budget approval",
             None,
         ),
         (
-            "mock-mh-acme-7d", "Sarah Chen", "weak",
+            "mock-mh-acme-7d",
+            "Sarah Chen",
+            "weak",
             "Delegated to junior team member, didn't attend last 20 minutes",
             Some("Champion may be losing interest; schedule 1:1 to re-engage"),
         ),
@@ -3954,7 +4062,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
              (meeting_id, champion_name, champion_status, champion_evidence, champion_risk)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![meeting_id, name, status, evidence, risk],
-        ).map_err(|e| format!("Champion health {}: {}", meeting_id, e))?;
+        )
+        .map_err(|e| format!("Champion health {}: {}", meeting_id, e))?;
     }
 
     // ─── I555: Role changes ─────────────────────────────────────────────────
@@ -3971,33 +4080,57 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "CTO",
             "Promoted last week per LinkedIn",
         ],
-    ).map_err(|e| format!("Role change: {}", e))?;
+    )
+    .map_err(|e| format!("Role change: {}", e))?;
 
     // ─── I555: Captured commitments ─────────────────────────────────────────
 
-    let commitment_rows: Vec<(&str, &str, Option<&str>, &str, Option<&str>, Option<&str>, &str, i32)> = vec![
+    let commitment_rows: Vec<(
+        &str,
+        &str,
+        Option<&str>,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        &str,
+        i32,
+    )> = vec![
         // (id, account_id, meeting_id, title, owner, target_date, source, consumed)
         (
-            "mock-commitment-1", "mock-acme-corp", Some("mock-mh-acme-2d"),
+            "mock-commitment-1",
+            "mock-acme-corp",
+            Some("mock-mh-acme-2d"),
             "Achieve 50% adoption across engineering by Q3",
-            Some("joint"), Some("2026-09-30"),
-            "transcript:Acme Corp Status Call", 0,
+            Some("joint"),
+            Some("2026-09-30"),
+            "transcript:Acme Corp Status Call",
+            0,
         ),
         (
-            "mock-commitment-2", "mock-acme-corp", Some("mock-mh-acme-7d"),
+            "mock-commitment-2",
+            "mock-acme-corp",
+            Some("mock-mh-acme-7d"),
             "Deliver integration performance report",
-            Some("us"), Some("2026-03-31"),
-            "transcript:Acme Corp Weekly Sync", 0,
+            Some("us"),
+            Some("2026-03-31"),
+            "transcript:Acme Corp Weekly Sync",
+            0,
         ),
         (
-            "mock-commitment-3", "mock-globex-industries", Some("mock-mh-globex-3d"),
+            "mock-commitment-3",
+            "mock-globex-industries",
+            Some("mock-mh-globex-3d"),
             "Provide API access for custom dashboards",
-            Some("us"), None,
-            "transcript:Globex Check-in", 1,
+            Some("us"),
+            None,
+            "transcript:Globex Check-in",
+            1,
         ),
     ];
 
-    for (id, account_id, meeting_id, title, owner, target_date, source, consumed) in &commitment_rows {
+    for (id, account_id, meeting_id, title, owner, target_date, source, consumed) in
+        &commitment_rows
+    {
         conn.execute(
             "INSERT OR REPLACE INTO captured_commitments
              (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)

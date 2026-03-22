@@ -15,6 +15,7 @@
   padding: 2rem;
   font-family: var(--font-mono);
   font-size: 0.8rem;
+  background: var(--color-paper-warm-white);
 }
 
 .parseError {
