@@ -470,19 +470,26 @@ export function PostMeetingIntelligence({
           <ChapterHeading title="Role Changes" />
           {roleChanges.map((rc) => (
             <div key={rc.id} className={styles.roleChange}>
-              <p className={styles.roleHeader}>
+              <div className={styles.roleHeader}>
                 <span className={styles.roleName}>{rc.personName}</span>
-                {rc.newStatus && (
-                  <>
-                    <ArrowRight size={14} className={styles.roleArrow} />
-                    {rc.newStatus}
-                  </>
+                {(rc.oldStatus || rc.newStatus) && (
+                  <span className={styles.roleTransition}>
+                    {rc.oldStatus && (
+                      <span className={styles.roleStatus}>{rc.oldStatus}</span>
+                    )}
+                    <ArrowRight size={12} className={styles.roleArrow} />
+                    {rc.newStatus && (
+                      <span className={styles.roleStatus}>{rc.newStatus}</span>
+                    )}
+                  </span>
                 )}
-              </p>
+              </div>
               {rc.evidenceQuote && (
-                <p className={styles.roleEvidence}>
-                  &ldquo;{rc.evidenceQuote}&rdquo;
-                </p>
+                <div className={styles.roleEvidenceBlock}>
+                  <p className={styles.roleEvidence}>
+                    &ldquo;{rc.evidenceQuote}&rdquo;
+                  </p>
+                </div>
               )}
             </div>
           ))}
