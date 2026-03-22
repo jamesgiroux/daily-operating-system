@@ -168,6 +168,8 @@
   --page-padding-bottom: 160px; /* Bottom padding for page container */
   --page-margin-top: 40px; /* Clearance for fixed folio bar */
   --page-max-width: 1100px; /* Maximum content width */
+  --page-content-width-standard: 900px; /* Standard editorial page width */
+  --page-content-width-reading: 760px; /* Narrower prose/report width */
   --nav-island-right: 28px; /* Distance from right edge */
 
   /* ─────────────────────────────────────────────────────────────────────────

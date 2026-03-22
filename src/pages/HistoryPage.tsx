@@ -5,6 +5,7 @@ import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
+import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
@@ -55,18 +56,12 @@ export default function HistoryPage() {
 
   return (
     <div className={styles.container}>
-      {/* ═══ HERO ═══ */}
-      <section className={styles.hero}>
-        <div className={styles.heroRow}>
-          <h1 className={styles.title}>
-            Processing History
-          </h1>
-          <span className={styles.entryCount}>
-            {entries.length} entr{entries.length !== 1 ? "ies" : "y"}
-          </span>
-        </div>
-        <div className={styles.heroRule} />
-      </section>
+      <EditorialPageHeader
+        title="Processing History"
+        scale="standard"
+        width="standard"
+        meta={`${entries.length} entr${entries.length !== 1 ? "ies" : "y"}`}
+      />
 
       {/* ═══ ENTRIES ═══ */}
       {entries.length === 0 ? (

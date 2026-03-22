@@ -6,6 +6,7 @@
  * I529: Optional feedbackSlot renders inline feedback controls next to the title.
  */
 import type { ReactNode } from "react";
+import styles from "./ChapterHeading.module.css";
 
 interface ChapterHeadingProps {
   title: string;
@@ -16,48 +17,13 @@ interface ChapterHeadingProps {
 
 export function ChapterHeading({ title, epigraph, feedbackSlot }: ChapterHeadingProps) {
   return (
-    <div style={{ marginBottom: 32 }}>
-      <hr
-        style={{
-          border: "none",
-          borderTop: "1px solid var(--color-rule-heavy)",
-          marginBottom: 16,
-        }}
-      />
-      <h2
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: 28,
-          fontWeight: 400,
-          lineHeight: 1.2,
-          letterSpacing: "-0.01em",
-          color: "var(--color-text-primary)",
-          margin: 0,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        {title}
-        {feedbackSlot}
-      </h2>
-      {epigraph && (
-        <p
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 17,
-            fontStyle: "italic",
-            fontWeight: 300,
-            lineHeight: 1.55,
-            color: "var(--color-text-tertiary)",
-            marginTop: 16,
-            marginBottom: 0,
-            maxWidth: 540,
-          }}
-        >
-          {epigraph}
-        </p>
-      )}
+    <div className={styles.heading}>
+      <hr className={styles.rule} />
+      <div className={styles.titleRow}>
+        <h2 className={styles.title}>{title}</h2>
+        {feedbackSlot ? <span className={styles.feedback}>{feedbackSlot}</span> : null}
+      </div>
+      {epigraph ? <p className={styles.epigraph}>{epigraph}</p> : null}
     </div>
   );
 }
