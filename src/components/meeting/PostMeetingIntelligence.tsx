@@ -357,8 +357,8 @@ export function PostMeetingIntelligence({
         <section className={styles.chapter}>
           <ChapterHeading title="Commitments & Actions" />
 
-          {/* Commitments — strategic commitments from the transcript (no overlap with actions) */}
-          {hasCommitments && (
+          {/* Commitments — only shown when no extracted actions exist (avoids duplication) */}
+          {hasCommitments && actions.length === 0 && (
             <div className={styles.commitmentsList}>
               {commitments.map((c) => (
                 <div key={c.capture.id} className={styles.commitmentItem}>
