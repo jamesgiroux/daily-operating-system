@@ -430,6 +430,30 @@ export function PostMeetingIntelligence({
                       </button>
                     </div>
                   )}
+
+                  {/* Complete toggle for pending/waiting/active actions */}
+                  {action.status !== "suggested" && action.status !== "completed" && (
+                    <div className={styles.actionControls}>
+                      <button
+                        className={styles.btnComplete}
+                        onClick={() => _onToggleAction?.(action.id)}
+                      >
+                        <Check size={12} /> Done
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Reopen for completed actions */}
+                  {action.status === "completed" && (
+                    <div className={styles.actionControls}>
+                      <button
+                        className={styles.btnReopen}
+                        onClick={() => _onToggleAction?.(action.id)}
+                      >
+                        Reopen
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
