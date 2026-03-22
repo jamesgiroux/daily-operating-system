@@ -10,8 +10,11 @@ import type {
 import {
   ArrowRight,
   Check,
+  Circle,
   CircleDot,
+  UserPlus,
   X,
+  Zap,
 } from "lucide-react";
 import { TalkBalanceBar } from "@/components/shared/TalkBalanceBar";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -105,7 +108,7 @@ export function PostMeetingIntelligence({
             <ul className={styles.threadList}>
               {continuityThread.actionsCompleted.map((action, index) => (
                 <li key={`completed-${action.title}-${index}`} className={styles.threadItem}>
-                  <span className={styles.threadIconConfirmed}>✓</span>
+                  <Check size={14} className={styles.threadIconConfirmed} />
                   <span>
                     {action.title}
                     <span className={styles.threadDetail}>
@@ -117,7 +120,7 @@ export function PostMeetingIntelligence({
 
               {continuityThread.actionsOpen.map((action, index) => (
                 <li key={`open-${action.title}-${index}`} className={styles.threadItem}>
-                  <span className={styles.threadIconOpen}>○</span>
+                  <Circle size={14} className={styles.threadIconOpen} />
                   <span>
                     {action.title}
                     {action.date && (
@@ -155,7 +158,7 @@ export function PostMeetingIntelligence({
 
               {continuityThread.newAttendees.map((attendee, index) => (
                 <li key={`attendee-${attendee}-${index}`} className={styles.threadItem}>
-                  <span className={styles.threadIconNewFace}>+</span>
+                  <UserPlus size={14} className={styles.threadIconNewFace} />
                   <span>
                     {attendee}
                     <span className={styles.threadDetail}>new attendee</span>
@@ -582,16 +585,16 @@ function PredictionItem({ prediction }: { prediction: PredictionResult }) {
       : prediction.category === "surprise"
       ? styles.predictionIconSurprise
       : styles.predictionIconNotRaised;
-  const icon =
+  const IconComponent =
     prediction.category === "confirmed"
-      ? "✓"
+      ? Check
       : prediction.category === "surprise"
-      ? "⚡"
-      : "✗";
+      ? Zap
+      : X;
 
   return (
     <div className={itemClass}>
-      <span className={iconClass}>{icon}</span>
+      <span className={iconClass}><IconComponent size={14} /></span>
       <div>
         <p>{prediction.text}</p>
         {(prediction.matchText || prediction.source) && (
