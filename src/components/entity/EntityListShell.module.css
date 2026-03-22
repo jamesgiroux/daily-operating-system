@@ -1,0 +1,51 @@
+@import "../../styles/design-tokens.css";
+
+.pageShell {
+  max-width: var(--page-content-width-standard);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.headerContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.tabButton {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  text-underline-offset: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.tabButtonActive {
+  color: var(--color-text-primary);
+  text-decoration: underline;
+}
+
+.searchInput {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  padding: 8px 0;
+  outline: none;
+}
