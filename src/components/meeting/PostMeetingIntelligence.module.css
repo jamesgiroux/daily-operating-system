@@ -666,6 +666,9 @@
   border: none;
   cursor: pointer;
   transition: opacity 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .actionBtn:hover {
