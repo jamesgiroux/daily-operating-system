@@ -112,14 +112,12 @@ pub fn compute_and_emit_cadence_anomalies_with_engine(
 ) -> Vec<CadenceAnomaly> {
     sync_weekly_cadence_rows(db);
 
-    let quiet_accounts = crate::services::emails::detect_gone_quiet_accounts(db).unwrap_or_default();
+    let quiet_accounts =
+        crate::services::emails::detect_gone_quiet_accounts(db).unwrap_or_default();
     let mut anomalies = Vec::new();
 
     for account in quiet_accounts {
-        let last_email_at = account
-            .last_email_date
-            .as_deref()
-            .and_then(parse_datetime);
+        let last_email_at = account.last_email_date.as_deref().and_then(parse_datetime);
 
         let active_signal_at = db
             .conn_ref()

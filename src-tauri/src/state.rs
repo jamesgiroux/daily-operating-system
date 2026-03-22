@@ -685,8 +685,7 @@ impl AppState {
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {
-        let db = crate::db::ActionDb::open()
-            .map_err(|e| format!("Database unavailable: {e}"))?;
+        let db = crate::db::ActionDb::open().map_err(|e| format!("Database unavailable: {e}"))?;
         f(&db)
     }
 
@@ -697,8 +696,7 @@ impl AppState {
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {
-        let db = crate::db::ActionDb::open()
-            .map_err(|e| format!("Database unavailable: {e}"))?;
+        let db = crate::db::ActionDb::open().map_err(|e| format!("Database unavailable: {e}"))?;
         f(&db)
     }
 

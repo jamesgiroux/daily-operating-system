@@ -165,7 +165,10 @@ fn test_archive_email_archives_entire_thread() {
         .expect("archive thread");
 
     let active = db.get_all_active_emails().expect("active emails");
-    assert!(active.is_empty(), "thread should be fully hidden once archived");
+    assert!(
+        active.is_empty(),
+        "thread should be fully hidden once archived"
+    );
 
     db.unarchive_email("em-thread-1-latest")
         .expect("unarchive thread");

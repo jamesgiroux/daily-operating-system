@@ -259,9 +259,7 @@ pub fn enrich_file(
                     actions: Vec::new(), // actions already extracted by extract_actions_from_ai
                     destination_path: match &result {
                         EnrichResult::Routed { destination, .. }
-                        | EnrichResult::Archived { destination, .. } => {
-                            Some(destination.clone())
-                        }
+                        | EnrichResult::Archived { destination, .. } => Some(destination.clone()),
                         _ => None,
                     },
                     profile: profile.to_string(),
@@ -598,12 +596,22 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         let line = line.trim();
 
         // Skip prompt instruction lines that appear inside sections (I554 sub-type guidance)
-        if (in_wins || in_risks || in_commitments) && !line.starts_with("- ") && !line.starts_with("END_") && !line.is_empty() {
+        if (in_wins || in_risks || in_commitments)
+            && !line.starts_with("- ")
+            && !line.starts_with("END_")
+            && !line.is_empty()
+        {
             // Check if this is a section header that should transition state
-            let is_section_header = line == "WINS:" || line == "RISKS:" || line == "DECISIONS:"
-                || line == "COMMITMENTS:" || line == "ACTIONS:" || line == "DISCUSSION:"
-                || line.starts_with("FILE_TYPE:") || line.starts_with("ACCOUNT:")
-                || line.starts_with("SUMMARY:") || line.starts_with("ANALYSIS:")
+            let is_section_header = line == "WINS:"
+                || line == "RISKS:"
+                || line == "DECISIONS:"
+                || line == "COMMITMENTS:"
+                || line == "ACTIONS:"
+                || line == "DISCUSSION:"
+                || line.starts_with("FILE_TYPE:")
+                || line.starts_with("ACCOUNT:")
+                || line.starts_with("SUMMARY:")
+                || line.starts_with("ANALYSIS:")
                 || line.starts_with("MEETING:");
             if !is_section_header {
                 continue; // Skip non-entry lines (e.g., sub-type definitions, format instructions)
@@ -1113,12 +1121,8 @@ END_COMMITMENTS";
 
     #[test]
     fn test_parse_enrichment_prompt_includes_subtypes() {
-        let prompt = build_enrichment_prompt(
-            "acme-update.md",
-            "# Account update\nAll good.",
-            None,
-            None,
-        );
+        let prompt =
+            build_enrichment_prompt("acme-update.md", "# Account update\nAll good.", None, None);
         // Win sub-types
         assert!(prompt.contains("ADOPTION:"));
         assert!(prompt.contains("EXPANSION:"));
