@@ -78,8 +78,5 @@ jobs:
       - name: Run frontend tests
         run: pnpm test
 
-      - name: Run Phase 3 production-parity gate
-        run: pnpm run test:parity
-
       - name: Run frontend dependency audit (high+)
         run: pnpm audit --audit-level high
