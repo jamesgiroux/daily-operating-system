@@ -1,5 +1,5 @@
 /**
- * Shared ProposedActionRow — renders a suggested action with accept/reject.
+ * Shared SuggestedActionRow — renders a suggested action with accept/reject.
  *
  * Consolidates duplicate implementations from:
  * - ActionsPage.tsx (full: "Suggested" label, priority, context)
@@ -8,7 +8,7 @@
  * ADR-0084 C2.
  */
 
-interface ProposedActionRowProps {
+interface SuggestedActionRowProps {
   action: {
     id: string;
     title: string;
@@ -29,14 +29,14 @@ function defaultStripMarkdown(s: string): string {
   return s.replace(/\*\*/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
 }
 
-export function ProposedActionRow({
+export function SuggestedActionRow({
   action,
   onAccept,
   onReject,
   showBorder = true,
   compact = false,
   stripMarkdown = defaultStripMarkdown,
-}: ProposedActionRowProps) {
+}: SuggestedActionRowProps) {
   const btnSize = compact ? 24 : 28;
   const svgSize = compact ? 12 : 14;
 
