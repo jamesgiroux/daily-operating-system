@@ -234,20 +234,63 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         ),
     ];
 
-    // Build prep_frozen_json for meetings with prep content
-    let build_prep_json = |account_name: Option<&str>, summary: Option<&str>| -> Option<String> {
-        let acct = account_name?;
-        let sum = summary?;
-        Some(
+    // Build prep_frozen_json — must include risks/recentWins arrays for I635 scorecard.
+    // Structure: { "prep": { "risks": [...], "recentWins": [...], ... } }
+    let build_prep_json =
+        |meeting_id: &str, account_name: Option<&str>, summary: Option<&str>| -> Option<String> {
+            let acct = account_name?;
+            let sum = summary?;
+            let (risks, wins) = match meeting_id {
+                "demo-mtg-acme" => (
+                    vec![
+                        "Billing team struggling with custom report builder",
+                        "Budget review in April — CFO wants ROI justification",
+                    ],
+                    vec![
+                        "Phase 2 scoping completed with full executive alignment",
+                        "Support ticket volume down 60% since migration",
+                    ],
+                ),
+                "demo-mtg-globex" => (
+                    vec![
+                        "Key stakeholder Jamie departing in Q2",
+                        "Team B usage declining — may need dedicated enablement",
+                    ],
+                    vec!["Expansion to 3 teams going well — Team A and C fully adopted"],
+                ),
+                "demo-mh-acme-7d" => (
+                    vec![
+                        "NPS trending down — 3 detractors in latest survey",
+                        "Billing team unhappy with reporting interface",
+                    ],
+                    vec![
+                        "Phase 1 migration completed ahead of schedule",
+                        "API integration passing all validation checks",
+                    ],
+                ),
+                "demo-mh-globex-14d" => (
+                    vec![
+                        "Team B engagement declining — needs intervention",
+                        "Key stakeholder Jamie departing Q2",
+                    ],
+                    vec!["New dashboard features well received"],
+                ),
+                _ => (vec![], vec![]),
+            };
+            Some(
             serde_json::json!({
-                "account_context": format!("{} — active customer relationship", acct),
-                "meeting_narrative": sum,
-                "recommended_actions": ["Review recent activity", "Prepare discussion points"],
-                "attendee_context": format!("Key stakeholders from {}", acct)
+                "prep": {
+                    "account_context": format!("{} — active customer relationship", acct),
+                    "meeting_narrative": sum,
+                    "risks": risks,
+                    "recentWins": wins,
+                    "recommended_actions": ["Review recent activity", "Prepare discussion points"],
+                    "attendee_context": format!("Key stakeholders from {}", acct)
+                }
             })
             .to_string(),
         )
-    };
+        };
 
     let account_names: std::collections::HashMap<&str, &str> = [
         ("demo-acme", "Acme Corp"),
@@ -260,13 +303,25 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     for (id, title, mtype, start_time, account_id, summary) in &meetings {
         let prep_json = account_id.and_then(|acct| {
             let acct_name = account_names.get(acct).copied();
-            build_prep_json(acct_name, *summary)
+            build_prep_json(id, acct_name, *summary)
         });
 
+        // Populate meetings.attendees JSON for The Room section
+        let attendees_json = match *id {
+            "demo-mtg-acme" => Some(
+                r#"[{"name":"Sarah Chen","email":"sarah@acme.com"},{"name":"Alex Torres","email":"alex@acme.com"},{"name":"Jordan Park","email":"jordan@acme.com"}]"#,
+            ),
+            "demo-mtg-globex" => Some(
+                r#"[{"name":"Jamie Reeves","email":"jamie@globex.com"},{"name":"Casey Kim","email":"casey@globex.com"}]"#,
+            ),
+            "demo-mtg-initech" => Some(r#"[{"name":"Dana Whitfield","email":"dana@initech.com"}]"#),
+            _ => None,
+        };
+
         conn.execute(
-            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![id, title, mtype, start_time, &today],
+            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, attendees, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, title, mtype, start_time, attendees_json, &today],
         )
         .map_err(|e| format!("Demo meeting insert: {}", e))?;
 
@@ -342,10 +397,23 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     ];
 
     for (id, title, mtype, start_time, account_id, summary) in &historical {
+        let hist_attendees = match *id {
+            "demo-mh-acme-7d" => Some(
+                r#"[{"name":"Sarah Chen","email":"sarah@acme.com"},{"name":"Alex Torres","email":"alex@acme.com"}]"#,
+            ),
+            "demo-mh-globex-14d" => Some(
+                r#"[{"name":"Jamie Reeves","email":"jamie@globex.com"},{"name":"Casey Kim","email":"casey@globex.com"}]"#,
+            ),
+            "demo-mh-initech-21d" => {
+                Some(r#"[{"name":"Dana Whitfield","email":"dana@initech.com"}]"#)
+            }
+            _ => None,
+        };
+
         conn.execute(
-            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![id, title, mtype, start_time, &today],
+            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, attendees, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, title, mtype, start_time, hist_attendees, &today],
         )
         .map_err(|e| format!("Demo historical meeting: {}", e))?;
 
@@ -354,9 +422,15 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
             rusqlite::params![id, summary],
         )
         .map_err(|e| format!("Demo historical meeting transcript: {}", e))?;
+        // I635: Historical meetings need prep_frozen_json for prediction scorecard
+        let hist_prep = account_id.and_then(|acct| {
+            let acct_name = account_names.get(acct).copied();
+            build_prep_json(id, acct_name, *summary)
+        });
         conn.execute(
-            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
-            rusqlite::params![id],
+            "INSERT OR REPLACE INTO meeting_prep (meeting_id, prep_frozen_json, prep_frozen_at) \
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![id, hist_prep, &today],
         )
         .map_err(|e| format!("Demo historical meeting prep: {}", e))?;
 
@@ -370,10 +444,276 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         }
     }
 
+    // ── v1.0.3: Full meeting intelligence mock data ──
+    // Mark all customer meetings as transcript-processed (Meeting Record stage)
+    // Today's meetings AND historical meetings get full intelligence so they
+    // show as Meeting Records once their start time passes.
+    for hist_id in &[
+        "demo-mtg-acme",
+        "demo-mtg-globex",
+        "demo-mh-acme-7d",
+        "demo-mh-globex-14d",
+        "demo-mh-initech-21d",
+    ] {
+        conn.execute(
+            "UPDATE meeting_transcripts SET transcript_processed_at = datetime('now', '-1 hour') \
+             WHERE meeting_id = ?1",
+            rusqlite::params![hist_id],
+        )
+        .ok();
+    }
+
+    // Enriched captures — full schema with speaker, evidence, urgency, impact, sub_type
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, impact, evidence_quote, speaker, captured_at) VALUES
+         -- Acme today: full intelligence for the weekly sync
+         ('demo-cap-at1', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'win', 'Phase 2 scoping completed with full executive alignment', 'expansion', NULL, 'Sets up Q2 expansion deal worth 6% ARR increase', 'Sarah said: \"Leadership signed off on the Phase 2 scope yesterday. We are ready to move forward.\"', 'Sarah Chen', datetime('now')),
+         ('demo-cap-at2', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'win', 'Support ticket volume down 60% since migration', 'value_realized', NULL, 'Validates platform stability narrative for renewal', 'Alex confirmed: \"We went from 15 tickets a week to about 6. The new platform is much more stable.\"', 'Alex Torres', datetime('now')),
+         ('demo-cap-at3', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'risk', 'Billing team still struggling with custom report builder', NULL, 'yellow', 'Could slow Phase 2 adoption if not addressed', '\"The billing team tried building their monthly reconciliation report and gave up after 20 minutes.\"', 'Alex Torres', datetime('now')),
+         ('demo-cap-at4', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'risk', 'Budget review in April — CFO wants ROI justification', NULL, 'red', 'Renewal at risk without clear ROI story', 'Sarah flagged: \"Our CFO is asking for hard numbers on cost savings before the April budget review.\"', 'Sarah Chen', datetime('now')),
+         ('demo-cap-at5', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'decision', 'Build custom report template for billing team before Phase 2 kickoff', NULL, NULL, NULL, 'Agreed to prioritize a billing-specific report template in the next sprint.', 'Sarah Chen', datetime('now')),
+         ('demo-cap-at6', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'commitment', 'Deliver ROI analysis deck to CFO by end of month', 'deliverable', NULL, NULL, '\"I will put together the ROI deck with the support ticket data and send it over by the 31st.\"', NULL, datetime('now')),
+         ('demo-cap-at7', 'demo-mtg-acme', 'Acme Corp Weekly Sync', 'demo-acme', 'commitment', 'Schedule billing team training session for next week', 'follow_up', NULL, NULL, '\"Let us get a 90-minute session on the calendar for the billing team.\"', NULL, datetime('now')),
+
+         -- Globex today: intelligence for the QBR
+         ('demo-cap-gt1', 'demo-mtg-globex', 'Globex Industries QBR', 'demo-globex', 'win', 'Expansion to 3 teams going well — Team A and C fully adopted', 'adoption', NULL, 'Two of three teams at full utilization', 'Jamie said: \"Teams A and C are all in. Usage is exactly where we want it.\"', 'Jamie Reeves', datetime('now')),
+         ('demo-cap-gt2', 'demo-mtg-globex', 'Globex Industries QBR', 'demo-globex', 'risk', 'Key stakeholder Jamie departing Q2 — champion transition urgent', NULL, 'red', 'Relationship continuity at risk without formal handoff', '\"My last day is May 15th. Casey and I have started the transition but there is a lot to cover.\"', 'Jamie Reeves', datetime('now')),
+         ('demo-cap-gt3', 'demo-mtg-globex', 'Globex Industries QBR', 'demo-globex', 'risk', 'Team B usage declining — 40% drop in logins over last 30 days', NULL, 'yellow', 'Risk of seat reduction at renewal', 'Casey noted: \"Team B is back to spreadsheets. We need to re-engage them before the renewal conversation.\"', 'Casey Kim', datetime('now')),
+         ('demo-cap-gt4', 'demo-mtg-globex', 'Globex Industries QBR', 'demo-globex', 'decision', 'Fast-track champion transition — Casey Kim to be primary contact by April 15', NULL, NULL, NULL, 'Both sides agreed Casey needs full context transfer before Jamie leaves.', 'Casey Kim', datetime('now')),
+         ('demo-cap-gt5', 'demo-mtg-globex', 'Globex Industries QBR', 'demo-globex', 'commitment', 'Create Team B re-engagement plan with usage targets', 'deliverable', NULL, NULL, '\"We will put together a 30-60-90 plan for Team B with specific adoption milestones.\"', NULL, datetime('now')),
+
+         -- Acme 7d ago: 2 wins, 2 risks, 1 decision, 1 commitment
+         ('demo-cap-a1', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'win', 'Phase 1 migration completed ahead of schedule', 'adoption', NULL, 'Reduced onboarding time by 40%', 'Sarah confirmed: \"We finished the migration two weeks early and the team is already productive.\"', 'Sarah Chen', datetime('now', '-7 days')),
+         ('demo-cap-a2', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'win', 'API integration passing all validation checks', 'value_realized', NULL, 'Zero production incidents since go-live', 'Alex noted the integration has been flawless since launch.', 'Alex Torres', datetime('now', '-7 days')),
+         ('demo-cap-a3', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'risk', 'NPS trending down — 3 detractors in latest survey', NULL, 'red', 'Churn risk if sentiment continues declining', 'Sarah flagged: \"We''re seeing some frustration from the billing team about the reporting interface.\"', 'Sarah Chen', datetime('now', '-7 days')),
+         ('demo-cap-a4', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'risk', 'Billing team unhappy with reporting interface', NULL, 'yellow', 'Could block Phase 2 expansion', '\"The reports don''t match what they see in their legacy system.\"', 'Alex Torres', datetime('now', '-7 days')),
+         ('demo-cap-a5', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'decision', 'Proceed with Phase 2 scoping next quarter', NULL, NULL, NULL, 'Both sides agreed to begin Phase 2 discovery in April.', 'Sarah Chen', datetime('now', '-7 days')),
+         ('demo-cap-a6', 'demo-mh-acme-7d', 'Acme Corp Status Call', 'demo-acme', 'commitment', 'Send updated ROI analysis by Friday', 'deliverable', NULL, NULL, '\"I''ll have the updated numbers to you by end of week.\"', NULL, datetime('now', '-7 days')),
+
+         -- Globex 14d ago: 1 win, 2 risks, 1 decision, 1 commitment
+         ('demo-cap-g1', 'demo-mh-globex-14d', 'Globex Sprint Demo', 'demo-globex', 'win', 'New dashboard features received enthusiastic response', 'engagement', NULL, 'Drove 30% increase in daily active usage', 'Jamie said: \"The team loved the new filtering — usage jumped the day we deployed.\"', 'Jamie Reeves', datetime('now', '-14 days')),
+         ('demo-cap-g2', 'demo-mh-globex-14d', 'Globex Sprint Demo', 'demo-globex', 'risk', 'Team B engagement declining — may need dedicated enablement', NULL, 'yellow', 'Team B represents 35% of seats', 'Casey raised concern: \"Team B hasn''t logged in since the UI refresh. They''re still using spreadsheets.\"', 'Casey Kim', datetime('now', '-14 days')),
+         ('demo-cap-g3', 'demo-mh-globex-14d', 'Globex Sprint Demo', 'demo-globex', 'risk', 'Key stakeholder Jamie departing in Q2', NULL, 'red', 'Champion loss — relationship continuity at risk', 'Jamie mentioned: \"I''m moving to a new role in May. We should start transitioning Casey as your main point of contact.\"', 'Jamie Reeves', datetime('now', '-14 days')),
+         ('demo-cap-g4', 'demo-mh-globex-14d', 'Globex Sprint Demo', 'demo-globex', 'decision', 'Schedule dedicated Team B enablement session', NULL, NULL, NULL, 'Agreed to run a 2-hour hands-on workshop for Team B next sprint.', 'Casey Kim', datetime('now', '-14 days')),
+         ('demo-cap-g5', 'demo-mh-globex-14d', 'Globex Sprint Demo', 'demo-globex', 'commitment', 'Coordinate Team B workshop logistics with Casey', 'follow_up', NULL, NULL, '\"Casey will send the invite, we''ll bring the training materials.\"', NULL, datetime('now', '-14 days'));"
+    ).ok();
+
+    // Interaction dynamics — talk balance, speaker sentiments, engagement signals
+    // Acme today
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_interaction_dynamics \
+         (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct, \
+          speaker_sentiments_json, question_density, decision_maker_active, \
+          forward_looking, monologue_risk, competitor_mentions_json, \
+          escalation_language_json, created_at) \
+         VALUES (?1, 58, 42, ?2, 'high', 'yes', 'high', 0, ?3, ?4, datetime('now'))",
+        rusqlite::params![
+            "demo-mtg-acme",
+            r#"[{"name":"Sarah Chen","sentiment":"positive","evidence":"Enthusiastic about Phase 2 alignment and eager to show ROI to CFO"},{"name":"Alex Torres","sentiment":"cautious","evidence":"Flagged billing team friction but acknowledged support improvements"}]"#,
+            r#"[]"#,
+            r#"[{"quote":"If we cannot show the CFO hard savings numbers by April, this gets a lot harder","speaker":"Sarah Chen"}]"#,
+        ],
+    ).ok();
+
+    // Globex today
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_interaction_dynamics \
+         (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct, \
+          speaker_sentiments_json, question_density, decision_maker_active, \
+          forward_looking, monologue_risk, competitor_mentions_json, \
+          escalation_language_json, created_at) \
+         VALUES (?1, 50, 50, ?2, 'medium', 'yes', 'high', 0, ?3, ?4, datetime('now'))",
+        rusqlite::params![
+            "demo-mtg-globex",
+            r#"[{"name":"Jamie Reeves","sentiment":"bittersweet","evidence":"Positive about product but open about departure — wants smooth transition"},{"name":"Casey Kim","sentiment":"determined","evidence":"Taking ownership of the relationship, direct about Team B challenges"}]"#,
+            r#"[{"competitor":"Looker","context":"Casey mentioned Team B explored Looker dashboards during the adoption gap"}]"#,
+            r#"[{"quote":"If Team B does not adopt by Q3, we will need to reconsider the seat count","speaker":"Casey Kim"}]"#,
+        ],
+    ).ok();
+
+    // Acme 7d ago
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_interaction_dynamics \
+         (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct, \
+          speaker_sentiments_json, question_density, decision_maker_active, \
+          forward_looking, monologue_risk, competitor_mentions_json, \
+          escalation_language_json, created_at) \
+         VALUES (?1, 62, 38, ?2, 'high', 'yes', 'high', 0, ?3, ?4, datetime('now'))",
+        rusqlite::params![
+            "demo-mh-acme-7d",
+            r#"[{"name":"Sarah Chen","sentiment":"positive","evidence":"Expressed satisfaction with migration timeline and team productivity"},{"name":"Alex Torres","sentiment":"cautious","evidence":"Raised concerns about billing team frustration but acknowledged integration success"}]"#,
+            r#"[{"competitor":"Gainsight","context":"Sarah mentioned they evaluated Gainsight before choosing us"}]"#,
+            r#"[]"#,
+        ],
+    ).ok();
+
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_interaction_dynamics \
+         (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct, \
+          speaker_sentiments_json, question_density, decision_maker_active, \
+          forward_looking, monologue_risk, competitor_mentions_json, \
+          escalation_language_json, created_at) \
+         VALUES (?1, 55, 45, ?2, 'medium', 'yes', 'medium', 0, ?3, ?4, datetime('now'))",
+        rusqlite::params![
+            "demo-mh-globex-14d",
+            r#"[{"name":"Jamie Reeves","sentiment":"positive","evidence":"Enthusiastic about dashboard improvements and transparent about departure timeline"},{"name":"Casey Kim","sentiment":"concerned","evidence":"Raised Team B engagement issues and wants more enablement support"}]"#,
+            r#"[]"#,
+            r#"[{"quote":"If Team B doesn't adopt by Q3, we'll need to reconsider the seat count","speaker":"Casey Kim"}]"#,
+        ],
+    ).ok();
+
+    // Champion health assessments
+    // Acme today
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_champion_health \
+         (meeting_id, champion_name, champion_status, champion_evidence, champion_risk, created_at) \
+         VALUES (?1, 'Sarah Chen', 'strong', \
+          'Driving Phase 2 internally. Proactively managing CFO expectations on ROI. Brought Alex to meeting to build multi-threaded relationship.', \
+          'CFO budget review in April could slow momentum if ROI deck is not compelling.', datetime('now'))",
+        rusqlite::params!["demo-mtg-acme"],
+    ).ok();
+
+    // Globex today
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_champion_health \
+         (meeting_id, champion_name, champion_status, champion_evidence, champion_risk, created_at) \
+         VALUES (?1, 'Jamie Reeves', 'weak', \
+          'Departing May 15th. Still fully engaged in transition planning but actively shifting responsibilities to Casey Kim.', \
+          'Champion loss imminent. Casey Kim shows strong potential but needs accelerated context transfer. Competitor evaluation by Team B adds urgency.', datetime('now'))",
+        rusqlite::params!["demo-mtg-globex"],
+    ).ok();
+
+    // Acme 7d ago
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_champion_health \
+         (meeting_id, champion_name, champion_status, champion_evidence, champion_risk, created_at) \
+         VALUES (?1, 'Sarah Chen', 'strong', \
+          'Actively advocating for Phase 2 expansion. Provided executive sponsorship for migration acceleration.', \
+          'No immediate risk — strong alignment and engagement.', datetime('now'))",
+        rusqlite::params!["demo-mh-acme-7d"],
+    ).ok();
+
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_champion_health \
+         (meeting_id, champion_name, champion_status, champion_evidence, champion_risk, created_at) \
+         VALUES (?1, 'Jamie Reeves', 'weak', \
+          'Departing in Q2. Still engaged but transitioning responsibilities to Casey Kim.', \
+          'Champion loss imminent. Casey Kim is the succession candidate but hasn''t been formally onboarded as champion.', datetime('now'))",
+        rusqlite::params!["demo-mh-globex-14d"],
+    ).ok();
+
+    // Role changes
+    // Globex today
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_role_changes \
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
+         VALUES ('demo-rc-gt1', 'demo-mtg-globex', 'Casey Kim', 'champion_candidate', 'champion', \
+          'Casey is now the primary point of contact. Jamie confirmed the handoff is complete for day-to-day operations.', datetime('now'))",
+        [],
+    ).ok();
+
+    // Acme today — Alex Torres elevated
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_role_changes \
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
+         VALUES ('demo-rc-at1', 'demo-mtg-acme', 'Alex Torres', 'stakeholder', 'technical_contact', \
+          'Alex brought to meeting to build multi-threaded relationship and validate billing team friction.', datetime('now'))",
+        [],
+    ).ok();
+
+    // Acme 7d ago — Alex Torres joined
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_role_changes \
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
+         VALUES ('demo-rc-a1', 'demo-mh-acme-7d', 'Alex Torres', NULL, 'stakeholder', \
+          'Alex provided technical perspective on API integration and flagged billing team friction.', datetime('now'))",
+        [],
+    ).ok();
+
+    // Globex 14d ago
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_role_changes \
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
+         VALUES ('demo-rc-g1', 'demo-mh-globex-14d', 'Jamie Reeves', 'champion', 'departing', \
+          'I''m moving to a new role in May. We should start transitioning Casey.', datetime('now'))",
+        [],
+    ).ok();
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_role_changes \
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote, created_at) \
+         VALUES ('demo-rc-g2', 'demo-mh-globex-14d', 'Casey Kim', 'stakeholder', 'champion_candidate', \
+          'Casey will be your main point of contact going forward.', datetime('now'))",
+        [],
+    ).ok();
+
+    // Meeting attendees for continuity thread
+    for (meeting_id, attendees) in &[
+        (
+            "demo-mh-acme-7d",
+            vec![
+                ("demo-sarah", "sarah@acme.com"),
+                ("demo-alex", "alex@acme.com"),
+            ],
+        ),
+        (
+            "demo-mtg-acme",
+            vec![
+                ("demo-sarah", "sarah@acme.com"),
+                ("demo-alex", "alex@acme.com"),
+                ("demo-newface", "jordan@acme.com"),
+            ],
+        ),
+        (
+            "demo-mh-globex-14d",
+            vec![
+                ("demo-jamie", "jamie@globex.com"),
+                ("demo-casey", "casey@globex.com"),
+            ],
+        ),
+        (
+            "demo-mtg-globex",
+            vec![
+                ("demo-jamie", "jamie@globex.com"),
+                ("demo-casey", "casey@globex.com"),
+            ],
+        ),
+    ] {
+        for (person_id, email) in attendees {
+            conn.execute(
+                "INSERT OR IGNORE INTO meeting_attendees (meeting_id, person_id, email) \
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params![meeting_id, person_id, email],
+            )
+            .ok();
+        }
+    }
+
+    // Transcript-extracted actions for demo meetings
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO actions (id, title, status, priority, source_type, source_id, account_id, created_at, updated_at, is_demo) VALUES
+         -- Today's meetings
+         ('demo-act-at1', 'Deliver ROI analysis deck to Acme CFO', 'proposed', 'P1', 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1),
+         ('demo-act-at2', 'Build custom billing report template for Acme', 'proposed', 'P1', 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1),
+         ('demo-act-at3', 'Schedule billing team training session', 'proposed', 'P2', 'transcript', 'demo-mtg-acme', 'demo-acme', datetime('now'), datetime('now'), 1),
+         ('demo-act-gt1', 'Create Team B 30-60-90 re-engagement plan', 'proposed', 'P1', 'transcript', 'demo-mtg-globex', 'demo-globex', datetime('now'), datetime('now'), 1),
+         ('demo-act-gt2', 'Complete champion context transfer to Casey Kim', 'proposed', 'P1', 'transcript', 'demo-mtg-globex', 'demo-globex', datetime('now'), datetime('now'), 1),
+         -- Historical meetings
+         ('demo-act-a1', 'Send updated ROI analysis to Acme', 'completed', 'P1', 'transcript', 'demo-mh-acme-7d', 'demo-acme', datetime('now', '-7 days'), datetime('now', '-3 days'), 1),
+         ('demo-act-a2', 'Schedule billing team feedback session', 'pending', 'P1', 'transcript', 'demo-mh-acme-7d', 'demo-acme', datetime('now', '-7 days'), datetime('now', '-7 days'), 1),
+         ('demo-act-g1', 'Coordinate Team B enablement workshop', 'pending', 'P1', 'transcript', 'demo-mh-globex-14d', 'demo-globex', datetime('now', '-14 days'), datetime('now', '-14 days'), 1),
+         ('demo-act-g2', 'Draft champion transition plan for Casey Kim', 'pending', 'P2', 'transcript', 'demo-mh-globex-14d', 'demo-globex', datetime('now', '-14 days'), datetime('now', '-14 days'), 1);"
+    ).ok();
+
     // I633: Seed health score history for trend computation demo
     for (acct, scores) in &[
-        ("demo-acme", vec![(72.0, "green"), (68.0, "yellow"), (75.0, "green")]),
-        ("demo-globex", vec![(45.0, "yellow"), (42.0, "yellow"), (38.0, "red")]),
+        (
+            "demo-acme",
+            vec![(72.0, "green"), (68.0, "yellow"), (75.0, "green")],
+        ),
+        (
+            "demo-globex",
+            vec![(45.0, "yellow"), (42.0, "yellow"), (38.0, "red")],
+        ),
     ] {
         for (i, (score, band)) in scores.iter().enumerate() {
             conn.execute(
@@ -419,6 +759,30 @@ pub fn clear_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), String>
         [],
     )
     .map_err(|e| format!("Clear demo health history: {}", e))?;
+
+    // Clean up v1.0.3 meeting intelligence tables for demo meetings
+    conn.execute("DELETE FROM captures WHERE meeting_id LIKE 'demo-%'", [])
+        .map_err(|e| format!("Clear demo captures: {}", e))?;
+    conn.execute(
+        "DELETE FROM meeting_interaction_dynamics WHERE meeting_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo interaction dynamics: {}", e))?;
+    conn.execute(
+        "DELETE FROM meeting_champion_health WHERE meeting_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo champion health: {}", e))?;
+    conn.execute(
+        "DELETE FROM meeting_role_changes WHERE meeting_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo role changes: {}", e))?;
+    conn.execute(
+        "DELETE FROM meeting_attendees WHERE meeting_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo meeting attendees: {}", e))?;
 
     // Clean up account_stakeholders links for demo people
     conn.execute(

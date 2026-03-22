@@ -1,10 +1,10 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { useActions } from "@/hooks/useActions";
-import { useProposedActions } from "@/hooks/useProposedActions";
+import { useSuggestedActions } from "@/hooks/useSuggestedActions";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { ActionRow as SharedActionRow } from "@/components/shared/ActionRow";
-import { ProposedActionRow as SharedProposedActionRow } from "@/components/shared/ProposedActionRow";
+import { SuggestedActionRow as SharedSuggestedActionRow } from "@/components/shared/SuggestedActionRow";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { usePersonality } from "@/hooks/usePersonality";
@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -127,11 +128,11 @@ function groupByMeeting(actions: DbAction[]): ActionGroup[] {
   return groups;
 }
 
-type StatusTab = "proposed" | "pending" | "completed";
+type StatusTab = "suggested" | "pending" | "completed";
 type PriorityTab = "all" | "P1" | "P2" | "P3";
 
-const statusTabs: StatusTab[] = ["proposed", "pending", "completed"];
-const statusTabLabels: Record<StatusTab, string> = { proposed: "Suggested", pending: "Pending", completed: "Completed" };
+const statusTabs: StatusTab[] = ["suggested", "pending", "completed"];
+const statusTabLabels: Record<StatusTab, string> = { suggested: "Suggested", pending: "Pending", completed: "Completed" };
 const priorityTabs: PriorityTab[] = ["all", "P1", "P2", "P3"];
 
 
@@ -153,13 +154,14 @@ export default function ActionsPage() {
     searchQuery,
     setSearchQuery,
   } = useActions(initialSearch as string | undefined);
-  const { proposedActions, acceptAction, rejectAction } = useProposedActions();
+  const { suggestedActions, acceptAction, rejectAction } = useSuggestedActions();
 
   const [showCreate, setShowCreate] = useState(false);
 
   // Computed stats
-  const proposedCount = proposedActions.length;
-  const pendingCount = allActions.filter((a) => a.status === "pending").length;
+  const suggestedCount = suggestedActions.length;
+  const pendingCount = allActions.filter((a) => a.status === "pending" || a.status === "waiting").length;
+  const completedCount = allActions.filter((a) => a.status === "completed").length;
   const overdueCount = allActions.filter(
     (a) => a.status === "pending" && a.dueDate && new Date(a.dueDate) < new Date()
   ).length;
@@ -173,43 +175,43 @@ export default function ActionsPage() {
     await rejectAction(id, "actions_page");
   }, [rejectAction]);
 
-  // Smart default: proposed tab when suggestions exist, else pending
+  // Smart default: suggested tab when suggestions exist, else pending
   const [hasSetDefault, setHasSetDefault] = useState(false);
-  const prevProposedCountRef = useRef(0);
+  const prevSuggestedCountRef = useRef(0);
   const userManuallySelectedTab = useRef(false);
 
-  if (!hasSetDefault && !loading && proposedCount > 0 && statusFilter !== "proposed") {
-    setStatusFilter("proposed");
+  if (!hasSetDefault && !loading && suggestedCount > 0 && statusFilter !== "suggested") {
+    setStatusFilter("suggested");
     setHasSetDefault(true);
-  } else if (!hasSetDefault && !loading && proposedCount === 0 && statusFilter !== "pending") {
+  } else if (!hasSetDefault && !loading && suggestedCount === 0 && statusFilter !== "pending") {
     setStatusFilter("pending");
     setHasSetDefault(true);
   } else if (!hasSetDefault && !loading) {
     setHasSetDefault(true);
   }
 
-  // Auto-switch to proposed tab when new proposals arrive (0 -> >0 transition)
+  // Auto-switch to suggested tab when new suggestions arrive (0 -> >0 transition)
   useEffect(() => {
     if (
       hasSetDefault &&
-      prevProposedCountRef.current === 0 &&
-      proposedCount > 0 &&
+      prevSuggestedCountRef.current === 0 &&
+      suggestedCount > 0 &&
       !userManuallySelectedTab.current
     ) {
-      setStatusFilter("proposed");
-      toast.info(`${proposedCount} new suggested action${proposedCount !== 1 ? "s" : ""} to review`);
+      setStatusFilter("suggested");
+      toast.info(`${suggestedCount} new suggested action${suggestedCount !== 1 ? "s" : ""} to review`);
     }
-    prevProposedCountRef.current = proposedCount;
-  }, [proposedCount, hasSetDefault, setStatusFilter]);
+    prevSuggestedCountRef.current = suggestedCount;
+  }, [suggestedCount, hasSetDefault, setStatusFilter]);
 
   // FolioBar readiness stats
   const folioStats = useMemo((): ReadinessStat[] => {
     const stats: ReadinessStat[] = [];
-    if (proposedCount > 0) stats.push({ label: `${proposedCount} to review`, color: "terracotta" });
+    if (suggestedCount > 0) stats.push({ label: `${suggestedCount} to review`, color: "terracotta" });
     if (pendingCount > 0) stats.push({ label: `${pendingCount} pending`, color: "sage" });
     if (overdueCount > 0) stats.push({ label: `${overdueCount} overdue`, color: "terracotta" });
     return stats;
-  }, [proposedCount, pendingCount, overdueCount]);
+  }, [suggestedCount, pendingCount, overdueCount]);
 
   // Register magazine shell
   const shellConfig = useMemo(
@@ -243,19 +245,13 @@ export default function ActionsPage() {
 
   return (
     <div className={s.pageContainer}>
-      {/* ═══ PAGE HEADER ═══ */}
-      <section className={s.headerSection}>
-        <div className={s.headerRow}>
-          <h1 className={s.pageTitle}>Actions</h1>
-          <span className={s.itemCount}>
-            {actions.length} item{actions.length !== 1 ? "s" : ""}
-          </span>
-        </div>
-
-        {/* Section rule */}
-        <div className={s.sectionRule} />
-
-        {/* Status filter toggles */}
+      <EditorialPageHeader
+        title="Actions"
+        scale="standard"
+        width="standard"
+        rule="subtle"
+        meta={`${actions.length} item${actions.length !== 1 ? "s" : ""}`}
+      >
         <div className={s.tabRow}>
           {statusTabs.map((tab) => (
             <button
@@ -268,15 +264,20 @@ export default function ActionsPage() {
             >
               <span className={s.statusTabInner}>
                 {statusTabLabels[tab]}
-                {tab === "proposed" && proposedCount > 0 && (
-                  <span className={s.proposedBadge}>{proposedCount}</span>
+                {tab === "suggested" && suggestedCount > 0 && (
+                  <span className={s.suggestedBadge}>{suggestedCount}</span>
+                )}
+                {tab === "pending" && pendingCount > 0 && (
+                  <span className={s.countBadge}>{pendingCount}</span>
+                )}
+                {tab === "completed" && completedCount > 0 && (
+                  <span className={s.countBadge}>{completedCount}</span>
                 )}
               </span>
             </button>
           ))}
         </div>
 
-        {/* Priority filter toggles */}
         <div className={s.tabRowPriority}>
           {priorityTabs.map((tab) => (
             <button
@@ -289,7 +290,6 @@ export default function ActionsPage() {
           ))}
         </div>
 
-        {/* Search */}
         <input
           type="text"
           value={searchQuery}
@@ -297,7 +297,7 @@ export default function ActionsPage() {
           placeholder="⌘  Search actions..."
           className={s.searchInput}
         />
-      </section>
+      </EditorialPageHeader>
 
       {/* ═══ CREATE FORM ═══ */}
       {showCreate && (
@@ -312,22 +312,22 @@ export default function ActionsPage() {
 
       {/* ═══ ACTION ROWS ═══ */}
       <section>
-        {statusFilter === "proposed" ? (
-          proposedActions.length === 0 ? (
+        {statusFilter === "suggested" ? (
+          suggestedActions.length === 0 ? (
             <EmptyState
               headline="All clear"
-              explanation="No AI suggestions waiting for review. New proposals surface from meetings and emails."
+              explanation="No AI suggestions waiting for review. New suggestions surface from meetings and emails."
               benefit="Action items, captured without lifting a finger."
             />
           ) : (
             <div className={s.actionColumn}>
-              {proposedActions.map((action, i) => (
-                <SharedProposedActionRow
+              {suggestedActions.map((action, i) => (
+                <SharedSuggestedActionRow
                   key={action.id}
                   action={action}
                   onAccept={() => handleAccept(action.id)}
                   onReject={() => handleReject(action.id)}
-                  showBorder={i < proposedActions.length - 1}
+                  showBorder={i < suggestedActions.length - 1}
                   stripMarkdown={stripMarkdown}
                 />
               ))}

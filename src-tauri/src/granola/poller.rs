@@ -111,7 +111,7 @@ fn poll_once(
         // (which skipped any existing row), we must resume non-completed rows so
         // app restarts don't strand pending Granola transcripts forever.
         let sync_id = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
             match db
                 .get_quill_sync_state_by_source(&matched.meeting_id, "granola")
@@ -229,8 +229,15 @@ fn process_granola_document(
 
         // Mark as processing before leaving the DB lock. If the app exits mid-run,
         // the next poll can recover this row.
-        let _ =
-            crate::quill::sync::transition_state(&db, sync_id, "processing", None, None, None, None);
+        let _ = crate::quill::sync::transition_state(
+            &db,
+            sync_id,
+            "processing",
+            None,
+            None,
+            None,
+            None,
+        );
 
         (calendar_event, workspace, profile, ai_config)
     }; // DB lock dropped
@@ -249,7 +256,7 @@ fn process_granola_document(
     // Phase 3: Re-acquire lock to write results
     match result {
         Ok(tr) => {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
             let dest = tr.destination.as_deref().unwrap_or("");
             let processed_at = chrono::Utc::now().to_rfc3339();
@@ -291,8 +298,9 @@ fn process_granola_document(
                 );
             }
 
-            // Write extracted actions as proposed actions
+            // Write extracted actions as suggested actions
             let now = chrono::Utc::now().to_rfc3339();
+            let mut written = 0usize;
             for (i, action) in tr.actions.iter().enumerate() {
                 let action_account_id = action
                     .account
@@ -321,7 +329,7 @@ fn process_granola_document(
                     id: format!("granola-{}-{}", meeting_id, i),
                     title: action.title.clone(),
                     priority: action.priority.clone().unwrap_or_else(|| "P2".to_string()),
-                    status: "proposed".to_string(),
+                    status: "suggested".to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,
@@ -338,7 +346,24 @@ fn process_granola_document(
                     next_meeting_title: None,
                     next_meeting_start: None,
                 };
-                let _ = db.upsert_action_if_not_completed(&db_action);
+                match db.upsert_action_if_not_completed(&db_action) {
+                    Ok(()) => written += 1,
+                    Err(e) => {
+                        log::warn!(
+                            "Granola: failed to write action '{}': {}",
+                            db_action.title,
+                            e
+                        );
+                    }
+                }
+            }
+            if !tr.actions.is_empty() {
+                log::info!(
+                    "Granola: wrote {}/{} suggested actions for '{}'",
+                    written,
+                    tr.actions.len(),
+                    calendar_event.title
+                );
             }
 
             // Transition sync state to completed
@@ -481,7 +506,7 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
         };
 
         let already_synced = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
             db.get_quill_sync_state_by_source(&matched.meeting_id, "granola")
                 .map_err(|e| e.to_string())?
                 .is_some()
@@ -618,9 +643,8 @@ pub fn trigger_granola_sync_for_meeting(
             };
 
             // Run the sync pipeline
-            match process_granola_document(
-                state, &sync_id, meeting_id, &doc.content, content_kind,
-            ) {
+            match process_granola_document(state, &sync_id, meeting_id, &doc.content, content_kind)
+            {
                 Ok(_) => {
                     emit_transcript_processed(state, app_handle, meeting_id);
                     return Ok(ManualGranolaSyncResult {

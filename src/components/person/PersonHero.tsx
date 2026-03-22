@@ -130,15 +130,7 @@ export function PersonHero({
           {ledeTruncated && (
             <button
               onClick={() => setShowFullLede(true)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "0 0 0 4px",
-              }}
+              className={styles.readMore}
             >
               Read more
             </button>
@@ -148,7 +140,7 @@ export function PersonHero({
 
       {/* Subtitle: email, org, role (role is inline-editable) */}
       {(subtitleParts.length > 0 || (editRole != null && setEditRole)) && (
-        <div className={styles.subtitle} style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+        <div className={`${styles.subtitle} ${styles.subtitleRow}`}>
           {detail.email && <span>{detail.email}</span>}
           {detail.email && (orgLabel || editRole != null) && <span> — </span>}
           {orgLabel && <span>{orgLabel}</span>}
@@ -170,33 +162,21 @@ export function PersonHero({
 
       {/* Bio (from Clay/Gravatar enrichment — shown below lede when both exist) */}
       {detail.bio && (
-        <p style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: 15,
-          lineHeight: 1.6,
-          color: "var(--color-text-secondary)",
-          fontStyle: "italic",
-          marginTop: lede ? 8 : 0,
-        }}>
+        <p className={`${styles.bio} ${lede ? styles.bioWithLede : ""}`}>
           {detail.bio.length > LEDE_LIMIT ? detail.bio.slice(0, LEDE_LIMIT) + "…" : detail.bio}
         </p>
       )}
 
       {/* Social links + phone */}
       {(detail.linkedinUrl || detail.twitterHandle || detail.phone) && (
-        <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+        <div className={styles.socialLinks}>
           {detail.linkedinUrl && (
             <a
               href={detail.linkedinUrl}
               target="_blank"
               rel="noopener noreferrer"
               title={detail.linkedinUrl}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--color-larkspur)",
-                textDecoration: "none",
-              }}
+              className={styles.socialLink}
             >
               LinkedIn ↗
             </a>
@@ -207,12 +187,7 @@ export function PersonHero({
               target="_blank"
               rel="noopener noreferrer"
               title={`https://x.com/${detail.twitterHandle.replace(/^@/, "")}`}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--color-larkspur)",
-                textDecoration: "none",
-              }}
+              className={styles.socialLink}
             >
               @{detail.twitterHandle.replace(/^@/, "")} ↗
             </a>
@@ -221,12 +196,7 @@ export function PersonHero({
             <a
               href={`tel:${detail.phone}`}
               title={detail.phone}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--color-text-secondary)",
-                textDecoration: "none",
-              }}
+              className={`${styles.socialLink} ${styles.socialLinkMuted}`}
             >
               {detail.phone}
             </a>
@@ -235,7 +205,7 @@ export function PersonHero({
       )}
 
       {/* Badges row */}
-      <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>
+      <div className={`${styles.badges} ${lede ? styles.badgesWithTopMargin : ""}`}>
         <span className={`${styles.badge} ${relationshipClass[detail.relationship] ?? styles.relationshipUnknown}`}>
           {detail.relationship}
         </span>
@@ -247,7 +217,7 @@ export function PersonHero({
       </div>
 
       {/* Meta row */}
-      <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
+      <div className={`${styles.meta} ${styles.metaRow}`}>
         {onEnrich && (
           <FolioRefreshButton
             onClick={onEnrich}

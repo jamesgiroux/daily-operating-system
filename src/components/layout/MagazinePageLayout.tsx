@@ -23,6 +23,7 @@ import { useMagazineShellConfig, useFolioVolatile } from '@/hooks/useMagazineShe
 import { useChapterObserver } from '@/hooks/useChapterObserver';
 import { useTauriEvent } from '@/hooks/useTauriEvent';
 import { useAppState } from '@/hooks/useAppState';
+import type { BackgroundWorkState } from '@/hooks/useBackgroundStatus';
 
 export interface MagazinePageLayoutProps {
   /** Main page content */
@@ -39,6 +40,9 @@ export interface MagazinePageLayoutProps {
 
   /** Callback when "What's New" is clicked in the update banner */
   onWhatsNew?: () => void;
+
+  /** Background work state — drives FolioBar brand mark pulsing */
+  backgroundWork?: BackgroundWorkState;
 }
 
 export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
@@ -47,6 +51,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
   onNavigate,
   onNavHome,
   onWhatsNew,
+  backgroundWork,
 }) => {
   // Page-specific config registered via useRegisterMagazineShell()
   const pageConfig = useMagazineShellConfig();
@@ -145,6 +150,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
         onSearchClick={onFolioSearch}
         backLink={backLink}
         actions={combinedActions}
+        backgroundWork={backgroundWork}
       />
 
       {/* Fixed floating nav island — right margin */}

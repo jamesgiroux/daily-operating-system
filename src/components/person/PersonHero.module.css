@@ -1,23 +1,11 @@
 @import '../../styles/design-tokens.css';
 
 .hero {
-  position: relative;
-  padding-top: 80px;
-  padding-bottom: 48px;
-  min-height: 70vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  composes: hero from "../entity/EntityHeroBase.module.css";
 }
 
 .heroDate {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-bottom: 24px;
+  composes: heroDate from "../entity/EntityHeroBase.module.css";
 }
 
 .nameRow {
@@ -43,40 +31,19 @@
 }
 
 .name {
-  font-family: var(--font-serif);
-  font-size: 76px;
-  font-weight: 400;
-  letter-spacing: -0.025em;
-  line-height: 1.06;
-  color: var(--color-text-primary);
-  margin: 0;
+  composes: heroTitle from "../entity/EntityHeroBase.module.css";
 }
 
 .lede {
-  font-family: var(--font-serif);
-  font-size: 21px;
-  line-height: 1.65;
-  color: var(--color-text-secondary);
-  font-weight: 300;
-  font-style: italic;
-  max-width: 620px;
+  composes: heroLede from "../entity/EntityHeroBase.module.css";
 }
 
 .badges {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
+  composes: heroBadges from "../entity/EntityHeroBase.module.css";
 }
 
 .badge {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 3px 10px;
-  border-radius: 3px;
+  composes: heroBadge from "../entity/EntityHeroBase.module.css";
 }
 
 .relationshipExternal {
@@ -123,45 +90,19 @@
 }
 
 .archivedBanner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  margin-bottom: 24px;
-  border: 1px solid var(--color-rule-light);
-  border-radius: 4px;
-  background: var(--color-paper-linen);
+  composes: heroArchivedBanner from "../entity/EntityHeroBase.module.css";
 }
 
 .archivedText {
-  font-family: var(--font-sans);
-  font-size: 13px;
-  color: var(--color-text-secondary);
+  composes: heroArchivedText from "../entity/EntityHeroBase.module.css";
 }
 
 .meta {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  margin-top: 16px;
+  composes: heroMeta from "../entity/EntityHeroBase.module.css";
 }
 
 .metaButton {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--color-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  padding: 0;
-}
-
-.metaButton:hover {
-  color: var(--color-text-secondary);
+  composes: heroMetaButton from "../entity/EntityHeroBase.module.css";
 }
 
 .metaButtonEnriching {
@@ -178,4 +119,58 @@
 
 .metaButtonDanger:hover {
   color: var(--color-spice-chili);
+}
+
+.readMore {
+  composes: heroReadMore from "../entity/EntityHeroBase.module.css";
+}
+
+.subtitleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.bio {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.bioWithLede {
+  margin-top: 8px;
+}
+
+.socialLinks {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.socialLink {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-garden-larkspur);
+  text-decoration: none;
+}
+
+.socialLinkMuted {
+  color: var(--color-text-secondary);
+}
+
+.badgesWithTopMargin {
+  margin-top: 24px;
+}
+
+.metaRow {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 16px;
 }

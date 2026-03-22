@@ -292,7 +292,7 @@ fn fetch_categorized_actions(db: &crate::db::ActionDb) -> ActionResult {
             let status = status.unwrap_or_else(|| "open".to_string());
 
             // Check for waiting status
-            if status == "waiting" || status == "blocked" {
+            if status == "blocked" {
                 result.waiting_on.push(json!({
                     "id": id,
                     "title": title,

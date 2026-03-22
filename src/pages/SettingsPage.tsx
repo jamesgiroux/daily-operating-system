@@ -7,6 +7,7 @@ import { useAppState } from "@/hooks/useAppState";
 import { useClaudeStatus } from "@/hooks/useClaudeStatus";
 
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import StatusDot from "@/components/shared/StatusDot";
@@ -224,10 +225,7 @@ export default function SettingsPage() {
       )}
 
       {/* ═══ HERO ═══ */}
-      <section className={s.hero}>
-        <h1 className={s.heroTitle}>Settings</h1>
-        <div className={s.heroRule} />
-      </section>
+      <EditorialPageHeader title="Settings" scale="page" width="standard" />
 
       {/* ═══ YOU ═══ */}
       <section id="settings-you" className={s.section}>
