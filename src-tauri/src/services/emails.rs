@@ -244,13 +244,15 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
                     let Some(source_id) = action.source_id.clone() else {
                         continue;
                     };
-                    let (commitment_text, owner) = parse_email_commitment_context(action.context.as_deref());
+                    let (commitment_text, owner) =
+                        parse_email_commitment_context(action.context.as_deref());
                     tracked
                         .entry(source_id)
                         .or_default()
                         .push(TrackedEmailCommitment {
                             action_id: action.id.clone(),
-                            commitment_text: commitment_text.unwrap_or_else(|| action.title.clone()),
+                            commitment_text: commitment_text
+                                .unwrap_or_else(|| action.title.clone()),
                             action_title: action.title.clone(),
                             due_date: action.due_date.clone(),
                             owner,
@@ -546,7 +548,10 @@ pub fn compare_email_rank(a: &crate::types::Email, b: &crate::types::Email) -> O
 }
 
 fn build_email_commitment_context(owner: Option<&str>, original_commitment: &str) -> String {
-    let mut lines = vec![format!("Original commitment: {}", original_commitment.trim())];
+    let mut lines = vec![format!(
+        "Original commitment: {}",
+        original_commitment.trim()
+    )];
     if let Some(owner) = owner.filter(|value| !value.trim().is_empty()) {
         lines.push(format!("Owner: {}", owner.trim()));
     }
@@ -579,19 +584,25 @@ fn parse_email_commitment_context(context: Option<&str>) -> (Option<String>, Opt
 fn parse_email_datetime(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     chrono::DateTime::parse_from_rfc3339(value)
         .map(|dt| dt.with_timezone(&chrono::Utc))
-        .or_else(|_| chrono::DateTime::parse_from_rfc2822(value).map(|dt| dt.with_timezone(&chrono::Utc)))
         .or_else(|_| {
-            chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
-                .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
+            chrono::DateTime::parse_from_rfc2822(value).map(|dt| dt.with_timezone(&chrono::Utc))
         })
         .or_else(|_| {
-            chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
-                .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
+            chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S").map(|dt| {
+                chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+            })
+        })
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S").map(|dt| {
+                chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+            })
         })
         .ok()
 }
 
-pub fn detect_gone_quiet_accounts(db: &crate::db::ActionDb) -> Result<Vec<GoneQuietAccount>, String> {
+pub fn detect_gone_quiet_accounts(
+    db: &crate::db::ActionDb,
+) -> Result<Vec<GoneQuietAccount>, String> {
     let mut stmt = db
         .conn_ref()
         .prepare(
@@ -1121,7 +1132,10 @@ pub async fn unarchive_email(state: &AppState, email_id: &str) -> Result<(), Str
     Ok(())
 }
 
-async fn unarchive_emails_in_gmail(access_token: &str, message_ids: &[String]) -> Result<(), String> {
+async fn unarchive_emails_in_gmail(
+    access_token: &str,
+    message_ids: &[String],
+) -> Result<(), String> {
     if message_ids.is_empty() {
         return Ok(());
     }
@@ -1234,7 +1248,10 @@ pub fn promote_commitment_to_action(
         source_type: Some("email_commitment".to_string()),
         source_id: Some(email_id.to_string()),
         source_label: Some("Email commitment".to_string()),
-        context: Some(build_email_commitment_context(owner.as_deref(), commitment_text)),
+        context: Some(build_email_commitment_context(
+            owner.as_deref(),
+            commitment_text,
+        )),
         waiting_on: None,
         updated_at: now,
         person_id: None,

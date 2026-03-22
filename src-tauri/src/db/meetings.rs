@@ -1228,8 +1228,7 @@ impl ActionDb {
                 })
             },
         )?;
-        let actions_completed: Vec<_> = completed_rows
-            .collect::<Result<Vec<_>, _>>()?;
+        let actions_completed: Vec<_> = completed_rows.collect::<Result<Vec<_>, _>>()?;
 
         // Open actions for this entity
         let mut open_stmt = self.conn.prepare(
@@ -1296,16 +1295,16 @@ impl ActionDb {
                )
              ORDER BY p.name",
         )?;
-        let new_att_rows = new_att_stmt.query_map(
-            params![current_meeting_id, prev_meeting_id],
-            |row| row.get::<_, String>(0),
-        )?;
+        let new_att_rows = new_att_stmt
+            .query_map(params![current_meeting_id, prev_meeting_id], |row| {
+                row.get::<_, String>(0)
+            })?;
         let new_attendees: Vec<_> = new_att_rows.collect::<Result<Vec<_>, _>>()?;
 
         Ok(super::types::ContinuityThread {
             previous_meeting_date: Some(prev_meeting_date.to_string()),
             previous_meeting_title: None, // filled by caller
-            entity_name: None,           // filled by caller
+            entity_name: None,            // filled by caller
             actions_completed,
             actions_open,
             health_delta,

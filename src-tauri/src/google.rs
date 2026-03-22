@@ -282,10 +282,8 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                 // I428: Record successful calendar sync
                 if let Ok(db) = crate::db::ActionDb::open() {
-                    let _ = crate::connectivity::record_sync_success(
-                        db.conn_ref(),
-                        "google_calendar",
-                    );
+                    let _ =
+                        crate::connectivity::record_sync_success(db.conn_ref(), "google_calendar");
                 }
 
                 let _ = app_handle.emit("calendar-updated", ());
@@ -1110,10 +1108,8 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         }
                         // I428: Record successful gmail sync
                         if let Ok(db) = crate::db::ActionDb::open() {
-                            let _ = crate::connectivity::record_sync_success(
-                                db.conn_ref(),
-                                "gmail",
-                            );
+                            let _ =
+                                crate::connectivity::record_sync_success(db.conn_ref(), "gmail");
                         }
 
                         // Emit mechanical update immediately
@@ -1133,12 +1129,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                             // Serialize expensive poller enrichment/scoring work so wake/unlock
                             // paths don't compete with other heavy queues.
-                            let _heavy_work_permit = match state
-                                .permits
-                                .pty
-                                .acquire()
-                                .await
-                            {
+                            let _heavy_work_permit = match state.permits.pty.acquire().await {
                                 Ok(permit) => permit,
                                 Err(e) => {
                                     log::warn!(

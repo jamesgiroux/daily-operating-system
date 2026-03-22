@@ -860,11 +860,7 @@ pub async fn get_meeting_continuity_thread(
                 crate::entity::EntityType::Other => return Ok(None),
             };
             let prev = db
-                .get_previous_meeting_for_entity(
-                    &entity.id,
-                    entity_type_str,
-                    &meeting.start_time,
-                )
+                .get_previous_meeting_for_entity(&entity.id, entity_type_str, &meeting.start_time)
                 .map_err(|e| e.to_string())?;
             match prev {
                 None => Ok(Some(crate::db::types::ContinuityThread {
@@ -922,10 +918,8 @@ pub async fn get_prediction_scorecard(
             if captures.is_empty() {
                 return Ok(None);
             }
-            let prep_risks =
-                crate::intelligence::predictions::extract_prep_risks(frozen_json);
-            let prep_wins =
-                crate::intelligence::predictions::extract_prep_wins(frozen_json);
+            let prep_risks = crate::intelligence::predictions::extract_prep_risks(frozen_json);
+            let prep_wins = crate::intelligence::predictions::extract_prep_wins(frozen_json);
             if prep_risks.is_empty() && prep_wins.is_empty() {
                 return Ok(None);
             }
@@ -937,9 +931,7 @@ pub async fn get_prediction_scorecard(
                 &outcome_risks,
                 &outcome_wins,
             );
-            crate::intelligence::predictions::emit_prediction_feedback(
-                db, &scorecard, &meeting_id,
-            );
+            crate::intelligence::predictions::emit_prediction_feedback(db, &scorecard, &meeting_id);
             if scorecard.has_data {
                 Ok(Some(scorecard))
             } else {

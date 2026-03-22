@@ -109,7 +109,10 @@ pub fn log_db_size_at_startup() -> u64 {
     let display = format_file_size(size);
 
     if size >= 500_000_000 {
-        log::error!("DB size: {} -- exceeds 500MB threshold, consider purging", display);
+        log::error!(
+            "DB size: {} -- exceeds 500MB threshold, consider purging",
+            display
+        );
     } else if size >= 300_000_000 {
         log::warn!("DB size: {} -- approaching 500MB threshold", display);
     } else {
@@ -687,7 +690,10 @@ mod tests {
             .expect("seed recent signal");
 
         let purged = purge_aged_signals(&db, 180).expect("purge");
-        assert_eq!(purged, 1, "only the old non-correction signal should be purged");
+        assert_eq!(
+            purged, 1,
+            "only the old non-correction signal should be purged"
+        );
 
         // Verify user_correction is still there
         let correction_exists: bool = db
