@@ -47,7 +47,7 @@ export const PHASE3_SURFACE_CONTRACTS: SurfaceContract[] = [
     commands: [
       {
         command: "get_actions_from_db",
-        requiredPaths: ["pending", "suggested", "completed", "pending.0.id", "pending.0.title"],
+        requiredPaths: ["0.id", "0.title", "0.priority", "0.status"],
       },
       {
         command: "get_suggested_actions",

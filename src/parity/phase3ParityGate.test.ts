@@ -193,25 +193,25 @@ describe("Phase 3 parity gate", () => {
   it("requires actions/proposed-actions visibility with production-shaped data", () => {
     for (const dataset of ["mock", "production"] as const) {
       const fixture = loadFixture(dataset, "actions");
-      const dbActions = fixture.commands.get_actions_from_db as {
-        pending?: Array<{ id?: string; title?: string }>;
-        proposed?: Array<{ id?: string; title?: string; priority?: string; status?: string }>;
-      };
-      const proposedActions = fixture.commands.get_proposed_actions as Array<{
+      const dbActions = fixture.commands.get_actions_from_db as Array<{
+        id?: string;
+        title?: string;
+        priority?: string;
+        status?: string;
+      }>;
+      const suggestedActions = fixture.commands.get_suggested_actions as Array<{
         id?: string;
         title?: string;
         priority?: string;
         status?: string;
       }>;
 
-      expect(Array.isArray(dbActions.pending)).toBe(true);
-      expect(Array.isArray(dbActions.proposed)).toBe(true);
-      expect(Array.isArray(proposedActions)).toBe(true);
-      expect((dbActions.pending ?? []).length, `${dataset}: pending actions empty`).toBeGreaterThan(0);
-      expect((dbActions.proposed ?? []).length, `${dataset}: proposed actions empty`).toBeGreaterThan(0);
-      expect(proposedActions.length, `${dataset}: get_proposed_actions empty`).toBeGreaterThan(0);
+      expect(Array.isArray(dbActions)).toBe(true);
+      expect(Array.isArray(suggestedActions)).toBe(true);
+      expect(dbActions.length, `${dataset}: get_actions_from_db empty`).toBeGreaterThan(0);
+      expect(suggestedActions.length, `${dataset}: get_suggested_actions empty`).toBeGreaterThan(0);
 
-      for (const row of [...(dbActions.proposed ?? []), ...proposedActions]) {
+      for (const row of [...dbActions, ...suggestedActions]) {
         expect(typeof row.id).toBe("string");
         expect(typeof row.title).toBe("string");
         expect(typeof row.priority).toBe("string");

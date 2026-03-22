@@ -3316,6 +3316,9 @@ fn build_gong_pre_context(db: Option<&ActionDb>, meeting: &CalendarEvent) -> Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::test_db;
+    use crate::db::types::{DbAccount, DbMeeting, DbPerson, DbProject};
+    use crate::db::AccountType;
     use crate::types::MeetingType;
     use chrono::Utc;
     use std::path::PathBuf;
@@ -3331,6 +3334,117 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+        }
+    }
+
+    fn parse_utc(ts: &str) -> chrono::DateTime<Utc> {
+        chrono::DateTime::parse_from_rfc3339(ts)
+            .expect("valid rfc3339 timestamp")
+            .with_timezone(&Utc)
+    }
+
+    fn sample_db_meeting_row(
+        id: &str,
+        title: &str,
+        meeting_type: &str,
+        start_time: &str,
+        prep_frozen_json: Option<&str>,
+    ) -> DbMeeting {
+        DbMeeting {
+            id: id.to_string(),
+            title: title.to_string(),
+            meeting_type: meeting_type.to_string(),
+            start_time: start_time.to_string(),
+            end_time: Some(start_time.to_string()),
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: start_time.to_string(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: prep_frozen_json.map(str::to_string),
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
+        }
+    }
+
+    fn sample_account_row(id: &str, name: &str) -> DbAccount {
+        DbAccount {
+            id: id.to_string(),
+            name: name.to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            account_type: AccountType::Customer,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
+            metadata: None,
+        }
+    }
+
+    fn sample_project_row(id: &str, name: &str) -> DbProject {
+        DbProject {
+            id: id.to_string(),
+            name: name.to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: None,
+            parent_id: None,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
+            metadata: None,
+        }
+    }
+
+    fn sample_person_row(id: &str, email: &str, name: &str) -> DbPerson {
+        DbPerson {
+            id: id.to_string(),
+            email: email.to_string(),
+            name: name.to_string(),
+            organization: Some("Acme".to_string()),
+            role: None,
+            relationship: "external".to_string(),
+            notes: None,
+            tracker_path: None,
+            last_seen: None,
+            first_seen: Some(Utc::now().to_rfc3339()),
+            meeting_count: 0,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: None,
         }
     }
 
@@ -3499,6 +3613,314 @@ mod tests {
             "weekly-sync-team-alpha"
         );
         assert_eq!(slugify("simple"), "simple");
+    }
+
+    #[test]
+    fn test_build_prediction_scorecard_markdown_returns_none_without_prep_or_captures() {
+        let db = test_db();
+        db.upsert_account(&sample_account_row("acc-scorecard", "Acme Corp"))
+            .expect("seed account");
+
+        let meeting_row = sample_db_meeting_row(
+            "mtg-no-score",
+            "Acme QBR",
+            "customer",
+            "2026-03-22T15:00:00Z",
+            None,
+        );
+        db.upsert_meeting(&meeting_row).expect("upsert meeting row");
+
+        let meeting = CalendarEvent {
+            id: "mtg-no-score".to_string(),
+            title: "Acme QBR".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::Customer,
+            account: Some("Acme Corp".to_string()),
+            attendees: vec![],
+            is_all_day: false,
+            linked_entities: None,
+        };
+
+        assert!(build_prediction_scorecard_markdown(&meeting, &db).is_none());
+    }
+
+    #[test]
+    fn test_build_prediction_scorecard_markdown_generates_confirmed_and_not_raised_items() {
+        let db = test_db();
+        db.upsert_account(&sample_account_row("acc-scorecard", "Acme Corp"))
+            .expect("seed account");
+
+        let prep_frozen_json = r#"{
+            "prep": {
+                "risks": [
+                    "Security review delays signature",
+                    "Budget approval stalls renewal"
+                ],
+                "recentWins": [
+                    "Champion expands rollout"
+                ]
+            }
+        }"#;
+        let meeting_row = sample_db_meeting_row(
+            "mtg-score",
+            "Acme QBR",
+            "customer",
+            "2026-03-22T15:00:00Z",
+            Some(prep_frozen_json),
+        );
+        db.upsert_meeting(&meeting_row).expect("upsert meeting row");
+        db.insert_capture_enriched(
+            "mtg-score",
+            "Acme QBR",
+            Some("acc-scorecard"),
+            "risk",
+            "Security review delays signature this week",
+            None,
+            Some("red"),
+            Some("Procurement is blocked on security."),
+        )
+        .expect("insert confirmed risk capture");
+
+        let meeting = CalendarEvent {
+            id: "mtg-score".to_string(),
+            title: "Acme QBR".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::Customer,
+            account: Some("Acme Corp".to_string()),
+            attendees: vec![],
+            is_all_day: false,
+            linked_entities: None,
+        };
+
+        let markdown = build_prediction_scorecard_markdown(&meeting, &db)
+            .expect("prediction scorecard markdown");
+        assert!(markdown.contains("## What We Predicted vs What Happened"));
+        assert!(markdown.contains("✓ Security review delays signature"));
+        assert!(markdown.contains("✗ Budget approval stalls renewal"));
+    }
+
+    #[test]
+    fn test_generate_meeting_record_markdown_includes_required_sections_when_data_exists() {
+        let db = test_db();
+        let meeting = CalendarEvent {
+            id: "mtg-record".to_string(),
+            title: "Acme QBR".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::Customer,
+            account: Some("Acme Corp".to_string()),
+            attendees: vec!["Sarah Chen".to_string(), "Alex Torres".to_string()],
+            is_all_day: false,
+            linked_entities: Some(vec![crate::types::LinkedEntity {
+                id: "acc-record".to_string(),
+                name: "Acme Corp".to_string(),
+                entity_type: "account".to_string(),
+            }]),
+        };
+        let wins = vec!["Expansion budget approved".to_string()];
+        let risks = vec!["Legal review is blocking procurement".to_string()];
+        let decisions = vec!["Pilot expands to APAC in April".to_string()];
+        let actions = vec![crate::types::CapturedAction {
+            title: "Send final pricing sheet".to_string(),
+            owner: Some("alex".to_string()),
+            due_date: Some("2026-03-29".to_string()),
+            priority: Some("P1".to_string()),
+            context: Some("Requested by finance".to_string()),
+            account: Some("Acme Corp".to_string()),
+        }];
+        let commitments = vec![crate::types::TranscriptCommitment {
+            commitment: "Deliver procurement packet".to_string(),
+            target_date: Some("2026-03-31".to_string()),
+            owned_by: Some("us".to_string()),
+            success_criteria: Some("Finance confirms pricing package is complete".to_string()),
+        }];
+        let interaction_dynamics = crate::types::InteractionDynamics {
+            talk_balance: Some("62% customer / 38% internal".to_string()),
+            speaker_sentiment: vec![crate::types::SpeakerSentiment {
+                name: "Sarah Chen".to_string(),
+                sentiment: "positive".to_string(),
+                evidence: Some("Proactively offered rollout support.".to_string()),
+            }],
+            engagement_signals: Some(crate::types::EngagementSignals {
+                question_density: Some("high".to_string()),
+                decision_maker_active: Some("yes".to_string()),
+                forward_looking: Some("strong".to_string()),
+                monologue_risk: Some(false),
+            }),
+            competitor_mentions: vec![crate::types::CompetitorMention {
+                competitor: "Competitor X".to_string(),
+                context: "Mentioned during evaluation recap".to_string(),
+            }],
+            escalation_signals: vec![crate::types::EscalationSignal {
+                quote: "We need this signed before month-end.".to_string(),
+                speaker: Some("Sarah Chen".to_string()),
+            }],
+        };
+        let champion_health = crate::types::ChampionHealth {
+            champion_name: "Sarah Chen".to_string(),
+            champion_status: "strong".to_string(),
+            champion_evidence: Some("She rallied finance and procurement.".to_string()),
+            champion_risk: Some("Needs legal support this week.".to_string()),
+        };
+
+        let markdown = generate_meeting_record_markdown(&MeetingRecordData {
+            meeting: &meeting,
+            summary: "Acme validated the rollout path and aligned on next steps.",
+            wins: &wins,
+            risks: &risks,
+            decisions: &decisions,
+            actions: &actions,
+            commitments: &commitments,
+            interaction_dynamics: Some(&interaction_dynamics),
+            champion_health: Some(&champion_health),
+            db: &db,
+        });
+
+        assert!(markdown.contains("meeting_id: \"mtg-record\""));
+        assert!(markdown.contains("entity: \"Acme Corp\""));
+        assert!(markdown.contains("## Summary"));
+        assert!(markdown.contains("## Key Findings"));
+        assert!(markdown.contains("## Engagement"));
+        assert!(markdown.contains("## Champion Health"));
+        assert!(markdown.contains("## Commitments"));
+        assert!(markdown.contains("## Actions"));
+        assert!(markdown.contains("## Attendees"));
+        assert!(markdown.contains("Expansion budget approved"));
+        assert!(markdown.contains("Send final pricing sheet @alex (due: 2026-03-29)"));
+    }
+
+    #[test]
+    fn test_generate_meeting_record_markdown_omits_empty_sections() {
+        let db = test_db();
+        let meeting = test_meeting();
+        let wins: Vec<String> = Vec::new();
+        let risks: Vec<String> = Vec::new();
+        let decisions: Vec<String> = Vec::new();
+        let actions: Vec<crate::types::CapturedAction> = Vec::new();
+        let commitments: Vec<crate::types::TranscriptCommitment> = Vec::new();
+
+        let markdown = generate_meeting_record_markdown(&MeetingRecordData {
+            meeting: &meeting,
+            summary: "",
+            wins: &wins,
+            risks: &risks,
+            decisions: &decisions,
+            actions: &actions,
+            commitments: &commitments,
+            interaction_dynamics: None,
+            champion_health: None,
+            db: &db,
+        });
+
+        assert!(markdown.contains("*No summary available.*"));
+        assert!(!markdown.contains("## Key Findings"));
+        assert!(!markdown.contains("## Engagement"));
+        assert!(!markdown.contains("## Champion Health"));
+        assert!(!markdown.contains("## Commitments"));
+        assert!(!markdown.contains("## Actions"));
+        assert!(markdown.contains("## Attendees"));
+    }
+
+    #[test]
+    fn test_compute_meeting_record_path_prefers_account_project_person_then_archive() {
+        let db = test_db();
+        db.upsert_account(&sample_account_row("acc-route", "Acme Corp"))
+            .expect("seed account");
+        db.upsert_project(&sample_project_row("proj-route", "Platform Migration"))
+            .expect("seed project");
+        db.upsert_person(&sample_person_row("person-route", "pat@acme.com", "Pat Kim"))
+            .expect("seed person");
+
+        let workspace = Path::new("/workspace");
+
+        let account_meeting = CalendarEvent {
+            id: "mtg-account-route".to_string(),
+            title: "Acme QBR".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::Customer,
+            account: Some("Acme Corp".to_string()),
+            attendees: vec![],
+            is_all_day: false,
+            linked_entities: Some(vec![crate::types::LinkedEntity {
+                id: "proj-route".to_string(),
+                name: "Platform Migration".to_string(),
+                entity_type: "project".to_string(),
+            }]),
+        };
+        let project_meeting = CalendarEvent {
+            id: "mtg-project-route".to_string(),
+            title: "Project Steering".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::Customer,
+            account: None,
+            attendees: vec![],
+            is_all_day: false,
+            linked_entities: Some(vec![crate::types::LinkedEntity {
+                id: "proj-route".to_string(),
+                name: "Platform Migration".to_string(),
+                entity_type: "project".to_string(),
+            }]),
+        };
+        let person_meeting = CalendarEvent {
+            id: "mtg-person-route".to_string(),
+            title: "Pat 1:1".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::OneOnOne,
+            account: None,
+            attendees: vec![],
+            is_all_day: false,
+            linked_entities: Some(vec![crate::types::LinkedEntity {
+                id: "person-route".to_string(),
+                name: "Pat Kim".to_string(),
+                entity_type: "person".to_string(),
+            }]),
+        };
+        let archive_meeting = CalendarEvent {
+            id: "mtg-archive-route".to_string(),
+            title: "Internal Sync".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::Internal,
+            account: None,
+            attendees: vec![],
+            is_all_day: false,
+            linked_entities: None,
+        };
+
+        let account_path = compute_meeting_record_path(workspace, &account_meeting, &db);
+        let project_path = compute_meeting_record_path(workspace, &project_meeting, &db);
+        let person_path = compute_meeting_record_path(workspace, &person_meeting, &db);
+        let archive_path = compute_meeting_record_path(workspace, &archive_meeting, &db);
+
+        assert_eq!(
+            account_path,
+            PathBuf::from(
+                "/workspace/Accounts/Acme-Corp/Meeting-Records/2026-03-22-acme-qbr-record.md"
+            )
+        );
+        assert_eq!(
+            project_path,
+            PathBuf::from(
+                "/workspace/Projects/Platform-Migration/Meeting-Records/2026-03-22-project-steering-record.md"
+            )
+        );
+        assert_eq!(
+            person_path,
+            PathBuf::from(
+                "/workspace/People/Pat-Kim/Meeting-Records/2026-03-22-pat-1-1-record.md"
+            )
+        );
+        assert_eq!(
+            archive_path,
+            PathBuf::from(
+                "/workspace/_archive/2026-03-22/2026-03-22-internal-sync-record.md"
+            )
+        );
     }
 
     // =========================================================================

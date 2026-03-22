@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
@@ -10,6 +10,14 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+  },
+  test: {
+    setupFiles: "./src/test/setup.ts",
+    exclude: [
+      ...configDefaults.exclude,
+      ".claude/**",
+      ".context/**",
+    ],
   },
   // Prevent vite from obscuring rust errors
   clearScreen: false,
