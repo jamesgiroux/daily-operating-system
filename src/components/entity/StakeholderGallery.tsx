@@ -294,9 +294,8 @@ export function StakeholderGallery({
   const hasMoreStakeholders = stakeholders.length > STAKEHOLDER_LIMIT && !expandedGrid;
 
   // ── Coverage analysis ──
-  const totalKnown = stakeholders.length + linkedPeople.filter(
-    (p) => !stakeholders.some((s) => s.name.toLowerCase() === p.name.toLowerCase()),
-  ).length;
+  // Only count intelligence stakeholders (the cards shown), not all linked people
+  const totalKnown = stakeholders.length;
   const engagedCount = stakeholders.filter(
     (s) => s.engagement && s.engagement !== "unknown" && s.engagement !== "none",
   ).length;
@@ -713,7 +712,7 @@ export function StakeholderGallery({
       {totalKnown > 0 && (
         <div className={css.coverageStrip}>
           <span className={css.coverageNumbers}>{engagedCount} of {totalKnown}</span>
-          <span className={css.coverageLabel}>known stakeholders with defined roles</span>
+          <span className={css.coverageLabel}>stakeholders with defined engagement</span>
         </div>
       )}
 
