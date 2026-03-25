@@ -134,11 +134,23 @@ pub fn enrich_file(
     };
 
     let enrich_db = crate::db::ActionDb::open().ok();
+    let inferred_tracker_path = if entity_tracker_path.is_none() {
+        super::router::infer_entity_tracker_path(
+            workspace,
+            filename,
+            &content,
+            parsed.account.as_deref(),
+            parsed.business_unit.as_deref(),
+            enrich_db.as_ref(),
+        )
+    } else {
+        None
+    };
     let route_outcome = resolve_destination(
         &classification,
         workspace,
         filename,
-        entity_tracker_path,
+        entity_tracker_path.or(inferred_tracker_path.as_deref()),
         enrich_db.as_ref(),
     );
 
@@ -165,6 +177,8 @@ pub fn enrich_file(
         }
         RouteOutcome::Destination(dest) => match move_file(&file_path, &dest) {
             Ok(route_result) => {
+                let account_path =
+                    account_path_from_destination(workspace, &route_result.destination);
                 // Write enriched companion .md for non-markdown files
                 if is_non_md {
                     let companion_path =
@@ -174,13 +188,30 @@ pub fn enrich_file(
                         format,
                         &content,
                         &file_type,
-                        account.as_deref(),
+                        account_path.as_deref().or(account.as_deref()),
                         &summary,
                     );
                     if let Err(e) =
                         crate::util::atomic_write_str(&companion_path, &companion_content)
                     {
                         log::warn!("Failed to write companion .md for '{}': {}", filename, e);
+                    }
+                } else if !super::extract::has_yaml_frontmatter(&content) {
+                    let enriched_content = super::extract::build_enriched_markdown_with_frontmatter(
+                        filename,
+                        &content,
+                        &file_type,
+                        account_path.as_deref(),
+                        &summary,
+                    );
+                    if let Err(e) =
+                        crate::util::atomic_write_str(&route_result.destination, &enriched_content)
+                    {
+                        log::warn!(
+                            "Failed to write enriched frontmatter for '{}': {}",
+                            filename,
+                            e
+                        );
                     }
                 }
                 // I474: Match meeting_notes to historical meetings
@@ -378,6 +409,8 @@ fn build_enrichment_prompt(
     format!(
         r#"{preamble}{user_fragment}Analyze the following inbox file.
 
+Trust explicit hints from the filename and any YAML frontmatter before making weaker inferences from the body. If the file clearly belongs to a business unit under an account, keep ACCOUNT at the top-level account and set BUSINESS_UNIT to the child unit.
+
 Filename: {filename}
 Content:
 {truncated}
@@ -385,7 +418,8 @@ Content:
 Respond in exactly this format:
 
 FILE_TYPE: <one of: meeting_notes, account_update, action_items, meeting_context, general>
-ACCOUNT: <account name if relevant, or NONE>
+ACCOUNT: <top-level account name if relevant, or NONE>
+BUSINESS_UNIT: <business unit under the account if relevant, or NONE>
 MEETING: <meeting name if relevant, or NONE>
 {summary_instruction}
 ACTIONS:
@@ -560,6 +594,7 @@ fn detect_transcript(filename: &str, content: &str) -> bool {
 pub struct ParsedEnrichment {
     pub file_type: String,
     pub account: Option<String>,
+    pub business_unit: Option<String>,
     pub meeting_name: Option<String>,
     pub summary: String,
     /// Discussion highlights from transcript summarization (I31).
@@ -576,6 +611,7 @@ pub struct ParsedEnrichment {
 pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
     let mut file_type = "general".to_string();
     let mut account = None;
+    let mut business_unit = None;
     let mut meeting_name = None;
     let mut summary = String::new();
     let mut discussion = Vec::new();
@@ -610,6 +646,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
                 || line == "DISCUSSION:"
                 || line.starts_with("FILE_TYPE:")
                 || line.starts_with("ACCOUNT:")
+                || line.starts_with("BUSINESS_UNIT:")
                 || line.starts_with("SUMMARY:")
                 || line.starts_with("ANALYSIS:")
                 || line.starts_with("MEETING:");
@@ -624,6 +661,11 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             let val = rest.trim();
             if val != "NONE" && !val.is_empty() {
                 account = Some(val.to_string());
+            }
+        } else if let Some(rest) = line.strip_prefix("BUSINESS_UNIT:") {
+            let val = rest.trim();
+            if val != "NONE" && !val.is_empty() {
+                business_unit = Some(val.to_string());
             }
         } else if let Some(rest) = line.strip_prefix("MEETING:") {
             let val = rest.trim();
@@ -727,6 +769,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
     ParsedEnrichment {
         file_type,
         account,
+        business_unit,
         meeting_name,
         summary,
         discussion,
@@ -736,6 +779,20 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         risks,
         decisions,
     }
+}
+
+fn account_path_from_destination(workspace: &Path, destination: &Path) -> Option<String> {
+    let relative = destination.strip_prefix(workspace).ok()?;
+    let parts: Vec<String> = relative
+        .iter()
+        .map(|part| part.to_string_lossy().to_string())
+        .collect();
+
+    if parts.len() < 4 || parts.first().map(String::as_str) != Some("Accounts") {
+        return None;
+    }
+
+    Some(parts[1..parts.len().saturating_sub(2)].join(" / "))
 }
 
 /// Extract actions from AI-generated action text and sync to SQLite.
@@ -830,6 +887,7 @@ mod tests {
         let output = "\
 FILE_TYPE: account_update
 ACCOUNT: Acme Corp
+BUSINESS_UNIT: Enterprise
 MEETING: NONE
 SUMMARY: Quarterly review notes
 ACTIONS:
@@ -847,6 +905,7 @@ END_RISKS";
 
         assert_eq!(parsed.file_type, "account_update");
         assert_eq!(parsed.account, Some("Acme Corp".to_string()));
+        assert_eq!(parsed.business_unit, Some("Enterprise".to_string()));
         assert!(parsed.actions_text.is_some());
         assert_eq!(parsed.wins.len(), 2);
         assert_eq!(parsed.wins[0], "Expanded deployment to 3 new teams");
@@ -1003,6 +1062,7 @@ Next renewal: March 2026
             None,
             None,
         );
+        assert!(prompt.contains("BUSINESS_UNIT:"));
         assert!(prompt.contains("DISCUSSION:"));
         assert!(prompt.contains("END_DISCUSSION"));
         assert!(prompt.contains("2-3 sentence executive summary"));
