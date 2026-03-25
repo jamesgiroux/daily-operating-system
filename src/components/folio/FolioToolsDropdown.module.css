@@ -1,0 +1,68 @@
+/* FolioToolsDropdown — extracted from AccountDetailEditorial */
+
+.button {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.wrapper {
+  position: relative;
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: 6px;
+  box-shadow: var(--shadow-xl);
+  min-width: 180px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-desk-charcoal);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-paper-linen);
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--color-paper-linen);
+}
+
+.item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.item:last-child {
+  border-bottom: none;
+}
+
+.separator {
+  height: 1px;
+  background: var(--color-rule-light);
+  margin: 0;
+}
