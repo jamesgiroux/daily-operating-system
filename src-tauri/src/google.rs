@@ -1050,37 +1050,41 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
     // since last session. ID-only fetch, no content, fast (~1-2s).
     if !crate::db::is_dev_db_mode() {
         match google_api::get_valid_access_token().await {
-            Ok(token) => {
-                match google_api::gmail::fetch_inbox_message_ids(&token, 100).await {
-                    Ok(inbox_ids) => {
-                        if let Ok(db) = crate::db::ActionDb::open() {
-                            let active = db.get_all_active_emails().unwrap_or_default();
-                            let db_ids: std::collections::HashSet<String> =
-                                active.iter().map(|e| e.email_id.clone()).collect();
-                            let vanished: Vec<String> =
-                                db_ids.difference(&inbox_ids).cloned().collect();
-                            if !vanished.is_empty() {
-                                match db.mark_emails_resolved(&vanished) {
-                                    Ok(count) if count > 0 => {
-                                        log::info!(
+            Ok(token) => match google_api::gmail::fetch_inbox_message_ids(&token, 100).await {
+                Ok(inbox_ids) => {
+                    if let Ok(db) = crate::db::ActionDb::open() {
+                        let active = db.get_all_active_emails().unwrap_or_default();
+                        let db_ids: std::collections::HashSet<String> =
+                            active.iter().map(|e| e.email_id.clone()).collect();
+                        let vanished: Vec<String> =
+                            db_ids.difference(&inbox_ids).cloned().collect();
+                        if !vanished.is_empty() {
+                            match db.mark_emails_resolved(&vanished) {
+                                Ok(count) if count > 0 => {
+                                    log::info!(
                                             "Email startup reconcile: marked {} archived emails resolved",
                                             count
                                         );
-                                        let _ = app_handle.emit("emails-updated", ());
-                                    }
-                                    Err(e) => {
-                                        log::warn!("Email startup reconcile: failed to mark resolved: {}", e);
-                                    }
-                                    _ => {}
+                                    let _ = app_handle.emit("emails-updated", ());
                                 }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Email startup reconcile: failed to mark resolved: {}",
+                                        e
+                                    );
+                                }
+                                _ => {}
                             }
                         }
                     }
-                    Err(e) => {
-                        log::debug!("Email startup reconcile: skipping — Gmail fetch failed: {}", e);
-                    }
                 }
-            }
+                Err(e) => {
+                    log::debug!(
+                        "Email startup reconcile: skipping — Gmail fetch failed: {}",
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 log::debug!("Email startup reconcile: skipping — no auth token: {}", e);
             }

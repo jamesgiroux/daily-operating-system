@@ -3830,8 +3830,12 @@ mod tests {
             .expect("seed account");
         db.upsert_project(&sample_project_row("proj-route", "Platform Migration"))
             .expect("seed project");
-        db.upsert_person(&sample_person_row("person-route", "pat@acme.com", "Pat Kim"))
-            .expect("seed person");
+        db.upsert_person(&sample_person_row(
+            "person-route",
+            "pat@acme.com",
+            "Pat Kim",
+        ))
+        .expect("seed person");
 
         let workspace = Path::new("/workspace");
 
@@ -3911,15 +3915,11 @@ mod tests {
         );
         assert_eq!(
             person_path,
-            PathBuf::from(
-                "/workspace/People/Pat-Kim/Meeting-Records/2026-03-22-pat-1-1-record.md"
-            )
+            PathBuf::from("/workspace/People/Pat-Kim/Meeting-Records/2026-03-22-pat-1-1-record.md")
         );
         assert_eq!(
             archive_path,
-            PathBuf::from(
-                "/workspace/_archive/2026-03-22/2026-03-22-internal-sync-record.md"
-            )
+            PathBuf::from("/workspace/_archive/2026-03-22/2026-03-22-internal-sync-record.md")
         );
     }
 
