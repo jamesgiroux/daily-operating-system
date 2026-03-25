@@ -10,6 +10,22 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.0.4 — Your edits, your data
+
+This release is about trust. When you edit something in DailyOS, it should stay edited. When you open the app, your data should be there. When you click a button, it should do what it says.
+
+**Your edits survive account refreshes.** Previously, editing a stakeholder role, a risk, or a recent win could get silently overwritten the next time an account refreshed. The system now recognizes fields you've touched and protects them — your changes stick, period.
+
+**Your briefing loads instantly.** Emails on the daily briefing used to show up blank for the first 10-15 seconds while waiting for a background refresh. Now your cached emails appear immediately when you open the app, and fresh data fills in behind the scenes.
+
+**Tools and Reports work where they should.** The toolbar dropdowns on account pages were appearing on the wrong pages and failing when clicked. We rebuilt them from scratch — each dropdown now manages its own state, and stale actions from a previous page can never bleed through to a new one.
+
+**Stakeholder counts tell the truth.** The "X of Y stakeholders" stat was inflated by counting every linked contact, not just the people who actually appear in your account's stakeholder view. Fixed to count only stakeholders with defined engagement.
+
+**Business unit emails route correctly.** Emails for accounts with business units now route to the right parent or child account during processing.
+
+---
+
 ## v1.0.3 — The Meeting Record
 
 After a meeting, the page used to show your prep with outcomes stacked on top. Now it becomes something you'd actually send to your VP.
