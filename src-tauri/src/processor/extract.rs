@@ -454,6 +454,78 @@ pub fn build_enriched_companion_md(
     )
 }
 
+/// Return true when markdown content already starts with YAML frontmatter.
+pub fn has_yaml_frontmatter(content: &str) -> bool {
+    let trimmed = content.trim_start_matches('\u{feff}');
+    trimmed.starts_with("---\n") || trimmed.starts_with("---\r\n")
+}
+
+/// Generate enriched markdown content using the workspace's established
+/// frontmatter conventions for account artifacts.
+pub fn build_enriched_markdown_with_frontmatter(
+    source_filename: &str,
+    content: &str,
+    classification: &str,
+    account_path: Option<&str>,
+    summary: &str,
+) -> String {
+    let mut frontmatter = String::from("---\n");
+    if let Some(account_value) = account_path.filter(|value| !value.is_empty()) {
+        frontmatter.push_str("area: Accounts\n");
+        frontmatter.push_str(&format!("account: {}\n", yaml_quote(account_value)));
+
+        let segments: Vec<&str> = account_value
+            .split('/')
+            .map(|part| part.trim())
+            .filter(|part| !part.is_empty())
+            .collect();
+        if segments.len() > 1 {
+            frontmatter.push_str(&format!(
+                "business_unit: {}\n",
+                yaml_quote(&segments[1..].join(" / "))
+            ));
+        }
+    }
+
+    frontmatter.push_str(&format!("doc_type: {}\n", yaml_quote(classification)));
+    if let Some(date) = extract_date_from_filename(source_filename) {
+        frontmatter.push_str(&format!("date: {date}\n"));
+    }
+    frontmatter.push_str("privacy: internal\n");
+    frontmatter.push_str(&format!("source: {}\n", yaml_quote(source_filename)));
+    frontmatter.push_str("created_by_agent: inbox-processing\n");
+    if !summary.is_empty() {
+        frontmatter.push_str(&format!("summary: {}\n", yaml_quote(summary)));
+    }
+    frontmatter.push_str("---\n\n");
+    frontmatter.push_str(content.trim_start_matches('\u{feff}'));
+
+    frontmatter
+}
+
+fn yaml_quote(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+fn extract_date_from_filename(filename: &str) -> Option<&str> {
+    let bytes = filename.as_bytes();
+    if bytes.len() < 10 {
+        return None;
+    }
+
+    let candidate = &filename[..10];
+    let valid = bytes[..10].iter().enumerate().all(|(idx, b)| match idx {
+        4 | 7 => *b == b'-',
+        _ => b.is_ascii_digit(),
+    });
+
+    if valid {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
 /// Compute the companion .md path for a given file path.
 /// e.g., /workspace/_archive/2026-02-08/report.pdf → /workspace/_archive/2026-02-08/report.md
 pub fn companion_md_path(original_path: &Path) -> std::path::PathBuf {
@@ -634,6 +706,31 @@ mod tests {
         assert!(md.contains("classification: meeting_notes"));
         assert!(md.contains("account: Acme Corp"));
         assert!(md.contains("summary: Q4 review notes"));
+    }
+
+    #[test]
+    fn test_build_enriched_markdown_with_frontmatter() {
+        let md = build_enriched_markdown_with_frontmatter(
+            "2026-03-24-acmecorp-onsite.md",
+            "# Notes",
+            "meeting_notes",
+            Some("Crestview Media / Corporate-Services-B2B"),
+            "Summary here",
+        );
+
+        assert!(md.starts_with("---\narea: Accounts\n"));
+        assert!(md.contains("account: \"Crestview Media / Corporate-Services-B2B\""));
+        assert!(md.contains("business_unit: \"Corporate-Services-B2B\""));
+        assert!(md.contains("doc_type: \"meeting_notes\""));
+        assert!(md.contains("date: 2026-03-24"));
+        assert!(md.contains("created_by_agent: inbox-processing"));
+        assert!(md.ends_with("# Notes"));
+    }
+
+    #[test]
+    fn test_has_yaml_frontmatter() {
+        assert!(has_yaml_frontmatter("---\nkey: value\n---\n\nbody"));
+        assert!(!has_yaml_frontmatter("# Heading\n\nbody"));
     }
 
     #[test]
