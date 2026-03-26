@@ -678,11 +678,11 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
             ],
         ),
     ] {
-        for (person_id, email) in attendees {
+        for (person_id, _email) in attendees {
             conn.execute(
-                "INSERT OR IGNORE INTO meeting_attendees (meeting_id, person_id, email) \
-                 VALUES (?1, ?2, ?3)",
-                rusqlite::params![meeting_id, person_id, email],
+                "INSERT OR IGNORE INTO meeting_attendees (meeting_id, person_id) \
+                 VALUES (?1, ?2)",
+                rusqlite::params![meeting_id, person_id],
             )
             .ok();
         }
