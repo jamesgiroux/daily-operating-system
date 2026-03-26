@@ -5,6 +5,22 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.0.4] — 2026-03-25
+
+### Fixed
+
+- **FolioBar dropdown bleed across pages** — Tools and Reports dropdowns appeared on report pages, list pages, and other pages where they shouldn't, with broken click handlers from stale closures. Root cause: `useUpdateFolioVolatile()` wrote dropdown JSX into a volatile ref that never cleared on navigation. Rebuilt with page-key stale invalidation and extracted `FolioReportsDropdown` / `FolioToolsDropdown` as self-contained components that own their own state.
+- **User-edited intelligence fields overwritten by enrichment** — `reconcile_enrichment` replaced vec fields (stakeholders, risks, wins, etc.) even when the user had edited individual items. Now skips reconciliation entirely for any vec field with user edits.
+- **Emails blank on daily briefing first load** — three `isStale` guards suppressed cached emails when the briefing date was from a previous day. Removed stale guards, added rank-based fallback, and added early inbox reconciliation on startup.
+- **Stakeholder coverage stat inflated** — "X of Y known stakeholders" counted all linked people including auto-linked contacts. Changed to count only stakeholders shown in The Room cards.
+- **Inbox routing for business units** — emails for accounts with business unit sub-accounts now route to the correct parent or child account during processing.
+
+### Changed
+
+- **CI cleanup** — removed parity gate step and script from dev branch (matches main).
+- **Test hardening** — added Rust tests for continuity thread, transcript processing, and predictions. Added frontend tests for PostMeetingIntelligence and useMagazineShell volatile state.
+
+
 ## [1.0.3] — 2026-03-22
 
 ### Added
