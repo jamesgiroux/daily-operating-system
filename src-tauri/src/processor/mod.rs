@@ -100,12 +100,25 @@ pub fn process_file(
 
     log::info!("Classified '{}' as '{}'", filename, class_label);
 
+    let account_hint = match &classification {
+        Classification::MeetingNotes { account } | Classification::ActionItems { account } => {
+            account.as_deref()
+        }
+        Classification::AccountUpdate { account } => Some(account.as_str()),
+        _ => None,
+    };
+    let inferred_tracker_path = if entity_tracker_path.is_none() {
+        router::infer_entity_tracker_path(workspace, filename, &content, account_hint, None, db)
+    } else {
+        None
+    };
+
     // Resolve destination (pass db for entity validation)
     let route_outcome = resolve_destination(
         &classification,
         workspace,
         filename,
-        entity_tracker_path,
+        entity_tracker_path.or(inferred_tracker_path.as_deref()),
         db,
     );
 

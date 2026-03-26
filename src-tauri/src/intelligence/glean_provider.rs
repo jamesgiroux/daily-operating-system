@@ -874,86 +874,115 @@ pub fn reconcile_enrichment(
     let mut result = existing.clone();
     let dismissed = &existing.dismissed_items;
 
+    // Helper: check if a vec field (or any of its items' sub-fields) has user edits.
+    // When a user edits an individual field like stakeholderInsights[0].engagement,
+    // the item's item_source stays as pty_synthesis — reconcile_vec_items would
+    // replace it. Skipping reconciliation for user-edited vec fields ensures
+    // preserve_user_edits (called later) operates on the correct base data.
+    let has_user_edits = |field_name: &str| -> bool {
+        existing.user_edits.iter().any(|e| {
+            e.field_path == field_name || e.field_path.starts_with(&format!("{}[", field_name))
+        })
+    };
+
     // --- Vec fields: source-aware item reconciliation ---
+    // Skip reconciliation for fields with user edits — preserve_user_edits
+    // handles those after this function returns.
 
-    result.risks = reconcile_vec_items(
-        &existing.risks,
-        &new_output.risks,
-        refreshed_sources,
-        dismissed,
-        "risks",
-        |r| &r.text,
-    );
-
-    result.recent_wins = reconcile_vec_items(
-        &existing.recent_wins,
-        &new_output.recent_wins,
-        refreshed_sources,
-        dismissed,
-        "recentWins",
-        |w| &w.text,
-    );
-
-    result.stakeholder_insights = reconcile_vec_items(
-        &existing.stakeholder_insights,
-        &new_output.stakeholder_insights,
-        refreshed_sources,
-        dismissed,
-        "stakeholderInsights",
-        |s| &s.name,
-    );
-
-    result.value_delivered = reconcile_vec_items(
-        &existing.value_delivered,
-        &new_output.value_delivered,
-        refreshed_sources,
-        dismissed,
-        "valueDelivered",
-        |v| &v.statement,
-    );
-
-    result.competitive_context = reconcile_vec_items(
-        &existing.competitive_context,
-        &new_output.competitive_context,
-        refreshed_sources,
-        dismissed,
-        "competitiveContext",
-        |c| &c.competitor,
-    );
-
-    result.organizational_changes = reconcile_vec_items(
-        &existing.organizational_changes,
-        &new_output.organizational_changes,
-        refreshed_sources,
-        dismissed,
-        "organizationalChanges",
-        |o| &o.person,
-    );
-
-    result.expansion_signals = reconcile_vec_items(
-        &existing.expansion_signals,
-        &new_output.expansion_signals,
-        refreshed_sources,
-        dismissed,
-        "expansionSignals",
-        |e| &e.opportunity,
-    );
-
-    // open_commitments is Option<Vec<...>>
-    if let (Some(existing_oc), Some(new_oc)) =
-        (&existing.open_commitments, &new_output.open_commitments)
-    {
-        let reconciled = reconcile_vec_items(
-            existing_oc,
-            new_oc,
+    if !has_user_edits("risks") {
+        result.risks = reconcile_vec_items(
+            &existing.risks,
+            &new_output.risks,
             refreshed_sources,
             dismissed,
-            "openCommitments",
-            |c| &c.description,
+            "risks",
+            |r| &r.text,
         );
-        result.open_commitments = Some(reconciled);
-    } else if new_output.open_commitments.is_some() {
-        result.open_commitments = new_output.open_commitments;
+    }
+
+    if !has_user_edits("recentWins") {
+        result.recent_wins = reconcile_vec_items(
+            &existing.recent_wins,
+            &new_output.recent_wins,
+            refreshed_sources,
+            dismissed,
+            "recentWins",
+            |w| &w.text,
+        );
+    }
+
+    if !has_user_edits("stakeholderInsights") {
+        result.stakeholder_insights = reconcile_vec_items(
+            &existing.stakeholder_insights,
+            &new_output.stakeholder_insights,
+            refreshed_sources,
+            dismissed,
+            "stakeholderInsights",
+            |s| &s.name,
+        );
+    }
+
+    if !has_user_edits("valueDelivered") {
+        result.value_delivered = reconcile_vec_items(
+            &existing.value_delivered,
+            &new_output.value_delivered,
+            refreshed_sources,
+            dismissed,
+            "valueDelivered",
+            |v| &v.statement,
+        );
+    }
+
+    if !has_user_edits("competitiveContext") {
+        result.competitive_context = reconcile_vec_items(
+            &existing.competitive_context,
+            &new_output.competitive_context,
+            refreshed_sources,
+            dismissed,
+            "competitiveContext",
+            |c| &c.competitor,
+        );
+    }
+
+    if !has_user_edits("organizationalChanges") {
+        result.organizational_changes = reconcile_vec_items(
+            &existing.organizational_changes,
+            &new_output.organizational_changes,
+            refreshed_sources,
+            dismissed,
+            "organizationalChanges",
+            |o| &o.person,
+        );
+    }
+
+    if !has_user_edits("expansionSignals") {
+        result.expansion_signals = reconcile_vec_items(
+            &existing.expansion_signals,
+            &new_output.expansion_signals,
+            refreshed_sources,
+            dismissed,
+            "expansionSignals",
+            |e| &e.opportunity,
+        );
+    }
+
+    // open_commitments is Option<Vec<...>>
+    if !has_user_edits("openCommitments") {
+        if let (Some(existing_oc), Some(new_oc)) =
+            (&existing.open_commitments, &new_output.open_commitments)
+        {
+            let reconciled = reconcile_vec_items(
+                existing_oc,
+                new_oc,
+                refreshed_sources,
+                dismissed,
+                "openCommitments",
+                |c| &c.description,
+            );
+            result.open_commitments = Some(reconciled);
+        } else if new_output.open_commitments.is_some() {
+            result.open_commitments = new_output.open_commitments;
+        }
     }
 
     // --- Option fields: fresh data wins, except user-edited fields ---
