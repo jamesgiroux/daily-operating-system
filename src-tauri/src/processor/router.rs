@@ -30,6 +30,76 @@ pub enum RouteOutcome {
     NeedsEntity { suggested_name: String },
 }
 
+/// Infer the most specific account tracker path from frontmatter, filename,
+/// enrichment hints, and obvious business-unit directories.
+///
+/// Returns a relative tracker path like `Accounts/Cox/Corporate-Services-B2B`
+/// when it can be determined confidently, otherwise `None`.
+pub fn infer_entity_tracker_path(
+    workspace: &Path,
+    filename: &str,
+    content: &str,
+    account_hint: Option<&str>,
+    business_unit_hint: Option<&str>,
+    db: Option<&ActionDb>,
+) -> Option<String> {
+    let frontmatter_account = frontmatter_value(content, "account");
+    let frontmatter_business_unit = frontmatter_value(content, "business_unit")
+        .or_else(|| frontmatter_value(content, "business-unit"));
+
+    for candidate in [frontmatter_account.as_deref(), account_hint]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(tp) = tracker_path_from_hint(candidate) {
+            if tracker_path_exists(workspace, &tp) {
+                return Some(tp);
+            }
+        }
+    }
+
+    let top_account = frontmatter_account
+        .as_deref()
+        .or(account_hint)
+        .map(top_account_name)
+        .filter(|s| !s.is_empty());
+    let business_unit = frontmatter_business_unit
+        .or_else(|| business_unit_hint.map(|s| s.to_string()))
+        .or_else(|| {
+            frontmatter_account
+                .as_deref()
+                .and_then(path_hint_business_unit)
+                .or_else(|| account_hint.and_then(path_hint_business_unit))
+        });
+    let haystack = normalized_haystack(filename, content);
+
+    if let Some(account) = top_account.as_deref() {
+        if let Some(tp) =
+            resolve_child_tracker_path_from_db(db, account, business_unit.as_deref(), &haystack)
+        {
+            return Some(tp);
+        }
+        if let Some(tp) = resolve_child_tracker_path_from_fs(
+            workspace,
+            account,
+            business_unit.as_deref(),
+            &haystack,
+        ) {
+            return Some(tp);
+        }
+        if let Some(tp) = resolve_exact_tracker_path_from_db(db, account) {
+            return Some(tp);
+        }
+
+        let top_level_tp = format!("Accounts/{}", sanitize_dir_name(account));
+        if tracker_path_exists(workspace, &top_level_tp) {
+            return Some(top_level_tp);
+        }
+    }
+
+    None
+}
+
 /// Determine the destination path for a classified file.
 ///
 /// When `db` is provided, validates that referenced accounts exist in the DB.
@@ -197,6 +267,216 @@ fn sanitize_dir_name(name: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("-")
+}
+
+fn frontmatter_value(content: &str, key: &str) -> Option<String> {
+    let mut lines = content.lines();
+    if lines.next()?.trim() != "---" {
+        return None;
+    }
+
+    let prefix = format!("{key}:");
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed == "---" {
+            break;
+        }
+        if let Some(rest) = trimmed.strip_prefix(&prefix) {
+            let value = rest.trim().trim_matches('"').trim_matches('\'');
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn normalized_haystack(filename: &str, content: &str) -> String {
+    let excerpt = content.lines().take(80).collect::<Vec<_>>().join(" ");
+    normalize_hint(&format!("{filename} {excerpt}"))
+}
+
+fn normalize_hint(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    let mut prev_space = true;
+
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch.to_ascii_lowercase());
+            prev_space = false;
+        } else if !prev_space {
+            normalized.push(' ');
+            prev_space = true;
+        }
+    }
+
+    normalized.trim().to_string()
+}
+
+fn tracker_path_exists(workspace: &Path, tracker_path: &str) -> bool {
+    workspace.join(tracker_path).is_dir()
+}
+
+fn tracker_path_from_hint(value: &str) -> Option<String> {
+    let trimmed = value.trim().trim_matches('"').trim_matches('\'');
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some(path) = trimmed.strip_prefix("Accounts/") {
+        let path = path.trim_matches('/');
+        if path.is_empty() {
+            return None;
+        }
+        return Some(format!("Accounts/{path}"));
+    }
+
+    let delimiter = if trimmed.contains('>') {
+        '>'
+    } else if trimmed.contains('/') {
+        '/'
+    } else {
+        return None;
+    };
+
+    let parts: Vec<String> = trimmed
+        .split(delimiter)
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .map(|part| part.to_string())
+        .collect();
+
+    if parts.len() < 2 {
+        return None;
+    }
+
+    Some(format!("Accounts/{}", parts.join("/")))
+}
+
+fn top_account_name(value: &str) -> String {
+    if let Some(tp) = tracker_path_from_hint(value) {
+        return tp
+            .trim_start_matches("Accounts/")
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .to_string();
+    }
+
+    value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_string()
+}
+
+fn path_hint_business_unit(value: &str) -> Option<String> {
+    let tp = tracker_path_from_hint(value)?;
+    let parts: Vec<&str> = tp.trim_start_matches("Accounts/").split('/').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    Some(parts[1..].join("/"))
+}
+
+fn resolve_exact_tracker_path_from_db(db: Option<&ActionDb>, account_name: &str) -> Option<String> {
+    let db = db?;
+    let account = db.get_account_by_name(account_name).ok().flatten()?;
+    account
+        .tracker_path
+        .or_else(|| Some(format!("Accounts/{}", sanitize_dir_name(&account.name))))
+}
+
+fn resolve_child_tracker_path_from_db(
+    db: Option<&ActionDb>,
+    top_account: &str,
+    business_unit_hint: Option<&str>,
+    haystack: &str,
+) -> Option<String> {
+    let db = db?;
+    let parent = db.get_account_by_name(top_account).ok().flatten()?;
+    let children = db.get_child_accounts(&parent.id).ok()?;
+    let bu_hint = business_unit_hint.map(normalize_hint);
+
+    let mut best: Option<(usize, String)> = None;
+    for child in children {
+        let child_name = normalize_hint(&child.name);
+        let mut score = 0usize;
+        if let Some(ref target) = bu_hint {
+            if child_name == *target {
+                score += 1000;
+            }
+        }
+        if !child_name.is_empty() && haystack.contains(&child_name) {
+            score += child_name.len();
+        }
+        if score == 0 {
+            continue;
+        }
+
+        let tracker_path = child.tracker_path.unwrap_or_else(|| {
+            format!(
+                "Accounts/{}/{}",
+                sanitize_dir_name(top_account),
+                sanitize_dir_name(&child.name)
+            )
+        });
+        match &best {
+            Some((best_score, _)) if *best_score >= score => {}
+            _ => best = Some((score, tracker_path)),
+        }
+    }
+
+    best.map(|(_, tp)| tp)
+}
+
+fn resolve_child_tracker_path_from_fs(
+    workspace: &Path,
+    top_account: &str,
+    business_unit_hint: Option<&str>,
+    haystack: &str,
+) -> Option<String> {
+    let account_dir = workspace
+        .join("Accounts")
+        .join(sanitize_dir_name(top_account));
+    let entries = std::fs::read_dir(&account_dir).ok()?;
+    let bu_hint = business_unit_hint.map(normalize_hint);
+
+    let mut best: Option<(usize, String)> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !crate::accounts::is_bu_directory(&name) {
+            continue;
+        }
+
+        let normalized_name = normalize_hint(&name);
+        let mut score = 0usize;
+        if let Some(ref target) = bu_hint {
+            if normalized_name == *target {
+                score += 1000;
+            }
+        }
+        if !normalized_name.is_empty() && haystack.contains(&normalized_name) {
+            score += normalized_name.len();
+        }
+        if score == 0 {
+            continue;
+        }
+
+        let tracker_path = format!("Accounts/{}/{}", sanitize_dir_name(top_account), name);
+        match &best {
+            Some((best_score, _)) if *best_score >= score => {}
+            _ => best = Some((score, tracker_path)),
+        }
+    }
+
+    best.map(|(_, tp)| tp)
 }
 
 #[cfg(test)]
@@ -406,5 +686,53 @@ mod tests {
             ),
             other => panic!("Expected Destination, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_infer_entity_tracker_path_from_explicit_filename() {
+        let workspace =
+            std::env::temp_dir().join(format!("dailyos-router-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(workspace.join("Accounts/Cox/Corporate-Services-B2B")).unwrap();
+
+        let inferred = infer_entity_tracker_path(
+            &workspace,
+            "2026-03-24-Cox--Corporate-Services-B2B-On-Site_.md",
+            "Plain text content",
+            Some("Cox"),
+            None,
+            None,
+        );
+
+        assert_eq!(
+            inferred,
+            Some("Accounts/Cox/Corporate-Services-B2B".to_string())
+        );
+
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn test_infer_entity_tracker_path_from_frontmatter_account_path() {
+        let workspace =
+            std::env::temp_dir().join(format!("dailyos-router-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(workspace.join("Accounts/Cox/Corporate-Services-B2B")).unwrap();
+
+        let content = r#"---
+account: "Cox / Corporate-Services-B2B"
+doc_type: summary
+---
+
+Meeting notes here.
+"#;
+
+        let inferred =
+            infer_entity_tracker_path(&workspace, "notes.md", content, Some("Cox"), None, None);
+
+        assert_eq!(
+            inferred,
+            Some("Accounts/Cox/Corporate-Services-B2B".to_string())
+        );
+
+        let _ = std::fs::remove_dir_all(workspace);
     }
 }
