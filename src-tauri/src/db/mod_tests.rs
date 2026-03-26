@@ -2,6 +2,9 @@ use super::test_utils::test_db;
 use super::*;
 use crate::entity::{DbEntity, EntityType};
 use chrono::Utc;
+use regex::Regex;
+use std::collections::{HashMap, HashSet};
+use strsim::jaro_winkler;
 
 fn sample_action(id: &str, title: &str) -> DbAction {
     let now = Utc::now().to_rfc3339();
@@ -3958,4 +3961,560 @@ fn test_email_signal_pipeline_multi_entity_targets() {
         .expect("list acc2");
     assert_eq!(signals_acc1.len(), 1);
     assert_eq!(signals_acc2.len(), 1);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MockInsertStatement {
+    table: String,
+    columns: Vec<String>,
+    value_arities: Vec<usize>,
+}
+
+fn extract_rust_string_literals(source: &str) -> Vec<String> {
+    let bytes = source.as_bytes();
+    let mut literals = Vec::new();
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        if bytes[i] == b'r' {
+            let mut hashes = 0usize;
+            let mut j = i + 1;
+            let mut matched_raw = false;
+            while j < bytes.len() && bytes[j] == b'#' {
+                hashes += 1;
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b'"' {
+                let start = j + 1;
+                let mut end = start;
+                while end < bytes.len() {
+                    if bytes[end] == b'"' {
+                        let hash_slice_end = end + 1 + hashes;
+                        if hash_slice_end <= bytes.len()
+                            && bytes[end + 1..hash_slice_end].iter().all(|b| *b == b'#')
+                        {
+                            literals.push(source[start..end].to_string());
+                            i = hash_slice_end;
+                            matched_raw = true;
+                            break;
+                        }
+                    }
+                    end += 1;
+                }
+                if matched_raw {
+                    continue;
+                }
+            }
+        }
+
+        if bytes[i] == b'"' {
+            let mut value = String::new();
+            let mut j = i + 1;
+            let mut closed = false;
+            while j < bytes.len() {
+                match bytes[j] {
+                    b'\\' => {
+                        j += 1;
+                        if j >= bytes.len() {
+                            break;
+                        }
+                        match bytes[j] {
+                            b'n' => value.push('\n'),
+                            b'r' => value.push('\r'),
+                            b't' => value.push('\t'),
+                            b'"' => value.push('"'),
+                            b'\\' => value.push('\\'),
+                            b'\n' => {
+                                j += 1;
+                                while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                                    j += 1;
+                                }
+                                continue;
+                            }
+                            other => value.push(other as char),
+                        }
+                    }
+                    b'"' => {
+                        literals.push(value);
+                        i = j + 1;
+                        closed = true;
+                        break;
+                    }
+                    other => value.push(other as char),
+                }
+                j += 1;
+            }
+            if closed {
+                continue;
+            }
+        }
+
+        i += 1;
+    }
+
+    literals
+}
+
+fn strip_sql_comments(sql: &str) -> String {
+    let mut result = String::with_capacity(sql.len());
+    let chars: Vec<char> = sql.chars().collect();
+    let mut i = 0usize;
+    let mut in_single_quote = false;
+
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '\'' {
+            result.push(ch);
+            if in_single_quote && i + 1 < chars.len() && chars[i + 1] == '\'' {
+                result.push(chars[i + 1]);
+                i += 2;
+                continue;
+            }
+            in_single_quote = !in_single_quote;
+            i += 1;
+            continue;
+        }
+
+        if !in_single_quote && ch == '-' && i + 1 < chars.len() && chars[i + 1] == '-' {
+            i += 2;
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+
+        result.push(ch);
+        i += 1;
+    }
+
+    result
+}
+
+fn split_top_level_csv(input: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0i32;
+    let mut in_single_quote = false;
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '\'' {
+            current.push(ch);
+            if in_single_quote && i + 1 < chars.len() && chars[i + 1] == '\'' {
+                current.push(chars[i + 1]);
+                i += 2;
+                continue;
+            }
+            in_single_quote = !in_single_quote;
+            i += 1;
+            continue;
+        }
+
+        if !in_single_quote {
+            match ch {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                ',' if depth == 0 => {
+                    let trimmed = current.trim();
+                    if !trimmed.is_empty() {
+                        items.push(trimmed.to_string());
+                    }
+                    current.clear();
+                    i += 1;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        current.push(ch);
+        i += 1;
+    }
+
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        items.push(trimmed.to_string());
+    }
+    items
+}
+
+fn parse_values_groups(values_block: &str) -> Vec<String> {
+    let mut groups = Vec::new();
+    let chars: Vec<char> = values_block.chars().collect();
+    let mut in_single_quote = false;
+    let mut depth = 0i32;
+    let mut start: Option<usize> = None;
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '\'' {
+            if in_single_quote && i + 1 < chars.len() && chars[i + 1] == '\'' {
+                i += 2;
+                continue;
+            }
+            in_single_quote = !in_single_quote;
+            i += 1;
+            continue;
+        }
+
+        if !in_single_quote {
+            if ch == '(' {
+                if depth == 0 {
+                    start = Some(i);
+                }
+                depth += 1;
+            } else if ch == ')' {
+                depth -= 1;
+                if depth == 0 {
+                    if let Some(group_start) = start.take() {
+                        groups.push(chars[group_start..=i].iter().collect::<String>());
+                    }
+                }
+            }
+        }
+
+        i += 1;
+    }
+
+    groups
+}
+
+fn extract_insert_statements(source: &str) -> Vec<MockInsertStatement> {
+    let insert_re = Regex::new(
+        r"(?is)^\s*INSERT(?:\s+OR\s+(?:IGNORE|REPLACE))?\s+INTO\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*?)\)\s*VALUES\s*(.+?)(?:\s+ON\s+CONFLICT\b.*)?\s*$",
+    )
+    .expect("insert regex");
+
+    extract_rust_string_literals(source)
+        .into_iter()
+        .filter_map(|literal| {
+            let normalized = strip_sql_comments(&literal);
+            let caps = insert_re.captures(normalized.trim())?;
+            let table = caps.get(1)?.as_str().trim().to_string();
+            let columns = split_top_level_csv(caps.get(2)?.as_str())
+                .into_iter()
+                .map(|c| {
+                    c.trim()
+                        .trim_matches('"')
+                        .trim_matches('`')
+                        .trim_matches('[')
+                        .trim_matches(']')
+                        .to_string()
+                })
+                .collect::<Vec<_>>();
+            let value_groups = parse_values_groups(caps.get(3)?.as_str());
+            if columns.is_empty() || value_groups.is_empty() {
+                return None;
+            }
+            let value_arities = value_groups
+                .into_iter()
+                .map(|group| {
+                    let trimmed = group.trim();
+                    let inner = trimmed
+                        .strip_prefix('(')
+                        .and_then(|s| s.strip_suffix(')'))
+                        .unwrap_or(trimmed);
+                    split_top_level_csv(inner).len()
+                })
+                .collect::<Vec<_>>();
+
+            Some(MockInsertStatement {
+                table,
+                columns,
+                value_arities,
+            })
+        })
+        .collect()
+}
+
+fn schema_columns(db: &ActionDb) -> HashMap<String, HashSet<String>> {
+    let mut stmt = db
+        .conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .expect("prepare schema query");
+    let tables = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query tables")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect tables");
+
+    let mut schema = HashMap::new();
+    for table in tables {
+        if table.starts_with("sqlite_") {
+            continue;
+        }
+        let pragma = format!("PRAGMA table_info({table})");
+        let mut column_stmt = db.conn.prepare(&pragma).expect("prepare table info");
+        let columns = column_stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("query columns")
+            .collect::<Result<HashSet<_>, _>>()
+            .expect("collect columns");
+        schema.insert(table, columns);
+    }
+
+    schema
+}
+
+fn closest_match(target: &str, candidates: impl IntoIterator<Item = String>) -> Option<String> {
+    let mut best: Option<(String, f64)> = None;
+    for candidate in candidates {
+        let mut score = jaro_winkler(target, &candidate);
+        let target_parts: HashSet<&str> = target.split('_').collect();
+        let candidate_parts: HashSet<&str> = candidate.split('_').collect();
+        if target.contains(&candidate) || candidate.contains(target) {
+            score += 0.25;
+        }
+        if target_parts.contains(candidate.as_str()) || candidate_parts.contains(target) {
+            score = score.max(0.85);
+        }
+        if target_parts.intersection(&candidate_parts).next().is_some() {
+            score += 0.1;
+        }
+        if score >= 0.72 {
+            match &best {
+                Some((_, best_score)) if *best_score >= score => {}
+                _ => best = Some((candidate, score)),
+            }
+        }
+    }
+    best.map(|(candidate, _)| candidate)
+}
+
+fn validate_mock_insert_source(
+    source_name: &str,
+    source: &str,
+    schema: &HashMap<String, HashSet<String>>,
+) -> Vec<String> {
+    let mut errors = Vec::new();
+
+    for statement in extract_insert_statements(source) {
+        let Some(table_columns) = schema.get(&statement.table) else {
+            let suggestion = closest_match(&statement.table, schema.keys().cloned())
+                .map(|candidate| format!(" Did you mean '{candidate}'?"))
+                .unwrap_or_default();
+            errors.push(format!(
+                "{source_name}: Mock data references table '{}' which does not exist.{suggestion}",
+                statement.table
+            ));
+            continue;
+        };
+
+        for column in &statement.columns {
+            if !table_columns.contains(column) {
+                let suggestion = closest_match(column, table_columns.iter().cloned())
+                    .map(|candidate| format!(" Did you mean '{candidate}'?"))
+                    .unwrap_or_default();
+                errors.push(format!(
+                    "{source_name}: Mock data references column '{}.{}' which does not exist.{suggestion}",
+                    statement.table, column
+                ));
+            }
+        }
+
+        for arity in &statement.value_arities {
+            if *arity != statement.columns.len() {
+                errors.push(format!(
+                    "{source_name}: INSERT INTO {} has {} columns but {} values in one tuple.",
+                    statement.table,
+                    statement.columns.len(),
+                    arity
+                ));
+            }
+        }
+    }
+
+    errors
+}
+
+fn sample_db_meeting(id: &str, title: &str, start_time: &str) -> DbMeeting {
+    DbMeeting {
+        id: id.to_string(),
+        title: title.to_string(),
+        meeting_type: "customer".to_string(),
+        start_time: start_time.to_string(),
+        end_time: Some(start_time.to_string()),
+        attendees: None,
+        notes_path: None,
+        summary: None,
+        created_at: start_time.to_string(),
+        calendar_event_id: None,
+        description: None,
+        prep_context_json: None,
+        user_agenda_json: None,
+        user_notes: None,
+        prep_frozen_json: None,
+        prep_frozen_at: None,
+        prep_snapshot_path: None,
+        prep_snapshot_hash: None,
+        transcript_path: None,
+        transcript_processed_at: None,
+        intelligence_state: None,
+        intelligence_quality: None,
+        last_enriched_at: None,
+        signal_count: None,
+        has_new_signals: None,
+        last_viewed_at: None,
+    }
+}
+
+#[test]
+fn test_mock_data_insert_statements_match_current_schema() {
+    let db = test_db();
+    let schema = schema_columns(&db);
+    let mut errors = Vec::new();
+
+    errors.extend(validate_mock_insert_source(
+        "src-tauri/src/demo.rs",
+        include_str!("../demo.rs"),
+        &schema,
+    ));
+    errors.extend(validate_mock_insert_source(
+        "src-tauri/src/devtools/mod.rs",
+        include_str!("../devtools/mod.rs"),
+        &schema,
+    ));
+
+    assert!(
+        errors.is_empty(),
+        "mock data validation failed:\n{}",
+        errors.join("\n")
+    );
+}
+
+#[test]
+fn test_mock_validator_reports_missing_table_with_suggestion() {
+    let db = test_db();
+    let schema = schema_columns(&db);
+    let errors = validate_mock_insert_source(
+        "bad-table.sql",
+        r#""INSERT INTO enriched_captures (id, meeting_id) VALUES (?1, ?2)""#,
+        &schema,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("enriched_captures"));
+    assert!(errors[0].contains("Did you mean 'captures'?"));
+}
+
+#[test]
+fn test_mock_validator_reports_missing_column_with_suggestion() {
+    let db = test_db();
+    let schema = schema_columns(&db);
+    let errors = validate_mock_insert_source(
+        "bad-column.sql",
+        r#""INSERT INTO captures (id, meeting_id, meeting_title, bogus_column) VALUES (?1, ?2, ?3, ?4)""#,
+        &schema,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("captures.bogus_column"));
+}
+
+#[test]
+fn test_mock_validator_reports_value_arity_mismatch() {
+    let db = test_db();
+    let schema = schema_columns(&db);
+    let errors = validate_mock_insert_source(
+        "bad-arity.sql",
+        r#""INSERT INTO captures (id, meeting_id, meeting_title) VALUES (?1, ?2)""#,
+        &schema,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("has 3 columns but 2 values"));
+}
+
+#[test]
+fn test_get_previous_meeting_for_entity_returns_none_for_first_meeting() {
+    let db = test_db();
+    setup_account(&db, "acc-first", "First Corp");
+
+    let meeting = sample_db_meeting("mtg-first", "First Corp Kickoff", "2026-03-20T15:00:00Z");
+    db.upsert_meeting(&meeting).expect("upsert current meeting");
+    db.link_meeting_entity(&meeting.id, "acc-first", "account")
+        .expect("link meeting");
+
+    let previous = db
+        .get_previous_meeting_for_entity("acc-first", "account", &meeting.start_time)
+        .expect("lookup previous meeting");
+
+    assert!(previous.is_none());
+}
+
+#[test]
+fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() {
+    let db = test_db();
+    setup_account(&db, "acc-thread", "Thread Corp");
+
+    let previous = sample_db_meeting("mtg-prev", "Thread Corp Weekly Sync", "2026-03-10T15:00:00Z");
+    let current = sample_db_meeting("mtg-current", "Thread Corp Weekly Sync", "2026-03-20T15:00:00Z");
+    db.upsert_meeting(&previous).expect("upsert previous meeting");
+    db.upsert_meeting(&current).expect("upsert current meeting");
+    db.link_meeting_entity(&previous.id, "acc-thread", "account")
+        .expect("link previous");
+    db.link_meeting_entity(&current.id, "acc-thread", "account")
+        .expect("link current");
+
+    let existing = sample_person("taylor@thread.com");
+    let newcomer = sample_person("jordan@thread.com");
+    db.upsert_person(&existing).expect("upsert existing attendee");
+    db.upsert_person(&newcomer).expect("upsert newcomer attendee");
+    db.record_meeting_attendance(&previous.id, &existing.id)
+        .expect("record previous attendance");
+    db.record_meeting_attendance(&current.id, &existing.id)
+        .expect("record repeated attendance");
+    db.record_meeting_attendance(&current.id, &newcomer.id)
+        .expect("record new attendance");
+
+    let mut completed = sample_action("act-thread-complete", "Finalize mutual action plan");
+    completed.account_id = Some("acc-thread".to_string());
+    completed.status = "completed".to_string();
+    completed.completed_at = Some("2026-03-15T10:00:00Z".to_string());
+    db.upsert_action(&completed).expect("upsert completed action");
+
+    let mut open = sample_action("act-thread-open", "Review pricing addendum");
+    open.account_id = Some("acc-thread".to_string());
+    open.due_date = Some("2026-03-25".to_string());
+    db.upsert_action(&open).expect("upsert open action");
+
+    db.conn
+        .execute(
+            "INSERT INTO health_score_history (account_id, score, band, confidence, computed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["acc-thread", 72.0, "yellow", 0.8, "2026-03-09T09:00:00Z"],
+        )
+        .expect("insert previous health score");
+    db.conn
+        .execute(
+            "INSERT INTO health_score_history (account_id, score, band, confidence, computed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["acc-thread", 84.0, "green", 0.9, "2026-03-19T09:00:00Z"],
+        )
+        .expect("insert current health score");
+
+    let thread = db
+        .get_continuity_thread(
+            "acc-thread",
+            &current.id,
+            &previous.id,
+            &previous.start_time,
+            &current.start_time,
+        )
+        .expect("continuity thread");
+
+    assert_eq!(thread.actions_completed.len(), 1);
+    assert_eq!(thread.actions_completed[0].title, "Finalize mutual action plan");
+    assert_eq!(thread.actions_open.len(), 1);
+    assert_eq!(thread.actions_open[0].title, "Review pricing addendum");
+    assert_eq!(thread.actions_open[0].date.as_deref(), Some("2026-03-25"));
+    assert_eq!(thread.new_attendees, vec![newcomer.name]);
+
+    let health_delta = thread.health_delta.expect("health delta");
+    assert_eq!(health_delta.previous, 72.0);
+    assert_eq!(health_delta.current, 84.0);
+    assert!(!thread.is_first_meeting);
 }

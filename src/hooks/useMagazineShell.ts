@@ -7,7 +7,7 @@
  * router doesn't need to import page internals like CHAPTERS constants.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import type { ChapterItem } from "@/components/layout/FloatingNavIsland";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 
@@ -33,11 +33,20 @@ export interface MagazineShellConfig {
 }
 
 /** I563: Volatile folio state that changes frequently (enrichment progress, save status).
- * Delivered via ref so updates don't re-trigger shell registration. */
+ * Delivered via ref so updates don't re-trigger shell registration.
+ * _pageKey ties volatile state to the page that wrote it — stale data from a
+ * previous page is automatically discarded when useFolioVolatile() reads it. */
 export interface FolioVolatileState {
   folioActions?: React.ReactNode;
   folioStatusText?: string;
   folioReadinessStats?: ReadinessStat[];
+  /** Internal — set by useUpdateFolioVolatile, checked by useFolioVolatile. */
+  _pageKey?: string;
+}
+
+/** Derive a stable page key from shell config identity. */
+function derivePageKey(config: MagazineShellConfig): string {
+  return `${config.activePage}::${config.folioLabel}`;
 }
 
 interface MagazineShellContextValue {
@@ -49,9 +58,12 @@ interface MagazineShellContextValue {
   /** I563: Bump counter to request a folio repaint without re-registering config. */
   requestFolioRepaint: () => void;
   folioPaintCount: number;
+  /** Current page key derived from registered config — used to invalidate stale volatile state. */
+  pageKeyRef: React.MutableRefObject<string | null>;
 }
 
 const defaultVolatileRef = { current: {} as FolioVolatileState };
+const defaultPageKeyRef = { current: null as string | null };
 const MagazineShellContext = createContext<MagazineShellContextValue>({
   config: null,
   register: () => {},
@@ -59,24 +71,28 @@ const MagazineShellContext = createContext<MagazineShellContextValue>({
   volatileRef: defaultVolatileRef,
   requestFolioRepaint: () => {},
   folioPaintCount: 0,
+  pageKeyRef: defaultPageKeyRef,
 });
 
 export function useMagazineShellProvider() {
   const [config, setConfig] = useState<MagazineShellConfig | null>(null);
   const volatileRef = useRef<FolioVolatileState>({});
+  const pageKeyRef = useRef<string | null>(null);
   const [folioPaintCount, setFolioPaintCount] = useState(0);
 
-  const register = useCallback((c: MagazineShellConfig) => setConfig(c), []);
+  const register = useCallback((c: MagazineShellConfig) => {
+    setConfig(c);
+    pageKeyRef.current = derivePageKey(c);
+  }, []);
   // I563: unregister clears config only. Volatile ref is NOT wiped here because
   // during same-route navigation (Account A → B), React's effect cleanup ordering
   // means the old page's cleanup runs AFTER the new render's synchronous ref write.
   // Wiping volatile in cleanup would destroy the new page's already-written actions.
-  // The volatile ref is overwritten synchronously by useUpdateFolioVolatile on each
-  // render, so stale data is never a concern — the new page always wins.
+  // Instead, useFolioVolatile() compares _pageKey to filter out stale volatile data.
   const unregister = useCallback(() => { setConfig(null); }, []);
   const requestFolioRepaint = useCallback(() => setFolioPaintCount(n => n + 1), []);
 
-  return { config, register, unregister, volatileRef, requestFolioRepaint, folioPaintCount };
+  return { config, register, unregister, volatileRef, requestFolioRepaint, folioPaintCount, pageKeyRef };
 }
 
 export { MagazineShellContext };
@@ -124,16 +140,33 @@ export function useUpdateFolioVolatile(
   repaintKey?: string | null,
 ) {
   const ctx = useContext(MagazineShellContext);
-  ctx.volatileRef.current = state;
+  // Stamp volatile state with current page key so stale reads are discarded.
+  ctx.volatileRef.current = { ...state, _pageKey: ctx.pageKeyRef.current ?? undefined };
+
+  // Re-stamp _pageKey after config re-registration. When the shell config identity
+  // changes (e.g., folioLabel goes from "Account" to "Internal"), the register effect
+  // updates pageKeyRef AFTER the synchronous volatile write above already stamped the
+  // old key. This effect runs after register and corrects the mismatch so
+  // useFolioVolatile() doesn't discard valid volatile state.
+  const registeredConfig = ctx.config;
+  useLayoutEffect(() => {
+    if (!registeredConfig) return;
+    const expectedKey = derivePageKey(registeredConfig);
+    if (ctx.volatileRef.current._pageKey !== expectedKey) {
+      ctx.volatileRef.current = { ...ctx.volatileRef.current, _pageKey: expectedKey };
+      ctx.requestFolioRepaint();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registeredConfig]);
 
   // Repaint when entity identity changes (e.g., account-to-account navigation)
-  useEffect(() => {
+  useLayoutEffect(() => {
     ctx.requestFolioRepaint();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repaintKey]);
 
   // Repaint when status text changes (save/enrich transitions)
-  useEffect(() => {
+  useLayoutEffect(() => {
     ctx.requestFolioRepaint();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.folioStatusText]);
@@ -148,10 +181,17 @@ export function useMagazineShellConfig(): MagazineShellConfig | null {
 
 /**
  * I563: Hook for MagazinePageLayout to read volatile folio state.
+ * Returns empty state if the volatile ref was written by a different page
+ * (stale data from a previous navigation).
  */
 export function useFolioVolatile(): FolioVolatileState {
   const ctx = useContext(MagazineShellContext);
   // Reading folioPaintCount subscribes the consumer to repaints
   void ctx.folioPaintCount;
-  return ctx.volatileRef.current;
+  const vol = ctx.volatileRef.current;
+  // Discard stale volatile state from a different page
+  if (vol._pageKey && vol._pageKey !== ctx.pageKeyRef.current) {
+    return {};
+  }
+  return vol;
 }

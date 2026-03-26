@@ -11,6 +11,8 @@ import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell, useUpdateFolioVolatile } from "@/hooks/useMagazineShell";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { FolioReportsDropdown } from "@/components/folio/FolioReportsDropdown";
+import { FolioToolsDropdown } from "@/components/folio/FolioToolsDropdown";
 import {
   AlignLeft,
   BarChart3,
@@ -193,15 +195,7 @@ export default function AccountDetailEditorial() {
   const preset = useActivePreset();
   useRevealObserver(!acct.loading && !!acct.detail);
 
-  const [reportsOpen, setReportsOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-
-  useEffect(() => {
-    if (!reportsOpen && !toolsOpen) return;
-    function handleClick() { setReportsOpen(false); setToolsOpen(false); }
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
-  }, [reportsOpen, toolsOpen]);
+  // Dropdown open/close state moved to FolioReportsDropdown / FolioToolsDropdown
 
   // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
   const {
@@ -269,9 +263,14 @@ export default function AccountDetailEditorial() {
   );
   useRegisterMagazineShell(shellConfig);
 
+  // Dialog open state — must be before useUpdateFolioVolatile (used by FolioToolsDropdown callbacks)
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+
   // I563: Volatile folio state — updates via ref, no re-registration.
   // Pass accountId as repaintKey so MagazinePageLayout re-reads when navigating
   // between accounts (same route, different params → component doesn't remount).
+  // Dropdown components own their own state — no closures leak into the volatile ref.
   useUpdateFolioVolatile({
     folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
     folioActions: (
@@ -289,94 +288,20 @@ export default function AccountDetailEditorial() {
             }
           />
         )}
-        <div className={styles.reportsDropdownWrapper}>
-          <button
-            onClick={(e) => { e.stopPropagation(); setReportsOpen(o => !o); }}
-            className={styles.reportsButton}
-          >
-            Reports {reportsOpen ? "\u25b4" : "\u25be"}
-          </button>
-          {reportsOpen && (
-            <div className={styles.reportsDropdown}>
-              {getAccountReports(preset?.id).map((item) => (
-                <button
-                  key={item.label}
-                  onClick={() => {
-                    setReportsOpen(false);
-                    if (item.reportType === "risk_briefing") {
-                      navigate({ to: "/accounts/$accountId/reports/risk_briefing", params: { accountId: accountId! } } as any);
-                    } else if (item.reportType === "account_health") {
-                      navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
-                    } else if (item.reportType === "ebr_qbr") {
-                      navigate({ to: "/accounts/$accountId/reports/ebr_qbr", params: { accountId: accountId! } } as any);
-                    } else {
-                      navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
-                    }
-                  }}
-                  className={styles.reportsDropdownItem}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className={styles.toolsDropdownWrapper}>
-          <button
-            onClick={(e) => { e.stopPropagation(); setToolsOpen(o => !o); }}
-            className={styles.toolsButton}
-          >
-            Tools {toolsOpen ? "\u25b4" : "\u25be"}
-          </button>
-          {toolsOpen && (
-            <div className={styles.toolsDropdown}>
-              {acct.detail && (
-                <button
-                  className={styles.toolsDropdownItem}
-                  onClick={() => { setToolsOpen(false); acct.setCreateChildOpen(true); }}
-                >
-                  + Business Unit
-                </button>
-              )}
-              <button
-                className={styles.toolsDropdownItem}
-                onClick={() => { setToolsOpen(false); setMergeDialogOpen(true); }}
-              >
-                Merge Into...
-              </button>
-              <button
-                className={styles.toolsDropdownItem}
-                onClick={() => { setToolsOpen(false); acct.handleIndexFiles(); }}
-                disabled={acct.indexing}
-              >
-                {acct.indexing ? "Indexing\u2026" : "Index Files"}
-              </button>
-              <div className={styles.toolsDropdownSeparator} />
-              {acct.detail?.archived ? (
-                <button
-                  className={styles.toolsDropdownItem}
-                  onClick={() => { setToolsOpen(false); acct.handleUnarchive(); }}
-                >
-                  Unarchive
-                </button>
-              ) : acct.detail ? (
-                <button
-                  className={styles.toolsDropdownItem}
-                  onClick={() => { setToolsOpen(false); setArchiveDialogOpen(true); }}
-                >
-                  Archive
-                </button>
-              ) : null}
-            </div>
-          )}
-        </div>
+        <FolioReportsDropdown accountId={accountId!} />
+        <FolioToolsDropdown
+          onCreateChild={() => acct.setCreateChildOpen(true)}
+          onMerge={() => setMergeDialogOpen(true)}
+          onArchive={() => setArchiveDialogOpen(true)}
+          onUnarchive={acct.handleUnarchive}
+          onIndexFiles={acct.handleIndexFiles}
+          isArchived={!!acct.detail?.archived}
+          isIndexing={acct.indexing}
+          hasDetail={!!acct.detail}
+        />
       </div>
     ),
   }, accountId);
-
-  // Dialog open state
-  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
-  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [rolloverDismissed, setRolloverDismissed] = useState(false);
 
   // I312: Preset metadata state
