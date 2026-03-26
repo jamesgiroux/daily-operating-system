@@ -122,8 +122,6 @@ function formatMinutes(minutes: number): string {
 export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
-  const isStale = freshness.freshness === "stale";
-
   // Data
   const meetings = data.meetings;
   const actions = data.actions;
@@ -132,7 +130,10 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   // I395: Score-based email selection — scored emails first, then enriched fill.
   // Shows up to 5 emails: high-scored ones first, then enriched emails with summaries
   // that didn't meet the score threshold (avoids hiding useful intelligence).
-  const briefingEmails = isStale ? [] : (() => {
+  // Cached emails shown immediately even when briefing is stale — background
+  // reconciliation will remove archived ones within seconds.
+  const briefingEmails = (() => {
+    if (emails.length === 0) return [];
     const ranked = [...emails].sort(compareEmailRank);
     const scored = ranked
       .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
@@ -142,7 +143,9 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
     const enrichedFill = ranked
       .filter((e) => !scoredIds.has(e.id) && e.summary && e.summary.trim().length > 0)
       .slice(0, Math.max(0, 5 - scored.length));
-    return [...scored, ...enrichedFill].slice(0, 5);
+    const selected = [...scored, ...enrichedFill].slice(0, 5);
+    // Fallback: if no emails passed score/enrichment filters, show top by rank
+    return selected.length > 0 ? selected : ranked.slice(0, 5);
   })();
   const emailSectionLabel = briefingEmails.length > 0 ? "WORTH YOUR ATTENTION" : "";
 
@@ -383,7 +386,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
       )}
 
       {/* ═══ ATTENTION ═══ */}
-      {/* When stale, only show attention section if we have actions (emails/narrative won't exist yet) */}
+      {/* Cached emails shown even when stale — background reconciliation updates them */}
       <AttentionSection
         suggestedActions={suggestedActions}
         acceptAction={acceptAction}
@@ -392,9 +395,9 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         pendingActions={pendingActions}
         completedIds={completedIds}
         onComplete={handleComplete}
-        briefingEmails={isStale ? [] : briefingEmails}
+        briefingEmails={briefingEmails}
         emailSectionLabel={emailSectionLabel}
-        allEmails={isStale ? [] : emails}
+        allEmails={emails}
         todayMeetingIds={new Set(meetings.map((m) => m.id))}
         emailSyncTimestamp={data.emailSync?.lastSuccessAt}
       />
