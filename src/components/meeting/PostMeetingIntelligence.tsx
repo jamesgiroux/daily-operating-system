@@ -695,6 +695,12 @@ function captureBadgeClass(capture: EnrichedCapture): { className: string; label
     if (urgency === "yellow") return { className: styles.badgeYellow, label: "Yellow" };
     return null;
   }
+  if (type === "decision") {
+    if (subType.includes("joint_agreement")) return { className: styles.badgeDecisionJoint, label: "Joint Agreement" };
+    if (subType.includes("customer_commitment")) return { className: styles.badgeDecisionCustomer, label: "Customer Commitment" };
+    if (subType.includes("internal_decision")) return { className: styles.badgeDecisionInternal, label: "Internal" };
+    return null;
+  }
   return null;
 }
 
