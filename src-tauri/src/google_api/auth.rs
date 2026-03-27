@@ -55,17 +55,15 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         log::warn!("Failed to open browser: {}. URL: {}", e, auth_url);
     }
 
-    // Wait for the redirect with a timeout
-    listener
-        .set_nonblocking(false)
-        .map_err(GoogleApiError::Io)?;
-
+    // Wait for the redirect (120s timeout in listen_for_callback guards
+    // against macOS firewall blocking the browser's localhost redirect).
     let oauth::CallbackResult {
         callback,
         mut stream,
     } = oauth::listen_for_callback(&listener).map_err(|e| match e {
         oauth::CallbackError::Io(io_err) => GoogleApiError::Io(io_err),
         oauth::CallbackError::FlowCancelled => GoogleApiError::FlowCancelled,
+        oauth::CallbackError::Timeout => GoogleApiError::OAuthTimeout,
     })?;
     if callback.state.as_deref() != Some(oauth_state.as_str()) {
         oauth::send_error_response(
