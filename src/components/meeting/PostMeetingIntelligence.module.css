@@ -502,6 +502,24 @@
   background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
 }
 
+.badgeDecisionJoint {
+  composes: findingBadge;
+  color: var(--color-mineral-larkspur, #5a7fa5);
+  background: rgba(90, 127, 165, 0.08);
+}
+
+.badgeDecisionCustomer {
+  composes: findingBadge;
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+}
+
+.badgeDecisionInternal {
+  composes: findingBadge;
+  color: var(--color-text-secondary, #6b6b6b);
+  background: rgba(107, 107, 107, 0.07);
+}
+
 .findingImpact {
   font-size: 14px;
   color: var(--color-text-tertiary);

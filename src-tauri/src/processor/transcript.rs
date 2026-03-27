@@ -600,11 +600,12 @@ pub fn process_transcript_with_kind(
                 });
             }
             for decision in &decisions {
-                let (content, evidence_quote) = parse_reviewed_evidence_quote(decision);
+                let (content, sub_type, evidence_quote) =
+                    parse_reviewed_decision_metadata(decision);
                 captures.push(crate::services::mutations::ParsedCapture {
                     capture_type: "decision",
                     content,
-                    sub_type: None,
+                    sub_type,
                     urgency: None,
                     evidence_quote,
                 });
@@ -1708,6 +1709,30 @@ fn parse_reviewed_risk_metadata(raw: &str) -> (&str, Option<String>, Option<&str
         }
     }
 
+    (text, None, evidence)
+}
+
+fn parse_reviewed_decision_metadata(raw: &str) -> (&str, Option<&str>, Option<&str>) {
+    let (text, evidence) = parse_reviewed_evidence_quote(raw);
+    // Strip @owner suffix before tag detection
+    let text = text
+        .rfind(" @")
+        .map_or(text, |idx| text[..idx].trim_end());
+    let trimmed = text.trim();
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let sub_type = &rest[..end];
+            let content = rest[end + 1..].trim();
+            let sub_lower = sub_type.to_lowercase();
+            let valid = matches!(
+                sub_lower.as_str(),
+                "customer_commitment" | "internal_decision" | "joint_agreement"
+            );
+            if valid {
+                return (content, Some(sub_type), evidence);
+            }
+        }
+    }
     (text, None, evidence)
 }
 
@@ -4135,6 +4160,38 @@ END_DECISIONS";
             "Expand pilot to EMEA starting Q2 — agreed by VP Sales"
         );
         assert_eq!(parsed.decisions[1], "Defer mobile launch to Q3");
+    }
+
+    #[test]
+    fn test_parse_decision_metadata() {
+        // Joint agreement with evidence and owner
+        let (content, sub, ev) = parse_reviewed_decision_metadata(
+            "[JOINT_AGREEMENT] Expand pilot to EMEA @VP Sales #\"let's go ahead with EMEA\"",
+        );
+        assert_eq!(content, "Expand pilot to EMEA");
+        assert_eq!(sub, Some("JOINT_AGREEMENT"));
+        assert_eq!(ev, Some("let's go ahead with EMEA"));
+
+        // Internal decision, no evidence
+        let (content, sub, ev) =
+            parse_reviewed_decision_metadata("[INTERNAL_DECISION] Defer mobile launch to Q3");
+        assert_eq!(content, "Defer mobile launch to Q3");
+        assert_eq!(sub, Some("INTERNAL_DECISION"));
+        assert_eq!(ev, None);
+
+        // Customer commitment
+        let (content, sub, _) = parse_reviewed_decision_metadata(
+            "[CUSTOMER_COMMITMENT] Will renew for 2 years @CFO",
+        );
+        assert_eq!(content, "Will renew for 2 years");
+        assert_eq!(sub, Some("CUSTOMER_COMMITMENT"));
+
+        // No tag — plain decision
+        let (content, sub, ev) =
+            parse_reviewed_decision_metadata("Agreed to revisit in Q3");
+        assert_eq!(content, "Agreed to revisit in Q3");
+        assert_eq!(sub, None);
+        assert_eq!(ev, None);
     }
 
     // =========================================================================
