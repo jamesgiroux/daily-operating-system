@@ -89,8 +89,36 @@ pub enum CallbackTone {
 /// Sends error/info responses for terminal failures (denied, missing code).
 /// Does NOT send a success response — the caller must do that after the
 /// token exchange succeeds.
+///
+/// Times out after 120 seconds to prevent thread leaks when the macOS
+/// Application Firewall blocks the browser's redirect to localhost.
 pub fn listen_for_callback(listener: &TcpListener) -> Result<CallbackResult, CallbackError> {
-    let (mut stream, _) = listener.accept().map_err(CallbackError::Io)?;
+    // Poll with a 120-second deadline so the backend doesn't hang forever if
+    // the browser redirect is blocked (e.g., macOS firewall denying incoming
+    // connections to DailyOS).
+    listener
+        .set_nonblocking(true)
+        .map_err(CallbackError::Io)?;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    let (mut stream, _) = loop {
+        match listener.accept() {
+            Ok(conn) => break conn,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if std::time::Instant::now() >= deadline {
+                    log::warn!("OAuth callback timed out after 120s — browser redirect may have been blocked by firewall");
+                    return Err(CallbackError::Timeout);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => return Err(CallbackError::Io(e)),
+        }
+    };
+
+    // Restore blocking mode for the accepted stream's read
+    stream
+        .set_nonblocking(false)
+        .map_err(CallbackError::Io)?;
 
     let mut buffer = [0u8; 4096];
     let n = stream.read(&mut buffer).map_err(CallbackError::Io)?;
@@ -219,6 +247,7 @@ pub fn send_info_response(stream: &mut impl Write, title: &str, message: &str) {
 pub enum CallbackError {
     Io(std::io::Error),
     FlowCancelled,
+    Timeout,
 }
 
 impl std::fmt::Display for CallbackError {
@@ -226,6 +255,7 @@ impl std::fmt::Display for CallbackError {
         match self {
             Self::Io(e) => write!(f, "OAuth callback IO error: {}", e),
             Self::FlowCancelled => write!(f, "OAuth flow cancelled"),
+            Self::Timeout => write!(f, "OAuth callback timed out — if your firewall blocked the connection, allow DailyOS in System Settings → Network → Firewall"),
         }
     }
 }

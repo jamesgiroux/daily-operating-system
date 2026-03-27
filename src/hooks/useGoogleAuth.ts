@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import type { GoogleAuthStatus } from "@/types";
 
 type GoogleAuthPhase = "idle" | "authorizing" | "disconnecting";
-const AUTH_TIMEOUT_MS = 30_000;
+const AUTH_TIMEOUT_MS = 150_000; // 2.5 min — backend has 120s timeout, give it room
 
 interface GoogleAuthFailedPayload {
   message: string;
@@ -15,7 +15,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return Promise.race([
     promise,
     new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Google authorization timed out after 30s")), timeoutMs);
+      setTimeout(() => reject(new Error("Authorization timed out. If your firewall blocked the connection, allow DailyOS in System Settings → Network → Firewall, then try again.")), timeoutMs);
     }),
   ]);
 }
