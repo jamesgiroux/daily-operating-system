@@ -120,6 +120,8 @@ pub enum GoogleApiError {
     Keychain(String),
     #[error("OAuth state mismatch")]
     OAuthStateMismatch,
+    #[error("Authorization timed out. If your firewall blocked the connection, allow DailyOS in System Settings → Network → Firewall, then try again.")]
+    OAuthTimeout,
 }
 
 #[derive(Debug, Clone)]
