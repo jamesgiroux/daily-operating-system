@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -12,6 +13,7 @@ import type {
   PostMeetingCaptureConfig,
 
   AiModelConfig,
+  GoogleAuthStatus,
   HygieneStatusView,
   HygieneNarrativeView,
 } from "@/types";
@@ -279,12 +281,12 @@ interface BackgroundDiagnostics {
   backgroundPause: BackgroundPauseStatusView;
 }
 
-function AiBackgroundWorkSection() {
+export function AiBackgroundWorkSection() {
   const [aiModels, setAiModels] = useState<AiModelConfig | null>(null);
   const [calendarPollInterval, setCalendarPollInterval] = useState(5);
   const [emailPollInterval, setEmailPollInterval] = useState(15);
   const [preMeetingHours, setPreMeetingHours] = useState(12);
-  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(false);
   const [backgroundPause, setBackgroundPause] = useState<BackgroundPauseStatusView | null>(null);
 
   async function loadConfig() {
@@ -301,9 +303,18 @@ function AiBackgroundWorkSection() {
       setCalendarPollInterval(config.google?.calendarPollIntervalMinutes ?? 5);
       setEmailPollInterval(config.google?.emailPollIntervalMinutes ?? 15);
       setPreMeetingHours(config.hygienePreMeetingHours ?? 12);
-      setGoogleEnabled(config.google?.enabled ?? false);
     } catch (err) {
       console.error("Settings load failed:", err); // Expected: background settings fetch
+    }
+  }
+
+  async function loadGoogleStatus() {
+    try {
+      const status = await invoke<GoogleAuthStatus>("get_google_auth_status");
+      setGoogleConnected(status.status === "authenticated");
+    } catch (err) {
+      console.warn("Google auth status failed:", err);
+      setGoogleConnected(false);
     }
   }
 
@@ -319,6 +330,15 @@ function AiBackgroundWorkSection() {
   useEffect(() => {
     loadConfig();
     loadDiagnostics();
+    loadGoogleStatus();
+
+    const unlisten = listen<GoogleAuthStatus>("google-auth-changed", (event) => {
+      setGoogleConnected(event.payload?.status === "authenticated");
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
   }, []);
 
   async function handleModelChange(tier: string, model: string) {
@@ -514,7 +534,7 @@ function AiBackgroundWorkSection() {
                 ? `Recent timeout rate: ${(backgroundPause.timeoutRateLast20 * 100).toFixed(0)}%`
                 : "Loading background AI status..."}
             </p>
-            {!googleEnabled && (
+            {!googleConnected && (
               <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
                 Google is currently disconnected, so poll cadence settings are dormant.
               </p>
