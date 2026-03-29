@@ -631,7 +631,11 @@ function AttentionSection({
   const hasActions = attentionActions.length > 0;
   const hasEmails = briefingEmails.length > 0;
   const hasLifecycle = lifecycleUpdates.length > 0;
-  const hasCallouts = briefingCallouts.length > 0;
+  // Callouts disabled: the signal propagation pipeline is populating
+  // briefing_callouts with raw signal data (e.g., "Support health: tickets
+  // updated") that violates ADR-0083 vocabulary rules. Until callouts are
+  // filtered to curated, user-meaningful intelligence items, suppress them.
+  const hasCallouts = false; // briefingCallouts.length > 0;
   const hasAnything = hasLifecycle || hasCallouts || hasSuggested || hasActions || hasEmails;
 
   if (!hasAnything) return null;
