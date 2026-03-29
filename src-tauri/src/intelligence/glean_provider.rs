@@ -669,6 +669,46 @@ pub fn emit_glean_signals(
         }
     }
 
+    // I649: Write technical footprint from org_health + support_health
+    if entity_type == "account" {
+        let support_tier = intel
+            .org_health
+            .as_ref()
+            .and_then(|oh| oh.support_tier.clone());
+        let support_health_data = intel.support_health.as_ref();
+        let has_footprint_data = support_tier.is_some() || support_health_data.is_some();
+        if has_footprint_data {
+            let csat = support_health_data.and_then(|sh| sh.csat);
+            let open_tickets = support_health_data
+                .and_then(|sh| sh.open_tickets)
+                .unwrap_or(0) as i64;
+            if let Err(e) = db.upsert_account_technical_footprint(
+                entity_id,
+                None,                        // integrations_json
+                None,                        // usage_tier
+                None,                        // adoption_score
+                None,                        // active_users
+                support_tier.as_deref(),
+                csat,
+                open_tickets,
+                None,                        // services_stage
+                "glean_zendesk",
+            ) {
+                log::warn!("[I649] Failed to upsert technical footprint for {}: {}", entity_id, e);
+            } else if let Err(e) = emit_signal(
+                db,
+                entity_type,
+                entity_id,
+                "technical_footprint_updated",
+                "glean_zendesk",
+                None,
+                0.85,
+            ) {
+                log::warn!("[I649] Failed to emit technical_footprint_updated: {}", e);
+            }
+        }
+    }
+
     // Competitive mentions at 0.7
     if !intel.competitive_context.is_empty() {
         if let Ok(value) = serde_json::to_string(&intel.competitive_context) {
