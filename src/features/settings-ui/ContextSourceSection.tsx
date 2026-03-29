@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Globe, HardDrive, RefreshCw, Check, AlertCircle, Loader2 } from "lucide-react";
@@ -33,6 +33,7 @@ export default function ContextSourceSection() {
   const [tokenHealth, setTokenHealth] = useState<GleanTokenHealth | null>(null);
 
   const glean = useGleanAuth();
+  const previousGleanPhase = useRef(glean.phase);
   const isConnected = glean.status.status === "authenticated";
 
   const load = useCallback(async () => {
@@ -51,29 +52,31 @@ export default function ContextSourceSection() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadTokenHealth() {
-      try {
-        const health = await invoke<GleanTokenHealth>("get_glean_token_health");
-        if (!cancelled) {
-          setTokenHealth(health);
-        }
-      } catch {
-        if (!cancelled) {
-          setTokenHealth(null);
-        }
-      }
+  const refreshTokenHealth = useCallback(async () => {
+    try {
+      const health = await invoke<GleanTokenHealth>("get_glean_token_health");
+      setTokenHealth(health);
+    } catch {
+      setTokenHealth(null);
     }
+  }, []);
 
-    loadTokenHealth();
-    const interval = window.setInterval(loadTokenHealth, 6 * 60 * 60 * 1000);
+  useEffect(() => {
+    refreshTokenHealth();
+    const interval = window.setInterval(refreshTokenHealth, 6 * 60 * 60 * 1000);
     return () => {
-      cancelled = true;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [refreshTokenHealth]);
+
+  useEffect(() => {
+    const previousPhase = previousGleanPhase.current;
+    previousGleanPhase.current = glean.phase;
+
+    if (previousPhase !== "idle" && glean.phase === "idle") {
+      void refreshTokenHealth();
+    }
+  }, [glean.phase, refreshTokenHealth]);
 
   const handleConnectGlean = async () => {
     if (!endpoint.trim()) {
