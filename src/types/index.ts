@@ -1397,6 +1397,26 @@ export interface AccountTeamMember {
   createdAt: string;
 }
 
+/** DB-first stakeholder with full person data and provenance. */
+export interface StakeholderFull {
+  personId: string;
+  personName: string;
+  personEmail?: string | null;
+  organization?: string | null;
+  /** Job title from people table. */
+  personRole?: string | null;
+  /** Role from account_stakeholders (champion, csm, etc.). */
+  stakeholderRole: string;
+  /** Provenance: 'user', 'glean', 'google'. */
+  dataSource: string;
+  lastSeenInGlean?: string | null;
+  createdAt: string;
+  linkedinUrl?: string | null;
+  photoUrl?: string | null;
+  meetingCount?: number | null;
+  lastSeen?: string | null;
+}
+
 export interface AccountTeamImportNote {
   id: number;
   accountId: string;
@@ -1456,6 +1476,8 @@ export interface AccountDetail extends AccountListItem {
   autoCompletedMilestones?: AccountMilestone[];
   /** I649: Technical footprint, adoption, and service-delivery data. */
   technicalFootprint?: AccountTechnicalFootprint;
+  /** DB-first stakeholder read model: all stakeholders with provenance. */
+  stakeholdersFull?: StakeholderFull[];
 }
 
 /** I649: Technical footprint data for an account. */

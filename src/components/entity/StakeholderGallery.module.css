@@ -596,6 +596,76 @@
   color: var(--color-garden-larkspur);
 }
 
+/* ── Source provenance indicators (DB-first read model) ── */
+
+.sourceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.sourceLabel {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-top: 6px;
+}
+
+.sourceRow .sourceLabel {
+  margin-top: 0;
+}
+
+.sourceLabel[data-source="glean"] {
+  background: var(--color-garden-larkspur-15, rgba(110, 137, 168, 0.15));
+  color: var(--color-garden-larkspur);
+}
+
+.sourceLabel[data-source="google"] {
+  background: var(--color-spice-turmeric-12, rgba(224, 175, 65, 0.12));
+  color: var(--color-spice-turmeric);
+}
+
+.sourceAccept {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-garden-sage);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sourceAccept:hover {
+  color: var(--color-text-primary);
+}
+
+.sourceDismiss {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sourceDismiss:hover {
+  color: var(--color-earth-terracotta);
+}
+
 /* ── Engagement badges ── */
 
 .engagementBadge {
