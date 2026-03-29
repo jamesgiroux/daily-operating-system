@@ -535,6 +535,40 @@ interface DbGrowthReport {
   reportedAt: string;
 }
 
+interface AiUsageBreakdownCount {
+  label: string;
+  count: number;
+}
+
+interface AiUsageTrendPoint {
+  date: string;
+  callCount: number;
+  estimatedPromptTokens: number;
+  estimatedOutputTokens: number;
+  estimatedTotalTokens: number;
+  totalDurationMs: number;
+}
+
+interface AiUsageDiagnostics {
+  today: AiUsageTrendPoint;
+  operationCounts: AiUsageBreakdownCount[];
+  modelCounts: AiUsageBreakdownCount[];
+  budgetLimit: number;
+  budgetRemaining: number;
+  estimatedDailyTokenBudget: number;
+  estimatedTokenBudgetRemaining: number;
+  backgroundPause: {
+    paused: boolean;
+    pausedUntil?: string | null;
+    reason?: string | null;
+    rolling4hTokens: number;
+    backgroundCalls4h: number;
+    timeoutRateLast20: number;
+    consecutiveBackgroundTimeouts: number;
+  };
+  trend: AiUsageTrendPoint[];
+}
+
 const TABLE_LABELS: Record<string, string> = {
   signal_events: "Signals",
   email_signals: "Email signals",
@@ -673,6 +707,149 @@ function DatabaseStorageCard() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function AiUsageCard() {
+  const [usage, setUsage] = useState<AiUsageDiagnostics | null>(null);
+
+  useEffect(() => {
+    invoke<AiUsageDiagnostics>("get_ai_usage_diagnostics")
+      .then(setUsage)
+      .catch((err) => console.warn("get_ai_usage_diagnostics failed:", err));
+  }, []);
+
+  if (!usage) return null;
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <p style={styles.subsectionLabel}>AI Usage</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
+        <div style={{ border: "1px solid var(--color-rule-light)", padding: "12px 14px" }}>
+          <div style={styles.monoLabel}>Today</div>
+          <div style={{ fontFamily: "var(--font-serif)", fontSize: 28, color: "var(--color-text-primary)", marginTop: 4 }}>
+            {usage.today.estimatedTotalTokens.toLocaleString()}
+          </div>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 4 }}>
+            estimated tokens across {usage.today.callCount} calls
+          </p>
+        </div>
+        <div style={{ border: "1px solid var(--color-rule-light)", padding: "12px 14px" }}>
+          <div style={styles.monoLabel}>Budget</div>
+          <div style={{ fontFamily: "var(--font-serif)", fontSize: 28, color: "var(--color-text-primary)", marginTop: 4 }}>
+            {usage.estimatedTokenBudgetRemaining.toLocaleString()}
+          </div>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 4 }}>
+            est. tokens remaining today
+          </p>
+        </div>
+        <div style={{ border: "1px solid var(--color-rule-light)", padding: "12px 14px" }}>
+          <div style={styles.monoLabel}>Hygiene Budget</div>
+          <div style={{ fontFamily: "var(--font-serif)", fontSize: 28, color: "var(--color-text-primary)", marginTop: 4 }}>
+            {usage.budgetRemaining}/{usage.budgetLimit}
+          </div>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 4 }}>
+            background AI calls left today
+          </p>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <div style={{ ...styles.monoLabel, marginBottom: 8 }}>Background Guard</div>
+        <div style={{ border: "1px solid var(--color-rule-light)", padding: "12px 14px" }}>
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-primary)" }}>
+            {usage.backgroundPause.paused ? "Paused" : "Running"}
+          </div>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 6 }}>
+            {usage.backgroundPause.paused
+              ? usage.backgroundPause.reason ?? "Background AI is temporarily paused"
+              : `${usage.backgroundPause.rolling4hTokens.toLocaleString()} tokens in the last 4 hours`}
+          </p>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 6 }}>
+            Timeout rate: {(usage.backgroundPause.timeoutRateLast20 * 100).toFixed(0)}% across recent background calls
+          </p>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <div style={{ ...styles.monoLabel, marginBottom: 8 }}>Top Operations</div>
+        {usage.operationCounts.length > 0 ? (
+          usage.operationCounts.map((entry) => (
+            <div
+              key={entry.label}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                padding: "6px 0",
+                borderBottom: "1px solid var(--color-rule-light)",
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+              }}
+            >
+              <span style={{ color: "var(--color-text-secondary)" }}>{entry.label}</span>
+              <span style={{ color: "var(--color-text-tertiary)" }}>{entry.count}</span>
+            </div>
+          ))
+        ) : (
+          <p style={{ ...styles.description, fontSize: 12 }}>No AI calls recorded today.</p>
+        )}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <div style={{ ...styles.monoLabel, marginBottom: 8 }}>Models</div>
+        {usage.modelCounts.length > 0 ? (
+          usage.modelCounts.map((entry) => (
+            <div
+              key={entry.label}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                padding: "6px 0",
+                borderBottom: "1px solid var(--color-rule-light)",
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+              }}
+            >
+              <span style={{ color: "var(--color-text-secondary)" }}>{entry.label}</span>
+              <span style={{ color: "var(--color-text-tertiary)" }}>{entry.count}</span>
+            </div>
+          ))
+        ) : (
+          <p style={{ ...styles.description, fontSize: 12 }}>No model usage recorded today.</p>
+        )}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <div style={{ ...styles.monoLabel, marginBottom: 8 }}>7-Day Trend</div>
+        {usage.trend.length > 0 ? (
+          usage.trend.map((point) => (
+            <div
+              key={point.date}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "90px 1fr auto",
+                gap: 12,
+                alignItems: "center",
+                padding: "6px 0",
+                borderBottom: "1px solid var(--color-rule-light)",
+              }}
+            >
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                {point.date}
+              </span>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                {point.callCount} calls · {point.estimatedTotalTokens.toLocaleString()} tokens · {(point.totalDurationMs / 1000).toFixed(1)}s
+              </span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                in {point.estimatedPromptTokens.toLocaleString()} / out {point.estimatedOutputTokens.toLocaleString()}
+              </span>
+            </div>
+          ))
+        ) : (
+          <p style={{ ...styles.description, fontSize: 12 }}>No usage recorded in the last 7 days.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -871,6 +1048,8 @@ export default function DiagnosticsSection() {
       <ManualRunSection running={running} onRun={handleRunWorkflow} />
       <hr style={styles.thinRule} />
       <MeetingBackfillCard />
+      <hr style={styles.thinRule} />
+      <AiUsageCard />
       <hr style={styles.thinRule} />
       <DatabaseStorageCard />
       <hr style={styles.thinRule} />

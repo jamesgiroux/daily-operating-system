@@ -116,7 +116,7 @@ impl Executor {
         workspace: &Path,
         user_ctx: &crate::types::UserContext,
         extraction_pty: &PtyManager,
-        synthesis_pty: &PtyManager,
+        synthesis_pty: Option<&PtyManager>,
     ) -> Result<(), String> {
         let known_domains = self.build_known_domains();
         match crate::workflow::deliver::enrich_emails(
@@ -128,6 +128,9 @@ impl Executor {
         ) {
             Ok(()) => Ok(()),
             Err(err) if Self::is_model_unavailable_error(&err) => {
+                let Some(synthesis_pty) = synthesis_pty else {
+                    return Err(err);
+                };
                 log::warn!(
                     "Email enrichment extraction model unavailable, retrying with synthesis tier: {}",
                     err
@@ -1111,7 +1114,7 @@ impl Executor {
                 workspace,
                 &user_ctx,
                 &extraction_pty,
-                &synthesis_pty,
+                Some(&synthesis_pty),
             ) {
                 log::warn!("Email enrichment failed (non-fatal): {}", e);
                 let sync = self.build_email_sync_status(
@@ -1318,7 +1321,7 @@ impl Executor {
             workspace,
             &user_ctx,
             &extraction_pty,
-            &synthesis_pty,
+            Some(&synthesis_pty),
         ) {
             log::warn!("Email refresh: AI enrichment failed (non-fatal): {}", e);
             let sync = self.build_email_sync_status(

@@ -1,5 +1,3 @@
-@import '../../styles/design-tokens.css';
-
 .hero {
   composes: hero from "../entity/EntityHeroBase.module.css";
 }
@@ -128,6 +126,13 @@
 .readMore {
   composes: heroReadMore from "../entity/EntityHeroBase.module.css";
   padding-top: 4px;
+}
+
+.provenance {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+  max-width: 720px;
 }
 
 /* ── Account Type Badge ── */

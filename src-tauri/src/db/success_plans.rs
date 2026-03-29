@@ -46,6 +46,8 @@ impl ActionDb {
             target_date: row.get("target_date")?,
             completed_at: row.get("completed_at")?,
             auto_detect_signal: row.get("auto_detect_signal")?,
+            completed_by: row.get("completed_by")?,
+            completion_trigger: row.get("completion_trigger")?,
             sort_order: row.get("sort_order")?,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
@@ -326,12 +328,25 @@ impl ActionDb {
         &self,
         milestone_id: &str,
     ) -> Result<(AccountMilestone, Option<AccountObjective>), DbError> {
+        self.complete_milestone_with_metadata(milestone_id, None, None)
+    }
+
+    pub fn complete_milestone_with_metadata(
+        &self,
+        milestone_id: &str,
+        completed_by: Option<&str>,
+        completion_trigger: Option<&str>,
+    ) -> Result<(AccountMilestone, Option<AccountObjective>), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
             "UPDATE account_milestones
-             SET status = 'completed', completed_at = ?2, updated_at = ?2
+             SET status = 'completed',
+                 completed_at = ?2,
+                 completed_by = COALESCE(?3, completed_by),
+                 completion_trigger = COALESCE(?4, completion_trigger),
+                 updated_at = ?2
              WHERE id = ?1",
-            params![milestone_id, now],
+            params![milestone_id, now, completed_by, completion_trigger],
         )?;
         let milestone = self.get_milestone(milestone_id)?.ok_or_else(|| {
             DbError::Migration("Milestone not found after completion".to_string())
@@ -566,16 +581,32 @@ impl ActionDb {
         account_id: &str,
         event_type: &str,
     ) -> Result<AutoCompletedMilestones, DbError> {
+        self.complete_milestones_for_completion_trigger(
+            account_id,
+            event_type,
+            Some("account_event"),
+        )
+    }
+
+    pub fn complete_milestones_for_completion_trigger(
+        &self,
+        account_id: &str,
+        completion_trigger: &str,
+        completed_by: Option<&str>,
+    ) -> Result<AutoCompletedMilestones, DbError> {
         let milestone_ids: Vec<String> = {
             let mut stmt = self.conn.prepare(
                 "SELECT id
                  FROM account_milestones
                  WHERE account_id = ?1
                    AND status = 'pending'
-                   AND auto_detect_signal = ?2
+                   AND (
+                       auto_detect_signal = ?2
+                       OR completion_trigger = ?2
+                   )
                  ORDER BY sort_order, created_at",
             )?;
-            let rows = stmt.query_map(params![account_id, event_type], |row| row.get(0))?;
+            let rows = stmt.query_map(params![account_id, completion_trigger], |row| row.get(0))?;
             let mut ids = Vec::new();
             for row in rows {
                 ids.push(row?);
@@ -586,7 +617,11 @@ impl ActionDb {
         let mut completed_milestones = Vec::new();
         let mut completed_objectives = Vec::new();
         for milestone_id in milestone_ids {
-            let (milestone, objective) = self.complete_milestone(&milestone_id)?;
+            let (milestone, objective) = self.complete_milestone_with_metadata(
+                &milestone_id,
+                completed_by,
+                Some(completion_trigger),
+            )?;
             completed_milestones.push(milestone);
             if let Some(objective) = objective {
                 completed_objectives.push(objective);

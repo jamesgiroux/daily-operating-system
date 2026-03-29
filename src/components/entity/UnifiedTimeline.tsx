@@ -95,6 +95,28 @@ export function UnifiedTimeline({
     }
   }
 
+  if (data.lifecycleChanges) {
+    for (const change of data.lifecycleChanges) {
+      const transition = change.previousLifecycle
+        ? `${change.previousLifecycle} → ${change.newLifecycle}`
+        : change.newLifecycle;
+      const subtitle = [
+        change.newStage ? `Stage: ${change.newStage.replace(/_/g, " ")}` : null,
+        change.evidence ?? null,
+        `Source: ${change.source}`,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      items.push({
+        date: formatShortDate(change.createdAt),
+        sortDate: change.createdAt,
+        type: "event" as TimelineEntryType,
+        title: `Lifecycle: ${transition}`,
+        subtitle,
+      });
+    }
+  }
+
   if (data.contextEntries) {
     for (const entry of data.contextEntries) {
       items.push({

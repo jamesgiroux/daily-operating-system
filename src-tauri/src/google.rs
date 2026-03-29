@@ -6,15 +6,16 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
+use crate::activity::ActivityLevel;
 use crate::db::DbPerson;
 use crate::google_api;
 use crate::people;
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
 use crate::util::{name_from_email, org_from_email, person_id_from_email};
@@ -144,6 +145,35 @@ enum PollError {
     ApiError(String),
 }
 
+const ACTIVE_POLL_DEFER_SECS: u64 = 60;
+const DORMANT_POLL_RECHECK_SECS: u64 = 60;
+
+fn google_enabled(state: &AppState) -> bool {
+    state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|cfg| cfg.google.enabled))
+        .unwrap_or(false)
+}
+
+fn google_auth_valid(state: &AppState) -> bool {
+    state
+        .calendar
+        .google_auth
+        .lock()
+        .map(|guard| matches!(*guard, GoogleAuthStatus::Authenticated { .. }))
+        .unwrap_or(false)
+}
+
+fn pollers_ready(state: &AppState) -> bool {
+    google_enabled(state) && google_auth_valid(state) && get_workspace(state).is_some()
+}
+
+fn should_defer_due_poll(state: &AppState) -> bool {
+    matches!(state.activity.level(), ActivityLevel::Active)
+}
+
 /// Start the calendar polling loop.
 ///
 /// Runs as an async task — polls every N minutes during work hours.
@@ -151,6 +181,7 @@ enum PollError {
 pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
     // Brief startup delay to let Google auth settle before first poll
     tokio::time::sleep(Duration::from_secs(5)).await;
+    let mut next_due_at: Option<Instant> = None;
 
     loop {
         // Dev mode isolation: pause background processing while dev sandbox is active
@@ -159,10 +190,9 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             continue;
         }
 
-        // Check if we should poll
-        if !should_poll(&state) {
-            let interval = crate::activity::adaptive_network_interval(&state.activity);
-            tokio::time::sleep(interval).await;
+        if !pollers_ready(&state) {
+            next_due_at = None;
+            tokio::time::sleep(Duration::from_secs(DORMANT_POLL_RECHECK_SECS)).await;
             continue;
         }
 
@@ -170,11 +200,25 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let workspace = match get_workspace(&state) {
             Some(p) => p,
             None => {
-                let interval = crate::activity::adaptive_network_interval(&state.activity);
-                tokio::time::sleep(interval).await;
+                next_due_at = None;
+                tokio::time::sleep(Duration::from_secs(DORMANT_POLL_RECHECK_SECS)).await;
                 continue;
             }
         };
+
+        let poll_interval = Duration::from_secs(get_poll_interval(&state) * 60);
+        let due_at = next_due_at.get_or_insert_with(Instant::now);
+        let now = Instant::now();
+        if *due_at > now {
+            tokio::time::sleep(due_at.saturating_duration_since(now)).await;
+            continue;
+        }
+
+        if should_defer_due_poll(&state) {
+            next_due_at = Some(Instant::now() + Duration::from_secs(ACTIVE_POLL_DEFER_SECS));
+            tokio::time::sleep(Duration::from_secs(ACTIVE_POLL_DEFER_SECS)).await;
+            continue;
+        }
 
         // Poll calendar
         match poll_calendar(&state).await {
@@ -333,21 +377,13 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
         }
 
-        // Sleep between polls -- adaptive based on user activity
-        let interval = crate::activity::adaptive_network_interval(&state.activity);
-        tokio::time::sleep(interval).await;
+        next_due_at = Some(Instant::now() + poll_interval);
     }
 }
 
 /// Check if we should poll now (authenticated + within work hours)
 fn should_poll(state: &AppState) -> bool {
-    // Only gate: must be authenticated with Google
-    state
-        .calendar
-        .google_auth
-        .lock()
-        .map(|guard| matches!(*guard, GoogleAuthStatus::Authenticated { .. }))
-        .unwrap_or(false)
+    pollers_ready(state)
 }
 
 /// Get the poll interval in minutes from config
@@ -877,7 +913,17 @@ fn get_workspace(state: &AppState) -> Option<PathBuf> {
         .read()
         .ok()
         .and_then(|g| g.clone())
-        .map(|cfg| std::path::PathBuf::from(cfg.workspace_path))
+        .and_then(|cfg| {
+            if cfg.workspace_path.trim().is_empty() {
+                return None;
+            }
+            let path = std::path::PathBuf::from(cfg.workspace_path);
+            if path.exists() {
+                Some(path)
+            } else {
+                None
+            }
+        })
 }
 
 /// Get the email poll interval in minutes from config
@@ -1048,7 +1094,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
     // Quick inbox reconciliation before the full startup delay — ensures cached
     // emails shown on first dashboard load don't include ones archived in Gmail
     // since last session. ID-only fetch, no content, fast (~1-2s).
-    if !crate::db::is_dev_db_mode() {
+    if !crate::db::is_dev_db_mode() && pollers_ready(&state) {
         match google_api::get_valid_access_token().await {
             Ok(token) => match google_api::gmail::fetch_inbox_message_ids(&token, 100).await {
                 Ok(inbox_ids) => {
@@ -1093,6 +1139,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
     // Longer startup delay than calendar (10s vs 5s) — let auth + calendar settle
     tokio::time::sleep(Duration::from_secs(10)).await;
+    let mut next_due_at: Option<Instant> = None;
 
     // Gmail always polls — Glean Governed mode removed (I560 Wave 1).
 
@@ -1103,9 +1150,9 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
             continue;
         }
 
-        // Check if we should poll
-        if !should_poll(&state) {
-            tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
+        if !pollers_ready(&state) {
+            next_due_at = None;
+            tokio::time::sleep(Duration::from_secs(DORMANT_POLL_RECHECK_SECS)).await;
             continue;
         }
 
@@ -1113,24 +1160,51 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let workspace = match get_workspace(&state) {
             Some(p) => p,
             None => {
-                tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity))
-                    .await;
+                next_due_at = None;
+                tokio::time::sleep(Duration::from_secs(DORMANT_POLL_RECHECK_SECS)).await;
                 continue;
             }
         };
+
+        let poll_interval = Duration::from_secs(get_email_poll_interval(&state) * 60);
+        let due_at = next_due_at.get_or_insert_with(Instant::now);
+        let now = Instant::now();
+        if *due_at > now {
+            let sleep = tokio::time::sleep(due_at.saturating_duration_since(now));
+            let wake = state.integrations.email_poller_wake.notified();
+            tokio::pin!(sleep);
+            tokio::pin!(wake);
+
+            tokio::select! {
+                _ = &mut sleep => {}
+                _ = &mut wake => {
+                    next_due_at = Some(Instant::now() + poll_interval);
+                    log::debug!("Email poll: wake signal reset the next due time");
+                }
+            }
+            continue;
+        }
+
+        if should_defer_due_poll(&state) {
+            next_due_at = Some(Instant::now() + Duration::from_secs(ACTIVE_POLL_DEFER_SECS));
+            tokio::time::sleep(Duration::from_secs(ACTIVE_POLL_DEFER_SECS)).await;
+            continue;
+        }
 
         // Guard: skip if /today workflow is currently running
         let today_status = state.get_workflow_status(crate::types::WorkflowId::Today);
         if matches!(today_status, crate::types::WorkflowStatus::Running { .. }) {
             log::debug!("Email poll: skipping — /today pipeline is running");
-            tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
+            next_due_at = Some(Instant::now() + Duration::from_secs(ACTIVE_POLL_DEFER_SECS));
+            tokio::time::sleep(Duration::from_secs(ACTIVE_POLL_DEFER_SECS)).await;
             continue;
         }
 
         let data_dir = workspace.join("_today").join("data");
         if !data_dir.exists() {
             // No _today/data/ means briefing hasn't run yet
-            tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
+            next_due_at = Some(Instant::now() + Duration::from_secs(ACTIVE_POLL_DEFER_SECS));
+            tokio::time::sleep(Duration::from_secs(ACTIVE_POLL_DEFER_SECS)).await;
             continue;
         }
 
@@ -1173,113 +1247,118 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 new_ids.len()
                             );
 
-                            // Serialize expensive poller enrichment/scoring work so wake/unlock
-                            // paths don't compete with other heavy queues.
-                            let _heavy_work_permit = match state.permits.pty.acquire().await {
-                                Ok(permit) => permit,
-                                Err(e) => {
-                                    log::warn!(
-                                        "Email poll: PTY permit closed, skipping enrichment: {}",
-                                        e
-                                    );
-                                    continue;
-                                }
-                            };
+                            if crate::pty::background_ai_paused() {
+                                log::info!(
+                                    "Email poll: skipping AI enrichment while background AI is paused"
+                                );
+                            } else {
+                                // Serialize expensive poller enrichment/scoring work so wake/unlock
+                                // paths don't compete with other heavy queues.
+                                let _heavy_work_permit = match state.permits.pty.acquire().await {
+                                    Ok(permit) => permit,
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Email poll: PTY permit closed, skipping enrichment: {}",
+                                            e
+                                        );
+                                        continue;
+                                    }
+                                };
 
-                            // Reuse Executor's enrichment pipeline (same as manual refresh)
-                            let executor =
-                                crate::executor::Executor::new(state.clone(), app_handle.clone());
-                            let user_ctx = state
-                                .config
-                                .read()
-                                .ok()
-                                .and_then(|g| {
-                                    g.as_ref().map(crate::types::UserContext::from_config)
-                                })
-                                .unwrap_or_default();
-                            let ai_config = executor.ai_model_config();
-                            let extraction_pty =
-                                PtyManager::for_tier(ModelTier::Extraction, &ai_config);
-                            let synthesis_pty =
-                                PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
-
-                            // AI enrichment (fault-tolerant, same as execute_email_refresh)
-                            match executor.enrich_emails_with_fallback(
-                                &data_dir,
-                                &workspace,
-                                &user_ctx,
-                                &extraction_pty,
-                                &synthesis_pty,
-                            ) {
-                                Ok(()) => {
-                                    log::info!("Email poll: AI enrichment succeeded");
-                                    let _ = app_handle.emit("emails-updated", ());
-                                }
-                                Err(e) => {
-                                    log::warn!(
-                                        "Email poll: AI enrichment failed (non-fatal): {}",
-                                        e
-                                    );
-                                }
-                            }
-
-                            // Sync enriched signals to DB
-                            match executor.sync_email_signals_from_payload(&data_dir) {
-                                Ok(count) if count > 0 => {
-                                    log::info!("Email poll: persisted {} email signal rows", count);
-                                }
-                                Err(e) => {
-                                    log::warn!("Email poll: signal sync failed (non-fatal): {}", e);
-                                }
-                                _ => {}
-                            }
-
-                            // I395: Re-score after enrichment so new intelligence is reflected.
-                            // Split-lock: read emails + score outside lock, write scores under lock.
-                            // Scoring involves embedding inference which is CPU-heavy (100-500ms/email).
-                            // Holding the DB lock during inference blocks all UI commands (I457).
-                            let scores = {
-                                let active = crate::db::ActionDb::open()
+                                // Reuse Executor's enrichment pipeline (same data shaping as manual refresh),
+                                // but keep the background pass cheap and extraction-only.
+                                let executor =
+                                    crate::executor::Executor::new(state.clone(), app_handle.clone());
+                                let user_ctx = state
+                                    .config
+                                    .read()
                                     .ok()
-                                    .and_then(|db| db.get_all_active_emails().ok())
+                                    .and_then(|g| {
+                                        g.as_ref().map(crate::types::UserContext::from_config)
+                                    })
                                     .unwrap_or_default();
-                                if !active.is_empty() {
-                                    // Open a separate DB connection for scoring so the main lock is free.
-                                    // score_emails needs DB for entity linkage + meeting context queries.
-                                    match crate::db::ActionDb::open() {
-                                        Ok(scoring_db) => {
-                                            let model = state.embedding_model.clone();
-                                            crate::signals::email_scoring::score_emails(
-                                                &scoring_db,
-                                                Some(&model),
-                                                &active,
-                                            )
-                                        }
-                                        Err(e) => {
-                                            log::warn!(
-                                                "Email poll: failed to open scoring DB: {}",
-                                                e
-                                            );
-                                            Vec::new()
-                                        }
-                                    }
-                                } else {
-                                    Vec::new()
-                                }
-                            };
-                            // Write scores back under the main lock (fast — just UPDATEs).
-                            if !scores.is_empty() {
-                                if let Ok(db) = crate::db::ActionDb::open() {
-                                    for (email_id, score, reason) in &scores {
-                                        let _ = db.set_relevance_score(email_id, *score, reason);
-                                    }
-                                }
-                                log::info!("Email poll: scored {} emails", scores.len());
-                            }
+                                let ai_config = executor.ai_model_config();
+                                let background_pty = PtyManager::for_tier(
+                                    ModelTier::Background,
+                                    &ai_config,
+                                )
+                                .with_usage_context(
+                                    AiUsageContext::new("gmail", "background_email_enrichment")
+                                        .with_trigger("poller")
+                                        .with_tier(ModelTier::Background)
+                                        .with_background(true),
+                                );
 
-                            // Final event so frontend picks up enriched data
-                            let _ = app_handle.emit("operation-delivered", "emails-enriched");
-                            let _ = app_handle.emit("emails-updated", ());
+                                match executor.enrich_emails_with_fallback(
+                                    &data_dir,
+                                    &workspace,
+                                    &user_ctx,
+                                    &background_pty,
+                                    None,
+                                ) {
+                                    Ok(()) => {
+                                        log::info!("Email poll: AI enrichment succeeded");
+                                        let _ = app_handle.emit("emails-updated", ());
+                                    }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Email poll: AI enrichment failed (non-fatal): {}",
+                                            e
+                                        );
+                                    }
+                                }
+
+                                // Sync enriched signals to DB
+                                match executor.sync_email_signals_from_payload(&data_dir) {
+                                    Ok(count) if count > 0 => {
+                                        log::info!("Email poll: persisted {} email signal rows", count);
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Email poll: signal sync failed (non-fatal): {}", e);
+                                    }
+                                    _ => {}
+                                }
+
+                                // I395: Re-score after enrichment so new intelligence is reflected.
+                                let scores = {
+                                    let active = crate::db::ActionDb::open()
+                                        .ok()
+                                        .and_then(|db| db.get_all_active_emails().ok())
+                                        .unwrap_or_default();
+                                    if !active.is_empty() {
+                                        match crate::db::ActionDb::open() {
+                                            Ok(scoring_db) => {
+                                                let model = state.embedding_model.clone();
+                                                crate::signals::email_scoring::score_emails(
+                                                    &scoring_db,
+                                                    Some(&model),
+                                                    &active,
+                                                )
+                                            }
+                                            Err(e) => {
+                                                log::warn!(
+                                                    "Email poll: failed to open scoring DB: {}",
+                                                    e
+                                                );
+                                                Vec::new()
+                                            }
+                                        }
+                                    } else {
+                                        Vec::new()
+                                    }
+                                };
+                                if !scores.is_empty() {
+                                    if let Ok(db) = crate::db::ActionDb::open() {
+                                        for (email_id, score, reason) in &scores {
+                                            let _ = db.set_relevance_score(email_id, *score, reason);
+                                        }
+                                    }
+                                    log::info!("Email poll: scored {} emails", scores.len());
+                                }
+
+                                let _ = app_handle.emit("operation-delivered", "emails-enriched");
+                                let _ = app_handle.emit("emails-updated", ());
+                            }
                         } else {
                             log::info!("Email poll: no new emails");
                         }
@@ -1310,18 +1389,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
         }
 
-        // Sleep between polls, interruptible by wake signal -- adaptive based on user activity
-        let sleep = tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity));
-        let wake = state.integrations.email_poller_wake.notified();
-        tokio::pin!(sleep);
-        tokio::pin!(wake);
-
-        tokio::select! {
-            _ = &mut sleep => {},
-            _ = &mut wake => {
-                log::debug!("Email poll: woken by manual refresh signal");
-            },
-        }
+        next_due_at = Some(Instant::now() + poll_interval);
     }
 }
 
