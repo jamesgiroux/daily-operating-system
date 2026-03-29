@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use rusqlite::OptionalExtension;
 use tauri::{AppHandle, Emitter};
 
 use crate::activity::ActivityLevel;
@@ -207,6 +208,14 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
         };
 
         let poll_interval = Duration::from_secs(get_poll_interval(&state) * 60);
+        if next_due_at.is_none() {
+            let remaining = remaining_until_next_poll(
+                load_last_sync_success("google_calendar"),
+                poll_interval,
+                Utc::now(),
+            );
+            next_due_at = Some(Instant::now() + remaining);
+        }
         let due_at = next_due_at.get_or_insert_with(Instant::now);
         let now = Instant::now();
         if *due_at > now {
@@ -395,6 +404,38 @@ fn get_poll_interval(state: &AppState) -> u64 {
         .and_then(|g| g.clone())
         .map(|cfg| cfg.google.calendar_poll_interval_minutes as u64)
         .unwrap_or(5)
+}
+
+fn load_last_sync_success(source: &str) -> Option<DateTime<Utc>> {
+    let db = crate::db::ActionDb::open().ok()?;
+    let raw: Option<String> = db
+        .conn_ref()
+        .query_row(
+            "SELECT last_success_at FROM sync_metadata WHERE source = ?1",
+            rusqlite::params![source],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten()?;
+
+    raw.and_then(|value| value.parse::<DateTime<Utc>>().ok())
+}
+
+fn remaining_until_next_poll(
+    last_success_at: Option<DateTime<Utc>>,
+    poll_interval: Duration,
+    now: DateTime<Utc>,
+) -> Duration {
+    let Some(last_success_at) = last_success_at else {
+        return Duration::ZERO;
+    };
+
+    let Ok(elapsed) = now.signed_duration_since(last_success_at).to_std() else {
+        return Duration::ZERO;
+    };
+
+    poll_interval.saturating_sub(elapsed)
 }
 
 /// Prep-eligible meeting types (same as PREP_ELIGIBLE_TYPES + PERSON_PREP_TYPES in deliver.rs)
@@ -1167,6 +1208,11 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
         };
 
         let poll_interval = Duration::from_secs(get_email_poll_interval(&state) * 60);
+        if next_due_at.is_none() {
+            let remaining =
+                remaining_until_next_poll(load_last_sync_success("gmail"), poll_interval, Utc::now());
+            next_due_at = Some(Instant::now() + remaining);
+        }
         let due_at = next_due_at.get_or_insert_with(Instant::now);
         let now = Instant::now();
         if *due_at > now {
@@ -1603,5 +1649,34 @@ mod tests {
             preps_dir,
             "evt-123_at_google.com"
         ));
+    }
+
+    #[test]
+    fn test_remaining_until_next_poll_returns_zero_without_prior_success() {
+        let now = Utc::now();
+        assert_eq!(
+            remaining_until_next_poll(None, Duration::from_secs(300), now),
+            Duration::ZERO
+        );
+    }
+
+    #[test]
+    fn test_remaining_until_next_poll_respects_remaining_interval() {
+        let now = Utc::now();
+        let last_success = now - chrono::Duration::seconds(90);
+        assert_eq!(
+            remaining_until_next_poll(Some(last_success), Duration::from_secs(300), now),
+            Duration::from_secs(210)
+        );
+    }
+
+    #[test]
+    fn test_remaining_until_next_poll_returns_zero_when_interval_elapsed() {
+        let now = Utc::now();
+        let last_success = now - chrono::Duration::seconds(600);
+        assert_eq!(
+            remaining_until_next_poll(Some(last_success), Duration::from_secs(300), now),
+            Duration::ZERO
+        );
     }
 }
