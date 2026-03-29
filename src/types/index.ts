@@ -1410,6 +1410,8 @@ export interface AccountTeamImportNote {
 export interface AccountDetail extends AccountListItem {
   contractStart?: string;
   renewalStage?: string | null;
+  /** I646 C3: Separate commercial opportunity stage. */
+  commercialStage?: string | null;
   /** JSON-serialized string[] of resolution keywords (I305) */
   keywords?: string;
   /** ISO timestamp when keywords were last extracted (I305) */

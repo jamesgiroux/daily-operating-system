@@ -81,6 +81,7 @@ pub fn create_child_account_record(
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        commercial_stage: None,
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -1365,6 +1366,7 @@ pub async fn get_account_detail(
                 nps: account.nps,
                 renewal_date: account.contract_end,
                 renewal_stage,
+                commercial_stage: account.commercial_stage,
                 contract_start: account.contract_start,
                 company_overview: overview,
                 strategic_programs: programs,
@@ -1653,6 +1655,7 @@ pub fn create_account(
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        commercial_stage: None,
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -1907,6 +1910,7 @@ pub fn bulk_create_accounts(
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         };
 
         db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -2126,6 +2130,7 @@ pub async fn create_internal_organization(
                         keywords: None,
                         keywords_extracted_at: None,
                         metadata: None,
+                        commercial_stage: None,
                     };
                     db.upsert_account(&root_account)
                         .map_err(|e| e.to_string())?;
@@ -2362,6 +2367,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         }
     }
 

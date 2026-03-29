@@ -34,6 +34,9 @@ pub struct AccountDetailResult {
     pub renewal_date: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub renewal_stage: Option<String>,
+    /// I646 C3: Separate commercial opportunity stage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commercial_stage: Option<String>,
     pub contract_start: Option<String>,
     pub company_overview: Option<crate::accounts::CompanyOverview>,
     pub strategic_programs: Vec<crate::accounts::StrategicProgram>,
