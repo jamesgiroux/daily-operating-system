@@ -1144,12 +1144,16 @@ fn reconcile_vec_items<T: super::io::HasSource + Clone>(
     }
 
     // 2. Add new items, filtering against dismissed tombstones and existing duplicates
+    // I645: Only enforce dismissals from the last 90 days
+    let cutoff_90d = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
     for item in new_items {
         let item_text = get_text(item).to_lowercase();
 
-        let is_dismissed = dismissed
-            .iter()
-            .any(|d| d.field == field_name && item_text.contains(&d.content.to_lowercase()));
+        let is_dismissed = dismissed.iter().any(|d| {
+            d.field == field_name
+                && d.dismissed_at > cutoff_90d
+                && item_text.contains(&d.content.to_lowercase())
+        });
 
         // Dedup: skip if an item with the same text already exists in result
         let is_duplicate = result

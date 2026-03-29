@@ -70,7 +70,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata, commercial_stage
              FROM accounts
              WHERE id = ?1",
         )?;
@@ -88,7 +88,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata, commercial_stage
              FROM accounts
              WHERE LOWER(name) = LOWER(?1)",
         )?;
@@ -106,7 +106,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata, commercial_stage
              FROM accounts WHERE archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -118,7 +118,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata, commercial_stage
              FROM accounts WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -130,7 +130,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata, commercial_stage
              FROM accounts WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map(params![parent_id], Self::map_account_row)?;
@@ -148,7 +148,7 @@ impl ActionDb {
             )
             SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                    nps, tracker_path, parent_id, account_type, updated_at, archived,
-                   keywords, keywords_extracted_at, metadata
+                   keywords, keywords_extracted_at, metadata, commercial_stage
             FROM accounts
             WHERE id IN (SELECT id FROM ancestors WHERE id IS NOT NULL)
             ORDER BY id",
@@ -170,7 +170,7 @@ impl ActionDb {
             SELECT acc.id, acc.name, acc.lifecycle, acc.arr, acc.health,
                    acc.contract_start, acc.contract_end, acc.nps, acc.tracker_path,
                    acc.parent_id, acc.account_type, acc.updated_at, acc.archived,
-                   acc.keywords, acc.keywords_extracted_at, acc.metadata
+                   acc.keywords, acc.keywords_extracted_at, acc.metadata, acc.commercial_stage
             FROM accounts acc
             JOIN descendants d ON acc.id = d.id
             WHERE acc.archived = 0
@@ -216,7 +216,7 @@ impl ActionDb {
         let query = if include_archived {
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
                     a.contract_end, a.nps, a.tracker_path, a.parent_id, a.account_type,
-                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata,
+                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata, a.commercial_stage,
                     ad.domain
              FROM accounts a
              LEFT JOIN account_domains ad ON a.id = ad.account_id
@@ -224,7 +224,7 @@ impl ActionDb {
         } else {
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
                     a.contract_end, a.nps, a.tracker_path, a.parent_id, a.account_type,
-                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata,
+                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata, a.commercial_stage,
                     ad.domain
              FROM accounts a
              LEFT JOIN account_domains ad ON a.id = ad.account_id
@@ -240,7 +240,7 @@ impl ActionDb {
 
         while let Some(row) = rows.next()? {
             let account_id: String = row.get(0)?;
-            let domain: Option<String> = row.get(16)?;
+            let domain: Option<String> = row.get(17)?;
 
             if current_id.as_deref() != Some(&account_id) {
                 // New account — push a new entry
@@ -264,6 +264,7 @@ impl ActionDb {
                     keywords: row.get(13).unwrap_or(None),
                     keywords_extracted_at: row.get(14).unwrap_or(None),
                     metadata: row.get(15).unwrap_or(None),
+                    commercial_stage: row.get(16).unwrap_or(None),
                 };
                 let domains = domain.into_iter().collect();
                 result.push((account, domains));
@@ -292,7 +293,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
                     a.nps, a.tracker_path, a.parent_id, a.account_type,
-                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata
+                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata, a.commercial_stage
              FROM accounts a
              INNER JOIN account_domains d ON d.account_id = a.id
              WHERE d.domain = ?1
@@ -318,7 +319,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata, commercial_stage
              FROM accounts
              WHERE account_type = 'internal' AND parent_id IS NULL AND archived = 0
              ORDER BY updated_at DESC
@@ -336,7 +337,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata, commercial_stage
              FROM accounts
              WHERE account_type = 'internal' AND archived = 0
              ORDER BY name",
@@ -1446,6 +1447,7 @@ impl ActionDb {
             keywords: row.get(13).unwrap_or(None),
             keywords_extracted_at: row.get(14).unwrap_or(None),
             metadata: row.get(15).unwrap_or(None),
+            commercial_stage: row.get(16).unwrap_or(None),
         })
     }
 
@@ -1655,7 +1657,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata, commercial_stage
              FROM accounts WHERE archived = 1 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -1800,7 +1802,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
                     a.nps, a.tracker_path, a.parent_id, a.account_type, a.updated_at, a.archived,
-                    a.keywords, a.keywords_extracted_at, a.metadata
+                    a.keywords, a.keywords_extracted_at, a.metadata, a.commercial_stage
              FROM accounts a
              WHERE a.contract_end IS NOT NULL
                AND a.contract_end < date('now')

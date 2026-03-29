@@ -16,7 +16,7 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { X, Plus, UserPlus, Search, LinkIcon, Check } from "lucide-react";
+import { X, Plus, UserPlus, Search, LinkIcon, Check, Award } from "lucide-react";
 import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember } from "@/types";
 import { formatRelativeDate } from "@/lib/utils";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -753,6 +753,29 @@ export function StakeholderGallery({
               </span>
             </div>
           )}
+        </div>
+      )}
+
+
+      {/* I646 C2: Champion designation badge — visible even without AI enrichment */}
+      {teamMembers.filter((m) => m.role?.toLowerCase().includes("champion")).length > 0 &&
+        !intelligence?.relationshipDepth?.championStrength && (
+        <div className={css.championBadgeRow}>
+          {teamMembers
+            .filter((m) => m.role?.toLowerCase().includes("champion"))
+            .map((champ) => (
+              <div className={css.championBadge} key={champ.personId}>
+                <Award size={14} />
+                <Link
+                  to="/people/$personId"
+                  params={{ personId: champ.personId }}
+                  className={css.championBadgeLink}
+                >
+                  {champ.personName}
+                </Link>
+                <span className={css.championBadgeLabel}>Champion</span>
+              </div>
+            ))}
         </div>
       )}
 

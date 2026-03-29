@@ -716,22 +716,48 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
         .unwrap_or_default();
 
     if champion_assessments.is_empty() {
-        // Fallback to structural check (pre-I555 behavior)
-        let mut score: f64 = 60.0;
-        let mut evidence = vec!["Champion identified (no meeting engagement data)".to_string()];
+        // I646 C1: User designated a champion — check if they specifically attended meetings
+        let champion_person_id = champion.map(|c| c.person_id.as_str()).unwrap_or("");
+        let champion_name = champion
+            .map(|c| c.person_name.as_str())
+            .unwrap_or("Champion");
 
-        if let Ok(signals) = db.get_stakeholder_signals(account_id) {
-            if signals.meeting_frequency_30d > 0 {
-                score += 20.0;
-                evidence.push("Active in recent meetings".to_string());
-            }
+        let champion_meeting_count: i64 = if !champion_person_id.is_empty() {
+            db.conn
+                .query_row(
+                    "SELECT COUNT(DISTINCT m.id) FROM meetings m
+                     JOIN meeting_entities me ON me.meeting_id = m.id
+                     JOIN meeting_attendees ma ON ma.meeting_id = m.id AND ma.person_id = ?2
+                     WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+                       AND m.start_time >= datetime('now', '-90 days')",
+                    rusqlite::params![account_id, champion_person_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        if champion_meeting_count > 0 {
+            return DimensionScore {
+                score: 70.0,
+                weight: 0.8,
+                evidence: vec![format!(
+                    "{} designated as champion, {} meetings in 90d",
+                    champion_name, champion_meeting_count
+                )],
+                trend: "stable".to_string(),
+            };
         }
 
         return DimensionScore {
-            score: score.clamp(0.0, 100.0),
-            weight: 1.0,
-            evidence,
-            trend: String::new(),
+            score: 40.0,
+            weight: 0.6,
+            evidence: vec![format!(
+                "{} designated as champion but no recent meetings",
+                champion_name
+            )],
+            trend: "declining".to_string(),
         };
     }
 

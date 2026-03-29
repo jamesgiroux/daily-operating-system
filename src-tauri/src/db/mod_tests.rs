@@ -232,6 +232,7 @@ fn test_upsert_and_query_account() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
 
     db.upsert_account(&account).expect("upsert account");
@@ -273,6 +274,7 @@ fn test_get_all_accounts_excludes_archived() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
 
     let archived = DbAccount {
@@ -292,6 +294,7 @@ fn test_get_all_accounts_excludes_archived() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
 
     db.upsert_account(&active).expect("upsert active");
@@ -794,6 +797,7 @@ fn test_touch_account_last_contact_by_name() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&account).expect("upsert");
 
@@ -822,6 +826,7 @@ fn test_touch_account_last_contact_by_id() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
         tracker_path: None,
         parent_id: None,
         account_type: crate::db::AccountType::Customer,
@@ -923,6 +928,7 @@ fn test_ensure_entity_for_account() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
 
     // upsert_account now calls ensure_entity_for_account automatically
@@ -1124,6 +1130,7 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&soon).expect("insert");
 
@@ -1145,6 +1152,7 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&no_end).expect("insert");
 
@@ -1166,6 +1174,7 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&expired).expect("insert");
 
@@ -1196,6 +1205,7 @@ fn test_get_stale_accounts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&stale).expect("insert");
 
@@ -1217,6 +1227,7 @@ fn test_get_stale_accounts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&fresh).expect("insert");
 
@@ -1334,6 +1345,7 @@ fn test_stakeholder_signals_with_account_contact() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&account).expect("insert account");
 
@@ -1688,6 +1700,7 @@ fn test_person_entity_linking() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&account).expect("upsert account");
 
@@ -2096,6 +2109,7 @@ fn test_merge_transfers_entity_links() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&account).expect("upsert account");
     db.link_person_to_entity(&remove.id, "acme", "associated")
@@ -2236,6 +2250,7 @@ fn test_delete_person_cascades() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&account).expect("upsert account");
     db.link_person_to_entity(&person.id, "doom-corp", "associated")
@@ -3327,6 +3342,7 @@ fn setup_account(db: &ActionDb, id: &str, name: &str) {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     };
     db.upsert_account(&account).expect("upsert account");
     db.ensure_entity_for_account(&account)
@@ -3572,6 +3588,7 @@ fn sample_account(id: &str, name: &str) -> DbAccount {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+            commercial_stage: None,
     }
 }
 

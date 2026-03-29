@@ -1352,6 +1352,27 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         [],
     ).map_err(|e| format!("Acme renewal_stage: {}", e))?;
 
+    // --- Commercial stage (I644) ---
+    conn.execute(
+        "UPDATE accounts SET commercial_stage = 'Proposal Sent' WHERE id = 'mock-globex-industries'",
+        [],
+    ).map_err(|e| format!("Globex commercial_stage: {}", e))?;
+
+    // --- Source references (I644) ---
+    for (account_id, field, system, kind, value) in [
+        ("mock-acme-corp", "arr", "salesforce", "fact", "1200000"),
+        ("mock-acme-corp", "renewal_date", "user", "fact", "2026-12-01"),
+        ("mock-acme-corp", "champion", "user", "fact", "Sarah Chen"),
+        ("mock-globex-industries", "arr", "salesforce", "fact", "800000"),
+        ("mock-globex-industries", "lifecycle", "glean_crm", "fact", "renewal"),
+    ] {
+        let id = format!("{}-{}-{}", account_id, field, system);
+        conn.execute(
+            "INSERT OR IGNORE INTO account_source_refs (id, account_id, field, source_system, source_kind, source_value, observed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
+            rusqlite::params![id, account_id, field, system, kind, value],
+        ).map_err(|e| format!("Source ref seed: {}", e))?;
+    }
+
     // --- Entities (mirrors accounts) ---
     conn.execute(
         "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",

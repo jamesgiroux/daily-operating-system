@@ -556,6 +556,7 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         },
         json,
     })
@@ -1038,6 +1039,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         }
     }
 
@@ -1416,6 +1418,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         };
 
         write_account_json(workspace, &account, None, &db).unwrap();
@@ -1498,6 +1501,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         };
         db.upsert_account(&parent).unwrap();
 
@@ -1519,6 +1523,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         };
         db.upsert_account(&child1).unwrap();
 
@@ -1539,6 +1544,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         };
         db.upsert_account(&child2).unwrap();
 
@@ -1576,6 +1582,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         })
         .unwrap();
 
@@ -1597,6 +1604,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         })
         .unwrap();
 
@@ -1617,6 +1625,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         })
         .unwrap();
 
