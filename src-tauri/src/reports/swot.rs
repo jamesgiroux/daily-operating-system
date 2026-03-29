@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::reports::generator::ReportGeneratorInput;
 use crate::reports::prompts::{append_intel_context, build_report_preamble};
 use crate::types::AiModelConfig;
@@ -248,6 +248,11 @@ pub fn run_parallel_swot_generation(
         let sender = tx.clone();
         std::thread::spawn(move || {
             let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_models)
+                .with_usage_context(
+                    AiUsageContext::new("reports", "swot_section_generation")
+                        .with_trigger(&section_name)
+                        .with_tier(ModelTier::Extraction),
+                )
                 .with_timeout(30)
                 .with_nice_priority(10);
             let result = pty

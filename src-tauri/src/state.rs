@@ -1214,7 +1214,14 @@ pub fn load_config() -> Result<Config, String> {
 
     let mut config: Config =
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))?;
+    let original_routing_version = config.ai_model_routing_version;
     config.normalize();
+    if config.ai_model_routing_version != original_routing_version {
+        let normalized = serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("Failed to serialize normalized config: {}", e))?;
+        crate::util::atomic_write_str(&config_path, &normalized)
+            .map_err(|e| format!("Failed to persist normalized config: {}", e))?;
+    }
 
     // Validate workspace path exists
     let workspace_path = std::path::Path::new(&config.workspace_path);
