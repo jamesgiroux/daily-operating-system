@@ -2141,6 +2141,16 @@ fn dual_write_enrichment_products(
             upserted,
             entity_id,
         );
+        // Intelligence Loop: every mutation emits a signal (I624 AC7)
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            "account",
+            entity_id,
+            "product_data_updated",
+            source,
+            Some(&format!("{{\"count\":{upserted}}}")),
+            0.55,
+        );
     }
 }
 

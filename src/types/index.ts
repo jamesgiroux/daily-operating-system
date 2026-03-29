@@ -392,6 +392,21 @@ export interface DashboardData {
   repliesNeeded?: ReplyNeeded[];
   /** I502: Health data keyed by entity ID for accounts linked to today's meetings. */
   entityHealthMap?: Record<string, IntelligenceAccountHealth>;
+  /** Briefing callouts from signal propagation (I623 AC4). */
+  briefingCallouts?: BriefingCallout[];
+}
+
+/** A briefing callout surfaced to the daily briefing (I623). */
+export interface BriefingCallout {
+  id: string;
+  entityId: string;
+  entityType: string;
+  entityName?: string | null;
+  calloutType: string;
+  headline: string;
+  detail?: string | null;
+  severity: string;
+  createdAt: string;
 }
 
 // =============================================================================
@@ -1435,6 +1450,8 @@ export interface AccountDetail extends AccountListItem {
   fieldConflicts?: AccountFieldConflictSuggestion[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
+  /** I628 AC5: Recently auto-completed milestones for timeline display. */
+  autoCompletedMilestones?: AccountMilestone[];
 }
 
 export interface AccountFieldProvenance {

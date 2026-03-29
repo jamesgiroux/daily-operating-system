@@ -418,15 +418,10 @@ export default function AccountDetailEditorial() {
   const intelligence = detail?.intelligence ?? null;
   const events = acct.events;
   const files = acct.files;
-  const fieldProvenanceMap = useMemo(
-    () => new Map((detail?.fieldProvenance ?? []).map((item) => [item.field, item])),
-    [detail?.fieldProvenance],
-  );
   const fieldConflictMap = useMemo(
     () => new Map((detail?.fieldConflicts ?? []).map((item) => [item.field, item])),
     [detail?.fieldConflicts],
   );
-  const latestLifecycleChange = detail?.lifecycleChanges?.[0];
   const healthDimensionCount = intelligence?.health?.dimensions
     ? Object.keys(intelligence.health.dimensions).length
     : 0;
@@ -499,60 +494,28 @@ export default function AccountDetailEditorial() {
     }
   };
 
-  const heroProvenanceRows = [
-    {
-      field: "lifecycle",
-      summary: [
-        formatFieldValue(detail, "lifecycle"),
-        latestLifecycleChange?.newContractEnd
-          && latestLifecycleChange.newContractEnd !== latestLifecycleChange.previousContractEnd
-          ? `renewed ${formatShortDate(latestLifecycleChange.newContractEnd)}`
-          : null,
-        formatProvenanceSource(fieldProvenanceMap.get("lifecycle")?.source),
-        fieldProvenanceMap.get("lifecycle")?.updatedAt
-          ? formatShortDate(fieldProvenanceMap.get("lifecycle")!.updatedAt!)
-          : null,
-      ].filter(Boolean).join(" · "),
-      provenance: fieldProvenanceMap.get("lifecycle"),
-      conflict: fieldConflictMap.get("lifecycle"),
-    },
-    {
-      field: "arr",
-      summary: [
-        formatFieldValue(detail, "arr"),
-        formatProvenanceSource(fieldProvenanceMap.get("arr")?.source),
-        fieldProvenanceMap.get("arr")?.updatedAt
-          ? formatShortDate(fieldProvenanceMap.get("arr")!.updatedAt!)
-          : null,
-      ].filter(Boolean).join(" · "),
-      provenance: fieldProvenanceMap.get("arr"),
-      conflict: fieldConflictMap.get("arr"),
-    },
-    {
-      field: "contract_end",
-      summary: [
-        formatFieldValue(detail, "contract_end"),
-        formatProvenanceSource(fieldProvenanceMap.get("contract_end")?.source),
-        fieldProvenanceMap.get("contract_end")?.updatedAt
-          ? formatShortDate(fieldProvenanceMap.get("contract_end")!.updatedAt!)
-          : null,
-      ].filter(Boolean).join(" · "),
-      provenance: fieldProvenanceMap.get("contract_end"),
-      conflict: fieldConflictMap.get("contract_end"),
-    },
-    {
-      field: "nps",
-      summary: [
-        formatFieldValue(detail, "nps"),
-        formatProvenanceSource(fieldProvenanceMap.get("nps")?.source),
-        fieldProvenanceMap.get("nps")?.updatedAt
-          ? formatShortDate(fieldProvenanceMap.get("nps")!.updatedAt!)
-          : null,
-      ].filter(Boolean).join(" · "),
-      provenance: fieldProvenanceMap.get("nps"),
-      conflict: fieldConflictMap.get("nps"),
-    },
-  ].filter((row) => row.summary || row.conflict);
+  const heroFieldConflicts = ["lifecycle", "arr", "contract_end", "nps"]
+    .map((field) => {
+      const conflict = fieldConflictMap.get(field);
+      if (!conflict) return null;
+
+      return {
+        field,
+        label: formatTrackedFieldLabel(field),
+        currentValue: formatFieldValue(detail, field) ?? "Not set",
+        suggestedValue: formatSuggestedValue(field, conflict.suggestedValue),
+        sourceSummary: [
+          formatProvenanceSource(conflict.source),
+          conflict.confidence != null ? `${Math.round(conflict.confidence * 100)}% confidence` : null,
+          conflict.detectedAt ? formatShortDate(conflict.detectedAt) : null,
+        ].filter(Boolean).join(" · "),
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null);
+
+  const healthReviewSummary = healthDimensionCount > 0 && intelligence?.enrichedAt
+    ? `${healthDimensionCount} dimensions · last scored ${formatRelativeDate(intelligence.enrichedAt)}`
+    : null;
 
   return (
     <>
@@ -624,32 +587,6 @@ export default function AccountDetailEditorial() {
               )
             ) : undefined
           }
-          provenanceSlot={
-            <div className={styles.heroProvenance}>
-              {heroProvenanceRows.map((row) => (
-                <ProvenanceLabel
-                  key={row.field}
-                  label={formatTrackedFieldLabel(row.field)}
-                  summary={row.summary}
-                  conflict={row.conflict ? {
-                    source: row.conflict.source,
-                    suggestedValue: formatSuggestedValue(row.field, row.conflict.suggestedValue),
-                    confidence: row.conflict.confidence,
-                    detectedAt: row.conflict.detectedAt,
-                    onAccept: () => { void handleAcceptConflict(row.field); },
-                    onDismiss: () => { void handleDismissConflict(row.field); },
-                    pending: pendingConflictField === row.field,
-                  } : undefined}
-                />
-              ))}
-              {healthDimensionCount > 0 && intelligence?.enrichedAt ? (
-                <ProvenanceLabel
-                  label="Health"
-                  summary={`${healthDimensionCount} dimensions · last scored ${formatRelativeDate(intelligence.enrichedAt)}`}
-                />
-              ) : null}
-            </div>
-          }
         />
         {/* I312: Preset metadata fields */}
         {preset && preset.metadata.account.length > 0 && (
@@ -665,6 +602,68 @@ export default function AccountDetailEditorial() {
                 });
               }}
             />
+          </div>
+        )}
+        {(heroFieldConflicts.length > 0 || healthReviewSummary) && (
+          <div className={styles.fieldReviewPanel}>
+            <div className={styles.fieldReviewHeader}>
+              <p className={styles.fieldReviewEyebrow}>Field review</p>
+              <p className={styles.fieldReviewIntro}>
+                Suggested updates live here so the hero stays focused on the account itself.
+              </p>
+            </div>
+
+            {healthReviewSummary ? (
+              <div className={styles.fieldReviewHealth}>
+                <span className={styles.fieldReviewHealthLabel}>Health scoring</span>
+                <span className={styles.fieldReviewHealthValue}>{healthReviewSummary}</span>
+              </div>
+            ) : null}
+
+            {heroFieldConflicts.length > 0 ? (
+              <div className={styles.fieldReviewList}>
+                {heroFieldConflicts.map((row) => (
+                  <div key={row.field} className={styles.fieldReviewCard}>
+                    <div className={styles.fieldReviewCardTop}>
+                      <div>
+                        <div className={styles.fieldReviewField}>{row.label}</div>
+                        <div className={styles.fieldReviewMeta}>{row.sourceSummary}</div>
+                      </div>
+                      <div className={styles.fieldReviewActions}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => { void handleAcceptConflict(row.field); }}
+                          disabled={pendingConflictField === row.field}
+                        >
+                          Accept
+                        </Button>
+                        <button
+                          type="button"
+                          className={styles.fieldReviewDismiss}
+                          onClick={() => { void handleDismissConflict(row.field); }}
+                          disabled={pendingConflictField === row.field}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                    <div className={styles.fieldReviewValues}>
+                      <div className={styles.fieldReviewValueBlock}>
+                        <span className={styles.fieldReviewValueLabel}>Current</span>
+                        <span className={styles.fieldReviewValue}>{row.currentValue}</span>
+                      </div>
+                      <div className={styles.fieldReviewArrow}>&rarr;</div>
+                      <div className={styles.fieldReviewValueBlock}>
+                        <span className={styles.fieldReviewValueLabel}>Suggested</span>
+                        <span className={styles.fieldReviewValueSuggested}>{row.suggestedValue}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         )}
         {/* Auto-rollover prompt for past renewal dates */}
@@ -727,7 +726,7 @@ export default function AccountDetailEditorial() {
       <div className={`editorial-reveal ${shared.marginLabelSection}`}>
         <div className={shared.marginLabel}>Products</div>
         <div className={shared.marginContent}>
-          <ChapterHeading title="Products" />
+          <ChapterHeading title="Products & Entitlements" />
           {detail.products && detail.products.length > 0 ? (
             <div className={styles.productList}>
               {detail.products.map((product) => (
@@ -772,9 +771,16 @@ export default function AccountDetailEditorial() {
                           setEditProductStatus(product.status);
                         }}
                       >
-                        <div className={styles.productName}>{product.name}</div>
+                        <div className={styles.productName}>
+                          {product.name}
+                          {product.status && (
+                            <span className={styles.productStatusBadge} data-status={product.status}>
+                              {product.status}
+                            </span>
+                          )}
+                        </div>
                         <div className={styles.productMeta}>
-                          {[product.category, product.status, product.notes].filter(Boolean).join(" · ")}
+                          {[product.category, product.notes].filter(Boolean).join(" · ")}
                         </div>
                       </div>
                       <div className={styles.productSource}>
@@ -1083,6 +1089,7 @@ export default function AccountDetailEditorial() {
               ...detail,
               accountEvents: events,
               lifecycleChanges: detail.lifecycleChanges,
+              autoCompletedMilestones: detail.autoCompletedMilestones,
               contextEntries: entityCtx.entries,
             }}
             sectionId=""

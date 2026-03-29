@@ -588,6 +588,62 @@ impl ActionDb {
         )
     }
 
+    /// Get recently auto-completed milestones (I628 AC5) for timeline display.
+    /// Returns milestones with `completed_by IS NOT NULL` completed within the last N days.
+    pub fn get_auto_completed_milestones(
+        &self,
+        account_id: &str,
+        days: i32,
+    ) -> Result<Vec<AccountMilestone>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, objective_id, account_id, title, status,
+                    target_date, completed_at, auto_detect_signal,
+                    completed_by, completion_trigger, sort_order,
+                    created_at, updated_at
+             FROM account_milestones
+             WHERE account_id = ?1
+               AND status = 'completed'
+               AND completed_by IS NOT NULL
+               AND completed_at >= datetime('now', ?2)
+             ORDER BY completed_at DESC",
+        )?;
+        let days_param = format!("-{} days", days);
+        let rows = stmt.query_map(params![account_id, days_param], Self::map_milestone_row)?;
+        let mut milestones = Vec::new();
+        for row in rows {
+            milestones.push(row?);
+        }
+        Ok(milestones)
+    }
+
+    /// Find pending milestones that match a completion trigger, returning (id, title) pairs.
+    /// Used for sub-0.8 confidence notation (I628 AC3) — notes the match without completing.
+    pub fn find_milestones_for_trigger(
+        &self,
+        account_id: &str,
+        completion_trigger: &str,
+    ) -> Result<Vec<(String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title
+             FROM account_milestones
+             WHERE account_id = ?1
+               AND status = 'pending'
+               AND (
+                   auto_detect_signal = ?2
+                   OR completion_trigger = ?2
+               )
+             ORDER BY sort_order, created_at",
+        )?;
+        let rows = stmt.query_map(params![account_id, completion_trigger], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
     pub fn complete_milestones_for_completion_trigger(
         &self,
         account_id: &str,

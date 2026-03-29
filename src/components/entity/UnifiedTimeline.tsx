@@ -129,6 +129,21 @@ export function UnifiedTimeline({
     }
   }
 
+  if (data.autoCompletedMilestones) {
+    for (const ms of data.autoCompletedMilestones) {
+      const triggerLabel = ms.completionTrigger
+        ? ms.completionTrigger.replace(/_/g, " ")
+        : "lifecycle transition";
+      items.push({
+        date: ms.completedAt ? formatShortDate(ms.completedAt) : "",
+        sortDate: ms.completedAt ?? "",
+        type: "value" as TimelineEntryType,
+        title: `Milestone completed: ${ms.title}`,
+        subtitle: `Auto-completed by ${triggerLabel}`,
+      });
+    }
+  }
+
   items.sort((a, b) => {
     if (!a.sortDate && !b.sortDate) return 0;
     if (!a.sortDate) return 1;

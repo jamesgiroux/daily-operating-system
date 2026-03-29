@@ -851,11 +851,31 @@ pub fn apply_lifecycle_transition(
                     "lifecycle_transition",
                 )?;
             } else {
-                log::info!(
-                    "Lifecycle transition for {} skipped milestone auto-complete at confidence {:.2}",
-                    account_id,
-                    transition.confidence
-                );
+                // I628 AC3: Note potential milestone matches in timeline (sub-0.8 confidence)
+                let matching = tx
+                    .find_milestones_for_trigger(account_id, trigger)
+                    .unwrap_or_default();
+                for (milestone_id, milestone_title) in &matching {
+                    log::info!(
+                        "Noting milestone match '{}' for {} at confidence {:.2} (below 0.8 threshold)",
+                        milestone_title, account_id, transition.confidence
+                    );
+                    let _ = crate::services::signals::emit_and_propagate(
+                        tx,
+                        engine,
+                        "account",
+                        account_id,
+                        "milestone_match_noted",
+                        "lifecycle_transition",
+                        Some(&serde_json::json!({
+                            "milestone_id": milestone_id,
+                            "milestone_title": milestone_title,
+                            "confidence": transition.confidence,
+                            "trigger": trigger,
+                        }).to_string()),
+                        transition.confidence,
+                    );
+                }
             }
         }
 
@@ -1331,6 +1351,11 @@ pub async fn get_account_detail(
                 })
                 .collect();
 
+            // I628 AC5: auto-completed milestones for timeline display (last 90 days)
+            let auto_completed_milestones = db
+                .get_auto_completed_milestones(&account.id, 90)
+                .unwrap_or_default();
+
             Ok(AccountDetailResult {
                 id: account.id,
                 name: account.name,
@@ -1365,6 +1390,7 @@ pub async fn get_account_detail(
                 field_provenance,
                 field_conflicts,
                 intelligence,
+                auto_completed_milestones,
             })
         })
         .await
