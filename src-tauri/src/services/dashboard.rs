@@ -595,12 +595,10 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         }
     };
 
-    if db_meetings.is_empty() && live_events.is_empty() {
-        return DashboardResult::Empty {
-            message: "Your daily briefing will appear here once generated.".to_string(),
-            google_auth,
-        };
-    }
+    // NOTE: We deliberately do NOT return Empty when meetings are empty.
+    // The briefing should render with whatever data exists (emails, actions,
+    // lifecycle updates, callouts) even on meeting-free days or before
+    // calendar syncs. The frontend handles empty meeting sections gracefully.
 
     // Convert DB meetings to frontend Meeting structs
     let briefing_meetings: Vec<Meeting> = db_meetings
