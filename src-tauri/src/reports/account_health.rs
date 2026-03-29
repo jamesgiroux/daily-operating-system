@@ -320,7 +320,8 @@ pub fn parse_account_health_response(stdout: &str) -> Result<AccountHealthConten
         );
         "Could not generate Account Health report — the AI response did not contain valid JSON. \
              This usually means there wasn't enough data for a meaningful report. \
-             Try enriching the account's intelligence first.".to_string()
+             Try enriching the account's intelligence first."
+            .to_string()
     })?;
 
     serde_json::from_str::<AccountHealthContent>(&json_str)

@@ -926,7 +926,7 @@ pub fn set_personality(
     })
 }
 
-/// Set AI model for a tier (synthesis, extraction, mechanical)
+/// Set AI model for a tier (synthesis, extraction, background, mechanical)
 #[tauri::command]
 pub fn set_ai_model(
     tier: String,
@@ -934,6 +934,28 @@ pub fn set_ai_model(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
     crate::services::settings::set_ai_model(&tier, &model, &state)
+}
+
+/// Reset AI model routing to the recommended defaults.
+#[tauri::command]
+pub fn reset_ai_models_to_recommended(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Config, String> {
+    crate::services::settings::reset_ai_models_to_recommended(&state)
+}
+
+/// Set Google poll intervals in minutes.
+#[tauri::command]
+pub fn set_google_poll_settings(
+    calendar_poll_interval_minutes: Option<u32>,
+    email_poll_interval_minutes: Option<u32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Config, String> {
+    crate::services::settings::set_google_poll_settings(
+        calendar_poll_interval_minutes,
+        email_poll_interval_minutes,
+        &state,
+    )
 }
 
 /// Set hygiene configuration (I271)

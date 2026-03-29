@@ -20,12 +20,14 @@ use crate::intelligence::{
     parse_intelligence_response, write_intelligence_json, InferredRelationship, IntelligenceJson,
     SourceManifestEntry,
 };
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::AiModelConfig;
 
 /// Debounce window for content-triggered enrichment requests.
 const CONTENT_DEBOUNCE_SECS: u64 = 30;
+const CALENDAR_DEBOUNCE_SECS: u64 = 600;
+const BACKGROUND_ENRICHMENT_TIMEOUT_SECS: u64 = 20;
 
 /// How often the background processor checks for work.
 const POLL_INTERVAL_SECS: u64 = 5;
@@ -97,13 +99,10 @@ impl IntelligenceQueue {
     /// `CONTENT_DEBOUNCE_SECS` — rapid changes within the window are
     /// coalesced into a single request.
     pub fn enqueue(&self, request: IntelRequest) {
-        // Debounce: skip if same entity was enqueued recently (low-priority triggers only)
-        if request.priority == IntelPriority::ContentChange
-            || request.priority == IntelPriority::ProactiveHygiene
-        {
+        if let Some(debounce_secs) = debounce_window_secs(request.priority) {
             if let Ok(last) = self.last_enqueued.lock() {
                 if let Some(last_time) = last.get(&request.entity_id) {
-                    if last_time.elapsed().as_secs() < CONTENT_DEBOUNCE_SECS {
+                    if last_time.elapsed().as_secs() < debounce_secs {
                         log::debug!(
                             "IntelQueue: debounced {} ({}s since last)",
                             request.entity_id,
@@ -226,6 +225,75 @@ impl IntelligenceQueue {
     }
 }
 
+fn debounce_window_secs(priority: IntelPriority) -> Option<u64> {
+    match priority {
+        IntelPriority::ContentChange | IntelPriority::ProactiveHygiene => {
+            Some(CONTENT_DEBOUNCE_SECS)
+        }
+        IntelPriority::CalendarChange => Some(CALENDAR_DEBOUNCE_SECS),
+        IntelPriority::Onboarding | IntelPriority::Manual => None,
+    }
+}
+
+fn is_background_priority(priority: IntelPriority) -> bool {
+    matches!(
+        priority,
+        IntelPriority::CalendarChange
+            | IntelPriority::ContentChange
+            | IntelPriority::ProactiveHygiene
+    )
+}
+
+fn trigger_for_priority(priority: IntelPriority) -> &'static str {
+    match priority {
+        IntelPriority::ProactiveHygiene => "proactive_hygiene",
+        IntelPriority::ContentChange => "content_change",
+        IntelPriority::CalendarChange => "calendar_change",
+        IntelPriority::Onboarding => "onboarding",
+        IntelPriority::Manual => "manual_refresh",
+    }
+}
+
+fn usage_context_for_priority(priority: IntelPriority) -> AiUsageContext {
+    let background = is_background_priority(priority);
+    let operation = match priority {
+        IntelPriority::Onboarding => "onboarding_entity_enrichment",
+        IntelPriority::Manual => "manual_entity_enrichment",
+        _ => "background_entity_enrichment",
+    };
+    AiUsageContext::new("intel_queue", operation)
+        .with_trigger(trigger_for_priority(priority))
+        .with_background(background)
+}
+
+#[cfg(test)]
+mod queue_policy_tests {
+    use super::{
+        debounce_window_secs, is_background_priority, IntelPriority, CALENDAR_DEBOUNCE_SECS,
+        CONTENT_DEBOUNCE_SECS,
+    };
+
+    #[test]
+    fn calendar_change_uses_longer_debounce_window() {
+        assert_eq!(
+            debounce_window_secs(IntelPriority::CalendarChange),
+            Some(CALENDAR_DEBOUNCE_SECS)
+        );
+        assert_eq!(
+            debounce_window_secs(IntelPriority::ContentChange),
+            Some(CONTENT_DEBOUNCE_SECS)
+        );
+    }
+
+    #[test]
+    fn background_priority_classification_matches_policy() {
+        assert!(is_background_priority(IntelPriority::CalendarChange));
+        assert!(is_background_priority(IntelPriority::ProactiveHygiene));
+        assert!(!is_background_priority(IntelPriority::Manual));
+        assert!(!is_background_priority(IntelPriority::Onboarding));
+    }
+}
+
 /// Payload emitted when intelligence is updated.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -325,12 +393,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             polls_since_prune = 0;
         }
 
-        // Phase 0: Dequeue up to adaptive batch size based on activity level (I289, performance)
-        // When user is Active: batch size 1 (faster individual processing, keeps app responsive)
-        // When Idle: batch size 2 (moderate throughput)
-        // When Background: batch size 3 (max throughput)
-        let batch_size = crate::activity::adaptive_batch_size(&state.activity);
-        let batch = state.intel_queue.dequeue_batch(batch_size);
+        // Process one request per wake so automatic background bursts do not
+        // stack PTY calls back-to-back and starve manual work.
+        let batch = state.intel_queue.dequeue_batch(1);
         if batch.is_empty() {
             continue;
         }
@@ -399,6 +464,13 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         let batch: Vec<IntelRequest> = batch
             .into_iter()
             .filter(|request| {
+                if is_background_priority(request.priority) && crate::pty::background_ai_paused() {
+                    log::info!(
+                        "IntelProcessor: skipping {} while background AI is paused",
+                        request.entity_id
+                    );
+                    return false;
+                }
                 if request.priority != IntelPriority::Manual {
                     if let Some(skip_msg) = check_enrichment_ttl(&state, request) {
                         log::debug!("{}", skip_msg);
@@ -470,8 +542,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     let ai_cfg = ai_config.clone();
                     let input_clone = input.clone();
                     let app_clone = app.clone();
+                    let usage_context = usage_context_for_priority(request.priority);
                     match tauri::async_runtime::spawn_blocking(move || {
-                        run_enrichment(&input_clone, &ai_cfg, Some(&app_clone))
+                        run_enrichment(&input_clone, &ai_cfg, Some(&app_clone), usage_context)
                     })
                     .await
                     {
@@ -611,7 +684,16 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             }
 
             let written_intel =
-                match write_enrichment_results(&state, input, intel, Some(&ai_config)) {
+                match write_enrichment_results(
+                    &state,
+                    input,
+                    intel,
+                    if is_background_priority(request.priority) {
+                        None
+                    } else {
+                        Some(&ai_config)
+                    },
+                ) {
                     Ok(intel) => intel,
                     Err(e) => {
                         log::warn!(
@@ -998,8 +1080,9 @@ async fn run_glean_enrichment_with_fallback(
                 // I564: PTY calls on blocking threads
                 let ai_cfg = ai_config.clone();
                 let input_clone = input.clone();
+                let usage_context = usage_context_for_priority(request.priority);
                 match tauri::async_runtime::spawn_blocking(move || {
-                    run_enrichment(&input_clone, &ai_cfg, None)
+                    run_enrichment(&input_clone, &ai_cfg, None, usage_context)
                 })
                 .await
                 {
@@ -1098,8 +1181,9 @@ async fn run_glean_enrichment_with_fallback(
         for (request, input) in pty_fallback_inputs {
             let ai_cfg = ai_config.clone();
             let input_clone = input.clone();
+            let usage_context = usage_context_for_priority(request.priority);
             match tauri::async_runtime::spawn_blocking(move || {
-                run_enrichment(&input_clone, &ai_cfg, None)
+                run_enrichment(&input_clone, &ai_cfg, None, usage_context)
             })
             .await
             {
@@ -1144,9 +1228,13 @@ pub fn run_enrichment(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
     app_handle: Option<&AppHandle>,
+    usage_context: AiUsageContext,
 ) -> Result<EnrichmentParseResult, String> {
+    if usage_context.background {
+        return run_background_enrichment(input, ai_config, &usage_context);
+    }
     if input.intelligence_context.is_some() {
-        match run_parallel_enrichment(input, ai_config, app_handle) {
+        match run_parallel_enrichment(input, ai_config, app_handle, &usage_context) {
             Ok(result) => return Ok(result),
             Err(e) => {
                 log::warn!(
@@ -1157,7 +1245,7 @@ pub fn run_enrichment(
             }
         }
     }
-    run_enrichment_legacy(input, ai_config)
+    run_enrichment_legacy(input, ai_config, &usage_context)
 }
 
 /// I574: Parallel per-dimension enrichment engine.
@@ -1173,6 +1261,7 @@ fn run_parallel_enrichment(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
     app_handle: Option<&AppHandle>,
+    usage_context: &AiUsageContext,
 ) -> Result<EnrichmentParseResult, String> {
     let ctx = input
         .intelligence_context
@@ -1205,11 +1294,13 @@ fn run_parallel_enrichment(
         let file_manifest = input.file_manifest.clone();
         let dim_name = dimension.to_string();
         let sender = tx.clone();
+        let dimension_usage_context = usage_context.clone().with_tier(ModelTier::Extraction);
 
         std::thread::spawn(move || {
             let dim_start = Instant::now();
 
             let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_cfg)
+                .with_usage_context(dimension_usage_context)
                 .with_timeout(30)
                 .with_nice_priority(10);
 
@@ -1406,8 +1497,10 @@ fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &In
 fn run_enrichment_legacy(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
+    usage_context: &AiUsageContext,
 ) -> Result<EnrichmentParseResult, String> {
     let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
+        .with_usage_context(usage_context.clone().with_tier(ModelTier::Synthesis))
         .with_timeout(30)
         .with_nice_priority(10);
     let output = pty
@@ -1449,6 +1542,34 @@ fn run_enrichment_legacy(
     })
 }
 
+fn run_background_enrichment(
+    input: &EnrichmentInput,
+    ai_config: &AiModelConfig,
+    usage_context: &AiUsageContext,
+) -> Result<EnrichmentParseResult, String> {
+    let pty = PtyManager::for_tier(ModelTier::Background, ai_config)
+        .with_usage_context(usage_context.clone().with_tier(ModelTier::Background))
+        .with_timeout(BACKGROUND_ENRICHMENT_TIMEOUT_SECS)
+        .with_nice_priority(10);
+    let output = pty
+        .spawn_claude(&input.workspace, &input.prompt)
+        .map_err(|e| format!("Claude Code error: {}", e))?;
+
+    let inferred_relationships = extract_inferred_relationships(&output.stdout);
+    let intel = parse_intelligence_response(
+        &output.stdout,
+        &input.entity_id,
+        &input.entity_type,
+        input.file_count,
+        input.file_manifest.clone(),
+    )?;
+
+    Ok(EnrichmentParseResult {
+        intel,
+        inferred_relationships,
+    })
+}
+
 /// I527: One-shot repair retry when deterministic checks still report
 /// high-severity contradictions after local repairs.
 fn run_consistency_repair_retry(
@@ -1460,6 +1581,11 @@ fn run_consistency_repair_retry(
 ) -> Result<IntelligenceJson, String> {
     let prompt = crate::intelligence::build_repair_prompt(intel, report, facts);
     let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
+        .with_usage_context(
+            AiUsageContext::new("intel_queue", "consistency_repair_retry")
+                .with_trigger("post_write_repair")
+                .with_tier(ModelTier::Extraction),
+        )
         .with_timeout(30)
         .with_nice_priority(10);
     let output = pty

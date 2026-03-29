@@ -218,6 +218,59 @@
   margin-bottom: 48px;
 }
 
+.sectionEmpty {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.productList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.productRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.productRow:last-child {
+  border-bottom: none;
+}
+
+.productName {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.productMeta {
+  margin-top: 4px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.productSource {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.heroProvenance {
+  display: grid;
+  gap: 12px;
+}
+
 .healthScoreNumber {
   font-family: var(--font-serif);
   font-size: 100px;
@@ -276,4 +329,3 @@
 }
 
 /* ── Engagement Cadence (I557) ── */
-

@@ -96,9 +96,7 @@ pub fn listen_for_callback(listener: &TcpListener) -> Result<CallbackResult, Cal
     // Poll with a 120-second deadline so the backend doesn't hang forever if
     // the browser redirect is blocked (e.g., macOS firewall denying incoming
     // connections to DailyOS).
-    listener
-        .set_nonblocking(true)
-        .map_err(CallbackError::Io)?;
+    listener.set_nonblocking(true).map_err(CallbackError::Io)?;
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
     let (mut stream, _) = loop {
@@ -116,9 +114,7 @@ pub fn listen_for_callback(listener: &TcpListener) -> Result<CallbackResult, Cal
     };
 
     // Restore blocking mode for the accepted stream's read
-    stream
-        .set_nonblocking(false)
-        .map_err(CallbackError::Io)?;
+    stream.set_nonblocking(false).map_err(CallbackError::Io)?;
 
     let mut buffer = [0u8; 4096];
     let n = stream.read(&mut buffer).map_err(CallbackError::Io)?;
