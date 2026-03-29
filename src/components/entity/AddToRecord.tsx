@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import s from "./AddToRecord.module.css";
 
 interface AddToRecordProps {
@@ -52,9 +53,9 @@ export function AddToRecord({ onAdd }: AddToRecordProps) {
 
   if (!expanded) {
     return (
-      <button className={s.addButton} onClick={() => setExpanded(true)}>
+      <Button variant="outline" size="sm" className={s.addButton} onClick={() => setExpanded(true)}>
         + Add note
-      </button>
+      </Button>
     );
   }
 
@@ -77,16 +78,18 @@ export function AddToRecord({ onAdd }: AddToRecordProps) {
         onChange={(e) => setContent(e.target.value)}
       />
       <div className={s.buttons}>
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           className={s.submitButton}
           disabled={!title.trim()}
           onClick={handleSubmit}
         >
           Add
-        </button>
-        <button className={s.cancelButton} onClick={reset}>
+        </Button>
+        <Button variant="ghost" size="sm" className={s.cancelButton} onClick={reset}>
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -30,6 +30,9 @@ import {
   Award,
   Compass,
   Telescope,
+  CheckCircle2,
+  CircleDot,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,9 +76,10 @@ import { WatchListPrograms } from "@/components/account/WatchListPrograms";
 import { DimensionBar } from "@/components/shared/DimensionBar";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 import {
-  ProvenanceLabel,
   formatProvenanceSource,
 } from "@/components/ui/ProvenanceLabel";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+import { EditableDate } from "@/components/ui/editable-date";
 import shared from "@/styles/entity-detail.module.css";
 import styles from "./AccountDetailEditorial.module.css";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
@@ -550,6 +554,17 @@ export default function AccountDetailEditorial() {
               )
             ) : undefined
           }
+          provenanceSlot={
+            detail.accountType !== "internal" ? (
+              <div className={styles.renewalDateRow}>
+                <span className={styles.renewalDateLabel}>Renewal</span>
+                <EditableDate
+                  value={detail.renewalDate ?? ""}
+                  onSave={(v) => void saveAccountField("contract_end", v)}
+                />
+              </div>
+            ) : undefined
+          }
         />
         {/* I312: Preset metadata fields */}
         {preset && preset.metadata.account.length > 0 && (
@@ -614,6 +629,7 @@ export default function AccountDetailEditorial() {
         <div id="outlook" className={`editorial-reveal ${shared.marginLabelSection}`}>
           <div className={shared.marginLabel}>Outlook</div>
           <div className={shared.marginContent}>
+            <ChapterHeading title="Outlook" />
             <AccountOutlook
               intelligence={intelligence}
               onUpdateField={handleUpdateIntelField}
@@ -630,72 +646,108 @@ export default function AccountDetailEditorial() {
           <ChapterHeading title="Products & Entitlements" />
           {detail.products && detail.products.length > 0 ? (
             <div className={styles.productList}>
-              {detail.products.map((product) => (
-                <div key={`${product.id}-${product.name}`} className={styles.productRow}>
-                  {editingProductId === product.id ? (
-                    <div className={styles.productEditRow}>
-                      <input
-                        className={styles.productEditInput}
-                        value={editProductName}
-                        onChange={(e) => setEditProductName(e.target.value)}
-                        autoFocus
-                      />
-                      <select
-                        className={styles.productEditSelect}
-                        value={editProductStatus}
-                        onChange={(e) => setEditProductStatus(e.target.value)}
-                      >
-                        <option value="active">Active</option>
-                        <option value="trial">Trial</option>
-                        <option value="churned">Churned</option>
-                      </select>
-                      <button
-                        className={styles.productEditSave}
-                        onClick={() => void handleCorrectProduct(product)}
-                      >
-                        Save
-                      </button>
-                      <button
-                        className={styles.productEditCancel}
-                        onClick={() => setEditingProductId(null)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <div
-                        className={styles.productClickable}
-                        onClick={() => {
+              {detail.products.map((product) => {
+                const confidencePct = Math.round(product.confidence * 100);
+                const sourceLabel = formatProvenanceSource(product.source);
+                const tooltipText = `${sourceLabel ?? "Unknown source"} \u00b7 ${confidencePct}% confidence`;
+
+                const statusCycle: string[] = ["active", "trial", "churned"];
+                const cycleStatus = () => {
+                  const currentIdx = statusCycle.indexOf(product.status);
+                  const nextStatus = statusCycle[(currentIdx + 1) % statusCycle.length];
+                  void invoke("correct_account_product", {
+                    accountId: detail.id,
+                    productId: product.id,
+                    name: product.name,
+                    status: nextStatus,
+                    sourceToPenalize: product.source,
+                  }).then(() => {
+                    void acct.load();
+                    toast.success(`${product.name} status changed to ${nextStatus}`);
+                  }).catch((err: unknown) => {
+                    console.error("correct_account_product failed:", err);
+                    toast.error("Failed to update product status");
+                  });
+                };
+
+                return (
+                  <div key={`${product.id}-${product.name}`} className={styles.productRow}>
+                    {/* Left: name (inline editable) + source provenance */}
+                    <div
+                      className={styles.productInfo}
+                      onClick={() => {
+                        if (editingProductId !== product.id) {
                           setEditingProductId(product.id);
                           setEditProductName(product.name);
                           setEditProductStatus(product.status);
-                        }}
-                      >
-                        <div className={styles.productName}>
-                          {product.name}
-                          {product.status && (
-                            <span className={styles.productStatusBadge} data-status={product.status}>
-                              {product.status}
-                            </span>
-                          )}
-                        </div>
-                        <div className={styles.productMeta}>
-                          {[product.category, product.notes].filter(Boolean).join(" · ")}
-                        </div>
-                      </div>
-                      <div className={styles.productSource}>
-                        <ProvenanceLabel
-                          summary={[
-                            formatProvenanceSource(product.source),
-                            `${Math.round(product.confidence * 100)}% confidence`,
-                          ].filter(Boolean).join(" · ")}
+                        }
+                      }}
+                    >
+                      {editingProductId === product.id ? (
+                        <input
+                          className={styles.productEditInput}
+                          value={editProductName}
+                          onChange={(e) => setEditProductName(e.target.value)}
+                          onBlur={() => void handleCorrectProduct(product)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void handleCorrectProduct(product);
+                            if (e.key === "Escape") setEditingProductId(null);
+                          }}
+                          autoFocus
                         />
+                      ) : (
+                        <div className={styles.productName}>{product.name}</div>
+                      )}
+                      <div className={styles.productProvenance}>
+                        {sourceLabel ?? "Unknown source"}
                       </div>
-                    </>
-                  )}
-                </div>
-              ))}
+                    </div>
+
+                    {/* Center: status badge (click to cycle) */}
+                    {product.status && (
+                      <button
+                        type="button"
+                        className={styles.productStatusBadge}
+                        data-status={product.status}
+                        onClick={cycleStatus}
+                        title={`Status: ${product.status} (click to change)`}
+                      >
+                        {product.status}
+                      </button>
+                    )}
+
+                    {/* Right: confidence icon + feedback thumbs */}
+                    <div className={styles.productRight}>
+                      <span
+                        className={`${styles.confidenceIcon} ${
+                          product.confidence >= 0.8
+                            ? styles.confidenceHigh
+                            : product.confidence >= 0.5
+                              ? styles.confidenceMedium
+                              : styles.confidenceLow
+                        }`}
+                        title={tooltipText}
+                      >
+                        {product.confidence >= 0.8 ? (
+                          <CheckCircle2 size={12} />
+                        ) : product.confidence >= 0.5 ? (
+                          <CircleDot size={12} />
+                        ) : (
+                          <AlertCircle size={12} />
+                        )}
+                      </span>
+                      <span className={styles.productFeedback}>
+                        <IntelligenceFeedback
+                          value={feedback.getFeedback(`products[${product.id}]`)}
+                          onFeedback={(type) => {
+                            feedback.submitFeedback(`products[${product.id}]`, type);
+                          }}
+                        />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className={styles.sectionEmpty}>No products captured yet.</p>
@@ -956,6 +1008,7 @@ export default function AccountDetailEditorial() {
         <div id="value-commitments" className={`editorial-reveal ${shared.marginLabelSection}`}>
           <div className={shared.marginLabel}>Value &<br/>Commitments</div>
           <div className={shared.marginContent}>
+            <ChapterHeading title="Value & Commitments" />
             <ValueCommitments
               intelligence={intelligence}
               onUpdateField={handleUpdateIntelField}
@@ -971,6 +1024,7 @@ export default function AccountDetailEditorial() {
         <div id="strategic-landscape" className={`editorial-reveal ${shared.marginLabelSection}`}>
           <div className={shared.marginLabel}>Competitive &<br/>Strategic</div>
           <div className={shared.marginContent}>
+            <ChapterHeading title="Competitive & Strategic" />
             <StrategicLandscape
               intelligence={intelligence}
               onUpdateField={handleUpdateIntelField}
