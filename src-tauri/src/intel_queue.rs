@@ -1614,10 +1614,49 @@ pub fn write_enrichment_results(
         .ok()
         .and_then(|db| db.get_entity_intelligence(&input.entity_id).ok().flatten());
     if let Some(existing) = existing_intel.as_ref() {
+        // I644: Protect stakeholder_insights from overwrite when user has
+        // designated team members via the Team panel (account_stakeholders
+        // table with data_source='user'). The reconciler checks user_edits
+        // to decide whether to skip stakeholderInsights — so inject a
+        // synthetic user_edits entry when DB has user-owned stakeholders.
+        let mut protected_existing = existing.clone();
+        if input.entity_type == "account" {
+            let has_user_stakeholders = crate::db::ActionDb::open()
+                .ok()
+                .and_then(|db| {
+                    db.conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*) FROM account_stakeholders WHERE account_id = ?1 AND data_source = 'user'",
+                            rusqlite::params![&input.entity_id],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .ok()
+                })
+                .unwrap_or(0)
+                > 0;
+            if has_user_stakeholders
+                && !protected_existing
+                    .user_edits
+                    .iter()
+                    .any(|e| e.field_path.starts_with("stakeholderInsights"))
+            {
+                protected_existing
+                    .user_edits
+                    .push(crate::intelligence::io::UserEdit {
+                        field_path: "stakeholderInsights".to_string(),
+                        edited_at: chrono::Utc::now().to_rfc3339(),
+                    });
+                log::info!(
+                    "I644: Protected stakeholderInsights from reconciliation (user-owned team members for {})",
+                    input.entity_id,
+                );
+            }
+        }
+
         // I576: Apply source-aware reconciliation (preserves user corrections,
         // non-refreshed source items, and dismissed tombstones)
         final_intel = crate::intelligence::glean_provider::reconcile_enrichment(
-            existing.clone(),
+            protected_existing,
             final_intel,
             &["pty_synthesis"],
         );
