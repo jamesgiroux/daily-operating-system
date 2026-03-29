@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { formatArr, formatRelativeDate, formatShortDate } from "@/lib/utils";
+import { formatArr, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
 import type { AccountProduct } from "@/types";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
@@ -54,7 +54,7 @@ import {
 } from "@/components/ui/dialog";
 import { AccountHero } from "@/components/account/AccountHero";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
-import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
+import { EditableVitalsStrip, type VitalConflict } from "@/components/entity/EditableVitalsStrip";
 import { StateOfPlay } from "@/components/entity/StateOfPlay";
 import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
 import { WatchList } from "@/components/entity/WatchList";
@@ -215,35 +215,6 @@ function formatLifecycleDisplay(value?: string | null): string {
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function formatFieldValue(
-  detail: {
-    arr?: number | null;
-    lifecycle?: string | null;
-    renewalStage?: string | null;
-    renewalDate?: string | null;
-    nps?: number | null;
-  },
-  field: string,
-): string | null {
-  switch (field) {
-    case "arr":
-      return detail.arr != null ? `$${formatArr(detail.arr)} ARR` : null;
-    case "lifecycle":
-      return [
-        detail.lifecycle ? formatLifecycleDisplay(detail.lifecycle) : null,
-        detail.renewalStage ? detail.renewalStage.replace(/_/g, " ") : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    case "contract_end":
-      return detail.renewalDate ? `Renews ${formatShortDate(detail.renewalDate)}` : null;
-    case "nps":
-      return detail.nps != null ? `NPS ${detail.nps}` : null;
-    default:
-      return null;
-  }
 }
 
 function formatSuggestedValue(field: string, value: string): string {
@@ -422,9 +393,6 @@ export default function AccountDetailEditorial() {
     () => new Map((detail?.fieldConflicts ?? []).map((item) => [item.field, item])),
     [detail?.fieldConflicts],
   );
-  const healthDimensionCount = intelligence?.health?.dimensions
-    ? Object.keys(intelligence.health.dimensions).length
-    : 0;
 
   if (acct.loading) return <EditorialLoading />;
 
@@ -494,28 +462,22 @@ export default function AccountDetailEditorial() {
     }
   };
 
-  const heroFieldConflicts = ["lifecycle", "arr", "contract_end", "nps"]
-    .map((field) => {
-      const conflict = fieldConflictMap.get(field);
-      if (!conflict) return null;
-
-      return {
-        field,
-        label: formatTrackedFieldLabel(field),
-        currentValue: formatFieldValue(detail, field) ?? "Not set",
-        suggestedValue: formatSuggestedValue(field, conflict.suggestedValue),
-        sourceSummary: [
-          formatProvenanceSource(conflict.source),
-          conflict.confidence != null ? `${Math.round(conflict.confidence * 100)}% confidence` : null,
-          conflict.detectedAt ? formatShortDate(conflict.detectedAt) : null,
-        ].filter(Boolean).join(" · "),
-      };
-    })
-    .filter((row): row is NonNullable<typeof row> => row !== null);
-
-  const healthReviewSummary = healthDimensionCount > 0 && intelligence?.enrichedAt
-    ? `${healthDimensionCount} dimensions · last scored ${formatRelativeDate(intelligence.enrichedAt)}`
-    : null;
+  const conflictsForStrip = new Map(
+    ["lifecycle", "arr", "contract_end", "nps"]
+      .flatMap((field) => {
+        const c = fieldConflictMap.get(field);
+        if (!c) return [];
+        const conflict: VitalConflict = {
+          source: c.source,
+          suggestedValue: formatSuggestedValue(field, c.suggestedValue),
+          detectedAt: c.detectedAt,
+          pending: pendingConflictField === field,
+          onAccept: () => void handleAcceptConflict(field),
+          onDismiss: () => void handleDismissConflict(field),
+        };
+        return [[field, conflict]];
+      })
+  );
 
   return (
     <>
@@ -581,7 +543,8 @@ export default function AccountDetailEditorial() {
                   void saveAccountField(field, value);
                 }
               }}
-            />
+                  conflicts={conflictsForStrip}
+                />
               ) : (
                 <VitalsStrip vitals={buildAccountVitals(detail)} />
               )
@@ -602,68 +565,6 @@ export default function AccountDetailEditorial() {
                 });
               }}
             />
-          </div>
-        )}
-        {(heroFieldConflicts.length > 0 || healthReviewSummary) && (
-          <div className={styles.fieldReviewPanel}>
-            <div className={styles.fieldReviewHeader}>
-              <p className={styles.fieldReviewEyebrow}>Field review</p>
-              <p className={styles.fieldReviewIntro}>
-                Suggested updates live here so the hero stays focused on the account itself.
-              </p>
-            </div>
-
-            {healthReviewSummary ? (
-              <div className={styles.fieldReviewHealth}>
-                <span className={styles.fieldReviewHealthLabel}>Health scoring</span>
-                <span className={styles.fieldReviewHealthValue}>{healthReviewSummary}</span>
-              </div>
-            ) : null}
-
-            {heroFieldConflicts.length > 0 ? (
-              <div className={styles.fieldReviewList}>
-                {heroFieldConflicts.map((row) => (
-                  <div key={row.field} className={styles.fieldReviewCard}>
-                    <div className={styles.fieldReviewCardTop}>
-                      <div>
-                        <div className={styles.fieldReviewField}>{row.label}</div>
-                        <div className={styles.fieldReviewMeta}>{row.sourceSummary}</div>
-                      </div>
-                      <div className={styles.fieldReviewActions}>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => { void handleAcceptConflict(row.field); }}
-                          disabled={pendingConflictField === row.field}
-                        >
-                          Accept
-                        </Button>
-                        <button
-                          type="button"
-                          className={styles.fieldReviewDismiss}
-                          onClick={() => { void handleDismissConflict(row.field); }}
-                          disabled={pendingConflictField === row.field}
-                        >
-                          Dismiss
-                        </button>
-                      </div>
-                    </div>
-                    <div className={styles.fieldReviewValues}>
-                      <div className={styles.fieldReviewValueBlock}>
-                        <span className={styles.fieldReviewValueLabel}>Current</span>
-                        <span className={styles.fieldReviewValue}>{row.currentValue}</span>
-                      </div>
-                      <div className={styles.fieldReviewArrow}>&rarr;</div>
-                      <div className={styles.fieldReviewValueBlock}>
-                        <span className={styles.fieldReviewValueLabel}>Suggested</span>
-                        <span className={styles.fieldReviewValueSuggested}>{row.suggestedValue}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
           </div>
         )}
         {/* Auto-rollover prompt for past renewal dates */}
