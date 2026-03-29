@@ -75,6 +75,9 @@ pub struct Config {
     /// AI model configuration for tiered operations (I174).
     #[serde(default)]
     pub ai_models: AiModelConfig,
+    /// Versioned routing policy for AI model defaults and migrations.
+    #[serde(default = "default_ai_model_routing_version")]
+    pub ai_model_routing_version: u32,
     /// Embedding model/runtime configuration for semantic retrieval (Sprint 26).
     #[serde(default)]
     pub embeddings: EmbeddingConfig,
@@ -150,6 +153,7 @@ pub fn validate_personality(value: &str) -> Result<(), String> {
 ///
 /// Synthesis: intelligence, briefing, week narrative (needs reasoning).
 /// Extraction: emails, preps (structured extraction from context).
+/// Background: automatic background maintenance (cheap, conservative).
 /// Mechanical: inbox classification, file summaries (simple tasks).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -158,6 +162,8 @@ pub struct AiModelConfig {
     pub synthesis: String,
     #[serde(default = "default_extraction_model")]
     pub extraction: String,
+    #[serde(default = "default_background_model")]
+    pub background: String,
     #[serde(default = "default_mechanical_model")]
     pub mechanical: String,
 }
@@ -167,6 +173,7 @@ impl Default for AiModelConfig {
         Self {
             synthesis: default_synthesis_model(),
             extraction: default_extraction_model(),
+            background: default_background_model(),
             mechanical: default_mechanical_model(),
         }
     }
@@ -182,6 +189,16 @@ fn default_extraction_model() -> String {
 
 fn default_mechanical_model() -> String {
     "haiku".to_string()
+}
+
+fn default_background_model() -> String {
+    "haiku".to_string()
+}
+
+pub const AI_MODEL_ROUTING_VERSION: u32 = 2;
+
+fn default_ai_model_routing_version() -> u32 {
+    AI_MODEL_ROUTING_VERSION
 }
 
 fn default_entity_mode() -> String {
@@ -257,6 +274,15 @@ fn default_hygiene_pre_meeting_hours() -> u32 {
 }
 
 impl Config {
+    /// Apply versioned config normalization for fields that intentionally reset
+    /// to new recommended defaults.
+    pub fn normalize(&mut self) {
+        if self.ai_model_routing_version < AI_MODEL_ROUTING_VERSION {
+            self.ai_models = AiModelConfig::default();
+            self.ai_model_routing_version = AI_MODEL_ROUTING_VERSION;
+        }
+    }
+
     /// Resolve the list of user domains for internal/external classification.
     ///
     /// Merges `user_domains` (preferred) with legacy `user_domain` field.
@@ -1016,6 +1042,8 @@ pub struct DashboardData {
     pub stats: DayStats,
     pub meetings: Vec<Meeting>,
     pub actions: Vec<Action>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lifecycle_updates: Option<Vec<DashboardLifecycleUpdate>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emails: Option<Vec<Email>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2305,9 +2333,48 @@ pub struct AccountMilestone {
     pub completed_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_detect_signal: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_trigger: Option<String>,
     pub sort_order: i32,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountFieldConflictSuggestion {
+    pub field: String,
+    pub source: String,
+    pub suggested_value: String,
+    pub signal_id: String,
+    pub confidence: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detected_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardLifecycleUpdate {
+    pub change_id: i64,
+    pub account_id: String,
+    pub account_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_lifecycle: Option<String>,
+    pub new_lifecycle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_stage: Option<String>,
+    pub source: String,
+    pub confidence: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_score_before: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_score_after: Option<f64>,
+    pub action_state: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2675,6 +2742,7 @@ mod tests {
             developer_mode: false,
             personality: "professional".to_string(),
             ai_models: AiModelConfig::default(),
+            ai_model_routing_version: AI_MODEL_ROUTING_VERSION,
             embeddings: EmbeddingConfig::default(),
             role: "customer-success".to_string(),
             custom_preset_path: None,
@@ -2746,6 +2814,37 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert!(config.features.is_empty());
         assert!(is_feature_enabled(&config, "emailTriage"));
+    }
+
+    #[test]
+    fn test_config_normalize_resets_legacy_ai_models_once() {
+        let mut config = test_config("customer-success");
+        config.ai_models.synthesis = "opus".to_string();
+        config.ai_models.extraction = "haiku".to_string();
+        config.ai_model_routing_version = 1;
+
+        config.normalize();
+
+        assert_eq!(config.ai_model_routing_version, AI_MODEL_ROUTING_VERSION);
+        assert_eq!(config.ai_models.synthesis, "sonnet");
+        assert_eq!(config.ai_models.extraction, "sonnet");
+        assert_eq!(config.ai_models.background, "haiku");
+        assert_eq!(config.ai_models.mechanical, "haiku");
+    }
+
+    #[test]
+    fn test_config_normalize_preserves_current_ai_models() {
+        let mut config = test_config("customer-success");
+        config.ai_models.synthesis = "opus".to_string();
+        config.ai_models.extraction = "haiku".to_string();
+        config.ai_models.background = "sonnet".to_string();
+        config.ai_model_routing_version = AI_MODEL_ROUTING_VERSION;
+
+        config.normalize();
+
+        assert_eq!(config.ai_models.synthesis, "opus");
+        assert_eq!(config.ai_models.extraction, "haiku");
+        assert_eq!(config.ai_models.background, "sonnet");
     }
 
     // =========================================================================

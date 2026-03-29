@@ -117,6 +117,16 @@ pub fn build_intelligence_context(
                 if let Some(nps) = acct.nps {
                     facts.push(format!("NPS: {}", nps));
                 }
+                if let Ok(products) = db.get_account_products(entity_id) {
+                    if !products.is_empty() {
+                        let product_line = products
+                            .iter()
+                            .map(|product| product.name.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        facts.push(format!("Products: {}", product_line));
+                    }
+                }
                 if let Ok(team) = db.get_account_team(entity_id) {
                     if !team.is_empty() {
                         let team_line = team

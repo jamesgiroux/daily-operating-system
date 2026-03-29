@@ -1715,9 +1715,7 @@ fn parse_reviewed_risk_metadata(raw: &str) -> (&str, Option<String>, Option<&str
 fn parse_reviewed_decision_metadata(raw: &str) -> (&str, Option<&str>, Option<&str>) {
     let (text, evidence) = parse_reviewed_evidence_quote(raw);
     // Strip @owner suffix before tag detection
-    let text = text
-        .rfind(" @")
-        .map_or(text, |idx| text[..idx].trim_end());
+    let text = text.rfind(" @").map_or(text, |idx| text[..idx].trim_end());
     let trimmed = text.trim();
     if let Some(rest) = trimmed.strip_prefix('[') {
         if let Some(end) = rest.find(']') {
@@ -4180,15 +4178,13 @@ END_DECISIONS";
         assert_eq!(ev, None);
 
         // Customer commitment
-        let (content, sub, _) = parse_reviewed_decision_metadata(
-            "[CUSTOMER_COMMITMENT] Will renew for 2 years @CFO",
-        );
+        let (content, sub, _) =
+            parse_reviewed_decision_metadata("[CUSTOMER_COMMITMENT] Will renew for 2 years @CFO");
         assert_eq!(content, "Will renew for 2 years");
         assert_eq!(sub, Some("CUSTOMER_COMMITMENT"));
 
         // No tag — plain decision
-        let (content, sub, ev) =
-            parse_reviewed_decision_metadata("Agreed to revisit in Q3");
+        let (content, sub, ev) = parse_reviewed_decision_metadata("Agreed to revisit in Q3");
         assert_eq!(content, "Agreed to revisit in Q3");
         assert_eq!(sub, None);
         assert_eq!(ev, None);
