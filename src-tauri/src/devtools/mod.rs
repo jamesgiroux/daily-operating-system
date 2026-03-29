@@ -1373,6 +1373,16 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Source ref seed: {}", e))?;
     }
 
+    // --- Technical Footprint (I649) ---
+    conn.execute(
+        "INSERT OR IGNORE INTO account_technical_footprint \
+         (account_id, usage_tier, adoption_score, active_users, support_tier, csat_score, open_tickets, services_stage, source) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+            "mock-acme-corp", "enterprise", 0.85, 247, "premium", 4.2, 3, "steady-state", "zendesk"
+        ],
+    ).map_err(|e| format!("Technical footprint seed: {}", e))?;
+
     // --- Entities (mirrors accounts) ---
     conn.execute(
         "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
