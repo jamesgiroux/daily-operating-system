@@ -8,6 +8,7 @@ import { useState } from "react";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { TimelineEntry, TimelineContainer, type TimelineEntryType } from "@/components/editorial/TimelineEntry";
 import { formatShortDate, formatMeetingType } from "@/lib/utils";
+import { formatProvenanceSource } from "@/components/ui/ProvenanceLabel";
 import type { TimelineSource } from "@/lib/entity-types";
 import s from "./UnifiedTimeline.module.css";
 
@@ -103,7 +104,7 @@ export function UnifiedTimeline({
       const subtitle = [
         change.newStage ? `Stage: ${change.newStage.replace(/_/g, " ")}` : null,
         change.evidence ?? null,
-        `Source: ${change.source}`,
+        formatProvenanceSource(change.source) ?? change.source,
       ]
         .filter(Boolean)
         .join(" · ");
@@ -111,7 +112,7 @@ export function UnifiedTimeline({
         date: formatShortDate(change.createdAt),
         sortDate: change.createdAt,
         type: "event" as TimelineEntryType,
-        title: `Lifecycle: ${transition}`,
+        title: transition,
         subtitle,
       });
     }
