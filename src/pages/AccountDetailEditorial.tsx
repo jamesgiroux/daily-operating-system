@@ -1010,6 +1010,7 @@ export default function AccountDetailEditorial() {
             intelligence={intelligence}
             linkedPeople={detail.linkedPeople}
             accountTeam={detail.accountTeam}
+            stakeholdersFull={detail.stakeholdersFull}
             sectionId=""
             entityId={accountId}
             entityType="account"

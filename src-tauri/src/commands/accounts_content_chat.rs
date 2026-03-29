@@ -74,6 +74,9 @@ pub struct AccountDetailResult {
     /// I649: Technical footprint, adoption, and service-delivery data.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub technical_footprint: Option<crate::db::DbAccountTechnicalFootprint>,
+    /// DB-first stakeholder read model: all stakeholders with provenance.
+    #[serde(default)]
+    pub stakeholders_full: Vec<crate::db::DbStakeholderFull>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
