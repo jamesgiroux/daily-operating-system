@@ -218,11 +218,14 @@
   margin-bottom: 48px;
 }
 
+/* ── Products Section (Editorial Redesign) ── */
+
 .sectionEmpty {
-  font-family: var(--font-sans);
-  font-size: 15px;
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-style: italic;
   line-height: 1.6;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
 }
 
 .productList {
@@ -233,9 +236,9 @@
 
 .productRow {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 0;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
   border-bottom: 1px solid var(--color-rule-light);
 }
 
@@ -243,107 +246,147 @@
   border-bottom: none;
 }
 
+/* Hover reveals feedback thumbs */
+.productRow:hover .productFeedback {
+  opacity: 1;
+}
+
+/* Left column: name + provenance */
+.productInfo {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.productInfo:hover .productName {
+  color: var(--color-spice-turmeric);
+}
+
 .productName {
   font-family: var(--font-sans);
   font-size: 15px;
   font-weight: 500;
   color: var(--color-text-primary);
+  transition: color var(--transition-fast);
 }
 
+.productProvenance {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+/* Center: status badge */
 .productStatusBadge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 2px 7px;
-  border-radius: 3px;
-  margin-left: 8px;
-  vertical-align: 2px;
+  border-radius: 100px;
+  cursor: pointer;
+  border: none;
+  background: var(--color-garden-sage-8);
   color: var(--color-garden-sage);
-  background: var(--color-garden-sage-8, rgba(126, 170, 123, 0.07));
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.productStatusBadge:hover {
+  background: var(--color-garden-sage-12);
 }
 
 .productStatusBadge[data-status="trial"] {
   color: var(--color-spice-turmeric);
-  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+  background: var(--color-spice-turmeric-8);
+}
+
+.productStatusBadge[data-status="trial"]:hover {
+  background: var(--color-spice-turmeric-12);
 }
 
 .productStatusBadge[data-status="churned"] {
   color: var(--color-spice-terracotta);
-  background: var(--color-spice-terracotta-8, rgba(196, 101, 74, 0.06));
+  background: var(--color-spice-terracotta-8);
 }
 
-.productMeta {
-  margin-top: 4px;
-  font-family: var(--font-sans);
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  line-height: 1.5;
+.productStatusBadge[data-status="churned"]:hover {
+  background: var(--color-spice-terracotta-12);
 }
 
-.productClickable {
-  cursor: pointer;
-}
-
-.productClickable:hover .productName {
-  color: var(--color-mineral-larkspur, #5a7fa5);
-}
-
-.productSource {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  min-width: 180px;
-}
-
-/* Product inline edit row */
-.productEditRow {
+/* Right: confidence icon + feedback */
+.productRight {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  gap: var(--space-sm);
+  flex-shrink: 0;
 }
 
+.confidenceIcon {
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+
+.confidenceHigh {
+  color: var(--color-garden-sage);
+}
+
+.confidenceMedium {
+  color: var(--color-spice-turmeric);
+}
+
+.confidenceLow {
+  color: var(--color-spice-terracotta);
+}
+
+.productFeedback {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+/* Product inline edit — EditableText-style */
 .productEditInput {
-  flex: 1;
   font-family: var(--font-sans);
   font-size: 15px;
-  padding: 6px 10px;
-  border: 1px solid var(--color-rule-light);
-  background: var(--color-paper-cream);
+  font-weight: 500;
   color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--color-spice-terracotta);
+  outline: none;
+  width: 100%;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-.productEditSelect {
+/* ── Renewal Date (Inline Editable) ── */
+
+.renewalDateRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.renewalDateLabel {
   font-family: var(--font-mono);
-  font-size: 11px;
-  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 500;
   letter-spacing: 0.08em;
-  padding: 6px 10px;
-  border: 1px solid var(--color-rule-light);
-  background: var(--color-paper-cream);
-  color: var(--color-text-secondary);
-}
-
-.productEditSave,
-.productEditCancel {
-  font-family: var(--font-mono);
-  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 6px 12px;
-  border: 1px solid var(--color-rule-heavy);
-  background: var(--color-paper-cream);
-  color: var(--color-text-primary);
-  cursor: pointer;
-}
-
-.productEditCancel {
-  border-color: var(--color-rule-light);
   color: var(--color-text-tertiary);
+  flex-shrink: 0;
 }
 
 .healthScoreNumber {

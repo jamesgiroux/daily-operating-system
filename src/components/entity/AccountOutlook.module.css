@@ -148,22 +148,22 @@
 }
 
 .badgeSage {
-  background: var(--color-garden-sage-12, rgba(136, 159, 120, 0.12));
+  background: var(--color-garden-sage-12, rgba(126, 170, 123, 0.12));
   color: var(--color-garden-sage);
 }
 
 .badgeTurmeric {
-  background: var(--color-spice-turmeric-12, rgba(224, 175, 65, 0.12));
+  background: var(--color-spice-turmeric-12, rgba(201, 162, 39, 0.12));
   color: var(--color-spice-turmeric);
 }
 
 .badgeTerracotta {
-  background: var(--color-spice-terracotta-12, rgba(192, 108, 84, 0.12));
+  background: var(--color-spice-terracotta-12, rgba(196, 101, 74, 0.12));
   color: var(--color-spice-terracotta);
 }
 
 .badgeNeutral {
-  background: var(--color-desk-charcoal-4, rgba(60, 55, 48, 0.04));
+  background: var(--color-desk-charcoal-4, rgba(30, 37, 48, 0.04));
   color: var(--color-text-tertiary);
 }
 
