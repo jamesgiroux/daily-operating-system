@@ -4,6 +4,28 @@
 use crate::state::AppState;
 use crate::types::{Config, WorkflowId};
 
+fn validate_ai_model_choice(tier: &str, model: &str) -> Result<(), String> {
+    let valid_tiers = ["synthesis", "extraction", "background", "mechanical"];
+    if !valid_tiers.contains(&tier) {
+        return Err(format!(
+            "Invalid tier '{}'. Must be one of: {}",
+            tier,
+            valid_tiers.join(", ")
+        ));
+    }
+
+    let valid_models = ["opus", "sonnet", "haiku"];
+    if !valid_models.contains(&model) {
+        return Err(format!(
+            "Invalid model '{}'. Must be one of: {}",
+            model,
+            valid_models.join(", ")
+        ));
+    }
+
+    Ok(())
+}
+
 /// Set entity mode (account, project, or both) with workspace dir creation.
 pub fn set_entity_mode(mode: &str, state: &AppState) -> Result<Config, String> {
     crate::types::validate_entity_mode(mode)?;
@@ -72,32 +94,58 @@ pub async fn set_workspace_path(path: &str, state: &AppState) -> Result<Config, 
     Ok(config)
 }
 
-/// Set AI model for a tier (synthesis, extraction, mechanical).
+/// Set AI model for a tier (synthesis, extraction, background, mechanical).
 pub fn set_ai_model(tier: &str, model: &str, state: &AppState) -> Result<Config, String> {
-    let valid_tiers = ["synthesis", "extraction", "mechanical"];
-    if !valid_tiers.contains(&tier) {
-        return Err(format!(
-            "Invalid tier '{}'. Must be one of: {}",
-            tier,
-            valid_tiers.join(", ")
-        ));
-    }
-
-    let valid_models = ["opus", "sonnet", "haiku"];
-    if !valid_models.contains(&model) {
-        return Err(format!(
-            "Invalid model '{}'. Must be one of: {}",
-            model,
-            valid_models.join(", ")
-        ));
-    }
+    validate_ai_model_choice(tier, model)?;
 
     let model = model.to_string();
     crate::state::create_or_update_config(state, |config| match tier {
         "synthesis" => config.ai_models.synthesis = model.clone(),
         "extraction" => config.ai_models.extraction = model.clone(),
+        "background" => config.ai_models.background = model.clone(),
         "mechanical" => config.ai_models.mechanical = model.clone(),
         _ => {}
+    })
+}
+
+/// Reset AI model routing to the recommended default bundle.
+pub fn reset_ai_models_to_recommended(state: &AppState) -> Result<Config, String> {
+    crate::state::create_or_update_config(state, |config| {
+        config.ai_models = crate::types::AiModelConfig::default();
+        config.ai_model_routing_version = crate::types::AI_MODEL_ROUTING_VERSION;
+    })
+}
+
+/// Set Google calendar and email poll intervals in minutes.
+pub fn set_google_poll_settings(
+    calendar_poll_interval_minutes: Option<u32>,
+    email_poll_interval_minutes: Option<u32>,
+    state: &AppState,
+) -> Result<Config, String> {
+    if let Some(v) = calendar_poll_interval_minutes {
+        if !(1..=60).contains(&v) {
+            return Err(format!(
+                "Invalid calendar poll interval: {}. Must be 1-60 minutes.",
+                v
+            ));
+        }
+    }
+    if let Some(v) = email_poll_interval_minutes {
+        if !(1..=60).contains(&v) {
+            return Err(format!(
+                "Invalid email poll interval: {}. Must be 1-60 minutes.",
+                v
+            ));
+        }
+    }
+
+    crate::state::create_or_update_config(state, |config| {
+        if let Some(v) = calendar_poll_interval_minutes {
+            config.google.calendar_poll_interval_minutes = v;
+        }
+        if let Some(v) = email_poll_interval_minutes {
+            config.google.email_poll_interval_minutes = v;
+        }
     })
 }
 
@@ -267,6 +315,22 @@ pub async fn set_user_profile(
     }).await;
 
     Ok("ok".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_ai_model_choice;
+
+    #[test]
+    fn validates_background_ai_model_choice() {
+        assert!(validate_ai_model_choice("background", "haiku").is_ok());
+    }
+
+    #[test]
+    fn rejects_invalid_ai_model_choice() {
+        assert!(validate_ai_model_choice("background", "unknown").is_err());
+        assert!(validate_ai_model_choice("invalid", "haiku").is_err());
+    }
 }
 
 /// Set multiple user domains with reclassification of people and meetings.

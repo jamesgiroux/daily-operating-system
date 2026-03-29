@@ -4450,9 +4450,18 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
     let db = test_db();
     setup_account(&db, "acc-thread", "Thread Corp");
 
-    let previous = sample_db_meeting("mtg-prev", "Thread Corp Weekly Sync", "2026-03-10T15:00:00Z");
-    let current = sample_db_meeting("mtg-current", "Thread Corp Weekly Sync", "2026-03-20T15:00:00Z");
-    db.upsert_meeting(&previous).expect("upsert previous meeting");
+    let previous = sample_db_meeting(
+        "mtg-prev",
+        "Thread Corp Weekly Sync",
+        "2026-03-10T15:00:00Z",
+    );
+    let current = sample_db_meeting(
+        "mtg-current",
+        "Thread Corp Weekly Sync",
+        "2026-03-20T15:00:00Z",
+    );
+    db.upsert_meeting(&previous)
+        .expect("upsert previous meeting");
     db.upsert_meeting(&current).expect("upsert current meeting");
     db.link_meeting_entity(&previous.id, "acc-thread", "account")
         .expect("link previous");
@@ -4461,8 +4470,10 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
 
     let existing = sample_person("taylor@thread.com");
     let newcomer = sample_person("jordan@thread.com");
-    db.upsert_person(&existing).expect("upsert existing attendee");
-    db.upsert_person(&newcomer).expect("upsert newcomer attendee");
+    db.upsert_person(&existing)
+        .expect("upsert existing attendee");
+    db.upsert_person(&newcomer)
+        .expect("upsert newcomer attendee");
     db.record_meeting_attendance(&previous.id, &existing.id)
         .expect("record previous attendance");
     db.record_meeting_attendance(&current.id, &existing.id)
@@ -4474,7 +4485,8 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
     completed.account_id = Some("acc-thread".to_string());
     completed.status = "completed".to_string();
     completed.completed_at = Some("2026-03-15T10:00:00Z".to_string());
-    db.upsert_action(&completed).expect("upsert completed action");
+    db.upsert_action(&completed)
+        .expect("upsert completed action");
 
     let mut open = sample_action("act-thread-open", "Review pricing addendum");
     open.account_id = Some("acc-thread".to_string());
@@ -4507,7 +4519,10 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
         .expect("continuity thread");
 
     assert_eq!(thread.actions_completed.len(), 1);
-    assert_eq!(thread.actions_completed[0].title, "Finalize mutual action plan");
+    assert_eq!(
+        thread.actions_completed[0].title,
+        "Finalize mutual action plan"
+    );
     assert_eq!(thread.actions_open.len(), 1);
     assert_eq!(thread.actions_open[0].title, "Review pricing addendum");
     assert_eq!(thread.actions_open[0].date.as_deref(), Some("2026-03-25"));
