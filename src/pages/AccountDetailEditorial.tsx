@@ -30,9 +30,6 @@ import {
   Award,
   Compass,
   Telescope,
-  CheckCircle2,
-  CircleDot,
-  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -698,10 +695,7 @@ export default function AccountDetailEditorial() {
                       ) : (
                         <div className={styles.productName}>{product.name}</div>
                       )}
-                      <div className={styles.productProvenance}>
-                        {sourceLabel ?? "Unknown source"}
                       </div>
-                    </div>
 
                     {/* Center: status badge (click to cycle) */}
                     {product.status && (
@@ -716,26 +710,8 @@ export default function AccountDetailEditorial() {
                       </button>
                     )}
 
-                    {/* Right: confidence icon + feedback thumbs */}
+                    {/* Right: feedback + dismiss */}
                     <div className={styles.productRight}>
-                      <span
-                        className={`${styles.confidenceIcon} ${
-                          product.confidence >= 0.8
-                            ? styles.confidenceHigh
-                            : product.confidence >= 0.5
-                              ? styles.confidenceMedium
-                              : styles.confidenceLow
-                        }`}
-                        title={tooltipText}
-                      >
-                        {product.confidence >= 0.8 ? (
-                          <CheckCircle2 size={12} />
-                        ) : product.confidence >= 0.5 ? (
-                          <CircleDot size={12} />
-                        ) : (
-                          <AlertCircle size={12} />
-                        )}
-                      </span>
                       <span className={styles.productFeedback}>
                         <IntelligenceFeedback
                           value={feedback.getFeedback(`products[${product.id}]`)}
@@ -744,6 +720,22 @@ export default function AccountDetailEditorial() {
                           }}
                         />
                       </span>
+                      <button
+                        type="button"
+                        className={styles.productDismiss}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          feedback.submitFeedback(`products[${product.id}]`, "negative");
+                          // Remove from display by correcting to churned
+                          void handleCorrectProduct({
+                            ...product,
+                            status: "churned",
+                          });
+                        }}
+                        title={`Remove — ${tooltipText}`}
+                      >
+                        ×
+                      </button>
                     </div>
                   </div>
                 );
