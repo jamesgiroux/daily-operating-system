@@ -17,7 +17,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { X, Plus, UserPlus, Search, LinkIcon, Check, Award } from "lucide-react";
-import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember } from "@/types";
+import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember, StakeholderFull } from "@/types";
 import { formatRelativeDate } from "@/lib/utils";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditableText } from "@/components/ui/EditableText";
@@ -31,6 +31,8 @@ interface StakeholderGalleryProps {
   intelligence: EntityIntelligence | null;
   linkedPeople: Person[];
   accountTeam?: AccountTeamMember[];
+  /** DB-first stakeholder read model — primary display source when non-empty. */
+  stakeholdersFull?: StakeholderFull[];
   sectionId?: string;
   chapterTitle?: string;
   /** Entity ID for intelligence updates. */
@@ -235,6 +237,7 @@ export function StakeholderGallery({
   intelligence,
   linkedPeople,
   accountTeam,
+  stakeholdersFull,
   sectionId = "the-room",
   chapterTitle = "The Room",
   entityId,
@@ -249,10 +252,17 @@ export function StakeholderGallery({
   teamSearchResults,
 }: StakeholderGalleryProps) {
   const navigate = useNavigate();
+
+  // DB-first: use stakeholdersFull as primary source when available
+  const useDbFirst = (stakeholdersFull?.length ?? 0) > 0;
+
   const allStakeholders = intelligence?.stakeholderInsights ?? [];
-  const stakeholders = filterInternalStakeholders(allStakeholders, linkedPeople);
-  const hasStakeholders = stakeholders.length > 0;
-  const epigraph = hasStakeholders ? buildEpigraph(stakeholders) : undefined;
+  const stakeholders = useDbFirst ? [] : filterInternalStakeholders(allStakeholders, linkedPeople);
+  const hasStakeholders = useDbFirst || stakeholders.length > 0;
+  const epigraphSource = useDbFirst
+    ? (stakeholdersFull ?? []).map((s) => ({ name: s.personName }))
+    : stakeholders;
+  const epigraph = hasStakeholders ? buildEpigraph(epigraphSource) : undefined;
   const teamMembers = accountTeam ?? [];
   const canEdit = !!entityId && !!entityType;
   const canEditTeam = !!onRemoveTeamMember;
@@ -285,20 +295,29 @@ export function StakeholderGallery({
   }, [showDropdown]);
 
   // Empty section collapse: return null when nothing to show (and not editing)
-  if (!hasStakeholders && linkedPeople.length === 0 && teamMembers.length === 0 && !canEdit && !canEditTeam) {
+  if (!hasStakeholders && !useDbFirst && linkedPeople.length === 0 && teamMembers.length === 0 && !canEdit && !canEditTeam) {
     return null;
   }
 
   const STAKEHOLDER_LIMIT = 6;
+  const dbStakeholders = stakeholdersFull ?? [];
+  const visibleDbStakeholders = expandedGrid ? dbStakeholders : dbStakeholders.slice(0, STAKEHOLDER_LIMIT);
+  const hasMoreDbStakeholders = dbStakeholders.length > STAKEHOLDER_LIMIT && !expandedGrid;
   const visibleStakeholders = expandedGrid ? stakeholders : stakeholders.slice(0, STAKEHOLDER_LIMIT);
-  const hasMoreStakeholders = stakeholders.length > STAKEHOLDER_LIMIT && !expandedGrid;
+  const hasMoreStakeholders = !useDbFirst && stakeholders.length > STAKEHOLDER_LIMIT && !expandedGrid;
 
   // ── Coverage analysis ──
-  // Only count intelligence stakeholders (the cards shown), not all linked people
-  const totalKnown = stakeholders.length;
-  const engagedCount = stakeholders.filter(
-    (s) => s.engagement && s.engagement !== "unknown" && s.engagement !== "none",
-  ).length;
+  const totalKnown = useDbFirst ? dbStakeholders.length : stakeholders.length;
+  // For DB-first, count stakeholders where we have intelligence engagement data
+  const intelInsights = intelligence?.stakeholderInsights ?? [];
+  const engagedCount = useDbFirst
+    ? dbStakeholders.filter((s) => {
+        const insight = intelInsights.find((i) => i.personId === s.personId || i.name.toLowerCase() === s.personName.toLowerCase());
+        return insight?.engagement && insight.engagement !== "unknown" && insight.engagement !== "none";
+      }).length
+    : stakeholders.filter(
+        (s) => s.engagement && s.engagement !== "unknown" && s.engagement !== "none",
+      ).length;
 
   // ── Field update helper ──
   async function updateField(fieldPath: string, value: string) {
@@ -443,7 +462,117 @@ export function StakeholderGallery({
     <section id={sectionId || undefined} className={css.section}>
       <ChapterHeading title={chapterTitle} epigraph={epigraph} />
 
-      {hasStakeholders ? (
+      {useDbFirst ? (
+        <>
+        <div className={css.grid}>
+          {visibleDbStakeholders.map((s) => {
+            // Look up supplementary AI assessment from intelligence by matching personId or name
+            const insight = intelInsights.find(
+              (ins) => ins.personId === s.personId || ins.name.toLowerCase() === s.personName.toLowerCase(),
+            );
+            const personDetail = [s.personRole, s.organization].filter(Boolean).join(" \u00b7 ") || null;
+            const isGlean = s.dataSource === "glean";
+            const isGoogle = s.dataSource === "google";
+
+            return (
+              <div key={s.personId} className={css.card}>
+                <div className={css.cardHeader}>
+                  <div className={css.avatarRingLinked}>
+                    <Avatar name={s.personName} personId={s.personId} size={24} />
+                  </div>
+                  <Link to="/people/$personId" params={{ personId: s.personId }} className={css.nameLink}>
+                    {s.personName}
+                  </Link>
+                  <LinkIcon size={12} strokeWidth={1.5} className={css.linkIcon} aria-label={`Linked to ${s.personName}`} />
+                  {insight?.engagement && canEdit ? (
+                    <EngagementSelector
+                      value={insight.engagement}
+                      onChange={(v) => {
+                        const idx = intelInsights.findIndex(
+                          (ins) => ins.personId === s.personId || ins.name.toLowerCase() === s.personName.toLowerCase(),
+                        );
+                        if (idx >= 0) updateField(`stakeholderInsights[${idx}].engagement`, v);
+                      }}
+                    />
+                  ) : insight?.engagement ? (
+                    <span className={`${css.engagementBadge} ${getEngagementBadgeClass(insight.engagement)}`}>
+                      {getStaticBadgeLabel(insight.engagement)}
+                    </span>
+                  ) : null}
+                </div>
+                {personDetail && <p className={css.titleLine}>{personDetail}</p>}
+                {s.stakeholderRole && s.stakeholderRole !== "associated" && (
+                  <p className={css.role}>{s.stakeholderRole}</p>
+                )}
+                {insight?.assessment && <TruncatedAssessment text={insight.assessment} />}
+                {/* Source provenance indicator */}
+                {isGlean && (
+                  <div className={css.sourceRow}>
+                    <span className={css.sourceLabel} data-source="glean">via Glean</span>
+                    {entityId && (
+                      <>
+                        <button
+                          onClick={() => {
+                            invoke("add_account_team_member", {
+                              accountId: entityId,
+                              personId: s.personId,
+                              role: s.stakeholderRole || "associated",
+                            }).then(() => onIntelligenceUpdated?.()).catch((e) => {
+                              console.error("Failed to accept stakeholder:", e);
+                              toast.error("Failed to accept");
+                            });
+                          }}
+                          className={css.sourceAccept}
+                          title="Confirm stakeholder"
+                        >
+                          <Check size={11} strokeWidth={2} /> Accept
+                        </button>
+                        <button
+                          onClick={() => {
+                            invoke("remove_account_team_member", {
+                              accountId: entityId,
+                              personId: s.personId,
+                              role: s.stakeholderRole || "associated",
+                            }).then(() => onIntelligenceUpdated?.()).catch((e) => {
+                              console.error("Failed to dismiss stakeholder:", e);
+                              toast.error("Failed to dismiss");
+                            });
+                          }}
+                          className={css.sourceDismiss}
+                          title="Remove stakeholder"
+                        >
+                          Dismiss
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {isGoogle && (
+                  <span className={css.sourceLabel} data-source="google">via Google</span>
+                )}
+                {/* Meeting count + last seen from DB */}
+                {(s.meetingCount != null && s.meetingCount > 0) && (
+                  <div className={css.lastSeen}>
+                    {s.meetingCount} meeting{s.meetingCount === 1 ? "" : "s"}
+                    {s.lastSeen ? ` \u00b7 Last seen ${formatRelativeDate(s.lastSeen)}` : ""}
+                  </div>
+                )}
+                {!s.meetingCount && s.lastSeen && (
+                  <div className={css.lastSeen}>
+                    Last seen {formatRelativeDate(s.lastSeen)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {hasMoreDbStakeholders && (
+          <button onClick={() => setExpandedGrid(true)} className={css.showMore}>
+            Show {dbStakeholders.length - STAKEHOLDER_LIMIT} more
+          </button>
+        )}
+        </>
+      ) : hasStakeholders ? (
         <>
         <div className={css.grid}>
           {visibleStakeholders.map((s, i) => {
