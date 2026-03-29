@@ -360,11 +360,45 @@ impl GleanIntelligenceProvider {
                 .ok()
                 .and_then(|db| db.get_entity_intelligence(entity_id).ok().flatten());
             match existing {
-                Some(existing) => reconcile_enrichment(
-                    existing,
-                    combined,
-                    &["glean_crm", "glean_zendesk", "glean_gong", "glean_chat"],
-                ),
+                Some(mut existing) => {
+                    // I644: Protect stakeholder_insights when user has designated
+                    // team members via the Team panel (account_stakeholders with
+                    // data_source='user'). Inject synthetic user_edits so
+                    // reconcile_enrichment skips the stakeholder array.
+                    if entity_type == "account" {
+                        let has_user_stakeholders = crate::db::ActionDb::open()
+                            .ok()
+                            .and_then(|db| {
+                                db.conn_ref()
+                                    .query_row(
+                                        "SELECT COUNT(*) FROM account_stakeholders WHERE account_id = ?1 AND data_source = 'user'",
+                                        rusqlite::params![entity_id],
+                                        |row| row.get::<_, i64>(0),
+                                    )
+                                    .ok()
+                            })
+                            .unwrap_or(0)
+                            > 0;
+                        if has_user_stakeholders
+                            && !existing
+                                .user_edits
+                                .iter()
+                                .any(|e| e.field_path.starts_with("stakeholderInsights"))
+                        {
+                            existing
+                                .user_edits
+                                .push(crate::intelligence::io::UserEdit {
+                                    field_path: "stakeholderInsights".to_string(),
+                                    edited_at: chrono::Utc::now().to_rfc3339(),
+                                });
+                        }
+                    }
+                    reconcile_enrichment(
+                        existing,
+                        combined,
+                        &["glean_crm", "glean_zendesk", "glean_gong", "glean_chat"],
+                    )
+                }
                 None => combined,
             }
         };
