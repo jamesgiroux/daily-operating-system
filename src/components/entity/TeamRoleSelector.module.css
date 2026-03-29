@@ -38,16 +38,16 @@
 }
 
 .option:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--color-black-4);
 }
 
 .optionActive {
   composes: option;
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--color-black-4);
 }
 
 .optionActive:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--color-black-8);
 }
 
 .optionLabel {

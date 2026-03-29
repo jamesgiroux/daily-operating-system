@@ -189,7 +189,7 @@ export function AccountOutlook({
       {/* Expansion signals */}
       {hasSignals && (
         <div className={css.expansionSection}>
-          <div className={css.expansionLabel}>Expansion Signals</div>
+          <div className={css.expansionLabel}>Growth Opportunities</div>
           <div className={css.signalList}>
             {signals.map((signal, i) => (
               <div key={i} className={css.signalItem}>
