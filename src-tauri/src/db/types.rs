@@ -190,6 +190,30 @@ pub struct DbAccountTeamMember {
     pub created_at: String,
 }
 
+/// Full stakeholder data with data_source for the DB-first read model.
+/// Returns ALL stakeholders (user-confirmed + Glean-suggested + Google-sourced)
+/// plus linked people from entity_members.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbStakeholderFull {
+    pub person_id: String,
+    pub person_name: String,
+    pub person_email: Option<String>,
+    pub organization: Option<String>,
+    /// Job title from people table.
+    pub person_role: Option<String>,
+    /// Role from account_stakeholders (champion, csm, etc.).
+    pub stakeholder_role: String,
+    /// Provenance: 'user', 'glean', 'google'.
+    pub data_source: String,
+    pub last_seen_in_glean: Option<String>,
+    pub created_at: String,
+    pub linkedin_url: Option<String>,
+    pub photo_url: Option<String>,
+    pub meeting_count: Option<i64>,
+    pub last_seen: Option<String>,
+}
+
 /// A row from `account_team_import_notes`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
