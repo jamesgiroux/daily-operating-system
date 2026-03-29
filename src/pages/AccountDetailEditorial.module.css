@@ -250,6 +250,31 @@
   color: var(--color-text-primary);
 }
 
+.productStatusBadge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: 8px;
+  vertical-align: 2px;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-8, rgba(126, 170, 123, 0.07));
+}
+
+.productStatusBadge[data-status="trial"] {
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+}
+
+.productStatusBadge[data-status="churned"] {
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8, rgba(196, 101, 74, 0.06));
+}
+
 .productMeta {
   margin-top: 4px;
   font-family: var(--font-sans);
@@ -321,9 +346,177 @@
   color: var(--color-text-tertiary);
 }
 
-.heroProvenance {
+.fieldReviewPanel {
+  margin: 20px 0 28px;
+  padding: 18px 20px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--color-paper-cream) 0%, var(--color-paper-warm-white) 100%);
+  display: grid;
+  gap: 16px;
+  max-width: 820px;
+}
+
+.fieldReviewHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.fieldReviewEyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.fieldReviewIntro {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.fieldReviewHealth {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-top: 2px;
+  flex-wrap: wrap;
+}
+
+.fieldReviewHealthLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.fieldReviewHealthValue {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.fieldReviewList {
   display: grid;
   gap: 12px;
+}
+
+.fieldReviewCard {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.fieldReviewCard:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.fieldReviewCardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.fieldReviewField {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.fieldReviewMeta {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.fieldReviewActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.fieldReviewDismiss {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.fieldReviewDismiss:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.fieldReviewValues {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.fieldReviewValueBlock {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.fieldReviewValueLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.fieldReviewValue,
+.fieldReviewValueSuggested {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.fieldReviewValueSuggested {
+  font-weight: 600;
+}
+
+.fieldReviewArrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+@media (max-width: 700px) {
+  .fieldReviewPanel {
+    padding: 16px;
+  }
+
+  .fieldReviewCardTop {
+    flex-direction: column;
+  }
+
+  .fieldReviewActions {
+    width: 100%;
+  }
 }
 
 .healthScoreNumber {
