@@ -1018,10 +1018,24 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
         .unwrap_or_default();
-    let extraction_pty =
-        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config);
-    let synthesis_pty =
-        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config);
+    let extraction_pty = crate::pty::PtyManager::for_tier(
+        crate::pty::ModelTier::Extraction,
+        &ai_config,
+    )
+    .with_usage_context(
+        crate::pty::AiUsageContext::new("devtools", "sample_email_enrichment")
+            .with_trigger("devtools")
+            .with_tier(crate::pty::ModelTier::Extraction),
+    );
+    let synthesis_pty = crate::pty::PtyManager::for_tier(
+        crate::pty::ModelTier::Synthesis,
+        &ai_config,
+    )
+    .with_usage_context(
+        crate::pty::AiUsageContext::new("devtools", "sample_email_enrichment_fallback")
+            .with_trigger("devtools")
+            .with_tier(crate::pty::ModelTier::Synthesis),
+    );
     let user_ctx = state
         .config
         .read()
