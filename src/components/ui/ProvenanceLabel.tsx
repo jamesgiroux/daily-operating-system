@@ -87,7 +87,7 @@ export function ProvenanceLabel({
                 onClick={conflict.onAccept}
                 disabled={conflict.pending}
               >
-                Looks good
+                Accept
               </Button>
             ) : null}
             {conflict.onDismiss ? (
