@@ -234,7 +234,7 @@ fn infer_renewal_stage(contract_end: Option<&str>) -> Option<String> {
         0..=30 => "contract_sent",
         31..=60 => "negotiating",
         61..=120 => "approaching",
-        _ => "approaching",
+        _ => return None, // >120 days out — not yet in renewal stage
     };
     Some(stage.to_string())
 }
@@ -891,6 +891,20 @@ pub fn ensure_account_lifecycle_state(
         if current_stage != inferred_stage {
             db.set_account_renewal_stage(account_id, inferred_stage.as_deref())
                 .map_err(|e| e.to_string())?;
+            let payload = format!(
+                "{{\"stage\":\"{}\"}}",
+                inferred_stage.as_deref().unwrap_or("")
+            );
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                engine,
+                "account",
+                account_id,
+                "renewal_stage_updated",
+                "system",
+                Some(&payload),
+                0.7,
+            );
         }
     }
 
