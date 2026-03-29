@@ -1454,6 +1454,21 @@ export interface AccountDetail extends AccountListItem {
   intelligence?: EntityIntelligence;
   /** I628 AC5: Recently auto-completed milestones for timeline display. */
   autoCompletedMilestones?: AccountMilestone[];
+  /** I649: Technical footprint, adoption, and service-delivery data. */
+  technicalFootprint?: AccountTechnicalFootprint;
+}
+
+/** I649: Technical footprint data for an account. */
+export interface AccountTechnicalFootprint {
+  usageTier?: string | null;
+  adoptionScore?: number | null;
+  activeUsers?: number | null;
+  supportTier?: string | null;
+  csatScore?: number | null;
+  openTickets?: number | null;
+  servicesStage?: string | null;
+  source: string;
+  sourcedAt: string;
 }
 
 export interface AccountFieldProvenance {

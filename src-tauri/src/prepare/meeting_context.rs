@@ -304,6 +304,45 @@ fn gather_account_context(
                 .collect::<Vec<_>>());
         }
     }
+
+    // I647: Source-verified facts from account_source_refs
+    if let Ok(refs) = db.get_account_source_refs(&entity_match.entity_id) {
+        let fact_refs: Vec<_> = refs
+            .iter()
+            .filter(|r| r.source_kind == "fact")
+            .collect();
+        if !fact_refs.is_empty() {
+            let mut seen_fields = std::collections::HashSet::new();
+            let sourced_facts: Vec<_> = fact_refs
+                .iter()
+                .filter(|r| seen_fields.insert(&r.field))
+                .map(|r| {
+                    json!({
+                        "field": r.field,
+                        "value": r.source_value,
+                        "source": r.source_system,
+                        "observedAt": r.observed_at,
+                    })
+                })
+                .collect();
+            ctx["sourcedFacts"] = json!(sourced_facts);
+        }
+    }
+
+    // I649: Technical footprint
+    if let Ok(Some(tf)) = db.get_account_technical_footprint(&entity_match.entity_id) {
+        ctx["technicalFootprint"] = json!({
+            "usageTier": tf.usage_tier,
+            "adoptionScore": tf.adoption_score,
+            "activeUsers": tf.active_users,
+            "supportTier": tf.support_tier,
+            "csatScore": tf.csat_score,
+            "openTickets": tf.open_tickets,
+            "servicesStage": tf.services_stage,
+            "source": tf.source,
+            "sourcedAt": tf.sourced_at,
+        });
+    }
 }
 
 /// Gather project-specific context into the meeting context JSON (I337).

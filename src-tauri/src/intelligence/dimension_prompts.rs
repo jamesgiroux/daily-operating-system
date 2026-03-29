@@ -554,14 +554,22 @@ RECONCILIATION RULES:\n\
 - Items tagged [user_correction] are SACRED — include them verbatim in your output, never modify or drop\n\
 - Items tagged [transcript] are personal observations — preserve even if you have no corroborating data\n\
 - If your data CONTRADICTS an existing item, include BOTH with \"discrepancy\": true on yours\n\
-- Tag every item in your output with \"itemSource\": {\"source\": \"pty_synthesis\", \"confidence\": 0.5, \"sourcedAt\": \"ISO timestamp\"}\n\n";
+- Tag every item in your output with \"itemSource\": {\"source\": \"pty_synthesis\", \"confidence\": 0.5, \"sourcedAt\": \"ISO timestamp\"}\n\n\
+ACCOUNT TRUTH rules:\n\
+- Fields marked \"(source: salesforce, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
+- Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
+- You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n";
 
 const RECONCILIATION_RULES_GLEAN: &str = "\
 RECONCILIATION RULES:\n\
 - Items tagged [user_correction] are SACRED — include them verbatim in your output, never modify or drop\n\
 - Items tagged [transcript] are personal observations — preserve even if you have no corroborating data\n\
 - If your data CONTRADICTS an existing item, include BOTH with \"discrepancy\": true on yours\n\
-- Tag every item with \"itemSource\": {\"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat\", \"confidence\": 0.7-0.9, \"sourcedAt\": \"ISO timestamp\", \"reference\": \"data source name\"}\n\n";
+- Tag every item with \"itemSource\": {\"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat\", \"confidence\": 0.7-0.9, \"sourcedAt\": \"ISO timestamp\", \"reference\": \"data source name\"}\n\n\
+ACCOUNT TRUTH rules:\n\
+- Fields marked \"(source: salesforce, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
+- Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
+- You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n";
 
 /// I576: Inject source-tagged existing intelligence items into the prompt.
 ///

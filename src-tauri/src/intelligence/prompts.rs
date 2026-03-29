@@ -76,6 +76,10 @@ pub struct IntelligenceContext {
     pub user_corrections: String,
     /// I645: Formatted source reliability weights for prompt injection.
     pub signal_weights_block: String,
+    /// I647: Source-verified account facts from account_source_refs (fact kind only).
+    pub source_verified_facts: String,
+    /// I649: Technical footprint block for prompt injection.
+    pub technical_footprint_block: String,
 }
 
 /// I508c structured gap query item used for local ranking + remote fan-out.
@@ -142,6 +146,93 @@ pub fn build_intelligence_context(
                     }
                 }
                 ctx.facts_block = facts.join("\n");
+
+                // I647: Source-verified facts from account_source_refs
+                if let Ok(refs) = db.get_account_source_refs(entity_id) {
+                    let fact_refs: Vec<_> = refs
+                        .iter()
+                        .filter(|r| r.source_kind == "fact")
+                        .collect();
+                    if !fact_refs.is_empty() {
+                        let mut lines = Vec::new();
+                        // Deduplicate by field — take first (most recent due to ORDER BY)
+                        let mut seen_fields = std::collections::HashSet::new();
+                        for r in &fact_refs {
+                            if !seen_fields.insert(&r.field) {
+                                continue;
+                            }
+                            let value_str = r.source_value.as_deref().unwrap_or("unknown");
+                            let observed = &r.observed_at;
+                            let lock_note = if r.field == "champion" {
+                                " \u{2014} do not reassign"
+                            } else {
+                                ""
+                            };
+                            let display_field = match r.field.as_str() {
+                                "arr" => {
+                                    if let Ok(v) = value_str.parse::<f64>() {
+                                        // Format with commas manually
+                                        let whole = v as u64;
+                                        let s = whole.to_string();
+                                        let formatted: String = s
+                                            .as_bytes()
+                                            .rchunks(3)
+                                            .rev()
+                                            .map(|chunk| std::str::from_utf8(chunk).unwrap())
+                                            .collect::<Vec<_>>()
+                                            .join(",");
+                                        format!("ARR: ${}", formatted)
+                                    } else {
+                                        format!("ARR: {}", value_str)
+                                    }
+                                }
+                                "renewal_date" => format!("Renewal: {}", value_str),
+                                "lifecycle" => format!("Lifecycle: {}", value_str),
+                                "nps" => format!("NPS: {}", value_str),
+                                "champion" => format!("Champion: {}", value_str),
+                                other => format!("{}: {}", other, value_str),
+                            };
+                            lines.push(format!(
+                                "- {} (source: {}, fact, {}{})",
+                                display_field, r.source_system, observed, lock_note
+                            ));
+                        }
+                        ctx.source_verified_facts = format!(
+                            "ACCOUNT TRUTH (source-verified \u{2014} treat as ground truth):\n{}",
+                            lines.join("\n")
+                        );
+                    }
+                }
+
+                // I649: Technical footprint
+                if let Ok(Some(tf)) = db.get_account_technical_footprint(entity_id) {
+                    let mut lines = Vec::new();
+                    if let Some(ref tier) = tf.support_tier {
+                        lines.push(format!("- Support tier: {}", tier));
+                    }
+                    if let Some(csat) = tf.csat_score {
+                        lines.push(format!("- CSAT: {:.1}/5", csat));
+                    }
+                    if tf.open_tickets > 0 {
+                        lines.push(format!("- Open tickets: {}", tf.open_tickets));
+                    }
+                    if let Some(ref tier) = tf.usage_tier {
+                        lines.push(format!("- Usage tier: {}", tier));
+                    }
+                    if let Some(users) = tf.active_users {
+                        lines.push(format!("- Active users: {}", users));
+                    }
+                    if let Some(score) = tf.adoption_score {
+                        lines.push(format!("- Adoption score: {:.0}%", score * 100.0));
+                    }
+                    if let Some(ref stage) = tf.services_stage {
+                        lines.push(format!("- Services stage: {}", stage));
+                    }
+                    if !lines.is_empty() {
+                        ctx.technical_footprint_block =
+                            format!("Technical Footprint:\n{}", lines.join("\n"));
+                    }
+                }
             }
         }
         "project" => {
@@ -1641,6 +1732,26 @@ fn build_intelligence_prompt_inner(
             prompt.push_str("\n\nSource reliability:\n");
             prompt.push_str(&ctx.signal_weights_block);
         }
+        prompt.push_str("\n\n");
+    }
+
+    // I647: Source-verified account facts (ground truth the LLM should not override)
+    if !ctx.source_verified_facts.is_empty() {
+        prompt.push_str("## ");
+        prompt.push_str(&ctx.source_verified_facts);
+        prompt.push_str("\n\n");
+        prompt.push_str(
+            "ACCOUNT TRUTH rules:\n\
+             - Fields marked \"(source: salesforce, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
+             - Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
+             - You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n",
+        );
+    }
+
+    // I649: Technical footprint context
+    if !ctx.technical_footprint_block.is_empty() {
+        prompt.push_str("## ");
+        prompt.push_str(&ctx.technical_footprint_block);
         prompt.push_str("\n\n");
     }
 
@@ -3236,6 +3347,8 @@ mod tests {
             extra_blocks: Vec::new(),
             user_corrections: String::new(),
             signal_weights_block: String::new(),
+            source_verified_facts: String::new(),
+            technical_footprint_block: String::new(),
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
