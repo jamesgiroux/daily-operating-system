@@ -1,7 +1,7 @@
 .block {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-sm, 8px);
 }
 
 .label {
