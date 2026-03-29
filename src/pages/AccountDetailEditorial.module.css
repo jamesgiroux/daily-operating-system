@@ -246,8 +246,9 @@
   border-bottom: none;
 }
 
-/* Hover reveals feedback thumbs */
-.productRow:hover .productFeedback {
+/* Hover reveals feedback thumbs + dismiss */
+.productRow:hover .productFeedback,
+.productRow:hover .productDismiss {
   opacity: 1;
 }
 
@@ -268,19 +269,6 @@
   font-weight: 500;
   color: var(--color-text-primary);
   transition: color var(--transition-fast);
-}
-
-.productProvenance {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  margin-top: 2px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
 }
 
 /* Center: status badge */
@@ -324,35 +312,40 @@
   background: var(--color-spice-terracotta-12);
 }
 
-/* Right: confidence icon + feedback */
+/* Right: feedback + dismiss */
 .productRight {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-xs, 4px);
   flex-shrink: 0;
-}
-
-.confidenceIcon {
-  display: inline-flex;
-  align-items: center;
-  cursor: default;
-}
-
-.confidenceHigh {
-  color: var(--color-garden-sage);
-}
-
-.confidenceMedium {
-  color: var(--color-spice-turmeric);
-}
-
-.confidenceLow {
-  color: var(--color-spice-terracotta);
 }
 
 .productFeedback {
   opacity: 0;
   transition: opacity var(--transition-fast);
+}
+
+.productDismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-quaternary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+
+.productDismiss:hover {
+  background: var(--color-spice-terracotta-8);
+  color: var(--color-spice-terracotta);
 }
 
 /* Product inline edit — EditableText-style */
