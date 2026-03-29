@@ -72,6 +72,10 @@ pub struct IntelligenceContext {
     pub org_health: Option<super::io::OrgHealthData>,
     /// I555: Additional context blocks (engagement patterns, champion health, commitments).
     pub extra_blocks: Vec<String>,
+    /// I645: Formatted user corrections (dismissed items + field edits) for prompt injection.
+    pub user_corrections: String,
+    /// I645: Formatted source reliability weights for prompt injection.
+    pub signal_weights_block: String,
 }
 
 /// I508c structured gap query item used for local ranking + remote fan-out.
@@ -879,6 +883,70 @@ pub fn build_intelligence_context(
     // I508c: Store gap queries for Glean fan-out
     ctx.gap_queries = gap_queries;
 
+    // I645 B3: Inject user corrections (dismissed items + field edits) into prompt context
+    if let Some(p) = prior {
+        let cutoff_90d = (Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+        let mut correction_lines: Vec<String> = Vec::new();
+
+        // Dismissed items (active within 90 days)
+        for d in &p.dismissed_items {
+            if d.dismissed_at > cutoff_90d {
+                correction_lines.push(format!(
+                    "- [dismissed] {}.\"{}\" (dismissed {})",
+                    d.field,
+                    d.content.chars().take(80).collect::<String>(),
+                    d.dismissed_at.split('T').next().unwrap_or(&d.dismissed_at),
+                ));
+            }
+        }
+
+        // User field edits
+        for e in &p.user_edits {
+            correction_lines.push(format!(
+                "- [corrected] {} (edited {})",
+                e.field_path,
+                e.edited_at.split('T').next().unwrap_or(&e.edited_at),
+            ));
+        }
+
+        if !correction_lines.is_empty() {
+            ctx.user_corrections = correction_lines.join("\n");
+        }
+    }
+
+    // I645 B4: Inject signal source reliability weights into prompt context
+    {
+        let sources = [
+            "glean_crm",
+            "glean_zendesk",
+            "glean_gong",
+            "glean_slack",
+            "pty_synthesis",
+            "local_file",
+            "user_correction",
+            "clay",
+        ];
+        let mut weight_lines: Vec<String> = Vec::new();
+        for source in &sources {
+            if let Ok(Some((alpha, beta, _count))) =
+                db.get_signal_weight(source, entity_type, "enrichment_quality")
+            {
+                let reliability = if alpha + beta > 0.0 {
+                    alpha / (alpha + beta) * 100.0
+                } else {
+                    50.0
+                };
+                weight_lines.push(format!(
+                    "- {}: {:.0}% (alpha: {:.0}, beta: {:.0})",
+                    source, reliability, alpha, beta,
+                ));
+            }
+        }
+        if !weight_lines.is_empty() {
+            ctx.signal_weights_block = weight_lines.join("\n");
+        }
+    }
+
     ctx
 }
 
@@ -1568,6 +1636,22 @@ fn build_intelligence_prompt_inner(
     if !ctx.facts_block.is_empty() {
         prompt.push_str("## Current Facts\n");
         prompt.push_str(&wrap_user_data(&ctx.facts_block));
+        // I645 B4: Append source reliability weights to facts block
+        if !ctx.signal_weights_block.is_empty() {
+            prompt.push_str("\n\nSource reliability:\n");
+            prompt.push_str(&ctx.signal_weights_block);
+        }
+        prompt.push_str("\n\n");
+    }
+
+    // I645 B3: User corrections — dismissed items and field edits
+    if !ctx.user_corrections.is_empty() {
+        prompt.push_str(
+            "## User Corrections (do not reproduce dismissed items)\n\
+             The user has made the following corrections. Respect these — do not \
+             re-introduce dismissed items or override corrected fields.\n\n",
+        );
+        prompt.push_str(&ctx.user_corrections);
         prompt.push_str("\n\n");
     }
 
@@ -3150,6 +3234,8 @@ mod tests {
             computed_health: None,
             org_health: None,
             extra_blocks: Vec::new(),
+            user_corrections: String::new(),
+            signal_weights_block: String::new(),
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
@@ -3552,6 +3638,7 @@ Hope this helps!"#;
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         };
         db.upsert_account(&account).expect("upsert");
 
@@ -3989,5 +4076,147 @@ mod eval_tests {
 
         let rels2 = extract_inferred_relationships(r#"{"inferredRelationships":"not an array"}"#);
         assert!(rels2.is_empty(), "Non-array must produce empty vec");
+    }
+
+    // ── I645 Track B: Learning loop tests ──
+
+    use crate::db::test_utils::test_db;
+
+    #[test]
+    fn test_prompt_includes_user_corrections_block() {
+        let ctx = IntelligenceContext {
+            facts_block: "Health: green".to_string(),
+            user_corrections: "- [dismissed] risks.\"budget risk\" (dismissed 2026-03-20)\n\
+                               - [corrected] stakeholderInsights[0].role (edited 2026-03-18)"
+                .to_string(),
+            ..Default::default()
+        };
+        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("User Corrections"),
+            "Prompt must include User Corrections section"
+        );
+        assert!(
+            prompt.contains("do not reproduce dismissed items"),
+            "Prompt must warn against reproducing dismissed items"
+        );
+        assert!(
+            prompt.contains("budget risk"),
+            "Prompt must include the dismissed item text"
+        );
+        assert!(
+            prompt.contains("stakeholderInsights[0].role"),
+            "Prompt must include the corrected field path"
+        );
+    }
+
+    #[test]
+    fn test_prompt_includes_signal_weights_in_facts() {
+        let ctx = IntelligenceContext {
+            facts_block: "ARR: $200K".to_string(),
+            signal_weights_block: "- glean_crm: 94% (alpha: 48, beta: 4)\n\
+                                   - pty_synthesis: 78% (alpha: 15, beta: 5)"
+                .to_string(),
+            ..Default::default()
+        };
+        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("Source reliability:"),
+            "Prompt must include source reliability header"
+        );
+        assert!(
+            prompt.contains("glean_crm: 94%"),
+            "Prompt must include glean_crm weight"
+        );
+        assert!(
+            prompt.contains("pty_synthesis: 78%"),
+            "Prompt must include pty_synthesis weight"
+        );
+    }
+
+    #[test]
+    fn test_prompt_omits_empty_corrections_and_weights() {
+        let ctx = IntelligenceContext {
+            facts_block: "ARR: $200K".to_string(),
+            ..Default::default()
+        };
+        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
+        assert!(
+            !prompt.contains("User Corrections"),
+            "Empty corrections should not appear in prompt"
+        );
+        assert!(
+            !prompt.contains("Source reliability:"),
+            "Empty weights should not appear in prompt"
+        );
+    }
+
+    #[test]
+    fn test_build_context_populates_corrections_from_prior() {
+        let db = test_db();
+        let workspace = std::path::PathBuf::from("/tmp/test_workspace");
+
+        let mut prior = IntelligenceJson::default();
+        prior.dismissed_items.push(DismissedItem {
+            field: "risks".to_string(),
+            content: "outdated risk about budget".to_string(),
+            dismissed_at: chrono::Utc::now().to_rfc3339(),
+        });
+        prior.user_edits.push(UserEdit {
+            field_path: "stakeholderInsights[0].role".to_string(),
+            edited_at: chrono::Utc::now().to_rfc3339(),
+        });
+
+        let ctx = build_intelligence_context(
+            &workspace,
+            &db,
+            "test-entity",
+            "account",
+            None,
+            None,
+            Some(&prior),
+            None,
+        );
+
+        assert!(
+            ctx.user_corrections.contains("[dismissed]"),
+            "Context must include dismissed items: got '{}'",
+            ctx.user_corrections,
+        );
+        assert!(
+            ctx.user_corrections.contains("[corrected]"),
+            "Context must include corrected fields: got '{}'",
+            ctx.user_corrections,
+        );
+    }
+
+    #[test]
+    fn test_build_context_excludes_old_dismissals() {
+        let db = test_db();
+        let workspace = std::path::PathBuf::from("/tmp/test_workspace");
+
+        let old_date = (chrono::Utc::now() - chrono::Duration::days(100)).to_rfc3339();
+        let mut prior = IntelligenceJson::default();
+        prior.dismissed_items.push(DismissedItem {
+            field: "risks".to_string(),
+            content: "ancient risk".to_string(),
+            dismissed_at: old_date,
+        });
+
+        let ctx = build_intelligence_context(
+            &workspace,
+            &db,
+            "test-entity",
+            "account",
+            None,
+            None,
+            Some(&prior),
+            None,
+        );
+
+        assert!(
+            !ctx.user_corrections.contains("ancient risk"),
+            "Dismissals older than 90 days should be excluded"
+        );
     }
 }
