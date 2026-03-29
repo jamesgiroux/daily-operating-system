@@ -1059,6 +1059,24 @@ pub struct DashboardData {
     /// User org domains for internal/external attendee grouping.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_domains: Option<Vec<String>>,
+    /// Briefing callouts from signal propagation (I623 AC4).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub briefing_callouts: Vec<DashboardBriefingCallout>,
+}
+
+/// A briefing callout surfaced to the daily briefing (I623).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardBriefingCallout {
+    pub id: String,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub entity_name: Option<String>,
+    pub callout_type: String,
+    pub headline: String,
+    pub detail: Option<String>,
+    pub severity: String,
+    pub created_at: String,
 }
 
 // =============================================================================

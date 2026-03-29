@@ -567,6 +567,9 @@ export function TheWork({
                     {labelMilestoneStatus(milestone.status)}
                     {milestone.targetDate ? ` · ${formatShortDate(milestone.targetDate)}` : ""}
                     {milestone.autoDetectSignal ? " · ⚡" : ""}
+                    {milestone.completedBy === "lifecycle_transition" && milestone.completionTrigger
+                      ? ` · auto-completed via ${milestone.completionTrigger.replace(/_/g, " ")}`
+                      : ""}
                   </div>
                 </div>
                 <div className={s.milestoneActions}>

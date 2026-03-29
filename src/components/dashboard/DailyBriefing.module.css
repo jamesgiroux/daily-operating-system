@@ -182,3 +182,98 @@
   opacity: 0.5;
   margin-left: 8px;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BRIEFING CALLOUTS (I623)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.calloutsGroupSpaced {
+  margin-top: 28px;
+}
+
+.calloutsGroupFlush {
+  margin-top: 0;
+}
+
+.calloutSeverityBadge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-paper-cream);
+  background: var(--color-spice-terracotta);
+  vertical-align: middle;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BRIEFING CALLOUTS (I623 AC4)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.calloutsGroupSpaced {
+  margin-top: var(--space-lg, 24px);
+}
+
+.calloutsGroupFlush {
+  margin-top: 0;
+}
+
+.calloutItem {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.calloutItem:last-child {
+  border-bottom: none;
+}
+
+.calloutSeverity {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+  background: var(--color-text-quaternary);
+}
+
+.calloutSeverity[data-severity="warning"] {
+  background: var(--color-spice-turmeric);
+}
+
+.calloutSeverity[data-severity="critical"] {
+  background: var(--color-spice-terracotta);
+}
+
+.calloutContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calloutHeadline {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.calloutEntity {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.calloutDetail {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}

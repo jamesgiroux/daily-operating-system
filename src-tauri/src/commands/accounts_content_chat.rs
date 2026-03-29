@@ -65,6 +65,9 @@ pub struct AccountDetailResult {
     pub field_conflicts: Vec<crate::types::AccountFieldConflictSuggestion>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::intelligence::IntelligenceJson>,
+    /// I628 AC5: Recently auto-completed milestones for timeline display.
+    #[serde(default)]
+    pub auto_completed_milestones: Vec<crate::types::AccountMilestone>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
