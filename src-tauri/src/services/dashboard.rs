@@ -10,9 +10,9 @@ use crate::json_loader::DataFreshness;
 use crate::parser::count_inbox;
 use crate::state::AppState;
 use crate::types::{
-    Action, CalendarEvent, DailyFocus, DashboardData, DayOverview, DayStats, EmailSyncStage,
-    EmailSyncState, EmailSyncStatus, GoogleAuthStatus, Meeting, MeetingType, OverlayStatus,
-    Priority, WeekOverview,
+    Action, CalendarEvent, DailyFocus, DashboardData, DashboardLifecycleUpdate, DayOverview,
+    DayStats, EmailSyncStage, EmailSyncState, EmailSyncStatus, GoogleAuthStatus, Meeting,
+    MeetingType, OverlayStatus, Priority, WeekOverview,
 };
 
 /// Result type for dashboard data loading
@@ -65,6 +65,35 @@ fn normalize_match_key(value: &str) -> String {
     crate::services::entities::normalize_match_key(value)
 }
 
+fn load_dashboard_lifecycle_updates(
+    db: &crate::db::ActionDb,
+    limit: usize,
+) -> Vec<DashboardLifecycleUpdate> {
+    db.get_recent_lifecycle_changes(limit)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|change| {
+            let account = db.get_account(&change.account_id).ok().flatten()?;
+            Some(DashboardLifecycleUpdate {
+                change_id: change.id,
+                account_id: change.account_id,
+                account_name: account.name,
+                previous_lifecycle: change.previous_lifecycle,
+                new_lifecycle: change.new_lifecycle,
+                renewal_stage: change.new_stage,
+                source: change.source,
+                confidence: change.confidence,
+                evidence: change.evidence,
+                health_score_before: change.health_score_before,
+                health_score_after: change.health_score_after,
+                action_state: change.user_response,
+                created_at: change.created_at,
+            })
+        })
+        .take(limit)
+        .collect()
+}
+
 /// Build dashboard data from live SQLite when schedule.json is missing.
 ///
 /// Returns `None` if no meetings exist for today or DB is unavailable.
@@ -76,7 +105,15 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         focus_candidates: Vec<crate::db::DbAction>,
         entity_map: HashMap<String, Vec<crate::types::LinkedEntity>>,
         intelligence_qualities: HashMap<String, crate::types::IntelligenceQuality>,
+        lifecycle_updates: Vec<DashboardLifecycleUpdate>,
     }
+
+    let engine = std::sync::Arc::clone(&state.signals.engine);
+    let _ = state
+        .db_write(move |db| {
+            crate::services::accounts::refresh_lifecycle_states_for_dashboard(db, &engine)
+        })
+        .await;
 
     let tz_for_live: chrono_tz::Tz = state
         .config
@@ -156,6 +193,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
                 let q = crate::intelligence::assess_intelligence_quality(db, mid);
                 iq_map.insert(mid.clone(), q);
             }
+            let lifecycle_updates = load_dashboard_lifecycle_updates(db, 3);
 
             Ok(Some(LiveSnapshot {
                 meetings,
@@ -163,6 +201,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
                 focus_candidates,
                 entity_map,
                 intelligence_qualities: iq_map,
+                lifecycle_updates,
             }))
         })
         .await
@@ -341,6 +380,11 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         stats,
         meetings,
         actions,
+        lifecycle_updates: if snap.lifecycle_updates.is_empty() {
+            None
+        } else {
+            Some(snap.lifecycle_updates)
+        },
         emails: None,
         email_sync: None,
         focus,
@@ -358,6 +402,13 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
 /// This is the main business logic for the `get_dashboard_data` command.
 /// Returns the full DashboardResult including latency tracking.
 pub async fn get_dashboard_data(state: &AppState) -> DashboardResult {
+    let engine = std::sync::Arc::clone(&state.signals.engine);
+    let _ = state
+        .db_write(move |db| {
+            crate::services::accounts::refresh_lifecycle_states_for_dashboard(db, &engine)
+        })
+        .await;
+
     let started = std::time::Instant::now();
     let mut db_busy = false;
 
@@ -1099,12 +1150,24 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         None
     };
 
+    let lifecycle_updates = state
+        .db_read(|db| {
+            Ok::<Vec<DashboardLifecycleUpdate>, String>(load_dashboard_lifecycle_updates(db, 3))
+        })
+        .await
+        .unwrap_or_default();
+
     DashboardResult::Success {
         data: DashboardData {
             overview,
             stats,
             meetings,
             actions,
+            lifecycle_updates: if lifecycle_updates.is_empty() {
+                None
+            } else {
+                Some(lifecycle_updates)
+            },
             emails,
             email_sync: email_sync.or(email_sync_fallback),
             focus,

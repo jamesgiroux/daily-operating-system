@@ -385,6 +385,7 @@ export interface DashboardData {
   emails?: Email[];
   emailSync?: EmailSyncStatus;
   focus?: DailyFocus;
+  lifecycleUpdates?: DashboardLifecycleUpdate[];
   /** AI-synthesized email narrative (I322/I355) */
   emailNarrative?: string;
   /** Threads awaiting user reply (I318/I355) */
@@ -1393,6 +1394,7 @@ export interface AccountTeamImportNote {
 /** Full detail for the account detail page. */
 export interface AccountDetail extends AccountListItem {
   contractStart?: string;
+  renewalStage?: string | null;
   /** JSON-serialized string[] of resolution keywords (I305) */
   keywords?: string;
   /** ISO timestamp when keywords were last extracted (I305) */
@@ -1427,8 +1429,77 @@ export interface AccountDetail extends AccountListItem {
   children: AccountChildSummary[];
   parentAggregate?: ParentAggregate;
   objectives: AccountObjective[];
+  lifecycleChanges?: LifecycleChange[];
+  products?: AccountProduct[];
+  fieldProvenance?: AccountFieldProvenance[];
+  fieldConflicts?: AccountFieldConflictSuggestion[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
+}
+
+export interface AccountFieldProvenance {
+  field: string;
+  source: string;
+  updatedAt?: string | null;
+}
+
+export interface LifecycleChange {
+  id: number;
+  accountId: string;
+  previousLifecycle?: string | null;
+  newLifecycle: string;
+  previousStage?: string | null;
+  newStage?: string | null;
+  previousContractEnd?: string | null;
+  newContractEnd?: string | null;
+  source: string;
+  confidence: number;
+  evidence?: string | null;
+  healthScoreBefore?: number | null;
+  healthScoreAfter?: number | null;
+  userResponse: string;
+  responseNotes?: string | null;
+  createdAt: string;
+  reviewedAt?: string | null;
+}
+
+export interface AccountProduct {
+  id: number;
+  accountId: string;
+  name: string;
+  category?: string | null;
+  status: string;
+  arrPortion?: number | null;
+  source: string;
+  confidence: number;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccountFieldConflictSuggestion {
+  field: string;
+  source: string;
+  suggestedValue: string;
+  signalId: string;
+  confidence: number;
+  detectedAt?: string | null;
+}
+
+export interface DashboardLifecycleUpdate {
+  changeId: number;
+  accountId: string;
+  accountName: string;
+  previousLifecycle?: string | null;
+  newLifecycle: string;
+  renewalStage?: string | null;
+  source: string;
+  confidence: number;
+  evidence?: string | null;
+  healthScoreBefore?: number | null;
+  healthScoreAfter?: number | null;
+  actionState: string;
+  createdAt: string;
 }
 
 export interface PickerAccount {
@@ -2003,6 +2074,7 @@ export interface ProjectDetail extends ProjectListItem {
 export interface AiModelConfig {
   synthesis: string;
   extraction: string;
+  background: string;
   mechanical: string;
 }
 
@@ -2135,6 +2207,8 @@ export interface AccountMilestone {
   targetDate?: string | null;
   completedAt?: string | null;
   autoDetectSignal?: string | null;
+  completedBy?: string | null;
+  completionTrigger?: string | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

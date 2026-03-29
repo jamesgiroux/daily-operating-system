@@ -17,6 +17,15 @@ export interface TimelineSource {
   recentEmailSignals?: EmailSignal[];
   recentCaptures?: { id: string; captureType: string; content: string; meetingTitle: string; meetingId?: string }[];
   accountEvents?: { id: number; eventType: string; eventDate: string; arrImpact?: number; notes?: string }[];
+  lifecycleChanges?: {
+    id: number;
+    previousLifecycle?: string | null;
+    newLifecycle: string;
+    newStage?: string | null;
+    source: string;
+    createdAt: string;
+    evidence?: string | null;
+  }[];
   contextEntries?: EntityContextEntry[];
 }
 

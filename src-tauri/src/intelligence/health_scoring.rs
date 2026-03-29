@@ -1129,7 +1129,7 @@ fn apply_lifecycle_weights(lifecycle: Option<&str>) -> [f64; 6] {
     match lifecycle {
         Some("onboarding") => [1.5, 1.0, 1.5, 1.0, 0.7, 1.0],
         Some("adoption") => [1.0, 1.0, 1.0, 1.5, 1.0, 1.5],
-        Some("renewal") => [1.0, 1.3, 1.0, 1.3, 2.0, 1.3],
+        Some("renewal") | Some("renewing") => [1.0, 1.3, 1.0, 1.3, 2.0, 1.3],
         Some("at-risk") | Some("at_risk") => [1.0, 1.0, 1.0, 1.0, 1.0, 2.0],
         Some("mature") => [0.7, 1.0, 1.3, 1.0, 1.0, 1.0],
         _ => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
