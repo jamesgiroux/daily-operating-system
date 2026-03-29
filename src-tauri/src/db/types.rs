@@ -124,6 +124,9 @@ pub struct DbAccount {
     /// JSON metadata for preset-driven custom fields (I311).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<String>,
+    /// I646 C3: Separate commercial opportunity stage (migration 076).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commercial_stage: Option<String>,
 }
 
 /// Provenance metadata for a tracked account field.
