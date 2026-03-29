@@ -38,6 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type {
+  BriefingCallout,
   DashboardData,
   DashboardLifecycleUpdate,
   DataFreshness,
@@ -458,6 +459,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
       {/* Cached emails shown even when stale — background reconciliation updates them */}
       <AttentionSection
         lifecycleUpdates={lifecycleUpdates}
+        briefingCallouts={data.briefingCallouts ?? []}
         onConfirmLifecycle={handleConfirmLifecycle}
         onOpenLifecycleCorrection={openCorrection}
         pendingLifecycleChangeId={pendingLifecycleChangeId}
@@ -559,6 +561,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
 
 function AttentionSection({
   lifecycleUpdates,
+  briefingCallouts,
   onConfirmLifecycle,
   onOpenLifecycleCorrection,
   pendingLifecycleChangeId,
@@ -576,6 +579,7 @@ function AttentionSection({
   emailSyncTimestamp,
 }: {
   lifecycleUpdates: DashboardLifecycleUpdate[];
+  briefingCallouts: BriefingCallout[];
   onConfirmLifecycle: (update: DashboardLifecycleUpdate) => void;
   onOpenLifecycleCorrection: (update: DashboardLifecycleUpdate) => void;
   pendingLifecycleChangeId: number | null;
@@ -627,7 +631,8 @@ function AttentionSection({
   const hasActions = attentionActions.length > 0;
   const hasEmails = briefingEmails.length > 0;
   const hasLifecycle = lifecycleUpdates.length > 0;
-  const hasAnything = hasLifecycle || hasSuggested || hasActions || hasEmails;
+  const hasCallouts = briefingCallouts.length > 0;
+  const hasAnything = hasLifecycle || hasCallouts || hasSuggested || hasActions || hasEmails;
 
   if (!hasAnything) return null;
 
@@ -659,6 +664,30 @@ function AttentionSection({
                     onConfirm={onConfirmLifecycle}
                     onCorrect={onOpenLifecycleCorrection}
                   />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {hasCallouts && (
+            <div className={hasLifecycle ? briefingStyles.calloutsGroupSpaced : briefingStyles.calloutsGroupFlush}>
+              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
+                Signals
+              </div>
+              <div className={s.priorityItems}>
+                {briefingCallouts.slice(0, 5).map((callout) => (
+                  <div key={callout.id} className={briefingStyles.calloutItem}>
+                    <div className={briefingStyles.calloutSeverity} data-severity={callout.severity} />
+                    <div className={briefingStyles.calloutContent}>
+                      <span className={briefingStyles.calloutHeadline}>{callout.headline}</span>
+                      {callout.entityName && (
+                        <span className={briefingStyles.calloutEntity}>{callout.entityName}</span>
+                      )}
+                      {callout.detail && (
+                        <span className={briefingStyles.calloutDetail}>{callout.detail}</span>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -938,6 +967,8 @@ function PriorityEmailItem({ email }: { email: Email }) {
 function formatLifecycleLabel(value?: string | null) {
   return value ? value.replace(/_/g, " ") : "";
 }
+
+// ─── Lifecycle Update Item ──────────────────────────────────────────────────
 
 function LifecycleUpdateItem({
   update,
