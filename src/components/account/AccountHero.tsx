@@ -76,7 +76,9 @@ export function AccountHero({
       {/* Hero date / intelligence timestamp + account type badge */}
       <div className={`${styles.heroDate} ${styles.heroDateLayout}`}>
         <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
-        {intelligence ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}` : ""}
+        {intelligence?.enrichedAt
+          ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}`
+          : " Awaiting first analysis"}
         {onSaveField && (
           <AccountTypeBadge
             value={detail.accountType as "customer" | "internal" | "partner"}
