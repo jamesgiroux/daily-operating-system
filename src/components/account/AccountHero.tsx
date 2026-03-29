@@ -77,10 +77,12 @@ export function AccountHero({
       <div className={`${styles.heroDate} ${styles.heroDateLayout}`}>
         <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
         {(() => {
-          const relative = intelligence?.enrichedAt ? formatRelativeDateShort(intelligence.enrichedAt) : "";
+          if (!intelligence) return "";
+          const at = intelligence.enrichedAt;
+          if (!at) return "";
+          const relative = formatRelativeDateShort(at);
           if (relative) return ` Last updated ${relative}`;
-          if (intelligence?.enrichedAt) return ` Last updated ${intelligence.enrichedAt.split("T")[0]}`;
-          return " Awaiting first analysis";
+          return "";
         })()}
         {onSaveField && (
           <AccountTypeBadge

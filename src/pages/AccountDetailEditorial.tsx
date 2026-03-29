@@ -77,7 +77,7 @@ import {
   formatProvenanceSource,
 } from "@/components/ui/ProvenanceLabel";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
-import { EditableDate } from "@/components/ui/editable-date";
+
 import shared from "@/styles/entity-detail.module.css";
 import styles from "./AccountDetailEditorial.module.css";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
@@ -569,17 +569,7 @@ export default function AccountDetailEditorial() {
               )
             ) : undefined
           }
-          provenanceSlot={
-            detail.accountType !== "internal" && detail.renewalDate ? (
-              <div className={styles.renewalDateRow}>
-                <span className={styles.renewalDateLabel}>Renews</span>
-                <EditableDate
-                  value={detail.renewalDate}
-                  onSave={(v) => void saveAccountField("contract_end", v)}
-                />
-              </div>
-            ) : undefined
-          }
+          provenanceSlot={undefined}
         />
         {/* I312: Preset metadata fields */}
         {preset && preset.metadata.account.length > 0 && (
