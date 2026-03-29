@@ -218,7 +218,7 @@ fn parse_iso_date(value: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()
 }
 
-fn normalized_lifecycle(value: &str) -> String {
+pub fn normalized_lifecycle(value: &str) -> String {
     match value.trim().to_lowercase().as_str() {
         "renewal" => "renewing".to_string(),
         "at-risk" => "at_risk".to_string(),
@@ -976,6 +976,38 @@ pub fn confirm_lifecycle_change(
         "user_feedback",
         Some(&format!("{{\"change_id\":{change_id}}}")),
         0.95,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
+    Ok(())
+}
+
+pub fn correct_account_product(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    product_id: i64,
+    name: &str,
+    status: Option<&str>,
+    source_to_penalize: &str,
+) -> Result<(), String> {
+    db.update_account_product(product_id, name, status, None, "user_correction", 1.0)
+        .map_err(|e| e.to_string())?;
+    let _ = db.upsert_signal_weight(
+        source_to_penalize,
+        "account",
+        "product_adoption",
+        0.0,
+        1.0,
+    );
+    crate::services::signals::emit_and_propagate(
+        db,
+        engine,
+        "account",
+        account_id,
+        "product_data_updated",
+        "user_correction",
+        Some(&format!("{{\"product_id\":{product_id},\"name\":\"{name}\"}}")),
+        1.0,
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
     Ok(())
@@ -2583,5 +2615,160 @@ mod tests {
         let created_again = super::bulk_create_accounts(&db, workspace, &names)
             .expect("bulk_create_accounts second run");
         assert_eq!(created_again.len(), 0, "Duplicates should be skipped");
+    }
+
+    // =========================================================================
+    // Lifecycle engine (v1.1.0)
+    // =========================================================================
+
+    #[test]
+    fn test_infer_renewal_stage() {
+        use chrono::{NaiveDate, Utc};
+
+        let today = Utc::now().date_naive();
+        let fmt = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+
+        // >120 days → None (not yet renewing)
+        let far_future = fmt(today + chrono::Duration::days(200));
+        assert_eq!(super::infer_renewal_stage(Some(&far_future)), None);
+
+        // 61-120 days → approaching
+        let approaching = fmt(today + chrono::Duration::days(90));
+        assert_eq!(
+            super::infer_renewal_stage(Some(&approaching)),
+            Some("approaching".to_string())
+        );
+
+        // 31-60 days → negotiating
+        let negotiating = fmt(today + chrono::Duration::days(45));
+        assert_eq!(
+            super::infer_renewal_stage(Some(&negotiating)),
+            Some("negotiating".to_string())
+        );
+
+        // 0-30 days → contract_sent
+        let soon = fmt(today + chrono::Duration::days(15));
+        assert_eq!(
+            super::infer_renewal_stage(Some(&soon)),
+            Some("contract_sent".to_string())
+        );
+
+        // Past → processed
+        let past = fmt(today - chrono::Duration::days(5));
+        assert_eq!(
+            super::infer_renewal_stage(Some(&past)),
+            Some("processed".to_string())
+        );
+
+        // None → None
+        assert_eq!(super::infer_renewal_stage(None), None);
+    }
+
+    #[test]
+    fn test_ensure_lifecycle_state_emits_renewal_stage_signal() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let today = chrono::Utc::now().date_naive();
+        let contract_end = (today + chrono::Duration::days(90))
+            .format("%Y-%m-%d")
+            .to_string();
+
+        let mut account = make_account("acc-renew", "Renewing Corp");
+        account.lifecycle = Some("renewing".to_string());
+        account.contract_end = Some(contract_end);
+        db.upsert_account(&account).expect("upsert");
+
+        super::ensure_account_lifecycle_state(&db, &engine, "acc-renew")
+            .expect("ensure_lifecycle");
+
+        // Should have emitted renewal_stage_updated signal
+        assert_eq!(signal_count(&db, "acc-renew", "renewal_stage_updated"), 1);
+
+        // Stage should be set to "approaching" (61-120 days)
+        let stage = db.get_account_renewal_stage("acc-renew").unwrap();
+        assert_eq!(stage, Some("approaching".to_string()));
+    }
+
+    #[test]
+    fn test_confirm_lifecycle_change_positive_weight() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+
+        let mut account = make_account("acc-confirm", "Confirm Corp");
+        account.lifecycle = Some("renewing".to_string());
+        db.upsert_account(&account).expect("upsert");
+
+        // Insert a pending lifecycle change
+        db.conn_ref()
+            .execute(
+                "INSERT INTO lifecycle_changes (account_id, previous_lifecycle, new_lifecycle, source, confidence, evidence, user_response, created_at)
+                 VALUES ('acc-confirm', 'renewing', 'active', 'email_signal', 0.85, 'Order form signed', 'pending', datetime('now'))",
+                [],
+            )
+            .expect("insert lifecycle_changes");
+        let change_id: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT id FROM lifecycle_changes WHERE account_id = 'acc-confirm'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("get change_id");
+
+        super::confirm_lifecycle_change(&db, &engine, change_id).expect("confirm");
+
+        // Signal weight alpha should increase for email_signal source (positive feedback)
+        let (alpha, beta): (f64, f64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT alpha, beta FROM signal_weights WHERE source = 'email_signal' AND signal_type = 'lifecycle_transition'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((0.0, 0.0));
+        assert!(alpha > 1.0, "Alpha should increase on confirm (was {})", alpha);
+        assert!((beta - 1.0).abs() < f64::EPSILON, "Beta should stay at base (was {})", beta);
+    }
+
+    #[test]
+    fn test_correct_lifecycle_change_negative_weight() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+
+        let mut account = make_account("acc-correct", "Correct Corp");
+        account.lifecycle = Some("renewing".to_string());
+        db.upsert_account(&account).expect("upsert");
+
+        // Insert a pending lifecycle change
+        db.conn_ref()
+            .execute(
+                "INSERT INTO lifecycle_changes (account_id, previous_lifecycle, new_lifecycle, source, confidence, evidence, user_response, created_at)
+                 VALUES ('acc-correct', 'renewing', 'active', 'calendar_pattern', 0.75, 'No meetings 30d', 'pending', datetime('now'))",
+                [],
+            )
+            .expect("insert lifecycle_changes");
+        let change_id: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT id FROM lifecycle_changes WHERE account_id = 'acc-correct'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("get change_id");
+
+        super::correct_lifecycle_change(&db, &engine, change_id, "at_risk", None, Some("Actually at risk"))
+            .expect("correct");
+
+        // Signal weight beta should increase for calendar_pattern source (negative feedback)
+        let (alpha, beta): (f64, f64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT alpha, beta FROM signal_weights WHERE source = 'calendar_pattern' AND signal_type = 'lifecycle_transition'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((0.0, 0.0));
+        assert!((alpha - 1.0).abs() < f64::EPSILON, "Alpha should stay at base (was {})", alpha);
+        assert!(beta > 1.0, "Beta should increase on correct (was {})", beta);
     }
 }

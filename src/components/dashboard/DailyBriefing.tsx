@@ -49,6 +49,7 @@ import type {
 import { HealthBadge } from "@/components/shared/HealthBadge";
 import { compareEmailRank } from "@/lib/email-ranking";
 import s from "@/styles/editorial-briefing.module.css";
+import briefingStyles from "./DailyBriefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -402,7 +403,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                   <Link
                     to="/meeting/$meetingId"
                     params={{ meetingId: m.id }}
-                    style={{ textDecoration: "none", color: "inherit" }}
+                    className={briefingStyles.linkUnstyled}
                   >
                     &#9888; {m.title} at {m.time} — no briefing yet
                   </Link>
@@ -435,13 +436,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                         userDomain={data.userDomains?.[0]}
                       />
                       {linkedAccountHealth && (
-                        <div style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          paddingLeft: 52,
-                          paddingBottom: 4,
-                        }}>
+                        <div className={briefingStyles.healthBadgeRow}>
                           <HealthBadge
                             score={linkedAccountHealth.health.score}
                             band={linkedAccountHealth.health.band}
@@ -488,15 +483,15 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
               Update the lifecycle call for {correctionTarget?.accountName ?? "this account"}.
             </DialogDescription>
           </DialogHeader>
-          <div style={{ display: "grid", gap: 14 }}>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)" }}>
+          <div className={briefingStyles.correctionFormGrid}>
+            <label className={briefingStyles.correctionFieldLabel}>
+              <span className={briefingStyles.correctionMonoLabel}>
                 Lifecycle
               </span>
               <select
                 value={correctedLifecycle}
                 onChange={(event) => setCorrectedLifecycle(event.target.value)}
-                style={{ minHeight: 38, border: "1px solid var(--color-rule-light)", padding: "8px 10px", background: "var(--color-paper-cream)" }}
+                className={briefingStyles.correctionSelect}
               >
                 {["onboarding", "active", "renewing", "at_risk", "churned"].map((value) => (
                   <option key={value} value={value}>
@@ -505,14 +500,14 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                 ))}
               </select>
             </label>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)" }}>
+            <label className={briefingStyles.correctionFieldLabel}>
+              <span className={briefingStyles.correctionMonoLabel}>
                 Renewal stage
               </span>
               <select
                 value={correctedStage}
                 onChange={(event) => setCorrectedStage(event.target.value)}
-                style={{ minHeight: 38, border: "1px solid var(--color-rule-light)", padding: "8px 10px", background: "var(--color-paper-cream)" }}
+                className={briefingStyles.correctionSelect}
               >
                 <option value="">No stage</option>
                 {["approaching", "negotiating", "contract_sent", "processed"].map((value) => (
@@ -522,22 +517,22 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                 ))}
               </select>
             </label>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)" }}>
+            <label className={briefingStyles.correctionFieldLabel}>
+              <span className={briefingStyles.correctionMonoLabel}>
                 Notes
               </span>
               <textarea
                 value={correctionNotes}
                 onChange={(event) => setCorrectionNotes(event.target.value)}
                 rows={4}
-                style={{ border: "1px solid var(--color-rule-light)", padding: "10px 12px", background: "var(--color-paper-cream)", resize: "vertical" }}
+                className={briefingStyles.correctionTextarea}
               />
             </label>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <div className={briefingStyles.correctionButtonRow}>
               <button
                 type="button"
                 onClick={() => closeCorrection(false)}
-                style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer" }}
+                className={briefingStyles.correctionCancelBtn}
               >
                 Cancel
               </button>
@@ -545,7 +540,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                 type="button"
                 onClick={() => { void handleSubmitCorrection(); }}
                 disabled={!correctedLifecycle || pendingLifecycleChangeId === correctionTarget?.changeId}
-                style={{ minHeight: 34, padding: "0 14px", border: "1px solid var(--color-rule-heavy)", background: "var(--color-paper-cream)", fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer" }}
+                className={briefingStyles.correctionSubmitBtn}
               >
                 Save correction
               </button>
@@ -651,7 +646,7 @@ function AttentionSection({
 
 
           {hasLifecycle && (
-            <div style={{ marginTop: 0 }}>
+            <div className={briefingStyles.lifecycleGroup}>
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>
                 Lifecycle
               </div>
@@ -672,7 +667,7 @@ function AttentionSection({
           {/* Suggested action triage (max 3) */}
           {hasSuggested && (
             <>
-              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              <div className={briefingStyles.suggestedColumn}>
                 {suggestedActions.slice(0, 3).map((action, i) => (
                   <SuggestedActionRow
                     key={action.id}
@@ -687,17 +682,7 @@ function AttentionSection({
               {suggestedActions.length > 3 && (
                 <button
                   onClick={() => navigate({ to: "/actions", search: { search: undefined } })}
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    fontWeight: 500,
-                    letterSpacing: "0.04em",
-                    color: "var(--color-spice-turmeric)",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: "8px 0 0 14px",
-                  }}
+                  className={briefingStyles.seeAllSuggestionsBtn}
                 >
                   See all {suggestedActions.length} suggestions &rarr;
                 </button>
@@ -707,7 +692,7 @@ function AttentionSection({
 
           {/* Actions: meeting-relevant + overdue (max 3) */}
           {hasActions && (
-            <div style={{ marginTop: hasLifecycle || hasSuggested ? 28 : 0 }}>
+            <div className={hasLifecycle || hasSuggested ? briefingStyles.actionsGroupSpaced : briefingStyles.actionsGroupFlush}>
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
                 Actions
               </div>
@@ -757,8 +742,7 @@ function AttentionSection({
                           <Link
                             to="/actions/$actionId"
                             params={{ actionId: action.id }}
-                            className={s.priorityTitle}
-                            style={{ textDecoration: done ? "line-through" : "none" }}
+                            className={clsx(s.priorityTitle, done ? briefingStyles.linkLineThrough : briefingStyles.linkNoDecoration)}
                           >
                             {stripMarkdown(action.title)}
                           </Link>
@@ -785,7 +769,7 @@ function AttentionSection({
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>
                 {emailSectionLabel}
                 {emailSyncTimestamp && (
-                  <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: 8 }}>
+                  <span className={briefingStyles.emailSyncTimestamp}>
                     as of {formatAsOfTime(emailSyncTimestamp)}
                   </span>
                 )}
@@ -856,8 +840,8 @@ function PrioritizedActionItem({
         urgencyClass,
         done && s.priorityItemCompleted,
         action.accountName && s.priorityItemAccount,
+        briefingStyles.linkNoDecoration,
       )}
-      style={{ textDecoration: "none" }}
     >
       <button
         className={clsx(
@@ -907,8 +891,7 @@ function PriorityEmailItem({ email }: { email: Email }) {
   return (
     <Link
       to="/emails"
-      className={clsx(s.priorityItem, s.priorityItemEmailType)}
-      style={{ textDecoration: "none" }}
+      className={clsx(s.priorityItem, s.priorityItemEmailType, briefingStyles.linkNoDecoration)}
     >
       <div
         className={clsx(
@@ -920,7 +903,7 @@ function PriorityEmailItem({ email }: { email: Email }) {
         {email.summary ? (
           <>
             <div className={s.priorityTitle}>{email.summary}</div>
-            <div className={s.replyMeta} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <div className={clsx(s.replyMeta, briefingStyles.emailMetaRow)}>
               {email.entityName && (
                 <EmailEntityChip
                   entityType={email.entityType}
@@ -992,8 +975,7 @@ function LifecycleUpdateItem({
         <Link
           to="/accounts/$accountId"
           params={{ accountId: update.accountId }}
-          className={s.priorityTitle}
-          style={{ textDecoration: "none" }}
+          className={clsx(s.priorityTitle, briefingStyles.linkNoDecoration)}
         >
           {update.accountName}: {transitionLabel}
         </Link>
@@ -1002,12 +984,12 @@ function LifecycleUpdateItem({
           <div className={s.priorityWhy}>{update.evidence}</div>
         )}
         {update.actionState === "pending" ? (
-          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+          <div className={briefingStyles.lifecycleButtonRow}>
             <button
               type="button"
               onClick={() => onConfirm(update)}
               disabled={pending}
-              style={{ minHeight: 30, padding: "0 12px", border: "1px solid var(--color-rule-heavy)", background: "var(--color-paper-cream)", fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer" }}
+              className={briefingStyles.lifecycleConfirmBtn}
             >
               Looks good
             </button>
@@ -1015,7 +997,7 @@ function LifecycleUpdateItem({
               type="button"
               onClick={() => onCorrect(update)}
               disabled={pending}
-              style={{ background: "none", border: "none", padding: 0, fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)", cursor: "pointer" }}
+              className={briefingStyles.lifecycleCorrectBtn}
             >
               Fix something
             </button>

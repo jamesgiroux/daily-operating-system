@@ -1330,6 +1330,28 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Account event {}/{}: {}", account_id, event_type, e))?;
     }
 
+    // --- Lifecycle change with pending user_response (for briefing Attention section) ---
+    conn.execute(
+        "INSERT OR IGNORE INTO lifecycle_changes (account_id, previous_lifecycle, new_lifecycle, source, confidence, evidence, health_score_before, health_score_after, user_response, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))",
+        rusqlite::params![
+            "mock-acme-corp",
+            "renewing",
+            "active",
+            "email_signal",
+            0.85,
+            "Renewal order form signed",
+            72.0,
+            78.0,
+            "pending",
+        ],
+    ).map_err(|e| format!("Lifecycle change seed: {}", e))?;
+
+    // Set renewal_stage on Acme so briefing surfaces renewal context
+    conn.execute(
+        "UPDATE accounts SET renewal_stage = 'approaching' WHERE id = 'mock-acme-corp'",
+        [],
+    ).map_err(|e| format!("Acme renewal_stage: {}", e))?;
+
     // --- Entities (mirrors accounts) ---
     conn.execute(
         "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -4381,6 +4403,14 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     db.upsert_entity_intelligence(&acme_intel)
         .map_err(|e| format!("Acme intelligence: {}", e))?;
 
+    // Acme products (from AdoptionSignals feature_adoption)
+    db.upsert_account_product("mock-acme-corp", "Core platform", None, "active", None, "product_data", 0.85, None)
+        .map_err(|e| format!("Acme product Core platform: {}", e))?;
+    db.upsert_account_product("mock-acme-corp", "Advanced analytics", None, "active", None, "product_data", 0.70, None)
+        .map_err(|e| format!("Acme product Advanced analytics: {}", e))?;
+    db.upsert_account_product("mock-acme-corp", "API integration", None, "active", None, "product_data", 0.85, None)
+        .map_err(|e| format!("Acme product API integration: {}", e))?;
+
     // --- Globex Industries: At-risk account, declining engagement ---
     let globex_intel = IntelligenceJson {
         entity_id: "mock-globex-industries".into(),
@@ -4549,6 +4579,14 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     db.upsert_entity_intelligence(&globex_intel)
         .map_err(|e| format!("Globex intelligence: {}", e))?;
 
+    // Globex products (from AdoptionSignals feature_adoption)
+    db.upsert_account_product("mock-globex-industries", "Core", None, "active", None, "product_data", 0.72, None)
+        .map_err(|e| format!("Globex product Core: {}", e))?;
+    db.upsert_account_product("mock-globex-industries", "Analytics", None, "active", None, "product_data", 0.45, None)
+        .map_err(|e| format!("Globex product Analytics: {}", e))?;
+    db.upsert_account_product("mock-globex-industries", "Team collaboration", None, "active", None, "product_data", 0.30, None)
+        .map_err(|e| format!("Globex product Team collaboration: {}", e))?;
+
     // --- Initech: Onboarding account, sparse but clean ---
     let initech_intel = IntelligenceJson {
         entity_id: "mock-initech".into(),
@@ -4699,6 +4737,12 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
 
     db.upsert_entity_intelligence(&initech_intel)
         .map_err(|e| format!("Initech intelligence: {}", e))?;
+
+    // Initech products (from AdoptionSignals feature_adoption: "Core: 90%", "Analytics: 40%")
+    db.upsert_account_product("mock-initech", "Core", None, "active", None, "product_data", 0.65, None)
+        .map_err(|e| format!("Initech product Core: {}", e))?;
+    db.upsert_account_product("mock-initech", "Analytics", None, "active", None, "product_data", 0.40, None)
+        .map_err(|e| format!("Initech product Analytics: {}", e))?;
 
     // --- Person intelligence: Sarah Chen ---
     let sarah_intel = IntelligenceJson {

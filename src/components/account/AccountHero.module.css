@@ -129,9 +129,9 @@
 }
 
 .provenance {
-  margin-top: 18px;
+  margin-top: var(--space-md, 16px);
   display: grid;
-  gap: 12px;
+  gap: var(--space-md, 16px);
   max-width: 720px;
 }
 

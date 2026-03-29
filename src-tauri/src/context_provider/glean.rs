@@ -1449,6 +1449,41 @@ impl ContextProvider for GleanContextProvider {
                 }
                 // Make org_health available on context for I499 health scoring
                 ctx.org_health = Some(org_health.clone());
+
+                // I625: Emit conflict signal when Glean CRM values differ from
+                // current account fields. build_account_field_conflicts() in
+                // services/accounts reads these signals to surface conflicts.
+                if entity_type == "account" {
+                    if let Ok(Some(account)) = db.get_account(entity_id) {
+                        let source = if org_health.source.is_empty() {
+                            "glean_crm"
+                        } else {
+                            &org_health.source
+                        };
+                        if let Some(stage) = org_health.customer_stage.as_deref() {
+                            let current = account.lifecycle.as_deref().unwrap_or("");
+                            let normalized =
+                                crate::services::accounts::normalized_lifecycle(stage);
+                            if !current.is_empty()
+                                && crate::services::accounts::normalized_lifecycle(current)
+                                    != normalized
+                            {
+                                let payload = serde_json::json!({
+                                    "lifecycle": normalized,
+                                });
+                                let _ = crate::signals::bus::emit_signal(
+                                    db,
+                                    "account",
+                                    entity_id,
+                                    "glean_field_suggestion",
+                                    source,
+                                    Some(&payload.to_string()),
+                                    0.7,
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
 

@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { formatArr, formatRelativeDate, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
+import type { AccountProduct } from "@/types";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
 import { getAccountReports } from "@/lib/report-config";
@@ -378,6 +379,9 @@ export default function AccountDetailEditorial() {
   }, accountId);
   const [rolloverDismissed, setRolloverDismissed] = useState(false);
   const [pendingConflictField, setPendingConflictField] = useState<string | null>(null);
+  const [editingProductId, setEditingProductId] = useState<number | null>(null);
+  const [editProductName, setEditProductName] = useState("");
+  const [editProductStatus, setEditProductStatus] = useState("");
 
   // I312: Preset metadata state
   const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
@@ -474,6 +478,24 @@ export default function AccountDetailEditorial() {
       toast.error(`Failed to dismiss ${formatTrackedFieldLabel(field)} suggestion`);
     } finally {
       setPendingConflictField(null);
+    }
+  };
+
+  const handleCorrectProduct = async (product: AccountProduct) => {
+    try {
+      await invoke("correct_account_product", {
+        accountId: detail.id,
+        productId: product.id,
+        name: editProductName,
+        status: editProductStatus || null,
+        sourceToPenalize: product.source,
+      });
+      setEditingProductId(null);
+      await acct.load();
+      toast.success(`Product "${editProductName}" updated`);
+    } catch (err) {
+      console.error("correct_account_product failed:", err);
+      toast.error("Failed to update product");
     }
   };
 
@@ -710,20 +732,61 @@ export default function AccountDetailEditorial() {
             <div className={styles.productList}>
               {detail.products.map((product) => (
                 <div key={`${product.id}-${product.name}`} className={styles.productRow}>
-                  <div>
-                    <div className={styles.productName}>{product.name}</div>
-                    <div className={styles.productMeta}>
-                      {[product.category, product.status, product.notes].filter(Boolean).join(" · ")}
+                  {editingProductId === product.id ? (
+                    <div className={styles.productEditRow}>
+                      <input
+                        className={styles.productEditInput}
+                        value={editProductName}
+                        onChange={(e) => setEditProductName(e.target.value)}
+                        autoFocus
+                      />
+                      <select
+                        className={styles.productEditSelect}
+                        value={editProductStatus}
+                        onChange={(e) => setEditProductStatus(e.target.value)}
+                      >
+                        <option value="active">Active</option>
+                        <option value="trial">Trial</option>
+                        <option value="churned">Churned</option>
+                      </select>
+                      <button
+                        className={styles.productEditSave}
+                        onClick={() => void handleCorrectProduct(product)}
+                      >
+                        Save
+                      </button>
+                      <button
+                        className={styles.productEditCancel}
+                        onClick={() => setEditingProductId(null)}
+                      >
+                        Cancel
+                      </button>
                     </div>
-                  </div>
-                  <div className={styles.productSource}>
-                    <ProvenanceLabel
-                      summary={[
-                        formatProvenanceSource(product.source),
-                        `${Math.round(product.confidence * 100)}% confidence`,
-                      ].filter(Boolean).join(" · ")}
-                    />
-                  </div>
+                  ) : (
+                    <>
+                      <div
+                        className={styles.productClickable}
+                        onClick={() => {
+                          setEditingProductId(product.id);
+                          setEditProductName(product.name);
+                          setEditProductStatus(product.status);
+                        }}
+                      >
+                        <div className={styles.productName}>{product.name}</div>
+                        <div className={styles.productMeta}>
+                          {[product.category, product.status, product.notes].filter(Boolean).join(" · ")}
+                        </div>
+                      </div>
+                      <div className={styles.productSource}>
+                        <ProvenanceLabel
+                          summary={[
+                            formatProvenanceSource(product.source),
+                            `${Math.round(product.confidence * 100)}% confidence`,
+                          ].filter(Boolean).join(" · ")}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
