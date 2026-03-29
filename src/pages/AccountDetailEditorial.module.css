@@ -439,4 +439,58 @@
   gap: 4px;
 }
 
+/* ── Technical Footprint (I649) ── */
+
+.technicalFootprint {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.technicalFootprintLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-sm);
+}
+
+.technicalFootprintGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-sm) var(--space-md);
+}
+
+.technicalFootprintItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.technicalFootprintItemLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.technicalFootprintItemValue {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.technicalFootprintSource {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-xs);
+}
+
 /* ── Engagement Cadence (I557) ── */
