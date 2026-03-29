@@ -394,6 +394,45 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Full stakeholder data with data_source for the DB-first read model.
+    /// Returns ALL stakeholders (user-confirmed + Glean-suggested + Google-sourced)
+    /// plus linked people from entity_members.
+    pub fn get_account_stakeholders_full(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<DbStakeholderFull>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT as_.person_id, p.name, p.email, p.organization, p.role AS person_role,
+                    as_.role AS stakeholder_role, as_.data_source, as_.last_seen_in_glean,
+                    as_.created_at,
+                    p.linkedin_url, p.photo_url, p.meeting_count, p.last_seen
+             FROM account_stakeholders as_
+             JOIN people p ON p.id = as_.person_id
+             WHERE as_.account_id = ?1
+             ORDER BY
+               CASE as_.data_source WHEN 'user' THEN 0 WHEN 'glean' THEN 1 ELSE 2 END,
+               p.name",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(DbStakeholderFull {
+                person_id: row.get(0)?,
+                person_name: row.get(1)?,
+                person_email: row.get(2)?,
+                organization: row.get(3)?,
+                person_role: row.get(4)?,
+                stakeholder_role: row.get(5)?,
+                data_source: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "user".to_string()),
+                last_seen_in_glean: row.get(7)?,
+                created_at: row.get(8)?,
+                linkedin_url: row.get(9)?,
+                photo_url: row.get(10)?,
+                meeting_count: row.get(11)?,
+                last_seen: row.get(12)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Add an account team member role link (idempotent).
     pub fn add_account_team_member(
         &self,
