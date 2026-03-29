@@ -76,9 +76,12 @@ export function AccountHero({
       {/* Hero date / intelligence timestamp + account type badge */}
       <div className={`${styles.heroDate} ${styles.heroDateLayout}`}>
         <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
-        {intelligence?.enrichedAt && formatRelativeDateShort(intelligence.enrichedAt)
-          ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}`
-          : " Awaiting first analysis"}
+        {(() => {
+          const relative = intelligence?.enrichedAt ? formatRelativeDateShort(intelligence.enrichedAt) : "";
+          if (relative) return ` Last updated ${relative}`;
+          if (intelligence?.enrichedAt) return ` Last updated ${intelligence.enrichedAt.split("T")[0]}`;
+          return " Awaiting first analysis";
+        })()}
         {onSaveField && (
           <AccountTypeBadge
             value={detail.accountType as "customer" | "internal" | "partner"}
