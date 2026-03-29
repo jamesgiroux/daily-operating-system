@@ -76,7 +76,7 @@ export function AccountHero({
       {/* Hero date / intelligence timestamp + account type badge */}
       <div className={`${styles.heroDate} ${styles.heroDateLayout}`}>
         <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
-        {intelligence?.enrichedAt
+        {intelligence?.enrichedAt && formatRelativeDateShort(intelligence.enrichedAt)
           ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}`
           : " Awaiting first analysis"}
         {onSaveField && (
