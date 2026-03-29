@@ -859,3 +859,34 @@ pub struct ContinuityThread {
     pub new_attendees: Vec<String>,
     pub is_first_meeting: bool,
 }
+
+/// A source reference for a tracked account field (I644).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountSourceRef {
+    pub id: String,
+    pub account_id: String,
+    pub field: String,
+    pub source_system: String,
+    pub source_kind: String,
+    pub source_value: Option<String>,
+    pub observed_at: String,
+}
+
+/// Technical footprint, adoption, and service-delivery data for an account (I649).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountTechnicalFootprint {
+    pub account_id: String,
+    pub integrations_json: Option<String>,
+    pub usage_tier: Option<String>,
+    pub adoption_score: Option<f64>,
+    pub active_users: Option<i64>,
+    pub support_tier: Option<String>,
+    pub csat_score: Option<f64>,
+    pub open_tickets: i64,
+    pub services_stage: Option<String>,
+    pub source: String,
+    pub sourced_at: String,
+    pub updated_at: String,
+}

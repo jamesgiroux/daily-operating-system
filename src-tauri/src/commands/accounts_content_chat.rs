@@ -71,6 +71,9 @@ pub struct AccountDetailResult {
     /// I628 AC5: Recently auto-completed milestones for timeline display.
     #[serde(default)]
     pub auto_completed_milestones: Vec<crate::types::AccountMilestone>,
+    /// I649: Technical footprint, adoption, and service-delivery data.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technical_footprint: Option<crate::db::DbAccountTechnicalFootprint>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
