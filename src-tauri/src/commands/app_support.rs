@@ -256,6 +256,7 @@ pub async fn populate_workspace(
                         .as_ref()
                         .and_then(|e| e.keywords_extracted_at.clone()),
                     metadata: existing.as_ref().and_then(|e| e.metadata.clone()),
+                    commercial_stage: existing.as_ref().and_then(|e| e.commercial_stage.clone()),
                 };
                 if let Err(e) = crate::services::mutations::upsert_account(db, &engine, &db_account)
                 {
