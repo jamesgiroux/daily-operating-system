@@ -407,13 +407,37 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             entity_names,
         );
 
-        // I571: Emit background work status for frontend indicator.
-        // Look up display names from DB for a descriptive toast.
+        // TTL check: filter out entities enriched recently unless manually requested (I287)
+        let batch: Vec<IntelRequest> = batch
+            .into_iter()
+            .filter(|request| {
+                if is_background_priority(request.priority) && crate::pty::background_ai_paused() {
+                    log::info!(
+                        "IntelProcessor: skipping {} while background AI is paused",
+                        request.entity_id
+                    );
+                    return false;
+                }
+                if request.priority != IntelPriority::Manual {
+                    if let Some(skip_msg) = check_enrichment_ttl(&state, request) {
+                        log::debug!("{}", skip_msg);
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect();
+
+        if batch.is_empty() {
+            continue;
+        }
+
+        // I571: Emit background work status for frontend indicator only when
+        // the batch survives TTL/background guards and will do real work.
         let display_names: Vec<String> = if let Ok(db) = crate::db::ActionDb::open() {
             batch
                 .iter()
                 .filter_map(|r| {
-                    // Try accounts first (most common), then projects, then people
                     db.get_account(&r.entity_id)
                         .ok()
                         .flatten()
@@ -451,38 +475,12 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             }),
         );
 
-        // Audit: entity enrichment started
         if let Ok(mut audit) = state.audit_log.lock() {
             let _ = audit.append(
                 "ai",
                 "entity_enrichment_started",
                 serde_json::json!({"batch_size": batch.len()}),
             );
-        }
-
-        // TTL check: filter out entities enriched recently unless manually requested (I287)
-        let batch: Vec<IntelRequest> = batch
-            .into_iter()
-            .filter(|request| {
-                if is_background_priority(request.priority) && crate::pty::background_ai_paused() {
-                    log::info!(
-                        "IntelProcessor: skipping {} while background AI is paused",
-                        request.entity_id
-                    );
-                    return false;
-                }
-                if request.priority != IntelPriority::Manual {
-                    if let Some(skip_msg) = check_enrichment_ttl(&state, request) {
-                        log::debug!("{}", skip_msg);
-                        return false;
-                    }
-                }
-                true
-            })
-            .collect();
-
-        if batch.is_empty() {
-            continue;
         }
 
         // Phase 1: Gather context for all entities (brief DB access per entity)
