@@ -1,4 +1,37 @@
 use super::*;
+use rusqlite::OptionalExtension;
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiUsageBreakdownCount {
+    pub label: String,
+    pub count: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiUsageTrendPoint {
+    pub date: String,
+    pub call_count: u32,
+    pub estimated_prompt_tokens: u32,
+    pub estimated_output_tokens: u32,
+    pub estimated_total_tokens: u32,
+    pub total_duration_ms: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiUsageDiagnostics {
+    pub today: AiUsageTrendPoint,
+    pub operation_counts: Vec<AiUsageBreakdownCount>,
+    pub model_counts: Vec<AiUsageBreakdownCount>,
+    pub budget_limit: u32,
+    pub budget_remaining: u32,
+    pub estimated_daily_token_budget: u32,
+    pub estimated_token_budget_remaining: u32,
+    pub background_pause: crate::pty::BackgroundAiPauseStatus,
+    pub trend: Vec<AiUsageTrendPoint>,
+}
 
 #[tauri::command]
 pub async fn get_processing_history(
@@ -435,6 +468,118 @@ fn claude_status_cache() -> &'static Mutex<Option<ClaudeStatusCacheEntry>> {
 #[tauri::command]
 pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
     crate::latency::get_rollups()
+}
+
+#[tauri::command]
+pub async fn get_ai_usage_diagnostics(
+    state: State<'_, Arc<AppState>>,
+) -> Result<AiUsageDiagnostics, String> {
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let budget_limit = state.hygiene.budget.daily_limit;
+    let budget_remaining = budget_limit.saturating_sub(state.hygiene.budget.used_today());
+    let background_pause = crate::pty::current_background_ai_pause_status();
+
+    state
+        .db_read(move |db| {
+            let ledger: crate::pty::AiUsageLedger = db
+                .conn_ref()
+                .query_row(
+                    "SELECT value_json FROM app_state_kv WHERE key = ?1",
+                    rusqlite::params![crate::pty::AI_USAGE_DAILY_KEY],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?
+                .and_then(|json| serde_json::from_str(&json).ok())
+                .unwrap_or_default();
+
+            let mut trend = ledger
+                .days
+                .iter()
+                .map(
+                    |(date, day): (&String, &crate::pty::AiUsageDay)| AiUsageTrendPoint {
+                        date: date.clone(),
+                        call_count: day.call_count,
+                        estimated_prompt_tokens: day.estimated_prompt_tokens,
+                        estimated_output_tokens: day.estimated_output_tokens,
+                        estimated_total_tokens: day.estimated_prompt_tokens
+                            + day.estimated_output_tokens,
+                        total_duration_ms: day.total_duration_ms,
+                    },
+                )
+                .collect::<Vec<_>>();
+            trend.sort_by(|a, b| a.date.cmp(&b.date));
+            let trend = if trend.len() > 7 {
+                trend[trend.len() - 7..].to_vec()
+            } else {
+                trend
+            };
+
+            let today_usage = ledger.days.get(&today).cloned().unwrap_or_default();
+            let mut operation_counts = today_usage
+                .operation_counts
+                .iter()
+                .map(|(label, count): (&String, &u32)| AiUsageBreakdownCount {
+                    label: label.clone(),
+                    count: *count,
+                })
+                .collect::<Vec<_>>();
+            if operation_counts.is_empty() {
+                operation_counts = today_usage
+                    .call_sites
+                    .iter()
+                    .map(|(label, count): (&String, &u32)| AiUsageBreakdownCount {
+                        label: label.clone(),
+                        count: *count,
+                    })
+                    .collect::<Vec<_>>();
+            }
+            operation_counts.sort_by(|a, b| {
+                b.count
+                    .cmp(&a.count)
+                    .then_with(|| a.label.cmp(&b.label))
+            });
+
+            let mut model_counts = today_usage
+                .model_counts
+                .iter()
+                .map(|(label, count): (&String, &u32)| AiUsageBreakdownCount {
+                    label: label.clone(),
+                    count: *count,
+                })
+                .collect::<Vec<_>>();
+            model_counts.sort_by(|a, b| {
+                b.count
+                    .cmp(&a.count)
+                    .then_with(|| a.label.cmp(&b.label))
+            });
+
+            let estimated_budget_remaining = crate::pty::ESTIMATED_DAILY_TOKEN_BUDGET
+                .saturating_sub(
+                    today_usage.estimated_prompt_tokens + today_usage.estimated_output_tokens,
+                );
+
+            Ok(AiUsageDiagnostics {
+                today: AiUsageTrendPoint {
+                    date: today,
+                    call_count: today_usage.call_count,
+                    estimated_prompt_tokens: today_usage.estimated_prompt_tokens,
+                    estimated_output_tokens: today_usage.estimated_output_tokens,
+                    estimated_total_tokens: today_usage.estimated_prompt_tokens
+                        + today_usage.estimated_output_tokens,
+                    total_duration_ms: today_usage.total_duration_ms,
+                },
+                operation_counts,
+                model_counts,
+                budget_limit,
+                budget_remaining,
+                estimated_daily_token_budget: crate::pty::ESTIMATED_DAILY_TOKEN_BUDGET,
+                estimated_token_budget_remaining: estimated_budget_remaining,
+                background_pause,
+                trend,
+            })
+        })
+        .await
 }
 
 /// Cache Claude status checks to avoid shelling out on every focus event.

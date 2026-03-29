@@ -28,9 +28,24 @@ import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { formatDayTime, stripMarkdown } from "@/lib/utils";
+import { formatDayTime, formatShortDate, stripMarkdown } from "@/lib/utils";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
-import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction } from "@/types";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type {
+  DashboardData,
+  DashboardLifecycleUpdate,
+  DataFreshness,
+  Meeting,
+  Action,
+  Email,
+  PrioritizedAction,
+} from "@/types";
 import { HealthBadge } from "@/components/shared/HealthBadge";
 import { compareEmailRank } from "@/lib/email-ranking";
 import s from "@/styles/editorial-briefing.module.css";
@@ -122,10 +137,16 @@ function formatMinutes(minutes: number): string {
 export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
+  const [pendingLifecycleChangeId, setPendingLifecycleChangeId] = useState<number | null>(null);
+  const [correctionTarget, setCorrectionTarget] = useState<DashboardLifecycleUpdate | null>(null);
+  const [correctedLifecycle, setCorrectedLifecycle] = useState("");
+  const [correctedStage, setCorrectedStage] = useState("");
+  const [correctionNotes, setCorrectionNotes] = useState("");
   // Data
   const meetings = data.meetings;
   const actions = data.actions;
   const emails = data.emails ?? [];
+  const lifecycleUpdates = data.lifecycleUpdates ?? [];
 
   // I395: Score-based email selection — scored emails first, then enriched fill.
   // Shows up to 5 emails: high-scored ones first, then enriched emails with summaries
@@ -249,6 +270,59 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
       toast.error("Failed to complete action");
     });
   }, []);
+
+  const handleConfirmLifecycle = useCallback(async (update: DashboardLifecycleUpdate) => {
+    setPendingLifecycleChangeId(update.changeId);
+    try {
+      await invoke("confirm_lifecycle_change", { changeId: update.changeId });
+      toast.success(`${update.accountName} marked confirmed`);
+      onRefresh?.();
+    } catch (err) {
+      console.error("confirm_lifecycle_change failed:", err);
+      toast.error("Failed to confirm lifecycle change");
+    } finally {
+      setPendingLifecycleChangeId(null);
+    }
+  }, [onRefresh]);
+
+  const openCorrection = useCallback((update: DashboardLifecycleUpdate) => {
+    setCorrectionTarget(update);
+    setCorrectedLifecycle(update.newLifecycle);
+    setCorrectedStage(update.renewalStage ?? "");
+    setCorrectionNotes(update.evidence ?? "");
+  }, []);
+
+  const closeCorrection = useCallback((open: boolean) => {
+    if (open) return;
+    setCorrectionTarget(null);
+    setCorrectedLifecycle("");
+    setCorrectedStage("");
+    setCorrectionNotes("");
+  }, []);
+
+  const handleSubmitCorrection = useCallback(async () => {
+    if (!correctionTarget) return;
+    setPendingLifecycleChangeId(correctionTarget.changeId);
+    try {
+      await invoke("correct_lifecycle_change", {
+        changeId: correctionTarget.changeId,
+        correctedLifecycle,
+        correctedStage: correctedStage || null,
+        notes: correctionNotes.trim() || null,
+      });
+      toast.success(`${correctionTarget.accountName} updated`);
+      setCorrectionTarget(null);
+      setCorrectedLifecycle("");
+      setCorrectedStage("");
+      setCorrectionNotes("");
+      onRefresh?.();
+    } catch (err) {
+      console.error("correct_lifecycle_change failed:", err);
+      toast.error("Failed to correct lifecycle change");
+    } finally {
+      setPendingLifecycleChangeId(null);
+    }
+  }, [correctionNotes, correctedLifecycle, correctedStage, correctionTarget, onRefresh]);
 
   // Proposed actions for triage
   const { suggestedActions, acceptAction, rejectAction } = useSuggestedActions();
@@ -388,6 +462,10 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
       {/* ═══ ATTENTION ═══ */}
       {/* Cached emails shown even when stale — background reconciliation updates them */}
       <AttentionSection
+        lifecycleUpdates={lifecycleUpdates}
+        onConfirmLifecycle={handleConfirmLifecycle}
+        onOpenLifecycleCorrection={openCorrection}
+        pendingLifecycleChangeId={pendingLifecycleChangeId}
         suggestedActions={suggestedActions}
         acceptAction={acceptAction}
         rejectAction={rejectAction}
@@ -402,6 +480,80 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         emailSyncTimestamp={data.emailSync?.lastSuccessAt}
       />
 
+      <Dialog open={!!correctionTarget} onOpenChange={closeCorrection}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Fix lifecycle change</DialogTitle>
+            <DialogDescription>
+              Update the lifecycle call for {correctionTarget?.accountName ?? "this account"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: "grid", gap: 14 }}>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)" }}>
+                Lifecycle
+              </span>
+              <select
+                value={correctedLifecycle}
+                onChange={(event) => setCorrectedLifecycle(event.target.value)}
+                style={{ minHeight: 38, border: "1px solid var(--color-rule-light)", padding: "8px 10px", background: "var(--color-paper-cream)" }}
+              >
+                {["onboarding", "active", "renewing", "at_risk", "churned"].map((value) => (
+                  <option key={value} value={value}>
+                    {value.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)" }}>
+                Renewal stage
+              </span>
+              <select
+                value={correctedStage}
+                onChange={(event) => setCorrectedStage(event.target.value)}
+                style={{ minHeight: 38, border: "1px solid var(--color-rule-light)", padding: "8px 10px", background: "var(--color-paper-cream)" }}
+              >
+                <option value="">No stage</option>
+                {["approaching", "negotiating", "contract_sent", "processed"].map((value) => (
+                  <option key={value} value={value}>
+                    {value.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)" }}>
+                Notes
+              </span>
+              <textarea
+                value={correctionNotes}
+                onChange={(event) => setCorrectionNotes(event.target.value)}
+                rows={4}
+                style={{ border: "1px solid var(--color-rule-light)", padding: "10px 12px", background: "var(--color-paper-cream)", resize: "vertical" }}
+              />
+            </label>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => closeCorrection(false)}
+                style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { void handleSubmitCorrection(); }}
+                disabled={!correctedLifecycle || pendingLifecycleChangeId === correctionTarget?.changeId}
+                style={{ minHeight: 34, padding: "0 14px", border: "1px solid var(--color-rule-heavy)", background: "var(--color-paper-cream)", fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer" }}
+              >
+                Save correction
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ═══ FINIS ═══ */}
       <FinisMarker />
     </div>
@@ -411,6 +563,10 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
 // ─── Attention Section (unified: suggested + actions + emails) ─────────────────
 
 function AttentionSection({
+  lifecycleUpdates,
+  onConfirmLifecycle,
+  onOpenLifecycleCorrection,
+  pendingLifecycleChangeId,
   suggestedActions,
   acceptAction,
   rejectAction,
@@ -424,6 +580,10 @@ function AttentionSection({
   todayMeetingIds,
   emailSyncTimestamp,
 }: {
+  lifecycleUpdates: DashboardLifecycleUpdate[];
+  onConfirmLifecycle: (update: DashboardLifecycleUpdate) => void;
+  onOpenLifecycleCorrection: (update: DashboardLifecycleUpdate) => void;
+  pendingLifecycleChangeId: number | null;
   suggestedActions: Array<{ id: string; title: string; sourceLabel?: string; sourceId?: string }>;
   acceptAction: (id: string) => void;
   rejectAction: (
@@ -471,7 +631,8 @@ function AttentionSection({
   const hasSuggested = suggestedActions.length > 0;
   const hasActions = attentionActions.length > 0;
   const hasEmails = briefingEmails.length > 0;
-  const hasAnything = hasSuggested || hasActions || hasEmails;
+  const hasLifecycle = lifecycleUpdates.length > 0;
+  const hasAnything = hasLifecycle || hasSuggested || hasActions || hasEmails;
 
   if (!hasAnything) return null;
 
@@ -488,6 +649,25 @@ function AttentionSection({
         <div className={s.marginContent}>
           <div className={s.sectionRule} />
 
+
+          {hasLifecycle && (
+            <div style={{ marginTop: 0 }}>
+              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>
+                Lifecycle
+              </div>
+              <div className={s.priorityItems}>
+                {lifecycleUpdates.slice(0, 3).map((update) => (
+                  <LifecycleUpdateItem
+                    key={update.changeId}
+                    update={update}
+                    pending={pendingLifecycleChangeId === update.changeId}
+                    onConfirm={onConfirmLifecycle}
+                    onCorrect={onOpenLifecycleCorrection}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Suggested action triage (max 3) */}
           {hasSuggested && (
@@ -527,7 +707,7 @@ function AttentionSection({
 
           {/* Actions: meeting-relevant + overdue (max 3) */}
           {hasActions && (
-            <div style={{ marginTop: hasSuggested ? 28 : 0 }}>
+            <div style={{ marginTop: hasLifecycle || hasSuggested ? 28 : 0 }}>
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
                 Actions
               </div>
@@ -769,5 +949,79 @@ function PriorityEmailItem({ email }: { email: Email }) {
         )}
       </div>
     </Link>
+  );
+}
+
+function formatLifecycleLabel(value?: string | null) {
+  return value ? value.replace(/_/g, " ") : "";
+}
+
+function LifecycleUpdateItem({
+  update,
+  pending,
+  onConfirm,
+  onCorrect,
+}: {
+  update: DashboardLifecycleUpdate;
+  pending: boolean;
+  onConfirm: (update: DashboardLifecycleUpdate) => void;
+  onCorrect: (update: DashboardLifecycleUpdate) => void;
+}) {
+  const transitionLabel = update.previousLifecycle
+    ? `${formatLifecycleLabel(update.previousLifecycle)} → ${formatLifecycleLabel(update.newLifecycle)}`
+    : formatLifecycleLabel(update.newLifecycle);
+  const healthDelta = update.healthScoreBefore != null && update.healthScoreAfter != null
+    ? `${Math.round(update.healthScoreBefore)} → ${Math.round(update.healthScoreAfter)}`
+    : null;
+  const contextBits = [
+    update.renewalStage ? `Stage: ${update.renewalStage.replace(/_/g, " ")}` : null,
+    healthDelta ? `Health ${healthDelta}` : null,
+    update.actionState !== "pending"
+      ? update.actionState.charAt(0).toUpperCase() + update.actionState.slice(1)
+      : null,
+    `${Math.round(update.confidence * 100)}% confidence`,
+    formatShortDate(update.createdAt),
+  ].filter(Boolean);
+
+  return (
+    <div
+      className={clsx(s.priorityItem, s.priorityItemToday, s.priorityItemAccount)}
+    >
+      <div className={clsx(s.priorityDot, s.priorityDotTurmeric)} />
+      <div className={s.priorityContent}>
+        <Link
+          to="/accounts/$accountId"
+          params={{ accountId: update.accountId }}
+          className={s.priorityTitle}
+          style={{ textDecoration: "none" }}
+        >
+          {update.accountName}: {transitionLabel}
+        </Link>
+        <div className={s.priorityContext}>{contextBits.join(" · ")}</div>
+        {update.evidence && (
+          <div className={s.priorityWhy}>{update.evidence}</div>
+        )}
+        {update.actionState === "pending" ? (
+          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => onConfirm(update)}
+              disabled={pending}
+              style={{ minHeight: 30, padding: "0 12px", border: "1px solid var(--color-rule-heavy)", background: "var(--color-paper-cream)", fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer" }}
+            >
+              Looks good
+            </button>
+            <button
+              type="button"
+              onClick={() => onCorrect(update)}
+              disabled={pending}
+              style={{ background: "none", border: "none", padding: 0, fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)", cursor: "pointer" }}
+            >
+              Fix something
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }

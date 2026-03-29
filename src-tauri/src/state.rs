@@ -1089,6 +1089,7 @@ pub fn create_or_update_config(
                 personality: "professional".to_string(),
                 developer_mode: false,
                 ai_models: crate::types::AiModelConfig::default(),
+                ai_model_routing_version: crate::types::AI_MODEL_ROUTING_VERSION,
                 embeddings: crate::types::EmbeddingConfig::default(),
                 internal_team_setup_completed: false,
                 internal_team_setup_version: 0,
@@ -1211,8 +1212,9 @@ pub fn load_config() -> Result<Config, String> {
     let content =
         fs::read_to_string(&config_path).map_err(|e| format!("Failed to read config: {}", e))?;
 
-    let config: Config =
+    let mut config: Config =
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))?;
+    config.normalize();
 
     // Validate workspace path exists
     let workspace_path = std::path::Path::new(&config.workspace_path);
