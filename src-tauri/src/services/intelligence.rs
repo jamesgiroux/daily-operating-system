@@ -716,13 +716,17 @@ pub async fn update_stakeholders(
                     .iter()
                     .filter_map(|s| {
                         let role = s.role.as_deref().unwrap_or("").to_lowercase();
+                        let engagement = s.engagement.as_deref().unwrap_or("").to_lowercase();
                         let person_id = s.person_id.as_deref()?;
-                        if role.contains("champion")
-                            || role.contains("executive")
-                            || role.contains("technical")
-                            || role.contains("decision")
+                        // Check BOTH role and engagement — user may set champion
+                        // via either the Team panel (role) or EngagementSelector (engagement)
+                        let effective = if !engagement.is_empty() { &engagement } else { &role };
+                        if effective.contains("champion")
+                            || effective.contains("executive")
+                            || effective.contains("technical")
+                            || effective.contains("decision")
                         {
-                            Some((person_id.to_string(), role))
+                            Some((person_id.to_string(), effective.to_string()))
                         } else {
                             None
                         }
