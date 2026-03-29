@@ -1357,6 +1357,11 @@ pub async fn get_account_detail(
                 .get_auto_completed_milestones(&account.id, 90)
                 .unwrap_or_default();
 
+            // I649: Technical footprint
+            let technical_footprint = db
+                .get_account_technical_footprint(&account.id)
+                .unwrap_or(None);
+
             Ok(AccountDetailResult {
                 id: account.id,
                 name: account.name,
@@ -1393,6 +1398,7 @@ pub async fn get_account_detail(
                 field_conflicts,
                 intelligence,
                 auto_completed_milestones,
+                technical_footprint,
             })
         })
         .await
