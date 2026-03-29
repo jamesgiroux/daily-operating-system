@@ -170,6 +170,7 @@
 .metricFill {
   height: 100%;
   border-radius: 2px;
+  width: var(--progress-width, 0%);
 }
 
 .metricFillSage {
@@ -313,7 +314,7 @@
 }
 
 .badgeNeutral {
-  background: rgba(30, 37, 48, 0.04);
+  background: var(--color-desk-charcoal-4);
   color: var(--color-text-tertiary);
 }
 
