@@ -369,6 +369,11 @@ impl GleanIntelligenceProvider {
             }
         };
 
+        // I624: Stamp source="glean" on product adoption so dual_write_enrichment_products
+        // writes products with correct Glean attribution.
+        let mut intel = intel;
+        stamp_glean_product_source(&mut intel);
+
         log::info!(
             "[I574] Glean parallel enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}",
             entity_name,
@@ -471,6 +476,11 @@ impl GleanIntelligenceProvider {
                 None => glean_intel,
             }
         };
+
+        // I624: Stamp source="glean" on product adoption so dual_write_enrichment_products
+        // writes products with correct Glean attribution.
+        let mut intel = intel;
+        stamp_glean_product_source(&mut intel);
 
         log::info!(
             "[I535] Glean enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}",
@@ -1057,6 +1067,24 @@ pub fn reconcile_enrichment(
     }
 
     result
+}
+
+/// I624: Ensure product adoption from Glean enrichment carries source="glean".
+///
+/// The Glean response may or may not include a source field in productAdoption.
+/// This stamps it explicitly so `dual_write_enrichment_products` writes products
+/// with Glean attribution instead of the default "ai_inference".
+fn stamp_glean_product_source(intel: &mut IntelligenceJson) {
+    if let Some(ref mut adoption) = intel.product_adoption {
+        if adoption.source.is_none()
+            || !adoption
+                .source
+                .as_ref()
+                .is_some_and(|s| s.contains("glean"))
+        {
+            adoption.source = Some("glean".to_string());
+        }
+    }
 }
 
 fn reconcile_internal_team(

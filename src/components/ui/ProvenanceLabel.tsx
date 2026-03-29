@@ -23,7 +23,8 @@ interface ProvenanceLabelProps {
 export function formatProvenanceSource(source?: string | null): string | null {
   if (!source) return null;
   const normalized = source.toLowerCase();
-  if (normalized === "user_edit" || normalized === "user_correction") return "you updated";
+  if (normalized === "user_correction") return "you updated";
+  if (normalized === "user_edit" || normalized === "user_noted") return "you noted";
   if (normalized.includes("salesforce") || normalized.includes("glean_crm")) return "via Salesforce";
   if (normalized.includes("gong")) return "via Gong";
   if (normalized.includes("zendesk")) return "via Zendesk";
