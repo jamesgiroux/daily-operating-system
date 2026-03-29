@@ -148,6 +148,7 @@ impl AiUsageContext {
 
     pub fn for_tier(tier: ModelTier) -> Self {
         Self {
+            operation: format!("{}_task", tier.as_str()),
             tier: tier.as_str().to_string(),
             ..Self::default()
         }

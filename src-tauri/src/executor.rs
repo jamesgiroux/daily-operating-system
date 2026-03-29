@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 
 use crate::error::ExecutionError;
 use crate::notification::send_notification;
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::scheduler::SchedulerMessage;
 use crate::state::{create_execution_record, AppState};
 use crate::types::{
@@ -1104,8 +1104,18 @@ impl Executor {
 
         // Create per-tier PtyManagers (I174)
         let ai_config = self.ai_model_config();
-        let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config);
-        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
+        let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config)
+            .with_usage_context(
+                AiUsageContext::new("workflow", "today_email_enrichment")
+                    .with_trigger("today")
+                    .with_tier(ModelTier::Extraction),
+            );
+        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config)
+            .with_usage_context(
+                AiUsageContext::new("workflow", "today_briefing_generation")
+                    .with_trigger("today")
+                    .with_tier(ModelTier::Synthesis),
+            );
 
         // AI: Enrich emails (high-priority only, feature-gated I39)
         if email_enabled {
@@ -1312,10 +1322,20 @@ impl Executor {
                 company: None,
                 title: None,
                 focus: None,
-            });
+        });
         let ai_config = self.ai_model_config();
-        let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config);
-        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
+        let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config)
+            .with_usage_context(
+                AiUsageContext::new("email", "manual_refresh_enrichment")
+                    .with_trigger("manual_refresh")
+                    .with_tier(ModelTier::Extraction),
+            );
+        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config)
+            .with_usage_context(
+                AiUsageContext::new("email", "manual_refresh_enrichment_fallback")
+                    .with_trigger("manual_refresh")
+                    .with_tier(ModelTier::Synthesis),
+            );
         if let Err(e) = self.enrich_emails_with_fallback(
             &data_dir,
             workspace,
