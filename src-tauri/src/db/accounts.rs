@@ -1797,6 +1797,123 @@ impl ActionDb {
         Ok(count > 0)
     }
 
+    // =========================================================================
+    // Source References (I644)
+    // =========================================================================
+
+    /// Get all source references for an account, ordered by field then most recent.
+    pub fn get_account_source_refs(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<DbAccountSourceRef>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, account_id, field, source_system, source_kind, source_value, observed_at
+             FROM account_source_refs
+             WHERE account_id = ?1
+             ORDER BY field, observed_at DESC",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(DbAccountSourceRef {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                field: row.get(2)?,
+                source_system: row.get(3)?,
+                source_kind: row.get(4)?,
+                source_value: row.get(5)?,
+                observed_at: row.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    // =========================================================================
+    // Technical Footprint (I649)
+    // =========================================================================
+
+    /// Upsert the technical footprint row for an account.
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_account_technical_footprint(
+        &self,
+        account_id: &str,
+        integrations_json: Option<&str>,
+        usage_tier: Option<&str>,
+        adoption_score: Option<f64>,
+        active_users: Option<i64>,
+        support_tier: Option<&str>,
+        csat_score: Option<f64>,
+        open_tickets: i64,
+        services_stage: Option<&str>,
+        source: &str,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        self.conn.execute(
+            "INSERT INTO account_technical_footprint
+                (account_id, integrations_json, usage_tier, adoption_score, active_users,
+                 support_tier, csat_score, open_tickets, services_stage, source, sourced_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+             ON CONFLICT(account_id) DO UPDATE SET
+                integrations_json = COALESCE(excluded.integrations_json, account_technical_footprint.integrations_json),
+                usage_tier = COALESCE(excluded.usage_tier, account_technical_footprint.usage_tier),
+                adoption_score = COALESCE(excluded.adoption_score, account_technical_footprint.adoption_score),
+                active_users = COALESCE(excluded.active_users, account_technical_footprint.active_users),
+                support_tier = COALESCE(excluded.support_tier, account_technical_footprint.support_tier),
+                csat_score = COALESCE(excluded.csat_score, account_technical_footprint.csat_score),
+                open_tickets = excluded.open_tickets,
+                services_stage = COALESCE(excluded.services_stage, account_technical_footprint.services_stage),
+                source = excluded.source,
+                sourced_at = excluded.sourced_at,
+                updated_at = excluded.updated_at",
+            params![
+                account_id,
+                integrations_json,
+                usage_tier,
+                adoption_score,
+                active_users,
+                support_tier,
+                csat_score,
+                open_tickets,
+                services_stage,
+                source,
+                now,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get the technical footprint for an account, if present.
+    pub fn get_account_technical_footprint(
+        &self,
+        account_id: &str,
+    ) -> Result<Option<DbAccountTechnicalFootprint>, DbError> {
+        use rusqlite::OptionalExtension;
+        self.conn
+            .query_row(
+                "SELECT account_id, integrations_json, usage_tier, adoption_score, active_users,
+                        support_tier, csat_score, open_tickets, services_stage, source, sourced_at, updated_at
+                 FROM account_technical_footprint
+                 WHERE account_id = ?1",
+                params![account_id],
+                |row| {
+                    Ok(DbAccountTechnicalFootprint {
+                        account_id: row.get(0)?,
+                        integrations_json: row.get(1)?,
+                        usage_tier: row.get(2)?,
+                        adoption_score: row.get(3)?,
+                        active_users: row.get(4)?,
+                        support_tier: row.get(5)?,
+                        csat_score: row.get(6)?,
+                        open_tickets: row.get::<_, i64>(7)?,
+                        services_stage: row.get(8)?,
+                        source: row.get(9)?,
+                        sourced_at: row.get(10)?,
+                        updated_at: row.get(11)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(DbError::from)
+    }
+
     /// Get accounts with renewal_date (contract_end) in the past and no churn event.
     pub fn get_accounts_past_renewal(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
