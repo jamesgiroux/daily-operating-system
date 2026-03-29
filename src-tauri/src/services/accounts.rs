@@ -1362,6 +1362,11 @@ pub async fn get_account_detail(
                 .get_account_technical_footprint(&account.id)
                 .unwrap_or(None);
 
+            // DB-first stakeholder read model: all stakeholders with provenance
+            let stakeholders_full = db
+                .get_account_stakeholders_full(&account.id)
+                .unwrap_or_default();
+
             Ok(AccountDetailResult {
                 id: account.id,
                 name: account.name,
@@ -1399,6 +1404,7 @@ pub async fn get_account_detail(
                 intelligence,
                 auto_completed_milestones,
                 technical_footprint,
+                stakeholders_full,
             })
         })
         .await
