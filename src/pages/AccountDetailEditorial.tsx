@@ -30,6 +30,7 @@ import {
   Award,
   Compass,
   Telescope,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -361,6 +362,16 @@ export default function AccountDetailEditorial() {
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [editProductName, setEditProductName] = useState("");
   const [editProductStatus, setEditProductStatus] = useState("");
+  const [statusDropdownProductId, setStatusDropdownProductId] = useState<number | null>(null);
+
+  // Close product status dropdown on outside click
+  useEffect(() => {
+    if (statusDropdownProductId === null) return;
+    const handler = () => setStatusDropdownProductId(null);
+    // Delay to avoid closing on the same click that opened it
+    const id = setTimeout(() => document.addEventListener("click", handler), 0);
+    return () => { clearTimeout(id); document.removeEventListener("click", handler); };
+  }, [statusDropdownProductId]);
 
   // I312: Preset metadata state
   const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
@@ -559,11 +570,11 @@ export default function AccountDetailEditorial() {
             ) : undefined
           }
           provenanceSlot={
-            detail.accountType !== "internal" ? (
+            detail.accountType !== "internal" && detail.renewalDate ? (
               <div className={styles.renewalDateRow}>
-                <span className={styles.renewalDateLabel}>Renewal</span>
+                <span className={styles.renewalDateLabel}>Renews</span>
                 <EditableDate
-                  value={detail.renewalDate ?? ""}
+                  value={detail.renewalDate}
                   onSave={(v) => void saveAccountField("contract_end", v)}
                 />
               </div>
@@ -655,10 +666,8 @@ export default function AccountDetailEditorial() {
                 const sourceLabel = formatProvenanceSource(product.source);
                 const tooltipText = `${sourceLabel ?? "Unknown source"} \u00b7 ${confidencePct}% confidence`;
 
-                const statusCycle: string[] = ["active", "trial", "churned"];
-                const cycleStatus = () => {
-                  const currentIdx = statusCycle.indexOf(product.status);
-                  const nextStatus = statusCycle[(currentIdx + 1) % statusCycle.length];
+                const setProductStatus = (nextStatus: string) => {
+                  setStatusDropdownProductId(null);
                   void invoke("correct_account_product", {
                     accountId: detail.id,
                     productId: product.id,
@@ -666,8 +675,7 @@ export default function AccountDetailEditorial() {
                     status: nextStatus,
                     sourceToPenalize: product.source,
                   }).then(() => {
-                    void acct.load();
-                    toast.success(`${product.name} status changed to ${nextStatus}`);
+                    void acct.silentRefresh();
                   }).catch((err: unknown) => {
                     console.error("correct_account_product failed:", err);
                     toast.error("Failed to update product status");
@@ -704,17 +712,36 @@ export default function AccountDetailEditorial() {
                       )}
                       </div>
 
-                    {/* Center: status badge (click to cycle) */}
+                    {/* Center: status badge with dropdown */}
                     {product.status && (
-                      <button
-                        type="button"
-                        className={styles.productStatusBadge}
-                        data-status={product.status}
-                        onClick={cycleStatus}
-                        title={`Status: ${product.status} (click to change)`}
-                      >
-                        {product.status}
-                      </button>
+                      <div className={styles.productStatusWrapper}>
+                        <button
+                          type="button"
+                          className={styles.productStatusBadge}
+                          data-status={product.status}
+                          onClick={() => setStatusDropdownProductId(
+                            statusDropdownProductId === product.id ? null : product.id
+                          )}
+                        >
+                          {product.status}
+                          <ChevronDown size={8} strokeWidth={2} />
+                        </button>
+                        {statusDropdownProductId === product.id && (
+                          <div className={styles.productStatusDropdown}>
+                            {["active", "trial", "churned"].map((s) => (
+                              <button
+                                key={s}
+                                type="button"
+                                className={`${styles.productStatusOption} ${s === product.status ? styles.productStatusOptionActive : ""}`}
+                                data-status={s}
+                                onClick={() => setProductStatus(s)}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     {/* Right: feedback + dismiss */}
