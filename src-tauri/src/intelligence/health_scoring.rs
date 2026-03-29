@@ -685,14 +685,32 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
 }
 
 fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
+    // Check account_stakeholders DB table for role-based champion
     let team = db.get_account_team(account_id).unwrap_or_default();
     let champion = team
         .iter()
         .find(|t| t.role.to_lowercase().contains("champion"));
 
+    // Also check intelligence JSON engagement field — the EngagementSelector
+    // writes "champion" to stakeholder_insights[].engagement, not to the DB role
+    let champion = champion.or_else(|| {
+        let intel = db.get_entity_intelligence(account_id).ok().flatten()?;
+        let has_engagement_champion = intel.stakeholder_insights.iter().any(|s| {
+            s.engagement
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains("champion")
+        });
+        if has_engagement_champion {
+            // Return a sentinel so the champion.is_some() check passes
+            team.first()
+        } else {
+            None
+        }
+    });
+
     if champion.is_none() {
-        // No explicit champion — infer engagement from meeting attendance patterns.
-        // Check if any person on this account attends a high % of meetings.
         return infer_champion_from_attendance(db, account_id);
     }
 
