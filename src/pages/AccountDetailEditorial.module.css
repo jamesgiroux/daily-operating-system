@@ -271,10 +271,16 @@
   transition: color var(--transition-fast);
 }
 
-/* Center: status badge */
+/* Center: status badge with dropdown */
+.productStatusWrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .productStatusBadge {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;
@@ -310,6 +316,54 @@
 
 .productStatusBadge[data-status="churned"]:hover {
   background: var(--color-spice-terracotta-12);
+}
+
+.productStatusDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 50;
+  min-width: 100px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.productStatusOption {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.productStatusOption:hover {
+  background: var(--color-black-4);
+}
+
+.productStatusOptionActive {
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-8);
+}
+
+.productStatusOption[data-status="trial"] {
+  color: var(--color-spice-turmeric);
+}
+
+.productStatusOption[data-status="churned"] {
+  color: var(--color-spice-terracotta);
 }
 
 /* Right: feedback + dismiss */
