@@ -107,6 +107,7 @@ function buildAccountVitals(detail: {
   lifecycle?: string;
   renewalDate?: string;
   renewalStage?: string | null;
+  commercialStage?: string | null;
   nps?: number | null;
   signals?: { meetingFrequency30d?: number };
   contractStart?: string;
@@ -126,6 +127,12 @@ function buildAccountVitals(detail: {
     vitals.push({
       text: `Stage: ${detail.renewalStage.replace(/_/g, " ")}`,
       highlight: "olive",
+    });
+  }
+  if (detail.commercialStage) {
+    vitals.push({
+      text: `Opp: ${detail.commercialStage.replace(/_/g, " ")}`,
+      highlight: "larkspur",
     });
   }
   if (detail.renewalDate) {

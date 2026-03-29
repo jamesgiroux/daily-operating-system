@@ -3441,6 +3441,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            commercial_stage: None,
         }
     }
 

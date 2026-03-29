@@ -687,6 +687,49 @@
   color: var(--color-text-secondary);
 }
 
+/* -- Champion designation badge (I646 C2) -- */
+
+.championBadgeRow {
+  margin-top: 24px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-rule-light);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.championBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--color-garden-sage);
+  background: rgba(126, 170, 123, 0.08);
+  color: var(--color-garden-sage);
+}
+
+.championBadgeLink {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.championBadgeLink:hover {
+  color: var(--color-spice-turmeric);
+}
+
+.championBadgeLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-garden-sage);
+}
+
 /* ── Editable text overrides for stakeholder cards ── */
 
 .editableName {
