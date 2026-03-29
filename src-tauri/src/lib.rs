@@ -602,6 +602,7 @@ pub fn run() {
             commands::update_account_field,
             commands::confirm_lifecycle_change,
             commands::correct_lifecycle_change,
+            commands::correct_account_product,
             commands::accept_account_field_conflict,
             commands::dismiss_account_field_conflict,
             commands::update_account_notes,

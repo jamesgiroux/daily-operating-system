@@ -260,6 +260,31 @@ pub async fn confirm_lifecycle_change(
 }
 
 #[tauri::command]
+pub async fn correct_account_product(
+    account_id: String,
+    product_id: i64,
+    name: String,
+    status: Option<String>,
+    source_to_penalize: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::correct_account_product(
+                db,
+                &app_state.signals.engine,
+                &account_id,
+                product_id,
+                &name,
+                status.as_deref(),
+                &source_to_penalize,
+            )
+        })
+        .await
+}
+
+#[tauri::command]
 pub async fn correct_lifecycle_change(
     change_id: i64,
     corrected_lifecycle: String,
