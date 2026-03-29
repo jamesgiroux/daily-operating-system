@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { formatArr, formatShortDate } from "@/lib/utils";
+import { formatArr, formatRelativeDate, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
@@ -71,6 +71,10 @@ import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
 import { WatchListPrograms } from "@/components/account/WatchListPrograms";
 import { DimensionBar } from "@/components/shared/DimensionBar";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
+import {
+  ProvenanceLabel,
+  formatProvenanceSource,
+} from "@/components/ui/ProvenanceLabel";
 import shared from "@/styles/entity-detail.module.css";
 import styles from "./AccountDetailEditorial.module.css";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
@@ -100,6 +104,7 @@ function buildAccountVitals(detail: {
   health?: string;
   lifecycle?: string;
   renewalDate?: string;
+  renewalStage?: string | null;
   nps?: number | null;
   signals?: { meetingFrequency30d?: number };
   contractStart?: string;
@@ -115,6 +120,12 @@ function buildAccountVitals(detail: {
     });
   }
   if (detail.lifecycle) vitals.push({ text: detail.lifecycle });
+  if (detail.renewalStage) {
+    vitals.push({
+      text: `Stage: ${detail.renewalStage.replace(/_/g, " ")}`,
+      highlight: "olive",
+    });
+  }
   if (detail.renewalDate) {
     const renewal = new Date(detail.renewalDate);
     const now = new Date();
@@ -186,6 +197,69 @@ function getHealthDotClass(health: string): string {
   if (health === "green") return styles.healthDotGreen;
   if (health === "red") return styles.healthDotRed;
   return styles.healthDotYellow;
+}
+
+function formatTrackedFieldLabel(field: string): string {
+  const labels: Record<string, string> = {
+    arr: "ARR",
+    lifecycle: "Lifecycle",
+    contract_end: "Renewal Date",
+    nps: "NPS",
+  };
+  return labels[field] ?? field.replace(/_/g, " ");
+}
+
+function formatLifecycleDisplay(value?: string | null): string {
+  if (!value) return "Unknown";
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatFieldValue(
+  detail: {
+    arr?: number | null;
+    lifecycle?: string | null;
+    renewalStage?: string | null;
+    renewalDate?: string | null;
+    nps?: number | null;
+  },
+  field: string,
+): string | null {
+  switch (field) {
+    case "arr":
+      return detail.arr != null ? `$${formatArr(detail.arr)} ARR` : null;
+    case "lifecycle":
+      return [
+        detail.lifecycle ? formatLifecycleDisplay(detail.lifecycle) : null,
+        detail.renewalStage ? detail.renewalStage.replace(/_/g, " ") : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    case "contract_end":
+      return detail.renewalDate ? `Renews ${formatShortDate(detail.renewalDate)}` : null;
+    case "nps":
+      return detail.nps != null ? `NPS ${detail.nps}` : null;
+    default:
+      return null;
+  }
+}
+
+function formatSuggestedValue(field: string, value: string): string {
+  if (field === "arr") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? `$${formatArr(parsed)} ARR` : value;
+  }
+  if (field === "contract_end") {
+    return `Renews ${formatShortDate(value)}`;
+  }
+  if (field === "lifecycle") {
+    return formatLifecycleDisplay(value);
+  }
+  if (field === "nps") {
+    return `NPS ${value}`;
+  }
+  return value;
 }
 
 export default function AccountDetailEditorial() {
@@ -303,6 +377,7 @@ export default function AccountDetailEditorial() {
     ),
   }, accountId);
   const [rolloverDismissed, setRolloverDismissed] = useState(false);
+  const [pendingConflictField, setPendingConflictField] = useState<string | null>(null);
 
   // I312: Preset metadata state
   const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
@@ -335,14 +410,127 @@ export default function AccountDetailEditorial() {
 
   // Context entries — must be before early returns (React hooks rule)
   const entityCtx = useEntityContextEntries("account", accountId ?? null);
+  const detail = acct.detail;
+  const intelligence = detail?.intelligence ?? null;
+  const events = acct.events;
+  const files = acct.files;
+  const fieldProvenanceMap = useMemo(
+    () => new Map((detail?.fieldProvenance ?? []).map((item) => [item.field, item])),
+    [detail?.fieldProvenance],
+  );
+  const fieldConflictMap = useMemo(
+    () => new Map((detail?.fieldConflicts ?? []).map((item) => [item.field, item])),
+    [detail?.fieldConflicts],
+  );
+  const latestLifecycleChange = detail?.lifecycleChanges?.[0];
+  const healthDimensionCount = intelligence?.health?.dimensions
+    ? Object.keys(intelligence.health.dimensions).length
+    : 0;
 
   if (acct.loading) return <EditorialLoading />;
 
-  if (acct.error || !acct.detail) {
+  if (acct.error || !detail) {
     return <EditorialError message={acct.error ?? "Account not found"} onRetry={acct.load} />;
   }
 
-  const { detail, intelligence, events, files } = acct;
+  const handleAcceptConflict = async (field: string) => {
+    const conflict = fieldConflictMap.get(field);
+    if (!conflict) return;
+    setPendingConflictField(field);
+    try {
+      await invoke("accept_account_field_conflict", {
+        accountId: detail.id,
+        field: conflict.field,
+        suggestedValue: conflict.suggestedValue,
+        source: conflict.source,
+        signalId: conflict.signalId || null,
+      });
+      await acct.load();
+      toast.success(`${formatTrackedFieldLabel(field)} updated`);
+    } catch (err) {
+      console.error("accept_account_field_conflict failed:", err);
+      toast.error(`Failed to update ${formatTrackedFieldLabel(field)}`);
+    } finally {
+      setPendingConflictField(null);
+    }
+  };
+
+  const handleDismissConflict = async (field: string) => {
+    const conflict = fieldConflictMap.get(field);
+    if (!conflict) return;
+    setPendingConflictField(field);
+    try {
+      await invoke("dismiss_account_field_conflict", {
+        accountId: detail.id,
+        field: conflict.field,
+        signalId: conflict.signalId,
+        source: conflict.source,
+        suggestedValue: conflict.suggestedValue,
+      });
+      await acct.silentRefresh();
+      toast.success(`${formatTrackedFieldLabel(field)} suggestion dismissed`);
+    } catch (err) {
+      console.error("dismiss_account_field_conflict failed:", err);
+      toast.error(`Failed to dismiss ${formatTrackedFieldLabel(field)} suggestion`);
+    } finally {
+      setPendingConflictField(null);
+    }
+  };
+
+  const heroProvenanceRows = [
+    {
+      field: "lifecycle",
+      summary: [
+        formatFieldValue(detail, "lifecycle"),
+        latestLifecycleChange?.newContractEnd
+          && latestLifecycleChange.newContractEnd !== latestLifecycleChange.previousContractEnd
+          ? `renewed ${formatShortDate(latestLifecycleChange.newContractEnd)}`
+          : null,
+        formatProvenanceSource(fieldProvenanceMap.get("lifecycle")?.source),
+        fieldProvenanceMap.get("lifecycle")?.updatedAt
+          ? formatShortDate(fieldProvenanceMap.get("lifecycle")!.updatedAt!)
+          : null,
+      ].filter(Boolean).join(" · "),
+      provenance: fieldProvenanceMap.get("lifecycle"),
+      conflict: fieldConflictMap.get("lifecycle"),
+    },
+    {
+      field: "arr",
+      summary: [
+        formatFieldValue(detail, "arr"),
+        formatProvenanceSource(fieldProvenanceMap.get("arr")?.source),
+        fieldProvenanceMap.get("arr")?.updatedAt
+          ? formatShortDate(fieldProvenanceMap.get("arr")!.updatedAt!)
+          : null,
+      ].filter(Boolean).join(" · "),
+      provenance: fieldProvenanceMap.get("arr"),
+      conflict: fieldConflictMap.get("arr"),
+    },
+    {
+      field: "contract_end",
+      summary: [
+        formatFieldValue(detail, "contract_end"),
+        formatProvenanceSource(fieldProvenanceMap.get("contract_end")?.source),
+        fieldProvenanceMap.get("contract_end")?.updatedAt
+          ? formatShortDate(fieldProvenanceMap.get("contract_end")!.updatedAt!)
+          : null,
+      ].filter(Boolean).join(" · "),
+      provenance: fieldProvenanceMap.get("contract_end"),
+      conflict: fieldConflictMap.get("contract_end"),
+    },
+    {
+      field: "nps",
+      summary: [
+        formatFieldValue(detail, "nps"),
+        formatProvenanceSource(fieldProvenanceMap.get("nps")?.source),
+        fieldProvenanceMap.get("nps")?.updatedAt
+          ? formatShortDate(fieldProvenanceMap.get("nps")!.updatedAt!)
+          : null,
+      ].filter(Boolean).join(" · "),
+      provenance: fieldProvenanceMap.get("nps"),
+      conflict: fieldConflictMap.get("nps"),
+    },
+  ].filter((row) => row.summary || row.conflict);
 
   return (
     <>
@@ -413,6 +601,32 @@ export default function AccountDetailEditorial() {
                 <VitalsStrip vitals={buildAccountVitals(detail)} />
               )
             ) : undefined
+          }
+          provenanceSlot={
+            <div className={styles.heroProvenance}>
+              {heroProvenanceRows.map((row) => (
+                <ProvenanceLabel
+                  key={row.field}
+                  label={formatTrackedFieldLabel(row.field)}
+                  summary={row.summary}
+                  conflict={row.conflict ? {
+                    source: row.conflict.source,
+                    suggestedValue: formatSuggestedValue(row.field, row.conflict.suggestedValue),
+                    confidence: row.conflict.confidence,
+                    detectedAt: row.conflict.detectedAt,
+                    onAccept: () => { void handleAcceptConflict(row.field); },
+                    onDismiss: () => { void handleDismissConflict(row.field); },
+                    pending: pendingConflictField === row.field,
+                  } : undefined}
+                />
+              ))}
+              {healthDimensionCount > 0 && intelligence?.enrichedAt ? (
+                <ProvenanceLabel
+                  label="Health"
+                  summary={`${healthDimensionCount} dimensions · last scored ${formatRelativeDate(intelligence.enrichedAt)}`}
+                />
+              ) : null}
+            </div>
           }
         />
         {/* I312: Preset metadata fields */}
@@ -487,6 +701,37 @@ export default function AccountDetailEditorial() {
           </div>
         </div>
       ) : null}
+
+      <div className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>Products</div>
+        <div className={shared.marginContent}>
+          <ChapterHeading title="Products" />
+          {detail.products && detail.products.length > 0 ? (
+            <div className={styles.productList}>
+              {detail.products.map((product) => (
+                <div key={`${product.id}-${product.name}`} className={styles.productRow}>
+                  <div>
+                    <div className={styles.productName}>{product.name}</div>
+                    <div className={styles.productMeta}>
+                      {[product.category, product.status, product.notes].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                  <div className={styles.productSource}>
+                    <ProvenanceLabel
+                      summary={[
+                        formatProvenanceSource(product.source),
+                        `${Math.round(product.confidence * 100)}% confidence`,
+                      ].filter(Boolean).join(" · ")}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.sectionEmpty}>No products captured yet.</p>
+          )}
+        </div>
+      </div>
 
       {/* I393: Portfolio chapter — only for parent accounts */}
       {detail.isParent && detail.children.length > 0 && (
@@ -771,7 +1016,12 @@ export default function AccountDetailEditorial() {
         <div className={shared.marginLabel}>The<br/>Record</div>
         <div className={shared.marginContent}>
           <UnifiedTimeline
-            data={{ ...detail, accountEvents: events, contextEntries: entityCtx.entries }}
+            data={{
+              ...detail,
+              accountEvents: events,
+              lifecycleChanges: detail.lifecycleChanges,
+              contextEntries: entityCtx.entries,
+            }}
             sectionId=""
             actionSlot={<AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />}
           />

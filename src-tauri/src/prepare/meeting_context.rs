@@ -274,6 +274,21 @@ fn gather_account_context(
     ctx["recent_captures"] = get_captures_for_account(db, &entity_match.entity_id, 14);
     ctx["open_actions"] = get_account_actions(db, &entity_match.entity_id);
     ctx["meeting_history"] = get_meeting_history(db, &entity_match.entity_id, 30, 3);
+    if let Ok(products) = db.get_account_products(&entity_match.entity_id) {
+        if !products.is_empty() {
+            ctx["products"] = json!(products
+                .iter()
+                .map(|product| {
+                    json!({
+                        "name": product.name,
+                        "category": product.category,
+                        "status": product.status,
+                        "source": product.source,
+                    })
+                })
+                .collect::<Vec<_>>());
+        }
+    }
     if let Ok(team) = db.get_account_team(&entity_match.entity_id) {
         if !team.is_empty() {
             ctx["account_team"] = json!(team

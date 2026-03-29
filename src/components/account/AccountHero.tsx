@@ -25,6 +25,7 @@ interface AccountHeroProps {
   onSaveField?: (field: string, value: string) => void;
   /** I550: Slot for vitals strip, rendered between name and lede */
   vitalsSlot?: React.ReactNode;
+  provenanceSlot?: React.ReactNode;
 }
 
 
@@ -40,6 +41,7 @@ export function AccountHero({
   onSave: _onSave,
   onSaveField,
   vitalsSlot,
+  provenanceSlot,
 }: AccountHeroProps) {
   // Extract all paragraphs of executive assessment as the narrative
   const paragraphs = intelligence?.executiveAssessment?.split("\n").filter((p) => p.trim()) ?? [];
@@ -101,6 +103,7 @@ export function AccountHero({
 
       {/* I550: Vitals strip between name and narrative */}
       {vitalsSlot}
+      {provenanceSlot ? <div className={styles.provenance}>{provenanceSlot}</div> : null}
 
       {/* Executive assessment narrative — italic serif, all paragraphs */}
       {narrative && (

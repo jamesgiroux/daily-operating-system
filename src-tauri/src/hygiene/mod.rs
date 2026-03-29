@@ -511,6 +511,7 @@ pub(crate) mod tests_common {
             developer_mode: false,
             personality: "professional".to_string(),
             ai_models: crate::types::AiModelConfig::default(),
+            ai_model_routing_version: crate::types::AI_MODEL_ROUTING_VERSION,
             embeddings: crate::types::EmbeddingConfig::default(),
             role: "customer-success".to_string(),
             custom_preset_path: None,

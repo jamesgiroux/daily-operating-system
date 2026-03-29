@@ -126,6 +126,55 @@ pub struct DbAccount {
     pub metadata: Option<String>,
 }
 
+/// Provenance metadata for a tracked account field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountFieldProvenance {
+    pub field: String,
+    pub source: String,
+    pub updated_at: Option<String>,
+}
+
+/// A logged automatic lifecycle change for an account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbLifecycleChange {
+    pub id: i64,
+    pub account_id: String,
+    pub previous_lifecycle: Option<String>,
+    pub new_lifecycle: String,
+    pub previous_stage: Option<String>,
+    pub new_stage: Option<String>,
+    pub previous_contract_end: Option<String>,
+    pub new_contract_end: Option<String>,
+    pub source: String,
+    pub confidence: f64,
+    pub evidence: Option<String>,
+    pub health_score_before: Option<f64>,
+    pub health_score_after: Option<f64>,
+    pub user_response: String,
+    pub response_notes: Option<String>,
+    pub created_at: String,
+    pub reviewed_at: Option<String>,
+}
+
+/// A discovered product or entitlement for an account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountProduct {
+    pub id: i64,
+    pub account_id: String,
+    pub name: String,
+    pub category: Option<String>,
+    pub status: String,
+    pub arr_portion: Option<f64>,
+    pub source: String,
+    pub confidence: f64,
+    pub notes: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 /// A row from `account_stakeholders`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,4 +1,5 @@
 use super::*;
+use rusqlite::OptionalExtension;
 
 impl ActionDb {
     // =========================================================================
@@ -731,6 +732,434 @@ impl ActionDb {
             }
         };
         self.conn.execute(sql, params![value, id, now])?;
+        Ok(())
+    }
+
+    /// Read the renewal stage for an account.
+    pub fn get_account_renewal_stage(&self, account_id: &str) -> Result<Option<String>, DbError> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT renewal_stage FROM accounts WHERE id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map(|value| value.flatten())?)
+    }
+
+    /// Set the renewal stage for an account and update updated_at.
+    pub fn set_account_renewal_stage(
+        &self,
+        account_id: &str,
+        renewal_stage: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE accounts
+             SET renewal_stage = ?1,
+                 updated_at = ?3
+             WHERE id = ?2",
+            params![renewal_stage, account_id, Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    /// Persist provenance metadata for a tracked account field.
+    pub fn set_account_field_provenance(
+        &self,
+        account_id: &str,
+        field: &str,
+        source: &str,
+        updated_at: Option<&str>,
+    ) -> Result<(), DbError> {
+        let (source_col, updated_col) = match field {
+            "arr" => ("arr_source", "arr_updated_at"),
+            "lifecycle" => ("lifecycle_source", "lifecycle_updated_at"),
+            "contract_end" => ("contract_end_source", "contract_end_updated_at"),
+            "nps" => ("nps_source", "nps_updated_at"),
+            _ => {
+                return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                    format!("Field '{field}' does not support provenance"),
+                )))
+            }
+        };
+
+        let sql = format!(
+            "UPDATE accounts SET {source_col} = ?1, {updated_col} = ?2, updated_at = ?4 WHERE id = ?3"
+        );
+        let provenance_updated_at = updated_at
+            .map(str::to_string)
+            .unwrap_or_else(|| Utc::now().to_rfc3339());
+        self.conn.execute(
+            &sql,
+            params![
+                source,
+                provenance_updated_at,
+                account_id,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Fetch provenance metadata for tracked account vitals.
+    pub fn get_account_field_provenance(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<DbAccountFieldProvenance>, DbError> {
+        let row = self.conn.query_row(
+            "SELECT
+                arr_source, arr_updated_at,
+                lifecycle_source, lifecycle_updated_at,
+                contract_end_source, contract_end_updated_at,
+                nps_source, nps_updated_at
+             FROM accounts
+             WHERE id = ?1",
+            params![account_id],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                ))
+            },
+        )?;
+
+        let mut result = Vec::new();
+        let fields = [
+            ("arr", row.0, row.1),
+            ("lifecycle", row.2, row.3),
+            ("contract_end", row.4, row.5),
+            ("nps", row.6, row.7),
+        ];
+        for (field, source, updated_at) in fields {
+            if let Some(source) = source {
+                if !source.is_empty() {
+                    result.push(DbAccountFieldProvenance {
+                        field: field.to_string(),
+                        source,
+                        updated_at,
+                    });
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    /// Insert a lifecycle change log entry and return the new ID.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_lifecycle_change(
+        &self,
+        account_id: &str,
+        previous_lifecycle: Option<&str>,
+        new_lifecycle: &str,
+        previous_stage: Option<&str>,
+        new_stage: Option<&str>,
+        previous_contract_end: Option<&str>,
+        new_contract_end: Option<&str>,
+        source: &str,
+        confidence: f64,
+        evidence: Option<&str>,
+        health_score_before: Option<f64>,
+        health_score_after: Option<f64>,
+    ) -> Result<i64, DbError> {
+        self.conn.execute(
+            "INSERT INTO lifecycle_changes (
+                account_id, previous_lifecycle, new_lifecycle, previous_stage, new_stage,
+                previous_contract_end, new_contract_end, source, confidence, evidence,
+                health_score_before, health_score_after
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                account_id,
+                previous_lifecycle,
+                new_lifecycle,
+                previous_stage,
+                new_stage,
+                previous_contract_end,
+                new_contract_end,
+                source,
+                confidence,
+                evidence,
+                health_score_before,
+                health_score_after,
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Update the user response for a lifecycle change.
+    pub fn set_lifecycle_change_response(
+        &self,
+        change_id: i64,
+        user_response: &str,
+        response_notes: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE lifecycle_changes
+             SET user_response = ?1,
+                 response_notes = ?2,
+                 reviewed_at = datetime('now')
+             WHERE id = ?3",
+            params![user_response, response_notes, change_id],
+        )?;
+        Ok(())
+    }
+
+    /// Fetch recent lifecycle changes for an account, most recent first.
+    pub fn get_account_lifecycle_changes(
+        &self,
+        account_id: &str,
+        limit: usize,
+    ) -> Result<Vec<DbLifecycleChange>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT
+                id, account_id, previous_lifecycle, new_lifecycle, previous_stage, new_stage,
+                previous_contract_end, new_contract_end, source, confidence, evidence,
+                health_score_before, health_score_after, user_response, response_notes,
+                created_at, reviewed_at
+             FROM lifecycle_changes
+             WHERE account_id = ?1
+             ORDER BY created_at DESC, id DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![account_id, limit as i64], |row| {
+            Ok(DbLifecycleChange {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                previous_lifecycle: row.get(2)?,
+                new_lifecycle: row.get(3)?,
+                previous_stage: row.get(4)?,
+                new_stage: row.get(5)?,
+                previous_contract_end: row.get(6)?,
+                new_contract_end: row.get(7)?,
+                source: row.get(8)?,
+                confidence: row.get(9)?,
+                evidence: row.get(10)?,
+                health_score_before: row.get(11)?,
+                health_score_after: row.get(12)?,
+                user_response: row.get(13)?,
+                response_notes: row.get(14)?,
+                created_at: row.get(15)?,
+                reviewed_at: row.get(16)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Fetch a single lifecycle change by ID.
+    pub fn get_lifecycle_change(
+        &self,
+        change_id: i64,
+    ) -> Result<Option<DbLifecycleChange>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT
+                id, account_id, previous_lifecycle, new_lifecycle, previous_stage, new_stage,
+                previous_contract_end, new_contract_end, source, confidence, evidence,
+                health_score_before, health_score_after, user_response, response_notes,
+                created_at, reviewed_at
+             FROM lifecycle_changes
+             WHERE id = ?1",
+        )?;
+        stmt.query_row(params![change_id], |row| {
+            Ok(DbLifecycleChange {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                previous_lifecycle: row.get(2)?,
+                new_lifecycle: row.get(3)?,
+                previous_stage: row.get(4)?,
+                new_stage: row.get(5)?,
+                previous_contract_end: row.get(6)?,
+                new_contract_end: row.get(7)?,
+                source: row.get(8)?,
+                confidence: row.get(9)?,
+                evidence: row.get(10)?,
+                health_score_before: row.get(11)?,
+                health_score_after: row.get(12)?,
+                user_response: row.get(13)?,
+                response_notes: row.get(14)?,
+                created_at: row.get(15)?,
+                reviewed_at: row.get(16)?,
+            })
+        })
+        .optional()
+        .map_err(DbError::from)
+    }
+
+    /// Fetch recent lifecycle changes for dashboard briefing consumption.
+    pub fn get_recent_lifecycle_changes(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<DbLifecycleChange>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT
+                id, account_id, previous_lifecycle, new_lifecycle, previous_stage, new_stage,
+                previous_contract_end, new_contract_end, source, confidence, evidence,
+                health_score_before, health_score_after, user_response, response_notes,
+                created_at, reviewed_at
+             FROM lifecycle_changes
+             WHERE created_at >= datetime('now', '-7 days')
+             ORDER BY created_at DESC, id DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok(DbLifecycleChange {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                previous_lifecycle: row.get(2)?,
+                new_lifecycle: row.get(3)?,
+                previous_stage: row.get(4)?,
+                new_stage: row.get(5)?,
+                previous_contract_end: row.get(6)?,
+                new_contract_end: row.get(7)?,
+                source: row.get(8)?,
+                confidence: row.get(9)?,
+                evidence: row.get(10)?,
+                health_score_before: row.get(11)?,
+                health_score_after: row.get(12)?,
+                user_response: row.get(13)?,
+                response_notes: row.get(14)?,
+                created_at: row.get(15)?,
+                reviewed_at: row.get(16)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get products for an account, ordered by source confidence then name.
+    pub fn get_account_products(&self, account_id: &str) -> Result<Vec<DbAccountProduct>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, account_id, name, category, status, arr_portion, source, confidence, notes, created_at, updated_at
+             FROM account_products
+             WHERE account_id = ?1
+             ORDER BY confidence DESC, lower(name) ASC, id ASC",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(DbAccountProduct {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                name: row.get(2)?,
+                category: row.get(3)?,
+                status: row.get(4)?,
+                arr_portion: row.get(5)?,
+                source: row.get(6)?,
+                confidence: row.get(7)?,
+                notes: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Insert or update a product for an account using source-priority merge logic.
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_account_product(
+        &self,
+        account_id: &str,
+        name: &str,
+        category: Option<&str>,
+        status: &str,
+        arr_portion: Option<f64>,
+        source: &str,
+        confidence: f64,
+        notes: Option<&str>,
+    ) -> Result<i64, DbError> {
+        let source_priority = |value: &str| match value {
+            "user_correction" => 3,
+            "glean" => 2,
+            _ => 1,
+        };
+        let existing = self.conn.query_row(
+            "SELECT id, source FROM account_products WHERE account_id = ?1 AND lower(name) = lower(?2) LIMIT 1",
+            params![account_id, name],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        ).optional()?;
+
+        let now = Utc::now().to_rfc3339();
+        match existing {
+            Some((id, existing_source)) => {
+                if source_priority(source) >= source_priority(&existing_source) {
+                    self.conn.execute(
+                        "UPDATE account_products
+                         SET category = ?1,
+                             status = ?2,
+                             arr_portion = ?3,
+                             source = ?4,
+                             confidence = ?5,
+                             notes = COALESCE(?6, notes),
+                             updated_at = ?8,
+                             name = ?7
+                         WHERE id = ?9",
+                        params![
+                            category,
+                            status,
+                            arr_portion,
+                            source,
+                            confidence,
+                            notes,
+                            name,
+                            now,
+                            id,
+                        ],
+                    )?;
+                }
+                Ok(id)
+            }
+            None => {
+                self.conn.execute(
+                    "INSERT INTO account_products (
+                        account_id, name, category, status, arr_portion, source, confidence, notes, created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+                    params![account_id, name, category, status, arr_portion, source, confidence, notes, now],
+                )?;
+                Ok(self.conn.last_insert_rowid())
+            }
+        }
+    }
+
+    /// Update a specific product row.
+    pub fn update_account_product(
+        &self,
+        product_id: i64,
+        name: &str,
+        status: Option<&str>,
+        notes: Option<&str>,
+        source: &str,
+        confidence: f64,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE account_products
+             SET name = ?1,
+                 status = COALESCE(?2, status),
+                 notes = COALESCE(?3, notes),
+                 source = ?4,
+                 confidence = ?5,
+                 updated_at = ?6
+             WHERE id = ?7",
+            params![
+                name,
+                status,
+                notes,
+                source,
+                confidence,
+                Utc::now().to_rfc3339(),
+                product_id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a product row.
+    pub fn delete_account_product(&self, product_id: i64) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM account_products WHERE id = ?1",
+            params![product_id],
+        )?;
         Ok(())
     }
 

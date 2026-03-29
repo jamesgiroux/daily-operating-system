@@ -32,6 +32,8 @@ pub struct AccountDetailResult {
     pub health: Option<String>,
     pub nps: Option<i32>,
     pub renewal_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_stage: Option<String>,
     pub contract_start: Option<String>,
     pub company_overview: Option<crate::accounts::CompanyOverview>,
     pub strategic_programs: Vec<crate::accounts::StrategicProgram>,
@@ -53,6 +55,14 @@ pub struct AccountDetailResult {
     pub archived: bool,
     #[serde(default)]
     pub objectives: Vec<crate::types::AccountObjective>,
+    #[serde(default)]
+    pub lifecycle_changes: Vec<crate::db::DbLifecycleChange>,
+    #[serde(default)]
+    pub products: Vec<crate::db::DbAccountProduct>,
+    #[serde(default)]
+    pub field_provenance: Vec<crate::db::DbAccountFieldProvenance>,
+    #[serde(default)]
+    pub field_conflicts: Vec<crate::types::AccountFieldConflictSuggestion>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::intelligence::IntelligenceJson>,
 }
@@ -227,6 +237,96 @@ pub async fn update_account_field(
                 &account_id,
                 &field,
                 &value,
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn confirm_lifecycle_change(
+    change_id: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::confirm_lifecycle_change(
+                db,
+                &app_state.signals.engine,
+                change_id,
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn correct_lifecycle_change(
+    change_id: i64,
+    corrected_lifecycle: String,
+    corrected_stage: Option<String>,
+    notes: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::correct_lifecycle_change(
+                db,
+                &app_state.signals.engine,
+                change_id,
+                &corrected_lifecycle,
+                corrected_stage.as_deref(),
+                notes.as_deref(),
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn accept_account_field_conflict(
+    account_id: String,
+    field: String,
+    suggested_value: String,
+    source: String,
+    signal_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::accept_account_field_conflict(
+                db,
+                &app_state,
+                &account_id,
+                &field,
+                &suggested_value,
+                &source,
+                signal_id.as_deref(),
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn dismiss_account_field_conflict(
+    account_id: String,
+    field: String,
+    signal_id: String,
+    source: String,
+    suggested_value: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::dismiss_account_field_conflict(
+                db,
+                &app_state,
+                &account_id,
+                &field,
+                &signal_id,
+                &source,
+                suggested_value.as_deref(),
             )
         })
         .await

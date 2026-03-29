@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use crate::db::ActionDb;
+use crate::pty::AiUsageContext;
 use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 use tauri::Emitter;
@@ -225,10 +226,14 @@ pub async fn enrich_entity(
                 let ai_config_for_enrichment = ai_config.clone();
                 let app_handle_clone = app_handle.cloned();
                 let pty_result = tauri::async_runtime::spawn_blocking(move || {
+                    let usage_context =
+                        AiUsageContext::new("intelligence", "manual_entity_enrichment")
+                            .with_trigger("manual_refresh");
                     run_enrichment(
                         &input_for_enrichment,
                         &ai_config_for_enrichment,
                         app_handle_clone.as_ref(),
+                        usage_context,
                     )
                 })
                 .await;
@@ -266,10 +271,14 @@ pub async fn enrich_entity(
         let ai_config_for_enrichment = ai_config.clone();
         let app_handle_clone = app_handle.cloned();
         let pty_result = tauri::async_runtime::spawn_blocking(move || {
+            let usage_context =
+                AiUsageContext::new("intelligence", "manual_entity_enrichment")
+                    .with_trigger("manual_refresh");
             run_enrichment(
                 &input_for_enrichment,
                 &ai_config_for_enrichment,
                 app_handle_clone.as_ref(),
+                usage_context,
             )
         })
         .await;
