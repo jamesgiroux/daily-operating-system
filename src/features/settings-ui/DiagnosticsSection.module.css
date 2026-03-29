@@ -1,0 +1,599 @@
+/* =============================================================================
+   DiagnosticsSection — CSS module for inline-style extraction
+   Editorial design tokens only. No hard-coded colors.
+   ============================================================================= */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SHARED BUTTON STYLES (migrated from styles.ts inline objects)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border-radius: 4px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btnPrimary {
+  composes: btn;
+  color: var(--color-garden-olive);
+  border: 1px solid var(--color-garden-olive);
+}
+
+.btnGhost {
+  composes: btn;
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-rule-heavy);
+}
+
+.btnDisabledOpacity {
+  opacity: 0.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DEVELOPER TOGGLE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.devToolLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.devToolDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-top: 2px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ENTITY MODE SELECTOR
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.entityModeDescription {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-bottom: 16px;
+}
+
+.entityModeList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.entityModeBtn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.entityModeBtn[data-selected="true"] {
+  border-color: var(--color-desk-charcoal);
+}
+
+.entityModeBtn[data-saving="true"] {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.entityModeIcon {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.entityModeContent {
+  flex: 1;
+}
+
+.entityModeTitle {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.entityModeDesc {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-top: 2px;
+}
+
+.entityModeCheck {
+  color: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SCHEDULE ROW
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.scheduleHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scheduleLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.scheduleStatusGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.scheduleCron {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+}
+
+.scheduleTimezone {
+  opacity: 0.6;
+}
+
+.scheduleRunBtn {
+  background: none;
+  border: none;
+  color: var(--color-text-tertiary);
+  padding: 4px;
+}
+
+.scheduleRunBtn:not(:disabled) {
+  cursor: pointer;
+}
+
+.scheduleRunBtn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MANUAL RUN
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.manualRunDescription {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-bottom: 16px;
+}
+
+.manualRunRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.manualRunSpinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MEETING BACKFILL
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.backfillDescription {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-bottom: 12px;
+}
+
+.backfillPathDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-bottom: 16px;
+}
+
+.backfillCode {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.backfillResultRow {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  margin-bottom: 16px;
+}
+
+.backfillResultHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.backfillResultLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.backfillErrorSection {
+  margin-top: 8px;
+}
+
+.backfillErrorLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-spice-terracotta);
+  margin-bottom: 4px;
+}
+
+.backfillErrorList {
+  max-height: 128px;
+  overflow-y: auto;
+}
+
+.backfillErrorItem {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+  margin-bottom: 2px;
+}
+
+.backfillRunBtn {
+  width: 100%;
+  text-align: center;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DATABASE STORAGE CARD
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.dbCard {
+  margin-top: 8px;
+}
+
+.dbHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dbIconDefault {
+  color: var(--color-text-tertiary);
+}
+
+.dbIconWarning {
+  color: var(--color-turmeric);
+}
+
+.dbIconDanger {
+  color: var(--color-terracotta);
+}
+
+.dbLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.dbSizeDefault {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-left: auto;
+}
+
+.dbSizeWarning {
+  composes: dbSizeDefault;
+  color: var(--color-turmeric);
+}
+
+.dbSizeDanger {
+  composes: dbSizeDefault;
+  color: var(--color-terracotta);
+}
+
+.dbDangerMessage {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-terracotta);
+  margin-bottom: 8px;
+}
+
+.dbExpandBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dbChevron {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.2s ease;
+}
+
+.dbChevronExpanded {
+  composes: dbChevron;
+  transform: rotate(180deg);
+}
+
+.dbTableDetails {
+  margin-top: 8px;
+}
+
+.dbTableRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.dbTableName {
+  color: var(--color-text-secondary);
+}
+
+.dbTableCount {
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   AI USAGE CARD
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.aiCard {
+  margin-top: 8px;
+}
+
+.aiStatGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.aiStatCard {
+  border: 1px solid var(--color-rule-light);
+  padding: 12px 14px;
+}
+
+.aiStatNumber {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  color: var(--color-text-primary);
+  margin-top: 4px;
+}
+
+.aiStatDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-top: 4px;
+}
+
+.aiSectionBlock {
+  margin-top: 16px;
+}
+
+.aiSectionLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.aiGuardCard {
+  border: 1px solid var(--color-rule-light);
+  padding: 12px 14px;
+}
+
+.aiGuardStatus {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.aiGuardDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-top: 6px;
+}
+
+.aiCallSiteRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.aiCallSiteLabel {
+  color: var(--color-text-secondary);
+}
+
+.aiCallSiteCount {
+  color: var(--color-text-tertiary);
+}
+
+.aiNoData {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.aiTrendRow {
+  display: grid;
+  grid-template-columns: 90px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.aiTrendDate {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.aiTrendSummary {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.aiTrendTokens {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ARCHIVED ACCOUNTS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.archivedCard {
+  margin-top: 8px;
+}
+
+.archivedToggleBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.archivedChevron {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+.archivedChevronExpanded {
+  composes: archivedChevron;
+  transform: rotate(180deg);
+}
+
+.archivedList {
+  margin-top: 16px;
+}
+
+.archivedEmpty {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.archivedAccountsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.archivedAccountRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.archivedAccountRowBorder {
+  composes: archivedAccountRow;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.archivedAccountName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.archivedAccountParent {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-left: 8px;
+}
+
+.archivedRestoreBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-garden-sage);
+  background: none;
+  border: 1px solid var(--color-garden-sage);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.archivedRestoreBtn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

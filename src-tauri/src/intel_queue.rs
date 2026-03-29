@@ -1765,6 +1765,7 @@ pub fn write_enrichment_results(
     // I535 Step 11: Dual-write commitments from Glean enrichment to captured_commitments
     if input.entity_type == "account" {
         dual_write_enrichment_commitments(&db, &input.entity_id, &final_intel);
+        dual_write_enrichment_products(&db, &input.entity_id, &final_intel);
     }
 
     // I338: Regenerate person files after intelligence enrichment
@@ -2086,6 +2087,60 @@ fn dual_write_enrichment_commitments(
         ) {
             log::warn!("Failed to emit commitment_captured signal: {}", e);
         }
+    }
+}
+
+/// Dual-write product adoption data from enrichment intelligence into the
+/// `account_products` table, keeping the relational surface in sync with
+/// the intelligence JSON blob.
+fn dual_write_enrichment_products(
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    intel: &IntelligenceJson,
+) {
+    let adoption = match intel.product_adoption.as_ref() {
+        Some(a) => a,
+        None => return,
+    };
+
+    let source = adoption.source.as_deref().unwrap_or("ai_inference");
+    let mut upserted = 0usize;
+
+    for feature in &adoption.feature_adoption {
+        // Parse "Core platform: 95%" → name = "Core platform", adoption_pct ~0.95
+        let (name, _adoption_pct) = if let Some(colon_pos) = feature.find(':') {
+            let raw_name = feature[..colon_pos].trim();
+            let pct_str = feature[colon_pos + 1..].trim().trim_end_matches('%');
+            let pct = pct_str.parse::<f64>().ok().map(|v| v / 100.0);
+            (raw_name.to_string(), pct)
+        } else {
+            (feature.trim().to_string(), None)
+        };
+
+        if name.is_empty() {
+            continue;
+        }
+
+        match db.upsert_account_product(entity_id, &name, None, "active", None, source, 0.55, None)
+        {
+            Ok(_) => upserted += 1,
+            Err(e) => {
+                log::warn!(
+                    "Failed to upsert account product '{}' for {}: {}",
+                    name,
+                    entity_id,
+                    e
+                );
+            }
+        }
+    }
+
+    if upserted > 0 {
+        log::info!(
+            "IntelProcessor: dual-wrote {} products for {} from enrichment",
+            upserted,
+            entity_id,
+        );
     }
 }
 
