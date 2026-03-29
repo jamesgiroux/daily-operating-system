@@ -7,15 +7,37 @@
  *  - select: click to cycle through options
  *  - date: click to open DatePicker popover
  *  - text: click to reveal input, commit on blur/Enter
+ *
+ * Enrichment suggestions render in a secondary section below the values row
+ * when the `conflicts` prop is provided.
  */
 import { useState, useRef, useEffect } from "react";
 import type { PresetVitalField } from "@/types/preset";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
+import {
+  formatProvenanceSource,
+} from "@/components/ui/ProvenanceLabel";
+import { Check, X } from "lucide-react";
 
 /** Loose data shape — uses index signature to accept any entity detail type. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EntityData = Record<string, any>;
+
+export interface VitalConflict {
+  source: string;
+  suggestedValue: string;
+  detectedAt?: string | null;
+  pending?: boolean;
+  onAccept?: () => void;
+  onDismiss?: () => void;
+}
 
 interface EditableVitalsStripProps {
   fields: PresetVitalField[];
@@ -24,6 +46,8 @@ interface EditableVitalsStripProps {
   onFieldChange: (key: string, columnMapping: string | undefined, source: string, value: string) => void;
   /** Extra signal-derived vitals appended read-only (e.g. meeting frequency) */
   extraVitals?: { text: string; highlight?: string }[];
+  /** Field-level enrichment suggestions (accept/dismiss) */
+  conflicts?: Map<string, VitalConflict>;
 }
 
 const highlightColor: Record<string, string> = {
@@ -31,6 +55,13 @@ const highlightColor: Record<string, string> = {
   saffron: "var(--color-spice-saffron)",
   olive: "var(--color-garden-olive)",
   larkspur: "var(--color-garden-larkspur)",
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  arr: "ARR",
+  lifecycle: "Lifecycle",
+  contract_end: "Renewal Date",
+  nps: "NPS",
 };
 
 const HIGHLIGHT_MAP: Record<string, string | undefined> = {
@@ -407,12 +438,155 @@ function VitalField({
   );
 }
 
+/** Suggestion row for a field conflict, rendered in the secondary section. */
+function SuggestionRow({
+  field,
+  conflict,
+}: {
+  field: string;
+  conflict: VitalConflict;
+}) {
+  const label = FIELD_LABELS[field] || field.replace(/_/g, " ");
+  const source = formatProvenanceSource(conflict.source);
+  const sourceMeta = [
+    source,
+    conflict.detectedAt ? formatShortDate(conflict.detectedAt) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 0 10px 12px",
+        borderLeft: "2px dashed var(--color-spice-turmeric)",
+        borderTop: "1px solid var(--color-rule-light)",
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            fontWeight: 500,
+            color: "var(--color-text-primary)",
+            marginBottom: 2,
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 4,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            {conflict.suggestedValue}
+          </span>
+        </div>
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--color-text-tertiary)",
+          }}
+        >
+          {sourceMeta}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={conflict.onAccept}
+                disabled={conflict.pending}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 4,
+                  border: "1px solid var(--color-garden-sage)",
+                  background: "transparent",
+                  cursor: conflict.pending ? "default" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 0,
+                  opacity: conflict.pending ? 0.5 : 1,
+                }}
+              >
+                <Check
+                  size={12}
+                  strokeWidth={2}
+                  color="var(--color-garden-sage)"
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              Accept this update
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={conflict.onDismiss}
+                disabled={conflict.pending}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 4,
+                  border: "1px solid var(--color-spice-terracotta)",
+                  background: "transparent",
+                  cursor: conflict.pending ? "default" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 0,
+                  opacity: conflict.pending ? 0.5 : 1,
+                }}
+              >
+                <X
+                  size={12}
+                  strokeWidth={2}
+                  color="var(--color-spice-terracotta)"
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              Dismiss — keep current value
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    </div>
+  );
+}
+
 export function EditableVitalsStrip({
   fields,
   entityData,
   metadata,
   onFieldChange,
   extraVitals,
+  conflicts,
 }: EditableVitalsStripProps) {
   if (fields.length === 0) return null;
 
@@ -452,6 +626,8 @@ export function EditableVitalsStrip({
     }
   }
 
+  const hasSuggestions = conflicts && conflicts.size > 0;
+
   return (
     <div
       style={{
@@ -462,7 +638,7 @@ export function EditableVitalsStrip({
         padding: "14px 0",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap", paddingLeft: 14, paddingRight: 14 }}>
         {allItems.map((item, i) => (
           <span key={i} style={{ display: "flex", alignItems: "center", gap: 24 }}>
             {i > 0 && (
@@ -480,6 +656,14 @@ export function EditableVitalsStrip({
           </span>
         ))}
       </div>
+
+      {hasSuggestions && (
+        <div style={{ paddingTop: 0 }}>
+          {Array.from(conflicts!.entries()).map(([field, conflict]) => (
+            <SuggestionRow key={field} field={field} conflict={conflict} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
