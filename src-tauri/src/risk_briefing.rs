@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
 use crate::intelligence::IntelligenceContext;
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::types::{
     AiModelConfig, RiskBottomLine, RiskBriefing, RiskCover, RiskStakes, RiskTheAsk, RiskThePlan,
     RiskWhatHappened,
@@ -476,6 +476,11 @@ pub fn run_risk_enrichment(
 
         std::thread::spawn(move || {
             let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_models)
+                .with_usage_context(
+                    AiUsageContext::new("risk_briefing", "section_generation")
+                        .with_trigger(&section_name)
+                        .with_tier(ModelTier::Extraction),
+                )
                 .with_timeout(30)
                 .with_nice_priority(10);
             let result = pty

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::db::{ActionDb, DbProcessingLog};
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use crate::types::{
     CalendarEvent, CapturedAction, ChampionHealth, CompetitorMention, EngagementSignals,
@@ -258,6 +258,11 @@ pub fn process_transcript_with_kind(
         phase1_prompt = format!("{}\n\n{}", ctx, phase1_prompt);
     }
     let pty1 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+        .with_usage_context(
+            AiUsageContext::new("transcript", "phase1_core_extraction")
+                .with_trigger("transcript_process")
+                .with_tier(ModelTier::Extraction),
+        )
         .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
     let phase1_output = match pty1.spawn_claude(workspace, &phase1_prompt) {
         Ok(o) => o.stdout,
@@ -386,6 +391,11 @@ pub fn process_transcript_with_kind(
     // ── Phase 2: Intelligence extraction (wins, risks, decisions, sentiment, champion) ──
     let phase2_prompt = build_phase2_prompt(meeting, &content, content_kind, &summary);
     let pty2 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+        .with_usage_context(
+            AiUsageContext::new("transcript", "phase2_intelligence_extraction")
+                .with_trigger("transcript_process")
+                .with_tier(ModelTier::Extraction),
+        )
         .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
 
     let (mut wins, mut risks, mut decisions, sentiment, mut champion_health) =
@@ -503,6 +513,11 @@ pub fn process_transcript_with_kind(
     // ── Phase 3: Deep analysis (dynamics, commitments, role changes) ──
     let phase3_prompt = build_phase3_prompt(meeting, &content, content_kind, &summary);
     let pty3 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+        .with_usage_context(
+            AiUsageContext::new("transcript", "phase3_deep_analysis")
+                .with_trigger("transcript_process")
+                .with_tier(ModelTier::Extraction),
+        )
         .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
 
     let (interaction_dynamics, role_changes, commitments) =
@@ -1579,6 +1594,11 @@ Review context:
     );
 
     let pty = PtyManager::for_tier(ModelTier::Mechanical, ai_config)
+        .with_usage_context(
+            AiUsageContext::new("transcript", "role_review")
+                .with_trigger("transcript_process")
+                .with_tier(ModelTier::Mechanical),
+        )
         .with_timeout(TRANSCRIPT_ROLE_REVIEW_TIMEOUT_SECS);
     let output = match pty.spawn_claude(workspace, &prompt) {
         Ok(o) => o.stdout,

@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::db::emails::EmailEnrichmentUpdate;
 use crate::db::types::DbEmail;
 use crate::db::ActionDb;
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use tauri::Emitter;
 
@@ -312,6 +312,11 @@ pub fn enrich_pending_emails_two_phase(
         };
 
         let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
+            .with_usage_context(
+                AiUsageContext::new("email", "relationship_email_enrichment")
+                    .with_trigger("batch_refresh")
+                    .with_tier(ModelTier::Extraction),
+            )
             .with_timeout(30)
             .with_nice_priority(10);
 
