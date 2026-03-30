@@ -460,7 +460,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         };
         db.upsert_account(&acct).expect("upsert");
 
