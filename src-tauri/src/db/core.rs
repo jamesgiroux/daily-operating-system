@@ -161,7 +161,13 @@ impl ActionDb {
         let _ = Self::backfill_meeting_user_layer(&conn);
         let _ = Self::backfill_stakeholder_columns(&conn);
 
-        Ok(Self { conn })
+        let db = Self { conn };
+
+        // One-time initialization tasks (guarded by init_tasks table).
+        // These run exactly once per database and are safe to call on every startup.
+        let _ = db.run_guarded_init_backfill_account_domains();
+
+        Ok(db)
     }
 
     /// Open without encryption. Used for tests only.
@@ -182,7 +188,10 @@ impl ActionDb {
         let _ = Self::backfill_meeting_identity(&conn);
         let _ = Self::backfill_meeting_user_layer(&conn);
         let _ = Self::backfill_stakeholder_columns(&conn);
-        Ok(Self { conn })
+
+        let db = Self { conn };
+        let _ = db.run_guarded_init_backfill_account_domains();
+        Ok(db)
     }
 
     /// Open the database in read-only mode. Used by the MCP binary for safe
@@ -603,6 +612,55 @@ impl ActionDb {
                 updated
             );
         }
+        Ok(())
+    }
+
+    /// Check if a one-time init task has been completed.
+    ///
+    /// Returns true if the task has already run and been marked in init_tasks.
+    fn is_init_task_completed(conn: &Connection, task_name: &str) -> Result<bool, DbError> {
+        let completed = conn
+            .query_row(
+                "SELECT 1 FROM init_tasks WHERE task_name = ?1",
+                params![task_name],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+        Ok(completed)
+    }
+
+    /// Mark a one-time init task as completed.
+    fn mark_init_task_completed(conn: &Connection, task_name: &str) -> Result<(), DbError> {
+        conn.execute(
+            "INSERT OR IGNORE INTO init_tasks (task_name) VALUES (?1)",
+            params![task_name],
+        )?;
+        Ok(())
+    }
+
+    /// Guarded backfill: Account domains from meeting attendees (Path 2b entity resolution).
+    ///
+    /// Runs exactly once. Subsequent calls are guarded by init_tasks table.
+    fn run_guarded_init_backfill_account_domains(&self) -> Result<(), DbError> {
+        const TASK_NAME: &str = "backfill_account_domains_v1";
+
+        if Self::is_init_task_completed(&self.conn, TASK_NAME)? {
+            return Ok(());
+        }
+
+        // Run the backfill
+        let inserted = self.backfill_account_domains_from_meetings()?;
+
+        // Mark task as complete
+        Self::mark_init_task_completed(&self.conn, TASK_NAME)?;
+
+        if inserted > 0 {
+            log::info!(
+                "Entity resolution: backfilled {} account→domain mappings from meeting attendees",
+                inserted
+            );
+        }
+
         Ok(())
     }
 }
