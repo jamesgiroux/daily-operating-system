@@ -430,13 +430,18 @@ impl GleanIntelligenceProvider {
         let mut intel = intel;
         stamp_glean_product_source(&mut intel);
 
+        // Path 2c: Extract domains from Glean-enriched intelligence data
+        // (company_context.website, stakeholder emails, org_health.website_url)
+        extract_domains_for_glean_enrichment(&mut intel);
+
         log::info!(
-            "[I574] Glean parallel enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}",
+            "[I574] Glean parallel enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}, domains: {}",
             entity_name,
             intel.executive_assessment.is_some(),
             intel.risks.len(),
             intel.recent_wins.len(),
             intel.stakeholder_insights.len(),
+            intel.domains.len(),
         );
 
         Ok(intel)
@@ -538,13 +543,18 @@ impl GleanIntelligenceProvider {
         let mut intel = intel;
         stamp_glean_product_source(&mut intel);
 
+        // Path 2c: Extract domains from Glean-enriched intelligence data
+        // (company_context.website, stakeholder emails, org_health.website_url)
+        extract_domains_for_glean_enrichment(&mut intel);
+
         log::info!(
-            "[I535] Glean enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}",
+            "[I535] Glean enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}, domains: {}",
             entity_name,
             intel.executive_assessment.is_some(),
             intel.risks.len(),
             intel.recent_wins.len(),
             intel.stakeholder_insights.len(),
+            intel.domains.len(),
         );
 
         Ok(intel)
@@ -611,6 +621,21 @@ impl GleanIntelligenceProvider {
     pub fn endpoint(&self) -> &str {
         &self.endpoint
     }
+}
+
+/// Path 2c: Placeholder for domain extraction from Glean enrichment.
+///
+/// IntelligenceJson now has an optional `domains` field that can be populated by:
+/// 1. Glean extracts domain from company_context (future: if Glean adds website field)
+/// 2. Email classification pipeline (extract from meeting attendees)
+/// 3. Enrichment future phases (if Glean company data includes domains)
+///
+/// For now, this function is a no-op. When Glean responses include domain data,
+/// this is where extraction logic will be added.
+fn extract_domains_for_glean_enrichment(_intel: &mut IntelligenceJson) {
+    // TODO: When Glean responses include firmographic domain data,
+    // extract and populate _intel.domains here.
+    // This hook is in place for easy future enhancement.
 }
 
 /// I575: Write progressive dimension state to DB during Glean parallel enrichment.
