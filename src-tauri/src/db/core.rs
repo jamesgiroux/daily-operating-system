@@ -6,7 +6,7 @@
 //! SQLite is not disposable — important state lives here and is written back to the
 //! filesystem at natural synchronization points (archive, dashboard regeneration).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::types::*;
@@ -662,6 +662,132 @@ impl ActionDb {
         }
 
         Ok(())
+    }
+
+    /// I644: One-time backfill of dashboard.json narrative fields into DB columns.
+    ///
+    /// Iterates accounts with `tracker_path IS NOT NULL AND company_overview IS NULL`,
+    /// reads their dashboard.json, and writes the fields to DB.
+    /// Same for projects.
+    pub fn backfill_dashboard_json_to_db(&self, workspace: &Path) -> Result<usize, DbError> {
+        const TASK_NAME: &str = "backfill_dashboard_json_to_db_v1";
+
+        if Self::is_init_task_completed(&self.conn, TASK_NAME)? {
+            return Ok(0);
+        }
+
+        let mut count = 0usize;
+
+        // Backfill accounts
+        let accounts: Vec<(String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, name FROM accounts \
+                 WHERE tracker_path IS NOT NULL AND company_overview IS NULL",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+
+        for (account_id, _account_name) in &accounts {
+            if let Ok(Some(account)) = self.get_account(account_id) {
+                let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+                let json_path = account_dir.join("dashboard.json");
+                if json_path.exists() {
+                    match crate::accounts::read_account_json(&json_path) {
+                        Ok(result) => {
+                            let ov_json = result
+                                .json
+                                .company_overview
+                                .and_then(|ov| serde_json::to_string(&ov).ok());
+                            let prg_json = if result.json.strategic_programs.is_empty() {
+                                None
+                            } else {
+                                serde_json::to_string(&result.json.strategic_programs).ok()
+                            };
+                            let notes = result.json.notes;
+                            let now = chrono::Utc::now().to_rfc3339();
+                            if let Err(e) = self.conn.execute(
+                                "UPDATE accounts SET company_overview = ?1, strategic_programs = ?2, \
+                                 notes = ?3, updated_at = ?4 WHERE id = ?5",
+                                rusqlite::params![ov_json, prg_json, notes, now, account_id],
+                            ) {
+                                log::warn!(
+                                    "I644 backfill: failed to update account {}: {}",
+                                    account_id, e
+                                );
+                            } else {
+                                count += 1;
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "I644 backfill: failed to read dashboard.json for account {}: {}",
+                                account_id, e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Backfill projects
+        let projects: Vec<(String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, name FROM projects \
+                 WHERE tracker_path IS NOT NULL AND description IS NULL",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+
+        for (project_id, project_name) in &projects {
+            let project_dir = crate::projects::project_dir(workspace, project_name);
+            let json_path = project_dir.join("dashboard.json");
+            if json_path.exists() {
+                match crate::projects::read_project_json(&json_path) {
+                    Ok(result) => {
+                        let ms_json = if result.json.milestones.is_empty() {
+                            None
+                        } else {
+                            serde_json::to_string(&result.json.milestones).ok()
+                        };
+                        let now = chrono::Utc::now().to_rfc3339();
+                        if let Err(e) = self.conn.execute(
+                            "UPDATE projects SET description = ?1, milestones = ?2, \
+                             notes = ?3, updated_at = ?4 WHERE id = ?5",
+                            rusqlite::params![
+                                result.json.description,
+                                ms_json,
+                                result.json.notes,
+                                now,
+                                project_id
+                            ],
+                        ) {
+                            log::warn!(
+                                "I644 backfill: failed to update project {}: {}",
+                                project_id, e
+                            );
+                        } else {
+                            count += 1;
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "I644 backfill: failed to read dashboard.json for project {}: {}",
+                            project_id, e
+                        );
+                    }
+                }
+            }
+        }
+
+        Self::mark_init_task_completed(&self.conn, TASK_NAME)?;
+
+        Ok(count)
     }
 }
 

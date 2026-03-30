@@ -112,16 +112,13 @@ pub async fn get_child_projects_list(
 
 /// Get full detail for a project by ID.
 ///
-/// Loads project from DB, reads dashboard.json + intelligence.json,
-/// fetches actions, meetings, people, signals, captures, and email signals.
+/// I644: All data from DB — no filesystem reads on the detail page path.
+/// Fetches actions, meetings, people, signals, captures, and email signals.
 /// I388: Also resolves parent/child hierarchy.
 pub async fn get_project_detail(
     project_id: &str,
     state: &AppState,
 ) -> Result<ProjectDetailResult, String> {
-    // Read config outside DB lock for workspace path
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
-
     let project_id = project_id.to_string();
     state
         .db_read(move |db| {
@@ -130,28 +127,19 @@ pub async fn get_project_detail(
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Project not found: {}", project_id))?;
 
-            // Read narrative fields from dashboard.json + intelligence.json if they exist
-            let (description, milestones, notes, intelligence) = if let Some(ref config) = config {
-                let workspace = Path::new(&config.workspace_path);
-                let project_dir = crate::projects::project_dir(workspace, &project.name);
-                let json_path = project_dir.join("dashboard.json");
-                let (desc, ms, nt) = if json_path.exists() {
-                    match crate::projects::read_project_json(&json_path) {
-                        Ok(result) => (
-                            result.json.description,
-                            result.json.milestones,
-                            result.json.notes,
-                        ),
-                        Err(_) => (None, Vec::new(), None),
-                    }
-                } else {
-                    (None, Vec::new(), None)
-                };
-                let intel = db.get_entity_intelligence(&project_id).ok().flatten();
-                (desc, ms, nt, intel)
-            } else {
-                (None, Vec::new(), None, None)
-            };
+            // I644: Read narrative fields from DB columns (promoted from dashboard.json).
+            let description = project.description.clone();
+            let milestones: Vec<crate::projects::ProjectMilestone> = project
+                .milestones
+                .as_ref()
+                .and_then(|json| serde_json::from_str(json).ok())
+                .unwrap_or_default();
+            let notes = project.notes.clone();
+            // I644: Intelligence from DB only — no filesystem fallback.
+            let intelligence = db
+                .get_entity_intelligence(&project_id)
+                .ok()
+                .flatten();
 
             let open_actions = db
                 .get_project_actions(&project_id)
@@ -269,10 +257,7 @@ pub async fn create_project(
                 tracker_path: Some(format!("Projects/{}", validated_name_clone)),
                 parent_id,
                 updated_at: now,
-                archived: false,
-                keywords: None,
-                keywords_extracted_at: None,
-                metadata: None,
+                ..Default::default()
             };
 
             db.upsert_project(&project).map_err(|e| e.to_string())?;
@@ -471,12 +456,8 @@ pub fn bulk_create_projects(
             owner: None,
             target_date: None,
             tracker_path: Some(format!("Projects/{}", name)),
-            parent_id: None,
             updated_at: now,
-            archived: false,
-            keywords: None,
-            keywords_extracted_at: None,
-            metadata: None,
+            ..Default::default()
         };
 
         db.upsert_project(&project).map_err(|e| e.to_string())?;

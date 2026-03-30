@@ -545,18 +545,13 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
             lifecycle: json.structured.lifecycle.clone(),
             arr: json.structured.arr,
             health: json.structured.health.clone(),
-            contract_start: None,
             contract_end: json.structured.renewal_date.clone(),
             nps: json.structured.nps,
             tracker_path: Some(tracker_path),
             parent_id: effective_parent_id,
             account_type: crate::db::AccountType::Customer,
             updated_at,
-            archived: false,
-            keywords: None,
-            keywords_extracted_at: None,
-            metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         },
         json,
     })
@@ -1039,7 +1034,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         }
     }
 
@@ -1418,7 +1413,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         };
 
         write_account_json(workspace, &account, None, &db).unwrap();
@@ -1501,7 +1496,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         };
         db.upsert_account(&parent).unwrap();
 
@@ -1523,7 +1518,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         };
         db.upsert_account(&child1).unwrap();
 
@@ -1544,7 +1539,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         };
         db.upsert_account(&child2).unwrap();
 
@@ -1582,7 +1577,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -1604,7 +1599,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         })
         .unwrap();
 
@@ -1625,7 +1620,7 @@ END_ENRICHMENT";
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         })
         .unwrap();
 

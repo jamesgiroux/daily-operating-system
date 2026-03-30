@@ -67,13 +67,11 @@ impl ActionDb {
 
     /// Get an account by ID.
     pub fn get_account(&self, id: &str) -> Result<Option<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata, commercial_stage
-             FROM accounts
-             WHERE id = ?1",
-        )?;
+        let sql = format!(
+            "SELECT {} FROM accounts WHERE id = ?1",
+            Self::ACCOUNT_COLUMNS
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
 
         let mut rows = stmt.query_map(params![id], Self::map_account_row)?;
 
@@ -85,13 +83,11 @@ impl ActionDb {
 
     /// Get an account by name (case-insensitive).
     pub fn get_account_by_name(&self, name: &str) -> Result<Option<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata, commercial_stage
-             FROM accounts
-             WHERE LOWER(name) = LOWER(?1)",
-        )?;
+        let sql = format!(
+            "SELECT {} FROM accounts WHERE LOWER(name) = LOWER(?1)",
+            Self::ACCOUNT_COLUMNS
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
 
         let mut rows = stmt.query_map(params![name], Self::map_account_row)?;
 
@@ -103,63 +99,59 @@ impl ActionDb {
 
     /// Get all accounts, ordered by name.
     pub fn get_all_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata, commercial_stage
-             FROM accounts WHERE archived = 0 ORDER BY name",
-        )?;
+        let sql = format!(
+            "SELECT {} FROM accounts WHERE archived = 0 ORDER BY name",
+            Self::ACCOUNT_COLUMNS
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Get top-level accounts (no parent), ordered by name.
     pub fn get_top_level_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata, commercial_stage
-             FROM accounts WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
-        )?;
+        let sql = format!(
+            "SELECT {} FROM accounts WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
+            Self::ACCOUNT_COLUMNS
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Get child accounts for a parent, ordered by name.
     pub fn get_child_accounts(&self, parent_id: &str) -> Result<Vec<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata, commercial_stage
-             FROM accounts WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
-        )?;
+        let sql = format!(
+            "SELECT {} FROM accounts WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
+            Self::ACCOUNT_COLUMNS
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![parent_id], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Walk the parent_id chain to get all ancestors (I316: n-level nesting).
     pub fn get_account_ancestors(&self, account_id: &str) -> Result<Vec<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
+        let sql = format!(
             "WITH RECURSIVE ancestors(id) AS (
                 SELECT parent_id FROM accounts WHERE id = ?1
                 UNION ALL
                 SELECT a.parent_id FROM accounts a JOIN ancestors anc ON a.id = anc.id
                 WHERE a.parent_id IS NOT NULL
             )
-            SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                   nps, tracker_path, parent_id, account_type, updated_at, archived,
-                   keywords, keywords_extracted_at, metadata, commercial_stage
-            FROM accounts
+            SELECT {} FROM accounts
             WHERE id IN (SELECT id FROM ancestors WHERE id IS NOT NULL)
             ORDER BY id",
-        )?;
+            Self::ACCOUNT_COLUMNS
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![account_id], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Get all descendants using recursive CTE with depth limit (I316: n-level nesting).
     pub fn get_descendant_accounts(&self, ancestor_id: &str) -> Result<Vec<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
+        let sql = format!(
             "WITH RECURSIVE descendants(id, depth) AS (
                 SELECT id, 1 FROM accounts WHERE parent_id = ?1
                 UNION ALL
@@ -167,15 +159,13 @@ impl ActionDb {
                 JOIN descendants d ON a.parent_id = d.id
                 WHERE d.depth < 10
             )
-            SELECT acc.id, acc.name, acc.lifecycle, acc.arr, acc.health,
-                   acc.contract_start, acc.contract_end, acc.nps, acc.tracker_path,
-                   acc.parent_id, acc.account_type, acc.updated_at, acc.archived,
-                   acc.keywords, acc.keywords_extracted_at, acc.metadata, acc.commercial_stage
-            FROM accounts acc
+            SELECT {} FROM accounts acc
             JOIN descendants d ON acc.id = d.id
             WHERE acc.archived = 0
             ORDER BY acc.name",
-        )?;
+            Self::account_columns_aliased("acc")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![ancestor_id], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
@@ -213,59 +203,39 @@ impl ActionDb {
         &self,
         include_archived: bool,
     ) -> Result<Vec<(DbAccount, Vec<String>)>, DbError> {
+        let acols = Self::account_columns_aliased("a");
         let query = if include_archived {
-            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
-                    a.contract_end, a.nps, a.tracker_path, a.parent_id, a.account_type,
-                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata, a.commercial_stage,
-                    ad.domain
-             FROM accounts a
-             LEFT JOIN account_domains ad ON a.id = ad.account_id
-             ORDER BY a.id, ad.domain"
+            format!(
+                "SELECT {}, ad.domain FROM accounts a \
+                 LEFT JOIN account_domains ad ON a.id = ad.account_id \
+                 ORDER BY a.id, ad.domain",
+                acols
+            )
         } else {
-            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
-                    a.contract_end, a.nps, a.tracker_path, a.parent_id, a.account_type,
-                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata, a.commercial_stage,
-                    ad.domain
-             FROM accounts a
-             LEFT JOIN account_domains ad ON a.id = ad.account_id
-             WHERE a.archived = 0
-             ORDER BY a.id, ad.domain"
+            format!(
+                "SELECT {}, ad.domain FROM accounts a \
+                 LEFT JOIN account_domains ad ON a.id = ad.account_id \
+                 WHERE a.archived = 0 \
+                 ORDER BY a.id, ad.domain",
+                acols
+            )
         };
 
-        let mut stmt = self.conn.prepare(query)?;
+        let mut stmt = self.conn.prepare(&query)?;
         let mut rows = stmt.query([])?;
 
         let mut result: Vec<(DbAccount, Vec<String>)> = Vec::new();
         let mut current_id: Option<String> = None;
+        // Domain column follows all ACCOUNT_COLUMNS (39 columns, 0-indexed → index 39).
+        let domain_idx = 39;
 
         while let Some(row) = rows.next()? {
             let account_id: String = row.get(0)?;
-            let domain: Option<String> = row.get(17)?;
+            let domain: Option<String> = row.get(domain_idx)?;
 
             if current_id.as_deref() != Some(&account_id) {
-                // New account — push a new entry
-                let account = DbAccount {
-                    id: account_id.clone(),
-                    name: row.get(1)?,
-                    lifecycle: row.get(2)?,
-                    arr: row.get(3)?,
-                    health: row.get(4)?,
-                    contract_start: row.get(5)?,
-                    contract_end: row.get(6)?,
-                    nps: row.get(7)?,
-                    tracker_path: row.get(8)?,
-                    parent_id: row.get(9)?,
-                    account_type: AccountType::from_db(
-                        &row.get::<_, String>(10)
-                            .unwrap_or_else(|_| "customer".to_string()),
-                    ),
-                    updated_at: row.get(11)?,
-                    archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
-                    keywords: row.get(13).unwrap_or(None),
-                    keywords_extracted_at: row.get(14).unwrap_or(None),
-                    metadata: row.get(15).unwrap_or(None),
-                    commercial_stage: row.get(16).unwrap_or(None),
-                };
+                // New account — push a new entry via map helper
+                let account = Self::map_account_row(row)?;
                 let domains = domain.into_iter().collect();
                 result.push((account, domains));
                 current_id = Some(account_id);
@@ -290,16 +260,14 @@ impl ActionDb {
             return Ok(Vec::new());
         }
 
-        let mut stmt = self.conn.prepare(
-            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
-                    a.nps, a.tracker_path, a.parent_id, a.account_type,
-                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata, a.commercial_stage
-             FROM accounts a
-             INNER JOIN account_domains d ON d.account_id = a.id
-             WHERE d.domain = ?1
-               AND a.archived = 0
+        let sql = format!(
+            "SELECT {} FROM accounts a \
+             INNER JOIN account_domains d ON d.account_id = a.id \
+             WHERE d.domain = ?1 AND a.archived = 0 \
              ORDER BY a.account_type ASC, a.name ASC",
-        )?;
+            Self::account_columns_aliased("a")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![normalized], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
@@ -390,15 +358,13 @@ impl ActionDb {
 
     /// Root internal organization account (top-level internal account).
     pub fn get_internal_root_account(&self) -> Result<Option<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata, commercial_stage
-             FROM accounts
-             WHERE account_type = 'internal' AND parent_id IS NULL AND archived = 0
-             ORDER BY updated_at DESC
-             LIMIT 1",
-        )?;
+        let sql = format!(
+            "SELECT {} FROM accounts \
+             WHERE account_type = 'internal' AND parent_id IS NULL AND archived = 0 \
+             ORDER BY updated_at DESC LIMIT 1",
+            Self::ACCOUNT_COLUMNS
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let mut rows = stmt.query_map([], Self::map_account_row)?;
         match rows.next() {
             Some(row) => Ok(Some(row?)),
@@ -408,14 +374,13 @@ impl ActionDb {
 
     /// All active internal accounts.
     pub fn get_internal_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata, commercial_stage
-             FROM accounts
-             WHERE account_type = 'internal' AND archived = 0
+        let sql = format!(
+            "SELECT {} FROM accounts \
+             WHERE account_type = 'internal' AND archived = 0 \
              ORDER BY name",
-        )?;
+            Self::ACCOUNT_COLUMNS
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
@@ -1767,6 +1732,31 @@ impl ActionDb {
         })
     }
 
+    /// The column list shared by all account SELECT queries (I644).
+    const ACCOUNT_COLUMNS: &'static str =
+        "id, name, lifecycle, arr, health, contract_start, contract_end, \
+         nps, tracker_path, parent_id, account_type, updated_at, archived, \
+         keywords, keywords_extracted_at, metadata, commercial_stage, \
+         arr_range_low, arr_range_high, \
+         renewal_likelihood, renewal_likelihood_source, renewal_likelihood_updated_at, \
+         renewal_model, renewal_pricing_method, \
+         support_tier, support_tier_source, support_tier_updated_at, \
+         active_subscription_count, \
+         growth_potential_score, growth_potential_score_source, \
+         icp_fit_score, icp_fit_score_source, \
+         primary_product, \
+         customer_status, customer_status_source, customer_status_updated_at, \
+         company_overview, strategic_programs, notes";
+
+    /// Helper: prefix every column in ACCOUNT_COLUMNS with a table alias.
+    fn account_columns_aliased(alias: &str) -> String {
+        Self::ACCOUNT_COLUMNS
+            .split(", ")
+            .map(|col| format!("{}.{}", alias, col.trim()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     /// Helper: map a row to `DbAccount`.
     pub(crate) fn map_account_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbAccount> {
         Ok(DbAccount {
@@ -1790,6 +1780,30 @@ impl ActionDb {
             keywords_extracted_at: row.get(14).unwrap_or(None),
             metadata: row.get(15).unwrap_or(None),
             commercial_stage: row.get(16).unwrap_or(None),
+            // I644 fact columns (migration 082)
+            arr_range_low: row.get(17).unwrap_or(None),
+            arr_range_high: row.get(18).unwrap_or(None),
+            renewal_likelihood: row.get(19).unwrap_or(None),
+            renewal_likelihood_source: row.get(20).unwrap_or(None),
+            renewal_likelihood_updated_at: row.get(21).unwrap_or(None),
+            renewal_model: row.get(22).unwrap_or(None),
+            renewal_pricing_method: row.get(23).unwrap_or(None),
+            support_tier: row.get(24).unwrap_or(None),
+            support_tier_source: row.get(25).unwrap_or(None),
+            support_tier_updated_at: row.get(26).unwrap_or(None),
+            active_subscription_count: row.get(27).unwrap_or(None),
+            growth_potential_score: row.get(28).unwrap_or(None),
+            growth_potential_score_source: row.get(29).unwrap_or(None),
+            icp_fit_score: row.get(30).unwrap_or(None),
+            icp_fit_score_source: row.get(31).unwrap_or(None),
+            primary_product: row.get(32).unwrap_or(None),
+            customer_status: row.get(33).unwrap_or(None),
+            customer_status_source: row.get(34).unwrap_or(None),
+            customer_status_updated_at: row.get(35).unwrap_or(None),
+            // I644: dashboard.json fields promoted to DB (migration 083)
+            company_overview: row.get(36).unwrap_or(None),
+            strategic_programs: row.get(37).unwrap_or(None),
+            notes: row.get(38).unwrap_or(None),
         })
     }
 
@@ -2008,12 +2022,11 @@ impl ActionDb {
 
     /// Get archived accounts (top-level + children).
     pub fn get_archived_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, account_type, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata, commercial_stage
-             FROM accounts WHERE archived = 1 ORDER BY name",
-        )?;
+        let sql = format!(
+            "SELECT {} FROM accounts WHERE archived = 1 ORDER BY name",
+            Self::ACCOUNT_COLUMNS
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
@@ -2270,20 +2283,174 @@ impl ActionDb {
 
     /// Get accounts with renewal_date (contract_end) in the past and no churn event.
     pub fn get_accounts_past_renewal(&self) -> Result<Vec<DbAccount>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
-                    a.nps, a.tracker_path, a.parent_id, a.account_type, a.updated_at, a.archived,
-                    a.keywords, a.keywords_extracted_at, a.metadata, a.commercial_stage
-             FROM accounts a
-             WHERE a.contract_end IS NOT NULL
-               AND a.contract_end < date('now')
-               AND a.archived = 0
-               AND a.id NOT IN (
-                   SELECT account_id FROM account_events WHERE event_type = 'churn'
-               )
+        let sql = format!(
+            "SELECT {} FROM accounts a \
+             WHERE a.contract_end IS NOT NULL \
+               AND a.contract_end < date('now') \
+               AND a.archived = 0 \
+               AND a.id NOT IN ( \
+                   SELECT account_id FROM account_events WHERE event_type = 'churn' \
+               ) \
              ORDER BY a.contract_end",
-        )?;
+            Self::account_columns_aliased("a")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    // =========================================================================
+    // Account fact upserts (I644)
+    // =========================================================================
+
+    /// Source priority for fact writes: user > salesforce > zendesk > glean > ai.
+    fn source_priority(source: &str) -> i32 {
+        match source {
+            "user" | "user_correction" => 4,
+            "salesforce" => 3,
+            "zendesk" => 2,
+            "glean" => 1,
+            "ai" | "inference" => 0,
+            _ => 0,
+        }
+    }
+
+    /// Allowed field names for `upsert_account_fact` (I644).
+    /// Each entry is (field, has_source, has_updated_at).
+    const FACT_FIELDS: &'static [(&'static str, bool, bool)] = &[
+        ("arr_range_low", false, false),
+        ("arr_range_high", false, false),
+        ("renewal_likelihood", true, true),
+        ("renewal_model", false, false),
+        ("renewal_pricing_method", false, false),
+        ("support_tier", true, true),
+        ("active_subscription_count", false, false),
+        ("growth_potential_score", true, false),
+        ("icp_fit_score", true, false),
+        ("primary_product", false, false),
+        ("customer_status", true, true),
+        ("commercial_stage", false, false),
+        ("renewal_stage", false, false),
+    ];
+
+    /// Update a single account fact field with source tracking (I644).
+    ///
+    /// Only overwrites if the new source priority >= existing source priority.
+    /// Source priority: user (4) > salesforce (3) > zendesk (2) > glean (1) > ai (0).
+    ///
+    /// Returns `Ok(true)` if the field was updated, `Ok(false)` if skipped due to
+    /// lower source priority.
+    pub fn upsert_account_fact(
+        &self,
+        account_id: &str,
+        field: &str,
+        value: &str,
+        source: &str,
+        observed_at: &str,
+    ) -> Result<bool, DbError> {
+        // Whitelist check
+        let spec = Self::FACT_FIELDS
+            .iter()
+            .find(|(name, _, _)| *name == field)
+            .ok_or_else(|| {
+                DbError::Migration(format!(
+                    "upsert_account_fact: unknown field '{}'",
+                    field
+                ))
+            })?;
+        let has_source = spec.1;
+        let has_updated_at = spec.2;
+
+        let new_priority = Self::source_priority(source);
+
+        // Check existing source priority (if this field tracks source)
+        if has_source {
+            let source_col = format!("{}_source", field);
+            let existing_source: Option<String> = self
+                .conn
+                .query_row(
+                    &format!(
+                        "SELECT {} FROM accounts WHERE id = ?1",
+                        source_col
+                    ),
+                    params![account_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .flatten();
+
+            if let Some(ref existing) = existing_source {
+                if Self::source_priority(existing) > new_priority {
+                    return Ok(false);
+                }
+            }
+        }
+
+        // Build the SET clause dynamically
+        let mut set_parts = vec![format!("{} = ?1", field)];
+        let mut param_idx = 2; // ?1 is value
+        if has_source {
+            set_parts.push(format!("{}_source = ?{}", field, param_idx));
+            param_idx += 1;
+        }
+        if has_updated_at {
+            set_parts.push(format!("{}_updated_at = ?{}", field, param_idx));
+            param_idx += 1;
+        }
+        set_parts.push(format!("updated_at = ?{}", param_idx));
+        let account_param = param_idx + 1;
+
+        let sql = format!(
+            "UPDATE accounts SET {} WHERE id = ?{}",
+            set_parts.join(", "),
+            account_param
+        );
+
+        let now = Utc::now().to_rfc3339();
+        // Build params vector matching the SET clause order
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        param_values.push(Box::new(value.to_string())); // ?1 = value
+        if has_source {
+            param_values.push(Box::new(source.to_string()));
+        }
+        if has_updated_at {
+            param_values.push(Box::new(observed_at.to_string()));
+        }
+        param_values.push(Box::new(now)); // updated_at
+        param_values.push(Box::new(account_id.to_string())); // WHERE id
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+
+        let rows_changed = self.conn.execute(&sql, params_refs.as_slice())?;
+        Ok(rows_changed > 0)
+    }
+
+    /// Write a source reference row (I644).
+    ///
+    /// Records provenance for a fact value: which system provided it, when it was
+    /// observed, and an optional reference to the source record.
+    pub fn upsert_account_source_ref(
+        &self,
+        ref_data: &AccountSourceRef<'_>,
+    ) -> Result<(), DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        self.conn.execute(
+            "INSERT OR REPLACE INTO account_source_refs
+                (id, account_id, field, source_system, source_kind, source_value,
+                 observed_at, source_record_ref)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                id,
+                ref_data.account_id,
+                ref_data.field,
+                ref_data.source_system,
+                ref_data.source_kind,
+                ref_data.source_value,
+                ref_data.observed_at,
+                ref_data.reference_id,
+            ],
+        )?;
+        Ok(())
     }
 }

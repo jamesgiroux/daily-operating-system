@@ -863,7 +863,7 @@ pub fn get_entity_emails(
                 .prepare(
                     "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
                             priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                            last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
+                            last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
                             contextual_summary, sentiment, urgency, user_is_last_sender,
                             last_sender_email, message_count, created_at, updated_at,
                             relevance_score, score_reason,
@@ -886,23 +886,24 @@ pub fn get_entity_emails(
                         enrichment_state: row.get(9)?,
                         enrichment_attempts: row.get(10)?,
                         last_enrichment_at: row.get(11)?,
-                        last_seen_at: row.get(12)?,
-                        resolved_at: row.get(13)?,
-                        entity_id: row.get(14)?,
-                        entity_type: row.get(15)?,
-                        contextual_summary: row.get(16)?,
-                        sentiment: row.get(17)?,
-                        urgency: row.get(18)?,
-                        user_is_last_sender: row.get::<_, i32>(19)? != 0,
-                        last_sender_email: row.get(20)?,
-                        message_count: row.get(21)?,
-                        created_at: row.get(22)?,
-                        updated_at: row.get(23)?,
-                        relevance_score: row.get(24).ok(),
-                        score_reason: row.get(25).ok(),
-                        pinned_at: row.get(26).ok(),
-                        commitments: row.get(27).ok(),
-                        questions: row.get(28).ok(),
+                        enriched_at: row.get(12).ok(),
+                        last_seen_at: row.get(13)?,
+                        resolved_at: row.get(14)?,
+                        entity_id: row.get(15)?,
+                        entity_type: row.get(16)?,
+                        contextual_summary: row.get(17)?,
+                        sentiment: row.get(18)?,
+                        urgency: row.get(19)?,
+                        user_is_last_sender: row.get::<_, i32>(20)? != 0,
+                        last_sender_email: row.get(21)?,
+                        message_count: row.get(22)?,
+                        created_at: row.get(23)?,
+                        updated_at: row.get(24)?,
+                        relevance_score: row.get(25).ok(),
+                        score_reason: row.get(26).ok(),
+                        pinned_at: row.get(27).ok(),
+                        commitments: row.get(28).ok(),
+                        questions: row.get(29).ok(),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -936,7 +937,7 @@ pub fn get_entity_emails(
             let sql = format!(
                 "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
                         priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                        last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
+                        last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
@@ -967,23 +968,24 @@ pub fn get_entity_emails(
                         enrichment_state: row.get(9)?,
                         enrichment_attempts: row.get(10)?,
                         last_enrichment_at: row.get(11)?,
-                        last_seen_at: row.get(12)?,
-                        resolved_at: row.get(13)?,
-                        entity_id: row.get(14)?,
-                        entity_type: row.get(15)?,
-                        contextual_summary: row.get(16)?,
-                        sentiment: row.get(17)?,
-                        urgency: row.get(18)?,
-                        user_is_last_sender: row.get::<_, i32>(19)? != 0,
-                        last_sender_email: row.get(20)?,
-                        message_count: row.get(21)?,
-                        created_at: row.get(22)?,
-                        updated_at: row.get(23)?,
-                        relevance_score: row.get(24).ok(),
-                        score_reason: row.get(25).ok(),
-                        pinned_at: row.get(26).ok(),
-                        commitments: row.get(27).ok(),
-                        questions: row.get(28).ok(),
+                        enriched_at: row.get(12).ok(),
+                        last_seen_at: row.get(13)?,
+                        resolved_at: row.get(14)?,
+                        entity_id: row.get(15)?,
+                        entity_type: row.get(16)?,
+                        contextual_summary: row.get(17)?,
+                        sentiment: row.get(18)?,
+                        urgency: row.get(19)?,
+                        user_is_last_sender: row.get::<_, i32>(20)? != 0,
+                        last_sender_email: row.get(21)?,
+                        message_count: row.get(22)?,
+                        created_at: row.get(23)?,
+                        updated_at: row.get(24)?,
+                        relevance_score: row.get(25).ok(),
+                        score_reason: row.get(26).ok(),
+                        pinned_at: row.get(27).ok(),
+                        commitments: row.get(28).ok(),
+                        questions: row.get(29).ok(),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -1542,4 +1544,293 @@ pub async fn refresh_emails(
     .await
     .map_err(|e| format!("Email refresh task failed: {}", e))?
     .map(|_| "Email refresh complete".to_string())
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// I652 Phase 3: EmailSnapshot batch helper
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Snapshot of email content for deduplication and change detection (I652).
+/// Stores the state of an email when it was last enriched.
+/// Used to determine if content has changed since last enrichment (e.g., new reply in thread).
+/// Gate 0 compares current email content with this prior snapshot.
+#[derive(Clone, Debug)]
+pub struct EmailSnapshot {
+    /// Optional snippet text from email body (used for content change detection)
+    pub snippet: Option<String>,
+    /// Subject line (used for content change detection)
+    pub subject: Option<String>,
+    /// Received date (for reference and context)
+    pub received_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Load email snapshots in batch for content change detection (I652 Gate 0).
+///
+/// Prevents N+1 query pattern by loading all snapshots in a single SQL query.
+/// Returns a HashMap mapping email_id to EmailSnapshot for content-change detection.
+///
+/// # Graceful handling
+/// - Empty email_ids → empty HashMap
+/// - Email not found → silently skipped (not an error)
+/// - Partial matches → only present emails in result
+///
+/// # Arguments
+/// * `db` - Database reference
+/// * `_account_id` - Account ID (for potential future filtering; currently unused)
+/// * `email_ids` - List of email IDs to snapshot
+///
+/// # Returns
+/// HashMap<email_id, EmailSnapshot> for matched emails only
+pub fn get_email_snapshots_for_content_check(
+    db: &crate::db::ActionDb,
+    _account_id: &str,
+    email_ids: &[String],
+) -> Result<HashMap<String, EmailSnapshot>, String> {
+    if email_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Build placeholders for IN clause: ?, ?, ...
+    let placeholders: Vec<String> = (1..=email_ids.len()).map(|i| format!("?{i}")).collect();
+    let sql = format!(
+        "SELECT email_id, subject, snippet, received_at FROM emails WHERE email_id IN ({})",
+        placeholders.join(", ")
+    );
+
+    let mut stmt = db
+        .conn_ref()
+        .prepare(&sql)
+        .map_err(|e| format!("Failed to prepare snapshot query: {e}"))?;
+
+    // Build parameter references for the IN clause
+    let param_values: Vec<&dyn rusqlite::types::ToSql> = email_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
+
+    let rows = stmt
+        .query_map(param_values.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })
+        .map_err(|e| format!("Failed to query snapshots: {e}"))?;
+
+    let mut snapshots = HashMap::new();
+    for row in rows {
+        let (email_id, subject, snippet, received_at_str) =
+            row.map_err(|e| format!("Failed to read snapshot row: {e}"))?;
+
+        // Parse received_at timestamp
+        let received_at = if let Some(ref date_str) = received_at_str {
+            // Try RFC3339, then other formats
+            chrono::DateTime::parse_from_rfc3339(date_str)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .or_else(|_| {
+                    chrono::DateTime::parse_from_rfc2822(date_str)
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                })
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S")
+                        .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
+                })
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S")
+                        .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
+                })
+                .unwrap_or_else(|_| chrono::Utc::now())
+        } else {
+            chrono::Utc::now()
+        };
+
+        snapshots.insert(
+            email_id,
+            EmailSnapshot {
+                snippet,
+                subject,
+                received_at,
+            },
+        );
+    }
+
+    Ok(snapshots)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    // Helper to create a test database connection with sample emails table
+    fn setup_test_db() -> Connection {
+        let conn = Connection::open_in_memory()
+            .expect("Failed to create in-memory database");
+
+        // Create emails table with minimal required columns for snapshots
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS emails (
+                email_id TEXT PRIMARY KEY,
+                subject TEXT,
+                snippet TEXT,
+                received_at TEXT
+            )",
+        )
+        .expect("Failed to create test table");
+
+        conn
+    }
+
+    #[test]
+    fn test_empty_email_ids() {
+        let _conn = setup_test_db();
+        let db = crate::db::ActionDb::from_conn(&_conn);
+        let result = get_email_snapshots_for_content_check(db, "account_123", &[]);
+        assert!(result.is_ok());
+        let snapshots = result.unwrap();
+        assert!(snapshots.is_empty());
+    }
+
+    #[test]
+    fn test_single_email_snapshot() {
+        let conn = setup_test_db();
+
+        // Insert a test email with received_at timestamp
+        conn.execute(
+            "INSERT INTO emails (email_id, subject, snippet, received_at) VALUES (?, ?, ?, ?)",
+            rusqlite::params!["email_1", "Test Subject", "Test snippet content", "2024-01-15T10:30:00Z"],
+        )
+        .expect("Failed to insert test email");
+
+        let db = crate::db::ActionDb::from_conn(&conn);
+        let result = get_email_snapshots_for_content_check(db, "account_123", &["email_1".to_string()]);
+        assert!(result.is_ok());
+        let snapshots = result.unwrap();
+
+        assert_eq!(snapshots.len(), 1);
+        assert!(snapshots.contains_key("email_1"));
+
+        let snapshot = &snapshots["email_1"];
+        assert_eq!(snapshot.subject, Some("Test Subject".to_string()));
+        assert_eq!(snapshot.snippet, Some("Test snippet content".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_emails_snapshot() {
+        let conn = setup_test_db();
+
+        // Insert multiple test emails
+        for i in 1..=3 {
+            conn.execute(
+                "INSERT INTO emails (email_id, subject, snippet, received_at) VALUES (?, ?, ?, ?)",
+                rusqlite::params![
+                    format!("email_{i}"),
+                    format!("Subject {i}"),
+                    format!("Snippet {i}"),
+                    "2024-01-15T10:30:00Z",
+                ],
+            )
+            .expect("Failed to insert test email");
+        }
+
+        let email_ids: Vec<String> = vec!["email_1".to_string(), "email_2".to_string(), "email_3".to_string()];
+        let db = crate::db::ActionDb::from_conn(&conn);
+        let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
+        assert!(result.is_ok());
+        let snapshots = result.unwrap();
+
+        assert_eq!(snapshots.len(), 3);
+        for i in 1..=3 {
+            let key = format!("email_{i}");
+            assert!(snapshots.contains_key(&key));
+            let snapshot = &snapshots[&key];
+            assert_eq!(snapshot.subject, Some(format!("Subject {i}")));
+            assert_eq!(snapshot.snippet, Some(format!("Snippet {i}")));
+        }
+    }
+
+    #[test]
+    fn test_email_not_found() {
+        let conn = setup_test_db();
+
+        // Insert only one email
+        conn.execute(
+            "INSERT INTO emails (email_id, subject, snippet, received_at) VALUES (?, ?, ?, ?)",
+            rusqlite::params!["email_1", "Test Subject", "Test snippet", "2024-01-15T10:30:00Z"],
+        )
+        .expect("Failed to insert test email");
+
+        // Request two emails, only one exists
+        let email_ids = vec!["email_1".to_string(), "email_missing".to_string()];
+        let db = crate::db::ActionDb::from_conn(&conn);
+        let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
+        assert!(result.is_ok());
+        let snapshots = result.unwrap();
+
+        // Only the found email should be in the result
+        assert_eq!(snapshots.len(), 1);
+        assert!(snapshots.contains_key("email_1"));
+        assert!(!snapshots.contains_key("email_missing"));
+    }
+
+    #[test]
+    fn test_order_independence() {
+        let conn = setup_test_db();
+
+        // Insert multiple emails
+        for i in 1..=3 {
+            conn.execute(
+                "INSERT INTO emails (email_id, subject, snippet, received_at) VALUES (?, ?, ?, ?)",
+                rusqlite::params![
+                    format!("email_{i}"),
+                    format!("Subject {i}"),
+                    format!("Snippet {i}"),
+                    "2024-01-15T10:30:00Z",
+                ],
+            )
+            .expect("Failed to insert test email");
+        }
+
+        // Request emails in different order (HashMap doesn't guarantee order)
+        let email_ids = vec!["email_3".to_string(), "email_1".to_string(), "email_2".to_string()];
+        let db = crate::db::ActionDb::from_conn(&conn);
+        let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
+        assert!(result.is_ok());
+        let snapshots = result.unwrap();
+
+        // All should be present regardless of request order
+        assert_eq!(snapshots.len(), 3);
+        assert!(snapshots.contains_key("email_1"));
+        assert!(snapshots.contains_key("email_2"));
+        assert!(snapshots.contains_key("email_3"));
+
+        // Verify content correctness
+        assert_eq!(snapshots["email_1"].subject, Some("Subject 1".to_string()));
+        assert_eq!(snapshots["email_2"].subject, Some("Subject 2".to_string()));
+        assert_eq!(snapshots["email_3"].subject, Some("Subject 3".to_string()));
+    }
+
+    #[test]
+    fn test_null_fields_default_to_none() {
+        let conn = setup_test_db();
+
+        // Insert email with NULL subject and snippet
+        conn.execute(
+            "INSERT INTO emails (email_id, subject, snippet, received_at) VALUES (?, NULL, NULL, ?)",
+            rusqlite::params!["email_1", "2024-01-15T10:30:00Z"],
+        )
+        .expect("Failed to insert test email with NULLs");
+
+        let db = crate::db::ActionDb::from_conn(&conn);
+        let result = get_email_snapshots_for_content_check(db, "account_123", &["email_1".to_string()]);
+        assert!(result.is_ok());
+        let snapshots = result.unwrap();
+
+        assert_eq!(snapshots.len(), 1);
+        let snapshot = &snapshots["email_1"];
+        assert_eq!(snapshot.subject, None);
+        assert_eq!(snapshot.snippet, None);
+    }
 }

@@ -611,17 +611,15 @@ pub async fn update_intelligence_field(
                 account.as_ref(),
             )?;
 
-            // Read intelligence from DB (source of truth post-I513), not disk.
-            // Fall back to disk if DB doesn't have it (legacy path).
+            // I644: DB is sole source of truth — no filesystem fallback.
             let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
-            let intel = if let Some(existing) = existing_intel {
-                crate::intelligence::apply_intelligence_field_update_in_memory(
+            let intel = match existing_intel {
+                Some(existing) => crate::intelligence::apply_intelligence_field_update_in_memory(
                     existing,
                     &field_path,
                     &value,
-                )?
-            } else {
-                crate::intelligence::apply_intelligence_field_update(&dir, &field_path, &value)?
+                )?,
+                None => return Err(format!("I644: no DB intelligence row for {} — cannot update field", entity_id)),
             };
             // Write to disk for MCP sidecar compatibility (best-effort)
             let _ = crate::intelligence::write_intelligence_json(&dir, &intel);
@@ -874,13 +872,11 @@ pub async fn dismiss_intelligence_item(
                 account.as_ref(),
             )?;
 
-            // DB-first: prefer intelligence from DB over disk
+            // I644: DB is sole source of truth — no filesystem fallback.
             let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
-            let mut intel = if let Some(existing) = existing_intel {
-                existing
-            } else {
-                crate::intelligence::read_intelligence_json(&dir)?
-            };
+            let mut intel = existing_intel.ok_or_else(|| {
+                format!("I644: no DB intelligence row for {} — cannot dismiss item", entity_id)
+            })?;
 
             // Add tombstone
             intel
@@ -1141,7 +1137,7 @@ mod mutation_smoke_tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         }
     }
 
