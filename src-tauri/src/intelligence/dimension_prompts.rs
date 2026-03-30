@@ -211,7 +211,7 @@ pub fn build_glean_dimension_prompt(
              - arr: null or the annual revenue number as a float\n\
              - billingTerms: null or one of (annual|monthly|multi_year)\n\n\
              If the account has NO active subscriptions or Subscription Status is not active, \
-             return an empty products array: `\"products\": []`\n\n"
+             return an empty products array: `\"products\": []`\n\n",
         );
     }
 

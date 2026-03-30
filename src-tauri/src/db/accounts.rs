@@ -328,16 +328,17 @@ impl ActionDb {
     /// Helper: Extract unique domains from attendee string (JSON or comma-separated).
     pub fn extract_domains_from_attendees_str(&self, attendees_str: &str) -> Vec<String> {
         // Try parsing as JSON array first
-        let attendees_array: Vec<String> = if let Ok(arr) = serde_json::from_str::<Vec<String>>(attendees_str) {
-            arr
-        } else {
-            // Fall back to comma-separated parsing
-            attendees_str
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        };
+        let attendees_array: Vec<String> =
+            if let Ok(arr) = serde_json::from_str::<Vec<String>>(attendees_str) {
+                arr
+            } else {
+                // Fall back to comma-separated parsing
+                attendees_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            };
 
         // Extract domains from emails
         let mut domains = Vec::new();
@@ -492,7 +493,8 @@ impl ActionDb {
                     person_role: row.get(4)?,
                     stakeholder_role: roles_csv.clone(),
                     roles: Vec::new(), // populated below
-                    data_source: row.get::<_, Option<String>>(6)?
+                    data_source: row
+                        .get::<_, Option<String>>(6)?
                         .unwrap_or_else(|| "user".to_string()),
                     last_seen_in_glean: row.get(7)?,
                     created_at: row.get(8)?,
@@ -1422,12 +1424,15 @@ impl ActionDb {
         data_source: &str,
     ) -> Result<i64, DbError> {
         let now = Utc::now().to_rfc3339();
-        let existing = self.conn.query_row(
-            "SELECT id FROM account_products
+        let existing = self
+            .conn
+            .query_row(
+                "SELECT id FROM account_products
              WHERE account_id = ?1 AND product_type = ?2 AND data_source = ?3 LIMIT 1",
-            params![account_id, product_type, data_source],
-            |row| row.get::<_, i64>(0),
-        ).optional()?;
+                params![account_id, product_type, data_source],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
 
         match existing {
             Some(id) => {
@@ -2360,10 +2365,7 @@ impl ActionDb {
             .iter()
             .find(|(name, _, _)| *name == field)
             .ok_or_else(|| {
-                DbError::Migration(format!(
-                    "upsert_account_fact: unknown field '{}'",
-                    field
-                ))
+                DbError::Migration(format!("upsert_account_fact: unknown field '{}'", field))
             })?;
         let has_source = spec.1;
         let has_updated_at = spec.2;
@@ -2376,10 +2378,7 @@ impl ActionDb {
             let existing_source: Option<String> = self
                 .conn
                 .query_row(
-                    &format!(
-                        "SELECT {} FROM accounts WHERE id = ?1",
-                        source_col
-                    ),
+                    &format!("SELECT {} FROM accounts WHERE id = ?1", source_col),
                     params![account_id],
                     |row| row.get(0),
                 )

@@ -65,6 +65,10 @@ fn normalize_match_key(value: &str) -> String {
     crate::services::entities::normalize_match_key(value)
 }
 
+fn include_dashboard_meeting(intelligence_state: Option<&str>) -> bool {
+    !matches!(intelligence_state, Some("archived"))
+}
+
 fn load_dashboard_lifecycle_updates(
     db: &crate::db::ActionDb,
     limit: usize,
@@ -95,11 +99,9 @@ fn load_dashboard_lifecycle_updates(
 }
 
 /// Load recent, undismissed briefing callouts (last 7 days) for the dashboard.
-fn load_briefing_callouts(
-    db: &crate::db::ActionDb,
-    limit: usize,
-) -> Vec<DashboardBriefingCallout> {
-    let sql = "SELECT id, entity_id, entity_type, entity_name, severity, headline, detail, created_at
+fn load_briefing_callouts(db: &crate::db::ActionDb, limit: usize) -> Vec<DashboardBriefingCallout> {
+    let sql =
+        "SELECT id, entity_id, entity_type, entity_name, severity, headline, detail, created_at
                FROM briefing_callouts
                WHERE dismissed_at IS NULL
                  AND created_at >= datetime('now', '-7 days')
@@ -219,7 +221,10 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
                     })
                 })
                 .map_err(|e| e.to_string())?;
-            let meetings: Vec<crate::db::DbMeeting> = meeting_rows.filter_map(|r| r.ok()).collect();
+            let meetings: Vec<crate::db::DbMeeting> = meeting_rows
+                .filter_map(|r| r.ok())
+                .filter(|m| include_dashboard_meeting(m.intelligence_state.as_deref()))
+                .collect();
 
             if meetings.is_empty() {
                 return Ok(None);
@@ -357,8 +362,8 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
     let active_meetings_count = meetings
         .iter()
         .filter(|m| {
-            m.overlay_status != Some(OverlayStatus::Cancelled) &&
-            m.meeting_type != MeetingType::Personal
+            m.overlay_status != Some(OverlayStatus::Cancelled)
+                && m.meeting_type != MeetingType::Personal
         })
         .count();
     let overview = DayOverview {
@@ -590,7 +595,10 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                     })
                 })
                 .map_err(|e| e.to_string())?;
-            Ok(rows.filter_map(|r| r.ok()).collect())
+            Ok(rows
+                .filter_map(|r| r.ok())
+                .filter(|m| include_dashboard_meeting(m.intelligence_state.as_deref()))
+                .collect())
         })
         .await
     {
@@ -623,7 +631,9 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                 }
                 // Fall back to local format (from pipeline, assume in user's timezone)
                 chrono::NaiveDateTime::parse_from_str(time_str, "%Y-%m-%dT%H:%M:%S")
-                    .or_else(|_| chrono::NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S"))
+                    .or_else(|_| {
+                        chrono::NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S")
+                    })
                     .map(|dt| dt.format("%-I:%M %p").to_string())
                     .unwrap_or_else(|_| time_str.to_string())
             };
@@ -1405,4 +1415,21 @@ pub fn get_week_data(_state: &AppState) -> WeekResult {
     }
     log_latency("get_week_data", started, READ_CMD_LATENCY_BUDGET_MS);
     WeekResult::Success { data: week }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::include_dashboard_meeting;
+
+    #[test]
+    fn archived_meetings_are_excluded_from_dashboard() {
+        assert!(!include_dashboard_meeting(Some("archived")));
+    }
+
+    #[test]
+    fn active_meetings_remain_visible_on_dashboard() {
+        assert!(include_dashboard_meeting(None));
+        assert!(include_dashboard_meeting(Some("detected")));
+        assert!(include_dashboard_meeting(Some("enriched")));
+    }
 }

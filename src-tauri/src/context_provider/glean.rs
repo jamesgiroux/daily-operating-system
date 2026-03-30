@@ -1462,8 +1462,7 @@ impl ContextProvider for GleanContextProvider {
                         };
                         if let Some(stage) = org_health.customer_stage.as_deref() {
                             let current = account.lifecycle.as_deref().unwrap_or("");
-                            let normalized =
-                                crate::services::accounts::normalized_lifecycle(stage);
+                            let normalized = crate::services::accounts::normalized_lifecycle(stage);
                             if !current.is_empty()
                                 && crate::services::accounts::normalized_lifecycle(current)
                                     != normalized
