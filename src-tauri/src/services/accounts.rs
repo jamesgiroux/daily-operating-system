@@ -1092,6 +1092,20 @@ pub fn accept_account_field_conflict(
         let _ = crate::signals::bus::supersede_signal(db, sig_id, &accepted_signal_id);
     }
 
+    // I645: Record feedback event for accepted field conflict.
+    let _ = db.record_feedback_event(
+        account_id,
+        "account",
+        field,
+        signal_id,
+        "accept",
+        Some(source),
+        Some("field_conflict"),
+        None,
+        Some(suggested_value),
+        None,
+    );
+
     let _ = db.upsert_signal_weight(
         source,
         "account",
@@ -1149,6 +1163,29 @@ pub fn dismiss_account_field_conflict(
         None,
         Some(&context),
     )?;
+
+    // I645: Record feedback event + suppression tombstone for rejected field conflict.
+    let _ = db.record_feedback_event(
+        account_id,
+        "account",
+        field,
+        Some(signal_id),
+        "reject",
+        Some(source),
+        Some("field_conflict"),
+        None,
+        suggested_value,
+        None,
+    );
+    let _ = db.create_suppression_tombstone(
+        account_id,
+        field,
+        Some(signal_id),
+        None,
+        Some(source),
+        None,
+    );
+
     let _ = db.upsert_signal_weight(
         source,
         "account",
@@ -1218,7 +1255,31 @@ pub async fn get_account_detail(
                 .unwrap_or_default();
             let notes = account.notes.clone();
             // I644: Intelligence from DB only — no filesystem fallback.
-            let intelligence = db.get_entity_intelligence(&account_id).ok().flatten();
+            let mut intelligence = db.get_entity_intelligence(&account_id).ok().flatten();
+
+            // I645: Filter stale items from active display using relevance windows.
+            if let Some(ref mut intel) = intelligence {
+                intel.risks.retain(|risk| {
+                    let sourced = risk.item_source.as_ref().map(|s| s.sourced_at.as_str());
+                    match sourced {
+                        Some(ts) => crate::intelligence::timeliness::is_within_relevance_window(
+                            "active_blocker",
+                            ts,
+                        ),
+                        None => true,
+                    }
+                });
+                intel.recent_wins.retain(|win| {
+                    let sourced = win.item_source.as_ref().map(|s| s.sourced_at.as_str());
+                    match sourced {
+                        Some(ts) => crate::intelligence::timeliness::is_within_relevance_window(
+                            "call_theme",
+                            ts,
+                        ),
+                        None => true,
+                    }
+                });
+            }
 
             let open_actions = db
                 .get_account_actions(&account_id)

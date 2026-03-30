@@ -1042,6 +1042,39 @@ pub struct DbAccountSourceRef {
     pub observed_at: String,
 }
 
+/// A row from the `entity_feedback_events` table (I645).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackEvent {
+    pub id: i64,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub field_key: String,
+    pub item_key: Option<String>,
+    pub feedback_type: String,
+    pub source_system: Option<String>,
+    pub source_kind: Option<String>,
+    pub previous_value: Option<String>,
+    pub corrected_value: Option<String>,
+    pub reason: Option<String>,
+    pub created_at: String,
+}
+
+/// A row from the `suppression_tombstones` table (I645).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuppressionTombstone {
+    pub id: i64,
+    pub entity_id: String,
+    pub field_key: String,
+    pub item_key: Option<String>,
+    pub item_hash: Option<String>,
+    pub dismissed_at: String,
+    pub source_scope: Option<String>,
+    pub expires_at: Option<String>,
+    pub superseded_by_evidence_after: Option<String>,
+}
+
 /// Technical footprint, adoption, and service-delivery data for an account (I649).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
