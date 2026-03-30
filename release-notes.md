@@ -10,6 +10,24 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.1.0 — It should just know
+
+This release makes DailyOS act on what it learns. The system now detects lifecycle transitions — renewals confirmed, accounts going quiet, contracts approaching — and reports what it did in your daily briefing. You confirm with one click or correct what's wrong. No pipeline to manage. No stages to update. It just knows.
+
+**Lifecycle intelligence.** When a renewal is confirmed (order form signed, Salesforce opportunity closed), DailyOS automatically updates the account, rescores health, and tells you in the morning briefing. Approaching renewals, engagement drops, and at-risk signals surface the same way. You click "Looks good" or "Fix something" — corrections teach the system to do better next time.
+
+**Stakeholder roles that stick.** Designate a champion, set engagement levels, assign multiple roles per person — your designations survive every refresh. The system suggests new stakeholders it discovers from meetings and Glean, but never overwrites what you've set. Manage stakeholder roles from the account page or the person detail page.
+
+**Products appear automatically.** DailyOS discovers your customer's products from Salesforce via Glean and shows them on the account page. No inventory to manage. Wrong product? Correct it inline and the system learns.
+
+**Source attribution everywhere.** Key account fields now show where their data came from — "via Salesforce," "via Zendesk," "you noted." When the system finds a different value than what you entered, it shows the conflict and lets you accept or dismiss. Your edits always win.
+
+**Smarter with your time.** Background AI work now runs on a budget with pause guards. Stale intelligence automatically fades from active views. Dismissed items don't bounce back. The daily briefing generates faster with email processing running in the background instead of blocking.
+
+**The Outlook chapter breathes.** Renewal confidence, growth opportunities, and commercial reality each get their own section with editorial spacing. Risk factors read as prose, not bullet lists. Expansion signals show stage and ARR impact.
+
+---
+
 ## v1.0.4 — Your edits, your data
 
 This release is about trust. When you edit something in DailyOS, it should stay edited. When you open the app, your data should be there. When you click a button, it should do what it says.
