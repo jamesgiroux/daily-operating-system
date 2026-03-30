@@ -226,7 +226,7 @@ describe("PostMeetingIntelligence", () => {
       />,
     );
 
-    expect(screen.getByText("The Thread")).toBeInTheDocument();
+    expect(screen.getAllByText("The Thread").length).toBeGreaterThan(0);
     expect(screen.getByText("Finalize pilot scope")).toBeInTheDocument();
     expect(screen.getAllByText("Pat Kim").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Observer").length).toBeGreaterThan(0);
@@ -246,5 +246,30 @@ describe("PostMeetingIntelligence", () => {
     expect(container).not.toHaveTextContent("✓");
     expect(container).not.toHaveTextContent("⚡");
     expect(container).not.toHaveTextContent("✗");
+  });
+
+  it("renders a fallback row when the thread has no captured changes", () => {
+    const emptyThread: ContinuityThread = {
+      previousMeetingDate: "2026-02-24T19:00:00+00:00",
+      previousMeetingTitle: "Jane <> VIP",
+      entityName: "Juniper Software",
+      actionsCompleted: [],
+      actionsOpen: [],
+      healthDelta: undefined,
+      newAttendees: [],
+      isFirstMeeting: false,
+    };
+
+    render(
+      <PostMeetingIntelligence
+        data={baseData()}
+        continuityThread={emptyThread}
+      />,
+    );
+
+    expect(screen.getAllByText("The Thread").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("No major changes captured since the previous meeting"),
+    ).toBeInTheDocument();
   });
 });
