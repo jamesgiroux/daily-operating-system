@@ -1873,8 +1873,11 @@ impl ActionDb {
         // 1b. Clear stale feedback — feedback is keyed by field path (e.g.
         // "riskFactors[0]"), which is positional. Re-enrichment produces new content
         // at the same positions, so old votes don't apply to new analysis.
+        // Preserve field conflict dismissals (account_field_conflict:*) — those are
+        // user decisions about data source conflicts, not positional analysis votes.
         conn.execute(
-            "DELETE FROM intelligence_feedback WHERE entity_id = ?1 AND entity_type = ?2",
+            "DELETE FROM intelligence_feedback WHERE entity_id = ?1 AND entity_type = ?2 \
+             AND field NOT LIKE 'account_field_conflict:%'",
             rusqlite::params![intel.entity_id, intel.entity_type],
         )?;
 
