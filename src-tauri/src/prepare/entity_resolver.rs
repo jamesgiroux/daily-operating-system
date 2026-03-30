@@ -129,6 +129,9 @@ pub fn resolve_meeting_entities(
 
     // Gate 2: No junction links — run full signal cascade
     let mut all_signals: Vec<ResolutionSignal> = Vec::new();
+    // Domain-based matching: extract attendee domains and match to accounts
+    // (must run before keyword matching to provide strong signal from org domains)
+    all_signals.extend(signal_domain_match(db, meeting));
     all_signals.extend(signal_attendee_inference(db, meeting));
     all_signals.extend(crate::signals::patterns::signal_attendee_group_pattern(
         db, meeting,
@@ -254,6 +257,41 @@ fn signal_junction_lookup(
                         confidence: 0.95,
                         source: "junction".to_string(),
                     });
+                }
+            }
+        }
+    }
+
+    signals
+}
+
+/// Signal 2: Domain-based matching from attendee email domains.
+/// Extracts domains from attendee emails and matches to accounts via account_domains table.
+/// Confidence: 0.75 per matched account (strong signal, org-owned domain).
+fn signal_domain_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal> {
+    let attendees = helpers::extract_attendee_emails(meeting);
+    if attendees.is_empty() {
+        return Vec::new();
+    }
+
+    let mut signals = Vec::new();
+    let mut seen_accounts: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Extract unique domains from attendee emails
+    for email in attendees {
+        if let Some(domain) = email.split('@').nth(1) {
+            let domain_str = domain.to_lowercase();
+            // Lookup accounts that own this domain
+            if let Ok(accounts) = db.lookup_account_candidates_by_domain(&domain_str) {
+                for account in accounts {
+                    if seen_accounts.insert(account.id.clone()) {
+                        signals.push(ResolutionSignal {
+                            entity_id: account.id,
+                            entity_type: EntityType::Account,
+                            confidence: 0.75, // Strong signal: org-owned domain
+                            source: format!("domain:{}", domain_str),
+                        });
+                    }
                 }
             }
         }
