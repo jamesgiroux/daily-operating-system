@@ -681,27 +681,26 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
-            let written_intel =
-                match write_enrichment_results(
-                    &state,
-                    input,
-                    intel,
-                    if is_background_priority(request.priority) {
-                        None
-                    } else {
-                        Some(&ai_config)
-                    },
-                ) {
-                    Ok(intel) => intel,
-                    Err(e) => {
-                        log::warn!(
-                            "IntelProcessor: failed to write results for {}: {}",
-                            request.entity_id,
-                            e
-                        );
-                        continue;
-                    }
-                };
+            let written_intel = match write_enrichment_results(
+                &state,
+                input,
+                intel,
+                if is_background_priority(request.priority) {
+                    None
+                } else {
+                    Some(&ai_config)
+                },
+            ) {
+                Ok(intel) => intel,
+                Err(e) => {
+                    log::warn!(
+                        "IntelProcessor: failed to write results for {}: {}",
+                        request.entity_id,
+                        e
+                    );
+                    continue;
+                }
+            };
 
             // I535: Emit tiered Glean signals after successful enrichment
             if state.context_provider().is_remote() {

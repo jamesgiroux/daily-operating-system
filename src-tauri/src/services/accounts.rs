@@ -403,10 +403,7 @@ fn build_account_field_conflicts(
             if let Some(current_arr) = contract.current_arr {
                 let suggested = format!("{current_arr:.0}");
                 if !field_matches_current_value(account, "arr", &suggested) {
-                    let feedback_key = account_field_conflict_feedback_key(
-                        "arr",
-                        &suggested,
-                    );
+                    let feedback_key = account_field_conflict_feedback_key("arr", &suggested);
                     if !dismissed_conflicts.contains(&feedback_key) {
                         conflicts.entry("arr".to_string()).or_insert_with(|| {
                             crate::types::AccountFieldConflictSuggestion {
@@ -423,10 +420,8 @@ fn build_account_field_conflicts(
             }
             if let Some(renewal_date) = contract.renewal_date.as_ref() {
                 if !field_matches_current_value(account, "contract_end", renewal_date) {
-                    let feedback_key = account_field_conflict_feedback_key(
-                        "contract_end",
-                        renewal_date,
-                    );
+                    let feedback_key =
+                        account_field_conflict_feedback_key("contract_end", renewal_date);
                     if !dismissed_conflicts.contains(&feedback_key) {
                         conflicts
                             .entry("contract_end".to_string())
@@ -446,10 +441,8 @@ fn build_account_field_conflicts(
             if let Some(stage) = org_health.customer_stage.as_ref() {
                 if !field_matches_current_value(account, "lifecycle", stage) {
                     let suggested_lifecycle = normalized_lifecycle(stage);
-                    let feedback_key = account_field_conflict_feedback_key(
-                        "lifecycle",
-                        &suggested_lifecycle,
-                    );
+                    let feedback_key =
+                        account_field_conflict_feedback_key("lifecycle", &suggested_lifecycle);
                     if !dismissed_conflicts.contains(&feedback_key) {
                         conflicts.entry("lifecycle".to_string()).or_insert_with(|| {
                             crate::types::AccountFieldConflictSuggestion {
@@ -477,8 +470,7 @@ fn build_account_field_conflicts(
             if let Some(nps) = nps_csat.nps {
                 let suggested = nps.to_string();
                 if !field_matches_current_value(account, "nps", &suggested) {
-                    let feedback_key =
-                        account_field_conflict_feedback_key("nps", &suggested);
+                    let feedback_key = account_field_conflict_feedback_key("nps", &suggested);
                     if !dismissed_conflicts.contains(&feedback_key) {
                         conflicts.entry("nps".to_string()).or_insert_with(|| {
                             crate::types::AccountFieldConflictSuggestion {
@@ -1010,13 +1002,7 @@ pub fn correct_account_product(
 ) -> Result<(), String> {
     db.update_account_product(product_id, name, status, None, "user_correction", 1.0)
         .map_err(|e| e.to_string())?;
-    let _ = db.upsert_signal_weight(
-        source_to_penalize,
-        "account",
-        "product_adoption",
-        0.0,
-        1.0,
-    );
+    let _ = db.upsert_signal_weight(source_to_penalize, "account", "product_adoption", 0.0, 1.0);
     crate::services::signals::emit_and_propagate(
         db,
         engine,
@@ -1024,7 +1010,9 @@ pub fn correct_account_product(
         account_id,
         "product_data_updated",
         "user_correction",
-        Some(&format!("{{\"product_id\":{product_id},\"name\":\"{name}\"}}")),
+        Some(&format!(
+            "{{\"product_id\":{product_id},\"name\":\"{name}\"}}"
+        )),
         1.0,
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
@@ -1230,10 +1218,7 @@ pub async fn get_account_detail(
                 .unwrap_or_default();
             let notes = account.notes.clone();
             // I644: Intelligence from DB only — no filesystem fallback.
-            let intelligence = db
-                .get_entity_intelligence(&account_id)
-                .ok()
-                .flatten();
+            let intelligence = db.get_entity_intelligence(&account_id).ok().flatten();
 
             let open_actions = db
                 .get_account_actions(&account_id)
@@ -1347,9 +1332,7 @@ pub async fn get_account_detail(
                 .unwrap_or_default();
 
             // I644: Source references for promoted account facts
-            let source_refs = db
-                .get_account_source_refs(&account.id)
-                .unwrap_or_default();
+            let source_refs = db.get_account_source_refs(&account.id).unwrap_or_default();
 
             Ok(AccountDetailResult {
                 id: account.id,
@@ -2970,8 +2953,7 @@ mod tests {
         account.contract_end = Some(contract_end);
         db.upsert_account(&account).expect("upsert");
 
-        super::ensure_account_lifecycle_state(&db, &engine, "acc-renew")
-            .expect("ensure_lifecycle");
+        super::ensure_account_lifecycle_state(&db, &engine, "acc-renew").expect("ensure_lifecycle");
 
         // Should have emitted renewal_stage_updated signal
         assert_eq!(signal_count(&db, "acc-renew", "renewal_stage_updated"), 1);
@@ -3018,8 +3000,16 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap_or((0.0, 0.0));
-        assert!(alpha > 1.0, "Alpha should increase on confirm (was {})", alpha);
-        assert!((beta - 1.0).abs() < f64::EPSILON, "Beta should stay at base (was {})", beta);
+        assert!(
+            alpha > 1.0,
+            "Alpha should increase on confirm (was {})",
+            alpha
+        );
+        assert!(
+            (beta - 1.0).abs() < f64::EPSILON,
+            "Beta should stay at base (was {})",
+            beta
+        );
     }
 
     #[test]
@@ -3048,8 +3038,15 @@ mod tests {
             )
             .expect("get change_id");
 
-        super::correct_lifecycle_change(&db, &engine, change_id, "at_risk", None, Some("Actually at risk"))
-            .expect("correct");
+        super::correct_lifecycle_change(
+            &db,
+            &engine,
+            change_id,
+            "at_risk",
+            None,
+            Some("Actually at risk"),
+        )
+        .expect("correct");
 
         // Signal weight beta should increase for calendar_pattern source (negative feedback)
         let (alpha, beta): (f64, f64) = db
@@ -3060,7 +3057,11 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap_or((0.0, 0.0));
-        assert!((alpha - 1.0).abs() < f64::EPSILON, "Alpha should stay at base (was {})", alpha);
+        assert!(
+            (alpha - 1.0).abs() < f64::EPSILON,
+            "Alpha should stay at base (was {})",
+            alpha
+        );
         assert!(beta > 1.0, "Beta should increase on correct (was {})", beta);
     }
 }
