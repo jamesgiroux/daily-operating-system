@@ -1022,6 +1022,13 @@ export default function AccountDetailEditorial() {
             teamSearchQuery={acct.teamSearchQuery}
             onTeamSearchQueryChange={acct.setTeamSearchQuery}
             teamSearchResults={acct.teamSearchResults}
+            suggestions={acct.suggestions}
+            onAcceptSuggestion={acct.acceptSuggestion}
+            onDismissSuggestion={acct.dismissSuggestion}
+            onUpdateEngagement={acct.updateStakeholderEngagement}
+            onUpdateAssessment={acct.updateStakeholderAssessment}
+            onAddRole={acct.addStakeholderRole}
+            onRemoveRole={acct.removeStakeholderRole}
           />
         </div>
       </div>

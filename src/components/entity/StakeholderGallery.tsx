@@ -24,22 +24,24 @@ import css from "./StakeholderGallery.module.css";
 
 /** Stakeholder role definitions for the multi-role picker. */
 const STAKEHOLDER_ROLES = [
-  { stored: "champion", label: "Champion" },
-  { stored: "executive_sponsor", label: "Exec Sponsor" },
-  { stored: "decision_maker", label: "Decision Maker" },
-  { stored: "economic_buyer", label: "Economic Buyer" },
-  { stored: "technical_buyer", label: "Technical Buyer" },
-  { stored: "primary_user", label: "Primary User" },
-  { stored: "technical_user", label: "Technical User" },
-  { stored: "csm", label: "CSM" },
-  { stored: "implementation", label: "Implementation" },
-  { stored: "associated", label: "Associated" },
+  { stored: "champion", label: "Champion", bg: "var(--color-spice-turmeric-12)", fg: "var(--color-spice-turmeric)" },
+  { stored: "executive_sponsor", label: "Exec Sponsor", bg: "var(--color-garden-rosemary-14)", fg: "var(--color-garden-rosemary)" },
+  { stored: "decision_maker", label: "Decision Maker", bg: "var(--color-garden-rosemary-14)", fg: "var(--color-garden-rosemary)" },
+  { stored: "economic_buyer", label: "Economic Buyer", bg: "var(--color-garden-sage-14)", fg: "var(--color-garden-sage)" },
+  { stored: "technical_buyer", label: "Technical Buyer", bg: "var(--color-garden-larkspur-14)", fg: "var(--color-garden-larkspur)" },
+  { stored: "primary_user", label: "Primary User", bg: "var(--color-garden-larkspur-14)", fg: "var(--color-garden-larkspur)" },
+  { stored: "technical_user", label: "Technical User", bg: "var(--color-garden-larkspur-14)", fg: "var(--color-garden-larkspur)" },
+  { stored: "csm", label: "CSM", bg: "var(--color-text-tertiary-8)", fg: "var(--color-text-secondary)" },
+  { stored: "implementation", label: "Implementation", bg: "var(--color-text-tertiary-8)", fg: "var(--color-text-secondary)" },
+  { stored: "associated", label: "Associated", bg: "var(--color-text-tertiary-8)", fg: "var(--color-text-tertiary)" },
 ];
 
-/** Get display label for a role stored value. */
-function getRoleDisplay(stored: string): string {
-  const found = STAKEHOLDER_ROLES.find((r) => r.stored === stored.toLowerCase());
-  return found ? found.label : stored;
+/** Get config (label + colors) for a role. */
+function getRoleConfig(stored: string) {
+  return (
+    STAKEHOLDER_ROLES.find((r) => r.stored === stored.toLowerCase()) ??
+    STAKEHOLDER_ROLES[STAKEHOLDER_ROLES.length - 1]
+  );
 }
 
 interface StakeholderGalleryProps {
@@ -486,8 +488,8 @@ export function StakeholderGallery({
                 {(roles.length > 0 || onAddRole) && (
                   <div className={css.roleBadges}>
                     {roles.map((r) => (
-                      <span key={r.role} className={css.roleBadge} data-source={r.dataSource}>
-                        {getRoleDisplay(r.role)}
+                      <span key={r.role} className={css.roleBadge} data-source={r.dataSource} style={{ background: getRoleConfig(r.role).bg, color: getRoleConfig(r.role).fg }}>
+                        {getRoleConfig(r.role).label}
                         {onRemoveRole && r.dataSource === "user" && (
                           <button
                             className={css.roleRemove}
@@ -566,7 +568,7 @@ export function StakeholderGallery({
               <div className={css.suggestionInfo}>
                 <span className={css.suggestionName}>{s.suggestedName ?? "Unknown"}</span>
                 {s.suggestedEmail && <span className={css.suggestionEmail}>{s.suggestedEmail}</span>}
-                {s.suggestedRole && <span className={css.roleBadge}>{getRoleDisplay(s.suggestedRole)}</span>}
+                {s.suggestedRole && <span className={css.roleBadge} style={{ background: getRoleConfig(s.suggestedRole).bg, color: getRoleConfig(s.suggestedRole).fg }}>{getRoleConfig(s.suggestedRole).label}</span>}
               </div>
               <div className={css.suggestionActions}>
                 {onAcceptSuggestion && (
