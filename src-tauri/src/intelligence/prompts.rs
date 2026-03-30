@@ -2999,6 +2999,7 @@ fn try_parse_json_response(
         source_attribution: ai_resp.source_attribution,
         gong_call_summaries: Vec::new(),
         success_plan_signals: ai_resp.success_plan_signals,
+        domains: Vec::new(),
         dismissed_items: Vec::new(),
     })
 }
