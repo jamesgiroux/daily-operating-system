@@ -58,6 +58,28 @@ const PERSON_PREP_TYPES: &[&str] = &["internal", "team_sync", "one_on_one"];
 const EMAILS_FILE: &str = "emails.json";
 
 // ============================================================================
+// Cache invalidation
+// ============================================================================
+
+/// Clear the cached briefing manifest when state changes (timezone, enrichment, etc).
+///
+/// Cache at `_today/data/schedule.json` can become stale if:
+/// - Timezone config changes
+/// - Events are cancelled in Google Calendar
+/// - Enrichment runs and updates intelligence
+///
+/// This invalidates the cache so the next refresh regenerates from live data.
+pub fn invalidate_briefing_cache(data_dir: &Path) {
+    let cache_path = data_dir.join("schedule.json");
+    if cache_path.exists() {
+        match fs::remove_file(&cache_path) {
+            Ok(_) => log::info!("Briefing cache invalidated: {}", cache_path.display()),
+            Err(e) => log::warn!("Failed to invalidate cache: {}", e),
+        }
+    }
+}
+
+// ============================================================================
 // Shared helpers (ported from deliver_today.py)
 // ============================================================================
 
