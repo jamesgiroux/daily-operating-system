@@ -1,13 +1,38 @@
 /* =============================================================================
-   ACCOUNT OUTLOOK — Narrative editorial style
-   Renewal outlook, expansion signals, contract context
+   ACCOUNT OUTLOOK — Three-section editorial chapter (I650)
+   Section 1: Renewal · Section 2: Growth Opportunities · Section 3: Commercial Reality
+   Each section breathes with generous whitespace and distinct headings.
    ============================================================================= */
 
 .section {
   scroll-margin-top: 60px;
 }
 
-/* ── Editorial statement — large serif headline ── */
+/* ── Shared: section rule + heading ── */
+
+.sectionRule {
+  width: 100%;
+  height: 1px;
+  background: var(--color-rule-light);
+  margin-bottom: var(--space-lg, 24px);
+}
+
+.sectionHeading {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-lg, 24px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 1 — Renewal
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.renewalSection {
+  margin-bottom: 56px;
+}
 
 .statement {
   font-family: var(--font-serif);
@@ -16,18 +41,7 @@
   line-height: 1.35;
   letter-spacing: -0.02em;
   max-width: 640px;
-  margin: 0 0 16px;
-}
-
-.expansionNarrative {
-  font-family: var(--font-serif);
-  font-size: 17px;
-  font-style: italic;
-  font-weight: 300;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-  max-width: 640px;
-  margin: 0 0 40px;
+  margin: 0 0 var(--space-md, 16px);
 }
 
 .confidenceHigh {
@@ -42,61 +56,33 @@
   color: var(--color-spice-terracotta);
 }
 
-/* ── Supporting detail — risk factors + recommended start ── */
-
-.detail {
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.65;
+/* Risk factors as flowing editorial prose */
+.renewalProse {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 300;
+  line-height: 1.6;
   color: var(--color-text-secondary);
-  max-width: 560px;
-  margin: 0;
+  max-width: 600px;
+  margin: 0 0 var(--space-md, 16px);
 }
 
-.riskFactorList {
-  margin: 0;
-  padding: 0 0 0 20px;
-  list-style: disc;
-  max-width: 560px;
-}
-
-.riskFactorItem {
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.65;
-  color: var(--color-text-secondary);
-  margin-bottom: 4px;
-}
-
-.riskFactorContent {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-.recommendedStart {
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.65;
-  color: var(--color-text-secondary);
-  max-width: 560px;
-  margin: 12px 0 0;
-}
-
-/* ── Expansion signals — editorial list ── */
-
-.expansionSection {
-  margin-top: 48px;
-}
-
-.expansionLabel {
+.renewalStart {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--color-text-tertiary);
-  margin: 0 0 16px;
+  margin: var(--space-md, 16px) 0 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 2 — Growth Opportunities
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.growthSection {
+  margin-bottom: 56px;
 }
 
 .signalList {
@@ -106,7 +92,7 @@
 
 .signalItem {
   display: flex;
-  gap: 16px;
+  gap: var(--space-md, 16px);
   align-items: flex-start;
   padding: 20px 0;
   border-bottom: 1px solid var(--color-rule-light);
@@ -134,9 +120,9 @@
   font-size: 11px;
   color: var(--color-text-tertiary);
   letter-spacing: 0.04em;
-  margin-top: 6px;
+  margin-top: 8px;
   display: flex;
-  gap: 16px;
+  gap: var(--space-md, 16px);
   align-items: center;
 }
 
@@ -145,8 +131,7 @@
   color: var(--color-spice-turmeric);
 }
 
-/* ── Stage badges ── */
-
+/* Stage badges */
 .badge {
   font-family: var(--font-mono);
   font-size: 9px;
@@ -174,19 +159,22 @@
 }
 
 .badgeNeutral {
-  background: var(--color-desk-charcoal-4, rgba(30, 37, 48, 0.04));
+  background: var(--color-desk-charcoal-4);
   color: var(--color-text-tertiary);
 }
 
-/* ── Contract strip — compact horizontal row ── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 3 — Commercial Reality
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-.contractStrip {
+.commercialSection {
+  margin-bottom: 0;
+}
+
+.contractGrid {
   display: flex;
   align-items: baseline;
   gap: 0;
-  border-top: 1px solid var(--color-rule-light);
-  margin-top: 48px;
-  padding-top: 20px;
 }
 
 .contractCell {
@@ -219,7 +207,7 @@
   color: var(--color-text-primary);
 }
 
-.contractValueArr {
+.contractValueHighlight {
   font-family: var(--font-serif);
   font-size: 14px;
   font-weight: 600;
@@ -229,15 +217,16 @@
 /* ── Hover-reveal item actions (I550) ── */
 
 .itemActions {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.15s ease;
+  margin-left: 6px;
 }
 
-.riskFactorItem:hover .itemActions,
+.renewalProse:hover .itemActions,
 .signalItem:hover .itemActions,
 .itemActions:focus-within {
   opacity: 1;
