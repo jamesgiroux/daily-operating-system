@@ -443,9 +443,7 @@ impl Scheduler {
                 self.find_missed_job(&config.schedules.today, WorkflowId::Today, now)
             {
                 if self.is_briefing_fresh_for_today() {
-                    log::info!(
-                        "Found missed 'today' job but briefing is already fresh — skipping"
-                    );
+                    log::info!("Found missed 'today' job but briefing is already fresh — skipping");
                 } else {
                     log::info!("Found missed 'today' job, running now");
                     self.trigger_workflow(WorkflowId::Today, ExecutionTrigger::Missed)

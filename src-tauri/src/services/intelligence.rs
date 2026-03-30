@@ -271,9 +271,8 @@ pub async fn enrich_entity(
         let ai_config_for_enrichment = ai_config.clone();
         let app_handle_clone = app_handle.cloned();
         let pty_result = tauri::async_runtime::spawn_blocking(move || {
-            let usage_context =
-                AiUsageContext::new("intelligence", "manual_entity_enrichment")
-                    .with_trigger("manual_refresh");
+            let usage_context = AiUsageContext::new("intelligence", "manual_entity_enrichment")
+                .with_trigger("manual_refresh");
             run_enrichment(
                 &input_for_enrichment,
                 &ai_config_for_enrichment,
@@ -449,7 +448,12 @@ pub fn upsert_assessment_snapshot(
     // Only applies to account entities.
     if intel.entity_type == "account" && !intel.domains.is_empty() {
         db.set_account_domains(&intel.entity_id, &intel.domains)
-            .map_err(|e| format!("Failed to store domains for account {}: {}", intel.entity_id, e))?;
+            .map_err(|e| {
+                format!(
+                    "Failed to store domains for account {}: {}",
+                    intel.entity_id, e
+                )
+            })?;
         log::debug!(
             "Intelligence service: stored {} domains for account '{}'",
             intel.domains.len(),
@@ -619,7 +623,12 @@ pub async fn update_intelligence_field(
                     &field_path,
                     &value,
                 )?,
-                None => return Err(format!("I644: no DB intelligence row for {} — cannot update field", entity_id)),
+                None => {
+                    return Err(format!(
+                        "I644: no DB intelligence row for {} — cannot update field",
+                        entity_id
+                    ))
+                }
             };
             // Write to disk for MCP sidecar compatibility (best-effort)
             let _ = crate::intelligence::write_intelligence_json(&dir, &intel);
@@ -875,7 +884,10 @@ pub async fn dismiss_intelligence_item(
             // I644: DB is sole source of truth — no filesystem fallback.
             let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
             let mut intel = existing_intel.ok_or_else(|| {
-                format!("I644: no DB intelligence row for {} — cannot dismiss item", entity_id)
+                format!(
+                    "I644: no DB intelligence row for {} — cannot dismiss item",
+                    entity_id
+                )
             })?;
 
             // Add tombstone

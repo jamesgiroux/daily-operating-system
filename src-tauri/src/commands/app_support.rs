@@ -264,25 +264,49 @@ pub async fn populate_workspace(
                     arr_range_low: existing.as_ref().and_then(|e| e.arr_range_low),
                     arr_range_high: existing.as_ref().and_then(|e| e.arr_range_high),
                     renewal_likelihood: existing.as_ref().and_then(|e| e.renewal_likelihood),
-                    renewal_likelihood_source: existing.as_ref().and_then(|e| e.renewal_likelihood_source.clone()),
-                    renewal_likelihood_updated_at: existing.as_ref().and_then(|e| e.renewal_likelihood_updated_at.clone()),
+                    renewal_likelihood_source: existing
+                        .as_ref()
+                        .and_then(|e| e.renewal_likelihood_source.clone()),
+                    renewal_likelihood_updated_at: existing
+                        .as_ref()
+                        .and_then(|e| e.renewal_likelihood_updated_at.clone()),
                     renewal_model: existing.as_ref().and_then(|e| e.renewal_model.clone()),
-                    renewal_pricing_method: existing.as_ref().and_then(|e| e.renewal_pricing_method.clone()),
+                    renewal_pricing_method: existing
+                        .as_ref()
+                        .and_then(|e| e.renewal_pricing_method.clone()),
                     support_tier: existing.as_ref().and_then(|e| e.support_tier.clone()),
-                    support_tier_source: existing.as_ref().and_then(|e| e.support_tier_source.clone()),
-                    support_tier_updated_at: existing.as_ref().and_then(|e| e.support_tier_updated_at.clone()),
-                    active_subscription_count: existing.as_ref().and_then(|e| e.active_subscription_count),
-                    growth_potential_score: existing.as_ref().and_then(|e| e.growth_potential_score),
-                    growth_potential_score_source: existing.as_ref().and_then(|e| e.growth_potential_score_source.clone()),
+                    support_tier_source: existing
+                        .as_ref()
+                        .and_then(|e| e.support_tier_source.clone()),
+                    support_tier_updated_at: existing
+                        .as_ref()
+                        .and_then(|e| e.support_tier_updated_at.clone()),
+                    active_subscription_count: existing
+                        .as_ref()
+                        .and_then(|e| e.active_subscription_count),
+                    growth_potential_score: existing
+                        .as_ref()
+                        .and_then(|e| e.growth_potential_score),
+                    growth_potential_score_source: existing
+                        .as_ref()
+                        .and_then(|e| e.growth_potential_score_source.clone()),
                     icp_fit_score: existing.as_ref().and_then(|e| e.icp_fit_score),
-                    icp_fit_score_source: existing.as_ref().and_then(|e| e.icp_fit_score_source.clone()),
+                    icp_fit_score_source: existing
+                        .as_ref()
+                        .and_then(|e| e.icp_fit_score_source.clone()),
                     primary_product: existing.as_ref().and_then(|e| e.primary_product.clone()),
                     customer_status: existing.as_ref().and_then(|e| e.customer_status.clone()),
-                    customer_status_source: existing.as_ref().and_then(|e| e.customer_status_source.clone()),
-                    customer_status_updated_at: existing.as_ref().and_then(|e| e.customer_status_updated_at.clone()),
+                    customer_status_source: existing
+                        .as_ref()
+                        .and_then(|e| e.customer_status_source.clone()),
+                    customer_status_updated_at: existing
+                        .as_ref()
+                        .and_then(|e| e.customer_status_updated_at.clone()),
                     // I644 dashboard.json fields
                     company_overview: existing.as_ref().and_then(|e| e.company_overview.clone()),
-                    strategic_programs: existing.as_ref().and_then(|e| e.strategic_programs.clone()),
+                    strategic_programs: existing
+                        .as_ref()
+                        .and_then(|e| e.strategic_programs.clone()),
                     notes: existing.as_ref().and_then(|e| e.notes.clone()),
                 };
                 if let Err(e) = crate::services::mutations::upsert_account(db, &engine, &db_account)
@@ -562,11 +586,8 @@ pub async fn get_ai_usage_diagnostics(
                     })
                     .collect::<Vec<_>>();
             }
-            operation_counts.sort_by(|a, b| {
-                b.count
-                    .cmp(&a.count)
-                    .then_with(|| a.label.cmp(&b.label))
-            });
+            operation_counts
+                .sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.label.cmp(&b.label)));
 
             let mut model_counts = today_usage
                 .model_counts
@@ -576,11 +597,7 @@ pub async fn get_ai_usage_diagnostics(
                     count: *count,
                 })
                 .collect::<Vec<_>>();
-            model_counts.sort_by(|a, b| {
-                b.count
-                    .cmp(&a.count)
-                    .then_with(|| a.label.cmp(&b.label))
-            });
+            model_counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.label.cmp(&b.label)));
 
             let estimated_budget_remaining = crate::pty::ESTIMATED_DAILY_TOKEN_BUDGET
                 .saturating_sub(
