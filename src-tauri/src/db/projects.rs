@@ -616,14 +616,24 @@ impl ActionDb {
     ) -> Result<usize, DbError> {
         // Route: accounts → account_stakeholders, projects → entity_members
         if let Some(acct_id) = account_id {
-            let count = self.conn.execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type)
-                 SELECT ?1, ma.person_id, 'associated', 'attendee'
+            self.conn.execute(
+                "INSERT INTO account_stakeholders (account_id, person_id)
+                 SELECT ?1, ma.person_id
                  FROM meeting_attendees ma
                  JOIN people p ON ma.person_id = p.id
                  WHERE ma.meeting_id = ?2
                    AND p.relationship = 'external'
                  ON CONFLICT(account_id, person_id) DO NOTHING",
+                params![acct_id, meeting_id],
+            )?;
+            let count = self.conn.execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role)
+                 SELECT ?1, ma.person_id, 'associated'
+                 FROM meeting_attendees ma
+                 JOIN people p ON ma.person_id = p.id
+                 WHERE ma.meeting_id = ?2
+                   AND p.relationship = 'external'
+                 ON CONFLICT(account_id, person_id, role) DO NOTHING",
                 params![acct_id, meeting_id],
             )?;
             return Ok(count);

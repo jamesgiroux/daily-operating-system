@@ -1,5 +1,20 @@
 use super::*;
 
+/// Result of a find-or-create person operation (I652).
+#[derive(Debug)]
+pub enum PersonResolution {
+    /// Existing person found by email (primary or alias). Definitive match.
+    FoundByEmail(DbPerson),
+    /// Existing person found by name similarity. Needs user confirmation.
+    FoundByName {
+        person: DbPerson,
+        confidence: f32,
+        reason: String,
+    },
+    /// No match found — a new person was created.
+    Created(DbPerson),
+}
+
 impl ActionDb {
     // =========================================================================
     // People (I51)
@@ -281,6 +296,183 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    // =========================================================================
+    // Person resolution: find-or-create with email + name dedup (I652)
+    // =========================================================================
+
+    /// Find an existing person by email (primary + aliases) or name similarity,
+    /// or create a new one. This is the canonical entry point for stakeholder
+    /// suggestion acceptance and meeting attendee reconciliation.
+    ///
+    /// Resolution order:
+    /// 1. Exact email match (primary `people.email`)
+    /// 2. Alias email match (`person_emails` table)
+    /// 3. Domain-alias match (`local_part@sibling_domain`)
+    /// 4. Name similarity match (confidence ≥ 0.60 within same org/domain)
+    /// 5. Create new person
+    ///
+    /// Steps 1-3 return `FoundByEmail` — the match is definitive.
+    /// Step 4 returns `FoundByName` — the caller should confirm with the user.
+    /// Step 5 returns `Created` — no match found.
+    pub fn find_or_create_person(
+        &self,
+        email: Option<&str>,
+        name: &str,
+        organization: Option<&str>,
+        relationship: &str,
+        user_domains: &[String],
+    ) -> Result<PersonResolution, DbError> {
+        // --- Step 1-3: Email-based resolution (definitive) ---
+        if let Some(email) = email {
+            let email_lower = email.to_lowercase();
+
+            // Step 1: Primary email match
+            if let Some(person) = self.get_person_by_email(&email_lower)? {
+                return Ok(PersonResolution::FoundByEmail(person));
+            }
+
+            // Step 2: Alias email match
+            if let Some(person) = self.get_person_by_email_or_alias(&email_lower)? {
+                return Ok(PersonResolution::FoundByEmail(person));
+            }
+
+            // Step 3: Domain-alias match (e.g., john@wpvip.com → john@a8c.com)
+            let siblings = self.get_sibling_domains_for_email(&email_lower, user_domains)?;
+            if !siblings.is_empty() {
+                if let Some(person) = self.find_person_by_domain_alias(&email_lower, &siblings)? {
+                    return Ok(PersonResolution::FoundByEmail(person));
+                }
+            }
+
+            // No email match — fall through to name matching, then create
+        }
+
+        // --- Step 4: Name-based similarity (needs user confirmation) ---
+        if !name.is_empty() && !name.contains('@') {
+            let candidates = self.find_person_candidates_by_name(name, organization)?;
+            if let Some((person, confidence, reason)) = candidates.into_iter().next() {
+                return Ok(PersonResolution::FoundByName { person, confidence, reason });
+            }
+        }
+
+        // --- Step 5: Create new person ---
+        if let Some(email) = email {
+            let id = crate::util::slugify(&format!(
+                "{}-{}",
+                name,
+                &email[..email.find('@').unwrap_or(email.len())]
+            ));
+            let now = chrono::Utc::now().to_rfc3339();
+            let person = DbPerson {
+                id: id.clone(),
+                email: email.to_lowercase(),
+                name: name.to_string(),
+                organization: organization.map(|s| s.to_string()),
+                role: None,
+                relationship: relationship.to_string(),
+                notes: None,
+                tracker_path: None,
+                last_seen: None,
+                first_seen: Some(now.clone()),
+                meeting_count: 0,
+                updated_at: now,
+                archived: false,
+                linkedin_url: None,
+                twitter_handle: None,
+                phone: None,
+                photo_url: None,
+                bio: None,
+                title_history: None,
+                company_industry: None,
+                company_size: None,
+                company_hq: None,
+                last_enriched_at: None,
+                enrichment_sources: None,
+            };
+            self.upsert_person(&person)?;
+            return Ok(PersonResolution::Created(person));
+        }
+
+        // Name only, no email — cannot create a person (email is NOT NULL)
+        Err(DbError::Migration(
+            "Cannot create person without email address".to_string(),
+        ))
+    }
+
+    /// Find existing people whose names are similar to the given name.
+    /// Returns matches sorted by confidence descending (highest first).
+    ///
+    /// Uses the same scoring algorithm as `hygiene/detectors::score_name_similarity`:
+    /// - 0.95: Exact normalized name match
+    /// - 0.70: Same first name + last initial
+    /// - 0.60: First 3 chars of first+last match
+    ///
+    /// Optionally filters by organization to reduce false positives.
+    pub fn find_person_candidates_by_name(
+        &self,
+        name: &str,
+        organization: Option<&str>,
+    ) -> Result<Vec<(DbPerson, f32, String)>, DbError> {
+        // Get first+last parts for targeted SQL query
+        let name_lower = name.trim().to_lowercase();
+        let parts: Vec<&str> = name_lower.split_whitespace().collect();
+        if parts.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Query candidates using LIKE on the first name part (reduces scan)
+        let first_part = parts[0];
+        let pattern = format!("{}%", first_part);
+
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email, name, organization, role, relationship, notes,
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
+             FROM people
+             WHERE archived = 0 AND LOWER(name) LIKE ?1
+             ORDER BY name
+             LIMIT 50",
+        )?;
+        let candidates: Vec<DbPerson> = stmt
+            .query_map(params![pattern], Self::map_person_row)?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut results: Vec<(DbPerson, f32, String)> = Vec::new();
+
+        for person in candidates {
+            // Score name similarity using the same algorithm as hygiene detectors
+            if let Some((confidence, reason)) =
+                crate::hygiene::detectors::score_name_similarity(name, &person.name)
+            {
+                // Only include matches ≥ 0.60
+                if confidence >= 0.60 {
+                    // Boost confidence if organizations match
+                    let org_boost = match (organization, person.organization.as_deref()) {
+                        (Some(org), Some(p_org))
+                            if !org.is_empty()
+                                && org.to_lowercase() == p_org.to_lowercase() =>
+                        {
+                            0.05
+                        }
+                        _ => 0.0,
+                    };
+                    let final_confidence = (confidence + org_boost).min(1.0);
+                    results.push((person, final_confidence, reason));
+                }
+            }
+        }
+
+        // Sort by confidence descending
+        results.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        Ok(results)
+    }
+
     /// Get a person by ID.
     pub fn get_person(&self, id: &str) -> Result<Option<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
@@ -471,9 +663,15 @@ impl ActionDb {
 
         if is_account {
             self.conn.execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type)
-                 VALUES (?1, ?2, 'associated', ?3)
+                "INSERT INTO account_stakeholders (account_id, person_id)
+                 VALUES (?1, ?2)
                  ON CONFLICT(account_id, person_id) DO NOTHING",
+                params![entity_id, person_id],
+            )?;
+            self.conn.execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(account_id, person_id, role) DO NOTHING",
                 params![entity_id, person_id, rel],
             )?;
         } else {
@@ -493,6 +691,10 @@ impl ActionDb {
         person_id: &str,
         entity_id: &str,
     ) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM account_stakeholder_roles WHERE account_id = ?1 AND person_id = ?2",
+            params![entity_id, person_id],
+        )?;
         self.conn.execute(
             "DELETE FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
             params![entity_id, person_id],
@@ -996,9 +1198,23 @@ impl ActionDb {
             // 2. Transfer account_stakeholders links
             tx.conn
                 .execute(
-                    "INSERT OR IGNORE INTO account_stakeholders (account_id, person_id, role, relationship_type)
-                 SELECT account_id, ?1, role, relationship_type FROM account_stakeholders WHERE person_id = ?2",
+                    "INSERT OR IGNORE INTO account_stakeholders (account_id, person_id, data_source)
+                 SELECT account_id, ?1, data_source FROM account_stakeholders WHERE person_id = ?2",
                     params![keep_id, remove_id],
+                )
+                .map_err(|e| e.to_string())?;
+            // 2a. Transfer account_stakeholder_roles links
+            tx.conn
+                .execute(
+                    "INSERT OR IGNORE INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 SELECT account_id, ?1, role, data_source FROM account_stakeholder_roles WHERE person_id = ?2",
+                    params![keep_id, remove_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM account_stakeholder_roles WHERE person_id = ?1",
+                    params![remove_id],
                 )
                 .map_err(|e| e.to_string())?;
             tx.conn
@@ -1122,6 +1338,12 @@ impl ActionDb {
             tx.conn
                 .execute(
                     "DELETE FROM meeting_attendees WHERE person_id = ?1",
+                    params![person_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM account_stakeholder_roles WHERE person_id = ?1",
                     params![person_id],
                 )
                 .map_err(|e| e.to_string())?;

@@ -113,12 +113,19 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         // Link to account if specified
         if let Some(acct) = account_id {
             conn.execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type) \
-                 VALUES (?1, ?2, 'associated', 'stakeholder')
+                "INSERT INTO account_stakeholders (account_id, person_id) \
+                 VALUES (?1, ?2)
                  ON CONFLICT(account_id, person_id) DO NOTHING",
                 rusqlite::params![acct, id],
             )
             .map_err(|e| format!("Demo account-stakeholder link: {}", e))?;
+            conn.execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role) \
+                 VALUES (?1, ?2, 'associated')
+                 ON CONFLICT(account_id, person_id, role) DO NOTHING",
+                rusqlite::params![acct, id],
+            )
+            .map_err(|e| format!("Demo account-stakeholder role link: {}", e))?;
         }
     }
 
@@ -783,6 +790,13 @@ pub fn clear_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), String>
         [],
     )
     .map_err(|e| format!("Clear demo meeting attendees: {}", e))?;
+
+    // Clean up account_stakeholder_roles links for demo people
+    conn.execute(
+        "DELETE FROM account_stakeholder_roles WHERE person_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo account-stakeholder role links: {}", e))?;
 
     // Clean up account_stakeholders links for demo people
     conn.execute(
