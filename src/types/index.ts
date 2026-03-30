@@ -1137,7 +1137,7 @@ export interface FullMeetingPrep {
   userAgenda?: string[];
   /** User-authored notes (I194 / ADR-0065) */
   userNotes?: string;
-  /** Intelligence summary — executive assessment from intelligence.json (I135) */
+  /** Intelligence summary — executive assessment from entity_assessment DB (I513). */
   intelligenceSummary?: string;
   /** Entity-level risks from intelligence.json (I135) */
   entityRisks?: IntelRisk[];
