@@ -615,6 +615,7 @@ impl ActionDb {
         project_id: Option<&str>,
     ) -> Result<usize, DbError> {
         // Route: accounts → account_stakeholders, projects → entity_members
+        // I652: Only auto-add after attendee appears in 2+ meetings with the account
         if let Some(acct_id) = account_id {
             self.conn.execute(
                 "INSERT INTO account_stakeholders (account_id, person_id)
@@ -623,18 +624,21 @@ impl ActionDb {
                  JOIN people p ON ma.person_id = p.id
                  WHERE ma.meeting_id = ?2
                    AND p.relationship = 'external'
+                   AND (SELECT COUNT(DISTINCT ma2.meeting_id)
+                        FROM meeting_attendees ma2
+                        JOIN meeting_entities me2 ON me2.meeting_id = ma2.meeting_id
+                        WHERE ma2.person_id = ma.person_id
+                          AND me2.entity_id = ?1 AND me2.entity_type = 'account') >= 2
                  ON CONFLICT(account_id, person_id) DO NOTHING",
                 params![acct_id, meeting_id],
             )?;
             let count = self.conn.execute(
-                "INSERT INTO account_stakeholder_roles (account_id, person_id, role)
-                 SELECT ?1, ma.person_id, 'associated'
-                 FROM meeting_attendees ma
-                 JOIN people p ON ma.person_id = p.id
-                 WHERE ma.meeting_id = ?2
-                   AND p.relationship = 'external'
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 SELECT as_.account_id, as_.person_id, 'associated', 'google'
+                 FROM account_stakeholders as_
+                 WHERE as_.account_id = ?1
                  ON CONFLICT(account_id, person_id, role) DO NOTHING",
-                params![acct_id, meeting_id],
+                params![acct_id],
             )?;
             return Ok(count);
         }
