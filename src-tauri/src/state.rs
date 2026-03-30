@@ -299,7 +299,7 @@ impl AppState {
         // loading so startup sync doesn't import mock data into the live DB.
         recover_from_unclean_dev_exit();
 
-        let config = load_config().ok();
+        let mut config = load_config().ok();
         let history = load_execution_history().unwrap_or_default();
 
         // Initialize audit logger BEFORE DB open so key events can be logged (Option B).
@@ -384,6 +384,36 @@ impl AppState {
 
         // Detect existing Google token on startup
         let google_auth = detect_google_auth();
+        if let Some(cfg) = config.as_mut() {
+            if reconcile_google_enabled_flag(cfg, &google_auth) {
+                let persist_result = serde_json::to_string_pretty(cfg)
+                    .map_err(|e| format!("Failed to serialize config: {}", e))
+                    .and_then(|content| {
+                        let path = config_path()?;
+                        crate::util::atomic_write_str(&path, &content)
+                            .map_err(|e| format!("Failed to write config: {}", e))
+                    });
+
+                match persist_result {
+                    Ok(()) => {
+                        log::info!(
+                            "Startup repair: enabled Google polling for authenticated account"
+                        );
+                        let _ = audit_logger.append(
+                            "config",
+                            "google_enabled_repaired",
+                            serde_json::json!({"trigger": "startup_auth_detected"}),
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Startup repair: enabled Google polling in memory but failed to persist config: {}",
+                            e
+                        );
+                    }
+                }
+            }
+        }
 
         // Load transcript records from disk
         let transcript_processed = load_transcript_records().unwrap_or_default();
@@ -1243,6 +1273,15 @@ pub fn load_config() -> Result<Config, String> {
     Ok(config)
 }
 
+fn reconcile_google_enabled_flag(config: &mut Config, google_auth: &GoogleAuthStatus) -> bool {
+    if matches!(google_auth, GoogleAuthStatus::Authenticated { .. }) && !config.google.enabled {
+        config.google.enabled = true;
+        return true;
+    }
+
+    false
+}
+
 /// Load execution history from disk
 fn load_execution_history() -> Result<Vec<ExecutionRecord>, String> {
     let path = get_state_dir()?.join("execution_history.json");
@@ -1528,6 +1567,7 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::GoogleConfig;
 
     #[test]
     fn test_app_lock_state_default() {
@@ -1535,5 +1575,40 @@ mod tests {
         assert!(!lock_state.is_locked);
         assert_eq!(lock_state.failed_unlock_count, 0);
         assert!(lock_state.last_failed_unlock.is_none());
+    }
+
+    #[test]
+    fn test_reconcile_google_enabled_flag_repairs_authenticated_config() {
+        let mut config: Config =
+            serde_json::from_value(serde_json::json!({ "workspacePath": "/tmp" })).unwrap();
+        config.google = GoogleConfig {
+            enabled: false,
+            ..GoogleConfig::default()
+        };
+
+        let changed = reconcile_google_enabled_flag(
+            &mut config,
+            &GoogleAuthStatus::Authenticated {
+                email: "user@example.com".to_string(),
+            },
+        );
+
+        assert!(changed);
+        assert!(config.google.enabled);
+    }
+
+    #[test]
+    fn test_reconcile_google_enabled_flag_skips_unauthenticated_config() {
+        let mut config: Config =
+            serde_json::from_value(serde_json::json!({ "workspacePath": "/tmp" })).unwrap();
+        config.google = GoogleConfig {
+            enabled: false,
+            ..GoogleConfig::default()
+        };
+
+        let changed = reconcile_google_enabled_flag(&mut config, &GoogleAuthStatus::NotConfigured);
+
+        assert!(!changed);
+        assert!(!config.google.enabled);
     }
 }
