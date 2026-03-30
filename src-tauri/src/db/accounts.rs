@@ -349,11 +349,18 @@ impl ActionDb {
     /// Get account team members with person details.
     pub fn get_account_team(&self, account_id: &str) -> Result<Vec<DbAccountTeamMember>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT as_.account_id, as_.person_id, p.name, p.email, as_.role, as_.created_at
+            "SELECT as_.account_id, as_.person_id, p.name, p.email,
+                    COALESCE(
+                        (SELECT GROUP_CONCAT(asr.role, ',')
+                         FROM account_stakeholder_roles asr
+                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
+                        'associated'
+                    ) AS roles,
+                    as_.created_at
              FROM account_stakeholders as_
              JOIN people p ON p.id = as_.person_id
              WHERE as_.account_id = ?1
-             ORDER BY as_.role, p.name",
+             ORDER BY p.name",
         )?;
         let rows = stmt.query_map(params![account_id], |row| {
             Ok(DbAccountTeamMember {
@@ -375,11 +382,18 @@ impl ActionDb {
         account_id: &str,
     ) -> Result<Vec<DbAccountTeamMember>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT as_.account_id, as_.person_id, p.name, p.email, as_.role, as_.created_at
+            "SELECT as_.account_id, as_.person_id, p.name, p.email,
+                    COALESCE(
+                        (SELECT GROUP_CONCAT(asr.role, ',')
+                         FROM account_stakeholder_roles asr
+                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
+                        'associated'
+                    ) AS roles,
+                    as_.created_at
              FROM account_stakeholders as_
              JOIN people p ON p.id = as_.person_id
              WHERE as_.account_id = ?1 AND p.relationship = 'internal'
-             ORDER BY as_.role, p.name",
+             ORDER BY p.name",
         )?;
         let rows = stmt.query_map(params![account_id], |row| {
             Ok(DbAccountTeamMember {
@@ -394,18 +408,27 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Full stakeholder data with data_source for the DB-first read model.
+    /// Full stakeholder data with data_source for the DB-first read model (I652).
     /// Returns ALL stakeholders (user-confirmed + Glean-suggested + Google-sourced)
-    /// plus linked people from entity_members.
+    /// plus linked people from entity_members. Roles come from account_stakeholder_roles.
     pub fn get_account_stakeholders_full(
         &self,
         account_id: &str,
     ) -> Result<Vec<DbStakeholderFull>, DbError> {
+        // Step 1: Fetch stakeholder base data + aggregated roles string
         let mut stmt = self.conn.prepare(
             "SELECT as_.person_id, p.name, p.email, p.organization, p.role AS person_role,
-                    as_.role AS stakeholder_role, as_.data_source, as_.last_seen_in_glean,
+                    COALESCE(
+                        (SELECT GROUP_CONCAT(asr.role, ',')
+                         FROM account_stakeholder_roles asr
+                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
+                        'associated'
+                    ) AS stakeholder_roles,
+                    as_.data_source, as_.last_seen_in_glean,
                     as_.created_at,
-                    p.linkedin_url, p.photo_url, p.meeting_count, p.last_seen
+                    p.linkedin_url, p.photo_url, p.meeting_count, p.last_seen,
+                    as_.engagement, as_.data_source_engagement,
+                    as_.assessment, as_.data_source_assessment
              FROM account_stakeholders as_
              JOIN people p ON p.id = as_.person_id
              WHERE as_.account_id = ?1
@@ -418,27 +441,66 @@ impl ActionDb {
                CASE as_.data_source WHEN 'user' THEN 0 WHEN 'glean' THEN 1 ELSE 2 END,
                p.name",
         )?;
-        let rows = stmt.query_map(params![account_id], |row| {
-            Ok(DbStakeholderFull {
-                person_id: row.get(0)?,
-                person_name: row.get(1)?,
-                person_email: row.get(2)?,
-                organization: row.get(3)?,
-                person_role: row.get(4)?,
-                stakeholder_role: row.get(5)?,
-                data_source: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "user".to_string()),
-                last_seen_in_glean: row.get(7)?,
-                created_at: row.get(8)?,
-                linkedin_url: row.get(9)?,
-                photo_url: row.get(10)?,
-                meeting_count: row.get(11)?,
-                last_seen: row.get(12)?,
+
+        let mut stakeholders: Vec<DbStakeholderFull> = stmt
+            .query_map(params![account_id], |row| {
+                let roles_csv: String = row.get(5)?;
+                Ok(DbStakeholderFull {
+                    person_id: row.get(0)?,
+                    person_name: row.get(1)?,
+                    person_email: row.get(2)?,
+                    organization: row.get(3)?,
+                    person_role: row.get(4)?,
+                    stakeholder_role: roles_csv.clone(),
+                    roles: Vec::new(), // populated below
+                    data_source: row.get::<_, Option<String>>(6)?
+                        .unwrap_or_else(|| "user".to_string()),
+                    last_seen_in_glean: row.get(7)?,
+                    created_at: row.get(8)?,
+                    linkedin_url: row.get(9)?,
+                    photo_url: row.get(10)?,
+                    meeting_count: row.get(11)?,
+                    last_seen: row.get(12)?,
+                    engagement: row.get(13)?,
+                    data_source_engagement: row.get(14)?,
+                    assessment: row.get(15)?,
+                    data_source_assessment: row.get(16)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Step 2: Fetch typed roles with per-role data_source for each stakeholder
+        for stakeholder in &mut stakeholders {
+            let roles = self.get_stakeholder_roles(account_id, &stakeholder.person_id)?;
+            stakeholder.roles = roles;
+        }
+
+        Ok(stakeholders)
+    }
+
+    /// Get typed roles for a specific stakeholder (I652).
+    pub fn get_stakeholder_roles(
+        &self,
+        account_id: &str,
+        person_id: &str,
+    ) -> Result<Vec<crate::db::types::StakeholderRole>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT role, data_source FROM account_stakeholder_roles
+             WHERE account_id = ?1 AND person_id = ?2
+             ORDER BY role",
+        )?;
+        let rows = stmt.query_map(params![account_id, person_id], |row| {
+            Ok(crate::db::types::StakeholderRole {
+                role: row.get(0)?,
+                data_source: row.get(1)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Add an account team member role link (idempotent).
+    /// Add an account team member with a role (idempotent, I652).
+    /// Inserts into account_stakeholders (the link) + account_stakeholder_roles (the role).
     pub fn add_account_team_member(
         &self,
         account_id: &str,
@@ -447,21 +509,29 @@ impl ActionDb {
     ) -> Result<(), DbError> {
         let role = role.trim().to_lowercase();
         let now = Utc::now().to_rfc3339();
+        // Ensure the person-account link exists
         self.conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type, data_source, created_at)
-             VALUES (?1, ?2, ?3, 'associated', 'user', ?4)
+            "INSERT INTO account_stakeholders (account_id, person_id, data_source, created_at)
+             VALUES (?1, ?2, 'user', ?3)
              ON CONFLICT(account_id, person_id) DO UPDATE SET
-                role = excluded.role,
+                data_source = 'user'",
+            params![account_id, person_id, now],
+        )?;
+        // Add the role
+        self.conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
+             VALUES (?1, ?2, ?3, 'user', ?4)
+             ON CONFLICT(account_id, person_id, role) DO UPDATE SET
                 data_source = 'user'",
             params![account_id, person_id, role, now],
         )?;
         Ok(())
     }
 
-    /// Link a person to an account with explicit data source (I505).
+    /// Link a person to an account with explicit data source (I505, updated I652).
     ///
     /// Sets `last_seen_in_glean` on insert/update. Does NOT overwrite `data_source`
-    /// or `role` if the existing row was user-owned (`data_source = 'user'`).
+    /// on the role if the existing role was user-owned (`data_source = 'user'`).
     pub fn link_person_to_account_with_source(
         &self,
         account_id: &str,
@@ -470,25 +540,42 @@ impl ActionDb {
         data_source: &str,
     ) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
+        // Ensure the person-account link exists
         self.conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type, data_source, last_seen_in_glean, created_at)
-             VALUES (?1, ?2, ?3, 'associated', ?4, ?5, ?5)
+            "INSERT INTO account_stakeholders (account_id, person_id, data_source, last_seen_in_glean, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)
              ON CONFLICT(account_id, person_id) DO UPDATE SET
                 last_seen_in_glean = excluded.last_seen_in_glean,
-                role = CASE WHEN account_stakeholders.data_source = 'user' THEN account_stakeholders.role ELSE excluded.role END,
-                data_source = CASE WHEN account_stakeholders.data_source = 'user' THEN account_stakeholders.data_source ELSE excluded.data_source END",
+                data_source = CASE WHEN account_stakeholders.data_source = 'user'
+                    THEN account_stakeholders.data_source ELSE excluded.data_source END",
+            params![account_id, person_id, data_source, now],
+        )?;
+        // Add the role (don't overwrite user-owned roles)
+        let role = role.trim().to_lowercase();
+        self.conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(account_id, person_id, role) DO UPDATE SET
+                data_source = CASE WHEN account_stakeholder_roles.data_source = 'user'
+                    THEN account_stakeholder_roles.data_source ELSE excluded.data_source END",
             params![account_id, person_id, role, data_source, now],
         )?;
         Ok(())
     }
 
-    /// Remove an account team member link.
+    /// Remove an account team member link and all their roles (I652).
     pub fn remove_account_team_member(
         &self,
         account_id: &str,
         person_id: &str,
         _role: &str,
     ) -> Result<(), DbError> {
+        // Roles cascade via FK, but be explicit
+        self.conn.execute(
+            "DELETE FROM account_stakeholder_roles
+             WHERE account_id = ?1 AND person_id = ?2",
+            params![account_id, person_id],
+        )?;
         self.conn.execute(
             "DELETE FROM account_stakeholders
              WHERE account_id = ?1 AND person_id = ?2",
@@ -1686,6 +1773,18 @@ impl ActionDb {
                 )
                 .map_err(|e| e.to_string())?;
 
+            // Reassign account_stakeholder_roles (ignore dupes)
+            conn.execute(
+                "UPDATE OR IGNORE account_stakeholder_roles SET account_id = ?2
+                 WHERE account_id = ?1",
+                params![from_id, into_id],
+            )
+            .map_err(|e| e.to_string())?;
+            conn.execute(
+                "DELETE FROM account_stakeholder_roles WHERE account_id = ?1",
+                params![from_id],
+            )
+            .map_err(|e| e.to_string())?;
             // Reassign account_stakeholders (ignore dupes)
             conn.execute(
                 "UPDATE OR IGNORE account_stakeholders SET account_id = ?2

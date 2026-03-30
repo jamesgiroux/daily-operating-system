@@ -957,7 +957,12 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'associated')",
+            "INSERT INTO account_stakeholders (account_id, person_id) VALUES ('a1', 'p1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES ('a1', 'p1', 'associated')",
             [],
         )
         .unwrap();
@@ -1070,7 +1075,12 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
+            "INSERT INTO account_stakeholders (account_id, person_id) VALUES ('a1', 'p1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
             [],
         )
         .unwrap();

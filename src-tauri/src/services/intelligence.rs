@@ -2113,27 +2113,51 @@ mod live_acceptance_tests {
         snapshot_db
             .conn_ref()
             .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, role, data_source)
-                 VALUES (?1, ?2, 'champion', 'glean')",
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
+                 VALUES (?1, ?2, 'glean')",
                 params![account_glean, glean_person_id],
             )
             .expect("seed glean stakeholder");
         snapshot_db
             .conn_ref()
             .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, role, data_source)
-                 VALUES (?1, ?2, 'champion', 'google')",
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES (?1, ?2, 'champion', 'glean')",
+                params![account_glean, glean_person_id],
+            )
+            .expect("seed glean stakeholder role");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
+                 VALUES (?1, ?2, 'google')",
                 params![account_google, google_person_id],
             )
             .expect("seed google stakeholder");
         snapshot_db
             .conn_ref()
             .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, role, data_source)
-                 VALUES (?1, ?2, 'champion', 'user')",
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES (?1, ?2, 'champion', 'google')",
+                params![account_google, google_person_id],
+            )
+            .expect("seed google stakeholder role");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
+                 VALUES (?1, ?2, 'user')",
                 params![account_user, user_person_id],
             )
             .expect("seed user stakeholder");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES (?1, ?2, 'champion', 'user')",
+                params![account_user, user_person_id],
+            )
+            .expect("seed user stakeholder role");
 
         snapshot_db
             .conn_ref()

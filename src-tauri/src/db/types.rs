@@ -204,11 +204,21 @@ pub struct DbAccountTeamMember {
     pub person_id: String,
     pub person_name: String,
     pub person_email: String,
+    /// Comma-separated roles from account_stakeholder_roles (I652).
+    /// Backward-compatible: callers using `.role.contains("champion")` still work.
     pub role: String,
     pub created_at: String,
 }
 
-/// Full stakeholder data with data_source for the DB-first read model.
+/// A single role assignment with its provenance (I652).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StakeholderRole {
+    pub role: String,
+    pub data_source: String,
+}
+
+/// Full stakeholder data with data_source for the DB-first read model (I652).
 /// Returns ALL stakeholders (user-confirmed + Glean-suggested + Google-sourced)
 /// plus linked people from entity_members.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,10 +230,21 @@ pub struct DbStakeholderFull {
     pub organization: Option<String>,
     /// Job title from people table.
     pub person_role: Option<String>,
-    /// Role from account_stakeholders (champion, csm, etc.).
+    /// Comma-separated roles from account_stakeholder_roles.
+    /// Backward-compatible field — use `roles` for typed access.
     pub stakeholder_role: String,
+    /// Typed multi-role assignments with per-role provenance (I652).
+    pub roles: Vec<StakeholderRole>,
     /// Provenance: 'user', 'glean', 'google'.
     pub data_source: String,
+    /// Engagement level: strong_advocate, engaged, neutral, disengaged, unknown (I652).
+    pub engagement: Option<String>,
+    /// Provenance for engagement value (I652).
+    pub data_source_engagement: Option<String>,
+    /// Free-text assessment of the person's stance (I652).
+    pub assessment: Option<String>,
+    /// Provenance for assessment value (I652).
+    pub data_source_assessment: Option<String>,
     pub last_seen_in_glean: Option<String>,
     pub created_at: String,
     pub linkedin_url: Option<String>,

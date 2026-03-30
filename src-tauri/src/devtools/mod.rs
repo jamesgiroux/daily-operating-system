@@ -2408,10 +2408,15 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     for (account_id, person_id, rel) in &entity_links {
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type) VALUES (?1, ?2, 'associated', ?3)
+            "INSERT INTO account_stakeholders (account_id, person_id) VALUES (?1, ?2)
              ON CONFLICT(account_id, person_id) DO NOTHING",
-            rusqlite::params![account_id, person_id, rel],
+            rusqlite::params![account_id, person_id],
         ).map_err(|e| format!("Account-stakeholder link: {}", e))?;
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES (?1, ?2, ?3)
+             ON CONFLICT(account_id, person_id, role) DO NOTHING",
+            rusqlite::params![account_id, person_id, rel],
+        ).map_err(|e| format!("Account-stakeholder role link: {}", e))?;
     }
 
     // =========================================================================
@@ -2992,10 +2997,15 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     for (account_id, person_id, role) in &account_team_rows {
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role, created_at) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(account_id, person_id) DO UPDATE SET role = excluded.role",
-            rusqlite::params![account_id, person_id, role, &today],
+            "INSERT INTO account_stakeholders (account_id, person_id, created_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(account_id, person_id) DO NOTHING",
+            rusqlite::params![account_id, person_id, &today],
         ).map_err(|e| format!("Account stakeholder insert: {}", e))?;
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role, created_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(account_id, person_id, role) DO UPDATE SET created_at = excluded.created_at",
+            rusqlite::params![account_id, person_id, role, &today],
+        ).map_err(|e| format!("Account stakeholder role insert: {}", e))?;
     }
 
     // =========================================================================
