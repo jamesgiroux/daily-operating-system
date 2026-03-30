@@ -528,6 +528,9 @@ impl ActionDb {
                OR (suggested_email IS NOT NULL AND EXISTS (
                  SELECT 1 FROM people p2 WHERE p2.email = LOWER(stakeholder_suggestions.suggested_email) AND p2.relationship = 'internal'
                ))
+               OR (suggested_name IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM people p3 WHERE LOWER(p3.name) = LOWER(stakeholder_suggestions.suggested_name) AND p3.relationship = 'internal'
+               ))
              )",
             [],
         )?;

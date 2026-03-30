@@ -666,6 +666,9 @@ impl ActionDb {
                AND (ss.suggested_email IS NULL OR NOT EXISTS (
                  SELECT 1 FROM people p2 WHERE p2.email = LOWER(ss.suggested_email) AND p2.relationship = 'internal'
                ))
+               AND (ss.suggested_name IS NULL OR NOT EXISTS (
+                 SELECT 1 FROM people p3 WHERE LOWER(p3.name) = LOWER(ss.suggested_name) AND p3.relationship = 'internal'
+               ))
              ORDER BY ss.created_at DESC",
         )?;
         let rows = stmt.query_map(params![account_id], |row| {
