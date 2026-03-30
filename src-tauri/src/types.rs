@@ -102,6 +102,11 @@ pub struct Config {
     /// Pre-meeting refresh window in hours (default: 12). Options: 2, 4, 12, 24.
     #[serde(default = "default_hygiene_pre_meeting_hours")]
     pub hygiene_pre_meeting_hours: u32,
+    /// Email enrichment timeout per email in seconds (I652 Phase 4).
+    /// Default: 90 seconds. Max: 300 seconds. Gracefully times out individual emails
+    /// without blocking the briefing workflow. Validated in `validate_config()`.
+    #[serde(default = "default_email_enrichment_timeout_seconds")]
+    pub email_enrichment_timeout_seconds: u32,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -273,6 +278,10 @@ fn default_hygiene_pre_meeting_hours() -> u32 {
     12
 }
 
+fn default_email_enrichment_timeout_seconds() -> u32 {
+    90
+}
+
 impl Config {
     /// Apply versioned config normalization for fields that intentionally reset
     /// to new recommended defaults.
@@ -297,6 +306,25 @@ impl Config {
         match &self.user_domain {
             Some(d) if !d.is_empty() => vec![d.clone()],
             _ => Vec::new(),
+        }
+    }
+
+    /// Validate email enrichment timeout configuration (I652 Phase 4).
+    /// Timeout must be 0 < timeout <= 300 seconds.
+    /// Returns error if misconfigured, logs warning and uses default (90) if invalid.
+    pub fn validate_email_enrichment_timeout(&mut self) -> Result<(), String> {
+        if self.email_enrichment_timeout_seconds == 0 || self.email_enrichment_timeout_seconds > 300 {
+            log::warn!(
+                "Invalid email_enrichment_timeout_seconds: {}. Must be 0 < timeout <= 300. Resetting to default: 90",
+                self.email_enrichment_timeout_seconds
+            );
+            self.email_enrichment_timeout_seconds = default_email_enrichment_timeout_seconds();
+            Err(format!(
+                "email_enrichment_timeout_seconds out of range: {} (valid: 1-300)",
+                self.email_enrichment_timeout_seconds
+            ))
+        } else {
+            Ok(())
         }
     }
 }
@@ -2769,6 +2797,7 @@ mod tests {
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,
+            email_enrichment_timeout_seconds: 90,
         }
     }
 
@@ -2999,5 +3028,102 @@ mod tests {
         }"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.personality, "playful");
+    }
+
+    #[test]
+    fn test_email_enrichment_timeout_default() {
+        // Default should be 90 seconds per AC7
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success"
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.email_enrichment_timeout_seconds, 90);
+    }
+
+    #[test]
+    fn test_email_enrichment_timeout_custom_valid() {
+        // Custom value within range should deserialize
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success",
+            "emailEnrichmentTimeoutSeconds": 120
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.email_enrichment_timeout_seconds, 120);
+    }
+
+    #[test]
+    fn test_email_enrichment_timeout_max_boundary() {
+        // Max value (300) should be valid per AC7
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success",
+            "emailEnrichmentTimeoutSeconds": 300
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.email_enrichment_timeout_seconds, 300);
+    }
+
+    #[test]
+    fn test_email_enrichment_timeout_min_valid() {
+        // Min value (1) should be valid per AC7
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success",
+            "emailEnrichmentTimeoutSeconds": 1
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.email_enrichment_timeout_seconds, 1);
+    }
+
+    #[test]
+    fn test_email_enrichment_timeout_validation_zero_invalid() {
+        // Zero should fail validation and reset to default (90)
+        let mut config = test_config("customer-success");
+        config.email_enrichment_timeout_seconds = 0;
+        let result = config.validate_email_enrichment_timeout();
+        assert!(result.is_err());
+        assert_eq!(config.email_enrichment_timeout_seconds, 90, "Should reset to default on invalid");
+    }
+
+    #[test]
+    fn test_email_enrichment_timeout_validation_exceeds_max() {
+        // Value > 300 should fail validation and reset to default (90)
+        let mut config = test_config("customer-success");
+        config.email_enrichment_timeout_seconds = 301;
+        let result = config.validate_email_enrichment_timeout();
+        assert!(result.is_err());
+        assert_eq!(config.email_enrichment_timeout_seconds, 90, "Should reset to default on invalid");
+    }
+
+    #[test]
+    fn test_email_enrichment_timeout_validation_at_boundary_300() {
+        // Exactly 300 should be valid
+        let mut config = test_config("customer-success");
+        config.email_enrichment_timeout_seconds = 300;
+        let result = config.validate_email_enrichment_timeout();
+        assert!(result.is_ok());
+        assert_eq!(config.email_enrichment_timeout_seconds, 300);
+    }
+
+    #[test]
+    fn test_email_enrichment_timeout_validation_at_boundary_1() {
+        // Exactly 1 should be valid
+        let mut config = test_config("customer-success");
+        config.email_enrichment_timeout_seconds = 1;
+        let result = config.validate_email_enrichment_timeout();
+        assert!(result.is_ok());
+        assert_eq!(config.email_enrichment_timeout_seconds, 1);
+    }
+
+    #[test]
+    fn test_email_enrichment_timeout_validation_typical_value() {
+        // Typical value (90) should be valid
+        let mut config = test_config("customer-success");
+        config.email_enrichment_timeout_seconds = 90;
+        let result = config.validate_email_enrichment_timeout();
+        assert!(result.is_ok());
+        assert_eq!(config.email_enrichment_timeout_seconds, 90);
     }
 }
