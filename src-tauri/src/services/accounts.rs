@@ -1346,6 +1346,11 @@ pub async fn get_account_detail(
                 .get_account_stakeholders_full(&account.id)
                 .unwrap_or_default();
 
+            // I644: Source references for promoted account facts
+            let source_refs = db
+                .get_account_source_refs(&account.id)
+                .unwrap_or_default();
+
             Ok(AccountDetailResult {
                 id: account.id,
                 name: account.name,
@@ -1384,6 +1389,7 @@ pub async fn get_account_detail(
                 auto_completed_milestones,
                 technical_footprint,
                 stakeholders_full,
+                source_refs,
             })
         })
         .await
