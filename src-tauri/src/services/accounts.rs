@@ -274,8 +274,8 @@ fn maybe_roll_contract_end(
         .or_else(|| previous_contract_end.map(str::to_string))
 }
 
-fn account_field_conflict_feedback_key(field: &str, signal_id: &str) -> String {
-    format!("account_field_conflict:{field}:{signal_id}")
+fn account_field_conflict_feedback_key(field: &str, suggested_value: &str) -> String {
+    format!("account_field_conflict:{field}:{suggested_value}")
 }
 
 fn account_field_signal_category(field: &str) -> String {
@@ -387,7 +387,7 @@ fn build_account_field_conflicts(
             let Some(suggested_value) = extract_json_conflict_value(&payload, field) else {
                 continue;
             };
-            let feedback_key = account_field_conflict_feedback_key(field, &signal.id);
+            let feedback_key = account_field_conflict_feedback_key(field, &suggested_value);
             if dismissed_conflicts.contains(&feedback_key) {
                 continue;
             }
@@ -415,7 +415,7 @@ fn build_account_field_conflicts(
                 if !field_matches_current_value(account, "arr", &suggested) {
                     let feedback_key = account_field_conflict_feedback_key(
                         "arr",
-                        "intelligence-contract-context-arr",
+                        &suggested,
                     );
                     if !dismissed_conflicts.contains(&feedback_key) {
                         conflicts.entry("arr".to_string()).or_insert_with(|| {
@@ -435,7 +435,7 @@ fn build_account_field_conflicts(
                 if !field_matches_current_value(account, "contract_end", renewal_date) {
                     let feedback_key = account_field_conflict_feedback_key(
                         "contract_end",
-                        "intelligence-contract-context-renewal-date",
+                        renewal_date,
                     );
                     if !dismissed_conflicts.contains(&feedback_key) {
                         conflicts
