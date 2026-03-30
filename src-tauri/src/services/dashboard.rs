@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use chrono::Datelike;
+use chrono::{Datelike, Utc};
 
 use crate::json_loader::DataFreshness;
 use crate::parser::count_inbox;
@@ -353,14 +353,21 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
     } else {
         "Good evening"
     };
-    let meeting_count = meetings.len();
+    // Count only active (non-cancelled) and non-personal meetings for display
+    let active_meetings_count = meetings
+        .iter()
+        .filter(|m| {
+            m.overlay_status != Some(OverlayStatus::Cancelled) &&
+            m.meeting_type != MeetingType::Personal
+        })
+        .count();
     let overview = DayOverview {
         greeting: greeting.to_string(),
         date: chrono::Local::now().format("%A, %B %e").to_string(),
         summary: format!(
             "You have {} meeting{} today",
-            meeting_count,
-            if meeting_count == 1 { "" } else { "s" }
+            active_meetings_count,
+            if active_meetings_count == 1 { "" } else { "s" }
         ),
         focus: None,
     };
@@ -607,31 +614,22 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             let meeting_type = crate::parser::parse_meeting_type(&dbm.meeting_type);
             let has_prep = dbm.prep_context_json.is_some();
 
-            let time = chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%dT%H:%M:%S")
-                .map(|dt| dt.format("%-I:%M %p").to_string())
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%d %H:%M:%S")
-                        .map(|dt| dt.format("%-I:%M %p").to_string())
-                })
-                .or_else(|_| {
-                    chrono::DateTime::parse_from_rfc3339(&dbm.start_time)
-                        .map(|dt| dt.format("%-I:%M %p").to_string())
-                })
-                .unwrap_or_else(|_| dbm.start_time.clone());
-
-            let end_time = dbm.end_time.as_ref().and_then(|et| {
-                chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%dT%H:%M:%S")
+            // Helper to format time in user's timezone
+            let format_meeting_time = |time_str: &str| -> String {
+                // Try RFC3339 first (from Google Calendar API, has timezone info)
+                if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(time_str) {
+                    let utc_dt = dt.with_timezone(&Utc);
+                    return utc_dt.with_timezone(&tz).format("%-I:%M %p").to_string();
+                }
+                // Fall back to local format (from pipeline, assume in user's timezone)
+                chrono::NaiveDateTime::parse_from_str(time_str, "%Y-%m-%dT%H:%M:%S")
+                    .or_else(|_| chrono::NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S"))
                     .map(|dt| dt.format("%-I:%M %p").to_string())
-                    .or_else(|_| {
-                        chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%d %H:%M:%S")
-                            .map(|dt| dt.format("%-I:%M %p").to_string())
-                    })
-                    .or_else(|_| {
-                        chrono::DateTime::parse_from_rfc3339(et)
-                            .map(|dt| dt.format("%-I:%M %p").to_string())
-                    })
-                    .ok()
-            });
+                    .unwrap_or_else(|_| time_str.to_string())
+            };
+
+            let time = format_meeting_time(&dbm.start_time);
+            let end_time = dbm.end_time.as_ref().map(|et| format_meeting_time(et));
 
             Meeting {
                 id: dbm.id,
@@ -658,6 +656,9 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
 
     // Merge DB meetings with live calendar events (ADR-0032)
     let mut meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
+
+    // Filter out personal meetings — they're tracked but not displayed in briefing (ADR-0032)
+    meetings.retain(|m| m.meeting_type != MeetingType::Personal);
 
     // Consolidate all dashboard DB reads into a single lock acquisition (I235).
     // This reduces lock contention and improves dashboard load latency.
