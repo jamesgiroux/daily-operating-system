@@ -839,6 +839,8 @@ pub fn run() {
             // I529: Intelligence Quality Feedback
             commands::submit_intelligence_feedback,
             commands::get_entity_feedback,
+            // I645: Feedback & Suppression Diagnostics
+            commands::get_feedback_diagnostics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

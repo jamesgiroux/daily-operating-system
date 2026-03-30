@@ -9,6 +9,7 @@ pub mod lifecycle;
 pub mod predictions;
 pub mod prompts;
 pub mod relationships;
+pub mod timeliness;
 pub mod user_context;
 pub mod validation;
 

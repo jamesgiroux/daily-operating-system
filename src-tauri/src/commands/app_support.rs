@@ -1115,6 +1115,60 @@ pub async fn get_db_growth_report(
 }
 
 // =============================================================================
+// I645: Feedback & Suppression Diagnostics
+// =============================================================================
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackDiagnostics {
+    pub event_count: i64,
+    pub suppression_count: i64,
+    pub last_feedback: Option<String>,
+}
+
+/// Return feedback event count, active suppression count, and last feedback timestamp.
+#[tauri::command]
+pub async fn get_feedback_diagnostics(
+    state: State<'_, Arc<AppState>>,
+) -> Result<FeedbackDiagnostics, String> {
+    state
+        .db_read(move |db| {
+            let event_count: i64 = db
+                .conn_ref()
+                .query_row(
+                    "SELECT COUNT(*) FROM entity_feedback_events",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            let suppression_count: i64 = db
+                .conn_ref()
+                .query_row(
+                    "SELECT COUNT(*) FROM suppression_tombstones \
+                     WHERE expires_at IS NULL OR expires_at > datetime('now')",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            let last_feedback: Option<String> = db
+                .conn_ref()
+                .query_row(
+                    "SELECT created_at FROM entity_feedback_events \
+                     ORDER BY created_at DESC LIMIT 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .ok();
+            Ok(FeedbackDiagnostics {
+                event_count,
+                suppression_count,
+                last_feedback,
+            })
+        })
+        .await
+}
+
+// =============================================================================
 // Health Scoring (I633)
 // =============================================================================
 
