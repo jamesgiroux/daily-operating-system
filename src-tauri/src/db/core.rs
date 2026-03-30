@@ -159,6 +159,7 @@ impl ActionDb {
         let _ = Self::normalize_reviewed_prep_keys(&conn);
         let _ = Self::backfill_meeting_identity(&conn);
         let _ = Self::backfill_meeting_user_layer(&conn);
+        let _ = Self::backfill_stakeholder_columns(&conn);
 
         Ok(Self { conn })
     }
@@ -180,6 +181,7 @@ impl ActionDb {
         let _ = Self::normalize_reviewed_prep_keys(&conn);
         let _ = Self::backfill_meeting_identity(&conn);
         let _ = Self::backfill_meeting_user_layer(&conn);
+        let _ = Self::backfill_stakeholder_columns(&conn);
         Ok(Self { conn })
     }
 
@@ -500,6 +502,106 @@ impl ActionDb {
                  WHERE meeting_id = ?3",
                 params![agenda_target, notes_target, meeting_id],
             )?;
+        }
+        Ok(())
+    }
+
+    /// I652: Backfill engagement/assessment columns on `account_stakeholders` from
+    /// the legacy `entity_assessment.stakeholder_insights_json` blob.
+    /// Runs once at startup — only touches rows where `engagement IS NULL`.
+    fn backfill_stakeholder_columns(conn: &Connection) -> Result<(), DbError> {
+        // Step 1: Find all account_stakeholders rows missing engagement.
+        let rows: Vec<(String, String)> = {
+            let mut stmt = conn.prepare(
+                "SELECT account_id, person_id FROM account_stakeholders WHERE engagement IS NULL",
+            )?;
+            let mapped = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            let mut items = Vec::new();
+            for row in mapped {
+                items.push(row?);
+            }
+            items
+        };
+
+        if rows.is_empty() {
+            return Ok(());
+        }
+
+        // Step 2: Group by account_id to avoid repeated JSON parses.
+        let mut by_account: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        for (account_id, person_id) in &rows {
+            by_account
+                .entry(account_id.clone())
+                .or_default()
+                .push(person_id.clone());
+        }
+
+        let mut updated = 0u32;
+        for (account_id, person_ids) in &by_account {
+            // Step 3: Read the stakeholder_insights_json for this entity.
+            let json_opt: Option<String> = conn
+                .query_row(
+                    "SELECT stakeholder_insights_json FROM entity_assessment WHERE entity_id = ?1",
+                    params![account_id],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            let json_str = match json_opt {
+                Some(ref s) if !s.is_empty() => s.as_str(),
+                _ => continue,
+            };
+
+            let entries: Vec<serde_json::Value> = match serde_json::from_str(json_str) {
+                Ok(v) => v,
+                Err(err) => {
+                    log::warn!(
+                        "I652 backfill: failed to parse stakeholder_insights_json for {}: {}",
+                        account_id,
+                        err
+                    );
+                    continue;
+                }
+            };
+
+            // Step 4: For each person_id, find a matching entry and update.
+            for person_id in person_ids {
+                let matching = entries.iter().find(|e| {
+                    e.get("person_id")
+                        .and_then(|v| v.as_str())
+                        .map(|pid| pid == person_id)
+                        .unwrap_or(false)
+                });
+
+                if let Some(entry) = matching {
+                    let engagement = entry.get("engagement").and_then(|v| v.as_str());
+                    let assessment = entry.get("assessment").and_then(|v| v.as_str());
+
+                    if engagement.is_some() || assessment.is_some() {
+                        conn.execute(
+                            "UPDATE account_stakeholders
+                             SET engagement = COALESCE(engagement, ?1),
+                                 assessment = COALESCE(assessment, ?2),
+                                 data_source_engagement = COALESCE(data_source_engagement, 'ai'),
+                                 data_source_assessment = COALESCE(data_source_assessment, 'ai')
+                             WHERE account_id = ?3 AND person_id = ?4
+                               AND engagement IS NULL",
+                            params![engagement, assessment, account_id, person_id],
+                        )?;
+                        updated += 1;
+                    }
+                }
+            }
+        }
+
+        if updated > 0 {
+            log::info!(
+                "I652 backfill: populated engagement/assessment for {} stakeholder rows",
+                updated
+            );
         }
         Ok(())
     }
