@@ -112,9 +112,10 @@ export function AccountOutlook({
             <span className={getConfidenceClass(renewal.confidence)}>
               {renewal.confidence?.toLowerCase() ?? "unknown"}
             </span>
-            {renewal.expansionPotential &&
-              ` \u2014 ${renewal.expansionPotential}`}
           </h2>
+          {renewal.expansionPotential && (
+            <p className={css.expansionNarrative}>{renewal.expansionPotential}</p>
+          )}
 
           {/* Risk factors as supporting detail */}
           {renewal.riskFactors && renewal.riskFactors.length > 0 && (
