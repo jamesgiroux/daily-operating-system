@@ -94,7 +94,7 @@ export function PostMeetingIntelligence({
       {/* ═══════ EXECUTIVE SUMMARY ═══════ */}
       {summary && (
         <div className={styles.summaryBlock}>
-          <p className={styles.summaryText}>{summary}</p>
+          <p className={styles.summaryText}>{cleanTranscriptDisplayText(summary)}</p>
         </div>
       )}
 
@@ -119,7 +119,7 @@ export function PostMeetingIntelligence({
                 <li key={`completed-${action.title}-${index}`} className={styles.threadItem}>
                   <Check size={14} className={styles.threadIconConfirmed} />
                   <span>
-                    {action.title}
+                    {cleanTranscriptDisplayText(action.title)}
                     <span className={styles.threadDetail}>
                       closed since the last meeting
                     </span>
@@ -131,7 +131,7 @@ export function PostMeetingIntelligence({
                 <li key={`open-${action.title}-${index}`} className={styles.threadItem}>
                   <Circle size={14} className={styles.threadIconOpen} />
                   <span>
-                    {action.title}
+                    {cleanTranscriptDisplayText(action.title)}
                     {action.date && (
                       <span className={styles.threadDetail}>
                         due {formatShortDate(action.date)}
@@ -271,15 +271,15 @@ export function PostMeetingIntelligence({
           {/* Escalation language */}
           {hasEscalation && interactionDynamics.escalationLanguage.map((e, i) => (
             <div key={i} className={styles.escalationBlock}>
-              <p className={styles.escalationQuote}>&ldquo;{e.quote}&rdquo;</p>
-              <p className={styles.escalationAttribution}>&mdash; {e.speaker}</p>
+              <p className={styles.escalationQuote}>&ldquo;{cleanTranscriptDisplayText(e.quote)}&rdquo;</p>
+              <p className={styles.escalationAttribution}>&mdash; {cleanTranscriptDisplayText(e.speaker)}</p>
             </div>
           ))}
 
           {/* Competitor mentions */}
           {hasCompetitorMentions && interactionDynamics.competitorMentions.map((m, i) => (
             <p key={i} className={styles.competitorMention}>
-              <span className={styles.competitorName}>{m.competitor}</span> &mdash; {m.context}
+              <span className={styles.competitorName}>{cleanTranscriptDisplayText(m.competitor)}</span> &mdash; {cleanTranscriptDisplayText(m.context)}
             </p>
           ))}
         </section>
@@ -356,10 +356,10 @@ export function PostMeetingIntelligence({
             </span>
           </div>
           {championHealth.championEvidence && (
-            <p className={styles.championEvidence}>{championHealth.championEvidence}</p>
+            <p className={styles.championEvidence}>{cleanTranscriptDisplayText(championHealth.championEvidence)}</p>
           )}
           {championHealth.championRisk && (
-            <p className={styles.championRisk}>{championHealth.championRisk}</p>
+            <p className={styles.championRisk}>{cleanTranscriptDisplayText(championHealth.championRisk)}</p>
           )}
         </section>
       )}
@@ -376,7 +376,7 @@ export function PostMeetingIntelligence({
                 <div key={c.capture.id} className={styles.commitmentItem}>
                   <ArrowRight size={14} className={styles.commitmentIcon} />
                   <span>
-                    {c.capture.content}
+                    {cleanTranscriptDisplayText(c.capture.content)}
                     {c.capture.subType && (
                       <span className={styles.commitmentTag}>{c.capture.subType}</span>
                     )}
@@ -414,14 +414,14 @@ export function PostMeetingIntelligence({
                   {/* Action content */}
                   <div className={styles.actionText}>
                     <span className={action.status === "completed" ? styles.actionTitleCompleted : undefined}>
-                      {action.title}
+                      {cleanTranscriptDisplayText(action.title)}
                     </span>
                     <span className={`${styles.actionMeta} ${action.priority === "P1" ? styles.priorityP1 : styles.priorityP2}`}>
                       {action.priority}
                       {action.dueDate && <> &middot; due {action.dueDate}</>}
                     </span>
                     {action.context && (
-                      <span className={styles.actionContext}>{action.context}</span>
+                      <span className={styles.actionContext}>{cleanTranscriptDisplayText(action.context)}</span>
                     )}
                   </div>
 
@@ -496,7 +496,7 @@ export function PostMeetingIntelligence({
               {rc.evidenceQuote && (
                 <div className={styles.roleEvidenceBlock}>
                   <p className={styles.roleEvidence}>
-                    &ldquo;{rc.evidenceQuote}&rdquo;
+                    &ldquo;{cleanTranscriptDisplayText(rc.evidenceQuote)}&rdquo;
                   </p>
                 </div>
               )}
@@ -539,21 +539,21 @@ function FindingItem({
       <div className={dotClass} />
       <div className={styles.findingContent}>
         <p className={styles.findingTitle}>
-          {capture.content}
+          {cleanTranscriptDisplayText(capture.content)}
           {badgeClass && (
             <span className={badgeClass.className}>{badgeClass.label}</span>
           )}
         </p>
         {capture.impact && (
-          <p className={styles.findingImpact}>{capture.impact}</p>
+          <p className={styles.findingImpact}>{cleanTranscriptDisplayText(capture.impact)}</p>
         )}
         {capture.evidenceQuote && (
           <div className={evidenceBlockClass}>
-            <p className={styles.evidenceText}>&ldquo;{capture.evidenceQuote}&rdquo;</p>
+            <p className={styles.evidenceText}>&ldquo;{cleanTranscriptDisplayText(capture.evidenceQuote)}&rdquo;</p>
           </div>
         )}
         {capture.speaker && (
-          <p className={styles.attribution}>&mdash; {capture.speaker}</p>
+          <p className={styles.attribution}>&mdash; {cleanTranscriptDisplayText(capture.speaker)}</p>
         )}
       </div>
       {onItemFeedback && (
@@ -582,7 +582,7 @@ function SpeakerSentimentBlock({ speaker }: { speaker: SpeakerSentiment }) {
         </span>
       </div>
       {speaker.evidence && (
-        <p className={styles.speakerEvidence}>{speaker.evidence}</p>
+        <p className={styles.speakerEvidence}>{cleanTranscriptDisplayText(speaker.evidence)}</p>
       )}
     </div>
   );
@@ -612,10 +612,10 @@ function PredictionItem({ prediction }: { prediction: PredictionResult }) {
     <div className={itemClass}>
       <span className={iconClass}><IconComponent size={14} /></span>
       <div>
-        <p>{prediction.text}</p>
+        <p>{cleanTranscriptDisplayText(prediction.text)}</p>
         {(prediction.matchText || prediction.source) && (
           <p className={styles.predictionMatch}>
-            {prediction.matchText ?? prediction.source}
+            {cleanTranscriptDisplayText(prediction.matchText ?? prediction.source ?? "")}
           </p>
         )}
       </div>
@@ -636,9 +636,9 @@ function buildThreadIntro(thread: ContinuityThread): string {
 
   const meetingLabel = thread.previousMeetingTitle ?? "the previous meeting";
   if (thread.previousMeetingDate) {
-    return `Since ${meetingLabel} on ${formatShortDate(thread.previousMeetingDate)}, here’s what changed.`;
+    return `Since ${cleanTranscriptDisplayText(meetingLabel)} on ${formatShortDate(thread.previousMeetingDate)}, here’s what changed.`;
   }
-  return `Since ${meetingLabel}, here’s what changed.`;
+  return `Since ${cleanTranscriptDisplayText(meetingLabel)}, here’s what changed.`;
 }
 
 function threadHasDetails(thread: ContinuityThread): boolean {
@@ -724,4 +724,11 @@ function captureBadgeClass(capture: EnrichedCapture): { className: string; label
 
 function formatSubType(subType: string): string {
   return subType.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function cleanTranscriptDisplayText(text: string): string {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^\[([A-Z0-9_]+)\]\s*(.*)$/);
+  if (!match) return trimmed;
+  return match[2].trim();
 }
