@@ -1634,12 +1634,14 @@ pub fn get_email_snapshots_for_content_check(
                         .map(|dt| dt.with_timezone(&chrono::Utc))
                 })
                 .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S")
-                        .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
+                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S").map(|dt| {
+                        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+                    })
                 })
                 .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S")
-                        .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
+                    chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S").map(|dt| {
+                        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc)
+                    })
                 })
                 .unwrap_or_else(|_| chrono::Utc::now())
         } else {
@@ -1666,8 +1668,7 @@ mod tests {
 
     // Helper to create a test database connection with sample emails table
     fn setup_test_db() -> Connection {
-        let conn = Connection::open_in_memory()
-            .expect("Failed to create in-memory database");
+        let conn = Connection::open_in_memory().expect("Failed to create in-memory database");
 
         // Create emails table with minimal required columns for snapshots
         conn.execute_batch(
@@ -1700,12 +1701,18 @@ mod tests {
         // Insert a test email with received_at timestamp
         conn.execute(
             "INSERT INTO emails (email_id, subject, snippet, received_at) VALUES (?, ?, ?, ?)",
-            rusqlite::params!["email_1", "Test Subject", "Test snippet content", "2024-01-15T10:30:00Z"],
+            rusqlite::params![
+                "email_1",
+                "Test Subject",
+                "Test snippet content",
+                "2024-01-15T10:30:00Z"
+            ],
         )
         .expect("Failed to insert test email");
 
         let db = crate::db::ActionDb::from_conn(&conn);
-        let result = get_email_snapshots_for_content_check(db, "account_123", &["email_1".to_string()]);
+        let result =
+            get_email_snapshots_for_content_check(db, "account_123", &["email_1".to_string()]);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 
@@ -1735,7 +1742,11 @@ mod tests {
             .expect("Failed to insert test email");
         }
 
-        let email_ids: Vec<String> = vec!["email_1".to_string(), "email_2".to_string(), "email_3".to_string()];
+        let email_ids: Vec<String> = vec![
+            "email_1".to_string(),
+            "email_2".to_string(),
+            "email_3".to_string(),
+        ];
         let db = crate::db::ActionDb::from_conn(&conn);
         let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
         assert!(result.is_ok());
@@ -1758,7 +1769,12 @@ mod tests {
         // Insert only one email
         conn.execute(
             "INSERT INTO emails (email_id, subject, snippet, received_at) VALUES (?, ?, ?, ?)",
-            rusqlite::params!["email_1", "Test Subject", "Test snippet", "2024-01-15T10:30:00Z"],
+            rusqlite::params![
+                "email_1",
+                "Test Subject",
+                "Test snippet",
+                "2024-01-15T10:30:00Z"
+            ],
         )
         .expect("Failed to insert test email");
 
@@ -1794,7 +1810,11 @@ mod tests {
         }
 
         // Request emails in different order (HashMap doesn't guarantee order)
-        let email_ids = vec!["email_3".to_string(), "email_1".to_string(), "email_2".to_string()];
+        let email_ids = vec![
+            "email_3".to_string(),
+            "email_1".to_string(),
+            "email_2".to_string(),
+        ];
         let db = crate::db::ActionDb::from_conn(&conn);
         let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
         assert!(result.is_ok());
@@ -1824,7 +1844,8 @@ mod tests {
         .expect("Failed to insert test email with NULLs");
 
         let db = crate::db::ActionDb::from_conn(&conn);
-        let result = get_email_snapshots_for_content_check(db, "account_123", &["email_1".to_string()]);
+        let result =
+            get_email_snapshots_for_content_check(db, "account_123", &["email_1".to_string()]);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 
