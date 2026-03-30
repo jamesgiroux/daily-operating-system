@@ -6,7 +6,7 @@
 //!
 //! Background loop: runs 30s after startup, then every 4 hours.
 
-mod detectors;
+pub(crate) mod detectors;
 mod fixers;
 mod loop_runner;
 mod matcher;
