@@ -545,6 +545,12 @@ fn build_account_products(
                         .trend
                         .as_ref()
                         .map(|trend| format!("Observed in product adoption ({trend})")),
+                    product_type: None,
+                    tier: None,
+                    billing_terms: None,
+                    arr: None,
+                    last_verified_at: None,
+                    data_source: None,
                     created_at: Utc::now().to_rfc3339(),
                     updated_at: Utc::now().to_rfc3339(),
                 })

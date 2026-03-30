@@ -253,15 +253,26 @@ export function StakeholderGallery({
 }: StakeholderGalleryProps) {
   const navigate = useNavigate();
 
-  // DB-first: use stakeholdersFull as primary source when available
-  const useDbFirst = (stakeholdersFull?.length ?? 0) > 0;
-
+  // Merged model: confirmed (DB) + suggestions (intelligence-only)
+  const confirmedStakeholders = stakeholdersFull ?? [];
   const allStakeholders = intelligence?.stakeholderInsights ?? [];
-  const stakeholders = useDbFirst ? [] : filterInternalStakeholders(allStakeholders, linkedPeople);
-  const hasStakeholders = useDbFirst || stakeholders.length > 0;
-  const epigraphSource = useDbFirst
-    ? (stakeholdersFull ?? []).map((s) => ({ name: s.personName }))
-    : stakeholders;
+
+  // Build lookup sets for deduplication
+  const confirmedPersonIds = new Set(confirmedStakeholders.map((s) => s.personId));
+  const confirmedNames = new Set(confirmedStakeholders.map((s) => s.personName.toLowerCase()));
+
+  // Intelligence-only suggestions: stakeholders from AI that have NO DB match
+  const suggestions = filterInternalStakeholders(allStakeholders, linkedPeople).filter((s) => {
+    if (s.personId && confirmedPersonIds.has(s.personId)) return false;
+    if (confirmedNames.has(s.name.toLowerCase())) return false;
+    return true;
+  });
+
+  const hasStakeholders = confirmedStakeholders.length > 0 || suggestions.length > 0;
+  const epigraphSource = [
+    ...confirmedStakeholders.map((s) => ({ name: s.personName })),
+    ...suggestions,
+  ];
   const epigraph = hasStakeholders ? buildEpigraph(epigraphSource) : undefined;
   const teamMembers = accountTeam ?? [];
   const canEdit = !!entityId && !!entityType;
@@ -295,29 +306,28 @@ export function StakeholderGallery({
   }, [showDropdown]);
 
   // Empty section collapse: return null when nothing to show (and not editing)
-  if (!hasStakeholders && !useDbFirst && linkedPeople.length === 0 && teamMembers.length === 0 && !canEdit && !canEditTeam) {
+  if (!hasStakeholders && linkedPeople.length === 0 && teamMembers.length === 0 && !canEdit && !canEditTeam) {
     return null;
   }
 
   const STAKEHOLDER_LIMIT = 6;
-  const dbStakeholders = stakeholdersFull ?? [];
-  const visibleDbStakeholders = expandedGrid ? dbStakeholders : dbStakeholders.slice(0, STAKEHOLDER_LIMIT);
-  const hasMoreDbStakeholders = dbStakeholders.length > STAKEHOLDER_LIMIT && !expandedGrid;
-  const visibleStakeholders = expandedGrid ? stakeholders : stakeholders.slice(0, STAKEHOLDER_LIMIT);
-  const hasMoreStakeholders = !useDbFirst && stakeholders.length > STAKEHOLDER_LIMIT && !expandedGrid;
+  const totalCount = confirmedStakeholders.length + suggestions.length;
+  const visibleConfirmed = expandedGrid ? confirmedStakeholders : confirmedStakeholders.slice(0, STAKEHOLDER_LIMIT);
+  const remainingSlots = Math.max(0, STAKEHOLDER_LIMIT - visibleConfirmed.length);
+  const visibleSuggestions = expandedGrid ? suggestions : suggestions.slice(0, remainingSlots);
+  const hasMoreStakeholders = totalCount > STAKEHOLDER_LIMIT && !expandedGrid;
 
   // ── Coverage analysis ──
-  const totalKnown = useDbFirst ? dbStakeholders.length : stakeholders.length;
-  // For DB-first, count stakeholders where we have intelligence engagement data
+  const totalKnown = totalCount;
   const intelInsights = intelligence?.stakeholderInsights ?? [];
-  const engagedCount = useDbFirst
-    ? dbStakeholders.filter((s) => {
-        const insight = intelInsights.find((i) => (i.personId && i.personId === s.personId) || i.name.toLowerCase() === s.personName.toLowerCase());
-        return insight?.engagement && insight.engagement !== "unknown" && insight.engagement !== "none";
-      }).length
-    : stakeholders.filter(
-        (s) => s.engagement && s.engagement !== "unknown" && s.engagement !== "none",
-      ).length;
+  const confirmedEngaged = confirmedStakeholders.filter((s) => {
+    const insight = intelInsights.find((i) => (i.personId && i.personId === s.personId) || i.name.toLowerCase() === s.personName.toLowerCase());
+    return insight?.engagement && insight.engagement !== "unknown" && insight.engagement !== "none";
+  }).length;
+  const suggestedEngaged = suggestions.filter(
+    (s) => s.engagement && s.engagement !== "unknown" && s.engagement !== "none",
+  ).length;
+  const engagedCount = confirmedEngaged + suggestedEngaged;
 
   // ── Field update helper ──
   async function updateField(fieldPath: string, value: string) {
@@ -352,10 +362,9 @@ export function StakeholderGallery({
     }
   }
 
-  // ── Remove stakeholder ──
-  function handleRemove(index: number) {
-    // Find the actual index in allStakeholders (since we filtered)
-    const name = stakeholders[index].name;
+  // ── Remove suggestion from intelligence ──
+  function handleRemoveSuggestion(index: number) {
+    const name = suggestions[index].name;
     const updated = allStakeholders.filter(
       (s) => s.name.toLowerCase() !== name.toLowerCase(),
     );
@@ -452,9 +461,9 @@ export function StakeholderGallery({
     // suggestedPersonId will be cleared on next enrichment cycle
   }
 
-  // ── Find actual index in allStakeholders for a filtered stakeholder ──
-  function actualIndex(filteredIdx: number): number {
-    const name = stakeholders[filteredIdx].name.toLowerCase();
+  // ── Find actual index in allStakeholders for a suggestion ──
+  function suggestionActualIndex(filteredIdx: number): number {
+    const name = suggestions[filteredIdx].name.toLowerCase();
     return allStakeholders.findIndex((s) => s.name.toLowerCase() === name);
   }
 
@@ -462,20 +471,30 @@ export function StakeholderGallery({
     <section id={sectionId || undefined} className={css.section}>
       <ChapterHeading title={chapterTitle} epigraph={epigraph} />
 
-      {useDbFirst ? (
-        <>
+      {/* ── Confirmed stakeholders (from DB) ── */}
+      {visibleConfirmed.length > 0 && (
         <div className={css.grid}>
-          {visibleDbStakeholders.map((s) => {
-            // Look up supplementary AI assessment from intelligence by matching personId or name
+          {visibleConfirmed.map((s) => {
             const insight = intelInsights.find(
               (ins) => (ins.personId && ins.personId === s.personId) || ins.name.toLowerCase() === s.personName.toLowerCase(),
             );
             const personDetail = [s.personRole, s.organization].filter(Boolean).join(" \u00b7 ") || null;
-            const isGlean = s.dataSource === "glean";
-            const isGoogle = s.dataSource === "google";
 
             return (
               <div key={s.personId} className={css.card}>
+                {/* Remove button (hover-revealed) */}
+                {onRemoveTeamMember && (
+                  <button
+                    className={css.cardRemoveButton}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemoveTeamMember(s.personId, s.stakeholderRole);
+                    }}
+                    title="Remove from account"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
                 <div className={css.cardHeader}>
                   <div className={css.avatarRingLinked}>
                     <Avatar name={s.personName} personId={s.personId} size={24} />
@@ -498,58 +517,14 @@ export function StakeholderGallery({
                     <span className={`${css.engagementBadge} ${getEngagementBadgeClass(insight.engagement)}`}>
                       {getStaticBadgeLabel(insight.engagement)}
                     </span>
+                  ) : s.stakeholderRole && s.stakeholderRole !== "associated" ? (
+                    <span className={`${css.engagementBadge} ${css.engagementNew}`}>
+                      {s.stakeholderRole}
+                    </span>
                   ) : null}
                 </div>
                 {personDetail && <p className={css.titleLine}>{personDetail}</p>}
-                {s.stakeholderRole && s.stakeholderRole !== "associated" && (
-                  <p className={css.role}>{s.stakeholderRole}</p>
-                )}
                 {insight?.assessment && <TruncatedAssessment text={insight.assessment} />}
-                {/* Source provenance indicator */}
-                {isGlean && (
-                  <div className={css.sourceRow}>
-                    <span className={css.sourceLabel} data-source="glean">via Glean</span>
-                    {entityId && (
-                      <>
-                        <button
-                          onClick={() => {
-                            invoke("add_account_team_member", {
-                              accountId: entityId,
-                              personId: s.personId,
-                              role: s.stakeholderRole || "associated",
-                            }).then(() => onIntelligenceUpdated?.()).catch((e) => {
-                              console.error("Failed to accept stakeholder:", e);
-                              toast.error("Failed to accept");
-                            });
-                          }}
-                          className={css.sourceAccept}
-                          title="Confirm stakeholder"
-                        >
-                          <Check size={11} strokeWidth={2} /> Accept
-                        </button>
-                        <button
-                          onClick={() => {
-                            invoke("remove_account_team_member", {
-                              accountId: entityId,
-                              personId: s.personId,
-                              role: s.stakeholderRole || "associated",
-                            }).then(() => onIntelligenceUpdated?.()).catch((e) => {
-                              console.error("Failed to dismiss stakeholder:", e);
-                              toast.error("Failed to dismiss");
-                            });
-                          }}
-                          className={css.sourceDismiss}
-                          title="Remove stakeholder"
-                        >
-                          Dismiss
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-                {isGoogle && (
-                  <span className={css.sourceLabel} data-source="google">via Google</span>
-                )}
                 {/* Meeting count + last seen from DB */}
                 {(s.meetingCount != null && s.meetingCount > 0) && (
                   <div className={css.lastSeen}>
@@ -566,16 +541,16 @@ export function StakeholderGallery({
             );
           })}
         </div>
-        {hasMoreDbStakeholders && (
-          <button onClick={() => setExpandedGrid(true)} className={css.showMore}>
-            Show {dbStakeholders.length - STAKEHOLDER_LIMIT} more
-          </button>
-        )}
-        </>
-      ) : hasStakeholders ? (
+      )}
+
+      {/* ── Suggested stakeholders (intelligence-only, no DB match) ── */}
+      {visibleSuggestions.length > 0 && (
         <>
+        {confirmedStakeholders.length > 0 && (
+          <span className={css.suggestedLabel}>Suggested</span>
+        )}
         <div className={css.grid}>
-          {visibleStakeholders.map((s, i) => {
+          {visibleSuggestions.map((s, i) => {
             // I420: personId-first matching, then name fallback
             const matched = s.personId
               ? linkedPeople.find((p) => p.id === s.personId)
@@ -583,13 +558,13 @@ export function StakeholderGallery({
             const suggested = !matched && s.suggestedPersonId
               ? linkedPeople.find((p) => p.id === s.suggestedPersonId)
               : null;
-            const idx = actualIndex(i);
+            const idx = suggestionActualIndex(i);
             const isHovered = hoveredCard === i;
             const personDetail = buildPersonDetail(matched);
 
-            const card = (
+            return (
               <div
-                key={i}
+                key={`suggestion-${i}`}
                 className={css.card}
                 onMouseEnter={() => setHoveredCard(i)}
                 onMouseLeave={() => setHoveredCard(null)}
@@ -600,7 +575,7 @@ export function StakeholderGallery({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      handleRemove(i);
+                      handleRemoveSuggestion(i);
                     }}
                     className={css.removeButton}
                     title="Remove stakeholder"
@@ -610,7 +585,6 @@ export function StakeholderGallery({
                 )}
 
                 <div className={css.cardHeader}>
-                  {/* Avatar with larkspur ring for linked person entities */}
                   <div className={matched ? css.avatarRingLinked : css.avatarRing}>
                     <Avatar name={s.name} personId={matched?.id} size={24} />
                   </div>
@@ -626,9 +600,7 @@ export function StakeholderGallery({
                       {s.name}
                     </Link>
                   ) : (
-                    <span className={css.name}>
-                      {s.name}
-                    </span>
+                    <span className={css.name}>{s.name}</span>
                   )}
                   {matched && (
                     <LinkIcon size={12} strokeWidth={1.5} className={css.linkIcon} aria-label={`Linked to ${matched.name}`} />
@@ -639,17 +611,12 @@ export function StakeholderGallery({
                       onChange={(v) => updateField(`stakeholderInsights[${idx}].engagement`, v)}
                     />
                   ) : s.engagement ? (
-                    <span
-                      className={`${css.engagementBadge} ${getEngagementBadgeClass(s.engagement)}`}
-                    >
+                    <span className={`${css.engagementBadge} ${getEngagementBadgeClass(s.engagement)}`}>
                       {getStaticBadgeLabel(s.engagement)}
                     </span>
                   ) : null}
                 </div>
-                {/* I493: Title and organization from linked person data */}
-                {personDetail && (
-                  <p className={css.titleLine}>{personDetail}</p>
-                )}
+                {personDetail && <p className={css.titleLine}>{personDetail}</p>}
                 {s.role != null && (
                   canEdit ? (
                     <EditableText
@@ -660,9 +627,7 @@ export function StakeholderGallery({
                       className={css.editableRole}
                     />
                   ) : (
-                    <p className={css.role}>
-                      {s.role}
-                    </p>
+                    <p className={css.role}>{s.role}</p>
                   )
                 )}
                 {s.assessment != null && (
@@ -683,7 +648,6 @@ export function StakeholderGallery({
                     {s.source === "clay" ? "Clay" : "Gravatar"}
                   </span>
                 )}
-                {/* I493: Last interaction date from linked person data */}
                 {matched?.lastSeen && (
                   <div className={css.lastSeen}>
                     Last seen {formatRelativeDate(matched.lastSeen)}
@@ -704,8 +668,23 @@ export function StakeholderGallery({
                     Link to {suggested.name}?
                   </button>
                 )}
+                {/* I420: Accept suggestion to add to account_stakeholders */}
+                {canEdit && !matched && !suggested && onAddTeamMember && s.personId && (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onAddTeamMember(s.personId!, "associated");
+                    }}
+                    className={css.actionButtonSuggestion}
+                    title={`Add ${s.name} to account`}
+                  >
+                    <Check size={12} strokeWidth={1.5} />
+                    Link to {s.name}?
+                  </button>
+                )}
                 {/* Create contact action for unlinked stakeholders */}
-                {canEdit && !matched && !suggested && isHovered && (
+                {canEdit && !matched && !suggested && !(s.personId && onAddTeamMember) && isHovered && (
                   <button
                     onClick={(e) => {
                       e.preventDefault();
@@ -720,21 +699,13 @@ export function StakeholderGallery({
                 )}
               </div>
             );
-
-            // Card body does NOT navigate — only name click navigates
-            return card;
           })}
         </div>
-        {hasMoreStakeholders && (
-          <button
-            onClick={() => setExpandedGrid(true)}
-            className={css.showMore}
-          >
-            Show {stakeholders.length - STAKEHOLDER_LIMIT} more
-          </button>
-        )}
         </>
-      ) : linkedPeople.length > 0 ? (
+      )}
+
+      {/* Fallback: linkedPeople when no confirmed or suggested stakeholders */}
+      {!hasStakeholders && linkedPeople.length > 0 && (
         <div className={css.grid}>
           {linkedPeople.map((p) => (
             <div key={p.id} className={css.card}>
@@ -756,7 +727,14 @@ export function StakeholderGallery({
             </div>
           ))}
         </div>
-      ) : null}
+      )}
+
+      {/* Show more */}
+      {hasMoreStakeholders && (
+        <button onClick={() => setExpandedGrid(true)} className={css.showMore}>
+          Show {totalCount - STAKEHOLDER_LIMIT} more
+        </button>
+      )}
 
       {/* Add stakeholder */}
       {canEdit && (
