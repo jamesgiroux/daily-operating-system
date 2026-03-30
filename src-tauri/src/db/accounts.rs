@@ -608,6 +608,66 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Get pending stakeholder suggestions for an account (I652 phase 2).
+    pub fn get_stakeholder_suggestions(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<StakeholderSuggestionRow>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, account_id, person_id, suggested_name, suggested_email,
+                    suggested_role, suggested_engagement, source, status, created_at
+             FROM stakeholder_suggestions
+             WHERE account_id = ?1 AND status = 'pending'
+             ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(StakeholderSuggestionRow {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                person_id: row.get(2)?,
+                suggested_name: row.get(3)?,
+                suggested_email: row.get(4)?,
+                suggested_role: row.get(5)?,
+                suggested_engagement: row.get(6)?,
+                source: row.get(7)?,
+                status: row.get(8)?,
+                created_at: row.get(9)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get a single stakeholder suggestion by ID (I652 phase 2).
+    pub fn get_stakeholder_suggestion(
+        &self,
+        suggestion_id: i64,
+    ) -> Result<Option<StakeholderSuggestionRow>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, account_id, person_id, suggested_name, suggested_email,
+                    suggested_role, suggested_engagement, source, status, created_at
+             FROM stakeholder_suggestions
+             WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![suggestion_id], |row| {
+            Ok(StakeholderSuggestionRow {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                person_id: row.get(2)?,
+                suggested_name: row.get(3)?,
+                suggested_email: row.get(4)?,
+                suggested_role: row.get(5)?,
+                suggested_engagement: row.get(6)?,
+                source: row.get(7)?,
+                status: row.get(8)?,
+                created_at: row.get(9)?,
+            })
+        })?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
     /// Aggregate child account signals for a parent account (I114).
     ///
     /// Returns total ARR, worst health, nearest renewal, and BU count.
