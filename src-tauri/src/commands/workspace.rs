@@ -983,7 +983,20 @@ pub fn set_schedule(
     timezone: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
-    crate::services::settings::set_schedule(&workflow, hour, minute, &timezone, &state)
+    let config = crate::services::settings::set_schedule(&workflow, hour, minute, &timezone, &state)?;
+
+    // Invalidate briefing cache when timezone changes (schedule.json is rendered with new tz)
+    if let Ok(guard) = state.config.read() {
+        if let Some(ref cfg) = *guard {
+            use std::path::Path;
+            let data_dir = Path::new(&cfg.workspace_path)
+                .join("_today")
+                .join("data");
+            crate::workflow::deliver::invalidate_briefing_cache(&data_dir);
+        }
+    }
+
+    Ok(config)
 }
 
 /// Save user profile fields (name, company, title, focus, domains)
