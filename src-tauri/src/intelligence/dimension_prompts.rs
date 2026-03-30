@@ -194,6 +194,27 @@ pub fn build_glean_dimension_prompt(
         }
     ));
 
+    // I651: Dimension-specific instructions for commercial_financial
+    if dimension == "commercial_financial" && entity_type == "account" {
+        prompt.push_str(
+            "## Product Classification (Salesforce)\n\n\
+             For the `productClassification.products` array, search Salesforce for:\n\
+             - Customer Account Subscription Status (current active subscriptions)\n\
+             - Support Package (tier level: Enhanced, Signature, Standard, Basic, Premier)\n\
+             - Estimated ARR or Estimated CMS ARR (annual recurring revenue)\n\
+             - Billing Terms (Annual, Monthly, Multi-Year)\n\
+             - Parsely Customer flag (include if true; if false, omit analytics)\n\
+             - Parsely Premier flag (include if true)\n\n\
+             Return one product object per active subscription:\n\
+             - type: \"cms\" or \"analytics\" (match Salesforce product names)\n\
+             - tier: null or one of (enhanced|signature|standard|basic|premier|unknown)\n\
+             - arr: null or the annual revenue number as a float\n\
+             - billingTerms: null or one of (annual|monthly|multi_year)\n\n\
+             If the account has NO active subscriptions or Subscription Status is not active, \
+             return an empty products array: `\"products\": []`\n\n"
+        );
+    }
+
     // JSON schema — stronger format enforcement for Glean
     prompt.push_str("## Required Output Format\n\n");
     prompt.push_str(
@@ -298,6 +319,10 @@ pub fn merge_dimension_into(
             }
             if !partial.blockers.is_empty() {
                 existing.blockers = partial.blockers.clone();
+            }
+            // I651: Product classification from Glean
+            if partial.product_classification.is_some() {
+                existing.product_classification = partial.product_classification.clone();
             }
         }
 
@@ -754,7 +779,12 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
                 r#"  "contractContext": {"contractType": "annual|multi_year|month_to_month", "autoRenew": true, "renewalDate": "ISO date", "currentArr": 0.0},
   "renewalOutlook": {"confidence": "high|moderate|low", "riskFactors": ["..."], "expansionPotential": "...", "recommendedStart": "ISO date"},
   "expansionSignals": [{"opportunity": "...", "arrImpact": 0.0, "stage": "exploring|evaluating|committed|blocked", "strength": "strong|moderate|early", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
-  "blockers": [{"description": "...", "owner": "...", "since": "ISO date", "impact": "critical|high|moderate|low"}]
+  "blockers": [{"description": "...", "owner": "...", "since": "ISO date", "impact": "critical|high|moderate|low"}],
+  "productClassification": {
+    "products": [
+      {"type": "cms|analytics", "tier": "enhanced|signature|standard|basic|premier|unknown|null", "arr": 0.0, "billingTerms": "annual|monthly|multi_year|null"}
+    ]
+  }
 "#,
             );
         }
