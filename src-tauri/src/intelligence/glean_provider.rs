@@ -1017,16 +1017,11 @@ pub fn reconcile_enrichment(
         );
     }
 
-    if !has_user_edits("stakeholderInsights") {
-        result.stakeholder_insights = reconcile_vec_items(
-            &existing.stakeholder_insights,
-            &new_output.stakeholder_insights,
-            refreshed_sources,
-            dismissed,
-            "stakeholderInsights",
-            |s| &s.name,
-        );
-    }
+    // I652: stakeholder_insights is now write-only context in intelligence.json.
+    // Real stakeholder protection is structural (data_source columns on account_stakeholders).
+    // Always take the fresh AI output — intel_queue::write_enrichment_results routes
+    // insights to DB columns or stakeholder_suggestions table.
+    result.stakeholder_insights = new_output.stakeholder_insights;
 
     if !has_user_edits("valueDelivered") {
         result.value_delivered = reconcile_vec_items(
