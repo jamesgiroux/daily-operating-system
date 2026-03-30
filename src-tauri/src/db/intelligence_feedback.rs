@@ -56,6 +56,45 @@ impl ActionDb {
         Ok(())
     }
 
+    /// I645: Check if an intelligence item is suppressed by a tombstone.
+    ///
+    /// Returns `true` if a matching tombstone exists for the given entity/field/item
+    /// AND the item does NOT have newer evidence (sourced_at > dismissed_at).
+    /// If `sourced_at` is provided and is newer than the tombstone's `dismissed_at`,
+    /// the item is NOT suppressed (new evidence supersedes the dismissal).
+    pub fn is_suppressed(
+        &self,
+        entity_id: &str,
+        field_key: &str,
+        item_key: Option<&str>,
+        sourced_at: Option<&str>,
+    ) -> Result<bool, String> {
+        let conn = self.conn_ref();
+        // Find matching tombstone that hasn't expired
+        let result: Option<String> = conn
+            .query_row(
+                "SELECT dismissed_at FROM suppression_tombstones \
+                 WHERE entity_id = ?1 AND field_key = ?2 AND item_key = ?3 \
+                 AND (expires_at IS NULL OR expires_at > datetime('now'))",
+                rusqlite::params![entity_id, field_key, item_key],
+                |row| row.get(0),
+            )
+            .ok();
+
+        match result {
+            None => Ok(false), // No tombstone found
+            Some(dismissed_at) => {
+                // If the item has newer evidence, it should pass through
+                if let Some(src_at) = sourced_at {
+                    if src_at > dismissed_at.as_str() {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+        }
+    }
+
     /// Get all feedback for an entity, newest first.
     pub fn get_entity_feedback(
         &self,
