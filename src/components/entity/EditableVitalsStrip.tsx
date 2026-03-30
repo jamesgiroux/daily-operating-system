@@ -13,6 +13,7 @@
  */
 import { useState, useRef, useEffect } from "react";
 import type { PresetVitalField } from "@/types/preset";
+import type { AccountSourceRef } from "@/types";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
@@ -48,6 +49,8 @@ interface EditableVitalsStripProps {
   extraVitals?: { text: string; highlight?: string }[];
   /** Field-level enrichment suggestions (accept/dismiss) */
   conflicts?: Map<string, VitalConflict>;
+  /** I644: Per-field source attribution refs */
+  sourceRefs?: AccountSourceRef[];
 }
 
 const highlightColor: Record<string, string> = {
@@ -270,17 +273,44 @@ function InlineSelect({
   );
 }
 
+/** Format a source ref into a subtle attribution string. */
+function formatSourceAttribution(ref: AccountSourceRef): string {
+  const source = formatProvenanceSource(ref.sourceSystem);
+  return source ?? ref.sourceSystem.replace(/_/g, " ");
+}
+
+/** Source attribution line rendered below a vital value. */
+function SourceAttributionLine({ sourceRef }: { sourceRef: AccountSourceRef }) {
+  return (
+    <span
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "var(--type-xs)",
+        color: "var(--color-text-muted)",
+        marginTop: 2,
+        display: "block",
+        textTransform: "none",
+        letterSpacing: "0.02em",
+      }}
+    >
+      {formatSourceAttribution(sourceRef)}
+    </span>
+  );
+}
+
 /** A single vital field in the strip. */
 function VitalField({
   field,
   entityData,
   metadata,
   onFieldChange,
+  sourceRef,
 }: {
   field: PresetVitalField;
   entityData: EntityData;
   metadata?: Record<string, string>;
   onFieldChange: EditableVitalsStripProps["onFieldChange"];
+  sourceRef?: AccountSourceRef;
 }) {
   const [editing, setEditing] = useState(false);
   const value = resolveValue(field, entityData, metadata);
@@ -294,22 +324,27 @@ function VitalField({
     onFieldChange(field.key, field.columnMapping, field.source, v);
   };
 
+  const attribution = !isEmpty && sourceRef ? <SourceAttributionLine sourceRef={sourceRef} /> : null;
+
   // Signal fields are read-only
   if (isSignal) {
     if (isEmpty) return null;
     return (
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 12,
-          fontWeight: 500,
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-          color,
-          whiteSpace: "nowrap",
-        }}
-      >
-        {field.fieldType === "currency" ? `${display} ${field.label}` : `${field.label} ${display}`}
+      <span style={{ display: "inline-flex", flexDirection: "column" }}>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            fontWeight: 500,
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            color,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {field.fieldType === "currency" ? `${display} ${field.label}` : `${field.label} ${display}`}
+        </span>
+        {attribution}
       </span>
     );
   }
@@ -317,36 +352,39 @@ function VitalField({
   // Select: click to show dropdown
   if (field.fieldType === "select" && field.options?.length) {
     return (
-      <span style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap" }}>
-        {editing ? (
-          <InlineSelect
-            value={value}
-            options={field.options!}
-            onCommit={(v) => {
-              commit(v);
-              setEditing(false);
-            }}
-            onCancel={() => setEditing(false)}
-          />
-        ) : (
-          <span
-            onClick={() => setEditing(true)}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              color: isEmpty ? "var(--color-text-tertiary)" : color,
-              opacity: isEmpty ? 0.5 : 1,
-              borderBottom: isEmpty ? "1px dashed var(--color-text-tertiary)" : undefined,
-              cursor: "pointer",
-            }}
-            title={`Click to ${isEmpty ? "set" : "change"} ${field.label.toLowerCase()}`}
-          >
-            {isEmpty ? field.label : `${display} ${field.label}`}
-          </span>
-        )}
+      <span style={{ display: "inline-flex", flexDirection: "column" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap" }}>
+          {editing ? (
+            <InlineSelect
+              value={value}
+              options={field.options!}
+              onCommit={(v) => {
+                commit(v);
+                setEditing(false);
+              }}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+            <span
+              onClick={() => setEditing(true)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                fontWeight: 500,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                color: isEmpty ? "var(--color-text-tertiary)" : color,
+                opacity: isEmpty ? 0.5 : 1,
+                borderBottom: isEmpty ? "1px dashed var(--color-text-tertiary)" : undefined,
+                cursor: "pointer",
+              }}
+              title={`Click to ${isEmpty ? "set" : "change"} ${field.label.toLowerCase()}`}
+            >
+              {isEmpty ? field.label : `${display} ${field.label}`}
+            </span>
+          )}
+        </span>
+        {attribution}
       </span>
     );
   }
@@ -354,18 +392,63 @@ function VitalField({
   // Date: use DatePicker
   if (field.fieldType === "date") {
     return (
-      <span style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap" }}>
-        {editing ? (
-          <span style={{ display: "inline-block", width: 160 }}>
-            <DatePicker
-              value={value || undefined}
-              onChange={(v) => {
-                commit(v);
-                setEditing(false);
+      <span style={{ display: "inline-flex", flexDirection: "column" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap" }}>
+          {editing ? (
+            <span style={{ display: "inline-block", width: 160 }}>
+              <DatePicker
+                value={value || undefined}
+                onChange={(v) => {
+                  commit(v);
+                  setEditing(false);
+                }}
+                placeholder={`Set ${field.label.toLowerCase()}`}
+              />
+            </span>
+          ) : (
+            <span
+              onClick={() => setEditing(true)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                fontWeight: 500,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                color: isEmpty ? "var(--color-text-tertiary)" : color,
+                opacity: isEmpty ? 0.5 : 1,
+                borderBottom: isEmpty ? "1px dashed var(--color-text-tertiary)" : undefined,
+                cursor: "pointer",
               }}
-              placeholder={`Set ${field.label.toLowerCase()}`}
-            />
-          </span>
+              title={`Click to ${isEmpty ? "set" : "edit"} ${field.label.toLowerCase()}`}
+            >
+              {isEmpty ? field.label : display}
+            </span>
+          )}
+        </span>
+        {attribution}
+      </span>
+    );
+  }
+
+  // Currency / Number / Text: inline input on click
+  const inputType = field.fieldType === "currency" || field.fieldType === "number" ? "number" : "text";
+  const prefix = field.fieldType === "currency" ? "$" : undefined;
+
+  return (
+    <span style={{ display: "inline-flex", flexDirection: "column" }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+        {editing ? (
+          <InlineInput
+            value={value}
+            onCommit={(v) => {
+              commit(v);
+              setEditing(false);
+            }}
+            onCancel={() => setEditing(false)}
+            type={inputType}
+            prefix={prefix}
+            label={field.label}
+          />
         ) : (
           <span
             onClick={() => setEditing(true)}
@@ -382,58 +465,19 @@ function VitalField({
             }}
             title={`Click to ${isEmpty ? "set" : "edit"} ${field.label.toLowerCase()}`}
           >
-            {isEmpty ? field.label : display}
+            {isEmpty
+              ? field.label
+              : field.fieldType === "currency"
+                ? `${display} ${field.label}`
+                : field.key === "health"
+                  ? `${display} ${field.label}`
+                  : field.key === "status" || field.key === "relationship"
+                    ? display
+                    : `${field.label} ${display}`}
           </span>
         )}
       </span>
-    );
-  }
-
-  // Currency / Number / Text: inline input on click
-  const inputType = field.fieldType === "currency" || field.fieldType === "number" ? "number" : "text";
-  const prefix = field.fieldType === "currency" ? "$" : undefined;
-
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
-      {editing ? (
-        <InlineInput
-          value={value}
-          onCommit={(v) => {
-            commit(v);
-            setEditing(false);
-          }}
-          onCancel={() => setEditing(false)}
-          type={inputType}
-          prefix={prefix}
-          label={field.label}
-        />
-      ) : (
-        <span
-          onClick={() => setEditing(true)}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            fontWeight: 500,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            color: isEmpty ? "var(--color-text-tertiary)" : color,
-            opacity: isEmpty ? 0.5 : 1,
-            borderBottom: isEmpty ? "1px dashed var(--color-text-tertiary)" : undefined,
-            cursor: "pointer",
-          }}
-          title={`Click to ${isEmpty ? "set" : "edit"} ${field.label.toLowerCase()}`}
-        >
-          {isEmpty
-            ? field.label
-            : field.fieldType === "currency"
-              ? `${display} ${field.label}`
-              : field.key === "health"
-                ? `${display} ${field.label}`
-                : field.key === "status" || field.key === "relationship"
-                  ? display
-                  : `${field.label} ${display}`}
-        </span>
-      )}
+      {attribution}
     </span>
   );
 }
@@ -580,6 +624,19 @@ function SuggestionRow({
   );
 }
 
+/** Map from field key to the column name used in account_source_refs. */
+const FIELD_TO_SOURCE_KEY: Record<string, string> = {
+  arr: "arr",
+  health: "health",
+  lifecycle: "lifecycle",
+  contract_end: "renewal_date",
+  nps: "nps",
+  status: "status",
+  relationship: "relationship",
+  contract_start: "contract_start",
+  owner: "owner",
+};
+
 export function EditableVitalsStrip({
   fields,
   entityData,
@@ -587,12 +644,26 @@ export function EditableVitalsStrip({
   onFieldChange,
   extraVitals,
   conflicts,
+  sourceRefs,
 }: EditableVitalsStripProps) {
   if (fields.length === 0) return null;
+
+  // Build a lookup from field name to the most recent source ref
+  const refsByField = new Map<string, AccountSourceRef>();
+  if (sourceRefs) {
+    for (const ref of sourceRefs) {
+      // Refs are ordered by field then observed_at DESC, so first wins
+      if (!refsByField.has(ref.field)) {
+        refsByField.set(ref.field, ref);
+      }
+    }
+  }
 
   const allItems: React.ReactNode[] = [];
 
   for (const field of fields) {
+    const sourceKey = FIELD_TO_SOURCE_KEY[field.key] ?? field.key;
+    const matchedRef = refsByField.get(sourceKey);
     allItems.push(
       <VitalField
         key={field.key}
@@ -600,6 +671,7 @@ export function EditableVitalsStrip({
         entityData={entityData}
         metadata={metadata}
         onFieldChange={onFieldChange}
+        sourceRef={matchedRef}
       />,
     );
   }
