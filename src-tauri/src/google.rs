@@ -1209,8 +1209,11 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
         let poll_interval = Duration::from_secs(get_email_poll_interval(&state) * 60);
         if next_due_at.is_none() {
-            let remaining =
-                remaining_until_next_poll(load_last_sync_success("gmail"), poll_interval, Utc::now());
+            let remaining = remaining_until_next_poll(
+                load_last_sync_success("gmail"),
+                poll_interval,
+                Utc::now(),
+            );
             next_due_at = Some(Instant::now() + remaining);
         }
         let due_at = next_due_at.get_or_insert_with(Instant::now);
@@ -1313,8 +1316,10 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                                 // Reuse Executor's enrichment pipeline (same data shaping as manual refresh),
                                 // but keep the background pass cheap and extraction-only.
-                                let executor =
-                                    crate::executor::Executor::new(state.clone(), app_handle.clone());
+                                let executor = crate::executor::Executor::new(
+                                    state.clone(),
+                                    app_handle.clone(),
+                                );
                                 let user_ctx = state
                                     .config
                                     .read()
@@ -1324,16 +1329,17 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                     })
                                     .unwrap_or_default();
                                 let ai_config = executor.ai_model_config();
-                                let background_pty = PtyManager::for_tier(
-                                    ModelTier::Background,
-                                    &ai_config,
-                                )
-                                .with_usage_context(
-                                    AiUsageContext::new("gmail", "background_email_enrichment")
-                                        .with_trigger("poller")
-                                        .with_tier(ModelTier::Background)
-                                        .with_background(true),
-                                );
+                                let background_pty =
+                                    PtyManager::for_tier(ModelTier::Background, &ai_config)
+                                        .with_usage_context(
+                                            AiUsageContext::new(
+                                                "gmail",
+                                                "background_email_enrichment",
+                                            )
+                                            .with_trigger("poller")
+                                            .with_tier(ModelTier::Background)
+                                            .with_background(true),
+                                        );
 
                                 match executor.enrich_emails_with_fallback(
                                     &data_dir,
@@ -1357,10 +1363,16 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 // Sync enriched signals to DB
                                 match executor.sync_email_signals_from_payload(&data_dir) {
                                     Ok(count) if count > 0 => {
-                                        log::info!("Email poll: persisted {} email signal rows", count);
+                                        log::info!(
+                                            "Email poll: persisted {} email signal rows",
+                                            count
+                                        );
                                     }
                                     Err(e) => {
-                                        log::warn!("Email poll: signal sync failed (non-fatal): {}", e);
+                                        log::warn!(
+                                            "Email poll: signal sync failed (non-fatal): {}",
+                                            e
+                                        );
                                     }
                                     _ => {}
                                 }
@@ -1396,7 +1408,8 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 if !scores.is_empty() {
                                     if let Ok(db) = crate::db::ActionDb::open() {
                                         for (email_id, score, reason) in &scores {
-                                            let _ = db.set_relevance_score(email_id, *score, reason);
+                                            let _ =
+                                                db.set_relevance_score(email_id, *score, reason);
                                         }
                                     }
                                     log::info!("Email poll: scored {} emails", scores.len());

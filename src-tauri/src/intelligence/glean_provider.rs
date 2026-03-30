@@ -298,7 +298,11 @@ impl GleanIntelligenceProvider {
                                     Ok(db) => {
                                         match upsert_products_to_db(&db, entity_id, products) {
                                             Ok(count) => {
-                                                log::info!("[I651] Upserted {} products for {}", count, entity_id);
+                                                log::info!(
+                                                    "[I651] Upserted {} products for {}",
+                                                    count,
+                                                    entity_id
+                                                );
                                             }
                                             Err(e) => {
                                                 log::warn!("[I651] Product upsert failed (best-effort): {}", e);
@@ -306,7 +310,10 @@ impl GleanIntelligenceProvider {
                                         }
                                     }
                                     Err(e) => {
-                                        log::warn!("[I651] Could not open DB for product upsert: {}", e);
+                                        log::warn!(
+                                            "[I651] Could not open DB for product upsert: {}",
+                                            e
+                                        );
                                     }
                                 }
                             }
@@ -407,12 +414,10 @@ impl GleanIntelligenceProvider {
                                 .iter()
                                 .any(|e| e.field_path.starts_with("stakeholderInsights"))
                         {
-                            existing
-                                .user_edits
-                                .push(crate::intelligence::io::UserEdit {
-                                    field_path: "stakeholderInsights".to_string(),
-                                    edited_at: chrono::Utc::now().to_rfc3339(),
-                                });
+                            existing.user_edits.push(crate::intelligence::io::UserEdit {
+                                field_path: "stakeholderInsights".to_string(),
+                                edited_at: chrono::Utc::now().to_rfc3339(),
+                            });
                         }
                     }
                     reconcile_enrichment(
@@ -765,17 +770,21 @@ pub fn emit_glean_signals(
                 .unwrap_or(0) as i64;
             if let Err(e) = db.upsert_account_technical_footprint(
                 entity_id,
-                None,                        // integrations_json
-                None,                        // usage_tier
-                None,                        // adoption_score
-                None,                        // active_users
+                None, // integrations_json
+                None, // usage_tier
+                None, // adoption_score
+                None, // active_users
                 support_tier.as_deref(),
                 csat,
                 open_tickets,
-                None,                        // services_stage
+                None, // services_stage
                 "glean_zendesk",
             ) {
-                log::warn!("[I649] Failed to upsert technical footprint for {}: {}", entity_id, e);
+                log::warn!(
+                    "[I649] Failed to upsert technical footprint for {}: {}",
+                    entity_id,
+                    e
+                );
             } else if let Err(e) = emit_signal(
                 db,
                 entity_type,
@@ -1037,7 +1046,9 @@ fn promote_glean_facts_to_accounts(
                     }) {
                         log::warn!(
                             "[I644] Source ref write failed for {}.{}: {}",
-                            entity_id, $field, e
+                            entity_id,
+                            $field,
+                            e
                         );
                     }
                 }
@@ -1045,13 +1056,16 @@ fn promote_glean_facts_to_accounts(
                     skipped += 1;
                     log::debug!(
                         "[I644] Skipped {}.{} — higher-priority source exists",
-                        entity_id, $field
+                        entity_id,
+                        $field
                     );
                 }
                 Err(e) => {
                     log::warn!(
                         "[I644] Fact upsert failed for {}.{}: {}",
-                        entity_id, $field, e
+                        entity_id,
+                        $field,
+                        e
                     );
                 }
             }
@@ -1121,15 +1135,18 @@ fn promote_glean_facts_to_accounts(
     if let Some(ref classification) = intel.product_classification {
         if !classification.products.is_empty() {
             let count_str = classification.products.len().to_string();
-            promote_fact!("active_subscription_count", &count_str, "salesforce", "fact");
+            promote_fact!(
+                "active_subscription_count",
+                &count_str,
+                "salesforce",
+                "fact"
+            );
 
             // Primary product = highest-ARR product, or first product if no ARR data
             let primary = classification
                 .products
                 .iter()
-                .filter_map(|p| {
-                    p.type_.as_ref().map(|t| (t.clone(), p.arr.unwrap_or(0.0)))
-                })
+                .filter_map(|p| p.type_.as_ref().map(|t| (t.clone(), p.arr.unwrap_or(0.0))))
                 .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
                 .map(|(t, _)| t);
             if let Some(ref product) = primary {

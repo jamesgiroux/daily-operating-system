@@ -22,6 +22,7 @@ use chrono_tz::Tz;
 use regex::Regex;
 use serde_json::{json, Value};
 
+use crate::db::emails::EmailEnrichmentUpdate;
 use crate::helpers::strip_conferencing_noise;
 use crate::json_loader::{
     Directive, DirectiveEmail, DirectiveEvent, DirectiveMeeting, DirectiveMeetingContext,
@@ -30,7 +31,6 @@ use crate::types::{EmailSyncStage, EmailSyncState, EmailSyncStatus};
 use crate::util::{
     encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE,
 };
-use crate::db::emails::EmailEnrichmentUpdate;
 
 // ============================================================================
 // Constants
@@ -2675,14 +2675,13 @@ pub fn enrich_emails(
     known_domains: &std::collections::HashSet<String>,
 ) -> Result<(), String> {
     // Open DB for Phase 5 workflow (load pending emails, write enrichments)
-    let db = crate::db::ActionDb::open().map_err(|e| {
-        format!("Failed to open DB for email enrichment: {}", e)
-    })?;
+    let db = crate::db::ActionDb::open()
+        .map_err(|e| format!("Failed to open DB for email enrichment: {}", e))?;
 
     // Step 1: Load all active emails from DB (not from JSON)
-    let all_emails = db.get_all_active_emails().map_err(|e| {
-        format!("Failed to load emails from DB: {}", e)
-    })?;
+    let all_emails = db
+        .get_all_active_emails()
+        .map_err(|e| format!("Failed to load emails from DB: {}", e))?;
 
     if all_emails.is_empty() {
         log::info!("enrich_emails: no active emails to enrich");
@@ -2691,9 +2690,9 @@ pub fn enrich_emails(
 
     // Step 2: Batch-load snapshots for Gate 0 (content-change detection)
     let email_ids: Vec<String> = all_emails.iter().map(|e| e.email_id.clone()).collect();
-    let snapshots = db.get_email_snapshots(&email_ids).map_err(|e| {
-        format!("Failed to load email snapshots: {}", e)
-    })?;
+    let snapshots = db
+        .get_email_snapshots(&email_ids)
+        .map_err(|e| format!("Failed to load email snapshots: {}", e))?;
 
     // Step 3: Build filter input for three-gate selection
     // Extract enriched_at, priority, received_at, sender_email, last_response_date
@@ -2762,10 +2761,8 @@ pub fn enrich_emails(
         now: Utc::now(),
     };
 
-    let emails_to_enrich = crate::workflow::email_filter::select_emails_for_enrichment(
-        emails_for_sort,
-        &filter_input,
-    );
+    let emails_to_enrich =
+        crate::workflow::email_filter::select_emails_for_enrichment(emails_for_sort, &filter_input);
 
     if emails_to_enrich.is_empty() {
         log::info!("enrich_emails: three-gate filter selected 0 emails to enrich");
@@ -2780,8 +2777,10 @@ pub fn enrich_emails(
 
     // Step 4: Prepare enrichment batch
     // Load full email data for the selected IDs
-    let emails_to_enrich_ids: HashSet<String> =
-        emails_to_enrich.iter().map(|e| e.email_id.clone()).collect();
+    let emails_to_enrich_ids: HashSet<String> = emails_to_enrich
+        .iter()
+        .map(|e| e.email_id.clone())
+        .collect();
 
     let full_emails_to_enrich: Vec<_> = all_emails
         .iter()
@@ -2894,7 +2893,8 @@ pub fn enrich_emails(
             };
 
             // Write to DB
-            if let Err(e) = db.set_enrichment_state(&email.email_id, "enriched", enrichment_update) {
+            if let Err(e) = db.set_enrichment_state(&email.email_id, "enriched", enrichment_update)
+            {
                 log::warn!("Failed to write enrichment for {}: {}", email.email_id, e);
                 continue;
             }
@@ -6007,10 +6007,19 @@ END_ENRICHMENT
 "#;
         let enrichments = parse_email_enrichment(response);
         assert_eq!(enrichments.len(), 2);
-        assert_eq!(enrichments["email1"].summary, Some("First email summary".to_string()));
-        assert_eq!(enrichments["email2"].summary, Some("Second email summary".to_string()));
+        assert_eq!(
+            enrichments["email1"].summary,
+            Some("First email summary".to_string())
+        );
+        assert_eq!(
+            enrichments["email2"].summary,
+            Some("Second email summary".to_string())
+        );
         assert_eq!(enrichments["email1"].sentiment, Some("neutral".to_string()));
-        assert_eq!(enrichments["email2"].sentiment, Some("positive".to_string()));
+        assert_eq!(
+            enrichments["email2"].sentiment,
+            Some("positive".to_string())
+        );
     }
 
     #[test]

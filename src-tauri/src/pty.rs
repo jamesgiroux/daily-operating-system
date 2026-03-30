@@ -342,9 +342,7 @@ fn background_pause_reason(status: &BackgroundAiPauseStatus) -> Option<String> {
             status.timeout_rate_last_20 * 100.0,
             BACKGROUND_AI_TIMEOUT_SAMPLE
         ))
-    } else if status.consecutive_background_timeouts
-        >= BACKGROUND_AI_CONSECUTIVE_TIMEOUTS as u32
-    {
+    } else if status.consecutive_background_timeouts >= BACKGROUND_AI_CONSECUTIVE_TIMEOUTS as u32 {
         Some(format!(
             "Paused background AI after {} consecutive background timeouts",
             status.consecutive_background_timeouts
@@ -367,9 +365,8 @@ fn maybe_refresh_background_ai_guard(db: &crate::db::ActionDb) -> BackgroundAiPa
     let reason = background_pause_reason(&status);
 
     if let Some(reason) = reason {
-        guard.paused_until = Some(
-            (Utc::now() + ChronoDuration::minutes(BACKGROUND_AI_PAUSE_MINUTES)).to_rfc3339(),
-        );
+        guard.paused_until =
+            Some((Utc::now() + ChronoDuration::minutes(BACKGROUND_AI_PAUSE_MINUTES)).to_rfc3339());
         guard.reason = Some(reason);
         write_json_kv(db, BACKGROUND_AI_GUARD_KEY, &guard);
         build_background_pause_status(&recent, &guard)
@@ -460,7 +457,8 @@ fn record_ai_usage(
 
     write_json_kv(&db, AI_USAGE_DAILY_KEY, &ledger);
 
-    let mut recent: AiRecentUsageLedger = read_json_kv(&db, AI_USAGE_RECENT_KEY).unwrap_or_default();
+    let mut recent: AiRecentUsageLedger =
+        read_json_kv(&db, AI_USAGE_RECENT_KEY).unwrap_or_default();
     recent.calls.push(AiRecentUsageCall {
         timestamp: Utc::now().to_rfc3339(),
         subsystem: context.subsystem.clone(),

@@ -136,10 +136,7 @@ pub async fn get_project_detail(
                 .unwrap_or_default();
             let notes = project.notes.clone();
             // I644: Intelligence from DB only — no filesystem fallback.
-            let intelligence = db
-                .get_entity_intelligence(&project_id)
-                .ok()
-                .flatten();
+            let intelligence = db.get_entity_intelligence(&project_id).ok().flatten();
 
             let open_actions = db
                 .get_project_actions(&project_id)

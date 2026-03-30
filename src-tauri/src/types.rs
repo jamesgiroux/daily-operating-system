@@ -313,7 +313,8 @@ impl Config {
     /// Timeout must be 0 < timeout <= 300 seconds.
     /// Returns error if misconfigured, logs warning and uses default (90) if invalid.
     pub fn validate_email_enrichment_timeout(&mut self) -> Result<(), String> {
-        if self.email_enrichment_timeout_seconds == 0 || self.email_enrichment_timeout_seconds > 300 {
+        if self.email_enrichment_timeout_seconds == 0 || self.email_enrichment_timeout_seconds > 300
+        {
             log::warn!(
                 "Invalid email_enrichment_timeout_seconds: {}. Must be 0 < timeout <= 300. Resetting to default: 90",
                 self.email_enrichment_timeout_seconds
@@ -3084,7 +3085,10 @@ mod tests {
         config.email_enrichment_timeout_seconds = 0;
         let result = config.validate_email_enrichment_timeout();
         assert!(result.is_err());
-        assert_eq!(config.email_enrichment_timeout_seconds, 90, "Should reset to default on invalid");
+        assert_eq!(
+            config.email_enrichment_timeout_seconds, 90,
+            "Should reset to default on invalid"
+        );
     }
 
     #[test]
@@ -3094,7 +3098,10 @@ mod tests {
         config.email_enrichment_timeout_seconds = 301;
         let result = config.validate_email_enrichment_timeout();
         assert!(result.is_err());
-        assert_eq!(config.email_enrichment_timeout_seconds, 90, "Should reset to default on invalid");
+        assert_eq!(
+            config.email_enrichment_timeout_seconds, 90,
+            "Should reset to default on invalid"
+        );
     }
 
     #[test]

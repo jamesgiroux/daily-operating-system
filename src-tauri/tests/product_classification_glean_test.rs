@@ -5,10 +5,8 @@
 
 #[cfg(test)]
 mod tests {
-    use dailyos_lib::intelligence::io::{
-        IntelligenceJson, ProductClassification, ProductInfo,
-    };
     use dailyos_lib::intelligence::glean_provider::extract_products_from_response;
+    use dailyos_lib::intelligence::io::{IntelligenceJson, ProductClassification, ProductInfo};
 
     // Helper: create a test IntelligenceJson with product classification
     fn intel_with_products(products: Vec<ProductInfo>) -> IntelligenceJson {
@@ -176,14 +174,12 @@ mod tests {
         // Verify products appear in intelligence JSON serialization
         let mut intel = IntelligenceJson::default();
         intel.product_classification = Some(ProductClassification {
-            products: vec![
-                ProductInfo {
-                    type_: Some("cms".to_string()),
-                    tier: Some("enhanced".to_string()),
-                    arr: Some(185400.0),
-                    billing_terms: Some("annual".to_string()),
-                },
-            ],
+            products: vec![ProductInfo {
+                type_: Some("cms".to_string()),
+                tier: Some("enhanced".to_string()),
+                arr: Some(185400.0),
+                billing_terms: Some("annual".to_string()),
+            }],
         });
 
         let json = serde_json::to_string(&intel).unwrap();
@@ -199,14 +195,12 @@ mod tests {
     #[test]
     fn test_extract_products_partial_data() {
         // All optional fields can be missing
-        let intel = intel_with_products(vec![
-            ProductInfo {
-                type_: Some("cms".to_string()),
-                tier: None,
-                arr: None,
-                billing_terms: None,
-            },
-        ]);
+        let intel = intel_with_products(vec![ProductInfo {
+            type_: Some("cms".to_string()),
+            tier: None,
+            arr: None,
+            billing_terms: None,
+        }]);
 
         let result = extract_products_from_response(&intel);
         assert!(result.is_ok());

@@ -149,10 +149,8 @@ pub fn build_intelligence_context(
 
                 // I647: Source-verified facts from account_source_refs
                 if let Ok(refs) = db.get_account_source_refs(entity_id) {
-                    let fact_refs: Vec<_> = refs
-                        .iter()
-                        .filter(|r| r.source_kind == "fact")
-                        .collect();
+                    let fact_refs: Vec<_> =
+                        refs.iter().filter(|r| r.source_kind == "fact").collect();
                     if !fact_refs.is_empty() {
                         let mut lines = Vec::new();
                         // Deduplicate by field — take first (most recent due to ORDER BY)
@@ -584,7 +582,9 @@ pub fn build_intelligence_context(
 
     // --- Stakeholders (I652: person-first, read from account_stakeholders DB) ---
     if entity_type == "account" || entity_type == "project" {
-        let stakeholders = db.get_account_stakeholders_full(entity_id).unwrap_or_default();
+        let stakeholders = db
+            .get_account_stakeholders_full(entity_id)
+            .unwrap_or_default();
         if !stakeholders.is_empty() {
             let lines: Vec<String> = stakeholders
                 .iter()
