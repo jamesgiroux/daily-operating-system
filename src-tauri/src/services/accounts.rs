@@ -2361,6 +2361,300 @@ pub fn backfill_internal_meeting_associations(db: &ActionDb) -> Result<usize, St
     Ok(updated)
 }
 
+// =============================================================================
+// I652 Phase 2: Person-first stakeholder mutations
+// =============================================================================
+
+/// Update engagement level for a stakeholder with signal emission.
+pub fn update_stakeholder_engagement(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    engagement: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE account_stakeholders
+                 SET engagement = ?1, data_source_engagement = 'user'
+                 WHERE account_id = ?2 AND person_id = ?3",
+                rusqlite::params![engagement, account_id, person_id],
+            )
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            account_id,
+            "stakeholder_engagement_updated",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"engagement\":\"{}\"}}",
+                person_id, engagement
+            )),
+            1.0,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Update assessment text for a stakeholder with signal emission.
+pub fn update_stakeholder_assessment(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    assessment: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE account_stakeholders
+                 SET assessment = ?1, data_source_assessment = 'user'
+                 WHERE account_id = ?2 AND person_id = ?3",
+                rusqlite::params![assessment, account_id, person_id],
+            )
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            account_id,
+            "stakeholder_assessment_updated",
+            "user_action",
+            Some(&format!("{{\"person_id\":\"{}\"}}", person_id)),
+            1.0,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Add a role to a stakeholder (multi-role — doesn't replace existing roles).
+pub fn add_stakeholder_role(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<(), String> {
+    let role = role.trim().to_lowercase();
+    if role.is_empty() {
+        return Err("Role is required".to_string());
+    }
+    db.with_transaction(|tx| {
+        let now = chrono::Utc::now().to_rfc3339();
+        tx.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
+                 VALUES (?1, ?2, ?3, 'user', ?4)
+                 ON CONFLICT(account_id, person_id, role) DO UPDATE SET
+                    data_source = 'user'",
+                rusqlite::params![account_id, person_id, role, now],
+            )
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            account_id,
+            "stakeholder_role_added",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
+                person_id, role
+            )),
+            0.9,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Remove a specific role from a stakeholder.
+pub fn remove_stakeholder_role(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "DELETE FROM account_stakeholder_roles
+                 WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
+                rusqlite::params![account_id, person_id, role],
+            )
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            account_id,
+            "stakeholder_role_removed",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
+                person_id, role
+            )),
+            0.8,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Accept a stakeholder suggestion: create person if needed, add to account.
+pub fn accept_stakeholder_suggestion(
+    db: &ActionDb,
+    state: &crate::state::AppState,
+    suggestion_id: i64,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        let suggestion = tx
+            .get_stakeholder_suggestion(suggestion_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Suggestion not found: {suggestion_id}"))?;
+
+        if suggestion.status != "pending" {
+            return Err(format!(
+                "Suggestion {} is already {}",
+                suggestion_id, suggestion.status
+            ));
+        }
+
+        // Resolve person_id: use existing, or find/create from email
+        let person_id = if let Some(pid) = suggestion.person_id.as_deref() {
+            pid.to_string()
+        } else if let Some(email) = suggestion.suggested_email.as_deref() {
+            let name = suggestion
+                .suggested_name
+                .as_deref()
+                .unwrap_or_else(|| email.split('@').next().unwrap_or("Unknown"));
+            let config = state
+                .config
+                .read()
+                .map_err(|_| "Lock poisoned")?
+                .clone()
+                .ok_or("Config not loaded")?;
+            let user_domains = config.resolved_user_domains();
+            let resolution =
+                tx.find_or_create_person(Some(email), name, None, "external", &user_domains)
+                    .map_err(|e| e.to_string())?;
+            match resolution {
+                crate::db::people::PersonResolution::FoundByEmail(p)
+                | crate::db::people::PersonResolution::Created(p) => p.id,
+                crate::db::people::PersonResolution::FoundByName { person, .. } => person.id,
+            }
+        } else {
+            return Err("Cannot accept suggestion: no person_id and no email".to_string());
+        };
+
+        // Ensure stakeholder link exists
+        let now = chrono::Utc::now().to_rfc3339();
+        tx.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source, created_at)
+                 VALUES (?1, ?2, 'user', ?3)
+                 ON CONFLICT(account_id, person_id) DO UPDATE SET data_source = 'user'",
+                rusqlite::params![suggestion.account_id, person_id, now],
+            )
+            .map_err(|e| e.to_string())?;
+
+        // Add suggested role if present
+        if let Some(role) = suggestion.suggested_role.as_deref() {
+            let role = role.trim().to_lowercase();
+            if !role.is_empty() {
+                tx.conn_ref()
+                    .execute(
+                        "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
+                         VALUES (?1, ?2, ?3, 'user', ?4)
+                         ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'user'",
+                        rusqlite::params![suggestion.account_id, person_id, role, now],
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        // Set engagement if suggested
+        if let Some(engagement) = suggestion.suggested_engagement.as_deref() {
+            tx.conn_ref()
+                .execute(
+                    "UPDATE account_stakeholders
+                     SET engagement = ?1, data_source_engagement = 'user'
+                     WHERE account_id = ?2 AND person_id = ?3",
+                    rusqlite::params![engagement, suggestion.account_id, person_id],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+
+        // Mark suggestion as accepted
+        tx.conn_ref()
+            .execute(
+                "UPDATE stakeholder_suggestions
+                 SET status = 'accepted', resolved_at = datetime('now')
+                 WHERE id = ?1",
+                rusqlite::params![suggestion_id],
+            )
+            .map_err(|e| e.to_string())?;
+
+        crate::services::signals::emit_and_propagate(
+            tx,
+            &state.signals.engine,
+            "account",
+            &suggestion.account_id,
+            "stakeholder_suggestion_accepted",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"source\":\"{}\"}}",
+                person_id, suggestion.source
+            )),
+            1.0,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Dismiss a stakeholder suggestion.
+pub fn dismiss_stakeholder_suggestion(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    suggestion_id: i64,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        let suggestion = tx
+            .get_stakeholder_suggestion(suggestion_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Suggestion not found: {suggestion_id}"))?;
+
+        tx.conn_ref()
+            .execute(
+                "UPDATE stakeholder_suggestions
+                 SET status = 'dismissed', resolved_at = datetime('now')
+                 WHERE id = ?1",
+                rusqlite::params![suggestion_id],
+            )
+            .map_err(|e| e.to_string())?;
+
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            &suggestion.account_id,
+            "stakeholder_suggestion_dismissed",
+            "user_action",
+            Some(&format!("{{\"suggestion_id\":{}}}", suggestion_id)),
+            0.7,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::db::test_utils::test_db;

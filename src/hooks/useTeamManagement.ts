@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Person } from "@/types";
+import type { Person, StakeholderSuggestion } from "@/types";
 
 function normalizeTeamRole(role: string): string {
   return role.trim() || "associated";
@@ -34,11 +34,20 @@ export function useTeamManagement(
   const [teamInlineRole, setTeamInlineRole] = useState("Champion");
   const [resolvedImportNotes, setResolvedImportNotes] = useState<Set<number>>(new Set());
   const [teamError, setTeamError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<StakeholderSuggestion[]>([]);
 
   // Reset on account change
   useEffect(() => {
     setResolvedImportNotes(new Set());
     setTeamError(null);
+  }, [accountId]);
+
+  // Fetch stakeholder suggestions
+  useEffect(() => {
+    if (!accountId) return;
+    invoke<StakeholderSuggestion[]>("get_stakeholder_suggestions", { accountId })
+      .then(setSuggestions)
+      .catch(() => setSuggestions([]));
   }, [accountId]);
 
   // Debounced team search
@@ -145,6 +154,50 @@ export function useTeamManagement(
     );
   }, [teamInlineName, teamInlineEmail, teamInlineRole, performTeamOperation, createAndAddTeamMember]);
 
+  // ── I652: Stakeholder engagement, assessment, roles, suggestions ──
+
+  const refreshWithSuggestions = useCallback(async () => {
+    await reload();
+    if (!accountId) return;
+    invoke<StakeholderSuggestion[]>("get_stakeholder_suggestions", { accountId })
+      .then(setSuggestions)
+      .catch(() => setSuggestions([]));
+  }, [accountId, reload]);
+
+  const updateStakeholderEngagement = useCallback(async (personId: string, engagement: string) => {
+    if (!accountId) return;
+    await invoke("update_stakeholder_engagement", { accountId, personId, engagement });
+    await refreshWithSuggestions();
+  }, [accountId, refreshWithSuggestions]);
+
+  const updateStakeholderAssessment = useCallback(async (personId: string, assessment: string) => {
+    if (!accountId) return;
+    await invoke("update_stakeholder_assessment", { accountId, personId, assessment });
+    await refreshWithSuggestions();
+  }, [accountId, refreshWithSuggestions]);
+
+  const addStakeholderRole = useCallback(async (personId: string, role: string) => {
+    if (!accountId) return;
+    await invoke("add_stakeholder_role", { accountId, personId, role });
+    await refreshWithSuggestions();
+  }, [accountId, refreshWithSuggestions]);
+
+  const removeStakeholderRole = useCallback(async (personId: string, role: string) => {
+    if (!accountId) return;
+    await invoke("remove_stakeholder_role", { accountId, personId, role });
+    await refreshWithSuggestions();
+  }, [accountId, refreshWithSuggestions]);
+
+  const acceptSuggestion = useCallback(async (suggestionId: number) => {
+    await invoke("accept_stakeholder_suggestion", { suggestionId });
+    await refreshWithSuggestions();
+  }, [refreshWithSuggestions]);
+
+  const dismissSuggestion = useCallback(async (suggestionId: number) => {
+    await invoke("dismiss_stakeholder_suggestion", { suggestionId });
+    await refreshWithSuggestions();
+  }, [refreshWithSuggestions]);
+
   // ── Direct methods (bypass state-driven drawer flow) ──
 
   const addTeamMemberDirect = useCallback(
@@ -224,5 +277,13 @@ export function useTeamManagement(
     addTeamMemberDirect,
     createTeamMemberDirect,
     changeTeamMemberRole,
+    // I652: Stakeholder engagement, assessment, roles, suggestions
+    suggestions,
+    updateStakeholderEngagement,
+    updateStakeholderAssessment,
+    addStakeholderRole,
+    removeStakeholderRole,
+    acceptSuggestion,
+    dismissSuggestion,
   };
 }
