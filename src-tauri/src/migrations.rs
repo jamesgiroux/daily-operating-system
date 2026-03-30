@@ -331,6 +331,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 78,
         sql: include_str!("migrations/078_pull_quote_column.sql"),
     },
+    Migration {
+        version: 79,
+        sql: include_str!("migrations/079_product_classification.sql"),
+    },
+    Migration {
+        version: 80,
+        sql: include_str!("migrations/080_stakeholder_source_of_truth.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -827,10 +835,20 @@ mod tests {
         .expect("accounts should include is_internal");
 
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'tam')",
+            "INSERT INTO people (id, email, name, updated_at) VALUES ('p1', 'test@acme.com', 'Test User', '2025-01-01')",
+            [],
+        )
+        .expect("people table should exist for FK");
+        conn.execute(
+            "INSERT INTO account_stakeholders (account_id, person_id) VALUES ('a1', 'p1')",
             [],
         )
         .expect("account_stakeholders table should exist");
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES ('a1', 'p1', 'tam')",
+            [],
+        )
+        .expect("account_stakeholder_roles table should exist");
 
         conn.execute(
             "INSERT INTO account_team_import_notes (account_id, legacy_field, legacy_value, note)
