@@ -2995,11 +2995,40 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ("mock-initech", "mock-priya-sharma", "technical_lead"),
     ];
 
+    // I652: Seed engagement/assessment data alongside stakeholder links
+    let engagement_seeds: std::collections::HashMap<(&str, &str), (&str, &str)> = [
+        (("mock-globex-industries", "mock-sarah-chen"), ("strong_advocate", "user")),
+        (("mock-globex-industries", "mock-alex-torres"), ("engaged", "ai")),
+        (("mock-globex-industries", "mock-casey-lee"), ("neutral", "ai")),
+        (("mock-initech", "mock-dana-patel"), ("engaged", "user")),
+        (("mock-initech", "mock-priya-sharma"), ("engaged", "ai")),
+    ].into_iter().collect();
+
+    let assessment_seeds: std::collections::HashMap<(&str, &str), &str> = [
+        (("mock-globex-industries", "mock-sarah-chen"), "Secured budget approval for Phase 2 independently — strong internal champion."),
+        (("mock-globex-industries", "mock-alex-torres"), "Technical backbone of Phase 1. Departure creates urgency around documentation."),
+        (("mock-initech", "mock-dana-patel"), "Data-driven CTO. Phase 1 ROI numbers will be compelling for Phase 2."),
+    ].into_iter().collect();
+
     for (account_id, person_id, role) in &account_team_rows {
+        let (engagement, ds_eng) = engagement_seeds
+            .get(&(*account_id, *person_id))
+            .copied()
+            .unwrap_or(("unknown", "ai"));
+        let assessment = assessment_seeds
+            .get(&(*account_id, *person_id))
+            .copied();
+        let ds_assess = "ai";
+
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, created_at) VALUES (?1, ?2, ?3)
-             ON CONFLICT(account_id, person_id) DO NOTHING",
-            rusqlite::params![account_id, person_id, &today],
+            "INSERT INTO account_stakeholders (account_id, person_id, engagement, data_source_engagement, assessment, data_source_assessment, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(account_id, person_id) DO UPDATE SET
+                engagement = COALESCE(excluded.engagement, account_stakeholders.engagement),
+                data_source_engagement = excluded.data_source_engagement,
+                assessment = COALESCE(excluded.assessment, account_stakeholders.assessment),
+                data_source_assessment = excluded.data_source_assessment",
+            rusqlite::params![account_id, person_id, engagement, ds_eng, assessment, ds_assess, &today],
         ).map_err(|e| format!("Account stakeholder insert: {}", e))?;
         conn.execute(
             "INSERT INTO account_stakeholder_roles (account_id, person_id, role, created_at) VALUES (?1, ?2, ?3, ?4)
