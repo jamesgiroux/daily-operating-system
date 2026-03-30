@@ -161,6 +161,50 @@
   color: var(--color-text-tertiary);
 }
 
+/* ── Confirmed card remove button (hover-revealed) ── */
+
+.cardRemoveButton {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-cream);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  color: var(--color-text-tertiary);
+}
+
+.card:hover .cardRemoveButton {
+  opacity: 1;
+}
+
+.cardRemoveButton:hover {
+  color: var(--color-earth-terracotta);
+  border-color: var(--color-earth-terracotta);
+}
+
+/* ── Suggested section label ── */
+
+.suggestedLabel {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-xs);
+}
+
 /* ── Suggestion / create contact actions ── */
 
 .actionButton {

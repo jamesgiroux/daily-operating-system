@@ -695,19 +695,16 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
     // writes "champion" to stakeholder_insights[].engagement, not to the DB role
     let champion = champion.or_else(|| {
         let intel = db.get_entity_intelligence(account_id).ok().flatten()?;
-        let has_engagement_champion = intel.stakeholder_insights.iter().any(|s| {
+        let champion_insight = intel.stakeholder_insights.iter().find(|s| {
             s.engagement
                 .as_deref()
                 .unwrap_or("")
                 .to_lowercase()
                 .contains("champion")
-        });
-        if has_engagement_champion {
-            // Return a sentinel so the champion.is_some() check passes
-            team.first()
-        } else {
-            None
-        }
+        })?;
+        // Match by person_id to find the right team member
+        let pid = champion_insight.person_id.as_deref()?;
+        team.iter().find(|t| t.person_id == pid)
     });
 
     if champion.is_none() {

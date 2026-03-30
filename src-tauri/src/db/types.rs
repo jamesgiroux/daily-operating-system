@@ -174,6 +174,24 @@ pub struct DbAccountProduct {
     pub source: String,
     pub confidence: f64,
     pub notes: Option<String>,
+    /// I651: Product classification type (e.g., "cms", "analytics")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_type: Option<String>,
+    /// I651: Product tier (e.g., "enhanced", "standard", "basic")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
+    /// I651: Billing terms (e.g., "annual", "monthly", "multi_year")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_terms: Option<String>,
+    /// I651: Annual recurring revenue for this product
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arr: Option<f64>,
+    /// I651: When this product classification was last verified from Glean
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_verified_at: Option<String>,
+    /// I651: Source system for product data (e.g., "salesforce", "glean")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_source: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

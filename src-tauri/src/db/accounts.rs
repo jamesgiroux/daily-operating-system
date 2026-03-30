@@ -409,6 +409,11 @@ impl ActionDb {
              FROM account_stakeholders as_
              JOIN people p ON p.id = as_.person_id
              WHERE as_.account_id = ?1
+               AND p.relationship != 'internal'
+               AND p.email NOT LIKE '%group-calendar%'
+               AND p.email NOT LIKE '%assistant.gong%'
+               AND p.email NOT LIKE '%noreply%'
+               AND length(p.name) > 3
              ORDER BY
                CASE as_.data_source WHEN 'user' THEN 0 WHEN 'glean' THEN 1 ELSE 2 END,
                p.name",
@@ -1073,7 +1078,9 @@ impl ActionDb {
     /// Get products for an account, ordered by source confidence then name.
     pub fn get_account_products(&self, account_id: &str) -> Result<Vec<DbAccountProduct>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, name, category, status, arr_portion, source, confidence, notes, created_at, updated_at
+            "SELECT id, account_id, name, category, status, arr_portion, source, confidence, notes,
+                    product_type, tier, billing_terms, arr, last_verified_at, data_source,
+                    created_at, updated_at
              FROM account_products
              WHERE account_id = ?1
              ORDER BY confidence DESC, lower(name) ASC, id ASC",
@@ -1089,8 +1096,14 @@ impl ActionDb {
                 source: row.get(6)?,
                 confidence: row.get(7)?,
                 notes: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
+                product_type: row.get(9)?,
+                tier: row.get(10)?,
+                billing_terms: row.get(11)?,
+                arr: row.get(12)?,
+                last_verified_at: row.get(13)?,
+                data_source: row.get(14)?,
+                created_at: row.get(15)?,
+                updated_at: row.get(16)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1201,6 +1214,75 @@ impl ActionDb {
             params![product_id],
         )?;
         Ok(())
+    }
+
+    /// I651: Upsert product classification from Glean/Salesforce.
+    /// Uses (account_id, product_type, data_source) as the upsert key.
+    /// Idempotent: calling twice with same data produces one row.
+    pub fn upsert_product_classification(
+        &self,
+        account_id: &str,
+        product_type: &str,
+        tier: Option<&str>,
+        arr: Option<f64>,
+        billing_terms: Option<&str>,
+        data_source: &str,
+    ) -> Result<i64, DbError> {
+        let now = Utc::now().to_rfc3339();
+        let existing = self.conn.query_row(
+            "SELECT id FROM account_products
+             WHERE account_id = ?1 AND product_type = ?2 AND data_source = ?3 LIMIT 1",
+            params![account_id, product_type, data_source],
+            |row| row.get::<_, i64>(0),
+        ).optional()?;
+
+        match existing {
+            Some(id) => {
+                // Update existing row
+                self.conn.execute(
+                    "UPDATE account_products
+                     SET tier = ?1,
+                         arr = ?2,
+                         billing_terms = ?3,
+                         last_verified_at = ?4,
+                         updated_at = ?4,
+                         status = 'active',
+                         confidence = 0.95
+                     WHERE id = ?5",
+                    params![tier, arr, billing_terms, now, id],
+                )?;
+                Ok(id)
+            }
+            None => {
+                // Insert new row
+                self.conn.execute(
+                    "INSERT INTO account_products (
+                        account_id, name, category, status, arr_portion,
+                        source, confidence, notes,
+                        product_type, tier, billing_terms, arr, last_verified_at, data_source,
+                        created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15)",
+                    params![
+                        account_id,
+                        product_type,                           // name
+                        product_type,                           // category
+                        "active",                               // status
+                        arr,                                    // arr_portion
+                        "glean",                                // source
+                        0.95,                                   // confidence (high for Glean)
+                        None::<&str>,                           // notes
+                        product_type,                           // product_type
+                        tier,                                   // tier
+                        billing_terms,                          // billing_terms
+                        arr,                                    // arr (product-specific)
+                        now,                                    // last_verified_at
+                        data_source,                            // data_source
+                        now,                                    // created_at & updated_at
+                    ],
+                )?;
+                Ok(self.conn.last_insert_rowid())
+            }
+        }
     }
 
     // =========================================================================

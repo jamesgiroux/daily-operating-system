@@ -2983,6 +2983,7 @@ fn try_parse_json_response(
         contract_context: ai_resp.contract_context,
         expansion_signals: ai_resp.expansion_signals,
         renewal_outlook: ai_resp.renewal_outlook,
+        product_classification: None,
         support_health: ai_resp.support_health,
         product_adoption: ai_resp.product_adoption,
         nps_csat: ai_resp.nps_csat,

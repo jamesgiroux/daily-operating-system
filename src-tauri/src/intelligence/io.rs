@@ -679,6 +679,32 @@ pub struct SatisfactionData {
     pub source: Option<String>,
 }
 
+/// I651: Product classification from Salesforce via Glean.
+/// Contains current product subscriptions and tier information.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductClassification {
+    /// Array of active product subscriptions (e.g., CMS, Analytics)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub products: Vec<ProductInfo>,
+}
+
+/// I651: Individual product information from Salesforce.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductInfo {
+    /// Product type: "cms", "analytics", etc.
+    #[serde(rename = "type")]
+    pub type_: Option<String>,
+    /// Product tier: "enhanced", "standard", "basic", "premier", "signature", "unknown", etc.
+    pub tier: Option<String>,
+    /// Annual recurring revenue for this product
+    pub arr: Option<f64>,
+    /// Billing terms: "annual", "monthly", "multi_year"
+    #[serde(rename = "billingTerms")]
+    pub billing_terms: Option<String>,
+}
+
 /// A Gong call summary produced by Glean enrichment (I535).
 ///
 /// Contains key metadata from a recorded call — title, date, participants,
@@ -834,6 +860,9 @@ pub struct IntelligenceJson {
     pub expansion_signals: Vec<ExpansionSignal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub renewal_outlook: Option<RenewalOutlook>,
+    /// I651: Product classification from Salesforce (Glean-only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product_classification: Option<ProductClassification>,
 
     // Dimension 6: External Health Signals
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -891,6 +920,9 @@ pub(crate) struct DimensionsBlob {
     pub expansion_signals: Vec<ExpansionSignal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub renewal_outlook: Option<RenewalOutlook>,
+    /// I651: Product classification from Salesforce (Glean-only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product_classification: Option<ProductClassification>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub support_health: Option<SupportHealth>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -917,6 +949,7 @@ impl IntelligenceJson {
             contract_context: self.contract_context.clone(),
             expansion_signals: self.expansion_signals.clone(),
             renewal_outlook: self.renewal_outlook.clone(),
+            product_classification: self.product_classification.clone(),
             support_health: self.support_health.clone(),
             product_adoption: self.product_adoption.clone(),
             nps_csat: self.nps_csat.clone(),
@@ -938,6 +971,7 @@ impl IntelligenceJson {
         self.contract_context = blob.contract_context.clone();
         self.expansion_signals = blob.expansion_signals.clone();
         self.renewal_outlook = blob.renewal_outlook.clone();
+        self.product_classification = blob.product_classification.clone();
         self.support_health = blob.support_health.clone();
         self.product_adoption = blob.product_adoption.clone();
         self.nps_csat = blob.nps_csat.clone();
