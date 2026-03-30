@@ -77,6 +77,9 @@ pub struct AccountDetailResult {
     /// DB-first stakeholder read model: all stakeholders with provenance.
     #[serde(default)]
     pub stakeholders_full: Vec<crate::db::DbStakeholderFull>,
+    /// I644: Source references for promoted account facts.
+    #[serde(default)]
+    pub source_refs: Vec<crate::db::DbAccountSourceRef>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
