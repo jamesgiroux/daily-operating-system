@@ -1403,18 +1403,45 @@ export interface StakeholderFull {
   personName: string;
   personEmail?: string | null;
   organization?: string | null;
-  /** Job title from people table. */
   personRole?: string | null;
-  /** Role from account_stakeholders (champion, csm, etc.). */
+  /** Comma-separated roles from account_stakeholder_roles. */
   stakeholderRole: string;
-  /** Provenance: 'user', 'glean', 'google'. */
+  /** Typed multi-role assignments with per-role provenance (I652). */
+  roles: StakeholderRole[];
   dataSource: string;
+  /** Engagement level (I652). */
+  engagement?: string | null;
+  /** Provenance for engagement (I652). */
+  dataSourceEngagement?: string | null;
+  /** Free-text assessment (I652). */
+  assessment?: string | null;
+  /** Provenance for assessment (I652). */
+  dataSourceAssessment?: string | null;
   lastSeenInGlean?: string | null;
   createdAt: string;
   linkedinUrl?: string | null;
   photoUrl?: string | null;
   meetingCount?: number | null;
   lastSeen?: string | null;
+}
+
+export interface StakeholderRole {
+  role: string;
+  dataSource: string;
+}
+
+export interface StakeholderSuggestion {
+  id: number;
+  accountId: string;
+  personId?: string | null;
+  suggestedName?: string | null;
+  suggestedEmail?: string | null;
+  suggestedRole?: string | null;
+  suggestedEngagement?: string | null;
+  source: string;
+  status: string;
+  createdAt: string;
+  resolvedAt?: string | null;
 }
 
 export interface AccountTeamImportNote {

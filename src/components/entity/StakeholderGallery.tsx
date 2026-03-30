@@ -1,31 +1,46 @@
 /**
  * StakeholderGallery — People chapter.
- * 2-column grid of stakeholder cards with editable engagement badges.
- * Falls back to linkedPeople when no intelligence stakeholders exist.
+ * 2-column grid of stakeholder cards with multi-role badges and engagement levels.
+ * Renders exclusively from DB-backed `stakeholdersFull` data.
+ * AI suggestions come from a separate `suggestions` prop (I652 phase 2).
  * Includes an optional "Your Team" strip for account team members.
- * Generalized: configurable title/id, accountTeam optional.
  *
- * I261: Live editing (name, role, assessment, engagement), add/remove
- * stakeholders, internal people filter, create contact from stakeholder.
- *
- * I493: Enriched cards show title/organization from linked person data,
- * engagement badges, last interaction date, and coverage analysis strip.
+ * I652: Removed intelligence JSON rendering. Stakeholders are DB-first.
+ * Multi-role display, engagement from DB, AI suggestions from prop.
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { X, Plus, UserPlus, Search, LinkIcon, Check, Award } from "lucide-react";
-import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember, StakeholderFull } from "@/types";
+import { X, Plus, UserPlus, Search, LinkIcon, Award } from "lucide-react";
+import type { EntityIntelligence, Person, AccountTeamMember, StakeholderFull, StakeholderSuggestion, StakeholderRole } from "@/types";
 import { formatRelativeDate } from "@/lib/utils";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import { EditableText } from "@/components/ui/EditableText";
 import { Avatar } from "@/components/ui/Avatar";
-import { EngagementSelector } from "./EngagementSelector";
-import { getEngagementDisplay } from "./EngagementSelector";
+import { EngagementSelector, getEngagementDisplay, getEngagementLabel } from "./EngagementSelector";
 import { TeamRoleSelector, getTeamRoleDisplay } from "./TeamRoleSelector";
 import css from "./StakeholderGallery.module.css";
+
+/** Stakeholder role definitions for the multi-role picker. */
+const STAKEHOLDER_ROLES = [
+  { stored: "champion", label: "Champion" },
+  { stored: "executive_sponsor", label: "Exec Sponsor" },
+  { stored: "decision_maker", label: "Decision Maker" },
+  { stored: "economic_buyer", label: "Economic Buyer" },
+  { stored: "technical_buyer", label: "Technical Buyer" },
+  { stored: "primary_user", label: "Primary User" },
+  { stored: "technical_user", label: "Technical User" },
+  { stored: "csm", label: "CSM" },
+  { stored: "implementation", label: "Implementation" },
+  { stored: "associated", label: "Associated" },
+];
+
+/** Get display label for a role stored value. */
+function getRoleDisplay(stored: string): string {
+  const found = STAKEHOLDER_ROLES.find((r) => r.stored === stored.toLowerCase());
+  return found ? found.label : stored;
+}
 
 interface StakeholderGalleryProps {
   intelligence: EntityIntelligence | null;
@@ -33,6 +48,8 @@ interface StakeholderGalleryProps {
   accountTeam?: AccountTeamMember[];
   /** DB-first stakeholder read model — primary display source when non-empty. */
   stakeholdersFull?: StakeholderFull[];
+  /** AI-suggested stakeholders pending accept/dismiss (I652). */
+  suggestions?: StakeholderSuggestion[];
   sectionId?: string;
   chapterTitle?: string;
   /** Entity ID for intelligence updates. */
@@ -49,6 +66,18 @@ interface StakeholderGalleryProps {
   teamSearchQuery?: string;
   onTeamSearchQueryChange?: (query: string) => void;
   teamSearchResults?: Person[];
+  /** Accept a stakeholder suggestion (I652). */
+  onAcceptSuggestion?: (suggestionId: number) => void;
+  /** Dismiss a stakeholder suggestion (I652). */
+  onDismissSuggestion?: (suggestionId: number) => void;
+  /** Update engagement level for a stakeholder (I652). */
+  onUpdateEngagement?: (personId: string, engagement: string) => void;
+  /** Update assessment for a stakeholder (I652). */
+  onUpdateAssessment?: (personId: string, assessment: string) => void;
+  /** Add a role to a stakeholder (I652 multi-role). */
+  onAddRole?: (personId: string, role: string) => void;
+  /** Remove a role from a stakeholder (I652 multi-role). */
+  onRemoveRole?: (personId: string, role: string) => void;
 }
 
 function buildEpigraph(stakeholders: { name: string }[]): string {
@@ -62,20 +91,6 @@ function buildEpigraph(stakeholders: { name: string }[]): string {
   const word = numberWords[count] ?? String(count);
   const noun = count === 1 ? "stakeholder shapes" : "stakeholders shape";
   return `${word} ${noun} this relationship across the organization.`;
-}
-
-/** Filter out internal people from stakeholder list. */
-function filterInternalStakeholders(
-  stakeholders: StakeholderInsight[],
-  linkedPeople: Person[],
-): StakeholderInsight[] {
-  const internalNames = new Set(
-    linkedPeople
-      .filter((p) => p.relationship === "internal")
-      .map((p) => p.name.toLowerCase()),
-  );
-  if (internalNames.size === 0) return stakeholders;
-  return stakeholders.filter((s) => !internalNames.has(s.name.toLowerCase()));
 }
 
 const ASSESSMENT_CHAR_LIMIT = 150;
@@ -223,14 +238,50 @@ function TeamAddForm({
   );
 }
 
-/** Build a title/organization line from enriched person data. */
-function buildPersonDetail(matched: Person | undefined): string | null {
-  if (!matched) return null;
-  const parts: string[] = [];
-  // Use role as title (Person.role is the job title field)
-  if (matched.role) parts.push(matched.role);
-  if (matched.organization) parts.push(matched.organization);
-  return parts.length > 0 ? parts.join(" \u00b7 ") : null;
+/** Role picker dropdown for adding roles to a stakeholder. */
+function RolePicker({
+  existingRoles,
+  onSelect,
+  onClose,
+}: {
+  existingRoles: string[];
+  onSelect: (role: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const existing = new Set(existingRoles.map((r) => r.toLowerCase()));
+  const available = STAKEHOLDER_ROLES.filter((r) => !existing.has(r.stored));
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [onClose]);
+
+  if (available.length === 0) return null;
+
+  return (
+    <div ref={ref} className={css.rolePickerDropdown}>
+      {available.map((r) => (
+        <button
+          key={r.stored}
+          className={css.rolePickerItem}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onSelect(r.stored);
+            onClose();
+          }}
+        >
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export function StakeholderGallery({
@@ -238,6 +289,7 @@ export function StakeholderGallery({
   linkedPeople,
   accountTeam,
   stakeholdersFull,
+  suggestions,
   sectionId = "the-room",
   chapterTitle = "The Room",
   entityId,
@@ -250,35 +302,26 @@ export function StakeholderGallery({
   teamSearchQuery,
   onTeamSearchQueryChange,
   teamSearchResults,
+  onAcceptSuggestion,
+  onDismissSuggestion,
+  onUpdateEngagement,
+  onUpdateAssessment: _onUpdateAssessment,
+  onAddRole,
+  onRemoveRole,
 }: StakeholderGalleryProps) {
   const navigate = useNavigate();
 
-  // Merged model: confirmed (DB) + suggestions (intelligence-only)
+  // DB-backed confirmed stakeholders are the primary source
   const confirmedStakeholders = stakeholdersFull ?? [];
-  const allStakeholders = intelligence?.stakeholderInsights ?? [];
+  const pendingSuggestions = (suggestions ?? []).filter((s) => s.status === "pending");
 
-  // Build lookup sets for deduplication
-  const confirmedPersonIds = new Set(confirmedStakeholders.map((s) => s.personId));
-  const confirmedNames = new Set(confirmedStakeholders.map((s) => s.personName.toLowerCase()));
-
-  // Intelligence-only suggestions: stakeholders from AI that have NO DB match
-  const suggestions = filterInternalStakeholders(allStakeholders, linkedPeople).filter((s) => {
-    if (s.personId && confirmedPersonIds.has(s.personId)) return false;
-    if (confirmedNames.has(s.name.toLowerCase())) return false;
-    return true;
-  });
-
-  const hasStakeholders = confirmedStakeholders.length > 0 || suggestions.length > 0;
-  const epigraphSource = [
-    ...confirmedStakeholders.map((s) => ({ name: s.personName })),
-    ...suggestions,
-  ];
+  const hasStakeholders = confirmedStakeholders.length > 0 || pendingSuggestions.length > 0;
+  const epigraphSource = confirmedStakeholders.map((s) => ({ name: s.personName }));
   const epigraph = hasStakeholders ? buildEpigraph(epigraphSource) : undefined;
   const teamMembers = accountTeam ?? [];
   const canEdit = !!entityId && !!entityType;
   const canEditTeam = !!onRemoveTeamMember;
 
-  // teamEditMode removed — always inline-editable (no pencil toggle)
   const [teamAddingMember, setTeamAddingMember] = useState(false);
   const [teamNewRole, setTeamNewRole] = useState("associated");
   const [teamNewEmail, setTeamNewEmail] = useState("");
@@ -287,9 +330,9 @@ export function StakeholderGallery({
   const [addingStakeholder, setAddingStakeholder] = useState(false);
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("");
-  const [hoveredCard, setHoveredCard] = useState<number | null>(null);
   const [searchResults, setSearchResults] = useState<Person[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [rolePickerFor, setRolePickerFor] = useState<string | null>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
   const addContainerRef = useRef<HTMLDivElement>(null);
 
@@ -305,71 +348,20 @@ export function StakeholderGallery({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showDropdown]);
 
-  // Empty section collapse: return null when nothing to show (and not editing)
+  // Empty section collapse
   if (!hasStakeholders && linkedPeople.length === 0 && teamMembers.length === 0 && !canEdit && !canEditTeam) {
     return null;
   }
 
   const STAKEHOLDER_LIMIT = 6;
-  const totalCount = confirmedStakeholders.length + suggestions.length;
   const visibleConfirmed = expandedGrid ? confirmedStakeholders : confirmedStakeholders.slice(0, STAKEHOLDER_LIMIT);
-  const remainingSlots = Math.max(0, STAKEHOLDER_LIMIT - visibleConfirmed.length);
-  const visibleSuggestions = expandedGrid ? suggestions : suggestions.slice(0, remainingSlots);
-  const hasMoreStakeholders = totalCount > STAKEHOLDER_LIMIT && !expandedGrid;
+  const hasMoreStakeholders = confirmedStakeholders.length > STAKEHOLDER_LIMIT && !expandedGrid;
 
   // ── Coverage analysis ──
-  const totalKnown = totalCount;
-  const intelInsights = intelligence?.stakeholderInsights ?? [];
-  const confirmedEngaged = confirmedStakeholders.filter((s) => {
-    const insight = intelInsights.find((i) => (i.personId && i.personId === s.personId) || i.name.toLowerCase() === s.personName.toLowerCase());
-    return insight?.engagement && insight.engagement !== "unknown" && insight.engagement !== "none";
-  }).length;
-  const suggestedEngaged = suggestions.filter(
+  const totalKnown = confirmedStakeholders.length;
+  const engagedCount = confirmedStakeholders.filter(
     (s) => s.engagement && s.engagement !== "unknown" && s.engagement !== "none",
   ).length;
-  const engagedCount = confirmedEngaged + suggestedEngaged;
-
-  // ── Field update helper ──
-  async function updateField(fieldPath: string, value: string) {
-    if (!entityId || !entityType) return;
-    try {
-      await invoke("update_intelligence_field", {
-        entityId,
-        entityType,
-        fieldPath,
-        value,
-      });
-      onIntelligenceUpdated?.();
-    } catch (e) {
-      console.error("Failed to update intelligence field:", e);
-      toast.error("Failed to save");
-    }
-  }
-
-  // ── Stakeholders bulk update ──
-  async function updateStakeholders(updated: StakeholderInsight[]) {
-    if (!entityId || !entityType) return;
-    try {
-      await invoke("update_stakeholders", {
-        entityId,
-        entityType,
-        stakeholdersJson: JSON.stringify(updated),
-      });
-      onIntelligenceUpdated?.();
-    } catch (e) {
-      console.error("Failed to update stakeholders:", e);
-      toast.error("Failed to save");
-    }
-  }
-
-  // ── Remove suggestion from intelligence ──
-  function handleRemoveSuggestion(index: number) {
-    const name = suggestions[index].name;
-    const updated = allStakeholders.filter(
-      (s) => s.name.toLowerCase() !== name.toLowerCase(),
-    );
-    updateStakeholders(updated);
-  }
 
   // ── Search people as user types ──
   function handleNameChange(value: string) {
@@ -383,9 +375,8 @@ export function StakeholderGallery({
     searchTimeout.current = setTimeout(async () => {
       try {
         const results = await invoke<Person[]>("search_people", { query: value.trim() });
-        // Filter out people already in the stakeholder list
-        const existingNames = new Set(allStakeholders.map((s) => s.name.toLowerCase()));
-        const filtered = results.filter((p) => !existingNames.has(p.name.toLowerCase()));
+        const existingIds = new Set(confirmedStakeholders.map((s) => s.personId));
+        const filtered = results.filter((p) => !existingIds.has(p.id));
         setSearchResults(filtered.slice(0, 5));
         setShowDropdown(filtered.length > 0);
       } catch {
@@ -397,19 +388,12 @@ export function StakeholderGallery({
 
   // ── Select existing person from search ──
   function handleSelectPerson(person: Person) {
-    const newStakeholder: StakeholderInsight = {
-      name: person.name,
-      role: person.role || newRole.trim() || undefined,
-      engagement: "unknown",
-    };
-    const updated = [...allStakeholders, newStakeholder];
-    updateStakeholders(updated);
-    // Also link the person to this entity
     if (entityId && entityType) {
       invoke("link_person_entity", { personId: person.id, entityId, relationshipType: "associated" }).catch((err) => {
-        console.error("link_person_entity failed:", err); // Expected: best-effort person link
+        console.error("link_person_entity failed:", err);
       });
     }
+    onIntelligenceUpdated?.();
     setNewName("");
     setNewRole("");
     setSearchResults([]);
@@ -418,53 +402,28 @@ export function StakeholderGallery({
   }
 
   // ── Add new stakeholder (create new) ──
-  function handleAdd() {
-    if (!newName.trim()) return;
-    const newStakeholder: StakeholderInsight = {
-      name: newName.trim(),
-      role: newRole.trim() || undefined,
-      engagement: "unknown",
-    };
-    const updated = [...allStakeholders, newStakeholder];
-    updateStakeholders(updated);
-    setNewName("");
-    setNewRole("");
-    setSearchResults([]);
-    setShowDropdown(false);
-    setAddingStakeholder(false);
-  }
-
-  // ── Create person entity from stakeholder ──
-  async function handleCreateContact(s: StakeholderInsight) {
-    if (!entityId || !entityType) return;
+  async function handleAdd() {
+    if (!newName.trim() || !entityId || !entityType) return;
     try {
       const personId = await invoke<string>("create_person_from_stakeholder", {
         entityId,
         entityType,
-        name: s.name,
-        role: s.role ?? null,
+        name: newName.trim(),
+        role: newRole.trim() || null,
       });
       onIntelligenceUpdated?.();
       if (personId) {
         navigate({ to: "/people/$personId", params: { personId } });
       }
     } catch (e) {
-      console.error("Failed to create person from stakeholder:", e);
+      console.error("Failed to create stakeholder:", e);
       toast.error("Failed to save");
     }
-  }
-
-  // ── Confirm a suggested person link (I420) ──
-  async function confirmSuggestion(idx: number, personId: string, canonicalName: string) {
-    await updateField(`stakeholderInsights[${idx}].personId`, personId);
-    await updateField(`stakeholderInsights[${idx}].name`, canonicalName);
-    // suggestedPersonId will be cleared on next enrichment cycle
-  }
-
-  // ── Find actual index in allStakeholders for a suggestion ──
-  function suggestionActualIndex(filteredIdx: number): number {
-    const name = suggestions[filteredIdx].name.toLowerCase();
-    return allStakeholders.findIndex((s) => s.name.toLowerCase() === name);
+    setNewName("");
+    setNewRole("");
+    setSearchResults([]);
+    setShowDropdown(false);
+    setAddingStakeholder(false);
   }
 
   return (
@@ -475,10 +434,8 @@ export function StakeholderGallery({
       {visibleConfirmed.length > 0 && (
         <div className={css.grid}>
           {visibleConfirmed.map((s) => {
-            const insight = intelInsights.find(
-              (ins) => (ins.personId && ins.personId === s.personId) || ins.name.toLowerCase() === s.personName.toLowerCase(),
-            );
             const personDetail = [s.personRole, s.organization].filter(Boolean).join(" \u00b7 ") || null;
+            const roles: StakeholderRole[] = s.roles ?? [];
 
             return (
               <div key={s.personId} className={css.card}>
@@ -503,28 +460,82 @@ export function StakeholderGallery({
                     {s.personName}
                   </Link>
                   <LinkIcon size={12} strokeWidth={1.5} className={css.linkIcon} aria-label={`Linked to ${s.personName}`} />
-                  {insight?.engagement && canEdit ? (
+
+                  {/* Engagement badge from DB field */}
+                  {s.engagement && onUpdateEngagement ? (
                     <EngagementSelector
-                      value={insight.engagement}
-                      onChange={(v) => {
-                        const idx = intelInsights.findIndex(
-                          (ins) => (ins.personId && ins.personId === s.personId) || ins.name.toLowerCase() === s.personName.toLowerCase(),
-                        );
-                        if (idx >= 0) updateField(`stakeholderInsights[${idx}].engagement`, v);
-                      }}
+                      value={s.engagement}
+                      onChange={(v) => onUpdateEngagement(s.personId, v)}
                     />
-                  ) : insight?.engagement ? (
-                    <span className={`${css.engagementBadge} ${getEngagementBadgeClass(insight.engagement)}`}>
-                      {getStaticBadgeLabel(insight.engagement)}
-                    </span>
-                  ) : s.stakeholderRole && s.stakeholderRole !== "associated" ? (
-                    <span className={`${css.engagementBadge} ${css.engagementNew}`}>
-                      {s.stakeholderRole}
+                  ) : s.engagement && s.engagement !== "unknown" ? (
+                    <span
+                      className={css.engagementBadge}
+                      style={{
+                        background: getEngagementDisplay(s.engagement).background,
+                        color: getEngagementDisplay(s.engagement).color,
+                      }}
+                    >
+                      {getEngagementLabel(s.engagement)}
                     </span>
                   ) : null}
                 </div>
+
                 {personDetail && <p className={css.titleLine}>{personDetail}</p>}
-                {insight?.assessment && <TruncatedAssessment text={insight.assessment} />}
+
+                {/* Multi-role badges (I652) */}
+                {(roles.length > 0 || onAddRole) && (
+                  <div className={css.roleBadges}>
+                    {roles.map((r) => (
+                      <span key={r.role} className={css.roleBadge} data-source={r.dataSource}>
+                        {getRoleDisplay(r.role)}
+                        {onRemoveRole && r.dataSource === "user" && (
+                          <button
+                            className={css.roleRemove}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onRemoveRole(s.personId, r.role);
+                            }}
+                          >
+                            &times;
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                    {onAddRole && (
+                      <div style={{ position: "relative", display: "inline-block" }}>
+                        <button
+                          className={css.addRoleBtn}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setRolePickerFor(rolePickerFor === s.personId ? null : s.personId);
+                          }}
+                        >
+                          +
+                        </button>
+                        {rolePickerFor === s.personId && (
+                          <RolePicker
+                            existingRoles={roles.map((r) => r.role)}
+                            onSelect={(role) => onAddRole(s.personId, role)}
+                            onClose={() => setRolePickerFor(null)}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Legacy single role fallback when no multi-role data */}
+                {roles.length === 0 && s.stakeholderRole && s.stakeholderRole !== "associated" && !onAddRole && (
+                  <span className={`${css.engagementBadge} ${css.engagementNew}`}>
+                    {s.stakeholderRole}
+                  </span>
+                )}
+
+                {/* Assessment from DB (I652) */}
+                {s.assessment && <TruncatedAssessment text={s.assessment} />}
+
                 {/* Meeting count + last seen from DB */}
                 {(s.meetingCount != null && s.meetingCount > 0) && (
                   <div className={css.lastSeen}>
@@ -543,165 +554,31 @@ export function StakeholderGallery({
         </div>
       )}
 
-      {/* ── Suggested stakeholders (intelligence-only, no DB match) ── */}
-      {visibleSuggestions.length > 0 && (
-        <>
-        {confirmedStakeholders.length > 0 && (
-          <span className={css.suggestedLabel}>Suggested</span>
-        )}
-        <div className={css.grid}>
-          {visibleSuggestions.map((s, i) => {
-            // I420: personId-first matching, then name fallback
-            const matched = s.personId
-              ? linkedPeople.find((p) => p.id === s.personId)
-              : linkedPeople.find((p) => p.name.toLowerCase() === s.name.toLowerCase());
-            const suggested = !matched && s.suggestedPersonId
-              ? linkedPeople.find((p) => p.id === s.suggestedPersonId)
-              : null;
-            const idx = suggestionActualIndex(i);
-            const isHovered = hoveredCard === i;
-            const personDetail = buildPersonDetail(matched);
-
-            return (
-              <div
-                key={`suggestion-${i}`}
-                className={css.card}
-                onMouseEnter={() => setHoveredCard(i)}
-                onMouseLeave={() => setHoveredCard(null)}
-              >
-                {/* Remove button (hover) */}
-                {canEdit && isHovered && (
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleRemoveSuggestion(i);
-                    }}
-                    className={css.removeButton}
-                    title="Remove stakeholder"
-                  >
-                    <X size={12} strokeWidth={1.5} className={css.removeIcon} />
-                  </button>
+      {/* ── AI Suggested stakeholders (I652 — from suggestions prop) ── */}
+      {pendingSuggestions.length > 0 && (
+        <div className={css.suggestedSection}>
+          <h4 className={css.sectionSubhead}>AI Suggested</h4>
+          <p className={css.sectionHint}>
+            Discovered by {pendingSuggestions[0]?.source ?? "intelligence"} — accept to add as stakeholder
+          </p>
+          {pendingSuggestions.map((s) => (
+            <div key={s.id} className={css.suggestionCard}>
+              <div className={css.suggestionInfo}>
+                <span className={css.suggestionName}>{s.suggestedName ?? "Unknown"}</span>
+                {s.suggestedEmail && <span className={css.suggestionEmail}>{s.suggestedEmail}</span>}
+                {s.suggestedRole && <span className={css.roleBadge}>{getRoleDisplay(s.suggestedRole)}</span>}
+              </div>
+              <div className={css.suggestionActions}>
+                {onAcceptSuggestion && (
+                  <button className={css.acceptBtn} onClick={() => onAcceptSuggestion(s.id)}>Accept</button>
                 )}
-
-                <div className={css.cardHeader}>
-                  <div className={matched ? css.avatarRingLinked : css.avatarRing}>
-                    <Avatar name={s.name} personId={matched?.id} size={24} />
-                  </div>
-                  {canEdit ? (
-                    <EditableText
-                      value={s.name}
-                      onChange={(v) => updateField(`stakeholderInsights[${idx}].name`, v)}
-                      multiline={false}
-                      className={css.editableName}
-                    />
-                  ) : matched ? (
-                    <Link to="/people/$personId" params={{ personId: matched.id }} className={css.nameLink}>
-                      {s.name}
-                    </Link>
-                  ) : (
-                    <span className={css.name}>{s.name}</span>
-                  )}
-                  {matched && (
-                    <LinkIcon size={12} strokeWidth={1.5} className={css.linkIcon} aria-label={`Linked to ${matched.name}`} />
-                  )}
-                  {s.engagement && canEdit ? (
-                    <EngagementSelector
-                      value={s.engagement}
-                      onChange={(v) => updateField(`stakeholderInsights[${idx}].engagement`, v)}
-                    />
-                  ) : s.engagement ? (
-                    <span className={`${css.engagementBadge} ${getEngagementBadgeClass(s.engagement)}`}>
-                      {getStaticBadgeLabel(s.engagement)}
-                    </span>
-                  ) : null}
-                </div>
-                {personDetail && <p className={css.titleLine}>{personDetail}</p>}
-                {s.role != null && (
-                  canEdit ? (
-                    <EditableText
-                      value={s.role}
-                      onChange={(v) => updateField(`stakeholderInsights[${idx}].role`, v)}
-                      as="p"
-                      multiline={false}
-                      className={css.editableRole}
-                    />
-                  ) : (
-                    <p className={css.role}>{s.role}</p>
-                  )
-                )}
-                {s.assessment != null && (
-                  canEdit ? (
-                    <EditableText
-                      value={s.assessment}
-                      onChange={(v) => updateField(`stakeholderInsights[${idx}].assessment`, v)}
-                      as="p"
-                      multiline
-                      className={css.editableAssessment}
-                    />
-                  ) : (
-                    <TruncatedAssessment text={s.assessment} />
-                  )
-                )}
-                {s.source && (s.source === "clay" || s.source === "gravatar") && (
-                  <span className={css.enrichmentTag} data-source={s.source}>
-                    {s.source === "clay" ? "Clay" : "Gravatar"}
-                  </span>
-                )}
-                {matched?.lastSeen && (
-                  <div className={css.lastSeen}>
-                    Last seen {formatRelativeDate(matched.lastSeen)}
-                  </div>
-                )}
-                {/* I420: Suggestion confirmation prompt */}
-                {canEdit && suggested && (
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      confirmSuggestion(idx, suggested.id, suggested.name);
-                    }}
-                    className={css.actionButtonSuggestion}
-                    title={`Link to ${suggested.name}`}
-                  >
-                    <Check size={12} strokeWidth={1.5} />
-                    Link to {suggested.name}?
-                  </button>
-                )}
-                {/* I420: Accept suggestion to add to account_stakeholders */}
-                {canEdit && !matched && !suggested && onAddTeamMember && s.personId && (
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onAddTeamMember(s.personId!, "associated");
-                    }}
-                    className={css.actionButtonSuggestion}
-                    title={`Add ${s.name} to account`}
-                  >
-                    <Check size={12} strokeWidth={1.5} />
-                    Link to {s.name}?
-                  </button>
-                )}
-                {/* Create contact action for unlinked stakeholders */}
-                {canEdit && !matched && !suggested && !(s.personId && onAddTeamMember) && isHovered && (
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleCreateContact(s);
-                    }}
-                    className={css.actionButtonCreate}
-                  >
-                    <UserPlus size={12} strokeWidth={1.5} />
-                    Create contact
-                  </button>
+                {onDismissSuggestion && (
+                  <button className={css.dismissBtn} onClick={() => onDismissSuggestion(s.id)}>Dismiss</button>
                 )}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
-        </>
       )}
 
       {/* Fallback: linkedPeople when no confirmed or suggested stakeholders */}
@@ -732,7 +609,7 @@ export function StakeholderGallery({
       {/* Show more */}
       {hasMoreStakeholders && (
         <button onClick={() => setExpandedGrid(true)} className={css.showMore}>
-          Show {totalCount - STAKEHOLDER_LIMIT} more
+          Show {confirmedStakeholders.length - STAKEHOLDER_LIMIT} more
         </button>
       )}
 
@@ -815,7 +692,7 @@ export function StakeholderGallery({
         </div>
       )}
 
-      {/* I493: Coverage analysis strip */}
+      {/* Coverage analysis strip */}
       {totalKnown > 0 && (
         <div className={css.coverageStrip}>
           <span className={css.coverageNumbers}>{engagedCount} of {totalKnown}</span>
@@ -992,17 +869,4 @@ function getDepthColor(dimension: string, value: string): string {
     return css.depthBadgeNeutral;
   }
   return css.depthBadgeNeutral;
-}
-
-// Static badge helpers for non-editable mode
-function getEngagementBadgeClass(engagement: string): string {
-  const e = (engagement ?? "").toLowerCase();
-  if (e === "high" || e === "active") return css.engagementActive;
-  if (e === "medium" || e === "warm") return css.engagementWarm;
-  if (e === "low" || e === "cooling") return css.engagementCooling;
-  return css.engagementNew;
-}
-
-function getStaticBadgeLabel(engagement: string): string {
-  return getEngagementDisplay(engagement).label;
 }

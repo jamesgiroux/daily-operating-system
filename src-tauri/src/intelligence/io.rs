@@ -884,6 +884,12 @@ pub struct IntelligenceJson {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub success_plan_signals: Option<crate::types::SuccessPlanSignals>,
 
+    /// Phase 2a: Domain list for account domain matching (entity resolution).
+    /// Extracted from Glean enrichment, email classification, or meeting attendees.
+    /// Used to populate account_domains table for domain-based entity linking.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub domains: Vec<String>,
+
     /// I576: Tombstones for dismissed items — prevents re-creation on enrichment.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dismissed_items: Vec<DismissedItem>,

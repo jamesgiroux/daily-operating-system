@@ -253,6 +253,22 @@ pub struct DbStakeholderFull {
     pub last_seen: Option<String>,
 }
 
+/// A pending stakeholder suggestion from the `stakeholder_suggestions` table (I652 phase 2).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StakeholderSuggestionRow {
+    pub id: i64,
+    pub account_id: String,
+    pub person_id: Option<String>,
+    pub suggested_name: Option<String>,
+    pub suggested_email: Option<String>,
+    pub suggested_role: Option<String>,
+    pub suggested_engagement: Option<String>,
+    pub source: String,
+    pub status: String,
+    pub created_at: String,
+}
+
 /// A row from `account_team_import_notes`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
