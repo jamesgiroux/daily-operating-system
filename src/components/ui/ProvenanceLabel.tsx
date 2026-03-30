@@ -20,26 +20,52 @@ interface ProvenanceLabelProps {
   conflict?: ConflictAction;
 }
 
+/**
+ * Translate internal source system names to user-friendly product vocabulary.
+ * See ADR-0083 for the canonical mapping.
+ */
 export function formatProvenanceSource(source?: string | null): string | null {
   if (!source) return null;
-  const normalized = source.toLowerCase();
-  if (normalized === "user_correction") return "you updated";
-  if (normalized === "user_edit" || normalized === "user_noted") return "you noted";
-  if (normalized.includes("salesforce") || normalized.includes("glean_crm")) return "via Salesforce";
-  if (normalized.includes("gong")) return "via Gong";
-  if (normalized.includes("zendesk")) return "via Zendesk";
-  if (normalized === "glean" || normalized.includes("glean")) return "via Glean";
-  if (normalized.includes("email")) return "via email signal";
+  const normalized = source.toLowerCase().trim();
+
+  // Exact matches first (ADR-0083 table)
+  if (normalized === "user_correction") return "you corrected";
+  if (normalized === "user" || normalized === "user_edit" || normalized === "user_noted") return "you noted";
+  if (normalized === "pty_synthesis" || normalized === "pty") return "AI";
+  if (normalized === "glean_chat") return "Glean";
+  if (normalized === "glean") return "Glean";
+  if (normalized === "salesforce") return "Salesforce";
+  if (normalized === "zendesk") return "Zendesk";
+  if (normalized === "gong") return "Gong";
+  if (normalized === "google") return "Google Calendar";
+  if (normalized === "clay") return "Clay";
+  if (normalized === "ai") return "AI";
+  if (normalized === "inference") return "AI synthesis";
+
+  // Substring matches for compound source names
+  if (normalized.includes("salesforce") || normalized.includes("glean_crm")) return "Salesforce";
+  if (normalized.includes("gong")) return "Gong";
+  if (normalized.includes("zendesk")) return "Zendesk";
+  if (normalized.includes("glean")) return "Glean";
+  if (normalized.includes("google")) return "Google Calendar";
+  if (normalized.includes("clay")) return "Clay";
+  if (normalized.includes("email")) return "email";
   if (
     normalized.includes("ai_inference")
     || normalized.includes("pty_synthesis")
+    || normalized.includes("pty")
     || normalized.includes("intelligence")
     || normalized.includes("ai")
   ) {
-    return "AI synthesis";
+    return "AI";
   }
+
+  // Fallback: humanize underscores
   return source.replace(/_/g, " ");
 }
+
+/** Convenience alias — use in UI components that display a source label. */
+export const formatSource = formatProvenanceSource;
 
 function buildSummary(source?: string | null, updatedAt?: string | null) {
   const bits = [formatProvenanceSource(source)];
