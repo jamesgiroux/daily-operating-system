@@ -13,9 +13,10 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { X, Plus, UserPlus, Search, LinkIcon, Award } from "lucide-react";
+import { X, Plus, UserPlus, Search, LinkIcon, Award, Check } from "lucide-react";
 import type { EntityIntelligence, Person, AccountTeamMember, StakeholderFull, StakeholderSuggestion, StakeholderRole } from "@/types";
 import { formatRelativeDate } from "@/lib/utils";
+import { formatProvenanceSource } from "@/components/ui/ProvenanceLabel";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { Avatar } from "@/components/ui/Avatar";
 import { EngagementSelector, getEngagementDisplay, getEngagementLabel } from "./EngagementSelector";
@@ -27,13 +28,10 @@ const STAKEHOLDER_ROLES = [
   { stored: "champion", label: "Champion", bg: "var(--color-spice-turmeric-12)", fg: "var(--color-spice-turmeric)" },
   { stored: "executive_sponsor", label: "Exec Sponsor", bg: "var(--color-garden-rosemary-14)", fg: "var(--color-garden-rosemary)" },
   { stored: "decision_maker", label: "Decision Maker", bg: "var(--color-garden-rosemary-14)", fg: "var(--color-garden-rosemary)" },
-  { stored: "economic_buyer", label: "Economic Buyer", bg: "var(--color-garden-sage-14)", fg: "var(--color-garden-sage)" },
-  { stored: "technical_buyer", label: "Technical Buyer", bg: "var(--color-garden-larkspur-14)", fg: "var(--color-garden-larkspur)" },
-  { stored: "primary_user", label: "Primary User", bg: "var(--color-garden-larkspur-14)", fg: "var(--color-garden-larkspur)" },
-  { stored: "technical_user", label: "Technical User", bg: "var(--color-garden-larkspur-14)", fg: "var(--color-garden-larkspur)" },
-  { stored: "csm", label: "CSM", bg: "var(--color-text-tertiary-8)", fg: "var(--color-text-secondary)" },
-  { stored: "implementation", label: "Implementation", bg: "var(--color-text-tertiary-8)", fg: "var(--color-text-secondary)" },
-  { stored: "associated", label: "Associated", bg: "var(--color-text-tertiary-8)", fg: "var(--color-text-tertiary)" },
+  { stored: "primary_contact", label: "Primary Contact", bg: "var(--color-garden-larkspur-14)", fg: "var(--color-garden-larkspur)" },
+  { stored: "technical_contact", label: "Technical Contact", bg: "var(--color-garden-larkspur-14)", fg: "var(--color-garden-larkspur)" },
+  { stored: "power_user", label: "Power User", bg: "var(--color-garden-larkspur-14)", fg: "var(--color-garden-larkspur)" },
+  { stored: "end_user", label: "End User", bg: "var(--color-garden-larkspur-8)", fg: "var(--color-text-tertiary)" },
 ];
 
 /** Get config (label + colors) for a role. */
@@ -556,30 +554,56 @@ export function StakeholderGallery({
         </div>
       )}
 
-      {/* ── AI Suggested stakeholders (I652 — from suggestions prop) ── */}
+      {/* ── Suggested stakeholders — rendered as editorial cards in the grid (I652) ── */}
       {pendingSuggestions.length > 0 && (
-        <div className={css.suggestedSection}>
-          <h4 className={css.sectionSubhead}>AI Suggested</h4>
-          <p className={css.sectionHint}>
-            Discovered by {pendingSuggestions[0]?.source ?? "intelligence"} — accept to add as stakeholder
-          </p>
-          {pendingSuggestions.map((s) => (
-            <div key={s.id} className={css.suggestionCard}>
-              <div className={css.suggestionInfo}>
-                <span className={css.suggestionName}>{s.suggestedName ?? "Unknown"}</span>
-                {s.suggestedEmail && <span className={css.suggestionEmail}>{s.suggestedEmail}</span>}
-                {s.suggestedRole && <span className={css.roleBadge} style={{ background: getRoleConfig(s.suggestedRole).bg, color: getRoleConfig(s.suggestedRole).fg }}>{getRoleConfig(s.suggestedRole).label}</span>}
-              </div>
-              <div className={css.suggestionActions}>
-                {onAcceptSuggestion && (
-                  <button className={css.acceptBtn} onClick={() => onAcceptSuggestion(s.id)}>Accept</button>
+        <div className={css.grid} style={visibleConfirmed.length > 0 ? { marginTop: 40 } : undefined}>
+          {pendingSuggestions.map((s) => {
+            const sourceLabel = formatProvenanceSource(s.source) ?? "AI";
+            return (
+              <div key={s.id} className={css.card}>
+                {/* Hover-revealed action buttons */}
+                <div className={css.suggestedCardActions}>
+                  {onAcceptSuggestion && (
+                    <button
+                      className={css.suggestedAcceptBtn}
+                      onClick={(e) => { e.stopPropagation(); onAcceptSuggestion(s.id); }}
+                      title="Accept as stakeholder"
+                    >
+                      <Check size={13} strokeWidth={1.5} />
+                    </button>
+                  )}
+                  {onDismissSuggestion && (
+                    <button
+                      className={css.suggestedDismissBtn}
+                      onClick={(e) => { e.stopPropagation(); onDismissSuggestion(s.id); }}
+                      title="Dismiss"
+                    >
+                      <X size={13} strokeWidth={1.5} />
+                    </button>
+                  )}
+                </div>
+
+                <div className={css.cardHeader}>
+                  <div className={css.avatarRing}>
+                    <Avatar name={s.suggestedName ?? "?"} size={24} />
+                  </div>
+                  <span className={css.name}>{s.suggestedName ?? "Unknown"}</span>
+                </div>
+
+                {s.suggestedEmail && <p className={css.titleLine}>{s.suggestedEmail}</p>}
+
+                {s.suggestedRole && (
+                  <div className={css.roleBadges}>
+                    <span className={css.roleBadge} style={{ background: getRoleConfig(s.suggestedRole).bg, color: getRoleConfig(s.suggestedRole).fg }}>
+                      {getRoleConfig(s.suggestedRole).label}
+                    </span>
+                  </div>
                 )}
-                {onDismissSuggestion && (
-                  <button className={css.dismissBtn} onClick={() => onDismissSuggestion(s.id)}>Dismiss</button>
-                )}
+
+                <div className={css.suggestedBadge}>Suggested via {sourceLabel}</div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
