@@ -1980,7 +1980,7 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) {
         source,
     } = params;
 
-    // I652: Skip suggestions for internal team members
+    // I652: Skip suggestions for internal team members (by person_id OR name match)
     if let Some(pid) = person_id {
         let is_internal: bool = db
             .conn_ref()
@@ -1991,6 +1991,19 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) {
             )
             .unwrap_or(false);
         if is_internal {
+            return;
+        }
+    } else {
+        // No person_id — check by name (PTY often suggests names without IDs)
+        let is_internal_by_name: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM people WHERE LOWER(name) = LOWER(?1) AND relationship = 'internal')",
+                rusqlite::params![&insight.name],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        if is_internal_by_name {
             return;
         }
     }
