@@ -563,9 +563,10 @@ export default function AccountDetailEditorial() {
                 }
               }}
                   conflicts={conflictsForStrip}
+                  sourceRefs={detail.sourceRefs}
                 />
               ) : (
-                <VitalsStrip vitals={buildAccountVitals(detail)} />
+                <VitalsStrip vitals={buildAccountVitals(detail)} sourceRefs={detail.sourceRefs} />
               )
             ) : undefined
           }

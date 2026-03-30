@@ -1505,6 +1505,19 @@ export interface AccountDetail extends AccountListItem {
   technicalFootprint?: AccountTechnicalFootprint;
   /** DB-first stakeholder read model: all stakeholders with provenance. */
   stakeholdersFull?: StakeholderFull[];
+  /** I644: Per-field source attribution from account_source_refs. */
+  sourceRefs?: AccountSourceRef[];
+}
+
+/** I644: Source reference for a tracked account field. */
+export interface AccountSourceRef {
+  id: string;
+  accountId: string;
+  field: string;
+  sourceSystem: string;
+  sourceKind: string;
+  sourceValue?: string | null;
+  observedAt: string;
 }
 
 /** I649: Technical footprint data for an account. */
