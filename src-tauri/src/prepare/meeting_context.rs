@@ -768,10 +768,21 @@ fn inject_entity_intelligence(
     } else {
         None
     };
-    let intel = match intel {
+    let mut intel = match intel {
         Some(intel) => intel,
         None => return,
     };
+
+    // I645: Filter stale items from meeting prep context using relevance windows.
+    intel.risks.retain(|risk| {
+        let sourced = risk.item_source.as_ref().map(|s| s.sourced_at.as_str());
+        match sourced {
+            Some(ts) => {
+                crate::intelligence::timeliness::is_within_relevance_window("active_blocker", ts)
+            }
+            None => true,
+        }
+    });
 
     if let Some(ref assessment) = intel.executive_assessment {
         ctx["executive_assessment"] = json!(assessment);

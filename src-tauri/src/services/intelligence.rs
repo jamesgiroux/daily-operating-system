@@ -936,6 +936,29 @@ pub async fn dismiss_intelligence_item(
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
                     .map_err(|e| e.to_string())?;
+
+                // I645: Record feedback event + suppression tombstone.
+                let _ = tx.record_feedback_event(
+                    &entity_id,
+                    &entity_type,
+                    &field,
+                    Some(&item_text),
+                    "dismiss",
+                    None,
+                    Some("intelligence"),
+                    Some(&item_text),
+                    None,
+                    None,
+                );
+                let _ = tx.create_suppression_tombstone(
+                    &entity_id,
+                    &field,
+                    Some(&item_text),
+                    None,
+                    Some("intelligence"),
+                    None,
+                );
+
                 crate::services::signals::emit_and_propagate(
                     tx,
                     &engine,

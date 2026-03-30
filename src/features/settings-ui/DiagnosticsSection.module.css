@@ -597,3 +597,37 @@
   cursor: default;
   opacity: 0.5;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   I645: FEEDBACK & LEARNING CARD
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.feedbackCard {
+  margin-top: 8px;
+}
+
+.feedbackStatGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.feedbackStatItem {
+  border: 1px solid var(--color-rule-light);
+  padding: 12px 14px;
+}
+
+.feedbackStatNumber {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  color: var(--color-text-primary);
+  margin-top: 4px;
+}
+
+.feedbackStatDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+}
