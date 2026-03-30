@@ -1767,8 +1767,8 @@ impl ActionDb {
                 relationship_depth, health_json, org_health_json, consistency_status,
                 consistency_findings_json, consistency_checked_at,
                 portfolio_json, network_json, user_edits_json, source_manifest_json,
-                dimensions_json, success_plan_signals_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
+                dimensions_json, success_plan_signals_json, pull_quote
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
             ON CONFLICT(entity_id) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 enriched_at = excluded.enriched_at,
@@ -1794,7 +1794,8 @@ impl ActionDb {
                 user_edits_json = excluded.user_edits_json,
                 source_manifest_json = excluded.source_manifest_json,
                 dimensions_json = excluded.dimensions_json,
-                success_plan_signals_json = excluded.success_plan_signals_json",
+                success_plan_signals_json = excluded.success_plan_signals_json,
+                pull_quote = excluded.pull_quote",
             rusqlite::params![
                 intel.entity_id,
                 intel.entity_type,
@@ -1825,6 +1826,7 @@ impl ActionDb {
                 serde_json::to_string(&intel.source_manifest).ok(),
                 dimensions_json,
                 intel.success_plan_signals.as_ref().and_then(|v| serde_json::to_string(v).ok()),
+                intel.pull_quote,
             ],
         )?;
 
@@ -1870,7 +1872,8 @@ impl ActionDb {
                     ea.value_delivered, ea.success_metrics, ea.open_commitments,
                     ea.relationship_depth, ea.consistency_status, ea.consistency_findings_json,
                     ea.consistency_checked_at, ea.portfolio_json, ea.network_json,
-                    ea.user_edits_json, ea.source_manifest_json, ea.dimensions_json
+                    ea.user_edits_json, ea.source_manifest_json, ea.dimensions_json,
+                    ea.pull_quote
              FROM entity_assessment ea
              LEFT JOIN entity_quality eq ON eq.entity_id = ea.entity_id
              WHERE ea.entity_id = ?1",
@@ -1898,6 +1901,7 @@ impl ActionDb {
             let user_edits_json: Option<String> = row.get(24)?;
             let source_manifest_json: Option<String> = row.get(25)?;
             let dimensions_json_raw: Option<String> = row.get(26)?;
+            let pull_quote: Option<String> = row.get(27)?;
 
             let health = health_json
                 .as_deref()
@@ -1948,6 +1952,7 @@ impl ActionDb {
                     .and_then(|j| serde_json::from_str(&j).ok())
                     .unwrap_or_default(),
                 consistency_checked_at: row.get(21)?,
+                pull_quote,
                 ..Default::default()
             };
             // Unpack I508a dimensions blob if present
