@@ -314,6 +314,80 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Path 2b: Backfill account_domains from existing meeting→account links.
+    ///
+    /// Processes all meetings linked to accounts and extracts attendee domains,
+    /// populating account_domains table for accounts that currently have 0 domains.
+    /// Returns count of account→domain mappings created.
+    ///
+    /// Safe to run multiple times (idempotent via INSERT OR IGNORE).
+    pub fn backfill_account_domains_from_meetings(&self) -> Result<usize, DbError> {
+        // Query all meetings with their linked accounts
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT m.id, m.attendees, me.entity_id
+             FROM meetings m
+             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE me.entity_type = 'account'
+               AND m.attendees IS NOT NULL
+               AND m.attendees != ''
+             ORDER BY me.entity_id",
+        )?;
+
+        let mut inserted_count = 0;
+        let mut rows = stmt.query([])?;
+
+        while let Some(row) = rows.next()? {
+            let attendees_str: String = row.get(1)?;
+            let account_id: String = row.get(2)?;
+
+            // Extract domains from attendee string
+            let domains = self.extract_domains_from_attendees_str(&attendees_str);
+            if !domains.is_empty() {
+                // Insert domains (idempotent)
+                for domain in domains {
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO account_domains (account_id, domain) VALUES (?1, ?2)",
+                        params![&account_id, &domain],
+                    )?;
+                    inserted_count += 1;
+                }
+            }
+        }
+
+        Ok(inserted_count)
+    }
+
+    /// Helper: Extract unique domains from attendee string (JSON or comma-separated).
+    pub fn extract_domains_from_attendees_str(&self, attendees_str: &str) -> Vec<String> {
+        // Try parsing as JSON array first
+        let attendees_array: Vec<String> = if let Ok(arr) = serde_json::from_str::<Vec<String>>(attendees_str) {
+            arr
+        } else {
+            // Fall back to comma-separated parsing
+            attendees_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        };
+
+        // Extract domains from emails
+        let mut domains = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        for email in attendees_array {
+            if let Some(domain_part) = email.split('@').nth(1) {
+                let domain = domain_part.to_lowercase();
+                // Filter out obviously invalid domains and duplicates
+                if !domain.is_empty() && !domain.contains(' ') && seen.insert(domain.clone()) {
+                    domains.push(domain);
+                }
+            }
+        }
+
+        domains
+    }
+
     /// Root internal organization account (top-level internal account).
     pub fn get_internal_root_account(&self) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
