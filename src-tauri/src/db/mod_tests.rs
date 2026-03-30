@@ -46,6 +46,7 @@ fn sample_email(id: &str, thread_id: &str, subject: &str) -> DbEmail {
         enrichment_state: "enriched".to_string(),
         enrichment_attempts: 0,
         last_enrichment_at: None,
+        enriched_at: Some(now.clone()),
         last_seen_at: Some(now.clone()),
         resolved_at: None,
         entity_id: Some("acc-1".to_string()),
@@ -232,8 +233,8 @@ fn test_upsert_and_query_account() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
 
     db.upsert_account(&account).expect("upsert account");
 
@@ -274,8 +275,8 @@ fn test_get_all_accounts_excludes_archived() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
 
     let archived = DbAccount {
         id: "archived-corp".to_string(),
@@ -294,8 +295,8 @@ fn test_get_all_accounts_excludes_archived() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
 
     db.upsert_account(&active).expect("upsert active");
     db.upsert_account(&archived).expect("upsert archived");
@@ -797,8 +798,8 @@ fn test_touch_account_last_contact_by_name() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&account).expect("upsert");
 
     // Touch by name (case-insensitive)
@@ -816,21 +817,8 @@ fn test_touch_account_last_contact_by_id() {
     let account = DbAccount {
         id: "acme-corp".to_string(),
         name: "Acme Corp".to_string(),
-        lifecycle: None,
-        arr: None,
-        health: None,
-        contract_start: None,
-        contract_end: None,
-        nps: None,
-        archived: false,
-        keywords: None,
-        keywords_extracted_at: None,
-        metadata: None,
-            commercial_stage: None,
-        tracker_path: None,
-        parent_id: None,
-        account_type: crate::db::AccountType::Customer,
         updated_at: "2020-01-01T00:00:00Z".to_string(),
+        ..Default::default()
     };
     db.upsert_account(&account).expect("upsert");
 
@@ -928,8 +916,8 @@ fn test_ensure_entity_for_account() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
 
     // upsert_account now calls ensure_entity_for_account automatically
     db.upsert_account(&account).expect("upsert account");
@@ -1130,8 +1118,8 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&soon).expect("insert");
 
     // Account with no contract_end (should NOT appear)
@@ -1152,8 +1140,8 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&no_end).expect("insert");
 
     // Account already expired (should NOT appear — contract_end < now)
@@ -1174,8 +1162,8 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&expired).expect("insert");
 
     let results = db.get_renewal_alerts(60).expect("query");
@@ -1205,8 +1193,8 @@ fn test_get_stale_accounts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&stale).expect("insert");
 
     // Account updated just now (should NOT be stale)
@@ -1227,8 +1215,8 @@ fn test_get_stale_accounts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&fresh).expect("insert");
 
     let results = db.get_stale_accounts(30).expect("query");
@@ -1345,8 +1333,8 @@ fn test_stakeholder_signals_with_account_contact() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&account).expect("insert account");
 
     let signals = db.get_stakeholder_signals("acme-corp").expect("signals");
@@ -1700,8 +1688,8 @@ fn test_person_entity_linking() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&account).expect("upsert account");
 
     db.link_person_to_entity(&person.id, "acme-corp", "associated")
@@ -2109,8 +2097,8 @@ fn test_merge_transfers_entity_links() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&account).expect("upsert account");
     db.link_person_to_entity(&remove.id, "acme", "associated")
         .expect("link");
@@ -2250,8 +2238,8 @@ fn test_delete_person_cascades() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&account).expect("upsert account");
     db.link_person_to_entity(&person.id, "doom-corp", "associated")
         .expect("link");
@@ -2306,7 +2294,7 @@ fn test_upsert_and_get_project() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
 
     db.upsert_project(&project).expect("upsert");
@@ -2335,7 +2323,7 @@ fn test_get_project_by_name() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
 
     db.upsert_project(&project).expect("upsert");
@@ -2358,16 +2346,8 @@ fn test_get_all_projects() {
             id: name.to_lowercase(),
             name: name.to_string(),
             status: "active".to_string(),
-            milestone: None,
-            owner: None,
-            target_date: None,
-            tracker_path: None,
-            parent_id: None,
             updated_at: now.clone(),
-            archived: false,
-            keywords: None,
-            keywords_extracted_at: None,
-            metadata: None,
+            ..Default::default()
         };
         db.upsert_project(&project).expect("upsert");
     }
@@ -2395,7 +2375,7 @@ fn test_update_project_field() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
     db.upsert_project(&project).expect("upsert");
 
@@ -2424,7 +2404,7 @@ fn test_update_project_field_rejects_invalid() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
     db.upsert_project(&project).expect("upsert");
 
@@ -2450,7 +2430,7 @@ fn test_ensure_entity_for_project() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
 
     db.upsert_project(&project).expect("upsert");
@@ -2478,7 +2458,7 @@ fn test_get_project_actions() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
     db.upsert_project(&project).expect("upsert");
 
@@ -2552,7 +2532,7 @@ fn test_link_meeting_to_project_and_query() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
     db.upsert_project(&project).expect("upsert project");
 
@@ -2674,7 +2654,7 @@ fn test_meeting_multi_entity_link() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
     db.upsert_project(&project).expect("upsert project");
 
@@ -3342,8 +3322,8 @@ fn setup_account(db: &ActionDb, id: &str, name: &str) {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    };
+            ..Default::default()
+        };
     db.upsert_account(&account).expect("upsert account");
     db.ensure_entity_for_account(&account)
         .expect("ensure entity");
@@ -3585,8 +3565,8 @@ fn sample_account(id: &str, name: &str) -> DbAccount {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            commercial_stage: None,
-    }
+            ..Default::default()
+        }
 }
 
 #[test]
