@@ -512,6 +512,63 @@ const TABLE_LABELS: Record<string, string> = {
   meetings: "Meetings",
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// I645: Feedback & Learning Card
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface FeedbackDiagnostics {
+  eventCount: number;
+  suppressionCount: number;
+  lastFeedback: string | null;
+}
+
+function FeedbackLearningCard() {
+  const [diag, setDiag] = useState<FeedbackDiagnostics | null>(null);
+
+  useEffect(() => {
+    invoke<FeedbackDiagnostics>("get_feedback_diagnostics")
+      .then(setDiag)
+      .catch((err) => console.warn("get_feedback_diagnostics failed:", err));
+  }, []);
+
+  if (!diag) return null;
+
+  const lastDate = diag.lastFeedback
+    ? new Date(diag.lastFeedback + "Z").toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
+
+  return (
+    <div className={ds.feedbackCard}>
+      <p style={styles.subsectionLabel}>Feedback &amp; Learning</p>
+      <div className={ds.feedbackStatGrid}>
+        <div className={ds.feedbackStatItem}>
+          <div style={styles.monoLabel}>Feedback Events</div>
+          <div className={ds.feedbackStatNumber}>{diag.eventCount}</div>
+          <p className={ds.feedbackStatDescription}>corrections recorded</p>
+        </div>
+        <div className={ds.feedbackStatItem}>
+          <div style={styles.monoLabel}>Suppressions</div>
+          <div className={ds.feedbackStatNumber}>{diag.suppressionCount}</div>
+          <p className={ds.feedbackStatDescription}>active item suppressions</p>
+        </div>
+        {lastDate && (
+          <div className={ds.feedbackStatItem}>
+            <div style={styles.monoLabel}>Last Feedback</div>
+            <p className={ds.feedbackStatDescription} style={{ marginTop: 8 }}>
+              {lastDate}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DatabaseStorageCard() {
   const [report, setReport] = useState<DbGrowthReport | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -853,6 +910,8 @@ export default function DiagnosticsSection() {
       <MeetingBackfillCard />
       <hr style={styles.thinRule} />
       <AiUsageCard />
+      <hr style={styles.thinRule} />
+      <FeedbackLearningCard />
       <hr style={styles.thinRule} />
       <DatabaseStorageCard />
       <hr style={styles.thinRule} />
