@@ -355,6 +355,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 84,
         sql: include_str!("migrations/083_dashboard_fields_to_db.sql"),
     },
+    Migration {
+        version: 85,
+        sql: include_str!("migrations/084_feedback_events.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

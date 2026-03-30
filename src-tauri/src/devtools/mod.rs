@@ -5644,6 +5644,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Signal weight: {}", e))?;
     }
 
+    // I645: entity_feedback_events and suppression_tombstones are populated
+    // by user actions (thumbs/dismiss/accept). No mock seeds — start empty.
+
     Ok(())
 }
 
