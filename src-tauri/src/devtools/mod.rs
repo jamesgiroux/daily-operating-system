@@ -3089,21 +3089,89 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     let suggestions: Vec<(&str, Option<&str>, &str, &str, &str, &str, &str, &str, i64)> = vec![
         // (account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, days_offset)
         // Recent pending suggestions for Acme (should appear)
-        ("mock-acme-corp", None, "Jordan Lee", "jordan.lee@example.com", "technical_contact", "high", "email_signal", "pending", 15),
-        ("mock-acme-corp", None, "Morgan Park", "morgan@example.com", "procurement_lead", "medium", "crm_signal", "pending", 20),
-
+        (
+            "mock-acme-corp",
+            None,
+            "Jordan Lee",
+            "jordan.lee@example.com",
+            "technical_contact",
+            "high",
+            "email_signal",
+            "pending",
+            15,
+        ),
+        (
+            "mock-acme-corp",
+            None,
+            "Morgan Park",
+            "morgan@example.com",
+            "procurement_lead",
+            "medium",
+            "crm_signal",
+            "pending",
+            20,
+        ),
         // Recent pending suggestion for Globex (should appear)
-        ("mock-globex-industries", None, "Riley Knight", "riley.knight@globex.com", "expansion_champion", "high", "usage_pattern", "pending", 10),
-
+        (
+            "mock-globex-industries",
+            None,
+            "Riley Knight",
+            "riley.knight@globex.com",
+            "expansion_champion",
+            "high",
+            "usage_pattern",
+            "pending",
+            10,
+        ),
         // Old pending suggestion for Acme (should be filtered out by 3-month check)
-        ("mock-acme-corp", None, "Old Suggestion Person", "old.person@example.com", "operations", "low", "email_signal", "pending", 120),
-
+        (
+            "mock-acme-corp",
+            None,
+            "Old Suggestion Person",
+            "old.person@example.com",
+            "operations",
+            "low",
+            "email_signal",
+            "pending",
+            120,
+        ),
         // Recent non-pending suggestions (should be filtered out by status check)
-        ("mock-acme-corp", None, "Already Added Person", "added@example.com", "stakeholder", "medium", "crm_signal", "accepted", 30),
-        ("mock-globex-industries", None, "Rejected Suggestion", "rejected@example.com", "technical_lead", "low", "email_signal", "rejected", 25),
+        (
+            "mock-acme-corp",
+            None,
+            "Already Added Person",
+            "added@example.com",
+            "stakeholder",
+            "medium",
+            "crm_signal",
+            "accepted",
+            30,
+        ),
+        (
+            "mock-globex-industries",
+            None,
+            "Rejected Suggestion",
+            "rejected@example.com",
+            "technical_lead",
+            "low",
+            "email_signal",
+            "rejected",
+            25,
+        ),
     ];
 
-    for (account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, days_offset) in suggestions {
+    for (
+        account_id,
+        person_id,
+        suggested_name,
+        suggested_email,
+        suggested_role,
+        suggested_engagement,
+        source,
+        status,
+        days_offset,
+    ) in suggestions
+    {
         let created_at_str = days_ago(days_offset);
 
         conn.execute(

@@ -1337,7 +1337,7 @@ impl Executor {
                 company: None,
                 title: None,
                 focus: None,
-        });
+            });
         let ai_config = self.ai_model_config();
         let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config)
             .with_usage_context(

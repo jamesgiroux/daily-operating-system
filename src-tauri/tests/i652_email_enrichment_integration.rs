@@ -193,7 +193,8 @@ fn test_i652_ac1_gate_0_recently_enriched_snippet_changed_triggers_re_enrich() {
     let now = Utc::now();
     let enriched_at = now - Duration::hours(12);
     let old_snippet = "Can you send the contract? I need it by Friday.";
-    let new_snippet = "Can you send the contract? I need it by Friday. RE: Yes, I'll send it Monday.";
+    let new_snippet =
+        "Can you send the contract? I need it by Friday. RE: Yes, I'll send it Monday.";
 
     let email = TestEmail::builder("email_ac1_03")
         .priority("high")
@@ -499,10 +500,16 @@ fn test_i652_ac3_gate_2_priority_tier_first_sorting_high_before_medium() {
     ];
 
     assert_eq!(selected.len(), 5, "AC3: Should select limit of 5 emails");
-    assert_eq!(selected[0].email_id, "h1", "AC3: Newest high-priority first");
+    assert_eq!(
+        selected[0].email_id, "h1",
+        "AC3: Newest high-priority first"
+    );
     assert_eq!(selected[1].email_id, "h2", "AC3: Second high-priority");
     assert_eq!(selected[2].email_id, "h3", "AC3: Third high-priority");
-    assert_eq!(selected[3].email_id, "m1", "AC3: Newest medium-priority after high");
+    assert_eq!(
+        selected[3].email_id, "m1",
+        "AC3: Newest medium-priority after high"
+    );
     assert_eq!(selected[4].email_id, "m2", "AC3: Next medium-priority");
 }
 
@@ -646,7 +653,10 @@ fn test_i652_ac4_timeout_one_email_does_not_affect_others() {
     for email in &emails {
         if email.email_id == "email_2_slow" {
             timeout_count += 1;
-            log::warn!("enrichment timeout for {}: exceeded 90 seconds", email.email_id);
+            log::warn!(
+                "enrichment timeout for {}: exceeded 90 seconds",
+                email.email_id
+            );
         } else {
             enriched_count += 1;
         }
@@ -672,8 +682,7 @@ fn test_i652_ac5_immediate_per_email_writes_independent_commits() {
     // Each email's enrichment is committed independently (not batched)
 
     let now = Utc::now();
-    let mut db_state: HashMap<String, (Option<DateTime<Utc>>, Option<String>)> =
-        HashMap::new();
+    let mut db_state: HashMap<String, (Option<DateTime<Utc>>, Option<String>)> = HashMap::new();
 
     // Simulate 5 emails being enriched, each written independently
     let emails = vec![
@@ -814,10 +823,7 @@ fn test_i652_ac6_schedule_json_written_before_enrichment_spawned() {
     let enrichment_spawned = true;
 
     // Verify order: schedule written first
-    assert!(
-        schedule_written,
-        "AC6: schedule.json should be written"
-    );
+    assert!(schedule_written, "AC6: schedule.json should be written");
     assert!(
         enrichment_spawned,
         "AC6: Enrichment should be spawned after schedule.json"
@@ -872,10 +878,7 @@ fn test_i652_ac7_single_email_failure_does_not_stop_batch() {
     }
 
     // Verify: 4 succeeded, 1 failed, but all were processed
-    let succeeded = enrichment_results
-        .iter()
-        .filter(|(_, r)| r.is_ok())
-        .count();
+    let succeeded = enrichment_results.iter().filter(|(_, r)| r.is_ok()).count();
     let failed = enrichment_results
         .iter()
         .filter(|(_, r)| r.is_err())
@@ -1069,8 +1072,7 @@ fn test_i652_ac8_real_data_20_emails_selective_enrichment() {
                 .last_response_date
                 .map(|d| d >= now - Duration::days(1))
                 .unwrap_or(false);
-            let is_known_domain =
-                e.sender_email.contains("customer.com") && e.priority == "medium";
+            let is_known_domain = e.sender_email.contains("customer.com") && e.priority == "medium";
 
             (is_high && is_recent && has_response)
                 || (e.priority == "medium" && is_known_domain && is_recent && has_response)
@@ -1102,11 +1104,7 @@ fn test_i652_ac8_real_data_20_emails_selective_enrichment() {
     });
     selected.truncate(5);
 
-    assert_eq!(
-        selected.len(),
-        5,
-        "AC8: Gate 2 should limit to 5 emails"
-    );
+    assert_eq!(selected.len(), 5, "AC8: Gate 2 should limit to 5 emails");
     assert_eq!(
         selected[0].email_id, "h1_recent",
         "AC8: Newest high-priority first"
@@ -1198,7 +1196,10 @@ fn test_i652_ac8_deduplication_second_run_skips_already_enriched() {
     );
 
     // Log: "enrich_emails: 0 emails qualify for enrichment"
-    log::info!("enrich_emails: {} emails qualify for enrichment", gate_0_pass.len());
+    log::info!(
+        "enrich_emails: {} emails qualify for enrichment",
+        gate_0_pass.len()
+    );
 }
 
 #[test]

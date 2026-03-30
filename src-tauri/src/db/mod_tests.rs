@@ -233,8 +233,8 @@ fn test_upsert_and_query_account() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
 
     db.upsert_account(&account).expect("upsert account");
 
@@ -275,8 +275,8 @@ fn test_get_all_accounts_excludes_archived() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
 
     let archived = DbAccount {
         id: "archived-corp".to_string(),
@@ -295,8 +295,8 @@ fn test_get_all_accounts_excludes_archived() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
 
     db.upsert_account(&active).expect("upsert active");
     db.upsert_account(&archived).expect("upsert archived");
@@ -798,8 +798,8 @@ fn test_touch_account_last_contact_by_name() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&account).expect("upsert");
 
     // Touch by name (case-insensitive)
@@ -916,8 +916,8 @@ fn test_ensure_entity_for_account() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
 
     // upsert_account now calls ensure_entity_for_account automatically
     db.upsert_account(&account).expect("upsert account");
@@ -1118,8 +1118,8 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&soon).expect("insert");
 
     // Account with no contract_end (should NOT appear)
@@ -1140,8 +1140,8 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&no_end).expect("insert");
 
     // Account already expired (should NOT appear — contract_end < now)
@@ -1162,8 +1162,8 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&expired).expect("insert");
 
     let results = db.get_renewal_alerts(60).expect("query");
@@ -1193,8 +1193,8 @@ fn test_get_stale_accounts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&stale).expect("insert");
 
     // Account updated just now (should NOT be stale)
@@ -1215,8 +1215,8 @@ fn test_get_stale_accounts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&fresh).expect("insert");
 
     let results = db.get_stale_accounts(30).expect("query");
@@ -1333,8 +1333,8 @@ fn test_stakeholder_signals_with_account_contact() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&account).expect("insert account");
 
     let signals = db.get_stakeholder_signals("acme-corp").expect("signals");
@@ -1688,8 +1688,8 @@ fn test_person_entity_linking() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&account).expect("upsert account");
 
     db.link_person_to_entity(&person.id, "acme-corp", "associated")
@@ -2097,8 +2097,8 @@ fn test_merge_transfers_entity_links() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&account).expect("upsert account");
     db.link_person_to_entity(&remove.id, "acme", "associated")
         .expect("link");
@@ -2238,8 +2238,8 @@ fn test_delete_person_cascades() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&account).expect("upsert account");
     db.link_person_to_entity(&person.id, "doom-corp", "associated")
         .expect("link");
@@ -3322,8 +3322,8 @@ fn setup_account(db: &ActionDb, id: &str, name: &str) {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        };
+        ..Default::default()
+    };
     db.upsert_account(&account).expect("upsert account");
     db.ensure_entity_for_account(&account)
         .expect("ensure entity");
@@ -3374,16 +3374,21 @@ fn test_cascade_meeting_entity_to_people_external_only() {
     let mut external = sample_person("jane@acme.com");
     external.relationship = "external".to_string();
     db.upsert_person(&external).expect("upsert external");
-    db.record_meeting_attendance("m1", &external.id).expect("attend m1");
-    db.record_meeting_attendance("m2", &external.id).expect("attend m2");
-    db.link_meeting_entity("m1", "acc1", "account").expect("link m1");
-    db.link_meeting_entity("m2", "acc1", "account").expect("link m2");
+    db.record_meeting_attendance("m1", &external.id)
+        .expect("attend m1");
+    db.record_meeting_attendance("m2", &external.id)
+        .expect("attend m2");
+    db.link_meeting_entity("m1", "acc1", "account")
+        .expect("link m1");
+    db.link_meeting_entity("m2", "acc1", "account")
+        .expect("link m2");
 
     // Internal person → should NOT be linked regardless of meeting count
     let mut internal = sample_person("john@mycompany.com");
     internal.relationship = "internal".to_string();
     db.upsert_person(&internal).expect("upsert internal");
-    db.record_meeting_attendance("m1", &internal.id).expect("attend");
+    db.record_meeting_attendance("m1", &internal.id)
+        .expect("attend");
 
     // Cascade on m2 — jane has 2 meetings with acc1, threshold met
     let linked = db
@@ -3393,10 +3398,16 @@ fn test_cascade_meeting_entity_to_people_external_only() {
 
     // External person linked
     let team = db.get_account_team("acc1").expect("team");
-    assert!(team.iter().any(|t| t.person_id == external.id), "jane should be in team");
+    assert!(
+        team.iter().any(|t| t.person_id == external.id),
+        "jane should be in team"
+    );
 
     // Internal person NOT linked
-    assert!(!team.iter().any(|t| t.person_id == internal.id), "internal should not be in team");
+    assert!(
+        !team.iter().any(|t| t.person_id == internal.id),
+        "internal should not be in team"
+    );
 }
 
 #[test]
@@ -3565,8 +3576,8 @@ fn sample_account(id: &str, name: &str) -> DbAccount {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
-            ..Default::default()
-        }
+        ..Default::default()
+    }
 }
 
 #[test]
