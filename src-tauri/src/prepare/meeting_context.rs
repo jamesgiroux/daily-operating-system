@@ -307,10 +307,7 @@ fn gather_account_context(
 
     // I647: Source-verified facts from account_source_refs
     if let Ok(refs) = db.get_account_source_refs(&entity_match.entity_id) {
-        let fact_refs: Vec<_> = refs
-            .iter()
-            .filter(|r| r.source_kind == "fact")
-            .collect();
+        let fact_refs: Vec<_> = refs.iter().filter(|r| r.source_kind == "fact").collect();
         if !fact_refs.is_empty() {
             let mut seen_fields = std::collections::HashSet::new();
             let sourced_facts: Vec<_> = fact_refs
@@ -2029,8 +2026,8 @@ mod tests {
                 keywords: None,
                 keywords_extracted_at: None,
                 metadata: None,
-            ..Default::default()
-        })
+                ..Default::default()
+            })
             .expect("upsert account");
         }
 
