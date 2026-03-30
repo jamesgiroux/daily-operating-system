@@ -1,0 +1,47 @@
+{
+  "health": {
+    "narrative": "Globex Holdings's CMS Enhanced subscription is performing well with annual billing at $185,400 ARR. No analytics subscription is currently active. Contract renewal is on track with strong product adoption indicators.",
+    "recommendedActions": [
+      "Schedule QBR to discuss expansion opportunities for Analytics product line",
+      "Confirm renewal timeline 90 days before contract end",
+      "Explore additional CMS features and training needs"
+    ]
+  },
+  "contractContext": {
+    "contractType": "annual",
+    "autoRenew": true,
+    "renewalDate": "2027-04-15",
+    "currentArr": 185400.0
+  },
+  "renewalOutlook": {
+    "confidence": "high",
+    "riskFactors": [],
+    "expansionPotential": "Strong opportunity for Analytics product upsell during renewal cycle",
+    "recommendedStart": "2027-01-15"
+  },
+  "expansionSignals": [
+    {
+      "opportunity": "Implement Analytics product for additional $50K-$100K ARR",
+      "arrImpact": 75000.0,
+      "stage": "evaluating",
+      "strength": "moderate",
+      "itemSource": {
+        "source": "glean_crm",
+        "confidence": 0.85,
+        "sourcedAt": "2026-03-29T00:00:00Z",
+        "reference": "Salesforce opportunity record"
+      }
+    }
+  ],
+  "blockers": [],
+  "productClassification": {
+    "products": [
+      {
+        "type": "cms",
+        "tier": "enhanced",
+        "arr": 185400.0,
+        "billingTerms": "annual"
+      }
+    ]
+  }
+}
