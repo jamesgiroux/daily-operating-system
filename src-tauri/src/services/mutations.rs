@@ -796,7 +796,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         }
     }
 
@@ -814,7 +814,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-            metadata: None,
+            ..Default::default()
         }
     }
 

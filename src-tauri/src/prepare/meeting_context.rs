@@ -2029,8 +2029,8 @@ mod tests {
                 keywords: None,
                 keywords_extracted_at: None,
                 metadata: None,
-            commercial_stage: None,
-            })
+            ..Default::default()
+        })
             .expect("upsert account");
         }
 
@@ -2042,13 +2042,8 @@ mod tests {
                 milestone: Some("Phase 2".to_string()),
                 owner: Some("Alice".to_string()),
                 target_date: Some("2026-03-15".to_string()),
-                tracker_path: None,
-                parent_id: None,
                 updated_at: now.clone(),
-                archived: false,
-                keywords: None,
-                keywords_extracted_at: None,
-                metadata: None,
+                ..Default::default()
             })
             .expect("upsert project");
         }

@@ -343,6 +343,18 @@ const MIGRATIONS: &[Migration] = &[
         version: 81,
         sql: include_str!("migrations/081_init_tasks.sql"),
     },
+    Migration {
+        version: 82,
+        sql: include_str!("migrations/082_email_enriched_at.sql"),
+    },
+    Migration {
+        version: 83,
+        sql: include_str!("migrations/082_account_fact_columns.sql"),
+    },
+    Migration {
+        version: 84,
+        sql: include_str!("migrations/083_dashboard_fields_to_db.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
