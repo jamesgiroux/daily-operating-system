@@ -327,6 +327,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 77,
         sql: include_str!("migrations/077_technical_footprint.sql"),
     },
+    Migration {
+        version: 78,
+        sql: include_str!("migrations/078_pull_quote_column.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
