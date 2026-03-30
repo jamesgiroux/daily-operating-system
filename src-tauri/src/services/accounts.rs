@@ -455,9 +455,10 @@ fn build_account_field_conflicts(
         if let Some(org_health) = intelligence.org_health.as_ref() {
             if let Some(stage) = org_health.customer_stage.as_ref() {
                 if !field_matches_current_value(account, "lifecycle", stage) {
+                    let suggested_lifecycle = normalized_lifecycle(stage);
                     let feedback_key = account_field_conflict_feedback_key(
                         "lifecycle",
-                        "intelligence-org-health-lifecycle",
+                        &suggested_lifecycle,
                     );
                     if !dismissed_conflicts.contains(&feedback_key) {
                         conflicts.entry("lifecycle".to_string()).or_insert_with(|| {
@@ -468,7 +469,7 @@ fn build_account_field_conflicts(
                                 } else {
                                     org_health.source.clone()
                                 },
-                                suggested_value: normalized_lifecycle(stage),
+                                suggested_value: suggested_lifecycle.clone(),
                                 signal_id: "intelligence-org-health-lifecycle".to_string(),
                                 confidence: 0.7,
                                 detected_at: if org_health.gathered_at.is_empty() {
@@ -487,7 +488,7 @@ fn build_account_field_conflicts(
                 let suggested = nps.to_string();
                 if !field_matches_current_value(account, "nps", &suggested) {
                     let feedback_key =
-                        account_field_conflict_feedback_key("nps", "intelligence-nps");
+                        account_field_conflict_feedback_key("nps", &suggested);
                     if !dismissed_conflicts.contains(&feedback_key) {
                         conflicts.entry("nps".to_string()).or_insert_with(|| {
                             crate::types::AccountFieldConflictSuggestion {
@@ -1083,12 +1084,12 @@ pub fn accept_account_field_conflict(
             .map_err(|e| e.to_string())?;
     }
 
-    if let Some(signal_id) = signal_id {
+    if let Some(sig_id) = signal_id {
         let feedback_id = uuid::Uuid::new_v4().to_string();
-        let feedback_key = account_field_conflict_feedback_key(field, signal_id);
+        let feedback_key = account_field_conflict_feedback_key(field, suggested_value);
         let context = serde_json::json!({
             "source": source,
-            "signal_id": signal_id,
+            "signal_id": sig_id,
             "suggested_value": suggested_value,
         })
         .to_string();
@@ -1104,7 +1105,7 @@ pub fn accept_account_field_conflict(
 
         let accepted_signal_id =
             format!("account-field-conflict-accepted-{}", uuid::Uuid::new_v4());
-        let _ = crate::signals::bus::supersede_signal(db, signal_id, &accepted_signal_id);
+        let _ = crate::signals::bus::supersede_signal(db, sig_id, &accepted_signal_id);
     }
 
     let _ = db.upsert_signal_weight(
@@ -1148,7 +1149,7 @@ pub fn dismiss_account_field_conflict(
     suggested_value: Option<&str>,
 ) -> Result<(), String> {
     let feedback_id = uuid::Uuid::new_v4().to_string();
-    let feedback_key = account_field_conflict_feedback_key(field, signal_id);
+    let feedback_key = account_field_conflict_feedback_key(field, suggested_value.unwrap_or(""));
     let context = serde_json::json!({
         "source": source,
         "signal_id": signal_id,
