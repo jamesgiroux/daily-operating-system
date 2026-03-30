@@ -290,6 +290,28 @@ impl GleanIntelligenceProvider {
                     } else {
                         succeeded += 1;
 
+                        // I651: After commercial_financial merge, extract and upsert products
+                        if dim_name == "commercial_financial" && entity_type == "account" {
+                            if let Ok(Some(products)) = extract_products_from_response(&partial) {
+                                // Best-effort upsert — log but don't fail enrichment if products fail
+                                match crate::db::ActionDb::open() {
+                                    Ok(db) => {
+                                        match upsert_products_to_db(&db, entity_id, products) {
+                                            Ok(count) => {
+                                                log::info!("[I651] Upserted {} products for {}", count, entity_id);
+                                            }
+                                            Err(e) => {
+                                                log::warn!("[I651] Product upsert failed (best-effort): {}", e);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::warn!("[I651] Could not open DB for product upsert: {}", e);
+                                    }
+                                }
+                            }
+                        }
+
                         // I575: Progressive DB write + event emission
                         if let Some(handle) = app_handle {
                             write_progressive_glean_dimension(entity_id, entity_type, &combined);
@@ -1271,4 +1293,86 @@ pub fn extract_json_object(text: &str) -> Option<&str> {
         }
     }
     None
+}
+
+// =============================================================================
+// I651: Product Classification Extraction & Upsert
+// =============================================================================
+
+/// I651: Extract product classification from a Financial dimension response.
+///
+/// Parses the `productClassification.products` array from the Glean response
+/// and returns structured product data ready for database upsert.
+/// Returns None if the section is missing or empty (best-effort).
+pub fn extract_products_from_response(
+    response: &IntelligenceJson,
+) -> Result<Option<Vec<(String, Option<String>, Option<f64>, Option<String>)>>, String> {
+    match &response.product_classification {
+        None => Ok(None),
+        Some(classification) if classification.products.is_empty() => Ok(None),
+        Some(classification) => {
+            let mut products = Vec::new();
+            for product in &classification.products {
+                if let Some(ref product_type) = product.type_ {
+                    // Parse type_ field which comes from Glean as "type"
+                    products.push((
+                        product_type.clone(),
+                        product.tier.clone(),
+                        product.arr,
+                        product.billing_terms.clone(),
+                    ));
+                }
+            }
+            if products.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(products))
+            }
+        }
+    }
+}
+
+/// I651: Upsert extracted products to the database.
+///
+/// For each (account_id, product_type, data_source) tuple, inserts or updates
+/// the row with tier, arr, billing_terms, and last_verified_at.
+/// Returns the count of products upserted on success.
+/// Logs warnings on database errors but returns them for best-effort handling.
+pub fn upsert_products_to_db(
+    db: &crate::db::ActionDb,
+    account_id: &str,
+    products: Vec<(String, Option<String>, Option<f64>, Option<String>)>,
+) -> Result<usize, String> {
+    let mut count = 0;
+    for (product_type, tier, arr, billing_terms) in products {
+        match db.upsert_product_classification(
+            account_id,
+            &product_type,
+            tier.as_deref(),
+            arr,
+            billing_terms.as_deref(),
+            "salesforce",
+        ) {
+            Ok(_) => {
+                count += 1;
+                log::info!(
+                    "I651: Upserted product {} ({:?} tier, ${:?} ARR) for {}",
+                    product_type,
+                    tier,
+                    arr,
+                    account_id
+                );
+            }
+            Err(e) => {
+                log::warn!(
+                    "I651: Failed to upsert product {} for {}: {}",
+                    product_type,
+                    account_id,
+                    e
+                );
+                return Err(format!("Product upsert failed for {}: {}", product_type, e));
+            }
+        }
+    }
+    Ok(count)
 }
