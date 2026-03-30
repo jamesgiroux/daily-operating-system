@@ -351,7 +351,11 @@ impl ActionDb {
         if !name.is_empty() && !name.contains('@') {
             let candidates = self.find_person_candidates_by_name(name, organization)?;
             if let Some((person, confidence, reason)) = candidates.into_iter().next() {
-                return Ok(PersonResolution::FoundByName { person, confidence, reason });
+                return Ok(PersonResolution::FoundByName {
+                    person,
+                    confidence,
+                    reason,
+                });
             }
         }
 
@@ -451,8 +455,7 @@ impl ActionDb {
                     // Boost confidence if organizations match
                     let org_boost = match (organization, person.organization.as_deref()) {
                         (Some(org), Some(p_org))
-                            if !org.is_empty()
-                                && org.to_lowercase() == p_org.to_lowercase() =>
+                            if !org.is_empty() && org.to_lowercase() == p_org.to_lowercase() =>
                         {
                             0.05
                         }
@@ -465,10 +468,7 @@ impl ActionDb {
         }
 
         // Sort by confidence descending
-        results.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         Ok(results)
     }

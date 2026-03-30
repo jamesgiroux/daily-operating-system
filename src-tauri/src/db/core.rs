@@ -749,7 +749,8 @@ impl ActionDb {
                         Err(e) => {
                             log::warn!(
                                 "I644 backfill: failed to read dashboard.json for account {}: {}",
-                                account_id, e
+                                account_id,
+                                e
                             );
                         }
                     }
@@ -794,7 +795,8 @@ impl ActionDb {
                         ) {
                             log::warn!(
                                 "I644 backfill: failed to update project {}: {}",
-                                project_id, e
+                                project_id,
+                                e
                             );
                         } else {
                             count += 1;
@@ -803,7 +805,8 @@ impl ActionDb {
                     Err(e) => {
                         log::warn!(
                             "I644 backfill: failed to read dashboard.json for project {}: {}",
-                            project_id, e
+                            project_id,
+                            e
                         );
                     }
                 }

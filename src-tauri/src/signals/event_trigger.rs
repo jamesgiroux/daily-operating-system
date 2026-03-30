@@ -140,7 +140,8 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
                     if let Err(e) = db.set_account_domains(&account_id, &discovered_domains) {
                         log::warn!(
                             "Entity resolution trigger: failed to store domains for account {}: {}",
-                            account_id, e
+                            account_id,
+                            e
                         );
                     } else {
                         log::debug!(

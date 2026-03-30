@@ -136,10 +136,7 @@ pub struct EmailForSort {
 ///
 /// Within the same priority tier, more recent emails come first (descending received_at).
 /// If two emails have the same priority and received_at, secondary sort by email_id for determinism.
-pub fn gate_2_limit_and_sort(
-    emails: Vec<EmailForSort>,
-    limit: usize,
-) -> Vec<EmailForSort> {
+pub fn gate_2_limit_and_sort(emails: Vec<EmailForSort>, limit: usize) -> Vec<EmailForSort> {
     let mut sorted = emails;
 
     // Sort: priority tier first (0=high, 1=medium, 2=low)
@@ -217,7 +214,11 @@ pub fn select_emails_for_enrichment(
     let gate_0_pass: Vec<EmailForSort> = emails
         .into_iter()
         .filter(|email| {
-            let enriched_at = input.enriched_at_map.get(&email.email_id).copied().flatten();
+            let enriched_at = input
+                .enriched_at_map
+                .get(&email.email_id)
+                .copied()
+                .flatten();
             let current_snippet = input
                 .snippets_map
                 .get(&email.email_id)
@@ -310,7 +311,10 @@ mod tests {
             &snapshots,
             now,
         );
-        assert!(result, "Recently enriched email with no content change should be skipped");
+        assert!(
+            result,
+            "Recently enriched email with no content change should be skipped"
+        );
     }
 
     #[test]
@@ -409,7 +413,10 @@ mod tests {
         );
         // At exactly 24h, it's still within the window, so it should be skipped
         // (enriched_at <= now - 24h is false when enriched_at == now - 24h)
-        assert!(result, "Email enriched exactly 24h ago should still be skipped");
+        assert!(
+            result,
+            "Email enriched exactly 24h ago should still be skipped"
+        );
     }
 
     #[test]
@@ -496,7 +503,10 @@ mod tests {
             Some("sender@example.com"),
             now,
         );
-        assert!(!result, "High-priority but old (>7 days) should fail recency check");
+        assert!(
+            !result,
+            "High-priority but old (>7 days) should fail recency check"
+        );
     }
 
     #[test]
@@ -615,7 +625,10 @@ mod tests {
             Some("sender@example.com"),
             now,
         );
-        assert!(result, "Email received exactly 7 days ago should pass recency check");
+        assert!(
+            result,
+            "Email received exactly 7 days ago should pass recency check"
+        );
     }
 
     #[test]
@@ -746,7 +759,10 @@ mod tests {
         let result = gate_2_limit_and_sort(emails, 10);
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].email_id, "high1", "High priority should be first");
-        assert_eq!(result[1].email_id, "medium1", "Medium priority should be second");
+        assert_eq!(
+            result[1].email_id, "medium1",
+            "Medium priority should be second"
+        );
         assert_eq!(result[2].email_id, "low1", "Low priority should be last");
     }
 
@@ -820,7 +836,11 @@ mod tests {
         ];
 
         let result = gate_2_limit_and_sort(emails, 5);
-        assert_eq!(result.len(), 2, "Should return all input when less than limit");
+        assert_eq!(
+            result.len(),
+            2,
+            "Should return all input when less than limit"
+        );
     }
 
     #[test]
@@ -866,7 +886,10 @@ mod tests {
         assert_eq!(result[1].email_id, "high2", "Middle high should be second");
         assert_eq!(result[2].email_id, "high3", "Oldest high should be third");
         // Then medium-priority (sorted by recency)
-        assert_eq!(result[3].email_id, "medium1", "Newest medium should be fourth");
+        assert_eq!(
+            result[3].email_id, "medium1",
+            "Newest medium should be fourth"
+        );
         assert_eq!(result[4].email_id, "medium2", "Next medium should be fifth");
     }
 
@@ -1006,13 +1029,11 @@ mod tests {
     #[test]
     fn orchestrator_all_emails_filtered_out() {
         let now = Utc::now();
-        let emails = vec![
-            EmailForSort {
-                email_id: "e1".to_string(),
-                priority: Some("low".to_string()),
-                received_at: now - Duration::hours(2),
-            },
-        ];
+        let emails = vec![EmailForSort {
+            email_id: "e1".to_string(),
+            priority: Some("low".to_string()),
+            received_at: now - Duration::hours(2),
+        }];
 
         let enriched_at_map = HashMap::new();
         let snippets_map = HashMap::new();
@@ -1029,7 +1050,11 @@ mod tests {
             now,
         };
         let result = select_emails_for_enrichment(emails, &input);
-        assert_eq!(result.len(), 0, "Low-priority should be filtered out by Gate 1");
+        assert_eq!(
+            result.len(),
+            0,
+            "Low-priority should be filtered out by Gate 1"
+        );
     }
 
     #[test]
@@ -1044,17 +1069,12 @@ mod tests {
             });
         }
 
-        let enriched_at_map: HashMap<String, Option<DateTime<Utc>>> = emails
-            .iter()
-            .map(|e| (e.email_id.clone(), None))
-            .collect();
+        let enriched_at_map: HashMap<String, Option<DateTime<Utc>>> =
+            emails.iter().map(|e| (e.email_id.clone(), None)).collect();
 
         let mut last_response_date_map = HashMap::new();
         for email in &emails {
-            last_response_date_map.insert(
-                email.email_id.clone(),
-                Some(now - Duration::hours(1)),
-            );
+            last_response_date_map.insert(email.email_id.clone(), Some(now - Duration::hours(1)));
         }
 
         let mut sender_email_map = HashMap::new();
