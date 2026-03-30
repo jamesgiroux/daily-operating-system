@@ -2997,6 +2997,9 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ("mock-initech", "mock-priya-sharma", "technical_lead"),
     ];
 
+    // I652: get_person_stakeholder_roles() reads from account_stakeholder_roles above.
+    // No additional mock data needed — roles are already seeded per account_team_rows.
+
     // I652: Seed engagement/assessment data alongside stakeholder links
     let engagement_seeds: std::collections::HashMap<(&str, &str), (&str, &str)> = [
         (("mock-globex-industries", "mock-sarah-chen"), ("strong_advocate", "user")),
