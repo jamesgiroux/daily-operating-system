@@ -1018,24 +1018,20 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
         .unwrap_or_default();
-    let extraction_pty = crate::pty::PtyManager::for_tier(
-        crate::pty::ModelTier::Extraction,
-        &ai_config,
-    )
-    .with_usage_context(
-        crate::pty::AiUsageContext::new("devtools", "sample_email_enrichment")
-            .with_trigger("devtools")
-            .with_tier(crate::pty::ModelTier::Extraction),
-    );
-    let synthesis_pty = crate::pty::PtyManager::for_tier(
-        crate::pty::ModelTier::Synthesis,
-        &ai_config,
-    )
-    .with_usage_context(
-        crate::pty::AiUsageContext::new("devtools", "sample_email_enrichment_fallback")
-            .with_trigger("devtools")
-            .with_tier(crate::pty::ModelTier::Synthesis),
-    );
+    let extraction_pty =
+        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config)
+            .with_usage_context(
+                crate::pty::AiUsageContext::new("devtools", "sample_email_enrichment")
+                    .with_trigger("devtools")
+                    .with_tier(crate::pty::ModelTier::Extraction),
+            );
+    let synthesis_pty =
+        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config)
+            .with_usage_context(
+                crate::pty::AiUsageContext::new("devtools", "sample_email_enrichment_fallback")
+                    .with_trigger("devtools")
+                    .with_tier(crate::pty::ModelTier::Synthesis),
+            );
     let user_ctx = state
         .config
         .read()
@@ -1352,7 +1348,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     conn.execute(
         "UPDATE accounts SET renewal_stage = 'approaching' WHERE id = 'mock-acme-corp'",
         [],
-    ).map_err(|e| format!("Acme renewal_stage: {}", e))?;
+    )
+    .map_err(|e| format!("Acme renewal_stage: {}", e))?;
 
     // --- Commercial stage (I644) ---
     conn.execute(
@@ -1363,10 +1360,28 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // --- Source references (I644) ---
     for (account_id, field, system, kind, value) in [
         ("mock-acme-corp", "arr", "salesforce", "fact", "1200000"),
-        ("mock-acme-corp", "renewal_date", "user", "fact", "2026-12-01"),
+        (
+            "mock-acme-corp",
+            "renewal_date",
+            "user",
+            "fact",
+            "2026-12-01",
+        ),
         ("mock-acme-corp", "champion", "user", "fact", "Sarah Chen"),
-        ("mock-globex-industries", "arr", "salesforce", "fact", "800000"),
-        ("mock-globex-industries", "lifecycle", "glean_crm", "fact", "renewal"),
+        (
+            "mock-globex-industries",
+            "arr",
+            "salesforce",
+            "fact",
+            "800000",
+        ),
+        (
+            "mock-globex-industries",
+            "lifecycle",
+            "glean_crm",
+            "fact",
+            "renewal",
+        ),
     ] {
         let id = format!("{}-{}-{}", account_id, field, system);
         conn.execute(
@@ -2413,7 +2428,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "INSERT INTO account_stakeholders (account_id, person_id) VALUES (?1, ?2)
              ON CONFLICT(account_id, person_id) DO NOTHING",
             rusqlite::params![account_id, person_id],
-        ).map_err(|e| format!("Account-stakeholder link: {}", e))?;
+        )
+        .map_err(|e| format!("Account-stakeholder link: {}", e))?;
         conn.execute(
             "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES (?1, ?2, ?3)
              ON CONFLICT(account_id, person_id, role) DO NOTHING",
@@ -3002,27 +3018,47 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     // I652: Seed engagement/assessment data alongside stakeholder links
     let engagement_seeds: std::collections::HashMap<(&str, &str), (&str, &str)> = [
-        (("mock-globex-industries", "mock-sarah-chen"), ("strong_advocate", "user")),
-        (("mock-globex-industries", "mock-alex-torres"), ("engaged", "ai")),
-        (("mock-globex-industries", "mock-casey-lee"), ("neutral", "ai")),
+        (
+            ("mock-globex-industries", "mock-sarah-chen"),
+            ("strong_advocate", "user"),
+        ),
+        (
+            ("mock-globex-industries", "mock-alex-torres"),
+            ("engaged", "ai"),
+        ),
+        (
+            ("mock-globex-industries", "mock-casey-lee"),
+            ("neutral", "ai"),
+        ),
         (("mock-initech", "mock-dana-patel"), ("engaged", "user")),
         (("mock-initech", "mock-priya-sharma"), ("engaged", "ai")),
-    ].into_iter().collect();
+    ]
+    .into_iter()
+    .collect();
 
     let assessment_seeds: std::collections::HashMap<(&str, &str), &str> = [
-        (("mock-globex-industries", "mock-sarah-chen"), "Secured budget approval for Phase 2 independently — strong internal champion."),
-        (("mock-globex-industries", "mock-alex-torres"), "Technical backbone of Phase 1. Departure creates urgency around documentation."),
-        (("mock-initech", "mock-dana-patel"), "Data-driven CTO. Phase 1 ROI numbers will be compelling for Phase 2."),
-    ].into_iter().collect();
+        (
+            ("mock-globex-industries", "mock-sarah-chen"),
+            "Secured budget approval for Phase 2 independently — strong internal champion.",
+        ),
+        (
+            ("mock-globex-industries", "mock-alex-torres"),
+            "Technical backbone of Phase 1. Departure creates urgency around documentation.",
+        ),
+        (
+            ("mock-initech", "mock-dana-patel"),
+            "Data-driven CTO. Phase 1 ROI numbers will be compelling for Phase 2.",
+        ),
+    ]
+    .into_iter()
+    .collect();
 
     for (account_id, person_id, role) in &account_team_rows {
         let (engagement, ds_eng) = engagement_seeds
             .get(&(*account_id, *person_id))
             .copied()
             .unwrap_or(("unknown", "ai"));
-        let assessment = assessment_seeds
-            .get(&(*account_id, *person_id))
-            .copied();
+        let assessment = assessment_seeds.get(&(*account_id, *person_id)).copied();
         let ds_assess = "ai";
 
         conn.execute(
@@ -3040,6 +3076,42 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
              ON CONFLICT(account_id, person_id, role) DO UPDATE SET created_at = excluded.created_at",
             rusqlite::params![account_id, person_id, role, &today],
         ).map_err(|e| format!("Account stakeholder role insert: {}", e))?;
+    }
+
+    // =========================================================================
+    // Phase 6b: Stakeholder Suggestions (I652 phase 2)
+    // =========================================================================
+    // Test data for get_stakeholder_suggestions() 3-month filter:
+    // - Recent suggestions (within 3 months) with pending status
+    // - Older suggestions (4+ months ago) that should be filtered out
+    // - Non-pending statuses to verify filter correctness
+
+    let suggestions: Vec<(&str, Option<&str>, &str, &str, &str, &str, &str, &str, i64)> = vec![
+        // (account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, days_offset)
+        // Recent pending suggestions for Acme (should appear)
+        ("mock-acme-corp", None, "Jordan Lee", "jordan.lee@example.com", "technical_contact", "high", "email_signal", "pending", 15),
+        ("mock-acme-corp", None, "Morgan Park", "morgan@example.com", "procurement_lead", "medium", "crm_signal", "pending", 20),
+
+        // Recent pending suggestion for Globex (should appear)
+        ("mock-globex-industries", None, "Riley Knight", "riley.knight@globex.com", "expansion_champion", "high", "usage_pattern", "pending", 10),
+
+        // Old pending suggestion for Acme (should be filtered out by 3-month check)
+        ("mock-acme-corp", None, "Old Suggestion Person", "old.person@example.com", "operations", "low", "email_signal", "pending", 120),
+
+        // Recent non-pending suggestions (should be filtered out by status check)
+        ("mock-acme-corp", None, "Already Added Person", "added@example.com", "stakeholder", "medium", "crm_signal", "accepted", 30),
+        ("mock-globex-industries", None, "Rejected Suggestion", "rejected@example.com", "technical_lead", "low", "email_signal", "rejected", 25),
+    ];
+
+    for (account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, days_offset) in suggestions {
+        let created_at_str = days_ago(days_offset);
+
+        conn.execute(
+            "INSERT INTO stakeholder_suggestions
+             (account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, &created_at_str],
+        ).map_err(|e| format!("Stakeholder suggestion insert: {}", e))?;
     }
 
     // =========================================================================
@@ -4479,12 +4551,39 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         .map_err(|e| format!("Acme intelligence: {}", e))?;
 
     // Acme products (from AdoptionSignals feature_adoption)
-    db.upsert_account_product("mock-acme-corp", "Core platform", None, "active", None, "product_data", 0.85, None)
-        .map_err(|e| format!("Acme product Core platform: {}", e))?;
-    db.upsert_account_product("mock-acme-corp", "Advanced analytics", None, "active", None, "product_data", 0.70, None)
-        .map_err(|e| format!("Acme product Advanced analytics: {}", e))?;
-    db.upsert_account_product("mock-acme-corp", "API integration", None, "active", None, "product_data", 0.85, None)
-        .map_err(|e| format!("Acme product API integration: {}", e))?;
+    db.upsert_account_product(
+        "mock-acme-corp",
+        "Core platform",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.85,
+        None,
+    )
+    .map_err(|e| format!("Acme product Core platform: {}", e))?;
+    db.upsert_account_product(
+        "mock-acme-corp",
+        "Advanced analytics",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.70,
+        None,
+    )
+    .map_err(|e| format!("Acme product Advanced analytics: {}", e))?;
+    db.upsert_account_product(
+        "mock-acme-corp",
+        "API integration",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.85,
+        None,
+    )
+    .map_err(|e| format!("Acme product API integration: {}", e))?;
 
     // --- Globex Industries: At-risk account, declining engagement ---
     let globex_intel = IntelligenceJson {
@@ -4655,12 +4754,39 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         .map_err(|e| format!("Globex intelligence: {}", e))?;
 
     // Globex products (from AdoptionSignals feature_adoption)
-    db.upsert_account_product("mock-globex-industries", "Core", None, "active", None, "product_data", 0.72, None)
-        .map_err(|e| format!("Globex product Core: {}", e))?;
-    db.upsert_account_product("mock-globex-industries", "Analytics", None, "active", None, "product_data", 0.45, None)
-        .map_err(|e| format!("Globex product Analytics: {}", e))?;
-    db.upsert_account_product("mock-globex-industries", "Team collaboration", None, "active", None, "product_data", 0.30, None)
-        .map_err(|e| format!("Globex product Team collaboration: {}", e))?;
+    db.upsert_account_product(
+        "mock-globex-industries",
+        "Core",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.72,
+        None,
+    )
+    .map_err(|e| format!("Globex product Core: {}", e))?;
+    db.upsert_account_product(
+        "mock-globex-industries",
+        "Analytics",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.45,
+        None,
+    )
+    .map_err(|e| format!("Globex product Analytics: {}", e))?;
+    db.upsert_account_product(
+        "mock-globex-industries",
+        "Team collaboration",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.30,
+        None,
+    )
+    .map_err(|e| format!("Globex product Team collaboration: {}", e))?;
 
     // --- Initech: Onboarding account, sparse but clean ---
     let initech_intel = IntelligenceJson {
@@ -4814,10 +4940,28 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         .map_err(|e| format!("Initech intelligence: {}", e))?;
 
     // Initech products (from AdoptionSignals feature_adoption: "Core: 90%", "Analytics: 40%")
-    db.upsert_account_product("mock-initech", "Core", None, "active", None, "product_data", 0.65, None)
-        .map_err(|e| format!("Initech product Core: {}", e))?;
-    db.upsert_account_product("mock-initech", "Analytics", None, "active", None, "product_data", 0.40, None)
-        .map_err(|e| format!("Initech product Analytics: {}", e))?;
+    db.upsert_account_product(
+        "mock-initech",
+        "Core",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.65,
+        None,
+    )
+    .map_err(|e| format!("Initech product Core: {}", e))?;
+    db.upsert_account_product(
+        "mock-initech",
+        "Analytics",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.40,
+        None,
+    )
+    .map_err(|e| format!("Initech product Analytics: {}", e))?;
 
     // --- Person intelligence: Sarah Chen ---
     let sarah_intel = IntelligenceJson {
