@@ -1805,6 +1805,16 @@ async fn fetch_and_classify_today(
     let mut classified = Vec::new();
     let mut events = Vec::new();
     for raw in &raw_events {
+        // Skip cancelled events
+        if raw.status.as_deref() == Some("cancelled") {
+            continue;
+        }
+
+        // Skip events with no attendees (e.g., self-scheduled, blocked time)
+        if raw.attendees.is_empty() {
+            continue;
+        }
+
         let cm = google_api::classify::classify_meeting_multi(raw, user_domains, entity_hints);
         let ev = cm.to_calendar_event();
         classified.push(json!({
