@@ -1981,6 +1981,21 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) {
         source,
     } = params;
 
+    // I652: Skip suggestions for internal team members
+    if let Some(pid) = person_id {
+        let is_internal: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT relationship = 'internal' FROM people WHERE id = ?1",
+                rusqlite::params![pid],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        if is_internal {
+            return;
+        }
+    }
+
     // Dedup: skip if a pending suggestion for this person+account already exists.
     // Match on person_id if available, otherwise match on name.
     let already_pending = if let Some(pid) = person_id {

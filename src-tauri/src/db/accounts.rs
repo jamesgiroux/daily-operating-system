@@ -653,11 +653,18 @@ impl ActionDb {
         account_id: &str,
     ) -> Result<Vec<StakeholderSuggestionRow>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, person_id, suggested_name, suggested_email,
-                    suggested_role, suggested_engagement, source, status, created_at
-             FROM stakeholder_suggestions
-             WHERE account_id = ?1 AND status = 'pending'
-             ORDER BY created_at DESC",
+            "SELECT ss.id, ss.account_id, ss.person_id, ss.suggested_name, ss.suggested_email,
+                    ss.suggested_role, ss.suggested_engagement, ss.source, ss.status, ss.created_at
+             FROM stakeholder_suggestions ss
+             WHERE ss.account_id = ?1 AND ss.status = 'pending'
+               AND ss.created_at >= datetime('now', '-3 months')
+               AND (ss.person_id IS NULL OR NOT EXISTS (
+                 SELECT 1 FROM people p WHERE p.id = ss.person_id AND p.relationship = 'internal'
+               ))
+               AND (ss.suggested_email IS NULL OR NOT EXISTS (
+                 SELECT 1 FROM people p2 WHERE p2.email = LOWER(ss.suggested_email) AND p2.relationship = 'internal'
+               ))
+             ORDER BY ss.created_at DESC",
         )?;
         let rows = stmt.query_map(params![account_id], |row| {
             Ok(StakeholderSuggestionRow {

@@ -160,6 +160,7 @@ impl ActionDb {
         let _ = Self::backfill_meeting_identity(&conn);
         let _ = Self::backfill_meeting_user_layer(&conn);
         let _ = Self::backfill_stakeholder_columns(&conn);
+        let _ = Self::dismiss_internal_stakeholder_suggestions(&conn);
 
         let db = Self { conn };
 
@@ -511,6 +512,30 @@ impl ActionDb {
                  WHERE meeting_id = ?3",
                 params![agenda_target, notes_target, meeting_id],
             )?;
+        }
+        Ok(())
+    }
+
+    /// I652: Auto-dismiss stakeholder suggestions for internal team members.
+    /// Cleans up suggestions that were created before the internal filter was added.
+    fn dismiss_internal_stakeholder_suggestions(conn: &Connection) -> Result<(), DbError> {
+        let dismissed = conn.execute(
+            "UPDATE stakeholder_suggestions SET status = 'dismissed', resolved_at = datetime('now')
+             WHERE status = 'pending' AND (
+               (person_id IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM people p WHERE p.id = stakeholder_suggestions.person_id AND p.relationship = 'internal'
+               ))
+               OR (suggested_email IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM people p2 WHERE p2.email = LOWER(stakeholder_suggestions.suggested_email) AND p2.relationship = 'internal'
+               ))
+             )",
+            [],
+        )?;
+        if dismissed > 0 {
+            log::info!(
+                "I652: auto-dismissed {} internal stakeholder suggestions",
+                dismissed
+            );
         }
         Ok(())
     }
