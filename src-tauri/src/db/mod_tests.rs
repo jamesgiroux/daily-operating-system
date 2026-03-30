@@ -3388,38 +3388,35 @@ fn test_cascade_meeting_entity_to_people_external_only() {
     let db = test_db();
     setup_account(&db, "acc1", "Acme Corp");
     setup_meeting(&db, "m1", "Acme QBR");
+    setup_meeting(&db, "m2", "Acme Follow-up");
 
-    // External person → should be linked
+    // External person attends 2 meetings with same account (I652: 2+ threshold)
     let mut external = sample_person("jane@acme.com");
     external.relationship = "external".to_string();
     db.upsert_person(&external).expect("upsert external");
-    db.record_meeting_attendance("m1", &external.id)
-        .expect("attend");
+    db.record_meeting_attendance("m1", &external.id).expect("attend m1");
+    db.record_meeting_attendance("m2", &external.id).expect("attend m2");
+    db.link_meeting_entity("m1", "acc1", "account").expect("link m1");
+    db.link_meeting_entity("m2", "acc1", "account").expect("link m2");
 
-    // Internal person → should NOT be linked
+    // Internal person → should NOT be linked regardless of meeting count
     let mut internal = sample_person("john@mycompany.com");
     internal.relationship = "internal".to_string();
     db.upsert_person(&internal).expect("upsert internal");
-    db.record_meeting_attendance("m1", &internal.id)
-        .expect("attend");
+    db.record_meeting_attendance("m1", &internal.id).expect("attend");
 
+    // Cascade on m2 — jane has 2 meetings with acc1, threshold met
     let linked = db
-        .cascade_meeting_entity_to_people("m1", Some("acc1"), None)
+        .cascade_meeting_entity_to_people("m2", Some("acc1"), None)
         .expect("cascade");
-    assert_eq!(linked, 1);
+    assert!(linked >= 1, "external with 2+ meetings should be linked");
 
-    // External person linked to account
-    let entities = db
-        .get_entities_for_person(&external.id)
-        .expect("entities for external");
-    assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].id, "acc1");
+    // External person linked
+    let team = db.get_account_team("acc1").expect("team");
+    assert!(team.iter().any(|t| t.person_id == external.id), "jane should be in team");
 
     // Internal person NOT linked
-    let entities = db
-        .get_entities_for_person(&internal.id)
-        .expect("entities for internal");
-    assert_eq!(entities.len(), 0);
+    assert!(!team.iter().any(|t| t.person_id == internal.id), "internal should not be in team");
 }
 
 #[test]
