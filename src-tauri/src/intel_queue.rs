@@ -1803,6 +1803,47 @@ pub fn write_enrichment_results(
         }
     }
 
+    // I645: Filter suppressed risks/wins before writing.
+    // If is_suppressed() is available (Agent 1 creates it in db module), check each
+    // item against tombstones. Items with newer evidence (sourced_at > dismissed_at)
+    // pass through — the is_suppressed function handles that logic.
+    if let Ok(feedback_db) = crate::db::ActionDb::open() {
+        let pre_risk_count = final_intel.risks.len();
+        final_intel.risks.retain(|risk| {
+            let item_key = Some(risk.text.as_str());
+            !feedback_db
+                .is_suppressed(
+                    &input.entity_id,
+                    "risks",
+                    item_key,
+                    risk.item_source.as_ref().map(|s| s.sourced_at.as_str()),
+                )
+                .unwrap_or(false)
+        });
+        let pre_win_count = final_intel.recent_wins.len();
+        final_intel.recent_wins.retain(|win| {
+            let item_key = Some(win.text.as_str());
+            !feedback_db
+                .is_suppressed(
+                    &input.entity_id,
+                    "recentWins",
+                    item_key,
+                    win.item_source.as_ref().map(|s| s.sourced_at.as_str()),
+                )
+                .unwrap_or(false)
+        });
+        let risks_suppressed = pre_risk_count - final_intel.risks.len();
+        let wins_suppressed = pre_win_count - final_intel.recent_wins.len();
+        if risks_suppressed > 0 || wins_suppressed > 0 {
+            log::info!(
+                "[I645] Suppression filter for {}: {} risks, {} wins removed",
+                input.entity_id,
+                risks_suppressed,
+                wins_suppressed,
+            );
+        }
+    }
+
     // I499: Merge computed health dimensions with LLM narrative.
     // The algorithmic engine provides score/band/dimensions/confidence;
     // the LLM provides only narrative + recommended_actions.
