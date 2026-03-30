@@ -396,7 +396,7 @@ pub(crate) mod tests_common {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -426,7 +426,7 @@ pub(crate) mod tests_common {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -522,6 +522,7 @@ pub(crate) mod tests_common {
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,
+            email_enrichment_timeout_seconds: 90,
         }
     }
 }

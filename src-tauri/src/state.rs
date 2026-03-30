@@ -926,6 +926,13 @@ pub fn run_startup_sync(state: &AppState) {
         Err(e) => log::warn!("Startup sync: projects sync failed: {}", e),
     }
 
+    // I644: One-time backfill of dashboard.json narrative fields into DB columns.
+    match db.backfill_dashboard_json_to_db(workspace) {
+        Ok(n) if n > 0 => log::info!("Startup sync: backfilled {} dashboard.json → DB", n),
+        Ok(_) => {}
+        Err(e) => log::warn!("Startup sync: dashboard.json backfill failed: {}", e),
+    }
+
     match crate::accounts::sync_all_content_indexes(workspace, &db) {
         Ok(n) if n > 0 => log::info!("Startup sync: indexed {} content files", n),
         Ok(_) => {}
@@ -1101,6 +1108,7 @@ pub fn create_or_update_config(
                 hygiene_scan_interval_hours: 4,
                 hygiene_ai_budget: 10,
                 hygiene_pre_meeting_hours: 12,
+                email_enrichment_timeout_seconds: 90,
             }
         }
     };

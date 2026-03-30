@@ -67,21 +67,11 @@ pub fn create_child_account_record(
     let account = crate::db::DbAccount {
         id,
         name: name.to_string(),
-        lifecycle: None,
-        arr: None,
-        health: None,
-        contract_start: None,
-        contract_end: None,
-        nps: None,
         tracker_path: Some(tracker_path),
         parent_id: Some(parent.id.clone()),
         account_type: parent.account_type.clone(),
         updated_at: now,
-        archived: false,
-        keywords: None,
-        keywords_extracted_at: None,
-        metadata: None,
-        commercial_stage: None,
+        ..Default::default()
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -1206,13 +1196,13 @@ pub fn dismiss_account_field_conflict(
 
 /// Get full detail for an account by ID.
 ///
-/// Loads account from DB, reads dashboard.json + intelligence.json,
-/// fetches actions, meetings, people, team, signals, captures, and email signals.
+/// I644: All data from DB — no filesystem reads on the detail page path.
+/// Fetches actions, meetings, people, team, signals, captures, and email signals.
 pub async fn get_account_detail(
     account_id: &str,
     state: &AppState,
 ) -> Result<AccountDetailResult, String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let _config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
     let engine = std::sync::Arc::clone(&state.signals.engine);
 
     let lifecycle_account_id = account_id.to_string();
@@ -1228,40 +1218,22 @@ pub async fn get_account_detail(
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-            // Read narrative fields from dashboard.json + intelligence.json if they exist
-            let (overview, programs, notes, intelligence) = if let Some(ref config) = config {
-                let workspace = Path::new(&config.workspace_path);
-                let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
-                let json_path = account_dir.join("dashboard.json");
-                let (ov, prg, nt) = if json_path.exists() {
-                    match crate::accounts::read_account_json(&json_path) {
-                        Ok(result) => (
-                            result.json.company_overview,
-                            result.json.strategic_programs,
-                            result.json.notes,
-                        ),
-                        Err(_) => (None, Vec::new(), None),
-                    }
-                } else {
-                    (None, Vec::new(), None)
-                };
-                // Read intelligence from DB (I513), fall back to legacy migration
-                let intel = db
-                    .get_entity_intelligence(&account_id)
-                    .ok()
-                    .flatten()
-                    .or_else(|| {
-                        // Auto-migrate from legacy CompanyOverview on first access
-                        ov.as_ref().and_then(|overview| {
-                            crate::intelligence::migrate_company_overview_to_intelligence(
-                                workspace, &account, overview,
-                            )
-                        })
-                    });
-                (ov, prg, nt, intel)
-            } else {
-                (None, Vec::new(), None, None)
-            };
+            // I644: Read narrative fields from DB columns (promoted from dashboard.json).
+            let overview: Option<crate::accounts::CompanyOverview> = account
+                .company_overview
+                .as_ref()
+                .and_then(|json| serde_json::from_str(json).ok());
+            let programs: Vec<crate::accounts::StrategicProgram> = account
+                .strategic_programs
+                .as_ref()
+                .and_then(|json| serde_json::from_str(json).ok())
+                .unwrap_or_default();
+            let notes = account.notes.clone();
+            // I644: Intelligence from DB only — no filesystem fallback.
+            let intelligence = db
+                .get_entity_intelligence(&account_id)
+                .ok()
+                .flatten();
 
             let open_actions = db
                 .get_account_actions(&account_id)
@@ -1660,21 +1632,11 @@ pub fn create_account(
     let account = crate::db::DbAccount {
         id: id.clone(),
         name: name.clone(),
-        lifecycle: None,
-        arr: None,
-        health: None,
-        contract_start: None,
-        contract_end: None,
-        nps: None,
         tracker_path: Some(tracker_path),
         parent_id: parent_id.map(|s| s.to_string()),
         account_type,
         updated_at: now,
-        archived: false,
-        keywords: None,
-        keywords_extracted_at: None,
-        metadata: None,
-        commercial_stage: None,
+        ..Default::default()
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -1915,21 +1877,9 @@ pub fn bulk_create_accounts(
         let account = crate::db::DbAccount {
             id: id.clone(),
             name: name.to_string(),
-            lifecycle: None,
-            arr: None,
-            health: None,
-            contract_start: None,
-            contract_end: None,
-            nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
-            parent_id: None,
-            account_type: crate::db::AccountType::Customer,
             updated_at: now,
-            archived: false,
-            keywords: None,
-            keywords_extracted_at: None,
-            metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         };
 
         db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -2136,20 +2086,11 @@ pub async fn create_internal_organization(
                         id: root_id.clone(),
                         name: company_name_clone.clone(),
                         lifecycle: Some("active".to_string()),
-                        arr: None,
                         health: Some("green".to_string()),
-                        contract_start: None,
-                        contract_end: None,
-                        nps: None,
                         tracker_path: Some(format!("Internal/{}", company_name_clone)),
-                        parent_id: None,
                         account_type: crate::db::AccountType::Internal,
                         updated_at: now,
-                        archived: false,
-                        keywords: None,
-                        keywords_extracted_at: None,
-                        metadata: None,
-                        commercial_stage: None,
+                        ..Default::default()
                     };
                     db.upsert_account(&root_account)
                         .map_err(|e| e.to_string())?;
@@ -2680,7 +2621,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-            commercial_stage: None,
+            ..Default::default()
         }
     }
 

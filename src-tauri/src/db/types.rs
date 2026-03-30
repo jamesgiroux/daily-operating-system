@@ -60,9 +60,10 @@ pub struct DbAction {
 }
 
 /// Account classification: customer, internal org, or partner (I382).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AccountType {
+    #[default]
     Customer,
     Internal,
     Partner,
@@ -99,7 +100,7 @@ impl std::fmt::Display for AccountType {
 }
 
 /// A row from the `accounts` table.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DbAccount {
     pub id: String,
@@ -127,6 +128,84 @@ pub struct DbAccount {
     /// I646 C3: Separate commercial opportunity stage (migration 076).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commercial_stage: Option<String>,
+    /// I644: ARR range low bound.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arr_range_low: Option<f64>,
+    /// I644: ARR range high bound.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arr_range_high: Option<f64>,
+    /// I644: Renewal likelihood (0.0–1.0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_likelihood: Option<f64>,
+    /// I644: Source for renewal_likelihood.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_likelihood_source: Option<String>,
+    /// I644: When renewal_likelihood was last updated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_likelihood_updated_at: Option<String>,
+    /// I644: Renewal model (e.g., "annual", "multi_year").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_model: Option<String>,
+    /// I644: Renewal pricing method (e.g., "flat", "usage_based").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_pricing_method: Option<String>,
+    /// I644: Support tier (e.g., "premium", "standard", "basic").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub support_tier: Option<String>,
+    /// I644: Source for support_tier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub support_tier_source: Option<String>,
+    /// I644: When support_tier was last updated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub support_tier_updated_at: Option<String>,
+    /// I644: Number of active subscriptions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_subscription_count: Option<i32>,
+    /// I644: Growth potential score (0.0–1.0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub growth_potential_score: Option<f64>,
+    /// I644: Source for growth_potential_score.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub growth_potential_score_source: Option<String>,
+    /// I644: ICP fit score (0.0–1.0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icp_fit_score: Option<f64>,
+    /// I644: Source for icp_fit_score.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icp_fit_score_source: Option<String>,
+    /// I644: Primary product name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_product: Option<String>,
+    /// I644: Customer status (e.g., "active", "at_risk", "churned").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer_status: Option<String>,
+    /// I644: Source for customer_status.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer_status_source: Option<String>,
+    /// I644: When customer_status was last updated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer_status_updated_at: Option<String>,
+    /// I644: Company overview JSON (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company_overview: Option<String>,
+    /// I644: Strategic programs JSON array (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategic_programs: Option<String>,
+    /// I644: Free-text notes (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+/// Parameters for writing a source reference row (I644).
+#[derive(Debug, Clone)]
+pub struct AccountSourceRef<'a> {
+    pub account_id: &'a str,
+    pub field: &'a str,
+    pub source_system: &'a str,
+    pub source_kind: &'a str,
+    pub source_value: Option<&'a str>,
+    pub observed_at: &'a str,
+    pub reference_id: Option<&'a str>,
 }
 
 /// Provenance metadata for a tracked account field.
@@ -453,6 +532,8 @@ pub struct DbEmail {
     pub enrichment_state: String,
     pub enrichment_attempts: i32,
     pub last_enrichment_at: Option<String>,
+    /// UTC timestamp when email was last enriched (I652: Gate 0 deduplication).
+    pub enriched_at: Option<String>,
     pub last_seen_at: Option<String>,
     pub resolved_at: Option<String>,
     pub entity_id: Option<String>,
@@ -585,7 +666,7 @@ pub struct PersonListItem {
 }
 
 /// A row from the `projects` table (I50).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DbProject {
     pub id: String,
@@ -607,6 +688,15 @@ pub struct DbProject {
     /// JSON metadata for preset-driven custom fields (I311).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<String>,
+    /// I644: Project description (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// I644: Project milestones JSON array (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub milestones: Option<String>,
+    /// I644: Free-text notes (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 /// Activity signals for a project (parallel to StakeholderSignals).
