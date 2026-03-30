@@ -86,6 +86,7 @@ export function PostMeetingIntelligence({
   const hasCompetitorMentions = (interactionDynamics?.competitorMentions?.length ?? 0) > 0;
   const hasEscalation = (interactionDynamics?.escalationLanguage?.length ?? 0) > 0;
   const hasThread = !!continuityThread;
+  const hasThreadItems = continuityThread ? threadHasDetails(continuityThread) : false;
   const hasPredictions = !!predictionScorecard?.hasData;
 
   return (
@@ -106,6 +107,14 @@ export function PostMeetingIntelligence({
           </p>
           {!continuityThread.isFirstMeeting && (
             <ul className={styles.threadList}>
+              {!hasThreadItems && (
+                <li className={styles.threadItem}>
+                  <span className={styles.threadIconNeutral}>
+                    <CircleDot size={12} />
+                  </span>
+                  <span>No major changes captured since the previous meeting</span>
+                </li>
+              )}
               {continuityThread.actionsCompleted.map((action, index) => (
                 <li key={`completed-${action.title}-${index}`} className={styles.threadItem}>
                   <Check size={14} className={styles.threadIconConfirmed} />
@@ -630,6 +639,15 @@ function buildThreadIntro(thread: ContinuityThread): string {
     return `Since ${meetingLabel} on ${formatShortDate(thread.previousMeetingDate)}, here’s what changed.`;
   }
   return `Since ${meetingLabel}, here’s what changed.`;
+}
+
+function threadHasDetails(thread: ContinuityThread): boolean {
+  return (
+    thread.actionsCompleted.length > 0
+    || thread.actionsOpen.length > 0
+    || thread.healthDelta != null
+    || thread.newAttendees.length > 0
+  );
 }
 
 function formatShortDate(date: string): string {
