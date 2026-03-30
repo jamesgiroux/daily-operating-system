@@ -685,27 +685,25 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
 }
 
 fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
-    // Check account_stakeholders DB table for role-based champion
-    let team = db.get_account_team(account_id).unwrap_or_default();
-    let champion = team
-        .iter()
-        .find(|t| t.role.to_lowercase().contains("champion"));
+    // I652: Query account_stakeholder_roles directly for champion designation
+    let champion_rows: Vec<(String, String)> = db
+        .conn
+        .prepare(
+            "SELECT asr.person_id, p.name FROM account_stakeholder_roles asr \
+             JOIN people p ON p.id = asr.person_id \
+             WHERE asr.account_id = ?1 AND asr.role = 'champion'",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![account_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
 
-    // Also check intelligence JSON engagement field — the EngagementSelector
-    // writes "champion" to stakeholder_insights[].engagement, not to the DB role
-    let champion = champion.or_else(|| {
-        let intel = db.get_entity_intelligence(account_id).ok().flatten()?;
-        let champion_insight = intel.stakeholder_insights.iter().find(|s| {
-            s.engagement
-                .as_deref()
-                .unwrap_or("")
-                .to_lowercase()
-                .contains("champion")
-        })?;
-        // Match by person_id to find the right team member
-        let pid = champion_insight.person_id.as_deref()?;
-        team.iter().find(|t| t.person_id == pid)
-    });
+    let champion: Option<(&str, &str)> = champion_rows
+        .first()
+        .map(|(pid, name)| (pid.as_str(), name.as_str()));
 
     if champion.is_none() {
         return infer_champion_from_attendance(db, account_id);
@@ -732,10 +730,8 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
 
     if champion_assessments.is_empty() {
         // I646 C1: User designated a champion — check if they specifically attended meetings
-        let champion_person_id = champion.map(|c| c.person_id.as_str()).unwrap_or("");
-        let champion_name = champion
-            .map(|c| c.person_name.as_str())
-            .unwrap_or("Champion");
+        let champion_person_id = champion.map(|(pid, _)| pid).unwrap_or("");
+        let champion_name = champion.map(|(_, name)| name).unwrap_or("Champion");
 
         let champion_meeting_count: i64 = if !champion_person_id.is_empty() {
             db.conn
@@ -806,9 +802,7 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
     };
 
     // Build evidence with specific meeting dates and statuses
-    let champion_name = champion
-        .map(|c| c.person_name.as_str())
-        .unwrap_or("Champion");
+    let champion_name = champion.map(|(_, name)| name).unwrap_or("Champion");
     let mut evidence = vec![format!(
         "{champion_name}: {} across {} meetings",
         champion_assessments[0].1,
