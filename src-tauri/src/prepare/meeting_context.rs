@@ -821,6 +821,13 @@ fn inject_entity_intelligence(
     if !intel.consistency_findings.is_empty() {
         ctx["consistency_findings"] = json!(intel.consistency_findings);
     }
+
+    // I651: Product classification from Glean
+    if let Some(ref classification) = intel.product_classification {
+        if !classification.products.is_empty() {
+            ctx["products"] = json!(classification.products);
+        }
+    }
 }
 
 /// I425: Inject active Linear issues linked to this entity via linear_entity_links.
