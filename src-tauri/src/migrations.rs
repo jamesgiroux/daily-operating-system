@@ -339,6 +339,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 80,
         sql: include_str!("migrations/080_stakeholder_source_of_truth.sql"),
     },
+    Migration {
+        version: 81,
+        sql: include_str!("migrations/081_init_tasks.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
