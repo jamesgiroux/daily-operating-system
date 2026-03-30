@@ -2849,6 +2849,8 @@ pub fn enrich_emails(
         enrichments.len(),
         emails_to_enrich.len()
     );
+    // Invalidate briefing cache after email enrichment (intelligence may affect briefing narrative)
+    invalidate_briefing_cache(data_dir);
     Ok(())
 }
 
@@ -3297,6 +3299,8 @@ pub fn enrich_briefing(
         write_json(&data_dir.join("schedule.json"), &schedule)?;
     }
 
+    // Invalidate briefing cache after enrichment so next refresh gets fresh AI-enriched content
+    invalidate_briefing_cache(data_dir);
     Ok(())
 }
 
