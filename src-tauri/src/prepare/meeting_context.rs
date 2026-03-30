@@ -800,19 +800,22 @@ fn inject_entity_intelligence(
         }
     }
 
-    if !intel.stakeholder_insights.is_empty() {
-        ctx["stakeholder_insights"] = json!(intel
-            .stakeholder_insights
-            .iter()
-            .map(|s| {
-                json!({
-                    "name": s.name,
-                    "role": s.role,
-                    "assessment": s.assessment,
-                    "engagement": s.engagement,
+    // I652: Read stakeholders from DB (person-first architecture) instead of intel JSON.
+    if let (Some(db), Some(eid)) = (db, entity_id) {
+        let stakeholders = db.get_account_stakeholders_full(eid).unwrap_or_default();
+        if !stakeholders.is_empty() {
+            ctx["stakeholder_insights"] = json!(stakeholders
+                .iter()
+                .map(|s| {
+                    json!({
+                        "name": s.person_name,
+                        "role": s.stakeholder_role,
+                        "assessment": s.assessment,
+                        "engagement": s.engagement,
+                    })
                 })
-            })
-            .collect::<Vec<_>>());
+                .collect::<Vec<_>>());
+        }
     }
 
     if let Some(status) = intel.consistency_status.as_ref() {

@@ -582,40 +582,49 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- Stakeholders ---
-    let people = db.get_people_for_entity(entity_id).unwrap_or_default();
-    if !people.is_empty() {
-        let lines: Vec<String> = people
-            .iter()
-            .map(|p| {
-                let role = p.role.as_deref().unwrap_or("unknown role");
-                let org = p.organization.as_deref().unwrap_or("");
-                format!(
-                    "- {} | {} | {} | {} meetings | last seen: {}",
-                    p.name,
-                    role,
-                    org,
-                    p.meeting_count,
-                    p.last_seen.as_deref().unwrap_or("never")
-                )
-            })
-            .collect();
-        ctx.stakeholders = lines.join("\n");
-
-        // I420: Canonical contacts for stakeholder reconciliation
-        let canonical_lines: Vec<String> = people
-            .iter()
-            .map(|p| {
-                format!(
-                    "- \"{}\" (role: {}, id: {}, email: {})",
-                    p.name,
-                    p.role.as_deref().unwrap_or("unknown"),
-                    p.id,
-                    p.email
-                )
-            })
-            .collect();
-        ctx.canonical_contacts = Some(canonical_lines.join("\n"));
+    // --- Stakeholders (I652: person-first, read from account_stakeholders DB) ---
+    if entity_type == "account" || entity_type == "project" {
+        let stakeholders = db.get_account_stakeholders_full(entity_id).unwrap_or_default();
+        if !stakeholders.is_empty() {
+            let lines: Vec<String> = stakeholders
+                .iter()
+                .map(|s| {
+                    let engagement = s.engagement.as_deref().unwrap_or("unknown");
+                    let assessment = s.assessment.as_deref().unwrap_or("");
+                    let roles = &s.stakeholder_role; // comma-separated from GROUP_CONCAT
+                    format!(
+                        "- {} ({}): roles=[{}], engagement={}, assessment={}",
+                        s.person_name,
+                        s.person_email.as_deref().unwrap_or("no email"),
+                        roles,
+                        engagement,
+                        assessment
+                    )
+                })
+                .collect();
+            ctx.stakeholders = lines.join("\n");
+        }
+    } else {
+        // Person/other entities: use people linkage for context
+        let people = db.get_people_for_entity(entity_id).unwrap_or_default();
+        if !people.is_empty() {
+            let lines: Vec<String> = people
+                .iter()
+                .map(|p| {
+                    let role = p.role.as_deref().unwrap_or("unknown role");
+                    let org = p.organization.as_deref().unwrap_or("");
+                    format!(
+                        "- {} | {} | {} | {} meetings | last seen: {}",
+                        p.name,
+                        role,
+                        org,
+                        p.meeting_count,
+                        p.last_seen.as_deref().unwrap_or("never")
+                    )
+                })
+                .collect();
+            ctx.stakeholders = lines.join("\n");
+        }
     }
 
     // I527: Deterministic stakeholder meeting presence lines for contradiction-resistant prompts.
