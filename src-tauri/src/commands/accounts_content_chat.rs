@@ -599,6 +599,144 @@ pub async fn backfill_internal_meeting_associations(
 }
 
 // =============================================================================
+// I652 Phase 2: Person-first stakeholder commands
+// =============================================================================
+
+/// Update engagement level for a stakeholder.
+#[tauri::command]
+pub async fn update_stakeholder_engagement(
+    account_id: String,
+    person_id: String,
+    engagement: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_stakeholder_engagement(
+                db,
+                &app_state.signals.engine,
+                &account_id,
+                &person_id,
+                &engagement,
+            )
+        })
+        .await
+}
+
+/// Update assessment text for a stakeholder.
+#[tauri::command]
+pub async fn update_stakeholder_assessment(
+    account_id: String,
+    person_id: String,
+    assessment: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_stakeholder_assessment(
+                db,
+                &app_state.signals.engine,
+                &account_id,
+                &person_id,
+                &assessment,
+            )
+        })
+        .await
+}
+
+/// Add a role to a stakeholder (multi-role).
+#[tauri::command]
+pub async fn add_stakeholder_role(
+    account_id: String,
+    person_id: String,
+    role: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::add_stakeholder_role(
+                db,
+                &app_state.signals.engine,
+                &account_id,
+                &person_id,
+                &role,
+            )
+        })
+        .await
+}
+
+/// Remove a specific role from a stakeholder.
+#[tauri::command]
+pub async fn remove_stakeholder_role(
+    account_id: String,
+    person_id: String,
+    role: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::remove_stakeholder_role(
+                db,
+                &app_state.signals.engine,
+                &account_id,
+                &person_id,
+                &role,
+            )
+        })
+        .await
+}
+
+/// Get pending stakeholder suggestions for an account.
+#[tauri::command]
+pub async fn get_stakeholder_suggestions(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::StakeholderSuggestionRow>, String> {
+    state
+        .db_read(move |db| {
+            db.get_stakeholder_suggestions(&account_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
+}
+
+/// Accept a stakeholder suggestion.
+#[tauri::command]
+pub async fn accept_stakeholder_suggestion(
+    suggestion_id: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::accept_stakeholder_suggestion(db, &app_state, suggestion_id)
+        })
+        .await
+}
+
+/// Dismiss a stakeholder suggestion.
+#[tauri::command]
+pub async fn dismiss_stakeholder_suggestion(
+    suggestion_id: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::dismiss_stakeholder_suggestion(
+                db,
+                &app_state.signals.engine,
+                suggestion_id,
+            )
+        })
+        .await
+}
+
+// =============================================================================
 // I124: Content Index
 // =============================================================================
 
