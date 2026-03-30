@@ -596,6 +596,56 @@ impl ActionDb {
         }
         Ok(results)
     }
+
+    /// Mark an email as enriched, setting `enriched_at` to now (I652 Phase 5).
+    /// Used after successful enrichment to support Gate 0 deduplication.
+    pub fn mark_email_enriched(&self, email_id: &str) -> Result<(), String> {
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE emails SET enriched_at = ?1, updated_at = ?1 WHERE email_id = ?2",
+                params![now, email_id],
+            )
+            .map_err(|e| format!("Failed to mark email enriched {email_id}: {e}"))?;
+        Ok(())
+    }
+
+    /// Get snapshot of email content (snippet + subject) for all provided email IDs.
+    /// Used in Gate 0 to detect content changes for re-enrichment eligibility.
+    pub fn get_email_snapshots(
+        &self,
+        email_ids: &[String],
+    ) -> Result<HashMap<String, crate::workflow::email_filter::PriorEmailSnapshot>, String> {
+        if email_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut result = HashMap::new();
+        for email_id in email_ids {
+            match self.conn.query_row(
+                "SELECT snippet, subject FROM emails WHERE email_id = ?1",
+                params![email_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            ) {
+                Ok((snippet, subject)) => {
+                    result.insert(
+                        email_id.clone(),
+                        crate::workflow::email_filter::PriorEmailSnapshot { snippet, subject },
+                    );
+                }
+                Err(_) => {
+                    // Email not found or query failed — skip it
+                }
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 /// Parameters for enrichment state updates (avoids too_many_arguments lint).
