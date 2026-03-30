@@ -69,12 +69,34 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
     let embedding_ref = state.embedding_model.as_ref();
 
     for meeting in &meetings {
+        // Parse attendees from storage (JSON array string or comma-separated).
+        // Attendees in meetings table are stored as Option<String>, either:
+        //   - JSON array: ["alice@acme.com", "bob@partner.com"]
+        //   - Comma-separated: alice@acme.com, bob@partner.com
+        // We need to parse into a proper JSON array for the resolver.
+        let attendees_array: Vec<String> = match &meeting.attendees {
+            Some(attendees_str) => {
+                // Try parsing as JSON array first
+                if let Ok(arr) = serde_json::from_str::<Vec<String>>(attendees_str) {
+                    arr
+                } else {
+                    // Fall back to comma-separated parsing
+                    attendees_str
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                }
+            }
+            None => Vec::new(),
+        };
+
         // Build a minimal meeting Value for the resolver
         let meeting_json = serde_json::json!({
             "id": meeting.id,
             "summary": meeting.title,
             "title": meeting.title,
-            "attendees": meeting.attendees,
+            "attendees": attendees_array,
         });
 
         let outcomes = crate::prepare::entity_resolver::resolve_meeting_entities(
