@@ -1065,16 +1065,16 @@ mod tests {
             );
         }
 
-        let result = select_emails_for_enrichment(
-            emails,
-            &enriched_at_map,
-            &HashMap::new(),
-            &HashSet::new(),
-            &sender_email_map,
-            &last_response_date_map,
-            7,
+        let input = EmailFilterInput {
+            enriched_at_map: &enriched_at_map,
+            snippets_map: &HashMap::new(),
+            known_domains: &HashSet::new(),
+            sender_email_map: &sender_email_map,
+            last_response_date_map: &last_response_date_map,
+            limit: 7,
             now,
-        );
+        };
+        let result = select_emails_for_enrichment(emails, &input);
         assert_eq!(result.len(), 7, "Should respect limit of 7");
     }
 
