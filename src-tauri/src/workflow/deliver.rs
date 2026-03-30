@@ -5022,6 +5022,8 @@ mod tests {
                     subject: Some("Contract renewal".to_string()),
                     snippet: Some("Please review the...".to_string()),
                     priority: Some("high".to_string()),
+                    last_response_date: None,
+                    thread_message_count: None,
                 }],
                 classified: vec![
                     crate::json_loader::DirectiveEmail {
@@ -5031,6 +5033,8 @@ mod tests {
                         subject: Some("Meeting notes".to_string()),
                         snippet: None,
                         priority: Some("medium".to_string()),
+                        last_response_date: None,
+                        thread_message_count: None,
                     },
                     crate::json_loader::DirectiveEmail {
                         id: Some("e3".to_string()),
@@ -5039,6 +5043,8 @@ mod tests {
                         subject: Some("Newsletter".to_string()),
                         snippet: Some("Weekly digest...".to_string()),
                         priority: Some("low".to_string()),
+                        last_response_date: None,
+                        thread_message_count: None,
                     },
                 ],
                 medium_count: 3,

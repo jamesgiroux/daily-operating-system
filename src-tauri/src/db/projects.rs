@@ -26,6 +26,10 @@ impl ActionDb {
             keywords: row.get(10).unwrap_or(None),
             keywords_extracted_at: row.get(11).unwrap_or(None),
             metadata: row.get(12).unwrap_or(None),
+            // I644: dashboard.json fields promoted to DB (migration 083)
+            description: row.get(13).unwrap_or(None),
+            milestones: row.get(14).unwrap_or(None),
+            notes: row.get(15).unwrap_or(None),
         })
     }
 
@@ -81,7 +85,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, parent_id, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata,
+                    description, milestones, notes
              FROM projects WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], Self::map_project_row)?;
@@ -96,7 +101,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, parent_id, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata,
+                    description, milestones, notes
              FROM projects WHERE LOWER(name) = LOWER(?1)",
         )?;
         let mut rows = stmt.query_map(params![name], Self::map_project_row)?;
@@ -111,7 +117,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, parent_id, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata,
+                    description, milestones, notes
              FROM projects WHERE archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_project_row)?;
@@ -170,7 +177,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, parent_id, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata,
+                    description, milestones, notes
              FROM projects WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_project_row)?;
@@ -182,7 +190,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, parent_id, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata,
+                    description, milestones, notes
              FROM projects WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map(params![parent_id], Self::map_project_row)?;
