@@ -439,8 +439,25 @@ pub fn upsert_assessment_snapshot(
     db: &ActionDb,
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), String> {
+    // Write intelligence snapshot
     db.upsert_entity_intelligence(intel)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Path 2c: Store domains from Glean enrichment (if present).
+    // When Glean enrichment populates intel.domains (extracted from stakeholder emails),
+    // persist them to account_domains for entity resolution.
+    // Only applies to account entities.
+    if intel.entity_type == "account" && !intel.domains.is_empty() {
+        db.set_account_domains(&intel.entity_id, &intel.domains)
+            .map_err(|e| format!("Failed to store domains for account {}: {}", intel.entity_id, e))?;
+        log::debug!(
+            "Intelligence service: stored {} domains for account '{}'",
+            intel.domains.len(),
+            intel.entity_id
+        );
+    }
+
+    Ok(())
 }
 
 /// Persist AI-inferred person relationships for an enrichment run (I504).
