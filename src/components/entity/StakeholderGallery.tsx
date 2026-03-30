@@ -312,7 +312,7 @@ export function StakeholderGallery({
   const intelInsights = intelligence?.stakeholderInsights ?? [];
   const engagedCount = useDbFirst
     ? dbStakeholders.filter((s) => {
-        const insight = intelInsights.find((i) => i.personId === s.personId || i.name.toLowerCase() === s.personName.toLowerCase());
+        const insight = intelInsights.find((i) => (i.personId && i.personId === s.personId) || i.name.toLowerCase() === s.personName.toLowerCase());
         return insight?.engagement && insight.engagement !== "unknown" && insight.engagement !== "none";
       }).length
     : stakeholders.filter(
@@ -468,7 +468,7 @@ export function StakeholderGallery({
           {visibleDbStakeholders.map((s) => {
             // Look up supplementary AI assessment from intelligence by matching personId or name
             const insight = intelInsights.find(
-              (ins) => ins.personId === s.personId || ins.name.toLowerCase() === s.personName.toLowerCase(),
+              (ins) => (ins.personId && ins.personId === s.personId) || ins.name.toLowerCase() === s.personName.toLowerCase(),
             );
             const personDetail = [s.personRole, s.organization].filter(Boolean).join(" \u00b7 ") || null;
             const isGlean = s.dataSource === "glean";
@@ -489,7 +489,7 @@ export function StakeholderGallery({
                       value={insight.engagement}
                       onChange={(v) => {
                         const idx = intelInsights.findIndex(
-                          (ins) => ins.personId === s.personId || ins.name.toLowerCase() === s.personName.toLowerCase(),
+                          (ins) => (ins.personId && ins.personId === s.personId) || ins.name.toLowerCase() === s.personName.toLowerCase(),
                         );
                         if (idx >= 0) updateField(`stakeholderInsights[${idx}].engagement`, v);
                       }}
