@@ -508,15 +508,17 @@ pub async fn start_google_auth(
     let _ = app_handle.emit("google-auth-changed", &new_status);
 
     // Auto-extract domain from email (non-fatal, preserves manual overrides)
-    if let Some(at_pos) = email.find('@') {
-        let domain = email[at_pos + 1..].to_lowercase();
-        if !domain.is_empty() {
-            let _ = crate::state::create_or_update_config(&state, |config| {
-                if config.user_domain.is_none() {
-                    config.user_domain = Some(domain);
-                }
-            });
+    let detected_domain = email
+        .find('@')
+        .map(|at_pos| email[at_pos + 1..].to_lowercase())
+        .filter(|domain| !domain.is_empty());
+    if let Err(e) = crate::state::create_or_update_config(&state, move |config| {
+        config.google.enabled = true;
+        if config.user_domain.is_none() {
+            config.user_domain = detected_domain.clone();
         }
+    }) {
+        log::warn!("Google auth: failed to persist enabled config: {}", e);
     }
 
     Ok(new_status)
@@ -554,6 +556,15 @@ pub fn disconnect_google(
     // Clear calendar events
     if let Ok(mut guard) = state.calendar.events.write() {
         guard.clear();
+    }
+
+    if let Err(e) = crate::state::create_or_update_config(&state, |config| {
+        config.google.enabled = false;
+    }) {
+        log::warn!(
+            "Google disconnect: failed to persist disabled config: {}",
+            e
+        );
     }
 
     // Emit event

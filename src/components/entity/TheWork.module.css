@@ -237,6 +237,12 @@
   height: 100%;
   border-radius: 2px;
   transition: width 0.3s ease;
+  width: var(--progress-width, 0%);
+}
+
+.autoDetectIcon {
+  display: inline;
+  vertical-align: middle;
 }
 .progressOnTrack .progressFill { background: var(--color-garden-sage); }
 .progressWarning .progressFill { background: var(--color-spice-turmeric); }

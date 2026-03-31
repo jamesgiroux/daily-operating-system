@@ -6,7 +6,7 @@
 //!
 //! Background loop: runs 30s after startup, then every 4 hours.
 
-mod detectors;
+pub(crate) mod detectors;
 mod fixers;
 mod loop_runner;
 mod matcher;
@@ -396,6 +396,7 @@ pub(crate) mod tests_common {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            ..Default::default()
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -425,6 +426,7 @@ pub(crate) mod tests_common {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            ..Default::default()
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -511,6 +513,7 @@ pub(crate) mod tests_common {
             developer_mode: false,
             personality: "professional".to_string(),
             ai_models: crate::types::AiModelConfig::default(),
+            ai_model_routing_version: crate::types::AI_MODEL_ROUTING_VERSION,
             embeddings: crate::types::EmbeddingConfig::default(),
             role: "customer-success".to_string(),
             custom_preset_path: None,
@@ -519,6 +522,7 @@ pub(crate) mod tests_common {
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,
+            email_enrichment_timeout_seconds: 90,
         }
     }
 }

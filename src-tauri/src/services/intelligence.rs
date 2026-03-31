@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use crate::db::ActionDb;
+use crate::pty::AiUsageContext;
 use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 use tauri::Emitter;
@@ -225,10 +226,14 @@ pub async fn enrich_entity(
                 let ai_config_for_enrichment = ai_config.clone();
                 let app_handle_clone = app_handle.cloned();
                 let pty_result = tauri::async_runtime::spawn_blocking(move || {
+                    let usage_context =
+                        AiUsageContext::new("intelligence", "manual_entity_enrichment")
+                            .with_trigger("manual_refresh");
                     run_enrichment(
                         &input_for_enrichment,
                         &ai_config_for_enrichment,
                         app_handle_clone.as_ref(),
+                        usage_context,
                     )
                 })
                 .await;
@@ -266,10 +271,13 @@ pub async fn enrich_entity(
         let ai_config_for_enrichment = ai_config.clone();
         let app_handle_clone = app_handle.cloned();
         let pty_result = tauri::async_runtime::spawn_blocking(move || {
+            let usage_context = AiUsageContext::new("intelligence", "manual_entity_enrichment")
+                .with_trigger("manual_refresh");
             run_enrichment(
                 &input_for_enrichment,
                 &ai_config_for_enrichment,
                 app_handle_clone.as_ref(),
+                usage_context,
             )
         })
         .await;
@@ -430,8 +438,30 @@ pub fn upsert_assessment_snapshot(
     db: &ActionDb,
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), String> {
+    // Write intelligence snapshot
     db.upsert_entity_intelligence(intel)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Path 2c: Store domains from Glean enrichment (if present).
+    // When Glean enrichment populates intel.domains (extracted from stakeholder emails),
+    // persist them to account_domains for entity resolution.
+    // Only applies to account entities.
+    if intel.entity_type == "account" && !intel.domains.is_empty() {
+        db.set_account_domains(&intel.entity_id, &intel.domains)
+            .map_err(|e| {
+                format!(
+                    "Failed to store domains for account {}: {}",
+                    intel.entity_id, e
+                )
+            })?;
+        log::debug!(
+            "Intelligence service: stored {} domains for account '{}'",
+            intel.domains.len(),
+            intel.entity_id
+        );
+    }
+
+    Ok(())
 }
 
 /// Persist AI-inferred person relationships for an enrichment run (I504).
@@ -585,17 +615,20 @@ pub async fn update_intelligence_field(
                 account.as_ref(),
             )?;
 
-            // Read intelligence from DB (source of truth post-I513), not disk.
-            // Fall back to disk if DB doesn't have it (legacy path).
+            // I644: DB is sole source of truth — no filesystem fallback.
             let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
-            let intel = if let Some(existing) = existing_intel {
-                crate::intelligence::apply_intelligence_field_update_in_memory(
+            let intel = match existing_intel {
+                Some(existing) => crate::intelligence::apply_intelligence_field_update_in_memory(
                     existing,
                     &field_path,
                     &value,
-                )?
-            } else {
-                crate::intelligence::apply_intelligence_field_update(&dir, &field_path, &value)?
+                )?,
+                None => {
+                    return Err(format!(
+                        "I644: no DB intelligence row for {} — cannot update field",
+                        entity_id
+                    ))
+                }
             };
             // Write to disk for MCP sidecar compatibility (best-effort)
             let _ = crate::intelligence::write_intelligence_json(&dir, &intel);
@@ -707,13 +740,17 @@ pub async fn update_stakeholders(
                     .iter()
                     .filter_map(|s| {
                         let role = s.role.as_deref().unwrap_or("").to_lowercase();
+                        let engagement = s.engagement.as_deref().unwrap_or("").to_lowercase();
                         let person_id = s.person_id.as_deref()?;
-                        if role.contains("champion")
-                            || role.contains("executive")
-                            || role.contains("technical")
-                            || role.contains("decision")
+                        // Check BOTH role and engagement — user may set champion
+                        // via either the Team panel (role) or EngagementSelector (engagement)
+                        let effective = if !engagement.is_empty() { &engagement } else { &role };
+                        if effective.contains("champion")
+                            || effective.contains("executive")
+                            || effective.contains("technical")
+                            || effective.contains("decision")
                         {
-                            Some((person_id.to_string(), role))
+                            Some((person_id.to_string(), effective.to_string()))
                         } else {
                             None
                         }
@@ -844,13 +881,14 @@ pub async fn dismiss_intelligence_item(
                 account.as_ref(),
             )?;
 
-            // DB-first: prefer intelligence from DB over disk
+            // I644: DB is sole source of truth — no filesystem fallback.
             let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
-            let mut intel = if let Some(existing) = existing_intel {
-                existing
-            } else {
-                crate::intelligence::read_intelligence_json(&dir)?
-            };
+            let mut intel = existing_intel.ok_or_else(|| {
+                format!(
+                    "I644: no DB intelligence row for {} — cannot dismiss item",
+                    entity_id
+                )
+            })?;
 
             // Add tombstone
             intel
@@ -898,6 +936,29 @@ pub async fn dismiss_intelligence_item(
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
                     .map_err(|e| e.to_string())?;
+
+                // I645: Record feedback event + suppression tombstone.
+                let _ = tx.record_feedback_event(
+                    &entity_id,
+                    &entity_type,
+                    &field,
+                    Some(&item_text),
+                    "dismiss",
+                    None,
+                    Some("intelligence"),
+                    Some(&item_text),
+                    None,
+                    None,
+                );
+                let _ = tx.create_suppression_tombstone(
+                    &entity_id,
+                    &field,
+                    Some(&item_text),
+                    None,
+                    Some("intelligence"),
+                    None,
+                );
+
                 crate::services::signals::emit_and_propagate(
                     tx,
                     &engine,
@@ -1111,6 +1172,7 @@ mod mutation_smoke_tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            ..Default::default()
         }
     }
 
@@ -2099,27 +2161,51 @@ mod live_acceptance_tests {
         snapshot_db
             .conn_ref()
             .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, role, data_source)
-                 VALUES (?1, ?2, 'champion', 'glean')",
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
+                 VALUES (?1, ?2, 'glean')",
                 params![account_glean, glean_person_id],
             )
             .expect("seed glean stakeholder");
         snapshot_db
             .conn_ref()
             .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, role, data_source)
-                 VALUES (?1, ?2, 'champion', 'google')",
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES (?1, ?2, 'champion', 'glean')",
+                params![account_glean, glean_person_id],
+            )
+            .expect("seed glean stakeholder role");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
+                 VALUES (?1, ?2, 'google')",
                 params![account_google, google_person_id],
             )
             .expect("seed google stakeholder");
         snapshot_db
             .conn_ref()
             .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, role, data_source)
-                 VALUES (?1, ?2, 'champion', 'user')",
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES (?1, ?2, 'champion', 'google')",
+                params![account_google, google_person_id],
+            )
+            .expect("seed google stakeholder role");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
+                 VALUES (?1, ?2, 'user')",
                 params![account_user, user_person_id],
             )
             .expect("seed user stakeholder");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES (?1, ?2, 'champion', 'user')",
+                params![account_user, user_person_id],
+            )
+            .expect("seed user stakeholder role");
 
         snapshot_db
             .conn_ref()

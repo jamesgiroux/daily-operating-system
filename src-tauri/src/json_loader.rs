@@ -501,6 +501,12 @@ pub struct DirectiveEmail {
     pub snippet: Option<String>,
     #[serde(default)]
     pub priority: Option<String>,
+    /// RFC3339 timestamp of the most recent message in the thread (I652: Gate 1 newness check).
+    #[serde(default)]
+    pub last_response_date: Option<String>,
+    /// Message count in the thread for reference context (I652).
+    #[serde(default)]
+    pub thread_message_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]

@@ -12,6 +12,7 @@ pub mod actions;
 pub mod content;
 pub mod data_lifecycle;
 pub mod emails;
+pub mod feedback;
 pub mod encryption;
 pub mod entities;
 pub mod hardening;
