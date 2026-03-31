@@ -5569,60 +5569,60 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     // Intelligence Feedback (6 rows)
     // =========================================================================
 
-    db.insert_intelligence_feedback(
-        "mock-fb-acme-risks-pos",
-        "mock-acme-corp",
-        "account",
-        "risks",
-        "positive",
-        None,
-        Some("User confirmed risk assessment accuracy"),
-    )?;
-    db.insert_intelligence_feedback(
-        "mock-fb-globex-stakeholder-pos",
-        "mock-globex-industries",
-        "account",
-        "stakeholder_insights",
-        "positive",
-        None,
-        Some("User confirmed Jamie Morrison assessment"),
-    )?;
-    db.insert_intelligence_feedback(
-        "mock-fb-initech-exec-neg",
-        "mock-initech",
-        "account",
-        "executive_assessment",
-        "negative",
-        None,
-        Some("User found assessment too optimistic"),
-    )?;
-    db.insert_intelligence_feedback(
-        "mock-fb-globex-renewal-neg",
-        "mock-globex-industries",
-        "account",
-        "renewal_outlook",
-        "negative",
-        None,
-        Some("User disagrees with renewal confidence"),
-    )?;
-    db.insert_intelligence_feedback(
-        "mock-fb-acme-health-replaced",
-        "mock-acme-corp",
-        "account",
-        "health.score",
-        "replaced",
-        Some("85"),
-        Some("User corrected health score from 85 to 78"),
-    )?;
-    db.insert_intelligence_feedback(
-        "mock-fb-globex-exec-replaced",
-        "mock-globex-industries",
-        "account",
-        "executive_assessment",
-        "replaced",
-        Some("Globex is in good shape overall"),
-        Some("User rewrote assessment to reflect risk"),
-    )?;
+    db.insert_intelligence_feedback(&crate::db::intelligence_feedback::FeedbackInput {
+        id: "mock-fb-acme-risks-pos",
+        entity_id: "mock-acme-corp",
+        entity_type: "account",
+        field: "risks",
+        feedback_type: "positive",
+        previous_value: None,
+        context: Some("User confirmed risk assessment accuracy"),
+    })?;
+    db.insert_intelligence_feedback(&crate::db::intelligence_feedback::FeedbackInput {
+        id: "mock-fb-globex-stakeholder-pos",
+        entity_id: "mock-globex-industries",
+        entity_type: "account",
+        field: "stakeholder_insights",
+        feedback_type: "positive",
+        previous_value: None,
+        context: Some("User confirmed Jamie Morrison assessment"),
+    })?;
+    db.insert_intelligence_feedback(&crate::db::intelligence_feedback::FeedbackInput {
+        id: "mock-fb-initech-exec-neg",
+        entity_id: "mock-initech",
+        entity_type: "account",
+        field: "executive_assessment",
+        feedback_type: "negative",
+        previous_value: None,
+        context: Some("User found assessment too optimistic"),
+    })?;
+    db.insert_intelligence_feedback(&crate::db::intelligence_feedback::FeedbackInput {
+        id: "mock-fb-globex-renewal-neg",
+        entity_id: "mock-globex-industries",
+        entity_type: "account",
+        field: "renewal_outlook",
+        feedback_type: "negative",
+        previous_value: None,
+        context: Some("User disagrees with renewal confidence"),
+    })?;
+    db.insert_intelligence_feedback(&crate::db::intelligence_feedback::FeedbackInput {
+        id: "mock-fb-acme-health-replaced",
+        entity_id: "mock-acme-corp",
+        entity_type: "account",
+        field: "health.score",
+        feedback_type: "replaced",
+        previous_value: Some("85"),
+        context: Some("User corrected health score from 85 to 78"),
+    })?;
+    db.insert_intelligence_feedback(&crate::db::intelligence_feedback::FeedbackInput {
+        id: "mock-fb-globex-exec-replaced",
+        entity_id: "mock-globex-industries",
+        entity_type: "account",
+        field: "executive_assessment",
+        feedback_type: "replaced",
+        previous_value: Some("Globex is in good shape overall"),
+        context: Some("User rewrote assessment to reflect risk"),
+    })?;
 
     // =========================================================================
     // Signal Weights (4 rows)
