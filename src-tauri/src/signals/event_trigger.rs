@@ -53,8 +53,10 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
 
     let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
+    // I653: Widened from 30 minutes to 7 days (10080 minutes) so meetings
+    // created during app downtime still get entity resolution on restart.
     let meetings = db
-        .get_meetings_needing_resolution(30)
+        .get_meetings_needing_resolution(10080)
         .map_err(|e| format!("Failed to query meetings: {}", e))?;
 
     if meetings.is_empty() {
@@ -114,18 +116,55 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
         let mut linked = 0;
         let mut linked_account_id: Option<String> = None;
         for entity in &selected {
-            let _ = db.link_meeting_entity_if_absent(
+            match db.link_meeting_entity_if_absent(
                 &meeting.id,
                 &entity.entity_id,
                 entity.entity_type.as_str(),
-            );
-            linked += 1;
+            ) {
+                Ok(true) => linked += 1,
+                Ok(false) => {} // already linked
+                Err(e) => log::warn!(
+                    "Entity resolution trigger: failed to link {} → {}: {}",
+                    meeting.id,
+                    entity.entity_id,
+                    e,
+                ),
+            }
             // Track the first account linked (for domain extraction)
             if linked_account_id.is_none() && entity.entity_type.as_str() == "account" {
                 linked_account_id = Some(entity.entity_id.clone());
             }
         }
         if linked > 0 {
+            // I653 FIX 4: Invalidate stale prep if it exists
+            let prep_exists: bool = db
+                .conn_ref()
+                .query_row(
+                    "SELECT prep_frozen_json IS NOT NULL FROM meeting_prep WHERE meeting_id = ?1",
+                    rusqlite::params![meeting.id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+
+            if prep_exists {
+                let _ = db.conn_ref().execute(
+                    "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                    rusqlite::params![meeting.id],
+                );
+                state
+                    .meeting_prep_queue
+                    .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                        meeting.id.clone(),
+                        crate::meeting_prep_queue::PrepPriority::Background,
+                    ));
+                state.integrations.prep_queue_wake.notify_one();
+                log::info!(
+                    "Entity resolution trigger: invalidated stale prep for '{}' after linking {} entities",
+                    meeting.title,
+                    linked,
+                );
+            }
+
             log::debug!(
                 "Entity resolution trigger: linked {} entities for meeting '{}'",
                 linked,

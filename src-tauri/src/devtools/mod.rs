@@ -5681,6 +5681,7 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
             attendees: attendees.into_iter().map(String::from).collect(),
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         }
     };
 

@@ -1890,6 +1890,12 @@ pub struct CalendarEvent {
     /// Entities linked via M2M junction table or entity resolution (I339)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked_entities: Option<Vec<LinkedEntity>>,
+    /// Entity IDs resolved at classification time (I653).
+    /// Carried through from ClassifiedMeeting.resolved_entities so callers
+    /// can persist entity links without losing the IDs in the conversion.
+    /// Default empty — only populated by classify_meeting_multi → to_calendar_event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classified_entities: Option<Vec<(String, String)>>, // (entity_id, entity_type)
 }
 
 // =============================================================================
