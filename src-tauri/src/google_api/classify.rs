@@ -44,7 +44,6 @@ pub struct EntityHint {
     pub account_type: Option<String>,
     /// Account IDs this person is linked to via account_stakeholders (I653).
     /// Enables classification-time confidence boost when known stakeholders attend.
-    #[allow(dead_code)]
     pub linked_account_ids: Vec<String>,
 }
 
