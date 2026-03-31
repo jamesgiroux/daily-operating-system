@@ -8,7 +8,7 @@ use std::path::Path;
 use chrono::Utc;
 
 use crate::db::{ActionDb, DbProcessingLog};
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use crate::util::{sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
@@ -84,6 +84,11 @@ pub fn enrich_file(
     // Invoke Claude Code via PTY (Mechanical tier — I174)
     let default_config = AiModelConfig::default();
     let pty = PtyManager::for_tier(ModelTier::Mechanical, ai_config.unwrap_or(&default_config))
+        .with_usage_context(
+            AiUsageContext::new("inbox", "file_enrichment")
+                .with_trigger("manual_process")
+                .with_tier(ModelTier::Mechanical),
+        )
         .with_timeout(AI_TIMEOUT_SECS);
     let output = match pty.spawn_claude(workspace, &prompt) {
         Ok(o) => o.stdout,

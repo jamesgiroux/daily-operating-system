@@ -1,4 +1,5 @@
 import type { SuccessPlanTemplate } from "@/types";
+import { Button } from "@/components/ui/button";
 import s from "./TemplatePreview.module.css";
 
 interface TemplatePreviewProps {
@@ -42,9 +43,9 @@ export function TemplatePreview({
     <div className={s.panel}>
       <div className={s.panelHeader}>
         <div className={s.panelTitle}>Templates</div>
-        <button className={s.closeButton} onClick={onClose}>
+        <Button variant="ghost" size="sm" className={s.closeButton} onClick={onClose}>
           Close
-        </button>
+        </Button>
       </div>
       {templates.map((template) => (
         <div key={template.id} className={s.templateCard}>
@@ -53,9 +54,9 @@ export function TemplatePreview({
               <div className={s.templateName}>{template.name}</div>
               <div className={s.templateDescription}>{template.description}</div>
             </div>
-            <button className={s.templateApply} onClick={() => onApply(template.id)}>
+            <Button variant="outline" size="sm" className={s.templateApply} onClick={() => onApply(template.id)}>
               Apply
-            </button>
+            </Button>
           </div>
           <ul className={s.objectivesList}>
             {template.objectives.map((objective) => (

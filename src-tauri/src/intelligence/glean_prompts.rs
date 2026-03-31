@@ -200,7 +200,8 @@ fn build_json_schema(entity_type: &str) -> String {
   "orgChartChanges": [{ "person": "name", "change": "what changed", "when": "date", "impact": "how it affects the relationship" }],
 "#);
 
-        schema.push_str(r#"  "successMetrics": [{ "name": "short KPI label (max 5 words)", "target": "short target (e.g. 95%, $500K)", "current": "short value — max 15 chars, number/grade only, NEVER a sentence", "status": "on-track|at-risk|behind|achieved" }],
+        schema.push_str(r#"  "productAdoption": { "adoptionRate": 0.0, "trend": "growing|stable|declining", "featureAdoption": ["product or feature name: usage%"], "lastActive": "YYYY-MM-DD or null", "source": "glean" },
+  "successMetrics": [{ "name": "short KPI label (max 5 words)", "target": "short target (e.g. 95%, $500K)", "current": "short value — max 15 chars, number/grade only, NEVER a sentence", "status": "on-track|at-risk|behind|achieved" }],
   "openCommitments": [{ "description": "what was promised", "owner": "us|them|joint", "dueDate": "YYYY-MM-DD or null", "status": "open|delivered|at-risk" }],
   "relationshipDepth": { "championStrength": "strong|adequate|weak|none", "executiveAccess": "yes|limited|none", "stakeholderCoverage": "narrative", "coverageGaps": ["gaps"] }
 "#);

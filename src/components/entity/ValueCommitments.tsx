@@ -255,8 +255,8 @@ export function ValueCommitments({
                     <div
                       className={`${css.metricFill} ${fillClass}`}
                       style={{
-                        width: pct != null ? `${pct}%` : "0%",
-                      }}
+                        '--progress-width': pct != null ? `${pct}%` : "0%",
+                      } as React.CSSProperties}
                     />
                   </div>
                   {onItemFeedback && (
@@ -322,7 +322,7 @@ export function ValueCommitments({
                         </span>
                       )}
                       {commitment.source && (
-                        <span className={css.commitmentSource}>Source: {commitment.source}</span>
+                        <ProvenanceTag itemSource={commitment.source ? { source: commitment.source, confidence: 0, sourcedAt: "" } : undefined} />
                       )}
                     </div>
                   </div>

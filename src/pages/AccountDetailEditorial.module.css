@@ -218,6 +218,224 @@
   margin-bottom: 48px;
 }
 
+/* ── Products Section (Editorial Redesign) ── */
+
+.sectionEmpty {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-style: italic;
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+}
+
+.productList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.productRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.productRow:last-child {
+  border-bottom: none;
+}
+
+/* Hover reveals feedback thumbs + dismiss */
+.productRow:hover .productFeedback,
+.productRow:hover .productDismiss {
+  opacity: 1;
+}
+
+/* Left column: name + provenance */
+.productInfo {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.productInfo:hover .productName {
+  color: var(--color-spice-turmeric);
+}
+
+.productName {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  transition: color var(--transition-fast);
+}
+
+/* Center: status badge with dropdown */
+.productStatusWrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.productStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 100px;
+  cursor: pointer;
+  border: none;
+  background: var(--color-garden-sage-8);
+  color: var(--color-garden-sage);
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.productStatusBadge:hover {
+  background: var(--color-garden-sage-12);
+}
+
+.productStatusBadge[data-status="trial"] {
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-8);
+}
+
+.productStatusBadge[data-status="trial"]:hover {
+  background: var(--color-spice-turmeric-12);
+}
+
+.productStatusBadge[data-status="churned"] {
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8);
+}
+
+.productStatusBadge[data-status="churned"]:hover {
+  background: var(--color-spice-terracotta-12);
+}
+
+.productStatusDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 50;
+  min-width: 100px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.productStatusOption {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.productStatusOption:hover {
+  background: var(--color-black-4);
+}
+
+.productStatusOptionActive {
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-8);
+}
+
+.productStatusOption[data-status="trial"] {
+  color: var(--color-spice-turmeric);
+}
+
+.productStatusOption[data-status="churned"] {
+  color: var(--color-spice-terracotta);
+}
+
+/* Right: feedback + dismiss */
+.productRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 4px);
+  flex-shrink: 0;
+}
+
+.productFeedback {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.productDismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-quaternary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+
+.productDismiss:hover {
+  background: var(--color-spice-terracotta-8);
+  color: var(--color-spice-terracotta);
+}
+
+/* Product inline edit — EditableText-style */
+.productEditInput {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--color-spice-terracotta);
+  outline: none;
+  width: 100%;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ── Renewal Date (Inline Editable) ── */
+
+.renewalDateRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.renewalDateLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
 .healthScoreNumber {
   font-family: var(--font-serif);
   font-size: 100px;
@@ -275,5 +493,58 @@
   gap: 4px;
 }
 
-/* ── Engagement Cadence (I557) ── */
+/* ── Technical Footprint (I649) ── */
 
+.technicalFootprint {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.technicalFootprintLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-sm);
+}
+
+.technicalFootprintGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-sm) var(--space-md);
+}
+
+.technicalFootprintItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.technicalFootprintItemLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.technicalFootprintItemValue {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.technicalFootprintSource {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-xs);
+}
+
+/* ── Engagement Cadence (I557) ── */

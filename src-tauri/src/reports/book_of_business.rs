@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::db::ActionDb;
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::reports::compute_aggregate_intel_hash;
 use crate::reports::generator::ReportGeneratorInput;
 use crate::reports::prompts::build_report_preamble;
@@ -1898,6 +1898,11 @@ pub fn run_bob_generation(
         build_synthesis_prompt(gather, glean_ctx, &risk_accounts, &expansion_accounts);
 
     let pty = PtyManager::for_tier(ModelTier::Synthesis, &gather.ai_models)
+        .with_usage_context(
+            AiUsageContext::new("reports", "book_of_business_generation")
+                .with_trigger("book_of_business")
+                .with_tier(ModelTier::Synthesis),
+        )
         .with_timeout(90)
         .with_nice_priority(10);
 

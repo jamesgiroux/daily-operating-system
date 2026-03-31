@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 
 /// Everything needed to run a report generation PTY call.
@@ -35,6 +35,11 @@ pub fn run_report_generation(input: &ReportGeneratorInput) -> Result<String, Str
         _ => 60,
     };
     let pty = PtyManager::for_tier(ModelTier::Synthesis, &input.ai_models)
+        .with_usage_context(
+            AiUsageContext::new("reports", "report_generation")
+                .with_trigger(&input.report_type)
+                .with_tier(ModelTier::Synthesis),
+        )
         .with_timeout(timeout_secs)
         .with_nice_priority(10);
 

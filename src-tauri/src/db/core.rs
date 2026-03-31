@@ -6,7 +6,7 @@
 //! SQLite is not disposable — important state lives here and is written back to the
 //! filesystem at natural synchronization points (archive, dashboard regeneration).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::types::*;
@@ -159,8 +159,16 @@ impl ActionDb {
         let _ = Self::normalize_reviewed_prep_keys(&conn);
         let _ = Self::backfill_meeting_identity(&conn);
         let _ = Self::backfill_meeting_user_layer(&conn);
+        let _ = Self::backfill_stakeholder_columns(&conn);
+        let _ = Self::dismiss_internal_stakeholder_suggestions(&conn);
 
-        Ok(Self { conn })
+        let db = Self { conn };
+
+        // One-time initialization tasks (guarded by init_tasks table).
+        // These run exactly once per database and are safe to call on every startup.
+        let _ = db.run_guarded_init_backfill_account_domains();
+
+        Ok(db)
     }
 
     /// Open without encryption. Used for tests only.
@@ -180,7 +188,11 @@ impl ActionDb {
         let _ = Self::normalize_reviewed_prep_keys(&conn);
         let _ = Self::backfill_meeting_identity(&conn);
         let _ = Self::backfill_meeting_user_layer(&conn);
-        Ok(Self { conn })
+        let _ = Self::backfill_stakeholder_columns(&conn);
+
+        let db = Self { conn };
+        let _ = db.run_guarded_init_backfill_account_domains();
+        Ok(db)
     }
 
     /// Open the database in read-only mode. Used by the MCP binary for safe
@@ -502,6 +514,311 @@ impl ActionDb {
             )?;
         }
         Ok(())
+    }
+
+    /// I652: Auto-dismiss stakeholder suggestions for internal team members.
+    /// Cleans up suggestions that were created before the internal filter was added.
+    fn dismiss_internal_stakeholder_suggestions(conn: &Connection) -> Result<(), DbError> {
+        let dismissed = conn.execute(
+            "UPDATE stakeholder_suggestions SET status = 'dismissed', resolved_at = datetime('now')
+             WHERE status = 'pending' AND (
+               (person_id IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM people p WHERE p.id = stakeholder_suggestions.person_id AND p.relationship = 'internal'
+               ))
+               OR (suggested_email IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM people p2 WHERE p2.email = LOWER(stakeholder_suggestions.suggested_email) AND p2.relationship = 'internal'
+               ))
+               OR (suggested_name IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM people p3 WHERE LOWER(p3.name) = LOWER(stakeholder_suggestions.suggested_name) AND p3.relationship = 'internal'
+               ))
+             )",
+            [],
+        )?;
+        if dismissed > 0 {
+            log::info!(
+                "I652: auto-dismissed {} internal stakeholder suggestions",
+                dismissed
+            );
+        }
+        Ok(())
+    }
+
+    /// I652: Backfill engagement/assessment columns on `account_stakeholders` from
+    /// the legacy `entity_assessment.stakeholder_insights_json` blob.
+    /// Runs once at startup — only touches rows where `engagement IS NULL`.
+    fn backfill_stakeholder_columns(conn: &Connection) -> Result<(), DbError> {
+        // Step 1: Find all account_stakeholders rows missing engagement.
+        let rows: Vec<(String, String)> = {
+            let mut stmt = conn.prepare(
+                "SELECT account_id, person_id FROM account_stakeholders WHERE engagement IS NULL",
+            )?;
+            let mapped = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            let mut items = Vec::new();
+            for row in mapped {
+                items.push(row?);
+            }
+            items
+        };
+
+        if rows.is_empty() {
+            return Ok(());
+        }
+
+        // Step 2: Group by account_id to avoid repeated JSON parses.
+        let mut by_account: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        for (account_id, person_id) in &rows {
+            by_account
+                .entry(account_id.clone())
+                .or_default()
+                .push(person_id.clone());
+        }
+
+        let mut updated = 0u32;
+        for (account_id, person_ids) in &by_account {
+            // Step 3: Read the stakeholder_insights_json for this entity.
+            let json_opt: Option<String> = conn
+                .query_row(
+                    "SELECT stakeholder_insights_json FROM entity_assessment WHERE entity_id = ?1",
+                    params![account_id],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            let json_str = match json_opt {
+                Some(ref s) if !s.is_empty() => s.as_str(),
+                _ => continue,
+            };
+
+            let entries: Vec<serde_json::Value> = match serde_json::from_str(json_str) {
+                Ok(v) => v,
+                Err(err) => {
+                    log::warn!(
+                        "I652 backfill: failed to parse stakeholder_insights_json for {}: {}",
+                        account_id,
+                        err
+                    );
+                    continue;
+                }
+            };
+
+            // Step 4: For each person_id, find a matching entry and update.
+            for person_id in person_ids {
+                let matching = entries.iter().find(|e| {
+                    e.get("person_id")
+                        .and_then(|v| v.as_str())
+                        .map(|pid| pid == person_id)
+                        .unwrap_or(false)
+                });
+
+                if let Some(entry) = matching {
+                    let engagement = entry.get("engagement").and_then(|v| v.as_str());
+                    let assessment = entry.get("assessment").and_then(|v| v.as_str());
+
+                    if engagement.is_some() || assessment.is_some() {
+                        conn.execute(
+                            "UPDATE account_stakeholders
+                             SET engagement = COALESCE(engagement, ?1),
+                                 assessment = COALESCE(assessment, ?2),
+                                 data_source_engagement = COALESCE(data_source_engagement, 'ai'),
+                                 data_source_assessment = COALESCE(data_source_assessment, 'ai')
+                             WHERE account_id = ?3 AND person_id = ?4
+                               AND engagement IS NULL",
+                            params![engagement, assessment, account_id, person_id],
+                        )?;
+                        updated += 1;
+                    }
+                }
+            }
+        }
+
+        if updated > 0 {
+            log::info!(
+                "I652 backfill: populated engagement/assessment for {} stakeholder rows",
+                updated
+            );
+        }
+        Ok(())
+    }
+
+    /// Check if a one-time init task has been completed.
+    ///
+    /// Returns true if the task has already run and been marked in init_tasks.
+    fn is_init_task_completed(conn: &Connection, task_name: &str) -> Result<bool, DbError> {
+        let completed = conn
+            .query_row(
+                "SELECT 1 FROM init_tasks WHERE task_name = ?1",
+                params![task_name],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+        Ok(completed)
+    }
+
+    /// Mark a one-time init task as completed.
+    fn mark_init_task_completed(conn: &Connection, task_name: &str) -> Result<(), DbError> {
+        conn.execute(
+            "INSERT OR IGNORE INTO init_tasks (task_name) VALUES (?1)",
+            params![task_name],
+        )?;
+        Ok(())
+    }
+
+    /// Guarded backfill: Account domains from meeting attendees (Path 2b entity resolution).
+    ///
+    /// Runs exactly once. Subsequent calls are guarded by init_tasks table.
+    fn run_guarded_init_backfill_account_domains(&self) -> Result<(), DbError> {
+        const TASK_NAME: &str = "backfill_account_domains_v1";
+
+        if Self::is_init_task_completed(&self.conn, TASK_NAME)? {
+            return Ok(());
+        }
+
+        // Run the backfill
+        let inserted = self.backfill_account_domains_from_meetings()?;
+
+        // Mark task as complete
+        Self::mark_init_task_completed(&self.conn, TASK_NAME)?;
+
+        if inserted > 0 {
+            log::info!(
+                "Entity resolution: backfilled {} account→domain mappings from meeting attendees",
+                inserted
+            );
+        }
+
+        Ok(())
+    }
+
+    /// I644: One-time backfill of dashboard.json narrative fields into DB columns.
+    ///
+    /// Iterates accounts with `tracker_path IS NOT NULL AND company_overview IS NULL`,
+    /// reads their dashboard.json, and writes the fields to DB.
+    /// Same for projects.
+    pub fn backfill_dashboard_json_to_db(&self, workspace: &Path) -> Result<usize, DbError> {
+        const TASK_NAME: &str = "backfill_dashboard_json_to_db_v1";
+
+        if Self::is_init_task_completed(&self.conn, TASK_NAME)? {
+            return Ok(0);
+        }
+
+        let mut count = 0usize;
+
+        // Backfill accounts
+        let accounts: Vec<(String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, name FROM accounts \
+                 WHERE tracker_path IS NOT NULL AND company_overview IS NULL",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+
+        for (account_id, _account_name) in &accounts {
+            if let Ok(Some(account)) = self.get_account(account_id) {
+                let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+                let json_path = account_dir.join("dashboard.json");
+                if json_path.exists() {
+                    match crate::accounts::read_account_json(&json_path) {
+                        Ok(result) => {
+                            let ov_json = result
+                                .json
+                                .company_overview
+                                .and_then(|ov| serde_json::to_string(&ov).ok());
+                            let prg_json = if result.json.strategic_programs.is_empty() {
+                                None
+                            } else {
+                                serde_json::to_string(&result.json.strategic_programs).ok()
+                            };
+                            let notes = result.json.notes;
+                            let now = chrono::Utc::now().to_rfc3339();
+                            if let Err(e) = self.conn.execute(
+                                "UPDATE accounts SET company_overview = ?1, strategic_programs = ?2, \
+                                 notes = ?3, updated_at = ?4 WHERE id = ?5",
+                                rusqlite::params![ov_json, prg_json, notes, now, account_id],
+                            ) {
+                                log::warn!(
+                                    "I644 backfill: failed to update account {}: {}",
+                                    account_id, e
+                                );
+                            } else {
+                                count += 1;
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "I644 backfill: failed to read dashboard.json for account {}: {}",
+                                account_id,
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Backfill projects
+        let projects: Vec<(String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, name FROM projects \
+                 WHERE tracker_path IS NOT NULL AND description IS NULL",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+
+        for (project_id, project_name) in &projects {
+            let project_dir = crate::projects::project_dir(workspace, project_name);
+            let json_path = project_dir.join("dashboard.json");
+            if json_path.exists() {
+                match crate::projects::read_project_json(&json_path) {
+                    Ok(result) => {
+                        let ms_json = if result.json.milestones.is_empty() {
+                            None
+                        } else {
+                            serde_json::to_string(&result.json.milestones).ok()
+                        };
+                        let now = chrono::Utc::now().to_rfc3339();
+                        if let Err(e) = self.conn.execute(
+                            "UPDATE projects SET description = ?1, milestones = ?2, \
+                             notes = ?3, updated_at = ?4 WHERE id = ?5",
+                            rusqlite::params![
+                                result.json.description,
+                                ms_json,
+                                result.json.notes,
+                                now,
+                                project_id
+                            ],
+                        ) {
+                            log::warn!(
+                                "I644 backfill: failed to update project {}: {}",
+                                project_id,
+                                e
+                            );
+                        } else {
+                            count += 1;
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "I644 backfill: failed to read dashboard.json for project {}: {}",
+                            project_id,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        Self::mark_init_task_completed(&self.conn, TASK_NAME)?;
+
+        Ok(count)
     }
 }
 

@@ -1,0 +1,93 @@
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 8px);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.marker {
+  width: 14px;
+  height: 1px;
+  background: var(--color-rule-heavy);
+  flex-shrink: 0;
+}
+
+.metaText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.conflict {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--color-spice-saffron);
+  background: var(--color-spice-saffron-8);
+}
+
+.conflictText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conflictLead {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.conflictMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.actionButton {
+  height: 30px;
+  font-size: 11px;
+}
+
+.dismissButton {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.dismissButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

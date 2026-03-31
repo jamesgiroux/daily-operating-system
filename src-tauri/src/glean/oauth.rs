@@ -536,11 +536,8 @@ pub async fn run_glean_consent_flow(instance_url: &str) -> Result<GleanAuthResul
         log::warn!("Failed to open browser: {}. URL: {}", e, auth_url);
     }
 
-    // 7. Wait for callback
-    listener
-        .set_nonblocking(false)
-        .map_err(|e| GleanAuthError::Other(format!("Listener error: {}", e)))?;
-
+    // 7. Wait for callback (120s timeout in listen_for_callback guards
+    // against macOS firewall blocking the browser's localhost redirect).
     let oauth::CallbackResult {
         callback,
         mut stream,
@@ -549,6 +546,9 @@ pub async fn run_glean_consent_flow(instance_url: &str) -> Result<GleanAuthResul
             GleanAuthError::Other(format!("Callback IO error: {}", io_err))
         }
         oauth::CallbackError::FlowCancelled => GleanAuthError::FlowCancelled,
+        oauth::CallbackError::Timeout => GleanAuthError::Other(
+            "Authorization timed out. If your firewall blocked the connection, allow DailyOS in System Settings → Network → Firewall, then try again.".into(),
+        ),
     })?;
 
     // Validate state

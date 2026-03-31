@@ -2,6 +2,17 @@
 
 Pre-push checklist for DailyOS releases. Complete every section before tagging and pushing to `main`.
 
+**Release cadence:** Weekly train, Tuesday late morning ET. See `RELEASE-POLICY.md` for the full schedule, hotfix criteria, and operating rules. This checklist runs on Monday afternoon (acceptance) and Tuesday morning (final validation).
+
+---
+
+## 0. Train Readiness
+
+- [ ] All issues assigned to this train are complete and committed on `dev`
+- [ ] Monday noon feature cutoff observed — no new work after cutoff
+- [ ] Release notes draft reviewed — changes grouped by user value area (Meetings, Accounts, Actions, Email, Polish)
+- [ ] No open hotfix-worthy issues from the previous train
+
 ---
 
 ## 1. Version Bump
@@ -20,7 +31,18 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 - [ ] `README.md` updated if the release changes installation steps, requirements, or core features
 - [ ] Architecture Decision Records created for any new architectural decisions (`.docs/decisions/`)
 
-## 3. Build Verification
+## 3. Dependency Updates
+
+Run these BEFORE build verification. CI runs `pnpm audit --audit-level high` and will fail on unpatched vulnerabilities.
+
+- [ ] `pnpm update` — update all packages within semver ranges
+- [ ] `pnpm audit --audit-level high` — zero high/critical vulnerabilities. Fix any that appear before proceeding.
+- [ ] `pnpm outdated` — review available updates. Apply security-relevant patches. Defer major version bumps unless needed.
+- [ ] `cargo update --manifest-path src-tauri/Cargo.toml` — update Rust deps within semver ranges
+- [ ] `cargo audit --file src-tauri/Cargo.lock` — zero known vulnerabilities (or documented exceptions). Install with `cargo install cargo-audit` if missing.
+- [ ] Commit lockfile updates before build verification
+
+## 4. Build Verification
 
 - [ ] `pnpm install` — clean install succeeds with no warnings
 - [ ] `pnpm build` — frontend builds without errors or TypeScript failures
@@ -30,7 +52,7 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 - [ ] Verify `DailyOS.app/Contents/MacOS/` contains both `dailyos` and `dailyos-mcp`
 - [ ] App launches from `/Applications` (not from build directory)
 
-## 4. Rust Backend
+## 5. Rust Backend
 
 - [ ] `cargo test --manifest-path src-tauri/Cargo.toml` — all tests pass
 - [ ] `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` — zero warnings
@@ -38,14 +60,14 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 - [ ] No new `unwrap()` or `expect()` in IPC command handlers (use `Result` propagation)
 - [ ] Database migrations are forward-compatible and idempotent
 
-## 5. Frontend
+## 6. Frontend
 
 - [ ] `pnpm test` — all Vitest tests pass
 - [ ] `pnpm audit` — no high/critical vulnerabilities (or documented exceptions)
 - [ ] No TypeScript `// @ts-ignore` or `any` casts added without justification
 - [ ] No `console.log` left in production code (use structured logging)
 
-## 6. Security Review
+## 7. Security Review
 
 - [ ] No secrets committed — search for `client_secret`, `api_key`, `password`, `token` in diff
 - [ ] No hardcoded credentials or API keys in source
@@ -56,7 +78,7 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 - [ ] Keychain storage for tokens — no plaintext token files
 - [ ] `reveal_in_finder` and `copy_to_inbox` path validation intact
 
-## 7. Performance Audit
+## 8. Performance Audit
 
 - [ ] App cold launch to usable dashboard: under 3 seconds
 - [ ] Hot read commands (status, focus): p95 under 100ms
@@ -66,7 +88,7 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 - [ ] Background tasks open own SQLite connections (not competing for shared Mutex)
 - [ ] No regressions to binary size (compare against previous release)
 
-## 8. Logic Tests (Does It Do What It Should)
+## 9. Logic Tests (Does It Do What It Should)
 
 - [ ] **Onboarding:** Fresh install → onboarding wizard completes → Google OAuth connects → first briefing generates
 - [ ] **Daily briefing:** Click refresh → workflow progresses through Preparing/AI Processing/Delivering → briefing renders with meetings, emails, actions
@@ -85,7 +107,7 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
   Reload the app — the What's New modal should appear with the current version's notes.
 - [ ] **Transcript processing:** Attach transcript → outcomes extracted → actions created
 
-## 9. UI/UX Tests
+## 10. UI/UX Tests
 
 - [ ] **Magazine layout:** All pages render in editorial shell with navigation island and folio bar
 - [ ] **Typography:** Newsreader (body) and Montserrat (headings) load correctly — no system font fallback flash
@@ -101,7 +123,7 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 - [ ] **ADR-0083 vocabulary audit:** grep user-facing strings for "entity", "intelligence", "signal", "enrichment", "prep", "connector" — translate per vocabulary rules in ADR-0083
 - [ ] **Release notes vocabulary:** verify `release-notes.md` entry exists for this version and uses product vocabulary (no internal jargon)
 
-## 10. CI Pipeline
+## 11. CI Pipeline
 
 - [ ] All checks pass on a clean branch (not just locally)
 - [ ] Release workflow dry-run: verify `release.yml` steps match current build requirements
@@ -114,7 +136,7 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 - [ ] **No uncommitted files referenced by committed code** — `git stash && cargo check --manifest-path src-tauri/Cargo.toml --lib && git stash pop` to verify committed code compiles independently. Partial commits (e.g., calling `crate::foo` without committing `foo.rs`) pass locally but fail in CI.
 - [ ] **Sidecar build script is intact** — `build-mcp.sh` must create a stub file BEFORE `cargo build` (Tauri's build.rs validates externalBin paths during any cargo build from that Cargo.toml, including the sidecar itself). Verify `touch src-tauri/build.rs` runs after sidecar creation in both `test.yml` and `release.yml` to force re-evaluation during the Tauri build step.
 
-## 11. Git Hygiene
+## 12. Git Hygiene
 
 - [ ] All changes are on `main` (merged from `dev`)
 - [ ] No unrelated changes in the release commit
@@ -123,7 +145,7 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 - [ ] Tag matches version: `git tag v{version}` (e.g., `v0.8.0`)
 - [ ] `.gitignore` covers all build artifacts (`src-tauri/target/`, `src-tauri/binaries/`, `dist/`)
 
-## 12. Post-Push Verification
+## 13. Post-Push Verification
 
 - [ ] GitHub Actions release workflow completes green
 - [ ] GitHub Release page has DMG, `.tar.gz`, `.tar.gz.sig`, and `latest.json`

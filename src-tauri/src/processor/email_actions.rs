@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use crate::db::ActionDb;
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 
 /// A commitment extracted from an email body.
@@ -56,6 +56,11 @@ pub fn extract_email_commitments(
 
     // Run through Claude via PTY (Extraction tier, 30s timeout)
     let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
+        .with_usage_context(
+            AiUsageContext::new("email", "action_extraction")
+                .with_trigger("email_actions")
+                .with_tier(ModelTier::Extraction),
+        )
         .with_timeout(30)
         .with_nice_priority(10);
 

@@ -315,6 +315,50 @@ const MIGRATIONS: &[Migration] = &[
         version: 74,
         sql: include_str!("migrations/074_action_status_vocabulary.sql"),
     },
+    Migration {
+        version: 75,
+        sql: include_str!("migrations/075_v110_lifecycle_products_provenance.sql"),
+    },
+    Migration {
+        version: 76,
+        sql: include_str!("migrations/076_source_aware_account_truth.sql"),
+    },
+    Migration {
+        version: 77,
+        sql: include_str!("migrations/077_technical_footprint.sql"),
+    },
+    Migration {
+        version: 78,
+        sql: include_str!("migrations/078_pull_quote_column.sql"),
+    },
+    Migration {
+        version: 79,
+        sql: include_str!("migrations/079_product_classification.sql"),
+    },
+    Migration {
+        version: 80,
+        sql: include_str!("migrations/080_stakeholder_source_of_truth.sql"),
+    },
+    Migration {
+        version: 81,
+        sql: include_str!("migrations/081_init_tasks.sql"),
+    },
+    Migration {
+        version: 82,
+        sql: include_str!("migrations/082_email_enriched_at.sql"),
+    },
+    Migration {
+        version: 83,
+        sql: include_str!("migrations/082_account_fact_columns.sql"),
+    },
+    Migration {
+        version: 84,
+        sql: include_str!("migrations/083_dashboard_fields_to_db.sql"),
+    },
+    Migration {
+        version: 85,
+        sql: include_str!("migrations/084_feedback_events.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -811,10 +855,20 @@ mod tests {
         .expect("accounts should include is_internal");
 
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'tam')",
+            "INSERT INTO people (id, email, name, updated_at) VALUES ('p1', 'test@acme.com', 'Test User', '2025-01-01')",
+            [],
+        )
+        .expect("people table should exist for FK");
+        conn.execute(
+            "INSERT INTO account_stakeholders (account_id, person_id) VALUES ('a1', 'p1')",
             [],
         )
         .expect("account_stakeholders table should exist");
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES ('a1', 'p1', 'tam')",
+            [],
+        )
+        .expect("account_stakeholder_roles table should exist");
 
         conn.execute(
             "INSERT INTO account_team_import_notes (account_id, legacy_field, legacy_value, note)

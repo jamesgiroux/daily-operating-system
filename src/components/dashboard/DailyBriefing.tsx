@@ -28,12 +28,29 @@ import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { formatDayTime, stripMarkdown } from "@/lib/utils";
+import { formatDayTime, formatShortDate, stripMarkdown } from "@/lib/utils";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
-import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction } from "@/types";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type {
+  BriefingCallout,
+  DashboardData,
+  DashboardLifecycleUpdate,
+  DataFreshness,
+  Meeting,
+  Action,
+  Email,
+  PrioritizedAction,
+} from "@/types";
 import { HealthBadge } from "@/components/shared/HealthBadge";
 import { compareEmailRank } from "@/lib/email-ranking";
 import s from "@/styles/editorial-briefing.module.css";
+import briefingStyles from "./DailyBriefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -122,10 +139,16 @@ function formatMinutes(minutes: number): string {
 export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
+  const [pendingLifecycleChangeId, setPendingLifecycleChangeId] = useState<number | null>(null);
+  const [correctionTarget, setCorrectionTarget] = useState<DashboardLifecycleUpdate | null>(null);
+  const [correctedLifecycle, setCorrectedLifecycle] = useState("");
+  const [correctedStage, setCorrectedStage] = useState("");
+  const [correctionNotes, setCorrectionNotes] = useState("");
   // Data
   const meetings = data.meetings;
   const actions = data.actions;
   const emails = data.emails ?? [];
+  const lifecycleUpdates = data.lifecycleUpdates ?? [];
 
   // I395: Score-based email selection — scored emails first, then enriched fill.
   // Shows up to 5 emails: high-scored ones first, then enriched emails with summaries
@@ -250,6 +273,59 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
     });
   }, []);
 
+  const handleConfirmLifecycle = useCallback(async (update: DashboardLifecycleUpdate) => {
+    setPendingLifecycleChangeId(update.changeId);
+    try {
+      await invoke("confirm_lifecycle_change", { changeId: update.changeId });
+      toast.success(`${update.accountName} marked confirmed`);
+      onRefresh?.();
+    } catch (err) {
+      console.error("confirm_lifecycle_change failed:", err);
+      toast.error("Failed to confirm lifecycle change");
+    } finally {
+      setPendingLifecycleChangeId(null);
+    }
+  }, [onRefresh]);
+
+  const openCorrection = useCallback((update: DashboardLifecycleUpdate) => {
+    setCorrectionTarget(update);
+    setCorrectedLifecycle(update.newLifecycle);
+    setCorrectedStage(update.renewalStage ?? "");
+    setCorrectionNotes(update.evidence ?? "");
+  }, []);
+
+  const closeCorrection = useCallback((open: boolean) => {
+    if (open) return;
+    setCorrectionTarget(null);
+    setCorrectedLifecycle("");
+    setCorrectedStage("");
+    setCorrectionNotes("");
+  }, []);
+
+  const handleSubmitCorrection = useCallback(async () => {
+    if (!correctionTarget) return;
+    setPendingLifecycleChangeId(correctionTarget.changeId);
+    try {
+      await invoke("correct_lifecycle_change", {
+        changeId: correctionTarget.changeId,
+        correctedLifecycle,
+        correctedStage: correctedStage || null,
+        notes: correctionNotes.trim() || null,
+      });
+      toast.success(`${correctionTarget.accountName} updated`);
+      setCorrectionTarget(null);
+      setCorrectedLifecycle("");
+      setCorrectedStage("");
+      setCorrectionNotes("");
+      onRefresh?.();
+    } catch (err) {
+      console.error("correct_lifecycle_change failed:", err);
+      toast.error("Failed to correct lifecycle change");
+    } finally {
+      setPendingLifecycleChangeId(null);
+    }
+  }, [correctionNotes, correctedLifecycle, correctedStage, correctionTarget, onRefresh]);
+
   // Proposed actions for triage
   const { suggestedActions, acceptAction, rejectAction } = useSuggestedActions();
 
@@ -328,7 +404,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                   <Link
                     to="/meeting/$meetingId"
                     params={{ meetingId: m.id }}
-                    style={{ textDecoration: "none", color: "inherit" }}
+                    className={briefingStyles.linkUnstyled}
                   >
                     &#9888; {m.title} at {m.time} — no briefing yet
                   </Link>
@@ -361,13 +437,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                         userDomain={data.userDomains?.[0]}
                       />
                       {linkedAccountHealth && (
-                        <div style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          paddingLeft: 52,
-                          paddingBottom: 4,
-                        }}>
+                        <div className={briefingStyles.healthBadgeRow}>
                           <HealthBadge
                             score={linkedAccountHealth.health.score}
                             band={linkedAccountHealth.health.band}
@@ -388,6 +458,11 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
       {/* ═══ ATTENTION ═══ */}
       {/* Cached emails shown even when stale — background reconciliation updates them */}
       <AttentionSection
+        lifecycleUpdates={lifecycleUpdates}
+        briefingCallouts={data.briefingCallouts ?? []}
+        onConfirmLifecycle={handleConfirmLifecycle}
+        onOpenLifecycleCorrection={openCorrection}
+        pendingLifecycleChangeId={pendingLifecycleChangeId}
         suggestedActions={suggestedActions}
         acceptAction={acceptAction}
         rejectAction={rejectAction}
@@ -402,6 +477,80 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         emailSyncTimestamp={data.emailSync?.lastSuccessAt}
       />
 
+      <Dialog open={!!correctionTarget} onOpenChange={closeCorrection}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Fix lifecycle change</DialogTitle>
+            <DialogDescription>
+              Update the lifecycle call for {correctionTarget?.accountName ?? "this account"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className={briefingStyles.correctionFormGrid}>
+            <label className={briefingStyles.correctionFieldLabel}>
+              <span className={briefingStyles.correctionMonoLabel}>
+                Lifecycle
+              </span>
+              <select
+                value={correctedLifecycle}
+                onChange={(event) => setCorrectedLifecycle(event.target.value)}
+                className={briefingStyles.correctionSelect}
+              >
+                {["onboarding", "active", "renewing", "at_risk", "churned"].map((value) => (
+                  <option key={value} value={value}>
+                    {value.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={briefingStyles.correctionFieldLabel}>
+              <span className={briefingStyles.correctionMonoLabel}>
+                Renewal stage
+              </span>
+              <select
+                value={correctedStage}
+                onChange={(event) => setCorrectedStage(event.target.value)}
+                className={briefingStyles.correctionSelect}
+              >
+                <option value="">No stage</option>
+                {["approaching", "negotiating", "contract_sent", "processed"].map((value) => (
+                  <option key={value} value={value}>
+                    {value.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={briefingStyles.correctionFieldLabel}>
+              <span className={briefingStyles.correctionMonoLabel}>
+                Notes
+              </span>
+              <textarea
+                value={correctionNotes}
+                onChange={(event) => setCorrectionNotes(event.target.value)}
+                rows={4}
+                className={briefingStyles.correctionTextarea}
+              />
+            </label>
+            <div className={briefingStyles.correctionButtonRow}>
+              <button
+                type="button"
+                onClick={() => closeCorrection(false)}
+                className={briefingStyles.correctionCancelBtn}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { void handleSubmitCorrection(); }}
+                disabled={!correctedLifecycle || pendingLifecycleChangeId === correctionTarget?.changeId}
+                className={briefingStyles.correctionSubmitBtn}
+              >
+                Save correction
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ═══ FINIS ═══ */}
       <FinisMarker />
     </div>
@@ -411,6 +560,11 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
 // ─── Attention Section (unified: suggested + actions + emails) ─────────────────
 
 function AttentionSection({
+  lifecycleUpdates,
+  briefingCallouts,
+  onConfirmLifecycle,
+  onOpenLifecycleCorrection,
+  pendingLifecycleChangeId,
   suggestedActions,
   acceptAction,
   rejectAction,
@@ -424,6 +578,11 @@ function AttentionSection({
   todayMeetingIds,
   emailSyncTimestamp,
 }: {
+  lifecycleUpdates: DashboardLifecycleUpdate[];
+  briefingCallouts: BriefingCallout[];
+  onConfirmLifecycle: (update: DashboardLifecycleUpdate) => void;
+  onOpenLifecycleCorrection: (update: DashboardLifecycleUpdate) => void;
+  pendingLifecycleChangeId: number | null;
   suggestedActions: Array<{ id: string; title: string; sourceLabel?: string; sourceId?: string }>;
   acceptAction: (id: string) => void;
   rejectAction: (
@@ -471,7 +630,13 @@ function AttentionSection({
   const hasSuggested = suggestedActions.length > 0;
   const hasActions = attentionActions.length > 0;
   const hasEmails = briefingEmails.length > 0;
-  const hasAnything = hasSuggested || hasActions || hasEmails;
+  const hasLifecycle = lifecycleUpdates.length > 0;
+  // Callouts disabled: the signal propagation pipeline is populating
+  // briefing_callouts with raw signal data (e.g., "Support health: tickets
+  // updated") that violates ADR-0083 vocabulary rules. Until callouts are
+  // filtered to curated, user-meaningful intelligence items, suppress them.
+  const hasCallouts = false; // briefingCallouts.length > 0;
+  const hasAnything = hasLifecycle || hasCallouts || hasSuggested || hasActions || hasEmails;
 
   if (!hasAnything) return null;
 
@@ -489,10 +654,53 @@ function AttentionSection({
           <div className={s.sectionRule} />
 
 
+          {hasLifecycle && (
+            <div className={briefingStyles.lifecycleGroup}>
+              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>
+                Lifecycle
+              </div>
+              <div className={s.priorityItems}>
+                {lifecycleUpdates.slice(0, 3).map((update) => (
+                  <LifecycleUpdateItem
+                    key={update.changeId}
+                    update={update}
+                    pending={pendingLifecycleChangeId === update.changeId}
+                    onConfirm={onConfirmLifecycle}
+                    onCorrect={onOpenLifecycleCorrection}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {hasCallouts && (
+            <div className={hasLifecycle ? briefingStyles.calloutsGroupSpaced : briefingStyles.calloutsGroupFlush}>
+              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
+                Signals
+              </div>
+              <div className={s.priorityItems}>
+                {briefingCallouts.slice(0, 5).map((callout) => (
+                  <div key={callout.id} className={briefingStyles.calloutItem}>
+                    <div className={briefingStyles.calloutSeverity} data-severity={callout.severity} />
+                    <div className={briefingStyles.calloutContent}>
+                      <span className={briefingStyles.calloutHeadline}>{callout.headline}</span>
+                      {callout.entityName && (
+                        <span className={briefingStyles.calloutEntity}>{callout.entityName}</span>
+                      )}
+                      {callout.detail && (
+                        <span className={briefingStyles.calloutDetail}>{callout.detail}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Suggested action triage (max 3) */}
           {hasSuggested && (
             <>
-              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              <div className={briefingStyles.suggestedColumn}>
                 {suggestedActions.slice(0, 3).map((action, i) => (
                   <SuggestedActionRow
                     key={action.id}
@@ -507,17 +715,7 @@ function AttentionSection({
               {suggestedActions.length > 3 && (
                 <button
                   onClick={() => navigate({ to: "/actions", search: { search: undefined } })}
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    fontWeight: 500,
-                    letterSpacing: "0.04em",
-                    color: "var(--color-spice-turmeric)",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: "8px 0 0 14px",
-                  }}
+                  className={briefingStyles.seeAllSuggestionsBtn}
                 >
                   See all {suggestedActions.length} suggestions &rarr;
                 </button>
@@ -527,7 +725,7 @@ function AttentionSection({
 
           {/* Actions: meeting-relevant + overdue (max 3) */}
           {hasActions && (
-            <div style={{ marginTop: hasSuggested ? 28 : 0 }}>
+            <div className={hasLifecycle || hasSuggested ? briefingStyles.actionsGroupSpaced : briefingStyles.actionsGroupFlush}>
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
                 Actions
               </div>
@@ -577,8 +775,7 @@ function AttentionSection({
                           <Link
                             to="/actions/$actionId"
                             params={{ actionId: action.id }}
-                            className={s.priorityTitle}
-                            style={{ textDecoration: done ? "line-through" : "none" }}
+                            className={clsx(s.priorityTitle, done ? briefingStyles.linkLineThrough : briefingStyles.linkNoDecoration)}
                           >
                             {stripMarkdown(action.title)}
                           </Link>
@@ -605,7 +802,7 @@ function AttentionSection({
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>
                 {emailSectionLabel}
                 {emailSyncTimestamp && (
-                  <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: 8 }}>
+                  <span className={briefingStyles.emailSyncTimestamp}>
                     as of {formatAsOfTime(emailSyncTimestamp)}
                   </span>
                 )}
@@ -676,8 +873,8 @@ function PrioritizedActionItem({
         urgencyClass,
         done && s.priorityItemCompleted,
         action.accountName && s.priorityItemAccount,
+        briefingStyles.linkNoDecoration,
       )}
-      style={{ textDecoration: "none" }}
     >
       <button
         className={clsx(
@@ -727,8 +924,7 @@ function PriorityEmailItem({ email }: { email: Email }) {
   return (
     <Link
       to="/emails"
-      className={clsx(s.priorityItem, s.priorityItemEmailType)}
-      style={{ textDecoration: "none" }}
+      className={clsx(s.priorityItem, s.priorityItemEmailType, briefingStyles.linkNoDecoration)}
     >
       <div
         className={clsx(
@@ -740,7 +936,7 @@ function PriorityEmailItem({ email }: { email: Email }) {
         {email.summary ? (
           <>
             <div className={s.priorityTitle}>{email.summary}</div>
-            <div className={s.replyMeta} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <div className={clsx(s.replyMeta, briefingStyles.emailMetaRow)}>
               {email.entityName && (
                 <EmailEntityChip
                   entityType={email.entityType}
@@ -769,5 +965,80 @@ function PriorityEmailItem({ email }: { email: Email }) {
         )}
       </div>
     </Link>
+  );
+}
+
+function formatLifecycleLabel(value?: string | null) {
+  return value ? value.replace(/_/g, " ") : "";
+}
+
+// ─── Lifecycle Update Item ──────────────────────────────────────────────────
+
+function LifecycleUpdateItem({
+  update,
+  pending,
+  onConfirm,
+  onCorrect,
+}: {
+  update: DashboardLifecycleUpdate;
+  pending: boolean;
+  onConfirm: (update: DashboardLifecycleUpdate) => void;
+  onCorrect: (update: DashboardLifecycleUpdate) => void;
+}) {
+  const transitionLabel = update.previousLifecycle
+    ? `${formatLifecycleLabel(update.previousLifecycle)} → ${formatLifecycleLabel(update.newLifecycle)}`
+    : formatLifecycleLabel(update.newLifecycle);
+  const healthDelta = update.healthScoreBefore != null && update.healthScoreAfter != null
+    ? `${Math.round(update.healthScoreBefore)} → ${Math.round(update.healthScoreAfter)}`
+    : null;
+  const contextBits = [
+    update.renewalStage ? `Stage: ${update.renewalStage.replace(/_/g, " ")}` : null,
+    healthDelta ? `Health ${healthDelta}` : null,
+    update.actionState !== "pending"
+      ? update.actionState.charAt(0).toUpperCase() + update.actionState.slice(1)
+      : null,
+    `${Math.round(update.confidence * 100)}% confidence`,
+    formatShortDate(update.createdAt),
+  ].filter(Boolean);
+
+  return (
+    <div
+      className={clsx(s.priorityItem, s.priorityItemToday, s.priorityItemAccount)}
+    >
+      <div className={clsx(s.priorityDot, s.priorityDotTurmeric)} />
+      <div className={s.priorityContent}>
+        <Link
+          to="/accounts/$accountId"
+          params={{ accountId: update.accountId }}
+          className={clsx(s.priorityTitle, briefingStyles.linkNoDecoration)}
+        >
+          {update.accountName}: {transitionLabel}
+        </Link>
+        <div className={s.priorityContext}>{contextBits.join(" · ")}</div>
+        {update.evidence && (
+          <div className={s.priorityWhy}>{update.evidence}</div>
+        )}
+        {update.actionState === "pending" ? (
+          <div className={briefingStyles.lifecycleButtonRow}>
+            <button
+              type="button"
+              onClick={() => onConfirm(update)}
+              disabled={pending}
+              className={briefingStyles.lifecycleConfirmBtn}
+            >
+              Looks good
+            </button>
+            <button
+              type="button"
+              onClick={() => onCorrect(update)}
+              disabled={pending}
+              className={briefingStyles.lifecycleCorrectBtn}
+            >
+              Fix something
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }

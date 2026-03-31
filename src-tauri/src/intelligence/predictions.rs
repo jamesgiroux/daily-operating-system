@@ -80,6 +80,24 @@ pub struct PrepItem {
     pub source: Option<String>,
 }
 
+fn normalize_prediction_display_text(text: &str) -> String {
+    let trimmed = text.trim();
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let tag = &rest[..end];
+            if !tag.is_empty()
+                && tag
+                    .chars()
+                    .all(|ch| ch.is_ascii_uppercase() || ch == '_' || ch.is_ascii_digit())
+            {
+                return rest[end + 1..].trim().to_string();
+            }
+        }
+    }
+
+    trimmed.to_string()
+}
+
 /// Compute the prediction scorecard by matching prep items against outcome items.
 ///
 /// For each prep risk/win: best match >= threshold -> Confirmed, else NotRaised.
@@ -127,14 +145,14 @@ fn classify_predictions(prep_items: &[PrepItem], outcomes: &[String]) -> Vec<Pre
                 matched_outcomes.insert(idx);
             }
             results.push(PredictionResult {
-                text: item.text.clone(),
+                text: normalize_prediction_display_text(&item.text),
                 category: PredictionCategory::Confirmed,
                 source: item.source.clone(),
-                match_text: best_text,
+                match_text: best_text.map(|text| normalize_prediction_display_text(&text)),
             });
         } else {
             results.push(PredictionResult {
-                text: item.text.clone(),
+                text: normalize_prediction_display_text(&item.text),
                 category: PredictionCategory::NotRaised,
                 source: item.source.clone(),
                 match_text: None,
@@ -146,7 +164,7 @@ fn classify_predictions(prep_items: &[PrepItem], outcomes: &[String]) -> Vec<Pre
     for (idx, outcome) in outcomes.iter().enumerate() {
         if !matched_outcomes.contains(&idx) {
             results.push(PredictionResult {
-                text: outcome.clone(),
+                text: normalize_prediction_display_text(outcome),
                 category: PredictionCategory::Surprise,
                 source: None,
                 match_text: None,
@@ -178,7 +196,7 @@ pub fn extract_prep_risks(frozen_json: &str) -> Vec<PrepItem> {
             if let Some(text) = risk.as_str() {
                 if !text.is_empty() {
                     items.push(PrepItem {
-                        text: text.to_string(),
+                        text: normalize_prediction_display_text(text),
                         source: None,
                     });
                 }
@@ -196,7 +214,7 @@ pub fn extract_prep_risks(frozen_json: &str) -> Vec<PrepItem> {
                         .and_then(|v| v.as_str())
                         .map(String::from);
                     items.push(PrepItem {
-                        text: text.to_string(),
+                        text: normalize_prediction_display_text(text),
                         source,
                     });
                 }
@@ -223,7 +241,7 @@ pub fn extract_prep_wins(frozen_json: &str) -> Vec<PrepItem> {
             if let Some(text) = win.as_str() {
                 if !text.is_empty() {
                     items.push(PrepItem {
-                        text: text.to_string(),
+                        text: normalize_prediction_display_text(text),
                         source: None,
                     });
                 }
@@ -253,8 +271,8 @@ pub fn extract_outcome_items(captures: &[EnrichedCapture]) -> (Vec<String>, Vec<
 
     for capture in captures {
         match capture.capture_type.as_str() {
-            "risk" => risks.push(capture.content.clone()),
-            "win" => wins.push(capture.content.clone()),
+            "risk" => risks.push(normalize_prediction_display_text(&capture.content)),
+            "win" => wins.push(normalize_prediction_display_text(&capture.content)),
             _ => {}
         }
     }
@@ -341,6 +359,26 @@ mod tests {
     fn test_jaccard_similarity_empty_strings() {
         assert!((jaccard_similarity("", "")).abs() < f64::EPSILON);
         assert!((jaccard_similarity("hello", "")).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_normalize_prediction_display_text_strips_control_tags() {
+        assert_eq!(
+            normalize_prediction_display_text("[YELLOW] Launch services pricing unresolved"),
+            "Launch services pricing unresolved"
+        );
+        assert_eq!(
+            normalize_prediction_display_text("[EXPANSION] Customer volunteered AI collaboration"),
+            "Customer volunteered AI collaboration"
+        );
+    }
+
+    #[test]
+    fn test_normalize_prediction_display_text_preserves_plain_text() {
+        assert_eq!(
+            normalize_prediction_display_text("Security review delayed signature"),
+            "Security review delayed signature"
+        );
     }
 
     #[test]
@@ -476,6 +514,44 @@ mod tests {
         assert_eq!(wins.len(), 1);
         assert_eq!(risks[0], "API latency issues");
         assert_eq!(wins[0], "Customer praised the new dashboard");
+    }
+
+    #[test]
+    fn test_extract_outcome_items_normalizes_legacy_tagged_captures() {
+        let captures = vec![
+            EnrichedCapture {
+                id: "c1".to_string(),
+                meeting_id: "m1".to_string(),
+                meeting_title: "Test".to_string(),
+                account_id: None,
+                capture_type: "risk".to_string(),
+                content: "[YELLOW] Launch services pricing unresolved".to_string(),
+                sub_type: None,
+                urgency: Some("yellow".to_string()),
+                impact: None,
+                evidence_quote: None,
+                speaker: None,
+                captured_at: "2026-01-01T00:00:00Z".to_string(),
+            },
+            EnrichedCapture {
+                id: "c2".to_string(),
+                meeting_id: "m1".to_string(),
+                meeting_title: "Test".to_string(),
+                account_id: None,
+                capture_type: "win".to_string(),
+                content: "[EXPANSION] Customer volunteered AI collaboration".to_string(),
+                sub_type: Some("expansion".to_string()),
+                urgency: None,
+                impact: None,
+                evidence_quote: None,
+                speaker: None,
+                captured_at: "2026-01-01T00:00:00Z".to_string(),
+            },
+        ];
+
+        let (risks, wins) = extract_outcome_items(&captures);
+        assert_eq!(risks, vec!["Launch services pricing unresolved"]);
+        assert_eq!(wins, vec!["Customer volunteered AI collaboration"]);
     }
 
     #[test]

@@ -1019,9 +1019,19 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
         .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
         .unwrap_or_default();
     let extraction_pty =
-        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config);
+        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config)
+            .with_usage_context(
+                crate::pty::AiUsageContext::new("devtools", "sample_email_enrichment")
+                    .with_trigger("devtools")
+                    .with_tier(crate::pty::ModelTier::Extraction),
+            );
     let synthesis_pty =
-        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config);
+        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config)
+            .with_usage_context(
+                crate::pty::AiUsageContext::new("devtools", "sample_email_enrichment_fallback")
+                    .with_trigger("devtools")
+                    .with_tier(crate::pty::ModelTier::Synthesis),
+            );
     let user_ctx = state
         .config
         .read()
@@ -1232,6 +1242,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     ).map_err(|e| e.to_string())?;
 
     // --- Account Domains (inbox-to-account matching) ---
+    // Populated here from mock data. In production, account_domains can be backfilled from
+    // meeting attendees via db.backfill_account_domains_from_meetings() (Path 2 entity resolution).
     let account_domain_rows: Vec<(&str, &str)> = vec![
         ("mock-acme-corp", "acme.com"),
         ("mock-globex-industries", "globex.com"),
@@ -1315,6 +1327,78 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             rusqlite::params![account_id, event_type, event_date, arr_impact, notes],
         ).map_err(|e| format!("Account event {}/{}: {}", account_id, event_type, e))?;
     }
+
+    // --- Lifecycle change with pending user_response (for briefing Attention section) ---
+    conn.execute(
+        "INSERT OR IGNORE INTO lifecycle_changes (account_id, previous_lifecycle, new_lifecycle, source, confidence, evidence, health_score_before, health_score_after, user_response, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))",
+        rusqlite::params![
+            "mock-acme-corp",
+            "renewing",
+            "active",
+            "email_signal",
+            0.85,
+            "Renewal order form signed",
+            72.0,
+            78.0,
+            "pending",
+        ],
+    ).map_err(|e| format!("Lifecycle change seed: {}", e))?;
+
+    // Set renewal_stage on Acme so briefing surfaces renewal context
+    conn.execute(
+        "UPDATE accounts SET renewal_stage = 'approaching' WHERE id = 'mock-acme-corp'",
+        [],
+    )
+    .map_err(|e| format!("Acme renewal_stage: {}", e))?;
+
+    // --- Commercial stage (I644) ---
+    conn.execute(
+        "UPDATE accounts SET commercial_stage = 'Proposal Sent' WHERE id = 'mock-globex-industries'",
+        [],
+    ).map_err(|e| format!("Globex commercial_stage: {}", e))?;
+
+    // --- Source references (I644) ---
+    for (account_id, field, system, kind, value) in [
+        ("mock-acme-corp", "arr", "salesforce", "fact", "1200000"),
+        (
+            "mock-acme-corp",
+            "renewal_date",
+            "user",
+            "fact",
+            "2026-12-01",
+        ),
+        ("mock-acme-corp", "champion", "user", "fact", "Sarah Chen"),
+        (
+            "mock-globex-industries",
+            "arr",
+            "salesforce",
+            "fact",
+            "800000",
+        ),
+        (
+            "mock-globex-industries",
+            "lifecycle",
+            "glean_crm",
+            "fact",
+            "renewal",
+        ),
+    ] {
+        let id = format!("{}-{}-{}", account_id, field, system);
+        conn.execute(
+            "INSERT OR IGNORE INTO account_source_refs (id, account_id, field, source_system, source_kind, source_value, observed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
+            rusqlite::params![id, account_id, field, system, kind, value],
+        ).map_err(|e| format!("Source ref seed: {}", e))?;
+    }
+
+    // --- Technical Footprint (I649) ---
+    conn.execute(
+        "INSERT OR IGNORE INTO account_technical_footprint \
+         (account_id, usage_tier, adoption_score, active_users, support_tier, csat_score, open_tickets, services_stage, source) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+            "mock-acme-corp", "enterprise", 0.85, 247, "premium", 4.2, 3, "steady-state", "zendesk"
+        ],
+    ).map_err(|e| format!("Technical footprint seed: {}", e))?;
 
     // --- Entities (mirrors accounts) ---
     conn.execute(
@@ -2341,10 +2425,16 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     for (account_id, person_id, rel) in &entity_links {
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type) VALUES (?1, ?2, 'associated', ?3)
+            "INSERT INTO account_stakeholders (account_id, person_id) VALUES (?1, ?2)
              ON CONFLICT(account_id, person_id) DO NOTHING",
+            rusqlite::params![account_id, person_id],
+        )
+        .map_err(|e| format!("Account-stakeholder link: {}", e))?;
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES (?1, ?2, ?3)
+             ON CONFLICT(account_id, person_id, role) DO NOTHING",
             rusqlite::params![account_id, person_id, rel],
-        ).map_err(|e| format!("Account-stakeholder link: {}", e))?;
+        ).map_err(|e| format!("Account-stakeholder role link: {}", e))?;
     }
 
     // =========================================================================
@@ -2923,12 +3013,173 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ("mock-initech", "mock-priya-sharma", "technical_lead"),
     ];
 
+    // I652: get_person_stakeholder_roles() reads from account_stakeholder_roles above.
+    // No additional mock data needed — roles are already seeded per account_team_rows.
+
+    // I652: Seed engagement/assessment data alongside stakeholder links
+    let engagement_seeds: std::collections::HashMap<(&str, &str), (&str, &str)> = [
+        (
+            ("mock-globex-industries", "mock-sarah-chen"),
+            ("strong_advocate", "user"),
+        ),
+        (
+            ("mock-globex-industries", "mock-alex-torres"),
+            ("engaged", "ai"),
+        ),
+        (
+            ("mock-globex-industries", "mock-casey-lee"),
+            ("neutral", "ai"),
+        ),
+        (("mock-initech", "mock-dana-patel"), ("engaged", "user")),
+        (("mock-initech", "mock-priya-sharma"), ("engaged", "ai")),
+    ]
+    .into_iter()
+    .collect();
+
+    let assessment_seeds: std::collections::HashMap<(&str, &str), &str> = [
+        (
+            ("mock-globex-industries", "mock-sarah-chen"),
+            "Secured budget approval for Phase 2 independently — strong internal champion.",
+        ),
+        (
+            ("mock-globex-industries", "mock-alex-torres"),
+            "Technical backbone of Phase 1. Departure creates urgency around documentation.",
+        ),
+        (
+            ("mock-initech", "mock-dana-patel"),
+            "Data-driven CTO. Phase 1 ROI numbers will be compelling for Phase 2.",
+        ),
+    ]
+    .into_iter()
+    .collect();
+
     for (account_id, person_id, role) in &account_team_rows {
+        let (engagement, ds_eng) = engagement_seeds
+            .get(&(*account_id, *person_id))
+            .copied()
+            .unwrap_or(("unknown", "ai"));
+        let assessment = assessment_seeds.get(&(*account_id, *person_id)).copied();
+        let ds_assess = "ai";
+
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role, created_at) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(account_id, person_id) DO UPDATE SET role = excluded.role",
-            rusqlite::params![account_id, person_id, role, &today],
+            "INSERT INTO account_stakeholders (account_id, person_id, engagement, data_source_engagement, assessment, data_source_assessment, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(account_id, person_id) DO UPDATE SET
+                engagement = COALESCE(excluded.engagement, account_stakeholders.engagement),
+                data_source_engagement = excluded.data_source_engagement,
+                assessment = COALESCE(excluded.assessment, account_stakeholders.assessment),
+                data_source_assessment = excluded.data_source_assessment",
+            rusqlite::params![account_id, person_id, engagement, ds_eng, assessment, ds_assess, &today],
         ).map_err(|e| format!("Account stakeholder insert: {}", e))?;
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role, created_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(account_id, person_id, role) DO UPDATE SET created_at = excluded.created_at",
+            rusqlite::params![account_id, person_id, role, &today],
+        ).map_err(|e| format!("Account stakeholder role insert: {}", e))?;
+    }
+
+    // =========================================================================
+    // Phase 6b: Stakeholder Suggestions (I652 phase 2)
+    // =========================================================================
+    // Test data for get_stakeholder_suggestions() 3-month filter:
+    // - Recent suggestions (within 3 months) with pending status
+    // - Older suggestions (4+ months ago) that should be filtered out
+    // - Non-pending statuses to verify filter correctness
+
+    let suggestions: Vec<(&str, Option<&str>, &str, &str, &str, &str, &str, &str, i64)> = vec![
+        // (account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, days_offset)
+        // Recent pending suggestions for Acme (should appear)
+        (
+            "mock-acme-corp",
+            None,
+            "Jordan Lee",
+            "jordan.lee@example.com",
+            "technical_contact",
+            "high",
+            "email_signal",
+            "pending",
+            15,
+        ),
+        (
+            "mock-acme-corp",
+            None,
+            "Morgan Park",
+            "morgan@example.com",
+            "procurement_lead",
+            "medium",
+            "crm_signal",
+            "pending",
+            20,
+        ),
+        // Recent pending suggestion for Globex (should appear)
+        (
+            "mock-globex-industries",
+            None,
+            "Riley Knight",
+            "riley.knight@globex.com",
+            "expansion_champion",
+            "high",
+            "usage_pattern",
+            "pending",
+            10,
+        ),
+        // Old pending suggestion for Acme (should be filtered out by 3-month check)
+        (
+            "mock-acme-corp",
+            None,
+            "Old Suggestion Person",
+            "old.person@example.com",
+            "operations",
+            "low",
+            "email_signal",
+            "pending",
+            120,
+        ),
+        // Recent non-pending suggestions (should be filtered out by status check)
+        (
+            "mock-acme-corp",
+            None,
+            "Already Added Person",
+            "added@example.com",
+            "stakeholder",
+            "medium",
+            "crm_signal",
+            "accepted",
+            30,
+        ),
+        (
+            "mock-globex-industries",
+            None,
+            "Rejected Suggestion",
+            "rejected@example.com",
+            "technical_lead",
+            "low",
+            "email_signal",
+            "rejected",
+            25,
+        ),
+    ];
+
+    for (
+        account_id,
+        person_id,
+        suggested_name,
+        suggested_email,
+        suggested_role,
+        suggested_engagement,
+        source,
+        status,
+        days_offset,
+    ) in suggestions
+    {
+        let created_at_str = days_ago(days_offset);
+
+        conn.execute(
+            "INSERT INTO stakeholder_suggestions
+             (account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, &created_at_str],
+        ).map_err(|e| format!("Stakeholder suggestion insert: {}", e))?;
     }
 
     // =========================================================================
@@ -4367,6 +4618,41 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     db.upsert_entity_intelligence(&acme_intel)
         .map_err(|e| format!("Acme intelligence: {}", e))?;
 
+    // Acme products (from AdoptionSignals feature_adoption)
+    db.upsert_account_product(
+        "mock-acme-corp",
+        "Core platform",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.85,
+        None,
+    )
+    .map_err(|e| format!("Acme product Core platform: {}", e))?;
+    db.upsert_account_product(
+        "mock-acme-corp",
+        "Advanced analytics",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.70,
+        None,
+    )
+    .map_err(|e| format!("Acme product Advanced analytics: {}", e))?;
+    db.upsert_account_product(
+        "mock-acme-corp",
+        "API integration",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.85,
+        None,
+    )
+    .map_err(|e| format!("Acme product API integration: {}", e))?;
+
     // --- Globex Industries: At-risk account, declining engagement ---
     let globex_intel = IntelligenceJson {
         entity_id: "mock-globex-industries".into(),
@@ -4535,6 +4821,41 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     db.upsert_entity_intelligence(&globex_intel)
         .map_err(|e| format!("Globex intelligence: {}", e))?;
 
+    // Globex products (from AdoptionSignals feature_adoption)
+    db.upsert_account_product(
+        "mock-globex-industries",
+        "Core",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.72,
+        None,
+    )
+    .map_err(|e| format!("Globex product Core: {}", e))?;
+    db.upsert_account_product(
+        "mock-globex-industries",
+        "Analytics",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.45,
+        None,
+    )
+    .map_err(|e| format!("Globex product Analytics: {}", e))?;
+    db.upsert_account_product(
+        "mock-globex-industries",
+        "Team collaboration",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.30,
+        None,
+    )
+    .map_err(|e| format!("Globex product Team collaboration: {}", e))?;
+
     // --- Initech: Onboarding account, sparse but clean ---
     let initech_intel = IntelligenceJson {
         entity_id: "mock-initech".into(),
@@ -4685,6 +5006,30 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
 
     db.upsert_entity_intelligence(&initech_intel)
         .map_err(|e| format!("Initech intelligence: {}", e))?;
+
+    // Initech products (from AdoptionSignals feature_adoption: "Core: 90%", "Analytics: 40%")
+    db.upsert_account_product(
+        "mock-initech",
+        "Core",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.65,
+        None,
+    )
+    .map_err(|e| format!("Initech product Core: {}", e))?;
+    db.upsert_account_product(
+        "mock-initech",
+        "Analytics",
+        None,
+        "active",
+        None,
+        "product_data",
+        0.40,
+        None,
+    )
+    .map_err(|e| format!("Initech product Analytics: {}", e))?;
 
     // --- Person intelligence: Sarah Chen ---
     let sarah_intel = IntelligenceJson {
@@ -5298,6 +5643,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             rusqlite::params![source, entity_type, signal_type, alpha, beta, update_count, &today],
         ).map_err(|e| format!("Signal weight: {}", e))?;
     }
+
+    // I645: entity_feedback_events and suppression_tombstones are populated
+    // by user actions (thumbs/dismiss/accept). No mock seeds — start empty.
 
     Ok(())
 }

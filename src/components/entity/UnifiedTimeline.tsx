@@ -8,6 +8,7 @@ import { useState } from "react";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { TimelineEntry, TimelineContainer, type TimelineEntryType } from "@/components/editorial/TimelineEntry";
 import { formatShortDate, formatMeetingType } from "@/lib/utils";
+import { formatProvenanceSource } from "@/components/ui/ProvenanceLabel";
 import type { TimelineSource } from "@/lib/entity-types";
 import s from "./UnifiedTimeline.module.css";
 
@@ -95,6 +96,28 @@ export function UnifiedTimeline({
     }
   }
 
+  if (data.lifecycleChanges) {
+    for (const change of data.lifecycleChanges) {
+      const transition = change.previousLifecycle
+        ? `${change.previousLifecycle} → ${change.newLifecycle}`
+        : change.newLifecycle;
+      const subtitle = [
+        change.newStage ? `Stage: ${change.newStage.replace(/_/g, " ")}` : null,
+        change.evidence ?? null,
+        formatProvenanceSource(change.source) ?? change.source,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      items.push({
+        date: formatShortDate(change.createdAt),
+        sortDate: change.createdAt,
+        type: "event" as TimelineEntryType,
+        title: transition,
+        subtitle,
+      });
+    }
+  }
+
   if (data.contextEntries) {
     for (const entry of data.contextEntries) {
       items.push({
@@ -103,6 +126,21 @@ export function UnifiedTimeline({
         type: "context",
         title: entry.title,
         subtitle: entry.content.length > 140 ? `${entry.content.slice(0, 140)}… · Added by you` : `${entry.content} · Added by you`,
+      });
+    }
+  }
+
+  if (data.autoCompletedMilestones) {
+    for (const ms of data.autoCompletedMilestones) {
+      const triggerLabel = ms.completionTrigger
+        ? ms.completionTrigger.replace(/_/g, " ")
+        : "lifecycle transition";
+      items.push({
+        date: ms.completedAt ? formatShortDate(ms.completedAt) : "",
+        sortDate: ms.completedAt ?? "",
+        type: "value" as TimelineEntryType,
+        title: `Milestone completed: ${ms.title}`,
+        subtitle: `Auto-completed by ${triggerLabel}`,
       });
     }
   }

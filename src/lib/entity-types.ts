@@ -3,7 +3,7 @@
  * Uses structural typing so AccountDetail, ProjectDetail, and PersonDetail
  * all satisfy these without adapters.
  */
-import type { Action, AccountObjective, EmailSignal, EntityContextEntry } from "@/types";
+import type { Action, AccountMilestone, AccountObjective, EmailSignal, EntityContextEntry } from "@/types";
 
 /** A single vital metric for VitalsStrip. */
 export interface VitalDisplay {
@@ -17,7 +17,18 @@ export interface TimelineSource {
   recentEmailSignals?: EmailSignal[];
   recentCaptures?: { id: string; captureType: string; content: string; meetingTitle: string; meetingId?: string }[];
   accountEvents?: { id: number; eventType: string; eventDate: string; arrImpact?: number; notes?: string }[];
+  lifecycleChanges?: {
+    id: number;
+    previousLifecycle?: string | null;
+    newLifecycle: string;
+    newStage?: string | null;
+    source: string;
+    createdAt: string;
+    evidence?: string | null;
+  }[];
   contextEntries?: EntityContextEntry[];
+  /** I628 AC5: Auto-completed milestones for timeline display. */
+  autoCompletedMilestones?: AccountMilestone[];
 }
 
 /** Data source for TheWork (commitments + upcoming meetings). */

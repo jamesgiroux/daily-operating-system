@@ -437,14 +437,18 @@ impl Scheduler {
 
         let Some(config) = config else { return };
 
-        // Check today workflow
+        // Check today workflow — skip if today's briefing is already cached
         if config.schedules.today.enabled {
             if let Ok(Some(_)) =
                 self.find_missed_job(&config.schedules.today, WorkflowId::Today, now)
             {
-                log::info!("Found missed 'today' job, running now");
-                self.trigger_workflow(WorkflowId::Today, ExecutionTrigger::Missed)
-                    .await;
+                if self.is_briefing_fresh_for_today() {
+                    log::info!("Found missed 'today' job but briefing is already fresh — skipping");
+                } else {
+                    log::info!("Found missed 'today' job, running now");
+                    self.trigger_workflow(WorkflowId::Today, ExecutionTrigger::Missed)
+                        .await;
+                }
             }
         }
 
@@ -479,6 +483,35 @@ impl Scheduler {
                     .await;
             }
         }
+    }
+
+    /// Check if today's briefing is already cached and fresh.
+    ///
+    /// Reads `briefing_freshness` from `app_state_kv` and compares the date
+    /// against today. Prevents redundant workflow runs on dev restarts and
+    /// sleep/wake when the briefing is already up to date.
+    fn is_briefing_fresh_for_today(&self) -> bool {
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        self.state
+            .with_db_read(|db| {
+                let json_str: Option<String> = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT value_json FROM app_state_kv WHERE key = 'briefing_freshness'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .ok();
+                let Some(json_str) = json_str else {
+                    return Ok(false);
+                };
+                let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&json_str) else {
+                    return Ok(false);
+                };
+                let date = manifest.get("date").and_then(|v| v.as_str()).unwrap_or("");
+                Ok(date == today)
+            })
+            .unwrap_or(false)
     }
 
     /// Find a missed job within the grace period.

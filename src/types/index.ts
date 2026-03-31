@@ -385,12 +385,28 @@ export interface DashboardData {
   emails?: Email[];
   emailSync?: EmailSyncStatus;
   focus?: DailyFocus;
+  lifecycleUpdates?: DashboardLifecycleUpdate[];
   /** AI-synthesized email narrative (I322/I355) */
   emailNarrative?: string;
   /** Threads awaiting user reply (I318/I355) */
   repliesNeeded?: ReplyNeeded[];
   /** I502: Health data keyed by entity ID for accounts linked to today's meetings. */
   entityHealthMap?: Record<string, IntelligenceAccountHealth>;
+  /** Briefing callouts from signal propagation (I623 AC4). */
+  briefingCallouts?: BriefingCallout[];
+}
+
+/** A briefing callout surfaced to the daily briefing (I623). */
+export interface BriefingCallout {
+  id: string;
+  entityId: string;
+  entityType: string;
+  entityName?: string | null;
+  calloutType: string;
+  headline: string;
+  detail?: string | null;
+  severity: string;
+  createdAt: string;
 }
 
 // =============================================================================
@@ -1121,7 +1137,7 @@ export interface FullMeetingPrep {
   userAgenda?: string[];
   /** User-authored notes (I194 / ADR-0065) */
   userNotes?: string;
-  /** Intelligence summary — executive assessment from intelligence.json (I135) */
+  /** Intelligence summary — executive assessment from entity_assessment DB (I513). */
   intelligenceSummary?: string;
   /** Entity-level risks from intelligence.json (I135) */
   entityRisks?: IntelRisk[];
@@ -1381,6 +1397,53 @@ export interface AccountTeamMember {
   createdAt: string;
 }
 
+/** DB-first stakeholder with full person data and provenance. */
+export interface StakeholderFull {
+  personId: string;
+  personName: string;
+  personEmail?: string | null;
+  organization?: string | null;
+  personRole?: string | null;
+  /** Comma-separated roles from account_stakeholder_roles. */
+  stakeholderRole: string;
+  /** Typed multi-role assignments with per-role provenance (I652). */
+  roles: StakeholderRole[];
+  dataSource: string;
+  /** Engagement level (I652). */
+  engagement?: string | null;
+  /** Provenance for engagement (I652). */
+  dataSourceEngagement?: string | null;
+  /** Free-text assessment (I652). */
+  assessment?: string | null;
+  /** Provenance for assessment (I652). */
+  dataSourceAssessment?: string | null;
+  lastSeenInGlean?: string | null;
+  createdAt: string;
+  linkedinUrl?: string | null;
+  photoUrl?: string | null;
+  meetingCount?: number | null;
+  lastSeen?: string | null;
+}
+
+export interface StakeholderRole {
+  role: string;
+  dataSource: string;
+}
+
+export interface StakeholderSuggestion {
+  id: number;
+  accountId: string;
+  personId?: string | null;
+  suggestedName?: string | null;
+  suggestedEmail?: string | null;
+  suggestedRole?: string | null;
+  suggestedEngagement?: string | null;
+  source: string;
+  status: string;
+  createdAt: string;
+  resolvedAt?: string | null;
+}
+
 export interface AccountTeamImportNote {
   id: number;
   accountId: string;
@@ -1393,6 +1456,9 @@ export interface AccountTeamImportNote {
 /** Full detail for the account detail page. */
 export interface AccountDetail extends AccountListItem {
   contractStart?: string;
+  renewalStage?: string | null;
+  /** I646 C3: Separate commercial opportunity stage. */
+  commercialStage?: string | null;
   /** JSON-serialized string[] of resolution keywords (I305) */
   keywords?: string;
   /** ISO timestamp when keywords were last extracted (I305) */
@@ -1427,8 +1493,109 @@ export interface AccountDetail extends AccountListItem {
   children: AccountChildSummary[];
   parentAggregate?: ParentAggregate;
   objectives: AccountObjective[];
+  lifecycleChanges?: LifecycleChange[];
+  products?: AccountProduct[];
+  fieldProvenance?: AccountFieldProvenance[];
+  fieldConflicts?: AccountFieldConflictSuggestion[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
+  /** I628 AC5: Recently auto-completed milestones for timeline display. */
+  autoCompletedMilestones?: AccountMilestone[];
+  /** I649: Technical footprint, adoption, and service-delivery data. */
+  technicalFootprint?: AccountTechnicalFootprint;
+  /** DB-first stakeholder read model: all stakeholders with provenance. */
+  stakeholdersFull?: StakeholderFull[];
+  /** I644: Per-field source attribution from account_source_refs. */
+  sourceRefs?: AccountSourceRef[];
+}
+
+/** I644: Source reference for a tracked account field. */
+export interface AccountSourceRef {
+  id: string;
+  accountId: string;
+  field: string;
+  sourceSystem: string;
+  sourceKind: string;
+  sourceValue?: string | null;
+  observedAt: string;
+}
+
+/** I649: Technical footprint data for an account. */
+export interface AccountTechnicalFootprint {
+  usageTier?: string | null;
+  adoptionScore?: number | null;
+  activeUsers?: number | null;
+  supportTier?: string | null;
+  csatScore?: number | null;
+  openTickets?: number | null;
+  servicesStage?: string | null;
+  source: string;
+  sourcedAt: string;
+}
+
+export interface AccountFieldProvenance {
+  field: string;
+  source: string;
+  updatedAt?: string | null;
+}
+
+export interface LifecycleChange {
+  id: number;
+  accountId: string;
+  previousLifecycle?: string | null;
+  newLifecycle: string;
+  previousStage?: string | null;
+  newStage?: string | null;
+  previousContractEnd?: string | null;
+  newContractEnd?: string | null;
+  source: string;
+  confidence: number;
+  evidence?: string | null;
+  healthScoreBefore?: number | null;
+  healthScoreAfter?: number | null;
+  userResponse: string;
+  responseNotes?: string | null;
+  createdAt: string;
+  reviewedAt?: string | null;
+}
+
+export interface AccountProduct {
+  id: number;
+  accountId: string;
+  name: string;
+  category?: string | null;
+  status: string;
+  arrPortion?: number | null;
+  source: string;
+  confidence: number;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccountFieldConflictSuggestion {
+  field: string;
+  source: string;
+  suggestedValue: string;
+  signalId: string;
+  confidence: number;
+  detectedAt?: string | null;
+}
+
+export interface DashboardLifecycleUpdate {
+  changeId: number;
+  accountId: string;
+  accountName: string;
+  previousLifecycle?: string | null;
+  newLifecycle: string;
+  renewalStage?: string | null;
+  source: string;
+  confidence: number;
+  evidence?: string | null;
+  healthScoreBefore?: number | null;
+  healthScoreAfter?: number | null;
+  actionState: string;
+  createdAt: string;
 }
 
 export interface PickerAccount {
@@ -1530,6 +1697,14 @@ export interface NetworkIntelligence {
   opportunities: string[];
   influenceRadius: number;
   clusterSummary?: string;
+}
+
+/** A person's stakeholder role for a specific account. */
+export interface PersonAccountRole {
+  accountId: string;
+  accountName: string;
+  role: string;
+  dataSource: string;
 }
 
 /** A person-to-person relationship edge (I390, ADR-0088). */
@@ -2003,6 +2178,7 @@ export interface ProjectDetail extends ProjectListItem {
 export interface AiModelConfig {
   synthesis: string;
   extraction: string;
+  background: string;
   mechanical: string;
 }
 
@@ -2135,6 +2311,8 @@ export interface AccountMilestone {
   targetDate?: string | null;
   completedAt?: string | null;
   autoDetectSignal?: string | null;
+  completedBy?: string | null;
+  completionTrigger?: string | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

@@ -375,7 +375,7 @@ pub fn detect_stale_champion(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
         // Find champion(s) for this account
         let champions: Vec<String> = conn
             .prepare(
-                "SELECT person_id FROM account_stakeholders WHERE account_id = ?1 AND role = 'champion'",
+                "SELECT asr.person_id FROM account_stakeholder_roles asr WHERE asr.account_id = ?1 AND asr.role = 'champion'",
             )
             .and_then(|mut stmt| {
                 stmt.query_map(params![account_id], |row| row.get(0))
@@ -1160,7 +1160,12 @@ mod tests {
             [],
         ).unwrap();
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
+            "INSERT INTO account_stakeholders (account_id, person_id) VALUES ('a1', 'p1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
             [],
         ).unwrap();
 
@@ -1213,7 +1218,12 @@ mod tests {
             [],
         ).unwrap();
         conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
+            "INSERT INTO account_stakeholders (account_id, person_id) VALUES ('a1', 'p1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
             [],
         ).unwrap();
 

@@ -60,9 +60,10 @@ pub struct DbAction {
 }
 
 /// Account classification: customer, internal org, or partner (I382).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AccountType {
+    #[default]
     Customer,
     Internal,
     Partner,
@@ -99,7 +100,7 @@ impl std::fmt::Display for AccountType {
 }
 
 /// A row from the `accounts` table.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DbAccount {
     pub id: String,
@@ -124,6 +125,164 @@ pub struct DbAccount {
     /// JSON metadata for preset-driven custom fields (I311).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<String>,
+    /// I646 C3: Separate commercial opportunity stage (migration 076).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commercial_stage: Option<String>,
+    /// I644: ARR range low bound.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arr_range_low: Option<f64>,
+    /// I644: ARR range high bound.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arr_range_high: Option<f64>,
+    /// I644: Renewal likelihood (0.0–1.0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_likelihood: Option<f64>,
+    /// I644: Source for renewal_likelihood.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_likelihood_source: Option<String>,
+    /// I644: When renewal_likelihood was last updated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_likelihood_updated_at: Option<String>,
+    /// I644: Renewal model (e.g., "annual", "multi_year").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_model: Option<String>,
+    /// I644: Renewal pricing method (e.g., "flat", "usage_based").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_pricing_method: Option<String>,
+    /// I644: Support tier (e.g., "premium", "standard", "basic").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub support_tier: Option<String>,
+    /// I644: Source for support_tier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub support_tier_source: Option<String>,
+    /// I644: When support_tier was last updated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub support_tier_updated_at: Option<String>,
+    /// I644: Number of active subscriptions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_subscription_count: Option<i32>,
+    /// I644: Growth potential score (0.0–1.0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub growth_potential_score: Option<f64>,
+    /// I644: Source for growth_potential_score.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub growth_potential_score_source: Option<String>,
+    /// I644: ICP fit score (0.0–1.0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icp_fit_score: Option<f64>,
+    /// I644: Source for icp_fit_score.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icp_fit_score_source: Option<String>,
+    /// I644: Primary product name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_product: Option<String>,
+    /// I644: Customer status (e.g., "active", "at_risk", "churned").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer_status: Option<String>,
+    /// I644: Source for customer_status.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer_status_source: Option<String>,
+    /// I644: When customer_status was last updated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer_status_updated_at: Option<String>,
+    /// I644: Company overview JSON (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company_overview: Option<String>,
+    /// I644: Strategic programs JSON array (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategic_programs: Option<String>,
+    /// I644: Free-text notes (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+/// Parameters for writing a source reference row (I644).
+#[derive(Debug, Clone)]
+pub struct AccountSourceRef<'a> {
+    pub account_id: &'a str,
+    pub field: &'a str,
+    pub source_system: &'a str,
+    pub source_kind: &'a str,
+    pub source_value: Option<&'a str>,
+    pub observed_at: &'a str,
+    pub reference_id: Option<&'a str>,
+}
+
+/// Provenance metadata for a tracked account field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountFieldProvenance {
+    pub field: String,
+    pub source: String,
+    pub updated_at: Option<String>,
+}
+
+/// A logged automatic lifecycle change for an account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbLifecycleChange {
+    pub id: i64,
+    pub account_id: String,
+    pub previous_lifecycle: Option<String>,
+    pub new_lifecycle: String,
+    pub previous_stage: Option<String>,
+    pub new_stage: Option<String>,
+    pub previous_contract_end: Option<String>,
+    pub new_contract_end: Option<String>,
+    pub source: String,
+    pub confidence: f64,
+    pub evidence: Option<String>,
+    pub health_score_before: Option<f64>,
+    pub health_score_after: Option<f64>,
+    pub user_response: String,
+    pub response_notes: Option<String>,
+    pub created_at: String,
+    pub reviewed_at: Option<String>,
+}
+
+/// A discovered product or entitlement for an account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountProduct {
+    pub id: i64,
+    pub account_id: String,
+    pub name: String,
+    pub category: Option<String>,
+    pub status: String,
+    pub arr_portion: Option<f64>,
+    pub source: String,
+    pub confidence: f64,
+    pub notes: Option<String>,
+    /// I651: Product classification type (e.g., "cms", "analytics")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_type: Option<String>,
+    /// I651: Product tier (e.g., "enhanced", "standard", "basic")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
+    /// I651: Billing terms (e.g., "annual", "monthly", "multi_year")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_terms: Option<String>,
+    /// I651: Annual recurring revenue for this product
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arr: Option<f64>,
+    /// I651: When this product classification was last verified from Glean
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_verified_at: Option<String>,
+    /// I651: Source system for product data (e.g., "salesforce", "glean")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_source: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A person's stakeholder roles across all their linked accounts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonAccountRole {
+    pub account_id: String,
+    pub account_name: String,
+    pub role: String,
+    pub data_source: String,
 }
 
 /// A row from `account_stakeholders`.
@@ -134,7 +293,68 @@ pub struct DbAccountTeamMember {
     pub person_id: String,
     pub person_name: String,
     pub person_email: String,
+    /// Comma-separated roles from account_stakeholder_roles (I652).
+    /// Backward-compatible: callers using `.role.contains("champion")` still work.
     pub role: String,
+    pub created_at: String,
+}
+
+/// A single role assignment with its provenance (I652).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StakeholderRole {
+    pub role: String,
+    pub data_source: String,
+}
+
+/// Full stakeholder data with data_source for the DB-first read model (I652).
+/// Returns ALL stakeholders (user-confirmed + Glean-suggested + Google-sourced)
+/// plus linked people from entity_members.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbStakeholderFull {
+    pub person_id: String,
+    pub person_name: String,
+    pub person_email: Option<String>,
+    pub organization: Option<String>,
+    /// Job title from people table.
+    pub person_role: Option<String>,
+    /// Comma-separated roles from account_stakeholder_roles.
+    /// Backward-compatible field — use `roles` for typed access.
+    pub stakeholder_role: String,
+    /// Typed multi-role assignments with per-role provenance (I652).
+    pub roles: Vec<StakeholderRole>,
+    /// Provenance: 'user', 'glean', 'google'.
+    pub data_source: String,
+    /// Engagement level: strong_advocate, engaged, neutral, disengaged, unknown (I652).
+    pub engagement: Option<String>,
+    /// Provenance for engagement value (I652).
+    pub data_source_engagement: Option<String>,
+    /// Free-text assessment of the person's stance (I652).
+    pub assessment: Option<String>,
+    /// Provenance for assessment value (I652).
+    pub data_source_assessment: Option<String>,
+    pub last_seen_in_glean: Option<String>,
+    pub created_at: String,
+    pub linkedin_url: Option<String>,
+    pub photo_url: Option<String>,
+    pub meeting_count: Option<i64>,
+    pub last_seen: Option<String>,
+}
+
+/// A pending stakeholder suggestion from the `stakeholder_suggestions` table (I652 phase 2).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StakeholderSuggestionRow {
+    pub id: i64,
+    pub account_id: String,
+    pub person_id: Option<String>,
+    pub suggested_name: Option<String>,
+    pub suggested_email: Option<String>,
+    pub suggested_role: Option<String>,
+    pub suggested_engagement: Option<String>,
+    pub source: String,
+    pub status: String,
     pub created_at: String,
 }
 
@@ -322,6 +542,8 @@ pub struct DbEmail {
     pub enrichment_state: String,
     pub enrichment_attempts: i32,
     pub last_enrichment_at: Option<String>,
+    /// UTC timestamp when email was last enriched (I652: Gate 0 deduplication).
+    pub enriched_at: Option<String>,
     pub last_seen_at: Option<String>,
     pub resolved_at: Option<String>,
     pub entity_id: Option<String>,
@@ -454,7 +676,7 @@ pub struct PersonListItem {
 }
 
 /// A row from the `projects` table (I50).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DbProject {
     pub id: String,
@@ -476,6 +698,15 @@ pub struct DbProject {
     /// JSON metadata for preset-driven custom fields (I311).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<String>,
+    /// I644: Project description (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// I644: Project milestones JSON array (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub milestones: Option<String>,
+    /// I644: Free-text notes (promoted from dashboard.json).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 /// Activity signals for a project (parallel to StakeholderSignals).
@@ -806,4 +1037,68 @@ pub struct ContinuityThread {
     pub health_delta: Option<HealthDelta>,
     pub new_attendees: Vec<String>,
     pub is_first_meeting: bool,
+}
+
+/// A source reference for a tracked account field (I644).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountSourceRef {
+    pub id: String,
+    pub account_id: String,
+    pub field: String,
+    pub source_system: String,
+    pub source_kind: String,
+    pub source_value: Option<String>,
+    pub observed_at: String,
+}
+
+/// A row from the `entity_feedback_events` table (I645).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackEvent {
+    pub id: i64,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub field_key: String,
+    pub item_key: Option<String>,
+    pub feedback_type: String,
+    pub source_system: Option<String>,
+    pub source_kind: Option<String>,
+    pub previous_value: Option<String>,
+    pub corrected_value: Option<String>,
+    pub reason: Option<String>,
+    pub created_at: String,
+}
+
+/// A row from the `suppression_tombstones` table (I645).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuppressionTombstone {
+    pub id: i64,
+    pub entity_id: String,
+    pub field_key: String,
+    pub item_key: Option<String>,
+    pub item_hash: Option<String>,
+    pub dismissed_at: String,
+    pub source_scope: Option<String>,
+    pub expires_at: Option<String>,
+    pub superseded_by_evidence_after: Option<String>,
+}
+
+/// Technical footprint, adoption, and service-delivery data for an account (I649).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountTechnicalFootprint {
+    pub account_id: String,
+    pub integrations_json: Option<String>,
+    pub usage_tier: Option<String>,
+    pub adoption_score: Option<f64>,
+    pub active_users: Option<i64>,
+    pub support_tier: Option<String>,
+    pub csat_score: Option<f64>,
+    pub open_tickets: i64,
+    pub services_stage: Option<String>,
+    pub source: String,
+    pub sourced_at: String,
+    pub updated_at: String,
 }

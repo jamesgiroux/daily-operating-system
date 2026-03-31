@@ -138,6 +138,7 @@ mod tests {
             enrichment_state: "enriched".to_string(),
             enrichment_attempts: 1,
             last_enrichment_at: None,
+            enriched_at: None,
             last_seen_at: None,
             resolved_at: None,
             entity_id: None,

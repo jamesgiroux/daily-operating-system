@@ -554,6 +554,7 @@ mod tests {
             location: String::new(),
             is_recurring,
             is_all_day: false,
+            status: Some("confirmed".to_string()),
         }
     }
 
