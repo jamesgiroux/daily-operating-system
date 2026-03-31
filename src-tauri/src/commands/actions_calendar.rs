@@ -162,13 +162,15 @@ pub async fn promote_commitment_to_action(
             crate::services::emails::promote_commitment_to_action(
                 db,
                 &engine,
-                &email_id,
-                &commitment_text,
-                action_title.as_deref(),
-                entity_id.as_deref(),
-                entity_type.as_deref(),
-                owner.as_deref(),
-                due_date.as_deref(),
+                &crate::services::emails::PromoteCommitmentParams {
+                    email_id: &email_id,
+                    commitment_text: &commitment_text,
+                    action_title: action_title.as_deref(),
+                    entity_id: entity_id.as_deref(),
+                    entity_type: entity_type.as_deref(),
+                    owner: owner.as_deref(),
+                    due_date: due_date.as_deref(),
+                },
             )
         })
         .await?;

@@ -459,14 +459,16 @@ pub fn process_transcript_with_kind(
         if !wins.is_empty() || !risks.is_empty() || !decisions.is_empty() {
             if let Err(e) = crate::services::mutations::persist_transcript_outcomes(
                 db,
-                entity_type,
-                entity_id,
-                &meeting.id,
-                &meeting.title,
-                meeting.account.as_deref(),
-                &wins,
-                &risks,
-                &decisions,
+                &crate::services::mutations::TranscriptOutcomesParams {
+                    entity_type,
+                    entity_id,
+                    meeting_id: &meeting.id,
+                    meeting_title: &meeting.title,
+                    account_id: meeting.account.as_deref(),
+                    wins: &wins,
+                    risks: &risks,
+                    decisions: &decisions,
+                },
             ) {
                 log::warn!(
                     "Failed to persist transcript captures/outcomes signal transactionally: {}",
