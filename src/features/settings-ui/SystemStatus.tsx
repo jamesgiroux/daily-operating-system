@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -12,6 +13,7 @@ import type {
   PostMeetingCaptureConfig,
 
   AiModelConfig,
+  GoogleAuthStatus,
   HygieneStatusView,
   HygieneNarrativeView,
 } from "@/types";
@@ -231,37 +233,112 @@ function HealthOneLiner() {
 }
 
 // ---------------------------------------------------------------------------
-// AiModelsSection
+// AI & Background Work
 // ---------------------------------------------------------------------------
 
 const modelOptions = ["haiku", "sonnet", "opus"] as const;
+const calendarPollOptions = [5, 10, 15, 30, 60] as const;
+const emailPollOptions = [5, 15, 30, 60] as const;
 
 const tierDescriptions: Record<string, { label: string; description: string }> = {
   synthesis: {
-    label: "Insights & Briefings",
-    description: "Account insights, meeting briefings, reports, daily narrative",
+    label: "Deep Analysis",
+    description: "Reports, briefings, narratives, and higher-reasoning work",
   },
   extraction: {
-    label: "Reading & Summarizing",
-    description: "Emails, meeting transcripts, finding action items",
+    label: "Detailed Extraction",
+    description: "Structured reading, summarizing, and action extraction",
+  },
+  background: {
+    label: "Background Maintenance",
+    description: "Automatic refreshes and poller-driven upkeep",
   },
   mechanical: {
-    label: "Sorting & Filing",
-    description: "Classifying inbox files",
+    label: "Fast Mechanical",
+    description: "Low-complexity sorting, filing, and lightweight processing",
   },
 };
 
-function AiModelsSection() {
+interface AiBackgroundConfig {
+  aiModels?: AiModelConfig;
+  google?: {
+    enabled?: boolean;
+    calendarPollIntervalMinutes?: number;
+    emailPollIntervalMinutes?: number;
+  };
+  hygienePreMeetingHours?: number;
+}
+
+interface BackgroundPauseStatusView {
+  paused: boolean;
+  pausedUntil?: string | null;
+  reason?: string | null;
+  rolling4hTokens: number;
+  timeoutRateLast20: number;
+}
+
+interface BackgroundDiagnostics {
+  backgroundPause: BackgroundPauseStatusView;
+}
+
+export function AiBackgroundWorkSection() {
   const [aiModels, setAiModels] = useState<AiModelConfig | null>(null);
+  const [calendarPollInterval, setCalendarPollInterval] = useState(5);
+  const [emailPollInterval, setEmailPollInterval] = useState(15);
+  const [preMeetingHours, setPreMeetingHours] = useState(12);
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [backgroundPause, setBackgroundPause] = useState<BackgroundPauseStatusView | null>(null);
+
+  async function loadConfig() {
+    try {
+      const config = await invoke<AiBackgroundConfig>("get_config");
+      setAiModels(
+        config.aiModels ?? {
+          synthesis: "sonnet",
+          extraction: "sonnet",
+          background: "haiku",
+          mechanical: "haiku",
+        },
+      );
+      setCalendarPollInterval(config.google?.calendarPollIntervalMinutes ?? 5);
+      setEmailPollInterval(config.google?.emailPollIntervalMinutes ?? 15);
+      setPreMeetingHours(config.hygienePreMeetingHours ?? 12);
+    } catch (err) {
+      console.error("Settings load failed:", err); // Expected: background settings fetch
+    }
+  }
+
+  async function loadGoogleStatus() {
+    try {
+      const status = await invoke<GoogleAuthStatus>("get_google_auth_status");
+      setGoogleConnected(status.status === "authenticated");
+    } catch (err) {
+      console.warn("Google auth status failed:", err);
+      setGoogleConnected(false);
+    }
+  }
+
+  async function loadDiagnostics() {
+    try {
+      const diagnostics = await invoke<BackgroundDiagnostics>("get_ai_usage_diagnostics");
+      setBackgroundPause(diagnostics.backgroundPause);
+    } catch (err) {
+      console.warn("Background diagnostics failed:", err);
+    }
+  }
 
   useEffect(() => {
-    invoke<{ aiModels?: AiModelConfig }>("get_config")
-      .then((config) => {
-        setAiModels(
-          config.aiModels ?? { synthesis: "sonnet", extraction: "haiku", mechanical: "haiku" },
-        );
-      })
-      .catch((err) => console.error("Settings load failed:", err)); // Expected: background settings fetch
+    loadConfig();
+    loadDiagnostics();
+    loadGoogleStatus();
+
+    const unlisten = listen<GoogleAuthStatus>("google-auth-changed", (event) => {
+      setGoogleConnected(event.payload?.status === "authenticated");
+    });
+
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
   }, []);
 
   async function handleModelChange(tier: string, model: string) {
@@ -275,16 +352,65 @@ function AiModelsSection() {
     }
   }
 
+  async function handlePollSettingChange(
+    field: "calendarPollIntervalMinutes" | "emailPollIntervalMinutes",
+    value: number,
+  ) {
+    try {
+      await invoke("set_google_poll_settings", {
+        ...(field === "calendarPollIntervalMinutes"
+          ? { calendarPollIntervalMinutes: value }
+          : { emailPollIntervalMinutes: value }),
+      });
+      if (field === "calendarPollIntervalMinutes") {
+        setCalendarPollInterval(value);
+      } else {
+        setEmailPollInterval(value);
+      }
+      toast.success("Poll interval updated");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to update poll interval");
+    }
+  }
+
+  async function handlePreMeetingChange(value: number) {
+    try {
+      await invoke("set_hygiene_config", { preMeetingHours: value });
+      setPreMeetingHours(value);
+      toast.success("Pre-meeting window updated");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to update pre-meeting window");
+    }
+  }
+
+  async function handleResetRecommended() {
+    try {
+      const updated = await invoke<AiBackgroundConfig>("reset_ai_models_to_recommended");
+      setAiModels(
+        updated.aiModels ?? {
+          synthesis: "sonnet",
+          extraction: "sonnet",
+          background: "haiku",
+          mechanical: "haiku",
+        },
+      );
+      toast.success("AI routing reset to recommended defaults");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to reset AI routing");
+    }
+  }
+
   return (
     <div>
-      <p style={styles.subsectionLabel}>AI Models</p>
+      <p style={styles.subsectionLabel}>AI &amp; Background Work</p>
       <p style={{ ...styles.description, marginBottom: 16 }}>
-        Choose which Claude model handles each type of task
+        Tune the background refresh budget, cadence, and model routing in one place.
       </p>
       <div style={{ display: "flex", flexDirection: "column" }}>
-        {(["synthesis", "extraction", "mechanical"] as const).map((tier) => {
+        {(["synthesis", "extraction", "background", "mechanical"] as const).map((tier) => {
           const info = tierDescriptions[tier];
-          const current = aiModels?.[tier] ?? "sonnet";
+          const current =
+            aiModels?.[tier] ?? (tier === "background" || tier === "mechanical" ? "haiku" : "sonnet");
           return (
             <div key={tier} style={styles.settingRow}>
               <div>
@@ -322,6 +448,105 @@ function AiModelsSection() {
             </div>
           );
         })}
+
+        <div style={styles.settingRow}>
+          <div>
+            <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Calendar Poll Interval</span>
+            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              How often DailyOS checks Google Calendar when polling is enabled
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {calendarPollOptions.map((value) => (
+              <button
+                key={value}
+                style={{
+                  ...styles.btn,
+                  ...(calendarPollInterval === value ? styles.btnPrimary : styles.btnGhost),
+                  padding: "3px 10px",
+                }}
+                onClick={() => handlePollSettingChange("calendarPollIntervalMinutes", value)}
+              >
+                {value}m
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={styles.settingRow}>
+          <div>
+            <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Email Poll Interval</span>
+            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              How often DailyOS checks Gmail for background refreshes
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {emailPollOptions.map((value) => (
+              <button
+                key={value}
+                style={{
+                  ...styles.btn,
+                  ...(emailPollInterval === value ? styles.btnPrimary : styles.btnGhost),
+                  padding: "3px 10px",
+                }}
+                onClick={() => handlePollSettingChange("emailPollIntervalMinutes", value)}
+              >
+                {value}m
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={styles.settingRow}>
+          <div>
+            <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Pre-Meeting Refresh Window</span>
+            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              How far ahead DailyOS may refresh account intelligence for upcoming meetings
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {preMeetingOptions.map((value) => (
+              <button
+                key={value}
+                style={{
+                  ...styles.btn,
+                  ...(preMeetingHours === value ? styles.btnPrimary : styles.btnGhost),
+                  padding: "3px 10px",
+                }}
+                onClick={() => handlePreMeetingChange(value)}
+              >
+                {value}h
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={styles.settingRow}>
+          <div>
+            <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Background AI Guard</span>
+            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              {backgroundPause?.paused
+                ? backgroundPause.reason ?? "Background AI is temporarily paused"
+                : `${backgroundPause?.rolling4hTokens?.toLocaleString?.() ?? "0"} estimated tokens used in the last 4 hours`}
+            </p>
+            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              {backgroundPause
+                ? `Recent timeout rate: ${(backgroundPause.timeoutRateLast20 * 100).toFixed(0)}%`
+                : "Loading background AI status..."}
+            </p>
+            {!googleConnected && (
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                Google is currently disconnected, so poll cadence settings are dormant.
+              </p>
+            )}
+          </div>
+          <button
+            style={{ ...styles.btn, ...styles.btnGhost }}
+            onClick={handleResetRecommended}
+          >
+            Reset to Recommended
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -740,39 +965,6 @@ function HygieneSection() {
               ))}
             </div>
           </div>
-          <div style={styles.settingRow}>
-            <div>
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 14,
-                  color: "var(--color-text-primary)",
-                }}
-              >
-                Pre-Meeting Window
-              </span>
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                Refresh intel before meetings
-              </p>
-            </div>
-            <div style={{ display: "flex", gap: 4 }}>
-              {preMeetingOptions.map((v) => (
-                <button
-                  key={v}
-                  style={{
-                    ...styles.btn,
-                    ...(hygieneConfig.hygienePreMeetingHours === v
-                      ? styles.btnPrimary
-                      : styles.btnGhost),
-                    padding: "3px 10px",
-                  }}
-                  onClick={() => handleHygieneConfigChange("preMeetingHours", v)}
-                >
-                  {v}hr
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1154,6 +1346,10 @@ export default function SystemStatus() {
 
       <hr style={{ ...styles.thinRule, margin: "24px 0" }} />
 
+      <AiBackgroundWorkSection />
+
+      <hr style={{ ...styles.thinRule, margin: "24px 0" }} />
+
       {/* Advanced disclosure */}
       <button
         onClick={() => setAdvancedOpen(!advancedOpen)}
@@ -1179,7 +1375,6 @@ export default function SystemStatus() {
 
       {advancedOpen && (
         <div style={{ display: "flex", flexDirection: "column", gap: 32, marginTop: 24 }}>
-          <AiModelsSection />
           <HygieneSection />
           <CaptureSection />
           <DataManagementSection />
