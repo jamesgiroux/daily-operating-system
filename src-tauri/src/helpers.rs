@@ -128,6 +128,7 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
                     keywords,
                     emails: vec![],
                     account_type: Some(acct.account_type.as_db_str().to_string()),
+                    linked_account_ids: vec![],
                 });
             }
         }
@@ -152,6 +153,7 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
                     keywords,
                     emails: vec![],
                     account_type: None,
+                    linked_account_ids: vec![],
                 });
             }
         }
@@ -169,6 +171,16 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
                     }
                 }
             }
+            // I653 FIX 8: Include linked account IDs for classification-time chaining.
+            // When a known stakeholder attends a meeting, their linked account
+            // gets a confidence boost in resolve_entities.
+            let linked_account_ids: Vec<String> = db
+                .get_entities_for_person(&person.id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|e| e.id)
+                .collect();
+
             hints.push(EntityHint {
                 id: person.id.clone(),
                 entity_type: EntityType::Person,
@@ -178,6 +190,7 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
                 keywords: vec![],
                 emails,
                 account_type: None,
+                linked_account_ids,
             });
         }
     }
