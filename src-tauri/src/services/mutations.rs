@@ -342,20 +342,20 @@ pub fn upsert_email_feedback_signal(
         "User corrected auto-archived email to {}",
         corrected_priority
     );
-    db.upsert_email_signal_with_source(
+    db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
         email_id,
-        None,
-        None,
-        "system",
-        "account",
-        "feedback",
-        &signal_text,
-        Some(1.0),
-        None,
-        None,
-        None,
-        Some("user_feedback"),
-    )
+        sender_email: None,
+        person_id: None,
+        entity_id: "system",
+        entity_type: "account",
+        signal_type: "feedback",
+        signal_text: &signal_text,
+        confidence: Some(1.0),
+        sentiment: None,
+        urgency: None,
+        detected_at: None,
+        source: Some("user_feedback"),
+    })
     .map(|_| ())
     .map_err(|e| format!("Failed to record correction signal: {}", e))
 }
@@ -497,44 +497,44 @@ pub fn persist_transcript_outcomes(
     db.with_transaction(|tx| {
         for win in wins {
             let (content, sub_type, evidence_quote) = parse_win_metadata(win);
-            tx.insert_capture_enriched(
+            tx.insert_capture_enriched(&crate::db::signals::CaptureInput {
                 meeting_id,
                 meeting_title,
                 account_id,
-                "win",
+                capture_type: "win",
                 content,
                 sub_type,
-                None, // wins don't have urgency
+                urgency: None, // wins don't have urgency
                 evidence_quote,
-            )
+            })
             .map_err(|e| format!("insert win capture failed: {e}"))?;
         }
         for risk in risks {
             let (content, urgency, evidence_quote) = parse_risk_metadata(risk);
-            tx.insert_capture_enriched(
+            tx.insert_capture_enriched(&crate::db::signals::CaptureInput {
                 meeting_id,
                 meeting_title,
                 account_id,
-                "risk",
+                capture_type: "risk",
                 content,
-                None, // risks use urgency, not sub_type
-                urgency.as_deref(),
+                sub_type: None, // risks use urgency, not sub_type
+                urgency: urgency.as_deref(),
                 evidence_quote,
-            )
+            })
             .map_err(|e| format!("insert risk capture failed: {e}"))?;
         }
         for decision in decisions {
             let (content, evidence_quote) = parse_evidence_quote(decision);
-            tx.insert_capture_enriched(
+            tx.insert_capture_enriched(&crate::db::signals::CaptureInput {
                 meeting_id,
                 meeting_title,
                 account_id,
-                "decision",
+                capture_type: "decision",
                 content,
-                None,
-                None,
+                sub_type: None,
+                urgency: None,
                 evidence_quote,
-            )
+            })
             .map_err(|e| format!("insert decision capture failed: {e}"))?;
         }
 
@@ -746,16 +746,16 @@ pub fn replace_transcript_outcome_captures(
             .map_err(|e| format!("clear reviewed captures failed: {e}"))?;
 
         for c in captures {
-            tx.insert_capture_enriched(
+            tx.insert_capture_enriched(&crate::db::signals::CaptureInput {
                 meeting_id,
                 meeting_title,
                 account_id,
-                c.capture_type,
-                c.content,
-                c.sub_type,
-                c.urgency.as_deref(),
-                c.evidence_quote,
-            )
+                capture_type: c.capture_type,
+                content: c.content,
+                sub_type: c.sub_type,
+                urgency: c.urgency.as_deref(),
+                evidence_quote: c.evidence_quote,
+            })
             .map_err(|e| format!("reinsert reviewed capture failed: {e}"))?;
         }
 

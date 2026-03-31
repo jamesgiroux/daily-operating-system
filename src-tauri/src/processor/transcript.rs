@@ -1978,16 +1978,16 @@ fn persist_enriched_transcript_data(
             // flow into intel context and meeting prep via existing queries
             // DIRECT_DB_ALLOWED: Transcript extraction dual-writes commitments into
             // captures so existing prep/intelligence queries can consume them immediately.
-            if let Err(e) = db.insert_capture_enriched(
+            if let Err(e) = db.insert_capture_enriched(&crate::db::signals::CaptureInput {
                 meeting_id,
                 meeting_title,
                 account_id,
-                "commitment",
-                &commitment.commitment,
-                None,
-                None,
-                commitment.success_criteria.as_deref(),
-            ) {
+                capture_type: "commitment",
+                content: &commitment.commitment,
+                sub_type: None,
+                urgency: None,
+                evidence_quote: commitment.success_criteria.as_deref(),
+            }) {
                 log::warn!("Failed to insert commitment capture: {}", e);
             }
         }
@@ -3734,16 +3734,16 @@ mod tests {
             Some(prep_frozen_json),
         );
         db.upsert_meeting(&meeting_row).expect("upsert meeting row");
-        db.insert_capture_enriched(
-            "mtg-score",
-            "Acme QBR",
-            Some("acc-scorecard"),
-            "risk",
-            "Security review delays signature this week",
-            None,
-            Some("red"),
-            Some("Procurement is blocked on security."),
-        )
+        db.insert_capture_enriched(&crate::db::signals::CaptureInput {
+            meeting_id: "mtg-score",
+            meeting_title: "Acme QBR",
+            account_id: Some("acc-scorecard"),
+            capture_type: "risk",
+            content: "Security review delays signature this week",
+            sub_type: None,
+            urgency: Some("red"),
+            evidence_quote: Some("Procurement is blocked on security."),
+        })
         .expect("insert confirmed risk capture");
 
         let meeting = CalendarEvent {
