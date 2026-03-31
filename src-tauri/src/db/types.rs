@@ -275,6 +275,16 @@ pub struct DbAccountProduct {
     pub updated_at: String,
 }
 
+/// A person's stakeholder roles across all their linked accounts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonAccountRole {
+    pub account_id: String,
+    pub account_name: String,
+    pub role: String,
+    pub data_source: String,
+}
+
 /// A row from `account_stakeholders`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

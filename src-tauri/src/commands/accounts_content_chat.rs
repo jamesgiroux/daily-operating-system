@@ -649,6 +649,20 @@ pub async fn update_stakeholder_assessment(
         .await
 }
 
+/// Get all stakeholder roles for a person across all their linked accounts.
+#[tauri::command]
+pub async fn get_person_stakeholder_roles(
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::PersonAccountRole>, String> {
+    state
+        .db_read(move |db| {
+            db.get_person_stakeholder_roles(&person_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
+}
+
 /// Add a role to a stakeholder (multi-role).
 #[tauri::command]
 pub async fn add_stakeholder_role(

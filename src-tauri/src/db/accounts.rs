@@ -520,6 +520,29 @@ impl ActionDb {
         Ok(stakeholders)
     }
 
+    /// Get all stakeholder roles for a person across all their linked accounts.
+    pub fn get_person_stakeholder_roles(
+        &self,
+        person_id: &str,
+    ) -> Result<Vec<crate::db::types::PersonAccountRole>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT asr.account_id, a.name AS account_name, asr.role, asr.data_source
+             FROM account_stakeholder_roles asr
+             JOIN accounts a ON a.id = asr.account_id
+             WHERE asr.person_id = ?1
+             ORDER BY a.name, asr.role",
+        )?;
+        let rows = stmt.query_map(params![person_id], |row| {
+            Ok(crate::db::types::PersonAccountRole {
+                account_id: row.get(0)?,
+                account_name: row.get(1)?,
+                role: row.get(2)?,
+                data_source: row.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Get typed roles for a specific stakeholder (I652).
     pub fn get_stakeholder_roles(
         &self,

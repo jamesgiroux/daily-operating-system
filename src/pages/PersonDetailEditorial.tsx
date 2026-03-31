@@ -296,6 +296,7 @@ export default function PersonDetailEditorial() {
       <div id="their-orbit" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
         <PersonNetwork
           entities={detail.entities}
+          personId={personId}
           onLink={person.handleLinkEntity}
           onUnlink={person.handleUnlinkEntity}
           chapterTitle="Their Orbit"
