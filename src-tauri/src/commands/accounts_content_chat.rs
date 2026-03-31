@@ -32,6 +32,11 @@ pub struct AccountDetailResult {
     pub health: Option<String>,
     pub nps: Option<i32>,
     pub renewal_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_stage: Option<String>,
+    /// I646 C3: Separate commercial opportunity stage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commercial_stage: Option<String>,
     pub contract_start: Option<String>,
     pub company_overview: Option<crate::accounts::CompanyOverview>,
     pub strategic_programs: Vec<crate::accounts::StrategicProgram>,
@@ -53,8 +58,28 @@ pub struct AccountDetailResult {
     pub archived: bool,
     #[serde(default)]
     pub objectives: Vec<crate::types::AccountObjective>,
+    #[serde(default)]
+    pub lifecycle_changes: Vec<crate::db::DbLifecycleChange>,
+    #[serde(default)]
+    pub products: Vec<crate::db::DbAccountProduct>,
+    #[serde(default)]
+    pub field_provenance: Vec<crate::db::DbAccountFieldProvenance>,
+    #[serde(default)]
+    pub field_conflicts: Vec<crate::types::AccountFieldConflictSuggestion>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::intelligence::IntelligenceJson>,
+    /// I628 AC5: Recently auto-completed milestones for timeline display.
+    #[serde(default)]
+    pub auto_completed_milestones: Vec<crate::types::AccountMilestone>,
+    /// I649: Technical footprint, adoption, and service-delivery data.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technical_footprint: Option<crate::db::DbAccountTechnicalFootprint>,
+    /// DB-first stakeholder read model: all stakeholders with provenance.
+    #[serde(default)]
+    pub stakeholders_full: Vec<crate::db::DbStakeholderFull>,
+    /// I644: Source references for promoted account facts.
+    #[serde(default)]
+    pub source_refs: Vec<crate::db::DbAccountSourceRef>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
@@ -227,6 +252,121 @@ pub async fn update_account_field(
                 &account_id,
                 &field,
                 &value,
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn confirm_lifecycle_change(
+    change_id: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::confirm_lifecycle_change(
+                db,
+                &app_state.signals.engine,
+                change_id,
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn correct_account_product(
+    account_id: String,
+    product_id: i64,
+    name: String,
+    status: Option<String>,
+    source_to_penalize: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::correct_account_product(
+                db,
+                &app_state.signals.engine,
+                &account_id,
+                product_id,
+                &name,
+                status.as_deref(),
+                &source_to_penalize,
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn correct_lifecycle_change(
+    change_id: i64,
+    corrected_lifecycle: String,
+    corrected_stage: Option<String>,
+    notes: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::correct_lifecycle_change(
+                db,
+                &app_state.signals.engine,
+                change_id,
+                &corrected_lifecycle,
+                corrected_stage.as_deref(),
+                notes.as_deref(),
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn accept_account_field_conflict(
+    account_id: String,
+    field: String,
+    suggested_value: String,
+    source: String,
+    signal_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::accept_account_field_conflict(
+                db,
+                &app_state,
+                &account_id,
+                &field,
+                &suggested_value,
+                &source,
+                signal_id.as_deref(),
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn dismiss_account_field_conflict(
+    account_id: String,
+    field: String,
+    signal_id: String,
+    source: String,
+    suggested_value: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::dismiss_account_field_conflict(
+                db,
+                &app_state,
+                &account_id,
+                &field,
+                &signal_id,
+                &source,
+                suggested_value.as_deref(),
             )
         })
         .await
@@ -458,6 +598,158 @@ pub async fn backfill_internal_meeting_associations(
 ) -> Result<usize, String> {
     state
         .db_write(crate::services::accounts::backfill_internal_meeting_associations)
+        .await
+}
+
+// =============================================================================
+// I652 Phase 2: Person-first stakeholder commands
+// =============================================================================
+
+/// Update engagement level for a stakeholder.
+#[tauri::command]
+pub async fn update_stakeholder_engagement(
+    account_id: String,
+    person_id: String,
+    engagement: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_stakeholder_engagement(
+                db,
+                &app_state.signals.engine,
+                &account_id,
+                &person_id,
+                &engagement,
+            )
+        })
+        .await
+}
+
+/// Update assessment text for a stakeholder.
+#[tauri::command]
+pub async fn update_stakeholder_assessment(
+    account_id: String,
+    person_id: String,
+    assessment: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_stakeholder_assessment(
+                db,
+                &app_state.signals.engine,
+                &account_id,
+                &person_id,
+                &assessment,
+            )
+        })
+        .await
+}
+
+/// Get all stakeholder roles for a person across all their linked accounts.
+#[tauri::command]
+pub async fn get_person_stakeholder_roles(
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::PersonAccountRole>, String> {
+    state
+        .db_read(move |db| {
+            db.get_person_stakeholder_roles(&person_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
+}
+
+/// Add a role to a stakeholder (multi-role).
+#[tauri::command]
+pub async fn add_stakeholder_role(
+    account_id: String,
+    person_id: String,
+    role: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::add_stakeholder_role(
+                db,
+                &app_state.signals.engine,
+                &account_id,
+                &person_id,
+                &role,
+            )
+        })
+        .await
+}
+
+/// Remove a specific role from a stakeholder.
+#[tauri::command]
+pub async fn remove_stakeholder_role(
+    account_id: String,
+    person_id: String,
+    role: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::remove_stakeholder_role(
+                db,
+                &app_state.signals.engine,
+                &account_id,
+                &person_id,
+                &role,
+            )
+        })
+        .await
+}
+
+/// Get pending stakeholder suggestions for an account.
+#[tauri::command]
+pub async fn get_stakeholder_suggestions(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::StakeholderSuggestionRow>, String> {
+    state
+        .db_read(move |db| {
+            db.get_stakeholder_suggestions(&account_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
+}
+
+/// Accept a stakeholder suggestion.
+#[tauri::command]
+pub async fn accept_stakeholder_suggestion(
+    suggestion_id: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::accept_stakeholder_suggestion(db, &app_state, suggestion_id)
+        })
+        .await
+}
+
+/// Dismiss a stakeholder suggestion.
+#[tauri::command]
+pub async fn dismiss_stakeholder_suggestion(
+    suggestion_id: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::dismiss_stakeholder_suggestion(
+                db,
+                &app_state.signals.engine,
+                suggestion_id,
+            )
+        })
         .await
 }
 

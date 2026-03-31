@@ -679,6 +679,32 @@ pub struct SatisfactionData {
     pub source: Option<String>,
 }
 
+/// I651: Product classification from Salesforce via Glean.
+/// Contains current product subscriptions and tier information.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductClassification {
+    /// Array of active product subscriptions (e.g., CMS, Analytics)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub products: Vec<ProductInfo>,
+}
+
+/// I651: Individual product information from Salesforce.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductInfo {
+    /// Product type: "cms", "analytics", etc.
+    #[serde(rename = "type")]
+    pub type_: Option<String>,
+    /// Product tier: "enhanced", "standard", "basic", "premier", "signature", "unknown", etc.
+    pub tier: Option<String>,
+    /// Annual recurring revenue for this product
+    pub arr: Option<f64>,
+    /// Billing terms: "annual", "monthly", "multi_year"
+    #[serde(rename = "billingTerms")]
+    pub billing_terms: Option<String>,
+}
+
 /// A Gong call summary produced by Glean enrichment (I535).
 ///
 /// Contains key metadata from a recorded call — title, date, participants,
@@ -834,6 +860,9 @@ pub struct IntelligenceJson {
     pub expansion_signals: Vec<ExpansionSignal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub renewal_outlook: Option<RenewalOutlook>,
+    /// I651: Product classification from Salesforce (Glean-only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product_classification: Option<ProductClassification>,
 
     // Dimension 6: External Health Signals
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -854,6 +883,12 @@ pub struct IntelligenceJson {
     // I554: Success plan signals synthesized from aggregate context
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub success_plan_signals: Option<crate::types::SuccessPlanSignals>,
+
+    /// Phase 2a: Domain list for account domain matching (entity resolution).
+    /// Extracted from Glean enrichment, email classification, or meeting attendees.
+    /// Used to populate account_domains table for domain-based entity linking.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub domains: Vec<String>,
 
     /// I576: Tombstones for dismissed items — prevents re-creation on enrichment.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -891,6 +926,9 @@ pub(crate) struct DimensionsBlob {
     pub expansion_signals: Vec<ExpansionSignal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub renewal_outlook: Option<RenewalOutlook>,
+    /// I651: Product classification from Salesforce (Glean-only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product_classification: Option<ProductClassification>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub support_health: Option<SupportHealth>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -917,6 +955,7 @@ impl IntelligenceJson {
             contract_context: self.contract_context.clone(),
             expansion_signals: self.expansion_signals.clone(),
             renewal_outlook: self.renewal_outlook.clone(),
+            product_classification: self.product_classification.clone(),
             support_health: self.support_health.clone(),
             product_adoption: self.product_adoption.clone(),
             nps_csat: self.nps_csat.clone(),
@@ -938,6 +977,7 @@ impl IntelligenceJson {
         self.contract_context = blob.contract_context.clone();
         self.expansion_signals = blob.expansion_signals.clone();
         self.renewal_outlook = blob.renewal_outlook.clone();
+        self.product_classification = blob.product_classification.clone();
         self.support_health = blob.support_health.clone();
         self.product_adoption = blob.product_adoption.clone();
         self.nps_csat = blob.nps_csat.clone();
@@ -1767,8 +1807,8 @@ impl ActionDb {
                 relationship_depth, health_json, org_health_json, consistency_status,
                 consistency_findings_json, consistency_checked_at,
                 portfolio_json, network_json, user_edits_json, source_manifest_json,
-                dimensions_json, success_plan_signals_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
+                dimensions_json, success_plan_signals_json, pull_quote
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
             ON CONFLICT(entity_id) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 enriched_at = excluded.enriched_at,
@@ -1794,7 +1834,8 @@ impl ActionDb {
                 user_edits_json = excluded.user_edits_json,
                 source_manifest_json = excluded.source_manifest_json,
                 dimensions_json = excluded.dimensions_json,
-                success_plan_signals_json = excluded.success_plan_signals_json",
+                success_plan_signals_json = excluded.success_plan_signals_json,
+                pull_quote = excluded.pull_quote",
             rusqlite::params![
                 intel.entity_id,
                 intel.entity_type,
@@ -1825,14 +1866,18 @@ impl ActionDb {
                 serde_json::to_string(&intel.source_manifest).ok(),
                 dimensions_json,
                 intel.success_plan_signals.as_ref().and_then(|v| serde_json::to_string(v).ok()),
+                intel.pull_quote,
             ],
         )?;
 
         // 1b. Clear stale feedback — feedback is keyed by field path (e.g.
         // "riskFactors[0]"), which is positional. Re-enrichment produces new content
         // at the same positions, so old votes don't apply to new analysis.
+        // Preserve field conflict dismissals (account_field_conflict:*) — those are
+        // user decisions about data source conflicts, not positional analysis votes.
         conn.execute(
-            "DELETE FROM intelligence_feedback WHERE entity_id = ?1 AND entity_type = ?2",
+            "DELETE FROM intelligence_feedback WHERE entity_id = ?1 AND entity_type = ?2 \
+             AND field NOT LIKE 'account_field_conflict:%'",
             rusqlite::params![intel.entity_id, intel.entity_type],
         )?;
 
@@ -1870,7 +1915,8 @@ impl ActionDb {
                     ea.value_delivered, ea.success_metrics, ea.open_commitments,
                     ea.relationship_depth, ea.consistency_status, ea.consistency_findings_json,
                     ea.consistency_checked_at, ea.portfolio_json, ea.network_json,
-                    ea.user_edits_json, ea.source_manifest_json, ea.dimensions_json
+                    ea.user_edits_json, ea.source_manifest_json, ea.dimensions_json,
+                    ea.pull_quote
              FROM entity_assessment ea
              LEFT JOIN entity_quality eq ON eq.entity_id = ea.entity_id
              WHERE ea.entity_id = ?1",
@@ -1898,6 +1944,7 @@ impl ActionDb {
             let user_edits_json: Option<String> = row.get(24)?;
             let source_manifest_json: Option<String> = row.get(25)?;
             let dimensions_json_raw: Option<String> = row.get(26)?;
+            let pull_quote: Option<String> = row.get(27)?;
 
             let health = health_json
                 .as_deref()
@@ -1948,6 +1995,7 @@ impl ActionDb {
                     .and_then(|j| serde_json::from_str(&j).ok())
                     .unwrap_or_default(),
                 consistency_checked_at: row.get(21)?,
+                pull_quote,
                 ..Default::default()
             };
             // Unpack I508a dimensions blob if present
@@ -2786,6 +2834,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            ..Default::default()
         };
 
         let overview = CompanyOverview {
@@ -2839,6 +2888,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            ..Default::default()
         };
 
         let overview = CompanyOverview {

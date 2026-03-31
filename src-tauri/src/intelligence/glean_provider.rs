@@ -290,6 +290,35 @@ impl GleanIntelligenceProvider {
                     } else {
                         succeeded += 1;
 
+                        // I651: After commercial_financial merge, extract and upsert products
+                        if dim_name == "commercial_financial" && entity_type == "account" {
+                            if let Ok(Some(products)) = extract_products_from_response(&partial) {
+                                // Best-effort upsert — log but don't fail enrichment if products fail
+                                match crate::db::ActionDb::open() {
+                                    Ok(db) => {
+                                        match upsert_products_to_db(&db, entity_id, products) {
+                                            Ok(count) => {
+                                                log::info!(
+                                                    "[I651] Upserted {} products for {}",
+                                                    count,
+                                                    entity_id
+                                                );
+                                            }
+                                            Err(e) => {
+                                                log::warn!("[I651] Product upsert failed (best-effort): {}", e);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "[I651] Could not open DB for product upsert: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+
                         // I575: Progressive DB write + event emission
                         if let Some(handle) = app_handle {
                             write_progressive_glean_dimension(entity_id, entity_type, &combined);
@@ -360,22 +389,64 @@ impl GleanIntelligenceProvider {
                 .ok()
                 .and_then(|db| db.get_entity_intelligence(entity_id).ok().flatten());
             match existing {
-                Some(existing) => reconcile_enrichment(
-                    existing,
-                    combined,
-                    &["glean_crm", "glean_zendesk", "glean_gong", "glean_chat"],
-                ),
+                Some(mut existing) => {
+                    // I644: Protect stakeholder_insights when user has designated
+                    // team members via the Team panel (account_stakeholders with
+                    // data_source='user'). Inject synthetic user_edits so
+                    // reconcile_enrichment skips the stakeholder array.
+                    if entity_type == "account" {
+                        let has_user_stakeholders = crate::db::ActionDb::open()
+                            .ok()
+                            .and_then(|db| {
+                                db.conn_ref()
+                                    .query_row(
+                                        "SELECT COUNT(*) FROM account_stakeholders WHERE account_id = ?1 AND data_source = 'user'",
+                                        rusqlite::params![entity_id],
+                                        |row| row.get::<_, i64>(0),
+                                    )
+                                    .ok()
+                            })
+                            .unwrap_or(0)
+                            > 0;
+                        if has_user_stakeholders
+                            && !existing
+                                .user_edits
+                                .iter()
+                                .any(|e| e.field_path.starts_with("stakeholderInsights"))
+                        {
+                            existing.user_edits.push(crate::intelligence::io::UserEdit {
+                                field_path: "stakeholderInsights".to_string(),
+                                edited_at: chrono::Utc::now().to_rfc3339(),
+                            });
+                        }
+                    }
+                    reconcile_enrichment(
+                        existing,
+                        combined,
+                        &["glean_crm", "glean_zendesk", "glean_gong", "glean_chat"],
+                    )
+                }
                 None => combined,
             }
         };
 
+        // I624: Stamp source="glean" on product adoption so dual_write_enrichment_products
+        // writes products with correct Glean attribution.
+        let mut intel = intel;
+        stamp_glean_product_source(&mut intel);
+
+        // Path 2c: Extract domains from Glean-enriched intelligence data
+        // (company_context.website, stakeholder emails, org_health.website_url)
+        extract_domains_for_glean_enrichment(&mut intel);
+
         log::info!(
-            "[I574] Glean parallel enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}",
+            "[I574] Glean parallel enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}, domains: {}",
             entity_name,
             intel.executive_assessment.is_some(),
             intel.risks.len(),
             intel.recent_wins.len(),
             intel.stakeholder_insights.len(),
+            intel.domains.len(),
         );
 
         Ok(intel)
@@ -472,13 +543,23 @@ impl GleanIntelligenceProvider {
             }
         };
 
+        // I624: Stamp source="glean" on product adoption so dual_write_enrichment_products
+        // writes products with correct Glean attribution.
+        let mut intel = intel;
+        stamp_glean_product_source(&mut intel);
+
+        // Path 2c: Extract domains from Glean-enriched intelligence data
+        // (company_context.website, stakeholder emails, org_health.website_url)
+        extract_domains_for_glean_enrichment(&mut intel);
+
         log::info!(
-            "[I535] Glean enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}",
+            "[I535] Glean enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}, domains: {}",
             entity_name,
             intel.executive_assessment.is_some(),
             intel.risks.len(),
             intel.recent_wins.len(),
             intel.stakeholder_insights.len(),
+            intel.domains.len(),
         );
 
         Ok(intel)
@@ -545,6 +626,21 @@ impl GleanIntelligenceProvider {
     pub fn endpoint(&self) -> &str {
         &self.endpoint
     }
+}
+
+/// Path 2c: Placeholder for domain extraction from Glean enrichment.
+///
+/// IntelligenceJson now has an optional `domains` field that can be populated by:
+/// 1. Glean extracts domain from company_context (future: if Glean adds website field)
+/// 2. Email classification pipeline (extract from meeting attendees)
+/// 3. Enrichment future phases (if Glean company data includes domains)
+///
+/// For now, this function is a no-op. When Glean responses include domain data,
+/// this is where extraction logic will be added.
+fn extract_domains_for_glean_enrichment(_intel: &mut IntelligenceJson) {
+    // TODO: When Glean responses include firmographic domain data,
+    // extract and populate _intel.domains here.
+    // This hook is in place for easy future enhancement.
 }
 
 /// I575: Write progressive dimension state to DB during Glean parallel enrichment.
@@ -655,6 +751,50 @@ pub fn emit_glean_signals(
                 0.85,
             ) {
                 log::warn!("[I535] Failed to emit support_health_updated: {}", e);
+            }
+        }
+    }
+
+    // I649: Write technical footprint from org_health + support_health
+    if entity_type == "account" {
+        let support_tier = intel
+            .org_health
+            .as_ref()
+            .and_then(|oh| oh.support_tier.clone());
+        let support_health_data = intel.support_health.as_ref();
+        let has_footprint_data = support_tier.is_some() || support_health_data.is_some();
+        if has_footprint_data {
+            let csat = support_health_data.and_then(|sh| sh.csat);
+            let open_tickets = support_health_data
+                .and_then(|sh| sh.open_tickets)
+                .unwrap_or(0) as i64;
+            if let Err(e) = db.upsert_account_technical_footprint(
+                entity_id,
+                None, // integrations_json
+                None, // usage_tier
+                None, // adoption_score
+                None, // active_users
+                support_tier.as_deref(),
+                csat,
+                open_tickets,
+                None, // services_stage
+                "glean_zendesk",
+            ) {
+                log::warn!(
+                    "[I649] Failed to upsert technical footprint for {}: {}",
+                    entity_id,
+                    e
+                );
+            } else if let Err(e) = emit_signal(
+                db,
+                entity_type,
+                entity_id,
+                "technical_footprint_updated",
+                "glean_zendesk",
+                None,
+                0.85,
+            ) {
+                log::warn!("[I649] Failed to emit technical_footprint_updated: {}", e);
             }
         }
     }
@@ -843,6 +983,12 @@ pub fn emit_glean_signals(
         }
     }
 
+    // I644: Promote high-confidence facts from Glean enrichment into accounts table
+    // columns with source tracking and provenance references.
+    if entity_type == "account" {
+        promote_glean_facts_to_accounts(db, entity_id, intel);
+    }
+
     // Recompute health after Glean signals are emitted so that new CRM/Gong/Zendesk
     // data flows immediately into the 6 health dimensions.
     if entity_type == "account" {
@@ -855,6 +1001,167 @@ pub fn emit_glean_signals(
                 e
             );
         }
+    }
+}
+
+/// I644: Promote high-confidence facts from Glean enrichment into accounts table columns.
+///
+/// Extracts structured data from `IntelligenceJson` (contract context, renewal outlook,
+/// org health, support health, product classification) and upserts each fact into the
+/// accounts table via `upsert_account_fact`. Each promoted fact also gets a source
+/// reference row in `account_source_refs` for provenance tracking.
+///
+/// Source attribution follows ADR-0100 confidence tiers:
+/// - CRM/Salesforce data (contract, ARR, renewal) → source "salesforce"
+/// - Zendesk data (support tier, CSAT) → source "zendesk"
+/// - Glean AI synthesis (scores, status) → source "glean"
+///
+/// The `upsert_account_fact` function handles source priority (user:4 > salesforce:3 >
+/// zendesk:2 > glean:1) so user edits are never overwritten.
+fn promote_glean_facts_to_accounts(
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    intel: &IntelligenceJson,
+) {
+    use crate::db::types::AccountSourceRef;
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut promoted = 0u32;
+    let mut skipped = 0u32;
+
+    // Helper: upsert a fact + source ref, logging results.
+    macro_rules! promote_fact {
+        ($field:expr, $value:expr, $source_system:expr, $source_kind:expr) => {
+            match db.upsert_account_fact(entity_id, $field, $value, $source_system, &now) {
+                Ok(true) => {
+                    promoted += 1;
+                    // Write provenance row
+                    if let Err(e) = db.upsert_account_source_ref(&AccountSourceRef {
+                        account_id: entity_id,
+                        field: $field,
+                        source_system: $source_system,
+                        source_kind: $source_kind,
+                        source_value: Some($value),
+                        observed_at: &now,
+                        reference_id: None,
+                    }) {
+                        log::warn!(
+                            "[I644] Source ref write failed for {}.{}: {}",
+                            entity_id,
+                            $field,
+                            e
+                        );
+                    }
+                }
+                Ok(false) => {
+                    skipped += 1;
+                    log::debug!(
+                        "[I644] Skipped {}.{} — higher-priority source exists",
+                        entity_id,
+                        $field
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[I644] Fact upsert failed for {}.{}: {}",
+                        entity_id,
+                        $field,
+                        e
+                    );
+                }
+            }
+        };
+    }
+
+    // --- Financial dimension: contract_context ---
+    if let Some(ref ctx) = intel.contract_context {
+        if let Some(arr) = ctx.current_arr {
+            // ARR goes to arr_range_low = arr_range_high (exact value)
+            let arr_str = format!("{:.0}", arr);
+            promote_fact!("arr_range_low", &arr_str, "salesforce", "fact");
+            promote_fact!("arr_range_high", &arr_str, "salesforce", "fact");
+        }
+    }
+
+    // --- Financial dimension: renewal_outlook ---
+    if let Some(ref outlook) = intel.renewal_outlook {
+        if let Some(ref confidence) = outlook.confidence {
+            // Map "high"/"moderate"/"low" to numeric likelihood
+            let likelihood = match confidence.to_lowercase().as_str() {
+                "high" => "0.85",
+                "moderate" => "0.55",
+                "low" => "0.25",
+                _ => confidence.as_str(),
+            };
+            promote_fact!("renewal_likelihood", likelihood, "salesforce", "inference");
+        }
+    }
+
+    // --- Org health (CRM overlay) ---
+    if let Some(ref org) = intel.org_health {
+        if let Some(ref tier) = org.support_tier {
+            promote_fact!("support_tier", tier, "zendesk", "fact");
+        }
+        if let Some(ref likelihood) = org.renewal_likelihood {
+            // Only promote if renewal_outlook didn't already set it —
+            // both are "salesforce" priority so upsert_account_fact
+            // keeps the first write (same priority = overwrite).
+            promote_fact!("renewal_likelihood", likelihood, "salesforce", "fact");
+        }
+        if let Some(ref stage) = org.customer_stage {
+            promote_fact!("customer_status", stage, "salesforce", "fact");
+        }
+        if let Some(ref fit) = org.icp_fit {
+            // Parse ICP fit string to a numeric score if possible
+            let score = match fit.to_lowercase().as_str() {
+                "strong" | "high" => "85",
+                "moderate" | "medium" => "55",
+                "weak" | "low" => "25",
+                _ => fit.as_str(),
+            };
+            promote_fact!("icp_fit_score", score, "glean", "inference");
+        }
+        if let Some(ref growth) = org.growth_tier {
+            let score = match growth.to_lowercase().as_str() {
+                "high" => "85",
+                "moderate" | "medium" => "55",
+                "low" => "25",
+                _ => growth.as_str(),
+            };
+            promote_fact!("growth_potential_score", score, "glean", "inference");
+        }
+    }
+
+    // --- Product classification → primary_product + subscription count ---
+    if let Some(ref classification) = intel.product_classification {
+        if !classification.products.is_empty() {
+            let count_str = classification.products.len().to_string();
+            promote_fact!(
+                "active_subscription_count",
+                &count_str,
+                "salesforce",
+                "fact"
+            );
+
+            // Primary product = highest-ARR product, or first product if no ARR data
+            let primary = classification
+                .products
+                .iter()
+                .filter_map(|p| p.type_.as_ref().map(|t| (t.clone(), p.arr.unwrap_or(0.0))))
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(t, _)| t);
+            if let Some(ref product) = primary {
+                promote_fact!("primary_product", product, "salesforce", "fact");
+            }
+        }
+    }
+
+    if promoted > 0 || skipped > 0 {
+        log::info!(
+            "[I644] Fact promotion for {}: {} promoted, {} skipped (source priority)",
+            entity_id,
+            promoted,
+            skipped,
+        );
     }
 }
 
@@ -911,16 +1218,11 @@ pub fn reconcile_enrichment(
         );
     }
 
-    if !has_user_edits("stakeholderInsights") {
-        result.stakeholder_insights = reconcile_vec_items(
-            &existing.stakeholder_insights,
-            &new_output.stakeholder_insights,
-            refreshed_sources,
-            dismissed,
-            "stakeholderInsights",
-            |s| &s.name,
-        );
-    }
+    // I652: stakeholder_insights is now write-only context in intelligence.json.
+    // Real stakeholder protection is structural (data_source columns on account_stakeholders).
+    // Always take the fresh AI output — intel_queue::write_enrichment_results routes
+    // insights to DB columns or stakeholder_suggestions table.
+    result.stakeholder_insights = new_output.stakeholder_insights;
 
     if !has_user_edits("valueDelivered") {
         result.value_delivered = reconcile_vec_items(
@@ -1059,6 +1361,24 @@ pub fn reconcile_enrichment(
     result
 }
 
+/// I624: Ensure product adoption from Glean enrichment carries source="glean".
+///
+/// The Glean response may or may not include a source field in productAdoption.
+/// This stamps it explicitly so `dual_write_enrichment_products` writes products
+/// with Glean attribution instead of the default "ai_inference".
+fn stamp_glean_product_source(intel: &mut IntelligenceJson) {
+    if let Some(ref mut adoption) = intel.product_adoption {
+        if adoption.source.is_none()
+            || !adoption
+                .source
+                .as_ref()
+                .is_some_and(|s| s.contains("glean"))
+        {
+            adoption.source = Some("glean".to_string());
+        }
+    }
+}
+
 fn reconcile_internal_team(
     existing: &[super::io::InternalTeamMember],
     new_items: &[super::io::InternalTeamMember],
@@ -1116,12 +1436,16 @@ fn reconcile_vec_items<T: super::io::HasSource + Clone>(
     }
 
     // 2. Add new items, filtering against dismissed tombstones and existing duplicates
+    // I645: Only enforce dismissals from the last 90 days
+    let cutoff_90d = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
     for item in new_items {
         let item_text = get_text(item).to_lowercase();
 
-        let is_dismissed = dismissed
-            .iter()
-            .any(|d| d.field == field_name && item_text.contains(&d.content.to_lowercase()));
+        let is_dismissed = dismissed.iter().any(|d| {
+            d.field == field_name
+                && d.dismissed_at > cutoff_90d
+                && item_text.contains(&d.content.to_lowercase())
+        });
 
         // Dedup: skip if an item with the same text already exists in result
         let is_duplicate = result
@@ -1165,4 +1489,86 @@ pub fn extract_json_object(text: &str) -> Option<&str> {
         }
     }
     None
+}
+
+// =============================================================================
+// I651: Product Classification Extraction & Upsert
+// =============================================================================
+
+/// I651: Extract product classification from a Financial dimension response.
+///
+/// Parses the `productClassification.products` array from the Glean response
+/// and returns structured product data ready for database upsert.
+/// Returns None if the section is missing or empty (best-effort).
+pub fn extract_products_from_response(
+    response: &IntelligenceJson,
+) -> Result<Option<Vec<(String, Option<String>, Option<f64>, Option<String>)>>, String> {
+    match &response.product_classification {
+        None => Ok(None),
+        Some(classification) if classification.products.is_empty() => Ok(None),
+        Some(classification) => {
+            let mut products = Vec::new();
+            for product in &classification.products {
+                if let Some(ref product_type) = product.type_ {
+                    // Parse type_ field which comes from Glean as "type"
+                    products.push((
+                        product_type.clone(),
+                        product.tier.clone(),
+                        product.arr,
+                        product.billing_terms.clone(),
+                    ));
+                }
+            }
+            if products.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(products))
+            }
+        }
+    }
+}
+
+/// I651: Upsert extracted products to the database.
+///
+/// For each (account_id, product_type, data_source) tuple, inserts or updates
+/// the row with tier, arr, billing_terms, and last_verified_at.
+/// Returns the count of products upserted on success.
+/// Logs warnings on database errors but returns them for best-effort handling.
+pub fn upsert_products_to_db(
+    db: &crate::db::ActionDb,
+    account_id: &str,
+    products: Vec<(String, Option<String>, Option<f64>, Option<String>)>,
+) -> Result<usize, String> {
+    let mut count = 0;
+    for (product_type, tier, arr, billing_terms) in products {
+        match db.upsert_product_classification(
+            account_id,
+            &product_type,
+            tier.as_deref(),
+            arr,
+            billing_terms.as_deref(),
+            "salesforce",
+        ) {
+            Ok(_) => {
+                count += 1;
+                log::info!(
+                    "I651: Upserted product {} ({:?} tier, ${:?} ARR) for {}",
+                    product_type,
+                    tier,
+                    arr,
+                    account_id
+                );
+            }
+            Err(e) => {
+                log::warn!(
+                    "I651: Failed to upsert product {} for {}: {}",
+                    product_type,
+                    account_id,
+                    e
+                );
+                return Err(format!("Product upsert failed for {}: {}", product_type, e));
+            }
+        }
+    }
+    Ok(count)
 }

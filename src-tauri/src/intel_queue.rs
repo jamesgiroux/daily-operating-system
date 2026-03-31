@@ -20,12 +20,14 @@ use crate::intelligence::{
     parse_intelligence_response, write_intelligence_json, InferredRelationship, IntelligenceJson,
     SourceManifestEntry,
 };
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::AiModelConfig;
 
 /// Debounce window for content-triggered enrichment requests.
 const CONTENT_DEBOUNCE_SECS: u64 = 30;
+const CALENDAR_DEBOUNCE_SECS: u64 = 600;
+const BACKGROUND_ENRICHMENT_TIMEOUT_SECS: u64 = 20;
 
 /// How often the background processor checks for work.
 const POLL_INTERVAL_SECS: u64 = 5;
@@ -97,13 +99,10 @@ impl IntelligenceQueue {
     /// `CONTENT_DEBOUNCE_SECS` — rapid changes within the window are
     /// coalesced into a single request.
     pub fn enqueue(&self, request: IntelRequest) {
-        // Debounce: skip if same entity was enqueued recently (low-priority triggers only)
-        if request.priority == IntelPriority::ContentChange
-            || request.priority == IntelPriority::ProactiveHygiene
-        {
+        if let Some(debounce_secs) = debounce_window_secs(request.priority) {
             if let Ok(last) = self.last_enqueued.lock() {
                 if let Some(last_time) = last.get(&request.entity_id) {
-                    if last_time.elapsed().as_secs() < CONTENT_DEBOUNCE_SECS {
+                    if last_time.elapsed().as_secs() < debounce_secs {
                         log::debug!(
                             "IntelQueue: debounced {} ({}s since last)",
                             request.entity_id,
@@ -226,6 +225,75 @@ impl IntelligenceQueue {
     }
 }
 
+fn debounce_window_secs(priority: IntelPriority) -> Option<u64> {
+    match priority {
+        IntelPriority::ContentChange | IntelPriority::ProactiveHygiene => {
+            Some(CONTENT_DEBOUNCE_SECS)
+        }
+        IntelPriority::CalendarChange => Some(CALENDAR_DEBOUNCE_SECS),
+        IntelPriority::Onboarding | IntelPriority::Manual => None,
+    }
+}
+
+fn is_background_priority(priority: IntelPriority) -> bool {
+    matches!(
+        priority,
+        IntelPriority::CalendarChange
+            | IntelPriority::ContentChange
+            | IntelPriority::ProactiveHygiene
+    )
+}
+
+fn trigger_for_priority(priority: IntelPriority) -> &'static str {
+    match priority {
+        IntelPriority::ProactiveHygiene => "proactive_hygiene",
+        IntelPriority::ContentChange => "content_change",
+        IntelPriority::CalendarChange => "calendar_change",
+        IntelPriority::Onboarding => "onboarding",
+        IntelPriority::Manual => "manual_refresh",
+    }
+}
+
+fn usage_context_for_priority(priority: IntelPriority) -> AiUsageContext {
+    let background = is_background_priority(priority);
+    let operation = match priority {
+        IntelPriority::Onboarding => "onboarding_entity_enrichment",
+        IntelPriority::Manual => "manual_entity_enrichment",
+        _ => "background_entity_enrichment",
+    };
+    AiUsageContext::new("intel_queue", operation)
+        .with_trigger(trigger_for_priority(priority))
+        .with_background(background)
+}
+
+#[cfg(test)]
+mod queue_policy_tests {
+    use super::{
+        debounce_window_secs, is_background_priority, IntelPriority, CALENDAR_DEBOUNCE_SECS,
+        CONTENT_DEBOUNCE_SECS,
+    };
+
+    #[test]
+    fn calendar_change_uses_longer_debounce_window() {
+        assert_eq!(
+            debounce_window_secs(IntelPriority::CalendarChange),
+            Some(CALENDAR_DEBOUNCE_SECS)
+        );
+        assert_eq!(
+            debounce_window_secs(IntelPriority::ContentChange),
+            Some(CONTENT_DEBOUNCE_SECS)
+        );
+    }
+
+    #[test]
+    fn background_priority_classification_matches_policy() {
+        assert!(is_background_priority(IntelPriority::CalendarChange));
+        assert!(is_background_priority(IntelPriority::ProactiveHygiene));
+        assert!(!is_background_priority(IntelPriority::Manual));
+        assert!(!is_background_priority(IntelPriority::Onboarding));
+    }
+}
+
 /// Payload emitted when intelligence is updated.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -325,12 +393,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             polls_since_prune = 0;
         }
 
-        // Phase 0: Dequeue up to adaptive batch size based on activity level (I289, performance)
-        // When user is Active: batch size 1 (faster individual processing, keeps app responsive)
-        // When Idle: batch size 2 (moderate throughput)
-        // When Background: batch size 3 (max throughput)
-        let batch_size = crate::activity::adaptive_batch_size(&state.activity);
-        let batch = state.intel_queue.dequeue_batch(batch_size);
+        // Process one request per wake so automatic background bursts do not
+        // stack PTY calls back-to-back and starve manual work.
+        let batch = state.intel_queue.dequeue_batch(1);
         if batch.is_empty() {
             continue;
         }
@@ -342,13 +407,37 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             entity_names,
         );
 
-        // I571: Emit background work status for frontend indicator.
-        // Look up display names from DB for a descriptive toast.
+        // TTL check: filter out entities enriched recently unless manually requested (I287)
+        let batch: Vec<IntelRequest> = batch
+            .into_iter()
+            .filter(|request| {
+                if is_background_priority(request.priority) && crate::pty::background_ai_paused() {
+                    log::info!(
+                        "IntelProcessor: skipping {} while background AI is paused",
+                        request.entity_id
+                    );
+                    return false;
+                }
+                if request.priority != IntelPriority::Manual {
+                    if let Some(skip_msg) = check_enrichment_ttl(&state, request) {
+                        log::debug!("{}", skip_msg);
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect();
+
+        if batch.is_empty() {
+            continue;
+        }
+
+        // I571: Emit background work status for frontend indicator only when
+        // the batch survives TTL/background guards and will do real work.
         let display_names: Vec<String> = if let Ok(db) = crate::db::ActionDb::open() {
             batch
                 .iter()
                 .filter_map(|r| {
-                    // Try accounts first (most common), then projects, then people
                     db.get_account(&r.entity_id)
                         .ok()
                         .flatten()
@@ -386,31 +475,12 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             }),
         );
 
-        // Audit: entity enrichment started
         if let Ok(mut audit) = state.audit_log.lock() {
             let _ = audit.append(
                 "ai",
                 "entity_enrichment_started",
                 serde_json::json!({"batch_size": batch.len()}),
             );
-        }
-
-        // TTL check: filter out entities enriched recently unless manually requested (I287)
-        let batch: Vec<IntelRequest> = batch
-            .into_iter()
-            .filter(|request| {
-                if request.priority != IntelPriority::Manual {
-                    if let Some(skip_msg) = check_enrichment_ttl(&state, request) {
-                        log::debug!("{}", skip_msg);
-                        return false;
-                    }
-                }
-                true
-            })
-            .collect();
-
-        if batch.is_empty() {
-            continue;
         }
 
         // Phase 1: Gather context for all entities (brief DB access per entity)
@@ -470,8 +540,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     let ai_cfg = ai_config.clone();
                     let input_clone = input.clone();
                     let app_clone = app.clone();
+                    let usage_context = usage_context_for_priority(request.priority);
                     match tauri::async_runtime::spawn_blocking(move || {
-                        run_enrichment(&input_clone, &ai_cfg, Some(&app_clone))
+                        run_enrichment(&input_clone, &ai_cfg, Some(&app_clone), usage_context)
                     })
                     .await
                     {
@@ -610,18 +681,26 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
-            let written_intel =
-                match write_enrichment_results(&state, input, intel, Some(&ai_config)) {
-                    Ok(intel) => intel,
-                    Err(e) => {
-                        log::warn!(
-                            "IntelProcessor: failed to write results for {}: {}",
-                            request.entity_id,
-                            e
-                        );
-                        continue;
-                    }
-                };
+            let written_intel = match write_enrichment_results(
+                &state,
+                input,
+                intel,
+                if is_background_priority(request.priority) {
+                    None
+                } else {
+                    Some(&ai_config)
+                },
+            ) {
+                Ok(intel) => intel,
+                Err(e) => {
+                    log::warn!(
+                        "IntelProcessor: failed to write results for {}: {}",
+                        request.entity_id,
+                        e
+                    );
+                    continue;
+                }
+            };
 
             // I535: Emit tiered Glean signals after successful enrichment
             if state.context_provider().is_remote() {
@@ -998,8 +1077,9 @@ async fn run_glean_enrichment_with_fallback(
                 // I564: PTY calls on blocking threads
                 let ai_cfg = ai_config.clone();
                 let input_clone = input.clone();
+                let usage_context = usage_context_for_priority(request.priority);
                 match tauri::async_runtime::spawn_blocking(move || {
-                    run_enrichment(&input_clone, &ai_cfg, None)
+                    run_enrichment(&input_clone, &ai_cfg, None, usage_context)
                 })
                 .await
                 {
@@ -1098,8 +1178,9 @@ async fn run_glean_enrichment_with_fallback(
         for (request, input) in pty_fallback_inputs {
             let ai_cfg = ai_config.clone();
             let input_clone = input.clone();
+            let usage_context = usage_context_for_priority(request.priority);
             match tauri::async_runtime::spawn_blocking(move || {
-                run_enrichment(&input_clone, &ai_cfg, None)
+                run_enrichment(&input_clone, &ai_cfg, None, usage_context)
             })
             .await
             {
@@ -1144,9 +1225,13 @@ pub fn run_enrichment(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
     app_handle: Option<&AppHandle>,
+    usage_context: AiUsageContext,
 ) -> Result<EnrichmentParseResult, String> {
+    if usage_context.background {
+        return run_background_enrichment(input, ai_config, &usage_context);
+    }
     if input.intelligence_context.is_some() {
-        match run_parallel_enrichment(input, ai_config, app_handle) {
+        match run_parallel_enrichment(input, ai_config, app_handle, &usage_context) {
             Ok(result) => return Ok(result),
             Err(e) => {
                 log::warn!(
@@ -1157,7 +1242,7 @@ pub fn run_enrichment(
             }
         }
     }
-    run_enrichment_legacy(input, ai_config)
+    run_enrichment_legacy(input, ai_config, &usage_context)
 }
 
 /// I574: Parallel per-dimension enrichment engine.
@@ -1173,6 +1258,7 @@ fn run_parallel_enrichment(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
     app_handle: Option<&AppHandle>,
+    usage_context: &AiUsageContext,
 ) -> Result<EnrichmentParseResult, String> {
     let ctx = input
         .intelligence_context
@@ -1205,11 +1291,13 @@ fn run_parallel_enrichment(
         let file_manifest = input.file_manifest.clone();
         let dim_name = dimension.to_string();
         let sender = tx.clone();
+        let dimension_usage_context = usage_context.clone().with_tier(ModelTier::Extraction);
 
         std::thread::spawn(move || {
             let dim_start = Instant::now();
 
             let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_cfg)
+                .with_usage_context(dimension_usage_context)
                 .with_timeout(30)
                 .with_nice_priority(10);
 
@@ -1406,8 +1494,10 @@ fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &In
 fn run_enrichment_legacy(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
+    usage_context: &AiUsageContext,
 ) -> Result<EnrichmentParseResult, String> {
     let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
+        .with_usage_context(usage_context.clone().with_tier(ModelTier::Synthesis))
         .with_timeout(30)
         .with_nice_priority(10);
     let output = pty
@@ -1449,6 +1539,34 @@ fn run_enrichment_legacy(
     })
 }
 
+fn run_background_enrichment(
+    input: &EnrichmentInput,
+    ai_config: &AiModelConfig,
+    usage_context: &AiUsageContext,
+) -> Result<EnrichmentParseResult, String> {
+    let pty = PtyManager::for_tier(ModelTier::Background, ai_config)
+        .with_usage_context(usage_context.clone().with_tier(ModelTier::Background))
+        .with_timeout(BACKGROUND_ENRICHMENT_TIMEOUT_SECS)
+        .with_nice_priority(10);
+    let output = pty
+        .spawn_claude(&input.workspace, &input.prompt)
+        .map_err(|e| format!("Claude Code error: {}", e))?;
+
+    let inferred_relationships = extract_inferred_relationships(&output.stdout);
+    let intel = parse_intelligence_response(
+        &output.stdout,
+        &input.entity_id,
+        &input.entity_type,
+        input.file_count,
+        input.file_manifest.clone(),
+    )?;
+
+    Ok(EnrichmentParseResult {
+        intel,
+        inferred_relationships,
+    })
+}
+
 /// I527: One-shot repair retry when deterministic checks still report
 /// high-severity contradictions after local repairs.
 fn run_consistency_repair_retry(
@@ -1460,6 +1578,11 @@ fn run_consistency_repair_retry(
 ) -> Result<IntelligenceJson, String> {
     let prompt = crate::intelligence::build_repair_prompt(intel, report, facts);
     let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
+        .with_usage_context(
+            AiUsageContext::new("intel_queue", "consistency_repair_retry")
+                .with_trigger("post_write_repair")
+                .with_tier(ModelTier::Extraction),
+        )
         .with_timeout(30)
         .with_nice_priority(10);
     let output = pty
@@ -1491,7 +1614,9 @@ pub fn write_enrichment_results(
         .and_then(|db| db.get_entity_intelligence(&input.entity_id).ok().flatten());
     if let Some(existing) = existing_intel.as_ref() {
         // I576: Apply source-aware reconciliation (preserves user corrections,
-        // non-refreshed source items, and dismissed tombstones)
+        // non-refreshed source items, and dismissed tombstones).
+        // I652: stakeholder_insights reconciliation is skipped in reconcile_enrichment —
+        // protection is now structural via data_source columns on account_stakeholders.
         final_intel = crate::intelligence::glean_provider::reconcile_enrichment(
             existing.clone(),
             final_intel,
@@ -1509,18 +1634,117 @@ pub fn write_enrichment_results(
         }
     }
 
-    // I420: Reconcile stakeholders against linked Person entities
-    if input.entity_type == "account" || input.entity_type == "project" {
-        if let Ok(db_for_people) = crate::db::ActionDb::open() {
-            let linked_people = db_for_people
-                .get_people_for_entity(&input.entity_id)
-                .unwrap_or_default();
-            if !linked_people.is_empty() {
-                crate::intelligence::reconcile_stakeholders::reconcile_stakeholders(
-                    &mut final_intel.stakeholder_insights,
-                    &linked_people,
-                    &final_intel.user_edits,
-                );
+    // I652: Route AI stakeholder insights to DB columns or suggestions table.
+    // Person-first architecture: enrichment never overwrites user-designated data.
+    // AI can update columns it previously wrote (data_source='ai'), and new
+    // discoveries go to stakeholder_suggestions for user review.
+    if input.entity_type == "account" && !final_intel.stakeholder_insights.is_empty() {
+        if let Ok(db_sh) = crate::db::ActionDb::open() {
+            for insight in &final_intel.stakeholder_insights {
+                let ai_source = insight
+                    .item_source
+                    .as_ref()
+                    .map(|s| s.source.as_str())
+                    .unwrap_or("pty_synthesis");
+
+                if let Some(ref pid) = insight.person_id {
+                    // Check if this person_id exists in account_stakeholders for this account
+                    let row_exists: bool = db_sh
+                        .conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*) FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
+                            rusqlite::params![&input.entity_id, pid],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .unwrap_or(0)
+                        > 0;
+
+                    if row_exists {
+                        // Update engagement if AI-owned
+                        if let Some(ref engagement) = insight.engagement {
+                            let ds: String = db_sh
+                                .conn_ref()
+                                .query_row(
+                                    "SELECT data_source_engagement FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
+                                    rusqlite::params![&input.entity_id, pid],
+                                    |row| row.get(0),
+                                )
+                                .unwrap_or_else(|_| "ai".to_string());
+                            if ds == "ai" {
+                                let _ = db_sh.conn_ref().execute(
+                                    "UPDATE account_stakeholders SET engagement = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_engagement = 'ai'",
+                                    rusqlite::params![engagement, &input.entity_id, pid],
+                                );
+                            } else {
+                                // AI disagrees with user-owned engagement — write suggestion
+                                write_stakeholder_suggestion(&StakeholderSuggestionParams {
+                                    db: &db_sh,
+                                    account_id: &input.entity_id,
+                                    person_id: Some(pid),
+                                    insight,
+                                    source: ai_source,
+                                });
+                            }
+                        }
+
+                        // Update assessment if AI-owned
+                        if let Some(ref assessment) = insight.assessment {
+                            let ds: String = db_sh
+                                .conn_ref()
+                                .query_row(
+                                    "SELECT data_source_assessment FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
+                                    rusqlite::params![&input.entity_id, pid],
+                                    |row| row.get(0),
+                                )
+                                .unwrap_or_else(|_| "ai".to_string());
+                            if ds == "ai" {
+                                let _ = db_sh.conn_ref().execute(
+                                    "UPDATE account_stakeholders SET assessment = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_assessment = 'ai'",
+                                    rusqlite::params![assessment, &input.entity_id, pid],
+                                );
+                            }
+                        }
+
+                        // Upsert roles: skip user-owned, update/insert AI-owned
+                        if let Some(ref role) = insight.role {
+                            let role_ds: Option<String> = db_sh
+                                .conn_ref()
+                                .query_row(
+                                    "SELECT data_source FROM account_stakeholder_roles WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
+                                    rusqlite::params![&input.entity_id, pid, role],
+                                    |row| row.get(0),
+                                )
+                                .ok();
+                            match role_ds.as_deref() {
+                                Some("user") => { /* User-owned role — do not touch */ }
+                                Some(_) | None => {
+                                    let _ = db_sh.conn_ref().execute(
+                                        "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
+                                        rusqlite::params![&input.entity_id, pid, role],
+                                    );
+                                }
+                            }
+                        }
+                    } else {
+                        // Person has a person_id but is not in account_stakeholders — suggest
+                        write_stakeholder_suggestion(&StakeholderSuggestionParams {
+                            db: &db_sh,
+                            account_id: &input.entity_id,
+                            person_id: Some(pid),
+                            insight,
+                            source: ai_source,
+                        });
+                    }
+                } else {
+                    // No person_id — write to suggestions table
+                    write_stakeholder_suggestion(&StakeholderSuggestionParams {
+                        db: &db_sh,
+                        account_id: &input.entity_id,
+                        person_id: None,
+                        insight,
+                        source: ai_source,
+                    });
+                }
             }
         }
     }
@@ -1576,6 +1800,47 @@ pub fn write_enrichment_results(
                 post_repair_intel.consistency_checked_at = Some(Utc::now().to_rfc3339());
                 final_intel = post_repair_intel;
             }
+        }
+    }
+
+    // I645: Filter suppressed risks/wins before writing.
+    // If is_suppressed() is available (Agent 1 creates it in db module), check each
+    // item against tombstones. Items with newer evidence (sourced_at > dismissed_at)
+    // pass through — the is_suppressed function handles that logic.
+    if let Ok(feedback_db) = crate::db::ActionDb::open() {
+        let pre_risk_count = final_intel.risks.len();
+        final_intel.risks.retain(|risk| {
+            let item_key = Some(risk.text.as_str());
+            !feedback_db
+                .is_suppressed(
+                    &input.entity_id,
+                    "risks",
+                    item_key,
+                    risk.item_source.as_ref().map(|s| s.sourced_at.as_str()),
+                )
+                .unwrap_or(false)
+        });
+        let pre_win_count = final_intel.recent_wins.len();
+        final_intel.recent_wins.retain(|win| {
+            let item_key = Some(win.text.as_str());
+            !feedback_db
+                .is_suppressed(
+                    &input.entity_id,
+                    "recentWins",
+                    item_key,
+                    win.item_source.as_ref().map(|s| s.sourced_at.as_str()),
+                )
+                .unwrap_or(false)
+        });
+        let risks_suppressed = pre_risk_count - final_intel.risks.len();
+        let wins_suppressed = pre_win_count - final_intel.recent_wins.len();
+        if risks_suppressed > 0 || wins_suppressed > 0 {
+            log::info!(
+                "[I645] Suppression filter for {}: {} risks, {} wins removed",
+                input.entity_id,
+                risks_suppressed,
+                wins_suppressed,
+            );
         }
     }
 
@@ -1639,6 +1904,7 @@ pub fn write_enrichment_results(
     // I535 Step 11: Dual-write commitments from Glean enrichment to captured_commitments
     if input.entity_type == "account" {
         dual_write_enrichment_commitments(&db, &input.entity_id, &final_intel);
+        dual_write_enrichment_products(&db, &input.entity_id, &final_intel);
     }
 
     // I338: Regenerate person files after intelligence enrichment
@@ -1733,6 +1999,106 @@ fn is_sparse_intelligence(intel: &IntelligenceJson) -> bool {
         || has_state
         || has_health
         || has_metrics)
+}
+
+/// I652: Parameters for writing a stakeholder suggestion.
+struct StakeholderSuggestionParams<'a> {
+    db: &'a crate::db::ActionDb,
+    account_id: &'a str,
+    person_id: Option<&'a str>,
+    insight: &'a crate::intelligence::io::StakeholderInsight,
+    source: &'a str,
+}
+
+/// I652: Write a stakeholder suggestion to the `stakeholder_suggestions` table.
+/// Skips if a pending suggestion for the same person+account already exists.
+fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) {
+    let StakeholderSuggestionParams {
+        db,
+        account_id,
+        person_id,
+        insight,
+        source,
+    } = params;
+
+    // I652: Skip suggestions for internal team members (by person_id OR name match)
+    if let Some(pid) = person_id {
+        let is_internal: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT relationship = 'internal' FROM people WHERE id = ?1",
+                rusqlite::params![pid],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        if is_internal {
+            return;
+        }
+    } else {
+        // No person_id — check by name (PTY often suggests names without IDs)
+        let is_internal_by_name: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM people WHERE LOWER(name) = LOWER(?1) AND relationship = 'internal')",
+                rusqlite::params![&insight.name],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        if is_internal_by_name {
+            return;
+        }
+    }
+
+    // Dedup: skip if a pending suggestion for this person+account already exists.
+    // Match on person_id if available, otherwise match on name.
+    let already_pending = if let Some(pid) = person_id {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM stakeholder_suggestions WHERE account_id = ?1 AND person_id = ?2 AND status = 'pending'",
+                rusqlite::params![account_id, pid],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0
+    } else {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM stakeholder_suggestions WHERE account_id = ?1 AND suggested_name = ?2 AND status = 'pending'",
+                rusqlite::params![account_id, &insight.name],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0
+    };
+    if already_pending {
+        return;
+    }
+
+    let raw_json = serde_json::to_string(insight).unwrap_or_default();
+    if let Err(e) = db.conn_ref().execute(
+        "INSERT INTO stakeholder_suggestions (account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, raw_suggestion, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, datetime('now'))",
+        rusqlite::params![
+            account_id,
+            person_id,
+            &insight.name,
+            Option::<&str>::None,
+            &insight.role,
+            &insight.engagement,
+            source,
+            raw_json,
+        ],
+    ) {
+        log::warn!(
+            "I652: Failed to write stakeholder suggestion for {} on {}: {}",
+            insight.name, account_id, e,
+        );
+    } else {
+        log::info!(
+            "I652: Wrote stakeholder suggestion for '{}' on account {}",
+            insight.name, account_id,
+        );
+    }
 }
 
 /// Keep prior core intelligence fields when a fresh refresh returns sparse output.
@@ -1960,6 +2326,70 @@ fn dual_write_enrichment_commitments(
         ) {
             log::warn!("Failed to emit commitment_captured signal: {}", e);
         }
+    }
+}
+
+/// Dual-write product adoption data from enrichment intelligence into the
+/// `account_products` table, keeping the relational surface in sync with
+/// the intelligence JSON blob.
+fn dual_write_enrichment_products(
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    intel: &IntelligenceJson,
+) {
+    let adoption = match intel.product_adoption.as_ref() {
+        Some(a) => a,
+        None => return,
+    };
+
+    let source = adoption.source.as_deref().unwrap_or("ai_inference");
+    let mut upserted = 0usize;
+
+    for feature in &adoption.feature_adoption {
+        // Parse "Core platform: 95%" → name = "Core platform", adoption_pct ~0.95
+        let (name, _adoption_pct) = if let Some(colon_pos) = feature.find(':') {
+            let raw_name = feature[..colon_pos].trim();
+            let pct_str = feature[colon_pos + 1..].trim().trim_end_matches('%');
+            let pct = pct_str.parse::<f64>().ok().map(|v| v / 100.0);
+            (raw_name.to_string(), pct)
+        } else {
+            (feature.trim().to_string(), None)
+        };
+
+        if name.is_empty() {
+            continue;
+        }
+
+        match db.upsert_account_product(entity_id, &name, None, "active", None, source, 0.55, None)
+        {
+            Ok(_) => upserted += 1,
+            Err(e) => {
+                log::warn!(
+                    "Failed to upsert account product '{}' for {}: {}",
+                    name,
+                    entity_id,
+                    e
+                );
+            }
+        }
+    }
+
+    if upserted > 0 {
+        log::info!(
+            "IntelProcessor: dual-wrote {} products for {} from enrichment",
+            upserted,
+            entity_id,
+        );
+        // Intelligence Loop: every mutation emits a signal (I624 AC7)
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            "account",
+            entity_id,
+            "product_data_updated",
+            source,
+            Some(&format!("{{\"count\":{upserted}}}")),
+            0.55,
+        );
     }
 }
 
