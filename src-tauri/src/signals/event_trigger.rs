@@ -69,12 +69,34 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
     let embedding_ref = state.embedding_model.as_ref();
 
     for meeting in &meetings {
+        // Parse attendees from storage (JSON array string or comma-separated).
+        // Attendees in meetings table are stored as Option<String>, either:
+        //   - JSON array: ["alice@acme.com", "bob@partner.com"]
+        //   - Comma-separated: alice@acme.com, bob@partner.com
+        // We need to parse into a proper JSON array for the resolver.
+        let attendees_array: Vec<String> = match &meeting.attendees {
+            Some(attendees_str) => {
+                // Try parsing as JSON array first
+                if let Ok(arr) = serde_json::from_str::<Vec<String>>(attendees_str) {
+                    arr
+                } else {
+                    // Fall back to comma-separated parsing
+                    attendees_str
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                }
+            }
+            None => Vec::new(),
+        };
+
         // Build a minimal meeting Value for the resolver
         let meeting_json = serde_json::json!({
             "id": meeting.id,
             "summary": meeting.title,
             "title": meeting.title,
-            "attendees": meeting.attendees,
+            "attendees": attendees_array,
         });
 
         let outcomes = crate::prepare::entity_resolver::resolve_meeting_entities(
@@ -90,6 +112,7 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
         let selected = select_auto_link_candidates(&outcomes);
 
         let mut linked = 0;
+        let mut linked_account_id: Option<String> = None;
         for entity in &selected {
             let _ = db.link_meeting_entity_if_absent(
                 &meeting.id,
@@ -97,6 +120,10 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
                 entity.entity_type.as_str(),
             );
             linked += 1;
+            // Track the first account linked (for domain extraction)
+            if linked_account_id.is_none() && entity.entity_type.as_str() == "account" {
+                linked_account_id = Some(entity.entity_id.clone());
+            }
         }
         if linked > 0 {
             log::debug!(
@@ -104,6 +131,27 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
                 linked,
                 meeting.title,
             );
+
+            // Path 2a: Extract domains from attendee emails and store in account_domains.
+            // This ensures newly-linked accounts gain domain knowledge for future matching.
+            if let Some(account_id) = linked_account_id {
+                let discovered_domains = extract_domains_from_attendees(&attendees_array);
+                if !discovered_domains.is_empty() {
+                    if let Err(e) = db.set_account_domains(&account_id, &discovered_domains) {
+                        log::warn!(
+                            "Entity resolution trigger: failed to store domains for account {}: {}",
+                            account_id,
+                            e
+                        );
+                    } else {
+                        log::debug!(
+                            "Entity resolution trigger: stored {} domains for account '{}'",
+                            discovered_domains.len(),
+                            account_id
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -174,6 +222,25 @@ fn select_auto_link_candidates(
     }
 
     best_by_type.into_values().collect()
+}
+
+/// Extract unique domains from attendee email addresses.
+/// Handles both valid emails and malformed strings gracefully.
+fn extract_domains_from_attendees(attendees: &[String]) -> Vec<String> {
+    let mut domains = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for email in attendees {
+        if let Some(domain_part) = email.split('@').nth(1) {
+            let domain = domain_part.to_lowercase();
+            // Filter out obviously invalid domains and duplicates
+            if !domain.is_empty() && !domain.contains(' ') && seen.insert(domain.clone()) {
+                domains.push(domain);
+            }
+        }
+    }
+
+    domains
 }
 
 /// Minimal meeting info for resolution trigger.

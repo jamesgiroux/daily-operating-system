@@ -1,14 +1,18 @@
 // Accounts service — extracted from commands.rs
 // Business logic for child account creation with collision handling.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
+
+use chrono::{Datelike, NaiveDate, Utc};
+use serde_json::Value;
 
 use crate::commands::{
     AccountChildSummary, AccountDetailResult, AccountListItem, MeetingPreview, MeetingSummary,
     PickerAccount, PrepContext,
 };
 use crate::db::ActionDb;
+use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 
 pub fn set_account_domains(
@@ -63,20 +67,11 @@ pub fn create_child_account_record(
     let account = crate::db::DbAccount {
         id,
         name: name.to_string(),
-        lifecycle: None,
-        arr: None,
-        health: None,
-        contract_start: None,
-        contract_end: None,
-        nps: None,
         tracker_path: Some(tracker_path),
         parent_id: Some(parent.id.clone()),
         account_type: parent.account_type.clone(),
         updated_at: now,
-        archived: false,
-        keywords: None,
-        keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -198,15 +193,1047 @@ pub fn infer_internal_account_for_meeting(
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LifecycleTransitionCandidate {
+    pub new_lifecycle: String,
+    pub renewal_stage: Option<String>,
+    pub source: String,
+    pub confidence: f64,
+    pub evidence: Option<String>,
+    pub completion_trigger: Option<String>,
+}
+
+fn parse_iso_date(value: &str) -> Option<NaiveDate> {
+    let trimmed = value.trim();
+    let date_str = trimmed.get(0..10).unwrap_or(trimmed);
+    NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()
+}
+
+pub fn normalized_lifecycle(value: &str) -> String {
+    match value.trim().to_lowercase().as_str() {
+        "renewal" => "renewing".to_string(),
+        "at-risk" => "at_risk".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn infer_renewal_stage(contract_end: Option<&str>) -> Option<String> {
+    let contract_end = contract_end.and_then(parse_iso_date)?;
+    let days_until = (contract_end - Utc::now().date_naive()).num_days();
+    let stage = match days_until {
+        i64::MIN..=-1 => "processed",
+        0..=30 => "contract_sent",
+        31..=60 => "negotiating",
+        61..=120 => "approaching",
+        _ => return None, // >120 days out — not yet in renewal stage
+    };
+    Some(stage.to_string())
+}
+
+fn add_one_year(date: NaiveDate) -> Option<NaiveDate> {
+    let next_year = date.year() + 1;
+    NaiveDate::from_ymd_opt(next_year, date.month(), date.day()).or_else(|| {
+        if date.month() == 2 && date.day() == 29 {
+            NaiveDate::from_ymd_opt(next_year, 2, 28)
+        } else {
+            None
+        }
+    })
+}
+
+fn maybe_roll_contract_end(
+    previous_contract_end: Option<&str>,
+    previous_lifecycle: Option<&str>,
+    new_lifecycle: &str,
+    completion_trigger: Option<&str>,
+) -> Option<String> {
+    if new_lifecycle != "active"
+        || completion_trigger != Some("contract_signed")
+        || !matches!(
+            previous_lifecycle.unwrap_or_default(),
+            "renewing" | "at_risk"
+        )
+    {
+        return previous_contract_end.map(str::to_string);
+    }
+
+    previous_contract_end
+        .and_then(parse_iso_date)
+        .and_then(add_one_year)
+        .map(|date| date.format("%Y-%m-%d").to_string())
+        .or_else(|| previous_contract_end.map(str::to_string))
+}
+
+fn account_field_conflict_feedback_key(field: &str, suggested_value: &str) -> String {
+    format!("account_field_conflict:{field}:{suggested_value}")
+}
+
+fn account_field_signal_category(field: &str) -> String {
+    match field {
+        "arr" => "account_arr_conflict".to_string(),
+        "lifecycle" => "lifecycle_transition".to_string(),
+        "contract_end" => "renewal_date_conflict".to_string(),
+        "nps" => "nps_conflict".to_string(),
+        _ => format!("account_field_{field}"),
+    }
+}
+
+fn current_health_score(db: &ActionDb, account_id: &str) -> Option<f64> {
+    db.conn_ref()
+        .query_row(
+            "SELECT health_score FROM entity_quality WHERE entity_id = ?1 AND entity_type = 'account'",
+            rusqlite::params![account_id],
+            |row| row.get(0),
+        )
+        .ok()
+}
+
+fn extract_json_conflict_value(payload: &Value, field: &str) -> Option<String> {
+    let keys: &[&str] = match field {
+        "arr" => &["currentArr", "current_arr", "arr"],
+        "lifecycle" => &["customerStage", "customer_stage", "lifecycle"],
+        "contract_end" => &["renewalDate", "renewal_date", "contractEnd", "contract_end"],
+        "nps" => &["nps", "NPS"],
+        _ => &[],
+    };
+
+    for key in keys {
+        let Some(value) = payload.get(*key) else {
+            continue;
+        };
+        let suggestion = match value {
+            Value::Null => None,
+            Value::Number(number) => Some(number.to_string()),
+            Value::String(string) if !string.trim().is_empty() => Some(string.trim().to_string()),
+            _ => Some(value.to_string()),
+        };
+        if suggestion.is_some() {
+            return suggestion;
+        }
+    }
+
+    None
+}
+
+fn field_matches_current_value(
+    account: &crate::db::DbAccount,
+    field: &str,
+    suggested_value: &str,
+) -> bool {
+    match field {
+        "arr" => account
+            .arr
+            .zip(suggested_value.parse::<f64>().ok())
+            .map(|(current, suggested)| (current - suggested).abs() < 1.0)
+            .unwrap_or(false),
+        "lifecycle" => account
+            .lifecycle
+            .as_deref()
+            .map(normalized_lifecycle)
+            .is_some_and(|current| current == normalized_lifecycle(suggested_value)),
+        "contract_end" => account
+            .contract_end
+            .as_deref()
+            .zip(parse_iso_date(suggested_value))
+            .map(|(current, suggested)| parse_iso_date(current) == Some(suggested))
+            .unwrap_or(false),
+        "nps" => account
+            .nps
+            .zip(suggested_value.parse::<i32>().ok())
+            .map(|(current, suggested)| current == suggested)
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+fn build_account_field_conflicts(
+    db: &ActionDb,
+    account: &crate::db::DbAccount,
+    intelligence: Option<&crate::intelligence::IntelligenceJson>,
+) -> Vec<crate::types::AccountFieldConflictSuggestion> {
+    let mut conflicts: HashMap<String, crate::types::AccountFieldConflictSuggestion> =
+        HashMap::new();
+    let dismissed_conflicts: HashSet<String> = db
+        .get_entity_feedback(&account.id, "account")
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| {
+            row.feedback_type == "negative" && row.field.starts_with("account_field_conflict:")
+        })
+        .map(|row| row.field)
+        .collect();
+
+    for signal in
+        crate::services::signals::get_for_entity(db, "account", &account.id).unwrap_or_default()
+    {
+        let Some(raw_value) = signal.value.as_deref() else {
+            continue;
+        };
+        let Ok(payload) = serde_json::from_str::<Value>(raw_value) else {
+            continue;
+        };
+
+        for field in ["arr", "lifecycle", "contract_end", "nps"] {
+            let Some(suggested_value) = extract_json_conflict_value(&payload, field) else {
+                continue;
+            };
+            let feedback_key = account_field_conflict_feedback_key(field, &suggested_value);
+            if dismissed_conflicts.contains(&feedback_key) {
+                continue;
+            }
+            if field_matches_current_value(account, field, &suggested_value) {
+                continue;
+            }
+
+            conflicts.entry(field.to_string()).or_insert_with(|| {
+                crate::types::AccountFieldConflictSuggestion {
+                    field: field.to_string(),
+                    source: signal.source.clone(),
+                    suggested_value,
+                    signal_id: signal.id.clone(),
+                    confidence: signal.confidence,
+                    detected_at: Some(signal.created_at.clone()),
+                }
+            });
+        }
+    }
+
+    if let Some(intelligence) = intelligence {
+        if let Some(contract) = intelligence.contract_context.as_ref() {
+            if let Some(current_arr) = contract.current_arr {
+                let suggested = format!("{current_arr:.0}");
+                if !field_matches_current_value(account, "arr", &suggested) {
+                    let feedback_key = account_field_conflict_feedback_key("arr", &suggested);
+                    if !dismissed_conflicts.contains(&feedback_key) {
+                        conflicts.entry("arr".to_string()).or_insert_with(|| {
+                            crate::types::AccountFieldConflictSuggestion {
+                                field: "arr".to_string(),
+                                source: "intelligence_contract_context".to_string(),
+                                suggested_value: suggested,
+                                signal_id: "intelligence-contract-context-arr".to_string(),
+                                confidence: 0.6,
+                                detected_at: None,
+                            }
+                        });
+                    }
+                }
+            }
+            if let Some(renewal_date) = contract.renewal_date.as_ref() {
+                if !field_matches_current_value(account, "contract_end", renewal_date) {
+                    let feedback_key =
+                        account_field_conflict_feedback_key("contract_end", renewal_date);
+                    if !dismissed_conflicts.contains(&feedback_key) {
+                        conflicts
+                            .entry("contract_end".to_string())
+                            .or_insert_with(|| crate::types::AccountFieldConflictSuggestion {
+                                field: "contract_end".to_string(),
+                                source: "intelligence_contract_context".to_string(),
+                                suggested_value: renewal_date.clone(),
+                                signal_id: "intelligence-contract-context-renewal-date".to_string(),
+                                confidence: 0.6,
+                                detected_at: None,
+                            });
+                    }
+                }
+            }
+        }
+        if let Some(org_health) = intelligence.org_health.as_ref() {
+            if let Some(stage) = org_health.customer_stage.as_ref() {
+                if !field_matches_current_value(account, "lifecycle", stage) {
+                    let suggested_lifecycle = normalized_lifecycle(stage);
+                    let feedback_key =
+                        account_field_conflict_feedback_key("lifecycle", &suggested_lifecycle);
+                    if !dismissed_conflicts.contains(&feedback_key) {
+                        conflicts.entry("lifecycle".to_string()).or_insert_with(|| {
+                            crate::types::AccountFieldConflictSuggestion {
+                                field: "lifecycle".to_string(),
+                                source: if org_health.source.is_empty() {
+                                    "glean_crm".to_string()
+                                } else {
+                                    org_health.source.clone()
+                                },
+                                suggested_value: suggested_lifecycle.clone(),
+                                signal_id: "intelligence-org-health-lifecycle".to_string(),
+                                confidence: 0.7,
+                                detected_at: if org_health.gathered_at.is_empty() {
+                                    None
+                                } else {
+                                    Some(org_health.gathered_at.clone())
+                                },
+                            }
+                        });
+                    }
+                }
+            }
+        }
+        if let Some(nps_csat) = intelligence.nps_csat.as_ref() {
+            if let Some(nps) = nps_csat.nps {
+                let suggested = nps.to_string();
+                if !field_matches_current_value(account, "nps", &suggested) {
+                    let feedback_key = account_field_conflict_feedback_key("nps", &suggested);
+                    if !dismissed_conflicts.contains(&feedback_key) {
+                        conflicts.entry("nps".to_string()).or_insert_with(|| {
+                            crate::types::AccountFieldConflictSuggestion {
+                                field: "nps".to_string(),
+                                source: nps_csat
+                                    .source
+                                    .clone()
+                                    .unwrap_or_else(|| "survey_tool".to_string()),
+                                suggested_value: suggested,
+                                signal_id: "intelligence-nps".to_string(),
+                                confidence: 0.65,
+                                detected_at: nps_csat.survey_date.clone(),
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    conflicts.into_values().collect()
+}
+
+fn build_account_products(
+    db: &ActionDb,
+    account_id: &str,
+    intelligence: Option<&crate::intelligence::IntelligenceJson>,
+) -> Vec<crate::db::DbAccountProduct> {
+    let stored = db.get_account_products(account_id).unwrap_or_default();
+    if !stored.is_empty() {
+        return stored;
+    }
+
+    intelligence
+        .and_then(|item| item.product_adoption.as_ref())
+        .map(|adoption| {
+            adoption
+                .feature_adoption
+                .iter()
+                .enumerate()
+                .map(|(index, feature)| crate::db::DbAccountProduct {
+                    id: -((index as i64) + 1),
+                    account_id: account_id.to_string(),
+                    name: feature.clone(),
+                    category: Some("adopted_feature".to_string()),
+                    status: "active".to_string(),
+                    arr_portion: None,
+                    source: adoption
+                        .source
+                        .clone()
+                        .unwrap_or_else(|| "ai_inference".to_string()),
+                    confidence: 0.55,
+                    notes: adoption
+                        .trend
+                        .as_ref()
+                        .map(|trend| format!("Observed in product adoption ({trend})")),
+                    product_type: None,
+                    tier: None,
+                    billing_terms: None,
+                    arr: None,
+                    last_verified_at: None,
+                    data_source: None,
+                    created_at: Utc::now().to_rfc3339(),
+                    updated_at: Utc::now().to_rfc3339(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn evaluate_lifecycle_transition_candidate(
+    db: &ActionDb,
+    account: &crate::db::DbAccount,
+) -> Option<LifecycleTransitionCandidate> {
+    let active_signals =
+        crate::services::signals::get_for_entity(db, "account", &account.id).unwrap_or_default();
+    let current_lifecycle = account
+        .lifecycle
+        .as_deref()
+        .map(normalized_lifecycle)
+        .unwrap_or_default();
+    let days_until_renewal = account
+        .contract_end
+        .as_deref()
+        .and_then(parse_iso_date)
+        .map(|date| (date - Utc::now().date_naive()).num_days());
+
+    let renewal_signals: Vec<_> = active_signals
+        .iter()
+        .filter(|signal| {
+            matches!(
+                signal.signal_type.as_str(),
+                "renewal_proximity" | "proactive_renewal_gap" | "renewal_data_updated"
+            )
+        })
+        .collect();
+    let risk_signals: Vec<_> = active_signals
+        .iter()
+        .filter(|signal| {
+            matches!(
+                signal.signal_type.as_str(),
+                "renewal_at_risk" | "renewal_risk_escalation"
+            )
+        })
+        .collect();
+    let onboarding_completion = active_signals.iter().find(|signal| {
+        matches!(
+            signal.signal_type.as_str(),
+            "go_live" | "onboarding_complete"
+        )
+    });
+    let contract_signed = active_signals
+        .iter()
+        .find(|signal| signal.signal_type == "contract_signed");
+
+    if let Some(signal) = contract_signed {
+        if matches!(current_lifecycle.as_str(), "renewing" | "at_risk") {
+            return Some(LifecycleTransitionCandidate {
+                new_lifecycle: "active".to_string(),
+                renewal_stage: None,
+                source: signal.source.clone(),
+                confidence: signal.confidence.max(0.9),
+                evidence: Some("Contract-signed signal detected.".to_string()),
+                completion_trigger: Some("contract_signed".to_string()),
+            });
+        }
+    }
+
+    if let Some(signal) = onboarding_completion {
+        if matches!(
+            current_lifecycle.as_str(),
+            "" | "onboarding" | "adoption" | "ramping"
+        ) {
+            return Some(LifecycleTransitionCandidate {
+                new_lifecycle: "active".to_string(),
+                renewal_stage: None,
+                source: signal.source.clone(),
+                confidence: signal.confidence.max(0.82),
+                evidence: Some(format!(
+                    "{} indicates onboarding completion.",
+                    signal.signal_type.replace('_', " ")
+                )),
+                completion_trigger: Some(signal.signal_type.clone()),
+            });
+        }
+    }
+
+    let renewal_confidence = renewal_signals
+        .iter()
+        .map(|signal| signal.confidence)
+        .fold(0.0f64, f64::max);
+    if !matches!(current_lifecycle.as_str(), "renewing" | "churned") {
+        let proximity_confidence = match days_until_renewal {
+            Some(days) if days <= 30 => 0.9,
+            Some(days) if days <= 60 => 0.8,
+            Some(days) if days <= 120 => 0.72,
+            _ => 0.0,
+        };
+        let confidence = renewal_confidence.max(proximity_confidence);
+        if confidence >= 0.72 {
+            let signal_sources = renewal_signals
+                .iter()
+                .map(|signal| signal.signal_type.replace('_', " "))
+                .collect::<Vec<_>>();
+            let evidence = if signal_sources.is_empty() {
+                days_until_renewal.map(|days| format!("Contract end is {days} days away."))
+            } else {
+                Some(format!("Signals: {}.", signal_sources.join(", ")))
+            };
+            return Some(LifecycleTransitionCandidate {
+                new_lifecycle: "renewing".to_string(),
+                renewal_stage: infer_renewal_stage(account.contract_end.as_deref()),
+                source: renewal_signals
+                    .first()
+                    .map(|signal| signal.source.clone())
+                    .unwrap_or_else(|| "proactive".to_string()),
+                confidence,
+                evidence,
+                completion_trigger: Some("renewal".to_string()),
+            });
+        }
+    }
+
+    let compound_risk =
+        risk_signals.len() >= 2 || (!risk_signals.is_empty() && !renewal_signals.is_empty());
+    if compound_risk && current_lifecycle != "at_risk" {
+        let confidence = risk_signals
+            .iter()
+            .map(|signal| signal.confidence)
+            .fold(0.0f64, f64::max)
+            .max(0.83);
+        let evidence = Some(format!(
+            "Compound renewal risk detected from {}.",
+            risk_signals
+                .iter()
+                .map(|signal| signal.signal_type.replace('_', " "))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        return Some(LifecycleTransitionCandidate {
+            new_lifecycle: "at_risk".to_string(),
+            renewal_stage: infer_renewal_stage(account.contract_end.as_deref()),
+            source: risk_signals
+                .first()
+                .map(|signal| signal.source.clone())
+                .unwrap_or_else(|| "proactive".to_string()),
+            confidence,
+            evidence,
+            completion_trigger: None,
+        });
+    }
+
+    None
+}
+
+fn emit_auto_completed_success_plan_signals(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    auto_completed: &crate::db::success_plans::AutoCompletedMilestones,
+    source: &str,
+) -> Result<(), String> {
+    for milestone in &auto_completed.milestones {
+        crate::services::signals::emit_and_propagate(
+            db,
+            engine,
+            "account",
+            &milestone.account_id,
+            "milestone_completed",
+            source,
+            Some(&format!(
+                "{{\"milestone_id\":\"{}\",\"objective_id\":\"{}\",\"completion_trigger\":\"{}\"}}",
+                milestone.id,
+                milestone.objective_id,
+                milestone.completion_trigger.clone().unwrap_or_default()
+            )),
+            0.9,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+    }
+
+    for objective in &auto_completed.objectives {
+        crate::services::signals::emit_and_propagate(
+            db,
+            engine,
+            "account",
+            &objective.account_id,
+            "objective_completed",
+            source,
+            Some(&format!("{{\"objective_id\":\"{}\"}}", objective.id)),
+            0.95,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+    }
+
+    Ok(())
+}
+
+pub fn apply_lifecycle_transition(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    transition: &LifecycleTransitionCandidate,
+) -> Result<Option<i64>, String> {
+    db.with_transaction(|tx| {
+        let account = tx
+            .get_account(account_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Account not found: {account_id}"))?;
+        let previous_lifecycle = account
+            .lifecycle
+            .as_deref()
+            .map(normalized_lifecycle);
+        let next_lifecycle = normalized_lifecycle(&transition.new_lifecycle);
+        let previous_contract_end = account.contract_end.clone();
+        let next_contract_end = maybe_roll_contract_end(
+            previous_contract_end.as_deref(),
+            previous_lifecycle.as_deref(),
+            &next_lifecycle,
+            transition.completion_trigger.as_deref(),
+        );
+        let previous_stage = tx
+            .get_account_renewal_stage(account_id)
+            .map_err(|e| e.to_string())?;
+        let next_stage = transition.renewal_stage.as_deref().map(str::to_string);
+
+        if previous_lifecycle.as_deref() == Some(next_lifecycle.as_str())
+            && previous_stage == next_stage
+        {
+            return Ok(None);
+        }
+
+        let health_before = current_health_score(tx, account_id);
+
+        tx.update_account_field(account_id, "lifecycle", &next_lifecycle)
+            .map_err(|e| e.to_string())?;
+        tx.set_account_field_provenance(account_id, "lifecycle", &transition.source, None)
+            .map_err(|e| e.to_string())?;
+        tx.set_account_renewal_stage(account_id, transition.renewal_stage.as_deref())
+            .map_err(|e| e.to_string())?;
+        if next_contract_end != previous_contract_end {
+            if let Some(contract_end) = next_contract_end.as_deref() {
+                tx.update_account_field(account_id, "contract_end", contract_end)
+                    .map_err(|e| e.to_string())?;
+                tx.set_account_field_provenance(account_id, "contract_end", &transition.source, None)
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        let _ = crate::services::intelligence::recompute_entity_health(tx, account_id, "account");
+        let health_after = current_health_score(tx, account_id);
+
+        let change_id = if previous_lifecycle.as_deref() != Some(next_lifecycle.as_str()) {
+            Some(
+                tx.insert_lifecycle_change(
+                    account_id,
+                    previous_lifecycle.as_deref(),
+                    &next_lifecycle,
+                    previous_stage.as_deref(),
+                    transition.renewal_stage.as_deref(),
+                    previous_contract_end.as_deref(),
+                    next_contract_end.as_deref(),
+                    &transition.source,
+                    transition.confidence,
+                    transition.evidence.as_deref(),
+                    health_before,
+                    health_after,
+                )
+                .map_err(|e| e.to_string())?,
+            )
+        } else {
+            None
+        };
+
+        let payload = serde_json::json!({
+            "previous_lifecycle": previous_lifecycle,
+            "new_lifecycle": next_lifecycle,
+            "previous_stage": previous_stage,
+            "new_stage": next_stage,
+            "confidence": transition.confidence,
+            "evidence": transition.evidence,
+        })
+        .to_string();
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            account_id,
+            "lifecycle_transition",
+            &transition.source,
+            Some(&payload),
+            transition.confidence,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+
+        if let Some(trigger) = transition.completion_trigger.as_deref() {
+            if transition.confidence >= 0.8 {
+                let auto_completed = tx
+                    .complete_milestones_for_completion_trigger(
+                        account_id,
+                        trigger,
+                        Some("lifecycle_transition"),
+                    )
+                    .map_err(|e| e.to_string())?;
+                emit_auto_completed_success_plan_signals(
+                    tx,
+                    engine,
+                    &auto_completed,
+                    "lifecycle_transition",
+                )?;
+            } else {
+                // I628 AC3: Note potential milestone matches in timeline (sub-0.8 confidence)
+                let matching = tx
+                    .find_milestones_for_trigger(account_id, trigger)
+                    .unwrap_or_default();
+                for (milestone_id, milestone_title) in &matching {
+                    log::info!(
+                        "Noting milestone match '{}' for {} at confidence {:.2} (below 0.8 threshold)",
+                        milestone_title, account_id, transition.confidence
+                    );
+                    let _ = crate::services::signals::emit_and_propagate(
+                        tx,
+                        engine,
+                        "account",
+                        account_id,
+                        "milestone_match_noted",
+                        "lifecycle_transition",
+                        Some(&serde_json::json!({
+                            "milestone_id": milestone_id,
+                            "milestone_title": milestone_title,
+                            "confidence": transition.confidence,
+                            "trigger": trigger,
+                        }).to_string()),
+                        transition.confidence,
+                    );
+                }
+            }
+        }
+
+        Ok(change_id)
+    })
+}
+
+pub fn ensure_account_lifecycle_state(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+) -> Result<(), String> {
+    let Some(account) = db.get_account(account_id).map_err(|e| e.to_string())? else {
+        return Ok(());
+    };
+    if !matches!(
+        account.account_type,
+        crate::db::AccountType::Customer | crate::db::AccountType::Partner
+    ) {
+        return Ok(());
+    }
+
+    if let Some(candidate) = evaluate_lifecycle_transition_candidate(db, &account) {
+        let _ = apply_lifecycle_transition(db, engine, account_id, &candidate)?;
+        return Ok(());
+    }
+
+    if normalized_lifecycle(account.lifecycle.as_deref().unwrap_or_default()) == "renewing" {
+        let current_stage = db
+            .get_account_renewal_stage(account_id)
+            .map_err(|e| e.to_string())?;
+        let inferred_stage = infer_renewal_stage(account.contract_end.as_deref());
+        if current_stage != inferred_stage {
+            db.set_account_renewal_stage(account_id, inferred_stage.as_deref())
+                .map_err(|e| e.to_string())?;
+            let payload = format!(
+                "{{\"stage\":\"{}\"}}",
+                inferred_stage.as_deref().unwrap_or("")
+            );
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                engine,
+                "account",
+                account_id,
+                "renewal_stage_updated",
+                "system",
+                Some(&payload),
+                0.7,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+pub fn refresh_lifecycle_states_for_dashboard(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+) -> Result<usize, String> {
+    let mut refreshed = 0usize;
+    for account in db.get_all_accounts().map_err(|e| e.to_string())? {
+        if !matches!(
+            account.account_type,
+            crate::db::AccountType::Customer | crate::db::AccountType::Partner
+        ) {
+            continue;
+        }
+
+        let near_renewal = account
+            .contract_end
+            .as_deref()
+            .and_then(parse_iso_date)
+            .map(|date| (date - Utc::now().date_naive()).num_days() <= 150)
+            .unwrap_or(false);
+        let has_signals = crate::services::signals::get_for_entity(db, "account", &account.id)
+            .map(|signals| {
+                signals.iter().any(|signal| {
+                    matches!(
+                        signal.signal_type.as_str(),
+                        "renewal_proximity"
+                            | "proactive_renewal_gap"
+                            | "renewal_data_updated"
+                            | "renewal_at_risk"
+                            | "renewal_risk_escalation"
+                            | "contract_signed"
+                    )
+                })
+            })
+            .unwrap_or(false);
+        if !near_renewal && !has_signals {
+            continue;
+        }
+
+        ensure_account_lifecycle_state(db, engine, &account.id)?;
+        refreshed += 1;
+    }
+    Ok(refreshed)
+}
+
+pub fn confirm_lifecycle_change(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    change_id: i64,
+) -> Result<(), String> {
+    let change = db
+        .get_lifecycle_change(change_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Lifecycle change not found: {change_id}"))?;
+    db.set_lifecycle_change_response(change_id, "confirmed", None)
+        .map_err(|e| e.to_string())?;
+    let _ = db.upsert_signal_weight(&change.source, "account", "lifecycle_transition", 1.0, 0.0);
+    crate::services::signals::emit_and_propagate(
+        db,
+        engine,
+        "account",
+        &change.account_id,
+        "lifecycle_change_confirmed",
+        "user_feedback",
+        Some(&format!("{{\"change_id\":{change_id}}}")),
+        0.95,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
+    Ok(())
+}
+
+pub fn correct_account_product(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    product_id: i64,
+    name: &str,
+    status: Option<&str>,
+    source_to_penalize: &str,
+) -> Result<(), String> {
+    db.update_account_product(product_id, name, status, None, "user_correction", 1.0)
+        .map_err(|e| e.to_string())?;
+    let _ = db.upsert_signal_weight(source_to_penalize, "account", "product_adoption", 0.0, 1.0);
+    crate::services::signals::emit_and_propagate(
+        db,
+        engine,
+        "account",
+        account_id,
+        "product_data_updated",
+        "user_correction",
+        Some(&format!(
+            "{{\"product_id\":{product_id},\"name\":\"{name}\"}}"
+        )),
+        1.0,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
+    Ok(())
+}
+
+pub fn correct_lifecycle_change(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    change_id: i64,
+    corrected_lifecycle: &str,
+    corrected_stage: Option<&str>,
+    notes: Option<&str>,
+) -> Result<(), String> {
+    let change = db
+        .get_lifecycle_change(change_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Lifecycle change not found: {change_id}"))?;
+    let transition = LifecycleTransitionCandidate {
+        new_lifecycle: corrected_lifecycle.to_string(),
+        renewal_stage: corrected_stage.map(str::to_string),
+        source: "user_correction".to_string(),
+        confidence: 1.0,
+        evidence: notes.map(str::to_string),
+        completion_trigger: None,
+    };
+    apply_lifecycle_transition(db, engine, &change.account_id, &transition)?;
+    db.set_lifecycle_change_response(change_id, "corrected", notes)
+        .map_err(|e| e.to_string())?;
+    let _ = db.upsert_signal_weight(&change.source, "account", "lifecycle_transition", 0.0, 1.0);
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn accept_account_field_conflict(
+    db: &ActionDb,
+    state: &AppState,
+    account_id: &str,
+    field: &str,
+    suggested_value: &str,
+    source: &str,
+    signal_id: Option<&str>,
+) -> Result<(), String> {
+    let next_value = if field == "lifecycle" {
+        normalized_lifecycle(suggested_value)
+    } else {
+        suggested_value.to_string()
+    };
+    update_account_field(db, state, account_id, field, &next_value)?;
+
+    if matches!(field, "arr" | "lifecycle" | "contract_end" | "nps") {
+        db.set_account_field_provenance(account_id, field, source, None)
+            .map_err(|e| e.to_string())?;
+    }
+
+    if let Some(sig_id) = signal_id {
+        let feedback_id = uuid::Uuid::new_v4().to_string();
+        let feedback_key = account_field_conflict_feedback_key(field, suggested_value);
+        let context = serde_json::json!({
+            "source": source,
+            "signal_id": sig_id,
+            "suggested_value": suggested_value,
+        })
+        .to_string();
+        db.insert_intelligence_feedback(
+            &feedback_id,
+            account_id,
+            "account",
+            &feedback_key,
+            "positive",
+            None,
+            Some(&context),
+        )?;
+
+        let accepted_signal_id =
+            format!("account-field-conflict-accepted-{}", uuid::Uuid::new_v4());
+        let _ = crate::signals::bus::supersede_signal(db, sig_id, &accepted_signal_id);
+    }
+
+    // I645: Record feedback event for accepted field conflict.
+    let _ = db.record_feedback_event(
+        account_id,
+        "account",
+        field,
+        signal_id,
+        "accept",
+        Some(source),
+        Some("field_conflict"),
+        None,
+        Some(suggested_value),
+        None,
+    );
+
+    let _ = db.upsert_signal_weight(
+        source,
+        "account",
+        &account_field_signal_category(field),
+        1.0,
+        0.0,
+    );
+
+    let payload = serde_json::json!({
+        "field": field,
+        "source": source,
+        "signal_id": signal_id,
+        "suggested_value": suggested_value,
+    })
+    .to_string();
+    crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_conflict_accepted",
+        "user_feedback",
+        Some(&payload),
+        0.95,
+        &state.intel_queue,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
+
+    Ok(())
+}
+
+pub fn dismiss_account_field_conflict(
+    db: &ActionDb,
+    state: &AppState,
+    account_id: &str,
+    field: &str,
+    signal_id: &str,
+    source: &str,
+    suggested_value: Option<&str>,
+) -> Result<(), String> {
+    let feedback_id = uuid::Uuid::new_v4().to_string();
+    let feedback_key = account_field_conflict_feedback_key(field, suggested_value.unwrap_or(""));
+    let context = serde_json::json!({
+        "source": source,
+        "signal_id": signal_id,
+        "suggested_value": suggested_value,
+    })
+    .to_string();
+    db.insert_intelligence_feedback(
+        &feedback_id,
+        account_id,
+        "account",
+        &feedback_key,
+        "negative",
+        None,
+        Some(&context),
+    )?;
+
+    // I645: Record feedback event + suppression tombstone for rejected field conflict.
+    let _ = db.record_feedback_event(
+        account_id,
+        "account",
+        field,
+        Some(signal_id),
+        "reject",
+        Some(source),
+        Some("field_conflict"),
+        None,
+        suggested_value,
+        None,
+    );
+    let _ = db.create_suppression_tombstone(
+        account_id,
+        field,
+        Some(signal_id),
+        None,
+        Some(source),
+        None,
+    );
+
+    let _ = db.upsert_signal_weight(
+        source,
+        "account",
+        &account_field_signal_category(field),
+        0.0,
+        1.0,
+    );
+
+    let dismissed_signal_id = format!("account-field-conflict-dismissed-{}", uuid::Uuid::new_v4());
+    let _ = crate::signals::bus::supersede_signal(db, signal_id, &dismissed_signal_id);
+    let payload = serde_json::json!({
+        "field": field,
+        "source": source,
+        "signal_id": signal_id,
+        "suggested_value": suggested_value,
+    })
+    .to_string();
+    crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_conflict_dismissed",
+        "user_feedback",
+        Some(&payload),
+        0.95,
+        &state.intel_queue,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
+
+    Ok(())
+}
+
 /// Get full detail for an account by ID.
 ///
-/// Loads account from DB, reads dashboard.json + intelligence.json,
-/// fetches actions, meetings, people, team, signals, captures, and email signals.
+/// I644: All data from DB — no filesystem reads on the detail page path.
+/// Fetches actions, meetings, people, team, signals, captures, and email signals.
 pub async fn get_account_detail(
     account_id: &str,
     state: &AppState,
 ) -> Result<AccountDetailResult, String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let _config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let engine = std::sync::Arc::clone(&state.signals.engine);
+
+    let lifecycle_account_id = account_id.to_string();
+    let _ = state
+        .db_write(move |db| ensure_account_lifecycle_state(db, &engine, &lifecycle_account_id))
+        .await;
 
     let account_id = account_id.to_string();
     state
@@ -216,40 +1243,43 @@ pub async fn get_account_detail(
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-            // Read narrative fields from dashboard.json + intelligence.json if they exist
-            let (overview, programs, notes, intelligence) = if let Some(ref config) = config {
-                let workspace = Path::new(&config.workspace_path);
-                let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
-                let json_path = account_dir.join("dashboard.json");
-                let (ov, prg, nt) = if json_path.exists() {
-                    match crate::accounts::read_account_json(&json_path) {
-                        Ok(result) => (
-                            result.json.company_overview,
-                            result.json.strategic_programs,
-                            result.json.notes,
+            // I644: Read narrative fields from DB columns (promoted from dashboard.json).
+            let overview: Option<crate::accounts::CompanyOverview> = account
+                .company_overview
+                .as_ref()
+                .and_then(|json| serde_json::from_str(json).ok());
+            let programs: Vec<crate::accounts::StrategicProgram> = account
+                .strategic_programs
+                .as_ref()
+                .and_then(|json| serde_json::from_str(json).ok())
+                .unwrap_or_default();
+            let notes = account.notes.clone();
+            // I644: Intelligence from DB only — no filesystem fallback.
+            let mut intelligence = db.get_entity_intelligence(&account_id).ok().flatten();
+
+            // I645: Filter stale items from active display using relevance windows.
+            if let Some(ref mut intel) = intelligence {
+                intel.risks.retain(|risk| {
+                    let sourced = risk.item_source.as_ref().map(|s| s.sourced_at.as_str());
+                    match sourced {
+                        Some(ts) => crate::intelligence::timeliness::is_within_relevance_window(
+                            "active_blocker",
+                            ts,
                         ),
-                        Err(_) => (None, Vec::new(), None),
+                        None => true,
                     }
-                } else {
-                    (None, Vec::new(), None)
-                };
-                // Read intelligence from DB (I513), fall back to legacy migration
-                let intel = db
-                    .get_entity_intelligence(&account_id)
-                    .ok()
-                    .flatten()
-                    .or_else(|| {
-                        // Auto-migrate from legacy CompanyOverview on first access
-                        ov.as_ref().and_then(|overview| {
-                            crate::intelligence::migrate_company_overview_to_intelligence(
-                                workspace, &account, overview,
-                            )
-                        })
-                    });
-                (ov, prg, nt, intel)
-            } else {
-                (None, Vec::new(), None, None)
-            };
+                });
+                intel.recent_wins.retain(|win| {
+                    let sourced = win.item_source.as_ref().map(|s| s.sourced_at.as_str());
+                    match sourced {
+                        Some(ts) => crate::intelligence::timeliness::is_within_relevance_window(
+                            "call_theme",
+                            ts,
+                        ),
+                        None => true,
+                    }
+                });
+            }
 
             let open_actions = db
                 .get_account_actions(&account_id)
@@ -317,6 +1347,18 @@ pub async fn get_account_detail(
             let objectives = db
                 .get_account_objectives(&account.id)
                 .map_err(|e: crate::db::DbError| e.to_string())?;
+            let renewal_stage = db
+                .get_account_renewal_stage(&account.id)
+                .map_err(|e| e.to_string())?;
+            let lifecycle_changes = db
+                .get_account_lifecycle_changes(&account.id, 12)
+                .map_err(|e| e.to_string())?;
+            let field_provenance = db
+                .get_account_field_provenance(&account.id)
+                .map_err(|e| e.to_string())?;
+            let field_conflicts =
+                build_account_field_conflicts(db, &account, intelligence.as_ref());
+            let products = build_account_products(db, &account.id, intelligence.as_ref());
             let children: Vec<AccountChildSummary> = child_accounts
                 .iter()
                 .map(|child| {
@@ -335,6 +1377,24 @@ pub async fn get_account_detail(
                 })
                 .collect();
 
+            // I628 AC5: auto-completed milestones for timeline display (last 90 days)
+            let auto_completed_milestones = db
+                .get_auto_completed_milestones(&account.id, 90)
+                .unwrap_or_default();
+
+            // I649: Technical footprint
+            let technical_footprint = db
+                .get_account_technical_footprint(&account.id)
+                .unwrap_or(None);
+
+            // DB-first stakeholder read model: all stakeholders with provenance
+            let stakeholders_full = db
+                .get_account_stakeholders_full(&account.id)
+                .unwrap_or_default();
+
+            // I644: Source references for promoted account facts
+            let source_refs = db.get_account_source_refs(&account.id).unwrap_or_default();
+
             Ok(AccountDetailResult {
                 id: account.id,
                 name: account.name,
@@ -343,6 +1403,8 @@ pub async fn get_account_detail(
                 health: account.health,
                 nps: account.nps,
                 renewal_date: account.contract_end,
+                renewal_stage,
+                commercial_stage: account.commercial_stage,
                 contract_start: account.contract_start,
                 company_overview: overview,
                 strategic_programs: programs,
@@ -363,7 +1425,15 @@ pub async fn get_account_detail(
                 account_type: account.account_type.clone(),
                 archived: account.archived,
                 objectives,
+                lifecycle_changes,
+                products,
+                field_provenance,
+                field_conflicts,
                 intelligence,
+                auto_completed_milestones,
+                technical_footprint,
+                stakeholders_full,
+                source_refs,
             })
         })
         .await
@@ -378,8 +1448,46 @@ pub fn update_account_field(
     field: &str,
     value: &str,
 ) -> Result<(), String> {
-    db.update_account_field(account_id, field, value)
+    let normalized_value = if field == "lifecycle" {
+        normalized_lifecycle(value)
+    } else {
+        value.to_string()
+    };
+
+    db.update_account_field(account_id, field, &normalized_value)
         .map_err(|e| e.to_string())?;
+
+    if matches!(field, "arr" | "lifecycle" | "contract_end" | "nps") {
+        db.set_account_field_provenance(account_id, field, "user_edit", None)
+            .map_err(|e| e.to_string())?;
+    }
+
+    if field == "lifecycle" {
+        let next_stage = if normalized_value == "renewing" {
+            db.get_account(account_id)
+                .map_err(|e| e.to_string())?
+                .and_then(|account| infer_renewal_stage(account.contract_end.as_deref()))
+        } else {
+            None
+        };
+        db.set_account_renewal_stage(account_id, next_stage.as_deref())
+            .map_err(|e| e.to_string())?;
+    } else if field == "contract_end" {
+        let next_stage = db
+            .get_account(account_id)
+            .map_err(|e| e.to_string())?
+            .and_then(|account| {
+                if normalized_lifecycle(account.lifecycle.as_deref().unwrap_or_default())
+                    == "renewing"
+                {
+                    infer_renewal_stage(account.contract_end.as_deref())
+                } else {
+                    None
+                }
+            });
+        db.set_account_renewal_stage(account_id, next_stage.as_deref())
+            .map_err(|e| e.to_string())?;
+    }
 
     // Emit field update signal + self-healing evaluation (I308, I410)
     crate::services::signals::emit_propagate_and_evaluate(
@@ -392,7 +1500,7 @@ pub fn update_account_field(
         Some(&format!(
             "{{\"field\":\"{}\",\"value\":\"{}\"}}",
             field,
-            value.replace('"', "\\\"")
+            normalized_value.replace('"', "\\\"")
         )),
         0.8,
         &state.intel_queue,
@@ -574,20 +1682,11 @@ pub fn create_account(
     let account = crate::db::DbAccount {
         id: id.clone(),
         name: name.clone(),
-        lifecycle: None,
-        arr: None,
-        health: None,
-        contract_start: None,
-        contract_end: None,
-        nps: None,
         tracker_path: Some(tracker_path),
         parent_id: parent_id.map(|s| s.to_string()),
         account_type,
         updated_at: now,
-        archived: false,
-        keywords: None,
-        keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -828,20 +1927,9 @@ pub fn bulk_create_accounts(
         let account = crate::db::DbAccount {
             id: id.clone(),
             name: name.to_string(),
-            lifecycle: None,
-            arr: None,
-            health: None,
-            contract_start: None,
-            contract_end: None,
-            nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
-            parent_id: None,
-            account_type: crate::db::AccountType::Customer,
             updated_at: now,
-            archived: false,
-            keywords: None,
-            keywords_extracted_at: None,
-            metadata: None,
+            ..Default::default()
         };
 
         db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -1048,19 +2136,11 @@ pub async fn create_internal_organization(
                         id: root_id.clone(),
                         name: company_name_clone.clone(),
                         lifecycle: Some("active".to_string()),
-                        arr: None,
                         health: Some("green".to_string()),
-                        contract_start: None,
-                        contract_end: None,
-                        nps: None,
                         tracker_path: Some(format!("Internal/{}", company_name_clone)),
-                        parent_id: None,
                         account_type: crate::db::AccountType::Internal,
                         updated_at: now,
-                        archived: false,
-                        keywords: None,
-                        keywords_extracted_at: None,
-                        metadata: None,
+                        ..Default::default()
                     };
                     db.upsert_account(&root_account)
                         .map_err(|e| e.to_string())?;
@@ -1272,6 +2352,300 @@ pub fn backfill_internal_meeting_associations(db: &ActionDb) -> Result<usize, St
     Ok(updated)
 }
 
+// =============================================================================
+// I652 Phase 2: Person-first stakeholder mutations
+// =============================================================================
+
+/// Update engagement level for a stakeholder with signal emission.
+pub fn update_stakeholder_engagement(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    engagement: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE account_stakeholders
+                 SET engagement = ?1, data_source_engagement = 'user'
+                 WHERE account_id = ?2 AND person_id = ?3",
+                rusqlite::params![engagement, account_id, person_id],
+            )
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            account_id,
+            "stakeholder_engagement_updated",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"engagement\":\"{}\"}}",
+                person_id, engagement
+            )),
+            1.0,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Update assessment text for a stakeholder with signal emission.
+pub fn update_stakeholder_assessment(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    assessment: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE account_stakeholders
+                 SET assessment = ?1, data_source_assessment = 'user'
+                 WHERE account_id = ?2 AND person_id = ?3",
+                rusqlite::params![assessment, account_id, person_id],
+            )
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            account_id,
+            "stakeholder_assessment_updated",
+            "user_action",
+            Some(&format!("{{\"person_id\":\"{}\"}}", person_id)),
+            1.0,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Add a role to a stakeholder (multi-role — doesn't replace existing roles).
+pub fn add_stakeholder_role(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<(), String> {
+    let role = role.trim().to_lowercase();
+    if role.is_empty() {
+        return Err("Role is required".to_string());
+    }
+    db.with_transaction(|tx| {
+        let now = chrono::Utc::now().to_rfc3339();
+        tx.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
+                 VALUES (?1, ?2, ?3, 'user', ?4)
+                 ON CONFLICT(account_id, person_id, role) DO UPDATE SET
+                    data_source = 'user'",
+                rusqlite::params![account_id, person_id, role, now],
+            )
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            account_id,
+            "stakeholder_role_added",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
+                person_id, role
+            )),
+            0.9,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Remove a specific role from a stakeholder.
+pub fn remove_stakeholder_role(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "DELETE FROM account_stakeholder_roles
+                 WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
+                rusqlite::params![account_id, person_id, role],
+            )
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            account_id,
+            "stakeholder_role_removed",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
+                person_id, role
+            )),
+            0.8,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Accept a stakeholder suggestion: create person if needed, add to account.
+pub fn accept_stakeholder_suggestion(
+    db: &ActionDb,
+    state: &crate::state::AppState,
+    suggestion_id: i64,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        let suggestion = tx
+            .get_stakeholder_suggestion(suggestion_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Suggestion not found: {suggestion_id}"))?;
+
+        if suggestion.status != "pending" {
+            return Err(format!(
+                "Suggestion {} is already {}",
+                suggestion_id, suggestion.status
+            ));
+        }
+
+        // Resolve person_id: use existing, or find/create from email
+        let person_id = if let Some(pid) = suggestion.person_id.as_deref() {
+            pid.to_string()
+        } else if let Some(email) = suggestion.suggested_email.as_deref() {
+            let name = suggestion
+                .suggested_name
+                .as_deref()
+                .unwrap_or_else(|| email.split('@').next().unwrap_or("Unknown"));
+            let config = state
+                .config
+                .read()
+                .map_err(|_| "Lock poisoned")?
+                .clone()
+                .ok_or("Config not loaded")?;
+            let user_domains = config.resolved_user_domains();
+            let resolution =
+                tx.find_or_create_person(Some(email), name, None, "external", &user_domains)
+                    .map_err(|e| e.to_string())?;
+            match resolution {
+                crate::db::people::PersonResolution::FoundByEmail(p)
+                | crate::db::people::PersonResolution::Created(p) => p.id,
+                crate::db::people::PersonResolution::FoundByName { person, .. } => person.id,
+            }
+        } else {
+            return Err("Cannot accept suggestion: no person_id and no email".to_string());
+        };
+
+        // Ensure stakeholder link exists
+        let now = chrono::Utc::now().to_rfc3339();
+        tx.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source, created_at)
+                 VALUES (?1, ?2, 'user', ?3)
+                 ON CONFLICT(account_id, person_id) DO UPDATE SET data_source = 'user'",
+                rusqlite::params![suggestion.account_id, person_id, now],
+            )
+            .map_err(|e| e.to_string())?;
+
+        // Add suggested role if present
+        if let Some(role) = suggestion.suggested_role.as_deref() {
+            let role = role.trim().to_lowercase();
+            if !role.is_empty() {
+                tx.conn_ref()
+                    .execute(
+                        "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
+                         VALUES (?1, ?2, ?3, 'user', ?4)
+                         ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'user'",
+                        rusqlite::params![suggestion.account_id, person_id, role, now],
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        // Set engagement if suggested
+        if let Some(engagement) = suggestion.suggested_engagement.as_deref() {
+            tx.conn_ref()
+                .execute(
+                    "UPDATE account_stakeholders
+                     SET engagement = ?1, data_source_engagement = 'user'
+                     WHERE account_id = ?2 AND person_id = ?3",
+                    rusqlite::params![engagement, suggestion.account_id, person_id],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+
+        // Mark suggestion as accepted
+        tx.conn_ref()
+            .execute(
+                "UPDATE stakeholder_suggestions
+                 SET status = 'accepted', resolved_at = datetime('now')
+                 WHERE id = ?1",
+                rusqlite::params![suggestion_id],
+            )
+            .map_err(|e| e.to_string())?;
+
+        crate::services::signals::emit_and_propagate(
+            tx,
+            &state.signals.engine,
+            "account",
+            &suggestion.account_id,
+            "stakeholder_suggestion_accepted",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"source\":\"{}\"}}",
+                person_id, suggestion.source
+            )),
+            1.0,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Dismiss a stakeholder suggestion.
+pub fn dismiss_stakeholder_suggestion(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    suggestion_id: i64,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        let suggestion = tx
+            .get_stakeholder_suggestion(suggestion_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Suggestion not found: {suggestion_id}"))?;
+
+        tx.conn_ref()
+            .execute(
+                "UPDATE stakeholder_suggestions
+                 SET status = 'dismissed', resolved_at = datetime('now')
+                 WHERE id = ?1",
+                rusqlite::params![suggestion_id],
+            )
+            .map_err(|e| e.to_string())?;
+
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            "account",
+            &suggestion.account_id,
+            "stakeholder_suggestion_dismissed",
+            "user_action",
+            Some(&format!("{{\"suggestion_id\":{}}}", suggestion_id)),
+            0.7,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::db::test_utils::test_db;
@@ -1297,6 +2671,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            ..Default::default()
         }
     }
 
@@ -1576,5 +2951,178 @@ mod tests {
         let created_again = super::bulk_create_accounts(&db, workspace, &names)
             .expect("bulk_create_accounts second run");
         assert_eq!(created_again.len(), 0, "Duplicates should be skipped");
+    }
+
+    // =========================================================================
+    // Lifecycle engine (v1.1.0)
+    // =========================================================================
+
+    #[test]
+    fn test_infer_renewal_stage() {
+        use chrono::{NaiveDate, Utc};
+
+        let today = Utc::now().date_naive();
+        let fmt = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+
+        // >120 days → None (not yet renewing)
+        let far_future = fmt(today + chrono::Duration::days(200));
+        assert_eq!(super::infer_renewal_stage(Some(&far_future)), None);
+
+        // 61-120 days → approaching
+        let approaching = fmt(today + chrono::Duration::days(90));
+        assert_eq!(
+            super::infer_renewal_stage(Some(&approaching)),
+            Some("approaching".to_string())
+        );
+
+        // 31-60 days → negotiating
+        let negotiating = fmt(today + chrono::Duration::days(45));
+        assert_eq!(
+            super::infer_renewal_stage(Some(&negotiating)),
+            Some("negotiating".to_string())
+        );
+
+        // 0-30 days → contract_sent
+        let soon = fmt(today + chrono::Duration::days(15));
+        assert_eq!(
+            super::infer_renewal_stage(Some(&soon)),
+            Some("contract_sent".to_string())
+        );
+
+        // Past → processed
+        let past = fmt(today - chrono::Duration::days(5));
+        assert_eq!(
+            super::infer_renewal_stage(Some(&past)),
+            Some("processed".to_string())
+        );
+
+        // None → None
+        assert_eq!(super::infer_renewal_stage(None), None);
+    }
+
+    #[test]
+    fn test_ensure_lifecycle_state_emits_renewal_stage_signal() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let today = chrono::Utc::now().date_naive();
+        let contract_end = (today + chrono::Duration::days(90))
+            .format("%Y-%m-%d")
+            .to_string();
+
+        let mut account = make_account("acc-renew", "Renewing Corp");
+        account.lifecycle = Some("renewing".to_string());
+        account.contract_end = Some(contract_end);
+        db.upsert_account(&account).expect("upsert");
+
+        super::ensure_account_lifecycle_state(&db, &engine, "acc-renew").expect("ensure_lifecycle");
+
+        // Should have emitted renewal_stage_updated signal
+        assert_eq!(signal_count(&db, "acc-renew", "renewal_stage_updated"), 1);
+
+        // Stage should be set to "approaching" (61-120 days)
+        let stage = db.get_account_renewal_stage("acc-renew").unwrap();
+        assert_eq!(stage, Some("approaching".to_string()));
+    }
+
+    #[test]
+    fn test_confirm_lifecycle_change_positive_weight() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+
+        let mut account = make_account("acc-confirm", "Confirm Corp");
+        account.lifecycle = Some("renewing".to_string());
+        db.upsert_account(&account).expect("upsert");
+
+        // Insert a pending lifecycle change
+        db.conn_ref()
+            .execute(
+                "INSERT INTO lifecycle_changes (account_id, previous_lifecycle, new_lifecycle, source, confidence, evidence, user_response, created_at)
+                 VALUES ('acc-confirm', 'renewing', 'active', 'email_signal', 0.85, 'Order form signed', 'pending', datetime('now'))",
+                [],
+            )
+            .expect("insert lifecycle_changes");
+        let change_id: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT id FROM lifecycle_changes WHERE account_id = 'acc-confirm'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("get change_id");
+
+        super::confirm_lifecycle_change(&db, &engine, change_id).expect("confirm");
+
+        // Signal weight alpha should increase for email_signal source (positive feedback)
+        let (alpha, beta): (f64, f64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT alpha, beta FROM signal_weights WHERE source = 'email_signal' AND signal_type = 'lifecycle_transition'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((0.0, 0.0));
+        assert!(
+            alpha > 1.0,
+            "Alpha should increase on confirm (was {})",
+            alpha
+        );
+        assert!(
+            (beta - 1.0).abs() < f64::EPSILON,
+            "Beta should stay at base (was {})",
+            beta
+        );
+    }
+
+    #[test]
+    fn test_correct_lifecycle_change_negative_weight() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+
+        let mut account = make_account("acc-correct", "Correct Corp");
+        account.lifecycle = Some("renewing".to_string());
+        db.upsert_account(&account).expect("upsert");
+
+        // Insert a pending lifecycle change
+        db.conn_ref()
+            .execute(
+                "INSERT INTO lifecycle_changes (account_id, previous_lifecycle, new_lifecycle, source, confidence, evidence, user_response, created_at)
+                 VALUES ('acc-correct', 'renewing', 'active', 'calendar_pattern', 0.75, 'No meetings 30d', 'pending', datetime('now'))",
+                [],
+            )
+            .expect("insert lifecycle_changes");
+        let change_id: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT id FROM lifecycle_changes WHERE account_id = 'acc-correct'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("get change_id");
+
+        super::correct_lifecycle_change(
+            &db,
+            &engine,
+            change_id,
+            "at_risk",
+            None,
+            Some("Actually at risk"),
+        )
+        .expect("correct");
+
+        // Signal weight beta should increase for calendar_pattern source (negative feedback)
+        let (alpha, beta): (f64, f64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT alpha, beta FROM signal_weights WHERE source = 'calendar_pattern' AND signal_type = 'lifecycle_transition'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap_or((0.0, 0.0));
+        assert!(
+            (alpha - 1.0).abs() < f64::EPSILON,
+            "Alpha should stay at base (was {})",
+            alpha
+        );
+        assert!(beta > 1.0, "Beta should increase on correct (was {})", beta);
     }
 }

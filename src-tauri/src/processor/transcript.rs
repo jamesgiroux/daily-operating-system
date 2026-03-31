@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::db::{ActionDb, DbProcessingLog};
-use crate::pty::{ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use crate::types::{
     CalendarEvent, CapturedAction, ChampionHealth, CompetitorMention, EngagementSignals,
@@ -258,6 +258,11 @@ pub fn process_transcript_with_kind(
         phase1_prompt = format!("{}\n\n{}", ctx, phase1_prompt);
     }
     let pty1 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+        .with_usage_context(
+            AiUsageContext::new("transcript", "phase1_core_extraction")
+                .with_trigger("transcript_process")
+                .with_tier(ModelTier::Extraction),
+        )
         .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
     let phase1_output = match pty1.spawn_claude(workspace, &phase1_prompt) {
         Ok(o) => o.stdout,
@@ -386,6 +391,11 @@ pub fn process_transcript_with_kind(
     // ── Phase 2: Intelligence extraction (wins, risks, decisions, sentiment, champion) ──
     let phase2_prompt = build_phase2_prompt(meeting, &content, content_kind, &summary);
     let pty2 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+        .with_usage_context(
+            AiUsageContext::new("transcript", "phase2_intelligence_extraction")
+                .with_trigger("transcript_process")
+                .with_tier(ModelTier::Extraction),
+        )
         .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
 
     let (mut wins, mut risks, mut decisions, sentiment, mut champion_health) =
@@ -503,6 +513,11 @@ pub fn process_transcript_with_kind(
     // ── Phase 3: Deep analysis (dynamics, commitments, role changes) ──
     let phase3_prompt = build_phase3_prompt(meeting, &content, content_kind, &summary);
     let pty3 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+        .with_usage_context(
+            AiUsageContext::new("transcript", "phase3_deep_analysis")
+                .with_trigger("transcript_process")
+                .with_tier(ModelTier::Extraction),
+        )
         .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
 
     let (interaction_dynamics, role_changes, commitments) =
@@ -600,11 +615,12 @@ pub fn process_transcript_with_kind(
                 });
             }
             for decision in &decisions {
-                let (content, evidence_quote) = parse_reviewed_evidence_quote(decision);
+                let (content, sub_type, evidence_quote) =
+                    parse_reviewed_decision_metadata(decision);
                 captures.push(crate::services::mutations::ParsedCapture {
                     capture_type: "decision",
                     content,
-                    sub_type: None,
+                    sub_type,
                     urgency: None,
                     evidence_quote,
                 });
@@ -1578,6 +1594,11 @@ Review context:
     );
 
     let pty = PtyManager::for_tier(ModelTier::Mechanical, ai_config)
+        .with_usage_context(
+            AiUsageContext::new("transcript", "role_review")
+                .with_trigger("transcript_process")
+                .with_tier(ModelTier::Mechanical),
+        )
         .with_timeout(TRANSCRIPT_ROLE_REVIEW_TIMEOUT_SECS);
     let output = match pty.spawn_claude(workspace, &prompt) {
         Ok(o) => o.stdout,
@@ -1708,6 +1729,28 @@ fn parse_reviewed_risk_metadata(raw: &str) -> (&str, Option<String>, Option<&str
         }
     }
 
+    (text, None, evidence)
+}
+
+fn parse_reviewed_decision_metadata(raw: &str) -> (&str, Option<&str>, Option<&str>) {
+    let (text, evidence) = parse_reviewed_evidence_quote(raw);
+    // Strip @owner suffix before tag detection
+    let text = text.rfind(" @").map_or(text, |idx| text[..idx].trim_end());
+    let trimmed = text.trim();
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let sub_type = &rest[..end];
+            let content = rest[end + 1..].trim();
+            let sub_lower = sub_type.to_lowercase();
+            let valid = matches!(
+                sub_lower.as_str(),
+                "customer_commitment" | "internal_decision" | "joint_agreement"
+            );
+            if valid {
+                return (content, Some(sub_type), evidence);
+            }
+        }
+    }
     (text, None, evidence)
 }
 
@@ -3398,6 +3441,7 @@ mod tests {
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            ..Default::default()
         }
     }
 
@@ -3415,7 +3459,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-            metadata: None,
+            ..Default::default()
         }
     }
 
@@ -4135,6 +4179,36 @@ END_DECISIONS";
             "Expand pilot to EMEA starting Q2 — agreed by VP Sales"
         );
         assert_eq!(parsed.decisions[1], "Defer mobile launch to Q3");
+    }
+
+    #[test]
+    fn test_parse_decision_metadata() {
+        // Joint agreement with evidence and owner
+        let (content, sub, ev) = parse_reviewed_decision_metadata(
+            "[JOINT_AGREEMENT] Expand pilot to EMEA @VP Sales #\"let's go ahead with EMEA\"",
+        );
+        assert_eq!(content, "Expand pilot to EMEA");
+        assert_eq!(sub, Some("JOINT_AGREEMENT"));
+        assert_eq!(ev, Some("let's go ahead with EMEA"));
+
+        // Internal decision, no evidence
+        let (content, sub, ev) =
+            parse_reviewed_decision_metadata("[INTERNAL_DECISION] Defer mobile launch to Q3");
+        assert_eq!(content, "Defer mobile launch to Q3");
+        assert_eq!(sub, Some("INTERNAL_DECISION"));
+        assert_eq!(ev, None);
+
+        // Customer commitment
+        let (content, sub, _) =
+            parse_reviewed_decision_metadata("[CUSTOMER_COMMITMENT] Will renew for 2 years @CFO");
+        assert_eq!(content, "Will renew for 2 years");
+        assert_eq!(sub, Some("CUSTOMER_COMMITMENT"));
+
+        // No tag — plain decision
+        let (content, sub, ev) = parse_reviewed_decision_metadata("Agreed to revisit in Q3");
+        assert_eq!(content, "Agreed to revisit in Q3");
+        assert_eq!(sub, None);
+        assert_eq!(ev, None);
     }
 
     // =========================================================================
