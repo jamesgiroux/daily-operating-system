@@ -483,31 +483,24 @@ fn resolve_entities(
             }
         }
     }
-    // Apply attendee vote boosts to account entities
+    // Apply attendee vote boosts to account entities that ALREADY matched
+    // via title/domain/keyword. Stakeholder chaining only boosts existing
+    // resolutions — it never introduces new accounts from nothing.
+    // Without this guard, every account any attendee is linked to would
+    // get resolved, flooding the meeting with unrelated accounts.
     for (account_id, votes) in &account_boosts {
         let attendee_confidence = (0.5 + 0.4 * (votes / total_attendees)).min(0.90);
-        best.entry(account_id.clone())
-            .and_modify(|existing| {
-                if attendee_confidence > existing.confidence {
-                    existing.confidence = attendee_confidence;
-                    existing.source = "stakeholder_attendee".to_string();
-                }
-            })
-            .or_insert_with(|| {
-                // Find the account name from hints
-                let name = entity_hints
-                    .iter()
-                    .find(|h| h.id == *account_id)
-                    .map(|h| h.name.clone())
-                    .unwrap_or_default();
-                ResolvedMeetingEntity {
-                    entity_id: account_id.clone(),
-                    entity_type: "account".to_string(),
-                    name,
-                    confidence: attendee_confidence,
-                    source: "stakeholder_attendee".to_string(),
-                }
-            });
+        best.entry(account_id.clone()).and_modify(|existing| {
+            if attendee_confidence > existing.confidence {
+                existing.confidence = attendee_confidence;
+                existing.source = "stakeholder_attendee".to_string();
+            }
+        });
+        // Note: no or_insert — intentional. If the account had zero signal
+        // from title/domain/keyword, stakeholder attendance alone is not
+        // enough to resolve it at classification time. The background
+        // entity resolver (entity_resolver.rs) handles that case with
+        // its full Bayesian fusion across more signal sources.
     }
 
     let mut entities: Vec<ResolvedMeetingEntity> = best.into_values().collect();
