@@ -175,10 +175,78 @@ fn classify_predictions(prep_items: &[PrepItem], outcomes: &[String]) -> Vec<Pre
     results
 }
 
+/// Extract prep risks from a `FullMeetingPrep` struct (ADR-0101: DB read model).
+///
+/// Reads from both `risks` (Vec<String>) and `entity_risks` (Vec<IntelRisk>)
+/// fields on the struct, avoiding JSON parsing entirely.
+pub fn extract_prep_risks_from_struct(prep: &crate::types::FullMeetingPrep) -> Vec<PrepItem> {
+    let mut items = Vec::new();
+
+    // Simple string risks
+    if let Some(ref risks) = prep.risks {
+        for text in risks {
+            if !text.is_empty() {
+                items.push(PrepItem {
+                    text: text.clone(),
+                    source: None,
+                });
+            }
+        }
+    }
+
+    // Structured entity risks (IntelRisk with text + source)
+    if let Some(ref entity_risks) = prep.entity_risks {
+        for risk in entity_risks {
+            if !risk.text.is_empty() {
+                items.push(PrepItem {
+                    text: risk.text.clone(),
+                    source: risk.source.clone(),
+                });
+            }
+        }
+    }
+
+    items
+}
+
+/// Extract prep wins from a `FullMeetingPrep` struct (ADR-0101: DB read model).
+///
+/// Reads from `recent_wins` and `recent_win_sources` fields on the struct,
+/// avoiding JSON parsing entirely.
+pub fn extract_prep_wins_from_struct(prep: &crate::types::FullMeetingPrep) -> Vec<PrepItem> {
+    let mut items = Vec::new();
+
+    if let Some(ref wins) = prep.recent_wins {
+        for text in wins {
+            if !text.is_empty() {
+                items.push(PrepItem {
+                    text: text.clone(),
+                    source: None,
+                });
+            }
+        }
+    }
+
+    // Attach structured win sources by index
+    if let Some(ref sources) = prep.recent_win_sources {
+        for (i, source) in sources.iter().enumerate() {
+            if i < items.len() && !source.label.is_empty() {
+                items[i].source = Some(source.label.clone());
+            }
+        }
+    }
+
+    items
+}
+
 /// Extract prep risks from frozen prep JSON.
 ///
 /// Looks for both `risks` (Vec<String>) and `entityRisks` (Vec<IntelRisk>)
 /// fields in the prep structure.
+///
+/// NOTE: Prefer `extract_prep_risks_from_struct` when a `FullMeetingPrep` is
+/// available (ADR-0101). This JSON-based version is retained for legacy callers
+/// and tests that work with raw JSON strings.
 pub fn extract_prep_risks(frozen_json: &str) -> Vec<PrepItem> {
     let value: serde_json::Value = match serde_json::from_str(frozen_json) {
         Ok(v) => v,
@@ -226,6 +294,9 @@ pub fn extract_prep_risks(frozen_json: &str) -> Vec<PrepItem> {
 }
 
 /// Extract prep wins from frozen prep JSON.
+///
+/// NOTE: Prefer `extract_prep_wins_from_struct` when a `FullMeetingPrep` is
+/// available (ADR-0101). This JSON-based version is retained for legacy callers.
 pub fn extract_prep_wins(frozen_json: &str) -> Vec<PrepItem> {
     let value: serde_json::Value = match serde_json::from_str(frozen_json) {
         Ok(v) => v,
@@ -637,5 +708,57 @@ mod tests {
             )
             .expect("query unrelated feedback rows");
         assert_eq!(unrelated_rows, 0);
+    }
+
+    #[test]
+    fn test_extract_prep_risks_from_struct() {
+        let prep = crate::types::FullMeetingPrep {
+            file_path: String::new(),
+            title: "Test".to_string(),
+            time_range: String::new(),
+            risks: Some(vec![
+                "budget concerns".to_string(),
+                "timeline slipping".to_string(),
+            ]),
+            entity_risks: Some(vec![crate::intelligence::IntelRisk {
+                text: "API issues".to_string(),
+                source: Some("glean".to_string()),
+                urgency: "medium".to_string(),
+                item_source: None,
+                discrepancy: None,
+            }]),
+            ..Default::default()
+        };
+        let items = extract_prep_risks_from_struct(&prep);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].text, "budget concerns");
+        assert!(items[0].source.is_none());
+        assert_eq!(items[2].text, "API issues");
+        assert_eq!(items[2].source.as_deref(), Some("glean"));
+    }
+
+    #[test]
+    fn test_extract_prep_wins_from_struct() {
+        let prep = crate::types::FullMeetingPrep {
+            file_path: String::new(),
+            title: "Test".to_string(),
+            time_range: String::new(),
+            recent_wins: Some(vec![
+                "successful onboarding".to_string(),
+                "hit Q3 targets".to_string(),
+            ]),
+            recent_win_sources: Some(vec![crate::types::SourceReference {
+                label: "glean".to_string(),
+                path: None,
+                last_updated: None,
+            }]),
+            ..Default::default()
+        };
+        let items = extract_prep_wins_from_struct(&prep);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].text, "successful onboarding");
+        assert_eq!(items[0].source.as_deref(), Some("glean"));
+        assert_eq!(items[1].text, "hit Q3 targets");
+        assert!(items[1].source.is_none());
     }
 }
