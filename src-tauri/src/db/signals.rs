@@ -1,6 +1,36 @@
 use super::*;
 use rusqlite::OptionalExtension;
 
+/// Parameters for inserting an enriched capture (win/risk/decision).
+#[derive(Debug)]
+pub struct CaptureInput<'a> {
+    pub meeting_id: &'a str,
+    pub meeting_title: &'a str,
+    pub account_id: Option<&'a str>,
+    pub capture_type: &'a str,
+    pub content: &'a str,
+    pub sub_type: Option<&'a str>,
+    pub urgency: Option<&'a str>,
+    pub evidence_quote: Option<&'a str>,
+}
+
+/// Parameters for inserting an email intelligence signal.
+#[derive(Debug)]
+pub struct EmailSignalInput<'a> {
+    pub email_id: &'a str,
+    pub sender_email: Option<&'a str>,
+    pub person_id: Option<&'a str>,
+    pub entity_id: &'a str,
+    pub entity_type: &'a str,
+    pub signal_type: &'a str,
+    pub signal_text: &'a str,
+    pub confidence: Option<f64>,
+    pub sentiment: Option<&'a str>,
+    pub urgency: Option<&'a str>,
+    pub detected_at: Option<&'a str>,
+    pub source: Option<&'a str>,
+}
+
 impl ActionDb {
     // =========================================================================
     // Stakeholder Signals (I43)
@@ -223,24 +253,16 @@ impl ActionDb {
     }
 
     /// Insert an enriched capture with metadata columns (I555).
-    #[allow(clippy::too_many_arguments)]
     pub fn insert_capture_enriched(
         &self,
-        meeting_id: &str,
-        meeting_title: &str,
-        account_id: Option<&str>,
-        capture_type: &str,
-        content: &str,
-        sub_type: Option<&str>,
-        urgency: Option<&str>,
-        evidence_quote: Option<&str>,
+        input: &CaptureInput<'_>,
     ) -> Result<(), DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
             "INSERT INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, evidence_quote, captured_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, evidence_quote, now],
+            params![id, input.meeting_id, input.meeting_title, input.account_id, input.capture_type, input.content, input.sub_type, input.urgency, input.evidence_quote, now],
         )?;
         Ok(())
     }
@@ -355,66 +377,22 @@ impl ActionDb {
     const VALID_ENTITY_TYPES: &'static [&'static str] = &["account", "project"];
 
     /// Insert an email signal, returning `true` if a new row was inserted.
-    #[allow(clippy::too_many_arguments)]
     pub fn upsert_email_signal(
         &self,
-        email_id: &str,
-        sender_email: Option<&str>,
-        person_id: Option<&str>,
-        entity_id: &str,
-        entity_type: &str,
-        signal_type: &str,
-        signal_text: &str,
-        confidence: Option<f64>,
-        sentiment: Option<&str>,
-        urgency: Option<&str>,
-        detected_at: Option<&str>,
+        input: &EmailSignalInput<'_>,
     ) -> Result<bool, DbError> {
-        self.upsert_email_signal_with_source(
-            email_id,
-            sender_email,
-            person_id,
-            entity_id,
-            entity_type,
-            signal_type,
-            signal_text,
-            confidence,
-            sentiment,
-            urgency,
-            detected_at,
-            None,
-        )
-    }
-
-    /// Insert an email signal with explicit source attribution.
-    #[allow(clippy::too_many_arguments)]
-    pub fn upsert_email_signal_with_source(
-        &self,
-        email_id: &str,
-        sender_email: Option<&str>,
-        person_id: Option<&str>,
-        entity_id: &str,
-        entity_type: &str,
-        signal_type: &str,
-        signal_text: &str,
-        confidence: Option<f64>,
-        sentiment: Option<&str>,
-        urgency: Option<&str>,
-        detected_at: Option<&str>,
-        source: Option<&str>,
-    ) -> Result<bool, DbError> {
-        if !Self::VALID_SIGNAL_TYPES.contains(&signal_type) {
+        if !Self::VALID_SIGNAL_TYPES.contains(&input.signal_type) {
             log::warn!(
                 "Ignoring unknown email signal type '{}' for entity {}",
-                signal_type,
-                entity_id
+                input.signal_type,
+                input.entity_id
             );
             return Ok(false);
         }
-        if !Self::VALID_ENTITY_TYPES.contains(&entity_type) {
+        if !Self::VALID_ENTITY_TYPES.contains(&input.entity_type) {
             log::warn!(
                 "Ignoring unknown entity type '{}' for email signal",
-                entity_type
+                input.entity_type
             );
             return Ok(false);
         }
@@ -425,18 +403,18 @@ impl ActionDb {
                 signal_type, signal_text, confidence, sentiment, urgency, detected_at, source
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, COALESCE(?11, datetime('now')), COALESCE(?12, 'email_enrichment'))",
             params![
-                email_id,
-                sender_email,
-                person_id,
-                entity_id,
-                entity_type,
-                signal_type,
-                signal_text,
-                confidence,
-                sentiment,
-                urgency,
-                detected_at,
-                source,
+                input.email_id,
+                input.sender_email,
+                input.person_id,
+                input.entity_id,
+                input.entity_type,
+                input.signal_type,
+                input.signal_text,
+                input.confidence,
+                input.sentiment,
+                input.urgency,
+                input.detected_at,
+                input.source,
             ],
         )?;
         Ok(self.conn.changes() > 0)
