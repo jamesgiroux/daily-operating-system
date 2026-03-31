@@ -5,6 +5,38 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.1.0] — 2026-03-30
+
+### Added
+
+- **Lifecycle intelligence engine (I623)** — automatic signal-driven lifecycle transitions. Renewals, at-risk signals, and engagement drops detected and reported in daily briefing with confirm/correct flow.
+- **Person-first stakeholder architecture (I652)** — multi-role support, AI suggestion table, email-based person dedup, per-field data_source provenance protecting user edits from enrichment overwrite.
+- **Product intelligence (I624)** — AI-discovered products from Glean/Salesforce displayed on account dossier with inline correction.
+- **Product classification (I651)** — extracts product_type, tier, ARR from Salesforce Financial dimension via Glean.
+- **Provenance inline markers (I625)** — "via Salesforce," "you noted" attribution on vitals strip. Conflict suggestions with accept/dismiss.
+- **Canonical account truth (I644)** — 19 promoted account fact columns, account_source_refs table, Glean fact promotion, field promotion matrix, dashboard.json elimination.
+- **Timeliness and feedback learning (I645)** — feedback events table, suppression tombstones, class-specific relevance windows, stale item filtering.
+- **Success plan auto-completion (I628)** — lifecycle transitions auto-complete matching milestones.
+- **Technical footprint (I649)** — DB-backed support tier, CSAT, tickets, adoption from Zendesk via Glean.
+- **Token observability (I642)** — per-operation metering, model breakdown, budget tracking in Diagnostics.
+- **Background PTY guardrails (I643)** — poll cadence, background model tier, token budget pause guards.
+- **Outlook editorial redesign (I650)** — three breathing sections for renewal, growth, commercial reality.
+- **Email enrichment optimization** — non-blocking pipeline, 5-7 email limit, dedup filters.
+- **Stakeholder roles on person detail** — designate roles from person page via "Their Orbit."
+
+### Changed
+
+- DB-first read model: intelligence.json and dashboard.json reads eliminated from all detail pages.
+- Health scoring reads champion from account_stakeholder_roles, not JSON.
+- Prompt context reads stakeholders from live DB join.
+- Meeting attendee auto-add requires 2+ meetings threshold.
+- Internal team members filtered from stakeholder suggestions.
+
+### Removed
+
+- `intelligence/reconcile_stakeholders.rs` — fuzzy name matching replaced by email-based person linking.
+- Synthetic user_edits injection — replaced by structural data_source provenance.
+
 ## [1.0.4] — 2026-03-25
 
 ### Fixed

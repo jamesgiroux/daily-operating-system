@@ -226,7 +226,7 @@ describe("PostMeetingIntelligence", () => {
       />,
     );
 
-    expect(screen.getByText("The Thread")).toBeInTheDocument();
+    expect(screen.getAllByText("The Thread").length).toBeGreaterThan(0);
     expect(screen.getByText("Finalize pilot scope")).toBeInTheDocument();
     expect(screen.getAllByText("Pat Kim").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Observer").length).toBeGreaterThan(0);
@@ -246,5 +246,143 @@ describe("PostMeetingIntelligence", () => {
     expect(container).not.toHaveTextContent("✓");
     expect(container).not.toHaveTextContent("⚡");
     expect(container).not.toHaveTextContent("✗");
+  });
+
+  it("renders a fallback row when the thread has no captured changes", () => {
+    const emptyThread: ContinuityThread = {
+      previousMeetingDate: "2026-02-24T19:00:00+00:00",
+      previousMeetingTitle: "Jane <> VIP",
+      entityName: "Jane Software",
+      actionsCompleted: [],
+      actionsOpen: [],
+      healthDelta: undefined,
+      newAttendees: [],
+      isFirstMeeting: false,
+    };
+
+    render(
+      <PostMeetingIntelligence
+        data={baseData()}
+        continuityThread={emptyThread}
+      />,
+    );
+
+    expect(screen.getAllByText("The Thread").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("No major changes captured since the previous meeting"),
+    ).toBeInTheDocument();
+  });
+
+  it("strips control tags across transcript enrichment sections", () => {
+    render(
+      <PostMeetingIntelligence
+        data={baseData({
+          interactionDynamics: {
+            meetingId: "mtg-001",
+            talkBalanceCustomerPct: 62,
+            talkBalanceInternalPct: 38,
+            speakerSentiments: [
+              {
+                name: "Sarah Chen",
+                sentiment: "positive",
+                evidence: "[YELLOW] She endorsed the rollout timeline.",
+              },
+            ],
+            questionDensity: "high",
+            decisionMakerActive: "yes",
+            forwardLooking: "strong",
+            monologueRisk: false,
+            competitorMentions: [
+              { competitor: "[EXPANSION] Competitor X", context: "[GREEN_WATCH] Mentioned during procurement review" },
+            ],
+            escalationLanguage: [
+              { quote: "[RED] We need legal unstuck this week", speaker: "[YELLOW] Sarah Chen" },
+            ],
+          },
+          championHealth: {
+            meetingId: "mtg-001",
+            championName: "Sarah Chen",
+            championStatus: "strong",
+            championEvidence: "[YELLOW] Actively pulled finance into the decision.",
+            championRisk: "[RED] Needs pricing backup before procurement review.",
+          },
+          roleChanges: [
+            {
+              id: "role-001",
+              meetingId: "mtg-001",
+              personName: "Pat Kim",
+              oldStatus: "Observer",
+              newStatus: "Executive sponsor",
+              evidenceQuote: "[JOINT_AGREEMENT] I’ll take this to the steering committee next week.",
+            },
+          ],
+          enrichedCaptures: [
+            makeCapture("win-001", "win", "[EXPANSION] Expansion motion is live", {
+              subType: "expansion",
+              speaker: "[YELLOW] Sarah Chen",
+              evidenceQuote: "[ADOPTION] We are ready to extend this into APAC.",
+              impact: "[VALUE_REALIZED] Multi-region rollout approved",
+            }),
+            makeCapture("commitment-001", "commitment", "[CUSTOMER_COMMITMENT] Send procurement package", {
+              subType: "follow_up",
+            }),
+          ],
+        })}
+        continuityThread={{
+          ...thread,
+          previousMeetingTitle: "[EXPANSION] last week’s sync",
+          actionsCompleted: [{ title: "[YELLOW] Finalize pilot scope", isOverdue: false }],
+          actionsOpen: [{ title: "[RED] Review pricing addendum", date: "2026-03-25", isOverdue: false }],
+        }}
+        predictionScorecard={{
+          hasData: true,
+          riskPredictions: [
+            prediction("[YELLOW] Security review delays signature", "confirmed", {
+              matchText: "[RED] Security review delayed the final signature.",
+            }),
+          ],
+          winPredictions: [
+            prediction("[EXPANSION] Champion pushes expansion", "surprise", {
+              source: "[ADOPTION] prep narrative",
+            }),
+          ],
+        }}
+        summary="[GREEN_WATCH] Acme validated the rollout path and surfaced one legal blocker."
+        actions={[
+          makeAction("act-007", "pending", {
+            title: "[RED] Send updated redlines",
+            context: "[YELLOW] Captured during call",
+          }),
+        ]}
+      />,
+    );
+
+    const bodyText = document.body.textContent ?? "";
+
+    expect(bodyText).toContain("Acme validated the rollout path and surfaced one legal blocker.");
+    expect(bodyText).toContain("Since last week’s sync on");
+    expect(bodyText).toContain("Finalize pilot scope");
+    expect(bodyText).toContain("Review pricing addendum");
+    expect(bodyText).toContain("Security review delays signature");
+    expect(bodyText).toContain("Security review delayed the final signature.");
+    expect(bodyText).toContain("Champion pushes expansion");
+    expect(bodyText).toContain("Expansion motion is live");
+    expect(bodyText).toContain("Multi-region rollout approved");
+    expect(bodyText).toContain("We need legal unstuck this week");
+    expect(bodyText).toContain("Mentioned during procurement review");
+    expect(bodyText).toContain("Actively pulled finance into the decision.");
+    expect(bodyText).toContain("Needs pricing backup before procurement review.");
+    expect(bodyText).toContain("Send updated redlines");
+    expect(bodyText).toContain("Captured during call");
+    expect(bodyText).toContain("I’ll take this to the steering committee next week.");
+
+    expect(bodyText).not.toContain("[YELLOW]");
+    expect(bodyText).not.toContain("[RED]");
+    expect(bodyText).not.toContain("[EXPANSION]");
+    expect(bodyText).not.toContain("[GREEN_WATCH]");
+    expect(bodyText).not.toContain("[ADOPTION]");
+    expect(bodyText).not.toContain("[VALUE_REALIZED]");
+    expect(bodyText).not.toContain("[CUSTOMER_COMMITMENT]");
+    expect(bodyText).not.toContain("[JOINT_AGREEMENT]");
   });
 });

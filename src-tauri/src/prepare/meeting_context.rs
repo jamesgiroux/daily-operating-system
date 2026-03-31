@@ -274,6 +274,21 @@ fn gather_account_context(
     ctx["recent_captures"] = get_captures_for_account(db, &entity_match.entity_id, 14);
     ctx["open_actions"] = get_account_actions(db, &entity_match.entity_id);
     ctx["meeting_history"] = get_meeting_history(db, &entity_match.entity_id, 30, 3);
+    if let Ok(products) = db.get_account_products(&entity_match.entity_id) {
+        if !products.is_empty() {
+            ctx["products"] = json!(products
+                .iter()
+                .map(|product| {
+                    json!({
+                        "name": product.name,
+                        "category": product.category,
+                        "status": product.status,
+                        "source": product.source,
+                    })
+                })
+                .collect::<Vec<_>>());
+        }
+    }
     if let Ok(team) = db.get_account_team(&entity_match.entity_id) {
         if !team.is_empty() {
             ctx["account_team"] = json!(team
@@ -288,6 +303,42 @@ fn gather_account_context(
                 })
                 .collect::<Vec<_>>());
         }
+    }
+
+    // I647: Source-verified facts from account_source_refs
+    if let Ok(refs) = db.get_account_source_refs(&entity_match.entity_id) {
+        let fact_refs: Vec<_> = refs.iter().filter(|r| r.source_kind == "fact").collect();
+        if !fact_refs.is_empty() {
+            let mut seen_fields = std::collections::HashSet::new();
+            let sourced_facts: Vec<_> = fact_refs
+                .iter()
+                .filter(|r| seen_fields.insert(&r.field))
+                .map(|r| {
+                    json!({
+                        "field": r.field,
+                        "value": r.source_value,
+                        "source": r.source_system,
+                        "observedAt": r.observed_at,
+                    })
+                })
+                .collect();
+            ctx["sourcedFacts"] = json!(sourced_facts);
+        }
+    }
+
+    // I649: Technical footprint
+    if let Ok(Some(tf)) = db.get_account_technical_footprint(&entity_match.entity_id) {
+        ctx["technicalFootprint"] = json!({
+            "usageTier": tf.usage_tier,
+            "adoptionScore": tf.adoption_score,
+            "activeUsers": tf.active_users,
+            "supportTier": tf.support_tier,
+            "csatScore": tf.csat_score,
+            "openTickets": tf.open_tickets,
+            "servicesStage": tf.services_stage,
+            "source": tf.source,
+            "sourcedAt": tf.sourced_at,
+        });
     }
 }
 
@@ -717,10 +768,21 @@ fn inject_entity_intelligence(
     } else {
         None
     };
-    let intel = match intel {
+    let mut intel = match intel {
         Some(intel) => intel,
         None => return,
     };
+
+    // I645: Filter stale items from meeting prep context using relevance windows.
+    intel.risks.retain(|risk| {
+        let sourced = risk.item_source.as_ref().map(|s| s.sourced_at.as_str());
+        match sourced {
+            Some(ts) => {
+                crate::intelligence::timeliness::is_within_relevance_window("active_blocker", ts)
+            }
+            None => true,
+        }
+    });
 
     if let Some(ref assessment) = intel.executive_assessment {
         ctx["executive_assessment"] = json!(assessment);
@@ -746,19 +808,22 @@ fn inject_entity_intelligence(
         }
     }
 
-    if !intel.stakeholder_insights.is_empty() {
-        ctx["stakeholder_insights"] = json!(intel
-            .stakeholder_insights
-            .iter()
-            .map(|s| {
-                json!({
-                    "name": s.name,
-                    "role": s.role,
-                    "assessment": s.assessment,
-                    "engagement": s.engagement,
+    // I652: Read stakeholders from DB (person-first architecture) instead of intel JSON.
+    if let (Some(db), Some(eid)) = (db, entity_id) {
+        let stakeholders = db.get_account_stakeholders_full(eid).unwrap_or_default();
+        if !stakeholders.is_empty() {
+            ctx["stakeholder_insights"] = json!(stakeholders
+                .iter()
+                .map(|s| {
+                    json!({
+                        "name": s.person_name,
+                        "role": s.stakeholder_role,
+                        "assessment": s.assessment,
+                        "engagement": s.engagement,
+                    })
                 })
-            })
-            .collect::<Vec<_>>());
+                .collect::<Vec<_>>());
+        }
     }
 
     if let Some(status) = intel.consistency_status.as_ref() {
@@ -766,6 +831,13 @@ fn inject_entity_intelligence(
     }
     if !intel.consistency_findings.is_empty() {
         ctx["consistency_findings"] = json!(intel.consistency_findings);
+    }
+
+    // I651: Product classification from Glean
+    if let Some(ref classification) = intel.product_classification {
+        if !classification.products.is_empty() {
+            ctx["products"] = json!(classification.products);
+        }
     }
 }
 
@@ -1965,6 +2037,7 @@ mod tests {
                 keywords: None,
                 keywords_extracted_at: None,
                 metadata: None,
+                ..Default::default()
             })
             .expect("upsert account");
         }
@@ -1977,13 +2050,8 @@ mod tests {
                 milestone: Some("Phase 2".to_string()),
                 owner: Some("Alice".to_string()),
                 target_date: Some("2026-03-15".to_string()),
-                tracker_path: None,
-                parent_id: None,
                 updated_at: now.clone(),
-                archived: false,
-                keywords: None,
-                keywords_extracted_at: None,
-                metadata: None,
+                ..Default::default()
             })
             .expect("upsert project");
         }
