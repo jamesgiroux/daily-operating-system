@@ -577,19 +577,29 @@ fn generate_mechanical_prep_with_inputs(
         }
     }
 
-    // Phase 6: Write result to prep_frozen_json in DB.
+    // Phase 6: Write result to both prep_context_json (DB read model) and
+    // prep_frozen_json (MCP export blob).
+    //
+    // ADR-0101: prep_context_json is the primary read source. prep_frozen_json
+    // is kept in sync as the MCP tool export format.
+    //
     // Deliberately does NOT set prep_frozen_at — that column is owned by the AI
     // workflow (reconcile.rs freeze_meeting_prep_snapshot) and gates on IS NULL.
     // Setting it here would prevent the workflow from ever writing real AI content.
     let frozen_str =
         serde_json::to_string(&prep_json).map_err(|e| format!("Serialize error: {}", e))?;
 
+    // Write to prep_context_json (DB read model) — UPSERT so row is created if absent
+    db.update_meeting_prep_context(meeting_id, &frozen_str)
+        .map_err(|e| format!("Failed to write prep_context_json: {}", e))?;
+
+    // Write to prep_frozen_json (MCP export)
     db.conn_ref()
         .execute(
             "UPDATE meeting_prep SET prep_frozen_json = ?1 WHERE meeting_id = ?2",
             rusqlite::params![frozen_str, meeting_id],
         )
-        .map_err(|e| format!("Failed to write prep: {}", e))?;
+        .map_err(|e| format!("Failed to write prep_frozen_json: {}", e))?;
 
     let quality = crate::intelligence::assess_intelligence_quality(&db, meeting_id);
     let _ = db.update_intelligence_state(

@@ -1574,7 +1574,7 @@ pub struct EmailBriefingData {
 // =============================================================================
 
 /// Complete meeting prep from individual prep file
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FullMeetingPrep {
     #[serde(default)]
