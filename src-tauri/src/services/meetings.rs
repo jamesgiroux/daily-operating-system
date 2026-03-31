@@ -255,25 +255,16 @@ pub fn collect_meeting_outcomes_from_db(
 }
 
 /// Load meeting prep from DB sources (mechanical assembly).
+///
+/// ADR-0101: DB is the read model. We try `prep_context_json` (DB-native) first,
+/// then fall back to `prep_frozen_json` (cached export blob). This ensures user
+/// edits persisted to `prep_context_json` are always reflected, even if the frozen
+/// export hasn't been regenerated yet.
 pub fn load_meeting_prep_from_sources(
     _today_dir: &Path,
     meeting: &crate::db::DbMeeting,
 ) -> Option<crate::types::FullMeetingPrep> {
-    // Source 1: prep_frozen_json — mechanical assembly from entity intelligence (ADR-0086)
-    if let Some(ref frozen) = meeting.prep_frozen_json {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(frozen) {
-            if let Some(prep_val) = value.get("prep") {
-                if let Ok(prep) =
-                    serde_json::from_value::<crate::types::FullMeetingPrep>(prep_val.clone())
-                {
-                    return Some(prep);
-                }
-            }
-            if let Ok(prep) = serde_json::from_value::<crate::types::FullMeetingPrep>(value) {
-                return Some(prep);
-            }
-        }
-    }
+    // Check for rebuild in progress — return None so the UI shows a loading state
     let rebuild_in_progress = meeting.prep_frozen_json.is_none()
         && matches!(
             meeting.intelligence_state.as_deref(),
@@ -282,7 +273,8 @@ pub fn load_meeting_prep_from_sources(
     if rebuild_in_progress {
         return None;
     }
-    // Source 2: prep_context_json from DB (I513 — no disk prep file fallback)
+
+    // Source 1 (ADR-0101): prep_context_json — the DB-native read model
     if let Some(ref prep_json) = meeting.prep_context_json {
         // Try direct deserialization first
         if let Ok(prep) = serde_json::from_str::<crate::types::FullMeetingPrep>(prep_json) {
@@ -358,6 +350,23 @@ pub fn load_meeting_prep_from_sources(
                             .collect(),
                     );
                 }
+                return Some(prep);
+            }
+        }
+    }
+
+    // Source 2 (ADR-0101 fallback): prep_frozen_json — cached export blob.
+    // Used when prep_context_json is absent or not in FullMeetingPrep format.
+    if let Some(ref frozen) = meeting.prep_frozen_json {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(frozen) {
+            if let Some(prep_val) = value.get("prep") {
+                if let Ok(prep) =
+                    serde_json::from_value::<crate::types::FullMeetingPrep>(prep_val.clone())
+                {
+                    return Some(prep);
+                }
+            }
+            if let Ok(prep) = serde_json::from_value::<crate::types::FullMeetingPrep>(value) {
                 return Some(prep);
             }
         }
@@ -2056,7 +2065,11 @@ pub fn update_meeting_user_notes(
     Ok(())
 }
 
-/// Update a single field in a meeting's frozen prep JSON with signal emission.
+/// Update a single field in a meeting's prep with signal emission.
+///
+/// ADR-0101: User edits are written to both `prep_context_json` (the DB read model)
+/// and `prep_frozen_json` (the MCP export blob). This ensures edits survive
+/// re-assembly and are immediately visible through the DB-first read path.
 ///
 /// Supports field paths like:
 /// - `"meetingContext"` (simple key)
@@ -2075,13 +2088,16 @@ pub fn update_meeting_prep_field(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
-    let frozen = meeting
-        .prep_frozen_json
+    // ADR-0101: Read from prep_context_json (DB read model) first, fall back to
+    // prep_frozen_json. This matches the read priority in load_meeting_prep_from_sources.
+    let source_json = meeting
+        .prep_context_json
         .as_deref()
-        .ok_or_else(|| "No frozen prep JSON to update".to_string())?;
+        .or(meeting.prep_frozen_json.as_deref())
+        .ok_or_else(|| "No prep JSON to update".to_string())?;
 
     let mut json: serde_json::Value =
-        serde_json::from_str(frozen).map_err(|e| format!("Invalid prep JSON: {}", e))?;
+        serde_json::from_str(source_json).map_err(|e| format!("Invalid prep JSON: {}", e))?;
 
     // Parse field_path and apply update
     apply_field_path_update(&mut json, field_path, value)?;
@@ -2097,6 +2113,11 @@ pub fn update_meeting_prep_field(
         .map_err(|e| e.to_string())?;
 
     db.with_transaction(|tx| {
+        // ADR-0101: Write to both prep_context_json (DB read model) and
+        // prep_frozen_json (MCP export). prep_context_json is the primary
+        // read source; prep_frozen_json is kept in sync for MCP tools.
+        tx.update_meeting_prep_context(meeting_id, &updated)
+            .map_err(|e| e.to_string())?;
         tx.update_prep_frozen_json(meeting_id, &updated)
             .map_err(|e| e.to_string())?;
 
