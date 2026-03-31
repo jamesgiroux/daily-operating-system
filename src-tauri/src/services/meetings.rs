@@ -1678,6 +1678,126 @@ pub async fn unlink_meeting_entity_with_prep_queue(
     Ok(())
 }
 
+/// Persist classification-time entity links (I653).
+///
+/// Called at meeting creation time (calendar poll, prepare_today, prepare_week).
+/// At this point, prep does not exist yet, so no invalidation is needed.
+/// Additive: INSERT OR IGNORE preserves existing manual user links.
+/// No signal emission — classification is detection, not user mutation.
+pub fn persist_classification_entities(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    entities: &[(String, String)], // (entity_id, entity_type)
+) -> Result<usize, String> {
+    let mut linked = 0usize;
+    for (entity_id, entity_type) in entities {
+        match db.link_meeting_entity(meeting_id, entity_id, entity_type) {
+            Ok(_) => linked += 1,
+            Err(e) => {
+                // INSERT OR IGNORE — duplicates are expected, real errors are not
+                let msg = e.to_string();
+                if !msg.contains("UNIQUE constraint") {
+                    log::warn!(
+                        "persist_classification_entities: failed to link {} → {} ({}): {}",
+                        meeting_id,
+                        entity_id,
+                        entity_type,
+                        msg,
+                    );
+                }
+            }
+        }
+    }
+    if linked > 0 {
+        log::info!(
+            "persist_classification_entities: linked {} entities to meeting {}",
+            linked,
+            meeting_id,
+        );
+    }
+    Ok(linked)
+}
+
+/// Persist entity links from background auto-resolution, invalidating stale prep (I653).
+///
+/// Called by the background entity resolution trigger (event_trigger.rs) which runs
+/// minutes to hours after meeting creation. Prep may already exist and be stale.
+/// If prep exists: clears prep_frozen_json and enqueues re-generation.
+pub async fn persist_and_invalidate_entity_links(
+    state: &AppState,
+    meeting_id: &str,
+    entities: &[(String, String)], // (entity_id, entity_type)
+) -> Result<usize, String> {
+    if entities.is_empty() {
+        return Ok(0);
+    }
+
+    let meeting_id_s = meeting_id.to_string();
+    let entities_owned: Vec<(String, String)> = entities.to_vec();
+
+    let (linked, had_prep) = state
+        .db_write(move |db| {
+            let mut count = 0usize;
+            for (entity_id, entity_type) in &entities_owned {
+                match db.link_meeting_entity_if_absent(&meeting_id_s, entity_id, entity_type) {
+                    Ok(true) => count += 1,
+                    Ok(false) => {} // already linked
+                    Err(e) => {
+                        log::warn!(
+                            "persist_and_invalidate: failed to link {} → {}: {}",
+                            meeting_id_s,
+                            entity_id,
+                            e,
+                        );
+                    }
+                }
+            }
+
+            // Check if stale prep exists that needs invalidation
+            let prep_exists: bool = db
+                .conn_ref()
+                .query_row(
+                    "SELECT prep_frozen_json IS NOT NULL FROM meeting_prep WHERE meeting_id = ?1",
+                    rusqlite::params![meeting_id_s],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+
+            if prep_exists && count > 0 {
+                let _ = db.conn_ref().execute(
+                    "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                    rusqlite::params![meeting_id_s],
+                );
+            }
+
+            Ok::<(usize, bool), String>((count, prep_exists && count > 0))
+        })
+        .await?;
+
+    if had_prep {
+        state
+            .meeting_prep_queue
+            .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                meeting_id.to_string(),
+                crate::meeting_prep_queue::PrepPriority::Background,
+            ));
+        state.integrations.prep_queue_wake.notify_one();
+        log::info!(
+            "persist_and_invalidate: linked {} entities to {}, invalidated stale prep",
+            linked,
+            meeting_id,
+        );
+    } else if linked > 0 {
+        log::info!(
+            "persist_and_invalidate: linked {} entities to {} (no prep to invalidate)",
+            linked,
+            meeting_id,
+        );
+    }
+
+    Ok(linked)
+}
+
 /// List available meeting prep files from the workspace.
 pub fn list_meeting_preps(state: &AppState) -> Result<Vec<String>, String> {
     let config = state
@@ -2700,6 +2820,7 @@ pub async fn reprocess_meeting_transcript(
         is_all_day: false,
         account: None, // Resolved by transcript pipeline from meeting_entities
         linked_entities: None,
+        classified_entities: None,
     };
 
     // Re-run the full pipeline via the existing attach path
