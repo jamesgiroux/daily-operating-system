@@ -3377,6 +3377,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         }
     }
 
@@ -3684,6 +3685,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         };
 
         assert!(build_prediction_scorecard_markdown(&meeting, &db).is_none());
@@ -3736,6 +3738,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         };
 
         let markdown = build_prediction_scorecard_markdown(&meeting, &db)
@@ -3762,6 +3765,7 @@ mod tests {
                 name: "Acme Corp".to_string(),
                 entity_type: "account".to_string(),
             }]),
+            classified_entities: None,
         };
         let wins = vec!["Expansion budget approved".to_string()];
         let risks = vec!["Legal review is blocking procurement".to_string()];
@@ -3897,6 +3901,7 @@ mod tests {
                 name: "Platform Migration".to_string(),
                 entity_type: "project".to_string(),
             }]),
+        classified_entities: None,
         };
         let project_meeting = CalendarEvent {
             id: "mtg-project-route".to_string(),
@@ -3912,6 +3917,7 @@ mod tests {
                 name: "Platform Migration".to_string(),
                 entity_type: "project".to_string(),
             }]),
+        classified_entities: None,
         };
         let person_meeting = CalendarEvent {
             id: "mtg-person-route".to_string(),
@@ -3927,6 +3933,7 @@ mod tests {
                 name: "Pat Kim".to_string(),
                 entity_type: "person".to_string(),
             }]),
+        classified_entities: None,
         };
         let archive_meeting = CalendarEvent {
             id: "mtg-archive-route".to_string(),
@@ -3938,6 +3945,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         };
 
         let account_path = compute_meeting_record_path(workspace, &account_meeting, &db);

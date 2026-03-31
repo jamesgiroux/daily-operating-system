@@ -493,12 +493,19 @@ fn generate_mechanical_prep_with_inputs(
 
     // Resolve workspace path for context gathering
     // Phase 3: Build classified meeting JSON for gather_meeting_context
+    // I653 FIX 6: Include attendees so entity resolver signals fire during prep
+    let attendees_val: serde_json::Value = meeting
+        .attendees
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or(serde_json::Value::Array(vec![]));
     let classified = json!({
         "id": meeting.id,
         "title": meeting.title,
         "type": meeting.meeting_type,
         "start": meeting.start_time,
         "description": meeting.description.as_deref().unwrap_or(""),
+        "attendees": attendees_val,
     });
 
     // Phase 4: Gather context (mechanical — no AI)
