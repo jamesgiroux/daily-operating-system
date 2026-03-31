@@ -385,45 +385,25 @@ pub fn upsert_timeline_meeting_with_entities(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn upsert_person_relationship(
     db: &ActionDb,
     engine: &PropagationEngine,
-    id: &str,
-    from_person_id: &str,
-    to_person_id: &str,
-    relationship_type: &str,
-    direction: &str,
-    confidence: f64,
-    context_entity_id: Option<&str>,
-    context_entity_type: Option<&str>,
-    source: &str,
+    rel: &UpsertRelationship<'_>,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
-        tx.upsert_person_relationship(&UpsertRelationship {
-            id,
-            from_person_id,
-            to_person_id,
-            relationship_type,
-            direction,
-            confidence,
-            context_entity_id,
-            context_entity_type,
-            source,
-            rationale: None,
-        })
-        .map_err(|e| format!("Failed to upsert relationship: {}", e))?;
+        tx.upsert_person_relationship(rel)
+            .map_err(|e| format!("Failed to upsert relationship: {}", e))?;
 
         crate::services::signals::emit_and_propagate(
             tx,
             engine,
             "person",
-            from_person_id,
+            rel.from_person_id,
             "relationship_graph_changed",
             "user_action",
             Some(&format!(
                 "{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}",
-                id, to_person_id
+                rel.id, rel.to_person_id
             )),
             0.9,
         )
@@ -433,12 +413,12 @@ pub fn upsert_person_relationship(
             tx,
             engine,
             "person",
-            to_person_id,
+            rel.to_person_id,
             "relationship_graph_changed",
             "user_action",
             Some(&format!(
                 "{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}",
-                id, from_person_id
+                rel.id, rel.from_person_id
             )),
             0.9,
         )
@@ -489,18 +469,31 @@ pub fn delete_person_relationship(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Parameters for persisting transcript-extracted outcomes.
+#[derive(Debug)]
+pub struct TranscriptOutcomesParams<'a> {
+    pub entity_type: &'a str,
+    pub entity_id: &'a str,
+    pub meeting_id: &'a str,
+    pub meeting_title: &'a str,
+    pub account_id: Option<&'a str>,
+    pub wins: &'a [String],
+    pub risks: &'a [String],
+    pub decisions: &'a [String],
+}
+
 pub fn persist_transcript_outcomes(
     db: &ActionDb,
-    entity_type: &str,
-    entity_id: &str,
-    meeting_id: &str,
-    meeting_title: &str,
-    account_id: Option<&str>,
-    wins: &[String],
-    risks: &[String],
-    decisions: &[String],
+    params: &TranscriptOutcomesParams<'_>,
 ) -> Result<(), String> {
+    let entity_type = params.entity_type;
+    let entity_id = params.entity_id;
+    let meeting_id = params.meeting_id;
+    let meeting_title = params.meeting_title;
+    let account_id = params.account_id;
+    let wins = params.wins;
+    let risks = params.risks;
+    let decisions = params.decisions;
     db.with_transaction(|tx| {
         for win in wins {
             let (content, sub_type, evidence_quote) = parse_win_metadata(win);
@@ -920,14 +913,16 @@ mod tests {
 
             persist_transcript_outcomes(
                 &db,
-                "account",
-                "acc-t",
-                "mtg-1",
-                "Q1 Review",
-                Some("acc-t"),
-                &wins,
-                &risks,
-                &decisions,
+                &TranscriptOutcomesParams {
+                    entity_type: "account",
+                    entity_id: "acc-t",
+                    meeting_id: "mtg-1",
+                    meeting_title: "Q1 Review",
+                    account_id: Some("acc-t"),
+                    wins: &wins,
+                    risks: &risks,
+                    decisions: &decisions,
+                },
             )
             .expect("persist_transcript_outcomes");
         }
@@ -1012,15 +1007,18 @@ mod tests {
         upsert_person_relationship(
             &db,
             &engine,
-            "rel-1",
-            "p1",
-            "p2",
-            "peer",
-            "symmetric",
-            0.8,
-            Some("acc-1"),
-            Some("account"),
-            "user_action",
+            &UpsertRelationship {
+                id: "rel-1",
+                from_person_id: "p1",
+                to_person_id: "p2",
+                relationship_type: "peer",
+                direction: "symmetric",
+                confidence: 0.8,
+                context_entity_id: Some("acc-1"),
+                context_entity_type: Some("account"),
+                source: "user_action",
+                rationale: None,
+            },
         )
         .expect("upsert_person_relationship");
 
