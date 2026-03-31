@@ -99,6 +99,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+        classified_entities: None,
         }];
         let blocks = available_blocks_from_live(&events, day);
         assert!(!blocks.is_empty());
@@ -144,6 +145,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+        classified_entities: None,
         }];
 
         let before = available_blocks_from_live(&events, day);
@@ -159,6 +161,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+        classified_entities: None,
         });
         let after = available_blocks_from_live(&events, day);
         let after_total: u32 = after.iter().map(|b| b.duration_minutes).sum();

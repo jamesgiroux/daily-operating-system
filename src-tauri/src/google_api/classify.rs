@@ -42,6 +42,10 @@ pub struct EntityHint {
     pub keywords: Vec<String>,
     pub emails: Vec<String>,
     pub account_type: Option<String>,
+    /// Account IDs this person is linked to via account_stakeholders (I653).
+    /// Enables classification-time confidence boost when known stakeholders attend.
+    #[allow(dead_code)]
+    pub linked_account_ids: Vec<String>,
 }
 
 /// Resolved entity from classification. I336.
@@ -462,6 +466,51 @@ fn resolve_entities(
         }
     }
 
+    // I653 FIX 8: Person→account chaining at classification time.
+    // If known stakeholders attend, boost their linked accounts' confidence.
+    // This enables deterministic auto-linking without AI: 3 Heroku stakeholders
+    // attending a meeting boosts Heroku's confidence via attendee vote signal.
+    let mut account_boosts: HashMap<String, f64> = HashMap::new();
+    let total_attendees = attendee_emails.len().max(1) as f64;
+    for hint in entity_hints.iter().filter(|h| h.entity_type == EntityType::Person) {
+        // Check if this person is an attendee
+        let is_attendee = hint
+            .emails
+            .iter()
+            .any(|e| attendee_emails.contains(&e.to_lowercase()));
+        if is_attendee {
+            for account_id in &hint.linked_account_ids {
+                *account_boosts.entry(account_id.clone()).or_insert(0.0) += 1.0;
+            }
+        }
+    }
+    // Apply attendee vote boosts to account entities
+    for (account_id, votes) in &account_boosts {
+        let attendee_confidence = (0.5 + 0.4 * (votes / total_attendees)).min(0.90);
+        best.entry(account_id.clone())
+            .and_modify(|existing| {
+                if attendee_confidence > existing.confidence {
+                    existing.confidence = attendee_confidence;
+                    existing.source = "stakeholder_attendee".to_string();
+                }
+            })
+            .or_insert_with(|| {
+                // Find the account name from hints
+                let name = entity_hints
+                    .iter()
+                    .find(|h| h.id == *account_id)
+                    .map(|h| h.name.clone())
+                    .unwrap_or_default();
+                ResolvedMeetingEntity {
+                    entity_id: account_id.clone(),
+                    entity_type: "account".to_string(),
+                    name,
+                    confidence: attendee_confidence,
+                    source: "stakeholder_attendee".to_string(),
+                }
+            });
+    }
+
     let mut entities: Vec<ResolvedMeetingEntity> = best.into_values().collect();
     entities.sort_by(|a, b| {
         b.confidence
@@ -517,6 +566,21 @@ impl ClassifiedMeeting {
             .find(|e| e.entity_type == "account")
             .map(|e| e.name.clone());
 
+        // Carry entity IDs through so callers can persist links (I653 FIX 1)
+        let classified_entities: Option<Vec<(String, String)>> = if self
+            .resolved_entities
+            .is_empty()
+        {
+            None
+        } else {
+            Some(
+                self.resolved_entities
+                    .iter()
+                    .map(|e| (e.entity_id.clone(), e.entity_type.clone()))
+                    .collect(),
+            )
+        };
+
         crate::types::CalendarEvent {
             id: self.id.clone(),
             title: self.title.clone(),
@@ -527,6 +591,7 @@ impl ClassifiedMeeting {
             attendees: self.attendees.clone(),
             is_all_day: self.is_all_day,
             linked_entities: None,
+            classified_entities,
         }
     }
 }
@@ -575,6 +640,7 @@ mod tests {
                 keywords: vec![],
                 emails: vec![],
                 account_type: None,
+                    linked_account_ids: vec![],
             })
             .collect()
     }
@@ -593,6 +659,7 @@ mod tests {
             keywords: keywords.iter().map(|s| s.to_string()).collect(),
             emails: vec![],
             account_type: None,
+                    linked_account_ids: vec![],
         }
     }
 
@@ -606,6 +673,7 @@ mod tests {
             keywords: vec![],
             emails: emails.iter().map(|s| s.to_string()).collect(),
             account_type: None,
+                    linked_account_ids: vec![],
         }
     }
 
@@ -635,6 +703,7 @@ mod tests {
             keywords: vec![],
             emails: vec![],
             account_type: None,
+                    linked_account_ids: vec![],
         }
     }
 
