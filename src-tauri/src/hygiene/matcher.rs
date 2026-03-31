@@ -202,7 +202,7 @@ pub(super) fn dedup_people_by_domain_alias(
     }
 
     // Group people by (local_part, canonical_domain_group).
-    // The canonical key is the sorted domain set so that `renan@wpvip.com` and `renan@a8c.com`
+    // The canonical key is the sorted domain set so that `user@subsidiary.com` and `user@parent.com`
     // fall into the same group when those domains are siblings.
     let mut groups: HashMap<(String, String), Vec<&crate::db::DbPerson>> = HashMap::new();
 
