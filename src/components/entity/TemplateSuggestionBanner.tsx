@@ -1,4 +1,5 @@
 import type { SuccessPlanTemplate } from "@/types";
+import { Button } from "@/components/ui/button";
 import s from "./TemplateSuggestionBanner.module.css";
 
 interface TemplateSuggestionBannerProps {
@@ -21,12 +22,12 @@ export function TemplateSuggestionBanner({
         </div>
       </div>
       <div className={s.bannerActions}>
-        <button className={s.bannerAction} onClick={onView}>
+        <Button variant="outline" size="sm" className={s.bannerAction} onClick={onView}>
           View
-        </button>
-        <button className={s.bannerActionMuted} onClick={onDismiss}>
+        </Button>
+        <Button variant="ghost" size="sm" className={s.bannerActionMuted} onClick={onDismiss}>
           Dismiss
-        </button>
+        </Button>
       </div>
     </div>
   );

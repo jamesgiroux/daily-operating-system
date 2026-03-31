@@ -94,6 +94,9 @@ pub struct GoogleCalendarEvent {
     pub location: String,
     pub is_recurring: bool,
     pub is_all_day: bool,
+    /// Event status from Google Calendar: "confirmed", "tentative", or "cancelled".
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 // ============================================================================
@@ -233,6 +236,7 @@ pub async fn fetch_events(
                 location: item.location.unwrap_or_default(),
                 is_recurring: item.recurring_event_id.is_some(),
                 is_all_day,
+                status: item.status,
             });
         }
 

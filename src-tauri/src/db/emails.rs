@@ -6,6 +6,7 @@ impl ActionDb {
     // =========================================================================
 
     /// Insert or update an email record. Sets `last_seen_at` to now on every upsert.
+    /// Preserves existing `enriched_at` timestamp if present, does not overwrite.
     pub fn upsert_email(&self, email: &DbEmail) -> Result<(), String> {
         let now = Utc::now().to_rfc3339();
         self.conn
@@ -13,12 +14,12 @@ impl ActionDb {
                 "INSERT INTO emails (
                     email_id, thread_id, sender_email, sender_name, subject, snippet,
                     priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                    last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
+                    last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
                     contextual_summary, sentiment, urgency, user_is_last_sender,
                     last_sender_email, message_count, created_at, updated_at
                  ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                    ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+                    ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25
                  )
                  ON CONFLICT(email_id) DO UPDATE SET
                     thread_id = excluded.thread_id,
@@ -47,6 +48,7 @@ impl ActionDb {
                     email.enrichment_state,
                     email.enrichment_attempts,
                     email.last_enrichment_at,
+                    email.enriched_at,
                     now,
                     email.resolved_at,
                     email.entity_id,
@@ -122,7 +124,7 @@ impl ActionDb {
             .prepare(
                 "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
                         priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                        last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
+                        last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
@@ -189,7 +191,7 @@ impl ActionDb {
             .prepare(
                 "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
                         priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                        last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
+                        last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
@@ -218,7 +220,7 @@ impl ActionDb {
             .prepare(
                 "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
                         priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                        last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
+                        last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
@@ -540,7 +542,7 @@ impl ActionDb {
             .prepare(
                 "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
                         priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                        last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
+                        last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
@@ -572,7 +574,7 @@ impl ActionDb {
             .prepare(
                 "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
                         priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                        last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
+                        last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
@@ -594,6 +596,56 @@ impl ActionDb {
         }
         Ok(results)
     }
+
+    /// Mark an email as enriched, setting `enriched_at` to now (I652 Phase 5).
+    /// Used after successful enrichment to support Gate 0 deduplication.
+    pub fn mark_email_enriched(&self, email_id: &str) -> Result<(), String> {
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE emails SET enriched_at = ?1, updated_at = ?1 WHERE email_id = ?2",
+                params![now, email_id],
+            )
+            .map_err(|e| format!("Failed to mark email enriched {email_id}: {e}"))?;
+        Ok(())
+    }
+
+    /// Get snapshot of email content (snippet + subject) for all provided email IDs.
+    /// Used in Gate 0 to detect content changes for re-enrichment eligibility.
+    pub fn get_email_snapshots(
+        &self,
+        email_ids: &[String],
+    ) -> Result<HashMap<String, crate::workflow::email_filter::PriorEmailSnapshot>, String> {
+        if email_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut result = HashMap::new();
+        for email_id in email_ids {
+            match self.conn.query_row(
+                "SELECT snippet, subject FROM emails WHERE email_id = ?1",
+                params![email_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            ) {
+                Ok((snippet, subject)) => {
+                    result.insert(
+                        email_id.clone(),
+                        crate::workflow::email_filter::PriorEmailSnapshot { snippet, subject },
+                    );
+                }
+                Err(_) => {
+                    // Email not found or query failed — skip it
+                }
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 /// Parameters for enrichment state updates (avoids too_many_arguments lint).
@@ -605,7 +657,7 @@ pub struct EmailEnrichmentUpdate<'a> {
     pub urgency: Option<&'a str>,
 }
 
-/// Row mapper for emails SELECT queries (29 columns).
+/// Row mapper for emails SELECT queries (30 columns).
 fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
     Ok(DbEmail {
         email_id: row.get(0)?,
@@ -620,22 +672,23 @@ fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
         enrichment_state: row.get(9)?,
         enrichment_attempts: row.get(10)?,
         last_enrichment_at: row.get(11)?,
-        last_seen_at: row.get(12)?,
-        resolved_at: row.get(13)?,
-        entity_id: row.get(14)?,
-        entity_type: row.get(15)?,
-        contextual_summary: row.get(16)?,
-        sentiment: row.get(17)?,
-        urgency: row.get(18)?,
-        user_is_last_sender: row.get::<_, i32>(19)? != 0,
-        last_sender_email: row.get(20)?,
-        message_count: row.get(21)?,
-        created_at: row.get(22)?,
-        updated_at: row.get(23)?,
-        relevance_score: row.get(24).ok(),
-        score_reason: row.get(25).ok(),
-        pinned_at: row.get(26).ok(),
-        commitments: row.get(27).ok(),
-        questions: row.get(28).ok(),
+        enriched_at: row.get(12)?,
+        last_seen_at: row.get(13)?,
+        resolved_at: row.get(14)?,
+        entity_id: row.get(15)?,
+        entity_type: row.get(16)?,
+        contextual_summary: row.get(17)?,
+        sentiment: row.get(18)?,
+        urgency: row.get(19)?,
+        user_is_last_sender: row.get::<_, i32>(20)? != 0,
+        last_sender_email: row.get(21)?,
+        message_count: row.get(22)?,
+        created_at: row.get(23)?,
+        updated_at: row.get(24)?,
+        relevance_score: row.get(25).ok(),
+        score_reason: row.get(26).ok(),
+        pinned_at: row.get(27).ok(),
+        commitments: row.get(28).ok(),
+        questions: row.get(29).ok(),
     })
 }

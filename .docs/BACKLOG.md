@@ -463,6 +463,7 @@ Version brief: `.docs/plans/v1.0.3.md`. Umbrella spec: `.docs/issues/i634.md`.
 | I624 | Product intelligence — AI-discovered products from Glean + transcript/email inference (no CRUD) | P1 | Backend / DB + Frontend |
 | I625 | Provenance inline markers — editorial attribution scoped to Glean sub-sources | P1 | Frontend / Components |
 | I628 | Success plan milestone auto-completion — lifecycle events auto-complete matching milestones | P2 | Backend / Success Plans |
+| I642 | Token usage observability + efficiency foundations — metering, daily budget, transcript dedup, email batching | P1 | Backend / Intelligence / PTY |
 
 Killed: ~~I626 (breadcrumb bar — management artifact)~~, ~~I627 (briefing quick actions — replaced by automatic detection)~~.
 

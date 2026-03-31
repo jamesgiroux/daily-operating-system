@@ -233,6 +233,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     enrichment_state: "pending".to_string(),
                     enrichment_attempts: 0,
                     last_enrichment_at: None,
+                    enriched_at: None,
                     last_seen_at: None,
                     resolved_at: None,
                     entity_id: None,
@@ -1432,6 +1433,7 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
                 enrichment_state: "pending".to_string(),
                 enrichment_attempts: 0,
                 last_enrichment_at: None,
+                enriched_at: None,
                 last_seen_at: None,
                 resolved_at: None,
                 entity_id: None,
@@ -1805,6 +1807,16 @@ async fn fetch_and_classify_today(
     let mut classified = Vec::new();
     let mut events = Vec::new();
     for raw in &raw_events {
+        // Skip cancelled events
+        if raw.status.as_deref() == Some("cancelled") {
+            continue;
+        }
+
+        // Skip events with no attendees (e.g., self-scheduled, blocked time)
+        if raw.attendees.is_empty() {
+            continue;
+        }
+
         let cm = google_api::classify::classify_meeting_multi(raw, user_domains, entity_hints);
         let ev = cm.to_calendar_event();
         classified.push(json!({
@@ -1943,6 +1955,11 @@ async fn fetch_and_classify_week(
     let mut classified = Vec::new();
     let mut events = Vec::new();
     for raw in &raw_events {
+        // Skip cancelled events (same filter as fetch_and_classify_today)
+        if raw.status.as_deref() == Some("cancelled") {
+            continue;
+        }
+
         let cm = google_api::classify::classify_meeting_multi(raw, user_domains, entity_hints);
         let ev = cm.to_calendar_event();
         classified.push(json!({

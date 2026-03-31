@@ -486,16 +486,6 @@ function DashboardPage() {
   const { state, refresh } = useDashboardData();
   const { runNow, isRunning, status } = useWorkflow();
 
-  // Auto-trigger refresh when empty but Google auth exists (backend may not have live data yet)
-  const autoTriggered = useRef(false);
-  const googleAuth = state.status === "empty" || state.status === "success" ? state.googleAuth : undefined;
-  useEffect(() => {
-    if (state.status === "empty" && googleAuth?.status !== "notconfigured" && !isRunning && !autoTriggered.current) {
-      autoTriggered.current = true;
-      runNow();
-    }
-  }, [state.status, googleAuth, isRunning, runNow]);
-
   switch (state.status) {
     case "loading":
       return <DashboardSkeleton />;

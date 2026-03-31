@@ -161,6 +161,50 @@
   color: var(--color-text-tertiary);
 }
 
+/* ── Confirmed card remove button (hover-revealed) ── */
+
+.cardRemoveButton {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-cream);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  color: var(--color-text-tertiary);
+}
+
+.card:hover .cardRemoveButton {
+  opacity: 1;
+}
+
+.cardRemoveButton:hover {
+  color: var(--color-earth-terracotta);
+  border-color: var(--color-earth-terracotta);
+}
+
+/* ── Suggested section label ── */
+
+.suggestedLabel {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-xs);
+}
+
 /* ── Suggestion / create contact actions ── */
 
 .actionButton {
@@ -596,6 +640,76 @@
   color: var(--color-garden-larkspur);
 }
 
+/* ── Source provenance indicators (DB-first read model) ── */
+
+.sourceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.sourceLabel {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-top: 6px;
+}
+
+.sourceRow .sourceLabel {
+  margin-top: 0;
+}
+
+.sourceLabel[data-source="glean"] {
+  background: var(--color-garden-larkspur-15, rgba(110, 137, 168, 0.15));
+  color: var(--color-garden-larkspur);
+}
+
+.sourceLabel[data-source="google"] {
+  background: var(--color-spice-turmeric-12, rgba(224, 175, 65, 0.12));
+  color: var(--color-spice-turmeric);
+}
+
+.sourceAccept {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-garden-sage);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sourceAccept:hover {
+  color: var(--color-text-primary);
+}
+
+.sourceDismiss {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sourceDismiss:hover {
+  color: var(--color-earth-terracotta);
+}
+
 /* ── Engagement badges ── */
 
 .engagementBadge {
@@ -687,6 +801,49 @@
   color: var(--color-text-secondary);
 }
 
+/* -- Champion designation badge (I646 C2) -- */
+
+.championBadgeRow {
+  margin-top: 24px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-rule-light);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.championBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--color-garden-sage);
+  background: rgba(126, 170, 123, 0.08);
+  color: var(--color-garden-sage);
+}
+
+.championBadgeLink {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.championBadgeLink:hover {
+  color: var(--color-spice-turmeric);
+}
+
+.championBadgeLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-garden-sage);
+}
+
 /* ── Editable text overrides for stakeholder cards ── */
 
 .editableName {
@@ -711,3 +868,188 @@
   color: var(--color-text-secondary);
   margin: 0;
 }
+
+/* ── I652: Suggested stakeholder card overlays (editorial grid cards) ── */
+
+.suggestedCardActions {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 2;
+}
+
+.card:hover .suggestedCardActions {
+  opacity: 1;
+}
+
+.suggestedAcceptBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-garden-sage);
+  background: var(--color-paper-cream);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--color-garden-sage);
+  transition: background 0.15s ease;
+}
+
+.suggestedAcceptBtn:hover {
+  background: rgba(126, 170, 123, 0.12);
+}
+
+.suggestedDismissBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-cream);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.suggestedDismissBtn:hover {
+  color: var(--color-earth-terracotta);
+  border-color: var(--color-earth-terracotta);
+}
+
+.suggestedBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: 8px;
+}
+
+/* ── I652: Multi-role badges ── */
+
+.roleBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin: 4px 0 6px 0;
+}
+
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--color-garden-larkspur-14);
+  color: var(--color-garden-larkspur);
+}
+
+.roleBadge[data-source="user"] {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+}
+
+.roleBadge[data-source="intelligence"] {
+  background: var(--color-garden-larkspur-14);
+  color: var(--color-garden-larkspur);
+}
+
+.roleRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.roleRemove:hover {
+  opacity: 1;
+}
+
+.addRoleBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px dashed var(--color-rule-light);
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.addRoleBtn:hover {
+  border-color: var(--color-garden-larkspur);
+  color: var(--color-garden-larkspur);
+}
+
+/* ── I652: Role picker dropdown ── */
+
+.rolePickerDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px 0;
+  min-width: 140px;
+}
+
+.rolePickerItem {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-primary);
+}
+
+.rolePickerItem:hover {
+  background: var(--color-black-4);
+}
+
+/* ── I652: Engagement badge variants ── */
+
+.engagementStrongAdvocate { background: var(--color-spice-turmeric-12); color: var(--color-spice-turmeric); }
+.engagementEngaged { background: var(--color-garden-rosemary-14); color: var(--color-garden-rosemary); }
+.engagementNeutral { background: var(--color-garden-larkspur-14); color: var(--color-garden-larkspur); }
+.engagementDisengaged { background: var(--color-text-tertiary-8); color: var(--color-text-tertiary); }
+.engagementUnknown { background: var(--color-text-tertiary-8); color: var(--color-text-tertiary); }

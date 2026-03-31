@@ -14,7 +14,7 @@ pub fn reload_configuration(state: State<'_, Arc<AppState>>) -> Result<Config, S
     reload_config(&state)
 }
 
-/// Get dashboard data from workspace _today/data/ JSON files
+/// Get dashboard data (DB-first, workspace JSON for today-specific data)
 #[tauri::command]
 pub async fn get_dashboard_data(
     state: State<'_, Arc<AppState>>,

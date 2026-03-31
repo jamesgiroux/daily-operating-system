@@ -453,6 +453,8 @@ pub fn run() {
             commands::set_developer_mode,
             commands::set_personality,
             commands::set_ai_model,
+            commands::reset_ai_models_to_recommended,
+            commands::set_google_poll_settings,
             commands::set_hygiene_config,
             commands::set_schedule,
             commands::get_actions_from_db,
@@ -540,6 +542,7 @@ pub fn run() {
             commands::launch_claude_login,
             commands::clear_claude_status_cache,
             commands::get_latency_rollups,
+            commands::get_ai_usage_diagnostics,
             commands::install_inbox_sample,
             commands::get_frequent_correspondents,
             // Dev Tools
@@ -597,10 +600,24 @@ pub fn run() {
             commands::get_account_detail,
             commands::get_account_team,
             commands::update_account_field,
+            commands::confirm_lifecycle_change,
+            commands::correct_lifecycle_change,
+            commands::correct_account_product,
+            commands::accept_account_field_conflict,
+            commands::dismiss_account_field_conflict,
             commands::update_account_notes,
             commands::update_account_programs,
             commands::add_account_team_member,
             commands::remove_account_team_member,
+            // I652 Phase 2: Person-first stakeholder commands
+            commands::get_person_stakeholder_roles,
+            commands::update_stakeholder_engagement,
+            commands::update_stakeholder_assessment,
+            commands::add_stakeholder_role,
+            commands::remove_stakeholder_role,
+            commands::get_stakeholder_suggestions,
+            commands::accept_stakeholder_suggestion,
+            commands::dismiss_stakeholder_suggestion,
             commands::create_account,
             commands::create_child_account,
             commands::create_team,
@@ -823,6 +840,8 @@ pub fn run() {
             // I529: Intelligence Quality Feedback
             commands::submit_intelligence_feedback,
             commands::get_entity_feedback,
+            // I645: Feedback & Suppression Diagnostics
+            commands::get_feedback_diagnostics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
