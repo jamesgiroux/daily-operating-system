@@ -61,8 +61,16 @@ vi.mock("@/hooks/useMagazineShell", () => ({
 
 vi.mock("@/hooks/useIntelligenceFeedback", () => ({
   useIntelligenceFeedback: () => ({
-    getItemFeedback: vi.fn(),
+    getFeedback: vi.fn(),
     submitFeedback: vi.fn(),
+  }),
+}));
+
+vi.mock("@/hooks/useAccountFieldSave", () => ({
+  useAccountFieldSave: () => ({
+    saveMetadata: vi.fn(),
+    saveAccountField: vi.fn(),
+    conflictsForStrip: new Map(),
   }),
 }));
 
@@ -136,6 +144,10 @@ vi.mock("@/components/editorial/FinisMarker", () => ({
   FinisMarker: () => <div data-testid="finis-marker" />,
 }));
 
+vi.mock("@/components/editorial/MarginSection", () => ({
+  MarginSection: ({ children }: { children: React.ReactNode }) => <div data-testid="margin-section">{children}</div>,
+}));
+
 vi.mock("@/components/editorial/EditorialLoading", () => ({
   EditorialLoading: () => <div data-testid="editorial-loading">Loading...</div>,
 }));
@@ -167,6 +179,42 @@ vi.mock("@/components/account/AccountMergeDialog", () => ({
 
 vi.mock("@/components/account/WatchListPrograms", () => ({
   WatchListPrograms: () => null,
+}));
+
+vi.mock("@/components/account/AccountBreadcrumbs", () => ({
+  AccountBreadcrumbs: () => null,
+}));
+
+vi.mock("@/components/account/AccountRolloverPrompt", () => ({
+  AccountRolloverPrompt: () => null,
+}));
+
+vi.mock("@/components/account/AccountProductsSection", () => ({
+  AccountProductsSection: () => <div data-testid="products-section" />,
+}));
+
+vi.mock("@/components/account/AccountPortfolioSection", () => ({
+  AccountPortfolioSection: () => <div data-testid="portfolio-section" />,
+}));
+
+vi.mock("@/components/account/AccountHealthSection", () => ({
+  AccountHealthSection: () => <div data-testid="health-section" />,
+}));
+
+vi.mock("@/components/account/AccountPullQuote", () => ({
+  AccountPullQuote: () => null,
+}));
+
+vi.mock("@/components/account/AccountTechnicalFootprint", () => ({
+  AccountTechnicalFootprint: () => null,
+}));
+
+vi.mock("@/components/account/AccountReportsSection", () => ({
+  AccountReportsSection: () => <div data-testid="reports-section" />,
+}));
+
+vi.mock("@/components/account/AccountDialogs", () => ({
+  AccountDialogs: () => null,
 }));
 
 vi.mock("@/components/shared/DimensionBar", () => ({
@@ -264,6 +312,15 @@ function makeAccountHookMock(overrides: Record<string, unknown> = {}) {
     // Events
     handleRecordEvent: vi.fn(),
     setNewEventType: vi.fn(),
+    setNewEventDate: vi.fn(),
+    // Stakeholders
+    suggestions: [],
+    acceptSuggestion: vi.fn(),
+    dismissSuggestion: vi.fn(),
+    updateStakeholderEngagement: vi.fn(),
+    updateStakeholderAssessment: vi.fn(),
+    addStakeholderRole: vi.fn(),
+    removeStakeholderRole: vi.fn(),
     // Archive
     handleArchive: vi.fn(),
     handleUnarchive: vi.fn(),
