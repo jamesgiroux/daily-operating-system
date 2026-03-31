@@ -936,19 +936,35 @@ fn build_meeting_thread_markdown(
     Some(md)
 }
 
+/// ADR-0101: Reads prep via `load_meeting_prep_from_sources` (DB-first) instead
+/// of parsing `prep_frozen_json` directly.
 fn build_prediction_scorecard_markdown(
     meeting: &CalendarEvent,
     db: &crate::db::ActionDb,
 ) -> Option<String> {
     let meeting_row = db.get_meeting_by_id(&meeting.id).ok().flatten()?;
-    let frozen_json = meeting_row.prep_frozen_json?;
     let captures = db.get_enriched_captures(&meeting.id).ok()?;
     if captures.is_empty() {
         return None;
     }
 
-    let prep_risks = crate::intelligence::predictions::extract_prep_risks(&frozen_json);
-    let prep_wins = crate::intelligence::predictions::extract_prep_wins(&frozen_json);
+    // ADR-0101: Try DB-first struct extraction, fall back to frozen JSON
+    let today_dir = std::path::PathBuf::new();
+    let (prep_risks, prep_wins) = if let Some(ref prep) =
+        crate::services::meetings::load_meeting_prep_from_sources(&today_dir, &meeting_row)
+    {
+        (
+            crate::intelligence::predictions::extract_prep_risks_from_struct(prep),
+            crate::intelligence::predictions::extract_prep_wins_from_struct(prep),
+        )
+    } else if let Some(ref frozen_json) = meeting_row.prep_frozen_json {
+        (
+            crate::intelligence::predictions::extract_prep_risks(frozen_json),
+            crate::intelligence::predictions::extract_prep_wins(frozen_json),
+        )
+    } else {
+        return None;
+    };
     if prep_risks.is_empty() && prep_wins.is_empty() {
         return None;
     }
