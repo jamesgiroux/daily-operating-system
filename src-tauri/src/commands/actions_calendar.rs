@@ -904,7 +904,11 @@ pub async fn get_meeting_continuity_thread(
 }
 
 /// I635: Get prediction scorecard — compare pre-meeting prep predictions against
-/// transcript outcomes. Returns `None` when no frozen prep or no captures.
+/// transcript outcomes. Returns `None` when no prep data or no captures.
+///
+/// ADR-0101: Reads prep via `load_meeting_prep_from_sources` (DB-first) instead
+/// of parsing `prep_frozen_json` directly. Falls back to frozen JSON only when
+/// the DB read model doesn't contain prep data.
 #[tauri::command]
 pub async fn get_prediction_scorecard(
     meeting_id: String,
@@ -919,19 +923,35 @@ pub async fn get_prediction_scorecard(
                 Some(m) => m,
                 None => return Ok(None),
             };
-            let frozen_json = match meeting.prep_frozen_json {
-                Some(ref json) if !json.is_empty() => json,
-                _ => return Ok(None),
+
+            // ADR-0101: Try DB-first struct extraction, fall back to frozen JSON
+            let today_dir = std::path::PathBuf::new();
+            let (prep_risks, prep_wins) = if let Some(ref prep) =
+                crate::services::meetings::load_meeting_prep_from_sources(&today_dir, &meeting)
+            {
+                (
+                    crate::intelligence::predictions::extract_prep_risks_from_struct(prep),
+                    crate::intelligence::predictions::extract_prep_wins_from_struct(prep),
+                )
+            } else if let Some(ref frozen) = meeting.prep_frozen_json {
+                if frozen.is_empty() {
+                    return Ok(None);
+                }
+                (
+                    crate::intelligence::predictions::extract_prep_risks(frozen),
+                    crate::intelligence::predictions::extract_prep_wins(frozen),
+                )
+            } else {
+                return Ok(None);
             };
+
+            if prep_risks.is_empty() && prep_wins.is_empty() {
+                return Ok(None);
+            }
             let captures = db
                 .get_enriched_captures(&meeting_id)
                 .map_err(|e| e.to_string())?;
             if captures.is_empty() {
-                return Ok(None);
-            }
-            let prep_risks = crate::intelligence::predictions::extract_prep_risks(frozen_json);
-            let prep_wins = crate::intelligence::predictions::extract_prep_wins(frozen_json);
-            if prep_risks.is_empty() && prep_wins.is_empty() {
                 return Ok(None);
             }
             let (outcome_risks, outcome_wins) =
