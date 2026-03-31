@@ -4013,6 +4013,266 @@ pub fn enrich_preps(
     Ok(())
 }
 
+/// AI-enrich a single meeting's prep JSON via PTY-spawned Claude.
+///
+/// Used by the MeetingPrepQueue (Track 2) to add AI-refined agenda items
+/// with "why" rationale to meetings that would otherwise only have
+/// mechanical agenda output.
+///
+/// Returns the enriched prep JSON on success, or the original on failure.
+/// Never panics — graceful degradation is the contract.
+pub fn enrich_single_prep(
+    prep: &Value,
+    pty: &crate::pty::PtyManager,
+    workspace: &Path,
+) -> Value {
+    let meeting_id = prep
+        .get("meetingId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let title = prep
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Meeting");
+
+    // Build context from prep ingredients
+    let mut prep_context = String::new();
+    prep_context.push_str(&format!(
+        "--- Meeting: {} (ID: {}) ---\n",
+        title, meeting_id
+    ));
+
+    // Meeting type context (QBR vs check-in vs training)
+    if let Some(meeting_type) = prep.get("meetingType").and_then(|v| v.as_str()) {
+        if !meeting_type.is_empty() {
+            prep_context.push_str(&format!("Meeting Type: {}\n", meeting_type));
+        }
+    }
+
+    // Intelligence summary (what matters right now for this account)
+    if let Some(summary) = prep.get("intelligenceSummary").and_then(|v| v.as_str()) {
+        if !summary.trim().is_empty() {
+            prep_context.push_str("Intelligence Summary:\n");
+            prep_context.push_str(summary.trim());
+            prep_context.push('\n');
+        }
+    }
+
+    // Since last meeting context
+    if let Some(since_last) = prep.get("sinceLast").and_then(|v| v.as_str()) {
+        if !since_last.trim().is_empty() {
+            prep_context.push_str("Since Last Meeting:\n");
+            prep_context.push_str(since_last.trim());
+            prep_context.push('\n');
+        }
+    }
+
+    if let Some(points) = prep
+        .get("recentWins")
+        .and_then(|v| v.as_array())
+        .or_else(|| prep.get("talkingPoints").and_then(|v| v.as_array()))
+    {
+        prep_context.push_str("Recent Wins:\n");
+        for p in points {
+            if let Some(t) = p.as_str() {
+                prep_context.push_str(&format!("- {}\n", t));
+            }
+        }
+    }
+    if let Some(notes) = prep.get("calendarNotes").and_then(|v| v.as_str()) {
+        if !notes.trim().is_empty() {
+            prep_context.push_str("Meeting Purpose (from calendar):\n");
+            prep_context.push_str(notes.trim());
+            prep_context.push('\n');
+        }
+    }
+    let calendar_agenda = extract_calendar_agenda_items(prep);
+    if !calendar_agenda.is_empty() {
+        prep_context.push_str("Calendar Agenda:\n");
+        for item in &calendar_agenda {
+            prep_context.push_str(&format!("- {}\n", item));
+        }
+    }
+    if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
+        prep_context.push_str("Risks:\n");
+        for r in risks {
+            if let Some(t) = r.as_str() {
+                prep_context.push_str(&format!("- {}\n", t));
+            }
+        }
+    }
+    if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
+        prep_context.push_str("Open Items:\n");
+        for item in items {
+            let item_title = item.get("title").and_then(|v| v.as_str()).unwrap_or("?");
+            let overdue = item
+                .get("isOverdue")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            prep_context.push_str(&format!(
+                "- {}{}\n",
+                item_title,
+                if overdue { " [OVERDUE]" } else { "" }
+            ));
+        }
+    }
+    if let Some(questions) = prep.get("questions").and_then(|v| v.as_array()) {
+        prep_context.push_str("Questions:\n");
+        for q in questions {
+            if let Some(t) = q.as_str() {
+                prep_context.push_str(&format!("- {}\n", t));
+            }
+        }
+    }
+    if let Some(agenda) = prep.get("proposedAgenda").and_then(|v| v.as_array()) {
+        prep_context.push_str("Current Mechanical Agenda:\n");
+        for (i, item) in agenda.iter().enumerate() {
+            let topic = item.get("topic").and_then(|v| v.as_str()).unwrap_or("?");
+            prep_context.push_str(&format!("{}. {}\n", i + 1, topic));
+        }
+    }
+
+    let prompt = format!(
+        "{}You are refining a meeting prep report for a Customer Success Manager.\n\n\
+         Review recent wins, risks, open items, questions, intelligence summary, \
+         since-last-meeting context, meeting purpose, and current mechanical agenda. Produce:\n\
+         1) A refined agenda that:\n\
+         0. When a 'Meeting Purpose (from calendar)' is provided, treat it as the primary framing constraint: \
+         steer agenda items, risks, and talking points toward that stated purpose. \
+         Deprioritize entity-level intelligence that does not directly relate to the meeting topic.\n\
+         1. Keeps calendar agenda items as primary structure when they exist (enrich around them, do not replace them)\n\
+         2. Orders items by impact (highest-stakes first)\n\
+         3. Adds a brief 'why' rationale for each item\n\
+         4. Uses source category (calendar_note, risk, talking_point, question, open_item, intelligence)\n\
+         5. Avoids duplicating recent wins unless there are no other substantive topics\n\
+         6. Caps at 7 items per meeting\n\
+         2) A clean recent wins list (max 4) with source provenance separated.\n\n\
+         Format your response as:\n\
+         AGENDA:{meeting_id}\n\
+         ITEM:topic text\n\
+         WHY:rationale\n\
+         SOURCE:source_category\n\
+         END_ITEM\n\
+         ... more items ...\n\
+         END_AGENDA\n\
+         WINS:{meeting_id}\n\
+         WIN:concise win statement (no markdown, no inline source: tail)\n\
+         SOURCE:path-or-label (optional, only if known)\n\
+         END_WIN\n\
+         ... more wins ...\n\
+         END_WINS\n\n\
+         {prep_context}",
+        INJECTION_PREAMBLE,
+        meeting_id = meeting_id,
+        prep_context = prep_context,
+    );
+
+    let output = match pty.spawn_claude(workspace, &prompt) {
+        Ok(o) => o,
+        Err(e) => {
+            log::warn!(
+                "enrich_single_prep: Claude enrichment failed for {}: {}",
+                meeting_id,
+                e
+            );
+            return prep.clone();
+        }
+    };
+
+    // Audit trail
+    let _ = crate::audit::write_audit_entry(workspace, "meeting_prep_enrichment", meeting_id, &output.stdout);
+
+    let enrichments = parse_prep_enrichment(&output.stdout);
+    let Some(enrichment) = enrichments.get(meeting_id) else {
+        log::warn!(
+            "enrich_single_prep: no enrichment parsed for {}",
+            meeting_id
+        );
+        return prep.clone();
+    };
+
+    let mut enriched = prep.clone();
+
+    // Apply agenda enrichment
+    let mut agenda_seen: HashSet<String> = HashSet::new();
+    let agenda_json: Vec<Value> = enrichment
+        .agenda
+        .iter()
+        .filter_map(|item| {
+            let topic = sanitize_prep_line(&item.topic)?;
+            let key = topic.to_lowercase();
+            if agenda_seen.contains(&key) {
+                return None;
+            }
+            agenda_seen.insert(key);
+            let mut obj = json!({"topic": topic});
+            if let Some(m) = obj.as_object_mut() {
+                if let Some(ref why) = item.why {
+                    if let Some(clean_why) = sanitize_prep_line(why) {
+                        m.insert("why".to_string(), json!(clean_why));
+                    }
+                }
+                if let Some(ref source) = item.source {
+                    let clean_source = sanitize_inline_markdown(source).to_lowercase();
+                    if !clean_source.is_empty() {
+                        m.insert("source".to_string(), json!(clean_source));
+                    }
+                }
+            }
+            Some(obj)
+        })
+        .take(7)
+        .collect();
+
+    // Apply wins enrichment
+    let mut win_seen: HashSet<String> = HashSet::new();
+    let mut source_seen: HashSet<String> = HashSet::new();
+    let mut wins_json: Vec<String> = Vec::new();
+    let mut win_sources_json: Vec<Value> = Vec::new();
+    for win in &enrichment.wins {
+        let (win_without_source, embedded_source) = split_inline_source_tail(&win.win);
+        if let Some(clean_win) = sanitize_recent_win_line(&win_without_source) {
+            let key = clean_win.to_lowercase();
+            if !win_seen.contains(&key) {
+                win_seen.insert(key);
+                wins_json.push(clean_win);
+            }
+        }
+
+        let source_text = win.source.clone().or(embedded_source);
+        if let Some(source_text) = source_text {
+            let source_key = source_text.to_lowercase();
+            if !source_seen.contains(&source_key) {
+                if let Some(source_ref) = source_reference_value(&source_text) {
+                    source_seen.insert(source_key);
+                    win_sources_json.push(source_ref);
+                }
+            }
+        }
+    }
+
+    if let Some(obj) = enriched.as_object_mut() {
+        if !agenda_json.is_empty() {
+            obj.insert("proposedAgenda".to_string(), json!(agenda_json));
+        }
+        if !wins_json.is_empty() {
+            obj.insert("recentWins".to_string(), json!(wins_json.clone()));
+            obj.insert("talkingPoints".to_string(), json!(wins_json));
+        }
+        if !win_sources_json.is_empty() {
+            obj.insert("recentWinSources".to_string(), json!(win_sources_json));
+        }
+    }
+
+    log::info!(
+        "enrich_single_prep: enriched {} ({} agenda items, {} wins)",
+        meeting_id,
+        agenda_json.len(),
+        wins_json.len(),
+    );
+    enriched
+}
+
 /// Build and write manifest.json.
 ///
 /// When `partial` is true, the manifest indicates that AI enrichment
