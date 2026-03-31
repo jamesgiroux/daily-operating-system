@@ -1078,13 +1078,15 @@ pub fn accept_account_field_conflict(
         })
         .to_string();
         db.insert_intelligence_feedback(
-            &feedback_id,
-            account_id,
-            "account",
-            &feedback_key,
-            "positive",
-            None,
-            Some(&context),
+            &crate::db::intelligence_feedback::FeedbackInput {
+                id: &feedback_id,
+                entity_id: account_id,
+                entity_type: "account",
+                field: &feedback_key,
+                feedback_type: "positive",
+                previous_value: None,
+                context: Some(&context),
+            },
         )?;
 
         let accepted_signal_id =
@@ -1155,13 +1157,15 @@ pub fn dismiss_account_field_conflict(
     })
     .to_string();
     db.insert_intelligence_feedback(
-        &feedback_id,
-        account_id,
-        "account",
-        &feedback_key,
-        "negative",
-        None,
-        Some(&context),
+        &crate::db::intelligence_feedback::FeedbackInput {
+            id: &feedback_id,
+            entity_id: account_id,
+            entity_type: "account",
+            field: &feedback_key,
+            feedback_type: "negative",
+            previous_value: None,
+            context: Some(&context),
+        },
     )?;
 
     // I645: Record feedback event + suppression tombstone for rejected field conflict.
