@@ -209,18 +209,21 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
         }
 
         // Check if enabled
-        let (enabled, api_key) = {
+        let enabled = {
             let config = state.config.read().ok();
-            match config.as_ref().and_then(|g| g.as_ref()) {
-                Some(c) => (c.gravatar.enabled, c.gravatar.api_key.clone()),
-                None => (false, None),
-            }
+            config
+                .as_ref()
+                .and_then(|g| g.as_ref())
+                .map(|c| c.gravatar.enabled)
+                .unwrap_or(false)
         };
 
         if !enabled {
             tokio::time::sleep(std::time::Duration::from_secs(300)).await;
             continue;
         }
+
+        let api_key = super::keychain::get_gravatar_api_key();
 
         log::info!("Gravatar fetcher: starting batch sync");
 

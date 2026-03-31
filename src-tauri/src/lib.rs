@@ -115,6 +115,9 @@ pub fn run() {
                 }
             }
 
+            // One-time migration: move Gravatar API key from config.json to Keychain
+            gravatar::keychain::migrate_from_config(&state);
+
             // Initialize async DbService (read/write separated connections).
             // Skip when startup recovery screens are active.
             if !state
