@@ -104,6 +104,20 @@ pub fn default_half_life(source: &str) -> i32 {
 // Builder struct for signal emission (ADR-0080 cleanup)
 // ---------------------------------------------------------------------------
 
+/// Parameters for inserting a signal event row into the DB.
+#[derive(Debug)]
+pub struct InsertSignalRow<'a> {
+    pub id: &'a str,
+    pub entity_type: &'a str,
+    pub entity_id: &'a str,
+    pub signal_type: &'a str,
+    pub source: &'a str,
+    pub value: Option<&'a str>,
+    pub confidence: f64,
+    pub decay_half_life_days: i32,
+    pub source_context: Option<&'a str>,
+}
+
 /// A structured parameter object for emitting signals, replacing long
 /// positional argument lists.
 pub struct SignalEmission<'a> {
@@ -120,30 +134,17 @@ pub struct SignalEmission<'a> {
 pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError> {
     let id = format!("sig-{}", Uuid::new_v4());
     let half_life = default_half_life(signal.source);
-    if signal.source_context.is_some() {
-        db.insert_signal_event_with_context(
-            &id,
-            signal.entity_type,
-            signal.entity_id,
-            signal.signal_type,
-            signal.source,
-            signal.value,
-            signal.confidence,
-            half_life,
-            signal.source_context,
-        )?;
-    } else {
-        db.insert_signal_event(
-            &id,
-            signal.entity_type,
-            signal.entity_id,
-            signal.signal_type,
-            signal.source,
-            signal.value,
-            signal.confidence,
-            half_life,
-        )?;
-    }
+    db.insert_signal_event(&InsertSignalRow {
+        id: &id,
+        entity_type: signal.entity_type,
+        entity_id: signal.entity_id,
+        signal_type: signal.signal_type,
+        source: signal.source,
+        value: signal.value,
+        confidence: signal.confidence,
+        decay_half_life_days: half_life,
+        source_context: signal.source_context,
+    })?;
 
     // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
     let _ = db.conn_ref().execute(
@@ -179,16 +180,17 @@ pub fn emit_signal(
 ) -> Result<String, DbError> {
     let id = format!("sig-{}", Uuid::new_v4());
     let half_life = default_half_life(source);
-    db.insert_signal_event(
-        &id,
+    db.insert_signal_event(&InsertSignalRow {
+        id: &id,
         entity_type,
         entity_id,
         signal_type,
         source,
         value,
         confidence,
-        half_life,
-    )?;
+        decay_half_life_days: half_life,
+        source_context: None,
+    })?;
 
     // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
     // Lightweight SQL UPDATE — scheduler picks these up every 30 min.
@@ -396,46 +398,25 @@ impl ActionDb {
     }
 
     /// Insert a signal event row.
-    #[allow(clippy::too_many_arguments)]
     pub fn insert_signal_event(
         &self,
-        id: &str,
-        entity_type: &str,
-        entity_id: &str,
-        signal_type: &str,
-        source: &str,
-        value: Option<&str>,
-        confidence: f64,
-        decay_half_life_days: i32,
-    ) -> Result<(), DbError> {
-        self.conn_ref().execute(
-            "INSERT INTO signal_events
-                (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days],
-        )?;
-        Ok(())
-    }
-
-    /// Insert a signal event row with source_context.
-    #[allow(clippy::too_many_arguments)]
-    pub fn insert_signal_event_with_context(
-        &self,
-        id: &str,
-        entity_type: &str,
-        entity_id: &str,
-        signal_type: &str,
-        source: &str,
-        value: Option<&str>,
-        confidence: f64,
-        decay_half_life_days: i32,
-        source_context: Option<&str>,
+        row: &InsertSignalRow<'_>,
     ) -> Result<(), DbError> {
         self.conn_ref().execute(
             "INSERT INTO signal_events
                 (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, source_context)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, source_context],
+            params![
+                row.id,
+                row.entity_type,
+                row.entity_id,
+                row.signal_type,
+                row.source,
+                row.value,
+                row.confidence,
+                row.decay_half_life_days,
+                row.source_context,
+            ],
         )?;
         Ok(())
     }
