@@ -336,7 +336,7 @@ impl ActionDb {
                 return Ok(PersonResolution::FoundByEmail(person));
             }
 
-            // Step 3: Domain-alias match (e.g., john@wpvip.com → john@a8c.com)
+            // Step 3: Domain-alias match (e.g., john@subsidiary.com → john@parent.com)
             let siblings = self.get_sibling_domains_for_email(&email_lower, user_domains)?;
             if !siblings.is_empty() {
                 if let Some(person) = self.find_person_by_domain_alias(&email_lower, &siblings)? {
