@@ -2149,15 +2149,18 @@ pub async fn upsert_person_relationship(
             crate::services::mutations::upsert_person_relationship(
                 db,
                 &engine,
-                &id,
-                &payload.from_person_id,
-                &payload.to_person_id,
-                &payload.relationship_type,
-                &payload.direction,
-                payload.confidence,
-                payload.context_entity_id.as_deref(),
-                payload.context_entity_type.as_deref(),
-                &payload.source,
+                &crate::db::person_relationships::UpsertRelationship {
+                    id: &id,
+                    from_person_id: &payload.from_person_id,
+                    to_person_id: &payload.to_person_id,
+                    relationship_type: &payload.relationship_type,
+                    direction: &payload.direction,
+                    confidence: payload.confidence,
+                    context_entity_id: payload.context_entity_id.as_deref(),
+                    context_entity_type: payload.context_entity_type.as_deref(),
+                    source: &payload.source,
+                    rationale: None,
+                },
             )?;
             Ok(id)
         })
