@@ -14,7 +14,6 @@ use crate::db::ActionDb;
 ///
 /// Records the feedback, adjusts source weights (Bayesian alpha/beta),
 /// and emits a signal for downstream propagation.
-#[allow(clippy::too_many_arguments)]
 pub fn submit_intelligence_feedback(
     db: &ActionDb,
     entity_id: &str,

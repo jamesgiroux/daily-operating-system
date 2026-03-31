@@ -1192,26 +1192,36 @@ pub fn pin_email(
 
 // ── I580: Commitment -> Action promotion ──────────────────────────────
 
+/// Parameters for promoting an email commitment to a tracked action.
+#[derive(Debug)]
+pub struct PromoteCommitmentParams<'a> {
+    pub email_id: &'a str,
+    pub commitment_text: &'a str,
+    pub action_title: Option<&'a str>,
+    pub entity_id: Option<&'a str>,
+    pub entity_type: Option<&'a str>,
+    pub owner: Option<&'a str>,
+    pub due_date: Option<&'a str>,
+}
+
 /// Promote an email commitment to a tracked action.
-#[allow(clippy::too_many_arguments)]
 pub fn promote_commitment_to_action(
     db: &crate::db::ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
-    email_id: &str,
-    commitment_text: &str,
-    action_title: Option<&str>,
-    entity_id: Option<&str>,
-    entity_type: Option<&str>,
-    owner: Option<&str>,
-    due_date: Option<&str>,
+    params: &PromoteCommitmentParams<'_>,
 ) -> Result<String, String> {
+    let email_id = params.email_id;
+    let commitment_text = params.commitment_text;
+    let action_title = params.action_title;
+    let entity_id = params.entity_id;
+    let entity_type = params.entity_type;
     let now = chrono::Utc::now().to_rfc3339();
     let action_id = uuid::Uuid::new_v4().to_string();
     let trimmed_title = action_title
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or(commitment_text);
-    let owner = owner
+    let owner = params.owner
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| value.to_string())
@@ -1240,7 +1250,7 @@ pub fn promote_commitment_to_action(
         priority: "P2".to_string(),
         status: "pending".to_string(),
         created_at: now.clone(),
-        due_date: due_date
+        due_date: params.due_date
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(|s| s.to_string()),
