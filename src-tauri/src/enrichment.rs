@@ -227,17 +227,20 @@ async fn process_clay_queue(state: &AppState) -> u32 {
 
 /// Process stale Gravatar profiles.
 async fn process_gravatar_queue(state: &AppState) -> u32 {
-    let (enabled, api_key) = {
+    let enabled = {
         let config = state.config.read().ok();
-        match config.as_ref().and_then(|g| g.as_ref()) {
-            Some(c) => (c.gravatar.enabled, c.gravatar.api_key.clone()),
-            None => (false, None),
-        }
+        config
+            .as_ref()
+            .and_then(|g| g.as_ref())
+            .map(|c| c.gravatar.enabled)
+            .unwrap_or(false)
     };
 
     if !enabled {
         return 0;
     }
+
+    let api_key = crate::gravatar::keychain::get_gravatar_api_key();
 
     let emails_to_fetch: Vec<(String, Option<String>)> = state
         .db_read(move |db| {
