@@ -1798,6 +1798,73 @@ pub async fn persist_and_invalidate_entity_links(
     Ok(linked)
 }
 
+/// Sync variant of persist_and_invalidate_entity_links for callers that
+/// already hold a DB handle (e.g., event_trigger background task).
+/// AC4 requires all entity linking to go through service functions.
+pub fn persist_and_invalidate_entity_links_sync(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    entities: &[(String, String)],
+    prep_queue: &crate::meeting_prep_queue::MeetingPrepQueue,
+    prep_queue_wake: &tokio::sync::Notify,
+) -> Result<usize, String> {
+    if entities.is_empty() {
+        return Ok(0);
+    }
+
+    let mut linked = 0usize;
+    for (entity_id, entity_type) in entities {
+        match db.link_meeting_entity_if_absent(meeting_id, entity_id, entity_type) {
+            Ok(true) => linked += 1,
+            Ok(false) => {}
+            Err(e) => {
+                log::warn!(
+                    "persist_and_invalidate_sync: failed to link {} → {}: {}",
+                    meeting_id,
+                    entity_id,
+                    e,
+                );
+            }
+        }
+    }
+
+    if linked > 0 {
+        let prep_exists: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT prep_frozen_json IS NOT NULL FROM meeting_prep WHERE meeting_id = ?1",
+                rusqlite::params![meeting_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if prep_exists {
+            let _ = db.conn_ref().execute(
+                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                rusqlite::params![meeting_id],
+            );
+            prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                meeting_id.to_string(),
+                crate::meeting_prep_queue::PrepPriority::Background,
+            ));
+            prep_queue_wake.notify_one();
+            log::info!(
+                "persist_and_invalidate_sync: linked {} entities to {}, invalidated stale prep",
+                linked,
+                meeting_id,
+            );
+        } else {
+            log::info!(
+                "persist_and_invalidate_sync: linked {} entities to {} (no prep to invalidate)",
+                linked,
+                meeting_id,
+            );
+        }
+    }
+
+    Ok(linked)
+}
+
 /// List available meeting prep files from the workspace.
 pub fn list_meeting_preps(state: &AppState) -> Result<Vec<String>, String> {
     let config = state
