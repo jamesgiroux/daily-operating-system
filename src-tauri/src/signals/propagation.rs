@@ -89,16 +89,17 @@ impl PropagationEngine {
                 let id = format!("sig-{}", Uuid::new_v4());
                 let half_life = super::bus::default_half_life(&ds.source);
 
-                db.insert_signal_event(
-                    &id,
-                    &ds.entity_type,
-                    &ds.entity_id,
-                    &ds.signal_type,
-                    &ds.source,
-                    ds.value.as_deref(),
-                    ds.confidence,
-                    half_life,
-                )?;
+                db.insert_signal_event(&super::bus::InsertSignalRow {
+                    id: &id,
+                    entity_type: &ds.entity_type,
+                    entity_id: &ds.entity_id,
+                    signal_type: &ds.signal_type,
+                    source: &ds.source,
+                    value: ds.value.as_deref(),
+                    confidence: ds.confidence,
+                    decay_half_life_days: half_life,
+                    source_context: None,
+                })?;
 
                 db.insert_signal_derivation(&source_signal.id, &id, rule_name)?;
 
