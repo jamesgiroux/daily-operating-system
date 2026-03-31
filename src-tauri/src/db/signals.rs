@@ -824,10 +824,12 @@ impl ActionDb {
         &self,
         entity_id: &str,
         days: i32,
-    ) -> Result<Vec<(String, String, f64, String)>, DbError> {
+    ) -> Result<Vec<crate::signals::bus::SignalEvent>, DbError> {
         let days_param = format!("-{days} days");
         let mut stmt = self.conn.prepare(
-            "SELECT signal_type, source, confidence, created_at
+            "SELECT id, entity_type, entity_id, signal_type, source,
+                    value, confidence, decay_half_life_days, created_at,
+                    superseded_by, source_context
              FROM signal_events
              WHERE entity_id = ?1
                AND created_at >= datetime('now', ?2)
@@ -835,12 +837,19 @@ impl ActionDb {
         )?;
 
         let rows = stmt.query_map(params![entity_id, days_param], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, f64>(2)?,
-                row.get::<_, String>(3)?,
-            ))
+            Ok(crate::signals::bus::SignalEvent {
+                id: row.get(0)?,
+                entity_type: row.get(1)?,
+                entity_id: row.get(2)?,
+                signal_type: row.get(3)?,
+                source: row.get(4)?,
+                value: row.get(5)?,
+                confidence: row.get(6)?,
+                decay_half_life_days: row.get(7)?,
+                created_at: row.get(8)?,
+                superseded_by: row.get(9)?,
+                source_context: row.get(10)?,
+            })
         })?;
 
         let mut signals = Vec::new();
