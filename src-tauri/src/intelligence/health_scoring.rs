@@ -803,11 +803,14 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
 
     // Build evidence with specific meeting dates and statuses
     let champion_name = champion.map(|(_, name)| name).unwrap_or("Champion");
-    let mut evidence = vec![format!(
-        "{champion_name}: {} across {} meetings",
-        champion_assessments[0].1,
-        champion_assessments.len()
-    )];
+    let mut evidence = vec![
+        format!(
+            "{champion_name}: {} across {} meetings",
+            champion_assessments[0].1,
+            champion_assessments.len()
+        ),
+        "Weighted by recency (30-day half-life)".to_string(),
+    ];
     for (date, status, ev) in &champion_assessments {
         let short_date = date.split('T').next().unwrap_or(date);
         let detail = ev.as_deref().map(|e| format!(" — {e}")).unwrap_or_default();
