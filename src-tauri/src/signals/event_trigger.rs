@@ -50,6 +50,10 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
         None => return Ok(()),
     };
     let accounts_dir = workspace.join("Accounts");
+    let user_domains = config
+        .as_ref()
+        .map(|c| c.resolved_user_domains())
+        .unwrap_or_default();
 
     let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
@@ -144,7 +148,8 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
             // Path 2a: Extract domains from attendee emails and store in account_domains.
             // This ensures newly-linked accounts gain domain knowledge for future matching.
             if let Some(account_id) = linked_account_id {
-                let discovered_domains = extract_domains_from_attendees(&attendees_array);
+                let discovered_domains =
+                    extract_domains_from_attendees(&attendees_array, &user_domains);
                 if !discovered_domains.is_empty() {
                     if let Err(e) = db.set_account_domains(&account_id, &discovered_domains) {
                         log::warn!(
@@ -235,15 +240,24 @@ fn select_auto_link_candidates(
 
 /// Extract unique domains from attendee email addresses.
 /// Handles both valid emails and malformed strings gracefully.
-fn extract_domains_from_attendees(attendees: &[String]) -> Vec<String> {
+fn extract_domains_from_attendees(
+    attendees: &[String],
+    user_domains: &[String],
+) -> Vec<String> {
     let mut domains = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
     for email in attendees {
         if let Some(domain_part) = email.split('@').nth(1) {
             let domain = domain_part.to_lowercase();
-            // Filter out obviously invalid domains and duplicates
-            if !domain.is_empty() && !domain.contains(' ') && seen.insert(domain.clone()) {
+            // Exclude the user's own company domains. Without this filter,
+            // the CSM's domain gets stored as a domain for every customer
+            // account, causing every meeting to resolve to every account.
+            if !domain.is_empty()
+                && !domain.contains(' ')
+                && !user_domains.iter().any(|ud| ud == &domain)
+                && seen.insert(domain.clone())
+            {
                 domains.push(domain);
             }
         }
