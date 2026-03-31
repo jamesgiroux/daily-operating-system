@@ -610,6 +610,7 @@ pub fn run() {
             commands::add_account_team_member,
             commands::remove_account_team_member,
             // I652 Phase 2: Person-first stakeholder commands
+            commands::get_person_stakeholder_roles,
             commands::update_stakeholder_engagement,
             commands::update_stakeholder_assessment,
             commands::add_stakeholder_role,

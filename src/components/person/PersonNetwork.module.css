@@ -52,10 +52,18 @@
 /* Entity row */
 .entityRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding: 10px 0;
   border-bottom: 1px solid var(--color-rule-light);
+}
+
+.entityContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .entityLink {
@@ -98,4 +106,102 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 2px 6px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ── Role badges (matches StakeholderGallery pattern) ── */
+
+.roleBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-left: 18px;
+  margin: 2px 0 0 0;
+}
+
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.roleRemove {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.roleRemove:hover {
+  opacity: 1;
+}
+
+.addRoleBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px dashed var(--color-rule-light);
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.addRoleBtn:hover {
+  border-color: var(--color-garden-larkspur);
+  color: var(--color-garden-larkspur);
+}
+
+/* ── Role picker dropdown ── */
+
+.rolePickerDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px 0;
+  min-width: 140px;
+}
+
+.rolePickerItem {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+
+.rolePickerItem:hover {
+  background: var(--color-black-4);
 }
