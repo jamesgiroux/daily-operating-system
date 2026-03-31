@@ -770,7 +770,7 @@ pub fn get_gravatar_status(state: State<'_, Arc<AppState>>) -> GravatarStatus {
     GravatarStatus {
         enabled: gravatar_config.enabled,
         cached_count,
-        api_key_set: gravatar_config.api_key.is_some(),
+        api_key_set: crate::gravatar::keychain::get_gravatar_api_key().is_some(),
     }
 }
 
@@ -783,16 +783,16 @@ pub fn set_gravatar_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> R
     Ok(())
 }
 
-/// Set or clear the Gravatar API key.
+/// Set or clear the Gravatar API key (stored in macOS Keychain).
 #[tauri::command]
 pub fn set_gravatar_api_key(
     key: Option<String>,
-    state: State<'_, Arc<AppState>>,
+    _state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::state::create_or_update_config(&state, |config| {
-        config.gravatar.api_key = key.filter(|k| !k.is_empty());
-    })?;
-    Ok(())
+    match key.filter(|k| !k.is_empty()) {
+        Some(k) => crate::gravatar::keychain::save_gravatar_api_key(&k),
+        None => crate::gravatar::keychain::delete_gravatar_api_key(),
+    }
 }
 
 /// Fetch Gravatar data for a single person on demand.
@@ -815,11 +815,7 @@ pub async fn fetch_gravatar(
         })
         .await?;
 
-    let api_key = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.gravatar.api_key.clone()));
+    let api_key = crate::gravatar::keychain::get_gravatar_api_key();
 
     // Connect and fetch
     let client = crate::gravatar::client::GravatarClient::connect(api_key.as_deref())
@@ -883,11 +879,7 @@ pub async fn fetch_gravatar(
 /// Batch fetch Gravatar data for all people with stale or missing cache.
 #[tauri::command]
 pub async fn bulk_fetch_gravatars(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
-    let api_key = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.gravatar.api_key.clone()));
+    let api_key = crate::gravatar::keychain::get_gravatar_api_key();
 
     let emails_to_fetch: Vec<(String, Option<String>)> = state
         .db_read(|db| crate::gravatar::cache::get_stale_emails(db.conn_ref(), 100))
