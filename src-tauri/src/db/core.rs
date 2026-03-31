@@ -670,16 +670,35 @@ impl ActionDb {
     ///
     /// Runs exactly once. Subsequent calls are guarded by init_tasks table.
     fn run_guarded_init_backfill_account_domains(&self) -> Result<(), DbError> {
-        const TASK_NAME: &str = "backfill_account_domains_v1";
+        // v2: purge user domains that were incorrectly stored in v1, then re-backfill
+        const TASK_NAME: &str = "backfill_account_domains_v2";
 
         if Self::is_init_task_completed(&self.conn, TASK_NAME)? {
             return Ok(());
         }
 
-        // Run the backfill
+        // Purge user domains that v1 incorrectly stored for every account
+        let user_domains: Vec<String> = crate::state::load_config()
+            .map(|c| c.resolved_user_domains())
+            .unwrap_or_default();
+        let mut purged = 0usize;
+        for ud in &user_domains {
+            let count = self.conn.execute(
+                "DELETE FROM account_domains WHERE domain = ?1",
+                params![ud],
+            )?;
+            purged += count;
+        }
+        if purged > 0 {
+            log::info!(
+                "Entity resolution: purged {} user-domain rows from account_domains",
+                purged,
+            );
+        }
+
+        // Re-backfill with user domain filtering
         let inserted = self.backfill_account_domains_from_meetings()?;
 
-        // Mark task as complete
         Self::mark_init_task_completed(&self.conn, TASK_NAME)?;
 
         if inserted > 0 {
