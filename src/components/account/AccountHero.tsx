@@ -25,6 +25,7 @@ interface AccountHeroProps {
   onSaveField?: (field: string, value: string) => void;
   /** I550: Slot for vitals strip, rendered between name and lede */
   vitalsSlot?: React.ReactNode;
+  provenanceSlot?: React.ReactNode;
 }
 
 
@@ -40,6 +41,7 @@ export function AccountHero({
   onSave: _onSave,
   onSaveField,
   vitalsSlot,
+  provenanceSlot,
 }: AccountHeroProps) {
   // Extract all paragraphs of executive assessment as the narrative
   const paragraphs = intelligence?.executiveAssessment?.split("\n").filter((p) => p.trim()) ?? [];
@@ -74,7 +76,14 @@ export function AccountHero({
       {/* Hero date / intelligence timestamp + account type badge */}
       <div className={`${styles.heroDate} ${styles.heroDateLayout}`}>
         <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
-        {intelligence ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}` : ""}
+        {(() => {
+          if (!intelligence) return "";
+          const at = intelligence.enrichedAt;
+          if (!at) return "";
+          const relative = formatRelativeDateShort(at);
+          if (relative) return ` Last updated ${relative}`;
+          return "";
+        })()}
         {onSaveField && (
           <AccountTypeBadge
             value={detail.accountType as "customer" | "internal" | "partner"}
@@ -101,6 +110,7 @@ export function AccountHero({
 
       {/* I550: Vitals strip between name and narrative */}
       {vitalsSlot}
+      {provenanceSlot ? <div className={styles.provenance}>{provenanceSlot}</div> : null}
 
       {/* Executive assessment narrative — italic serif, all paragraphs */}
       {narrative && (

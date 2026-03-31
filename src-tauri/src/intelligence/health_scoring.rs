@@ -685,14 +685,27 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
 }
 
 fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
-    let team = db.get_account_team(account_id).unwrap_or_default();
-    let champion = team
-        .iter()
-        .find(|t| t.role.to_lowercase().contains("champion"));
+    // I652: Query account_stakeholder_roles directly for champion designation
+    let champion_rows: Vec<(String, String)> = db
+        .conn
+        .prepare(
+            "SELECT asr.person_id, p.name FROM account_stakeholder_roles asr \
+             JOIN people p ON p.id = asr.person_id \
+             WHERE asr.account_id = ?1 AND asr.role = 'champion'",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![account_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    let champion: Option<(&str, &str)> = champion_rows
+        .first()
+        .map(|(pid, name)| (pid.as_str(), name.as_str()));
 
     if champion.is_none() {
-        // No explicit champion — infer engagement from meeting attendance patterns.
-        // Check if any person on this account attends a high % of meetings.
         return infer_champion_from_attendance(db, account_id);
     }
 
@@ -716,22 +729,46 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
         .unwrap_or_default();
 
     if champion_assessments.is_empty() {
-        // Fallback to structural check (pre-I555 behavior)
-        let mut score: f64 = 60.0;
-        let mut evidence = vec!["Champion identified (no meeting engagement data)".to_string()];
+        // I646 C1: User designated a champion — check if they specifically attended meetings
+        let champion_person_id = champion.map(|(pid, _)| pid).unwrap_or("");
+        let champion_name = champion.map(|(_, name)| name).unwrap_or("Champion");
 
-        if let Ok(signals) = db.get_stakeholder_signals(account_id) {
-            if signals.meeting_frequency_30d > 0 {
-                score += 20.0;
-                evidence.push("Active in recent meetings".to_string());
-            }
+        let champion_meeting_count: i64 = if !champion_person_id.is_empty() {
+            db.conn
+                .query_row(
+                    "SELECT COUNT(DISTINCT m.id) FROM meetings m
+                     JOIN meeting_entities me ON me.meeting_id = m.id
+                     JOIN meeting_attendees ma ON ma.meeting_id = m.id AND ma.person_id = ?2
+                     WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+                       AND m.start_time >= datetime('now', '-90 days')",
+                    rusqlite::params![account_id, champion_person_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        if champion_meeting_count > 0 {
+            return DimensionScore {
+                score: 70.0,
+                weight: 0.8,
+                evidence: vec![format!(
+                    "{} designated as champion, {} meetings in 90d",
+                    champion_name, champion_meeting_count
+                )],
+                trend: "stable".to_string(),
+            };
         }
 
         return DimensionScore {
-            score: score.clamp(0.0, 100.0),
-            weight: 1.0,
-            evidence,
-            trend: String::new(),
+            score: 40.0,
+            weight: 0.6,
+            evidence: vec![format!(
+                "{} designated as champion but no recent meetings",
+                champion_name
+            )],
+            trend: "declining".to_string(),
         };
     }
 
@@ -765,9 +802,7 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
     };
 
     // Build evidence with specific meeting dates and statuses
-    let champion_name = champion
-        .map(|c| c.person_name.as_str())
-        .unwrap_or("Champion");
+    let champion_name = champion.map(|(_, name)| name).unwrap_or("Champion");
     let mut evidence = vec![format!(
         "{champion_name}: {} across {} meetings",
         champion_assessments[0].1,
@@ -1129,7 +1164,7 @@ fn apply_lifecycle_weights(lifecycle: Option<&str>) -> [f64; 6] {
     match lifecycle {
         Some("onboarding") => [1.5, 1.0, 1.5, 1.0, 0.7, 1.0],
         Some("adoption") => [1.0, 1.0, 1.0, 1.5, 1.0, 1.5],
-        Some("renewal") => [1.0, 1.3, 1.0, 1.3, 2.0, 1.3],
+        Some("renewal") | Some("renewing") => [1.0, 1.3, 1.0, 1.3, 2.0, 1.3],
         Some("at-risk") | Some("at_risk") => [1.0, 1.0, 1.0, 1.0, 1.0, 2.0],
         Some("mature") => [0.7, 1.0, 1.3, 1.0, 1.0, 1.0],
         _ => [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import { Zap } from "lucide-react";
 import type {
   AccountObjective,
   SuccessPlanTemplate,
@@ -497,7 +498,7 @@ export function TheWork({
               )}
               {objective.totalMilestoneCount > 0 && (
                 <div className={`${s.progressBar} ${progressClass}`}>
-                  <div className={s.progressFill} style={{ width: `${progressRatio * 100}%` } as React.CSSProperties} />
+                  <div className={s.progressFill} style={{ '--progress-width': `${progressRatio * 100}%` } as React.CSSProperties} />
                 </div>
               )}
             </div>
@@ -566,7 +567,10 @@ export function TheWork({
                   <div className={s.milestoneMeta}>
                     {labelMilestoneStatus(milestone.status)}
                     {milestone.targetDate ? ` · ${formatShortDate(milestone.targetDate)}` : ""}
-                    {milestone.autoDetectSignal ? " · ⚡" : ""}
+                    {milestone.autoDetectSignal ? <>{" · "}<Zap size={11} className={s.autoDetectIcon} /></> : ""}
+                    {milestone.completedBy === "lifecycle_transition" && milestone.completionTrigger
+                      ? " · completed automatically"
+                      : ""}
                   </div>
                 </div>
                 <div className={s.milestoneActions}>

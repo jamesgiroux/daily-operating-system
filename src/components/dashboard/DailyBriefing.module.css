@@ -1,0 +1,279 @@
+/* =============================================================================
+   DailyBriefing — CSS module for inline-style extraction
+   Editorial design tokens only. No hard-coded colors.
+   ============================================================================= */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LINKS (unstyled navigation)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.linkUnstyled {
+  text-decoration: none;
+  color: inherit;
+}
+
+.linkNoDecoration {
+  text-decoration: none;
+}
+
+.linkLineThrough {
+  text-decoration: line-through;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   HEALTH BADGE WRAPPER (schedule section)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.healthBadgeRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 52px;
+  padding-bottom: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LIFECYCLE CORRECTION MODAL
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.correctionFormGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.correctionFieldLabel {
+  display: grid;
+  gap: 6px;
+}
+
+.correctionMonoLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.correctionSelect {
+  min-height: 38px;
+  border: 1px solid var(--color-rule-light);
+  padding: 8px 10px;
+  background: var(--color-paper-cream);
+}
+
+.correctionTextarea {
+  border: 1px solid var(--color-rule-light);
+  padding: 10px 12px;
+  background: var(--color-paper-cream);
+  resize: vertical;
+}
+
+.correctionButtonRow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.correctionCancelBtn {
+  background: none;
+  border: none;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.correctionSubmitBtn {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--color-rule-heavy);
+  background: var(--color-paper-cream);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LIFECYCLE UPDATE ITEMS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.lifecycleButtonRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.lifecycleConfirmBtn {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--color-rule-heavy);
+  background: var(--color-paper-cream);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.lifecycleCorrectBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ATTENTION SECTION — LAYOUT HELPERS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.lifecycleGroup {
+  margin-top: 0;
+}
+
+.suggestedColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.seeAllSuggestionsBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 0 0 14px;
+}
+
+.actionsGroupSpaced {
+  margin-top: 28px;
+}
+
+.actionsGroupFlush {
+  margin-top: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   EMAIL META ROW
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.emailMetaRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.emailSyncTimestamp {
+  font-weight: 400;
+  opacity: 0.5;
+  margin-left: 8px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BRIEFING CALLOUTS (I623)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.calloutsGroupSpaced {
+  margin-top: 28px;
+}
+
+.calloutsGroupFlush {
+  margin-top: 0;
+}
+
+.calloutSeverityBadge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-paper-cream);
+  background: var(--color-spice-terracotta);
+  vertical-align: middle;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BRIEFING CALLOUTS (I623 AC4)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.calloutsGroupSpaced {
+  margin-top: var(--space-lg, 24px);
+}
+
+.calloutsGroupFlush {
+  margin-top: 0;
+}
+
+.calloutItem {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.calloutItem:last-child {
+  border-bottom: none;
+}
+
+.calloutSeverity {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+  background: var(--color-text-quaternary);
+}
+
+.calloutSeverity[data-severity="warning"] {
+  background: var(--color-spice-turmeric);
+}
+
+.calloutSeverity[data-severity="critical"] {
+  background: var(--color-spice-terracotta);
+}
+
+.calloutContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calloutHeadline {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.calloutEntity {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.calloutDetail {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}

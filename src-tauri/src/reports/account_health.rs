@@ -217,6 +217,7 @@ fn build_account_health_prompt(
     prompt.push_str("- recommended_actions: Exactly 3. Concrete verb phrases.\n");
     prompt.push_str("- SPECIFICITY: The Entity Intelligence Assessment (if present above) is your primary source. Use the specific risks, named people, and strategic context it identifies. Generic observations from meeting metadata alone are not sufficient.\n");
     prompt.push_str("- CAPTURES: When Recent Captures are present, distinguish RED urgency items from GREEN_WATCH. RED items should inform risks and what_is_struggling. Use evidence_quote when available for customer_quote.\n");
+    prompt.push_str("- ALWAYS respond with the JSON object, even if data is sparse. Use null for fields you cannot populate and empty arrays where no items exist. Never respond with plain text or refusal — the JSON schema must always be returned.\n");
 
     prompt
 }
@@ -237,6 +238,48 @@ pub fn gather_account_health_input(
         .get_account(entity_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Account not found: {}", entity_id))?;
+
+    // Pre-flight: ensure enough data exists to generate a meaningful report.
+    // A fresh account with no intelligence, no meetings, and no signals will
+    // produce a prompt so thin that the LLM returns prose instead of JSON.
+    let has_intel = db
+        .get_entity_intelligence(entity_id)
+        .ok()
+        .flatten()
+        .is_some();
+    let ninety_days_ago = (Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+    let has_meetings = db
+        .conn_ref()
+        .query_row(
+            "SELECT COUNT(*) FROM meetings m
+             JOIN meeting_entities me ON me.meeting_id = m.id
+             WHERE me.entity_id = ?1 AND m.start_time > ?2
+               AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')",
+            rusqlite::params![entity_id, ninety_days_ago],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+    let has_signals = db
+        .conn_ref()
+        .query_row(
+            "SELECT COUNT(*) FROM signal_events WHERE entity_id = ?1",
+            rusqlite::params![entity_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+
+    // Remote providers (Glean) can supply context even without local data.
+    if !has_intel && !has_meetings && !has_signals && !context_provider.is_remote() {
+        return Err(format!(
+            "Not enough data to generate an Account Health report for {}. \
+             DailyOS needs at least one of: intelligence enrichment, meeting history, \
+             or signal data. Try enriching the account first, connect Glean for \
+             automatic data discovery, or wait for upcoming meetings to be processed.",
+            account.name
+        ));
+    }
 
     let entity_name = account.name.clone();
     let intel_hash = crate::reports::compute_intel_hash(entity_id, "account", db);
@@ -268,8 +311,18 @@ pub fn gather_account_health_input(
 // =============================================================================
 
 pub fn parse_account_health_response(stdout: &str) -> Result<AccountHealthContent, String> {
-    let json_str = crate::risk_briefing::extract_json_object(stdout)
-        .ok_or_else(|| "No valid JSON object found in Account Health response".to_string())?;
+    let json_str = crate::risk_briefing::extract_json_object(stdout).ok_or_else(|| {
+        let preview: String = stdout.chars().take(200).collect();
+        log::error!(
+            "Account Health: no JSON in PTY response (len={}): {}",
+            stdout.len(),
+            preview
+        );
+        "Could not generate Account Health report — the AI response did not contain valid JSON. \
+             This usually means there wasn't enough data for a meaningful report. \
+             Try enriching the account's intelligence first."
+            .to_string()
+    })?;
 
     serde_json::from_str::<AccountHealthContent>(&json_str)
         .map_err(|e| format!("Failed to parse Account Health JSON: {}", e))

@@ -4,15 +4,15 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use chrono::Datelike;
+use chrono::{Datelike, Utc};
 
 use crate::json_loader::DataFreshness;
 use crate::parser::count_inbox;
 use crate::state::AppState;
 use crate::types::{
-    Action, CalendarEvent, DailyFocus, DashboardData, DayOverview, DayStats, EmailSyncStage,
-    EmailSyncState, EmailSyncStatus, GoogleAuthStatus, Meeting, MeetingType, OverlayStatus,
-    Priority, WeekOverview,
+    Action, CalendarEvent, DailyFocus, DashboardBriefingCallout, DashboardData,
+    DashboardLifecycleUpdate, DayOverview, DayStats, EmailSyncStage, EmailSyncState,
+    EmailSyncStatus, GoogleAuthStatus, Meeting, MeetingType, OverlayStatus, Priority, WeekOverview,
 };
 
 /// Result type for dashboard data loading
@@ -65,6 +65,80 @@ fn normalize_match_key(value: &str) -> String {
     crate::services::entities::normalize_match_key(value)
 }
 
+fn include_dashboard_meeting(intelligence_state: Option<&str>) -> bool {
+    !matches!(intelligence_state, Some("archived"))
+}
+
+fn load_dashboard_lifecycle_updates(
+    db: &crate::db::ActionDb,
+    limit: usize,
+) -> Vec<DashboardLifecycleUpdate> {
+    db.get_recent_lifecycle_changes(limit)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|change| {
+            let account = db.get_account(&change.account_id).ok().flatten()?;
+            Some(DashboardLifecycleUpdate {
+                change_id: change.id,
+                account_id: change.account_id,
+                account_name: account.name,
+                previous_lifecycle: change.previous_lifecycle,
+                new_lifecycle: change.new_lifecycle,
+                renewal_stage: change.new_stage,
+                source: change.source,
+                confidence: change.confidence,
+                evidence: change.evidence,
+                health_score_before: change.health_score_before,
+                health_score_after: change.health_score_after,
+                action_state: change.user_response,
+                created_at: change.created_at,
+            })
+        })
+        .take(limit)
+        .collect()
+}
+
+/// Load recent, undismissed briefing callouts (last 7 days) for the dashboard.
+fn load_briefing_callouts(db: &crate::db::ActionDb, limit: usize) -> Vec<DashboardBriefingCallout> {
+    let sql =
+        "SELECT id, entity_id, entity_type, entity_name, severity, headline, detail, created_at
+               FROM briefing_callouts
+               WHERE dismissed_at IS NULL
+                 AND created_at >= datetime('now', '-7 days')
+               ORDER BY
+                 CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+                 created_at DESC
+               LIMIT ?1";
+    let conn = db.conn_ref();
+    let mut stmt = match conn.prepare(sql) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("load_briefing_callouts: {}", e);
+            return Vec::new();
+        }
+    };
+    let rows = match stmt.query_map(rusqlite::params![limit as i64], |row| {
+        Ok(DashboardBriefingCallout {
+            id: row.get(0)?,
+            entity_id: row.get(1)?,
+            entity_type: row.get(2)?,
+            entity_name: row.get(3)?,
+            severity: row.get(4)?,
+            headline: row.get(5)?,
+            detail: row.get(6)?,
+            callout_type: row.get::<_, String>(4)?.clone(), // severity doubles as callout_type bucket
+            created_at: row.get(7)?,
+        })
+    }) {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("load_briefing_callouts query: {}", e);
+            return Vec::new();
+        }
+    };
+    rows.filter_map(|r| r.ok()).collect()
+}
+
 /// Build dashboard data from live SQLite when schedule.json is missing.
 ///
 /// Returns `None` if no meetings exist for today or DB is unavailable.
@@ -76,7 +150,16 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         focus_candidates: Vec<crate::db::DbAction>,
         entity_map: HashMap<String, Vec<crate::types::LinkedEntity>>,
         intelligence_qualities: HashMap<String, crate::types::IntelligenceQuality>,
+        lifecycle_updates: Vec<DashboardLifecycleUpdate>,
+        briefing_callouts: Vec<DashboardBriefingCallout>,
     }
+
+    let engine = std::sync::Arc::clone(&state.signals.engine);
+    let _ = state
+        .db_write(move |db| {
+            crate::services::accounts::refresh_lifecycle_states_for_dashboard(db, &engine)
+        })
+        .await;
 
     let tz_for_live: chrono_tz::Tz = state
         .config
@@ -138,7 +221,10 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
                     })
                 })
                 .map_err(|e| e.to_string())?;
-            let meetings: Vec<crate::db::DbMeeting> = meeting_rows.filter_map(|r| r.ok()).collect();
+            let meetings: Vec<crate::db::DbMeeting> = meeting_rows
+                .filter_map(|r| r.ok())
+                .filter(|m| include_dashboard_meeting(m.intelligence_state.as_deref()))
+                .collect();
 
             if meetings.is_empty() {
                 return Ok(None);
@@ -156,6 +242,8 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
                 let q = crate::intelligence::assess_intelligence_quality(db, mid);
                 iq_map.insert(mid.clone(), q);
             }
+            let lifecycle_updates = load_dashboard_lifecycle_updates(db, 3);
+            let briefing_callouts = load_briefing_callouts(db, 10);
 
             Ok(Some(LiveSnapshot {
                 meetings,
@@ -163,6 +251,8 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
                 focus_candidates,
                 entity_map,
                 intelligence_qualities: iq_map,
+                lifecycle_updates,
+                briefing_callouts,
             }))
         })
         .await
@@ -268,14 +358,21 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
     } else {
         "Good evening"
     };
-    let meeting_count = meetings.len();
+    // Count only active (non-cancelled) and non-personal meetings for display
+    let active_meetings_count = meetings
+        .iter()
+        .filter(|m| {
+            m.overlay_status != Some(OverlayStatus::Cancelled)
+                && m.meeting_type != MeetingType::Personal
+        })
+        .count();
     let overview = DayOverview {
         greeting: greeting.to_string(),
         date: chrono::Local::now().format("%A, %B %e").to_string(),
         summary: format!(
             "You have {} meeting{} today",
-            meeting_count,
-            if meeting_count == 1 { "" } else { "s" }
+            active_meetings_count,
+            if active_meetings_count == 1 { "" } else { "s" }
         ),
         focus: None,
     };
@@ -341,6 +438,11 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         stats,
         meetings,
         actions,
+        lifecycle_updates: if snap.lifecycle_updates.is_empty() {
+            None
+        } else {
+            Some(snap.lifecycle_updates)
+        },
         emails: None,
         email_sync: None,
         focus,
@@ -350,6 +452,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
             .ok()
             .map(|c| c.resolved_user_domains())
             .filter(|d| !d.is_empty()),
+        briefing_callouts: snap.briefing_callouts,
     })
 }
 
@@ -358,6 +461,13 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
 /// This is the main business logic for the `get_dashboard_data` command.
 /// Returns the full DashboardResult including latency tracking.
 pub async fn get_dashboard_data(state: &AppState) -> DashboardResult {
+    let engine = std::sync::Arc::clone(&state.signals.engine);
+    let _ = state
+        .db_write(move |db| {
+            crate::services::accounts::refresh_lifecycle_states_for_dashboard(db, &engine)
+        })
+        .await;
+
     let started = std::time::Instant::now();
     let mut db_busy = false;
 
@@ -485,7 +595,10 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                     })
                 })
                 .map_err(|e| e.to_string())?;
-            Ok(rows.filter_map(|r| r.ok()).collect())
+            Ok(rows
+                .filter_map(|r| r.ok())
+                .filter(|m| include_dashboard_meeting(m.intelligence_state.as_deref()))
+                .collect())
         })
         .await
     {
@@ -497,12 +610,10 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         }
     };
 
-    if db_meetings.is_empty() && live_events.is_empty() {
-        return DashboardResult::Empty {
-            message: "Your daily briefing will appear here once generated.".to_string(),
-            google_auth,
-        };
-    }
+    // NOTE: We deliberately do NOT return Empty when meetings are empty.
+    // The briefing should render with whatever data exists (emails, actions,
+    // lifecycle updates, callouts) even on meeting-free days or before
+    // calendar syncs. The frontend handles empty meeting sections gracefully.
 
     // Convert DB meetings to frontend Meeting structs
     let briefing_meetings: Vec<Meeting> = db_meetings
@@ -511,31 +622,24 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             let meeting_type = crate::parser::parse_meeting_type(&dbm.meeting_type);
             let has_prep = dbm.prep_context_json.is_some();
 
-            let time = chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%dT%H:%M:%S")
-                .map(|dt| dt.format("%-I:%M %p").to_string())
-                .or_else(|_| {
-                    chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%d %H:%M:%S")
-                        .map(|dt| dt.format("%-I:%M %p").to_string())
-                })
-                .or_else(|_| {
-                    chrono::DateTime::parse_from_rfc3339(&dbm.start_time)
-                        .map(|dt| dt.format("%-I:%M %p").to_string())
-                })
-                .unwrap_or_else(|_| dbm.start_time.clone());
-
-            let end_time = dbm.end_time.as_ref().and_then(|et| {
-                chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%dT%H:%M:%S")
+            // Helper to format time in user's timezone
+            let format_meeting_time = |time_str: &str| -> String {
+                // Try RFC3339 first (from Google Calendar API, has timezone info)
+                if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(time_str) {
+                    let utc_dt = dt.with_timezone(&Utc);
+                    return utc_dt.with_timezone(&tz).format("%-I:%M %p").to_string();
+                }
+                // Fall back to local format (from pipeline, assume in user's timezone)
+                chrono::NaiveDateTime::parse_from_str(time_str, "%Y-%m-%dT%H:%M:%S")
+                    .or_else(|_| {
+                        chrono::NaiveDateTime::parse_from_str(time_str, "%Y-%m-%d %H:%M:%S")
+                    })
                     .map(|dt| dt.format("%-I:%M %p").to_string())
-                    .or_else(|_| {
-                        chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%d %H:%M:%S")
-                            .map(|dt| dt.format("%-I:%M %p").to_string())
-                    })
-                    .or_else(|_| {
-                        chrono::DateTime::parse_from_rfc3339(et)
-                            .map(|dt| dt.format("%-I:%M %p").to_string())
-                    })
-                    .ok()
-            });
+                    .unwrap_or_else(|_| time_str.to_string())
+            };
+
+            let time = format_meeting_time(&dbm.start_time);
+            let end_time = dbm.end_time.as_ref().map(|et| format_meeting_time(et));
 
             Meeting {
                 id: dbm.id,
@@ -562,6 +666,9 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
 
     // Merge DB meetings with live calendar events (ADR-0032)
     let mut meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
+
+    // Filter out personal meetings — they're tracked but not displayed in briefing (ADR-0032)
+    meetings.retain(|m| m.meeting_type != MeetingType::Personal);
 
     // Consolidate all dashboard DB reads into a single lock acquisition (I235).
     // This reduces lock contention and improves dashboard load latency.
@@ -1099,12 +1206,26 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         None
     };
 
+    let (lifecycle_updates, briefing_callouts) = state
+        .db_read(|db| {
+            let lu = load_dashboard_lifecycle_updates(db, 3);
+            let bc = load_briefing_callouts(db, 10);
+            Ok::<(Vec<DashboardLifecycleUpdate>, Vec<DashboardBriefingCallout>), String>((lu, bc))
+        })
+        .await
+        .unwrap_or_default();
+
     DashboardResult::Success {
         data: DashboardData {
             overview,
             stats,
             meetings,
             actions,
+            lifecycle_updates: if lifecycle_updates.is_empty() {
+                None
+            } else {
+                Some(lifecycle_updates)
+            },
             emails,
             email_sync: email_sync.or(email_sync_fallback),
             focus,
@@ -1118,6 +1239,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                     Some(domains)
                 }
             },
+            briefing_callouts,
         },
         freshness,
         google_auth,
@@ -1293,4 +1415,21 @@ pub fn get_week_data(_state: &AppState) -> WeekResult {
     }
     log_latency("get_week_data", started, READ_CMD_LATENCY_BUDGET_MS);
     WeekResult::Success { data: week }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::include_dashboard_meeting;
+
+    #[test]
+    fn archived_meetings_are_excluded_from_dashboard() {
+        assert!(!include_dashboard_meeting(Some("archived")));
+    }
+
+    #[test]
+    fn active_meetings_remain_visible_on_dashboard() {
+        assert!(include_dashboard_meeting(None));
+        assert!(include_dashboard_meeting(Some("detected")));
+        assert!(include_dashboard_meeting(Some("enriched")));
+    }
 }

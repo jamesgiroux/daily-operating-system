@@ -46,6 +46,7 @@ fn sample_email(id: &str, thread_id: &str, subject: &str) -> DbEmail {
         enrichment_state: "enriched".to_string(),
         enrichment_attempts: 0,
         last_enrichment_at: None,
+        enriched_at: Some(now.clone()),
         last_seen_at: Some(now.clone()),
         resolved_at: None,
         entity_id: Some("acc-1".to_string()),
@@ -232,6 +233,7 @@ fn test_upsert_and_query_account() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
 
     db.upsert_account(&account).expect("upsert account");
@@ -273,6 +275,7 @@ fn test_get_all_accounts_excludes_archived() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
 
     let archived = DbAccount {
@@ -292,6 +295,7 @@ fn test_get_all_accounts_excludes_archived() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
 
     db.upsert_account(&active).expect("upsert active");
@@ -794,6 +798,7 @@ fn test_touch_account_last_contact_by_name() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&account).expect("upsert");
 
@@ -812,20 +817,8 @@ fn test_touch_account_last_contact_by_id() {
     let account = DbAccount {
         id: "acme-corp".to_string(),
         name: "Acme Corp".to_string(),
-        lifecycle: None,
-        arr: None,
-        health: None,
-        contract_start: None,
-        contract_end: None,
-        nps: None,
-        archived: false,
-        keywords: None,
-        keywords_extracted_at: None,
-        metadata: None,
-        tracker_path: None,
-        parent_id: None,
-        account_type: crate::db::AccountType::Customer,
         updated_at: "2020-01-01T00:00:00Z".to_string(),
+        ..Default::default()
     };
     db.upsert_account(&account).expect("upsert");
 
@@ -923,6 +916,7 @@ fn test_ensure_entity_for_account() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
 
     // upsert_account now calls ensure_entity_for_account automatically
@@ -1124,6 +1118,7 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&soon).expect("insert");
 
@@ -1145,6 +1140,7 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&no_end).expect("insert");
 
@@ -1166,6 +1162,7 @@ fn test_get_renewal_alerts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&expired).expect("insert");
 
@@ -1196,6 +1193,7 @@ fn test_get_stale_accounts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&stale).expect("insert");
 
@@ -1217,6 +1215,7 @@ fn test_get_stale_accounts() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&fresh).expect("insert");
 
@@ -1334,6 +1333,7 @@ fn test_stakeholder_signals_with_account_contact() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&account).expect("insert account");
 
@@ -1688,6 +1688,7 @@ fn test_person_entity_linking() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&account).expect("upsert account");
 
@@ -2096,6 +2097,7 @@ fn test_merge_transfers_entity_links() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&account).expect("upsert account");
     db.link_person_to_entity(&remove.id, "acme", "associated")
@@ -2236,6 +2238,7 @@ fn test_delete_person_cascades() {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&account).expect("upsert account");
     db.link_person_to_entity(&person.id, "doom-corp", "associated")
@@ -2291,7 +2294,7 @@ fn test_upsert_and_get_project() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
 
     db.upsert_project(&project).expect("upsert");
@@ -2320,7 +2323,7 @@ fn test_get_project_by_name() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
 
     db.upsert_project(&project).expect("upsert");
@@ -2343,16 +2346,8 @@ fn test_get_all_projects() {
             id: name.to_lowercase(),
             name: name.to_string(),
             status: "active".to_string(),
-            milestone: None,
-            owner: None,
-            target_date: None,
-            tracker_path: None,
-            parent_id: None,
             updated_at: now.clone(),
-            archived: false,
-            keywords: None,
-            keywords_extracted_at: None,
-            metadata: None,
+            ..Default::default()
         };
         db.upsert_project(&project).expect("upsert");
     }
@@ -2380,7 +2375,7 @@ fn test_update_project_field() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
     db.upsert_project(&project).expect("upsert");
 
@@ -2409,7 +2404,7 @@ fn test_update_project_field_rejects_invalid() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
     db.upsert_project(&project).expect("upsert");
 
@@ -2435,7 +2430,7 @@ fn test_ensure_entity_for_project() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
 
     db.upsert_project(&project).expect("upsert");
@@ -2463,7 +2458,7 @@ fn test_get_project_actions() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
     db.upsert_project(&project).expect("upsert");
 
@@ -2537,7 +2532,7 @@ fn test_link_meeting_to_project_and_query() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
     db.upsert_project(&project).expect("upsert project");
 
@@ -2659,7 +2654,7 @@ fn test_meeting_multi_entity_link() {
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-        metadata: None,
+        ..Default::default()
     };
     db.upsert_project(&project).expect("upsert project");
 
@@ -3327,6 +3322,7 @@ fn setup_account(db: &ActionDb, id: &str, name: &str) {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     };
     db.upsert_account(&account).expect("upsert account");
     db.ensure_entity_for_account(&account)
@@ -3372,38 +3368,46 @@ fn test_cascade_meeting_entity_to_people_external_only() {
     let db = test_db();
     setup_account(&db, "acc1", "Acme Corp");
     setup_meeting(&db, "m1", "Acme QBR");
+    setup_meeting(&db, "m2", "Acme Follow-up");
 
-    // External person → should be linked
+    // External person attends 2 meetings with same account (I652: 2+ threshold)
     let mut external = sample_person("jane@acme.com");
     external.relationship = "external".to_string();
     db.upsert_person(&external).expect("upsert external");
     db.record_meeting_attendance("m1", &external.id)
-        .expect("attend");
+        .expect("attend m1");
+    db.record_meeting_attendance("m2", &external.id)
+        .expect("attend m2");
+    db.link_meeting_entity("m1", "acc1", "account")
+        .expect("link m1");
+    db.link_meeting_entity("m2", "acc1", "account")
+        .expect("link m2");
 
-    // Internal person → should NOT be linked
+    // Internal person → should NOT be linked regardless of meeting count
     let mut internal = sample_person("john@mycompany.com");
     internal.relationship = "internal".to_string();
     db.upsert_person(&internal).expect("upsert internal");
     db.record_meeting_attendance("m1", &internal.id)
         .expect("attend");
 
+    // Cascade on m2 — jane has 2 meetings with acc1, threshold met
     let linked = db
-        .cascade_meeting_entity_to_people("m1", Some("acc1"), None)
+        .cascade_meeting_entity_to_people("m2", Some("acc1"), None)
         .expect("cascade");
-    assert_eq!(linked, 1);
+    assert!(linked >= 1, "external with 2+ meetings should be linked");
 
-    // External person linked to account
-    let entities = db
-        .get_entities_for_person(&external.id)
-        .expect("entities for external");
-    assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].id, "acc1");
+    // External person linked
+    let team = db.get_account_team("acc1").expect("team");
+    assert!(
+        team.iter().any(|t| t.person_id == external.id),
+        "jane should be in team"
+    );
 
     // Internal person NOT linked
-    let entities = db
-        .get_entities_for_person(&internal.id)
-        .expect("entities for internal");
-    assert_eq!(entities.len(), 0);
+    assert!(
+        !team.iter().any(|t| t.person_id == internal.id),
+        "internal should not be in team"
+    );
 }
 
 #[test]
@@ -3572,6 +3576,7 @@ fn sample_account(id: &str, name: &str) -> DbAccount {
         keywords: None,
         keywords_extracted_at: None,
         metadata: None,
+        ..Default::default()
     }
 }
 
@@ -4450,9 +4455,18 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
     let db = test_db();
     setup_account(&db, "acc-thread", "Thread Corp");
 
-    let previous = sample_db_meeting("mtg-prev", "Thread Corp Weekly Sync", "2026-03-10T15:00:00Z");
-    let current = sample_db_meeting("mtg-current", "Thread Corp Weekly Sync", "2026-03-20T15:00:00Z");
-    db.upsert_meeting(&previous).expect("upsert previous meeting");
+    let previous = sample_db_meeting(
+        "mtg-prev",
+        "Thread Corp Weekly Sync",
+        "2026-03-10T15:00:00Z",
+    );
+    let current = sample_db_meeting(
+        "mtg-current",
+        "Thread Corp Weekly Sync",
+        "2026-03-20T15:00:00Z",
+    );
+    db.upsert_meeting(&previous)
+        .expect("upsert previous meeting");
     db.upsert_meeting(&current).expect("upsert current meeting");
     db.link_meeting_entity(&previous.id, "acc-thread", "account")
         .expect("link previous");
@@ -4461,8 +4475,10 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
 
     let existing = sample_person("taylor@thread.com");
     let newcomer = sample_person("jordan@thread.com");
-    db.upsert_person(&existing).expect("upsert existing attendee");
-    db.upsert_person(&newcomer).expect("upsert newcomer attendee");
+    db.upsert_person(&existing)
+        .expect("upsert existing attendee");
+    db.upsert_person(&newcomer)
+        .expect("upsert newcomer attendee");
     db.record_meeting_attendance(&previous.id, &existing.id)
         .expect("record previous attendance");
     db.record_meeting_attendance(&current.id, &existing.id)
@@ -4474,7 +4490,8 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
     completed.account_id = Some("acc-thread".to_string());
     completed.status = "completed".to_string();
     completed.completed_at = Some("2026-03-15T10:00:00Z".to_string());
-    db.upsert_action(&completed).expect("upsert completed action");
+    db.upsert_action(&completed)
+        .expect("upsert completed action");
 
     let mut open = sample_action("act-thread-open", "Review pricing addendum");
     open.account_id = Some("acc-thread".to_string());
@@ -4507,7 +4524,10 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
         .expect("continuity thread");
 
     assert_eq!(thread.actions_completed.len(), 1);
-    assert_eq!(thread.actions_completed[0].title, "Finalize mutual action plan");
+    assert_eq!(
+        thread.actions_completed[0].title,
+        "Finalize mutual action plan"
+    );
     assert_eq!(thread.actions_open.len(), 1);
     assert_eq!(thread.actions_open[0].title, "Review pricing addendum");
     assert_eq!(thread.actions_open[0].date.as_deref(), Some("2026-03-25"));
