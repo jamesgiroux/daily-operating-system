@@ -317,10 +317,10 @@ impl Executor {
 
                         for (entity_id, entity_type) in &targets {
                             let was_inserted = db
-                                .upsert_email_signal_with_source(
+                                .upsert_email_signal(&crate::db::signals::EmailSignalInput {
                                     email_id,
-                                    sender_email.as_deref(),
-                                    person_id.as_deref(),
+                                    sender_email: sender_email.as_deref(),
+                                    person_id: person_id.as_deref(),
                                     entity_id,
                                     entity_type,
                                     signal_type,
@@ -329,8 +329,8 @@ impl Executor {
                                     sentiment,
                                     urgency,
                                     detected_at,
-                                    signal_source,
-                                )
+                                    source: signal_source,
+                                })
                                 .map_err(|e| e.to_string())?;
                             if was_inserted {
                                 inserted += 1;
