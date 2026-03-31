@@ -785,7 +785,28 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
         })
         .collect();
 
-    let avg_score = status_scores.iter().sum::<f64>() / status_scores.len() as f64;
+    // Temporal weighting: recent assessments matter more (30-day half-life)
+    let now = chrono::Utc::now();
+    let weights: Vec<f64> = champion_assessments
+        .iter()
+        .map(|(start_time, _, _)| {
+            let age_days = chrono::DateTime::parse_from_rfc3339(start_time)
+                .map(|d| (now - d.with_timezone(&chrono::Utc)).num_days().max(0) as f64)
+                .unwrap_or(0.0);
+            crate::signals::decay::decayed_weight(1.0, age_days, 30.0)
+        })
+        .collect();
+    let weight_sum: f64 = weights.iter().sum();
+    let avg_score = if weight_sum > 0.0 {
+        status_scores
+            .iter()
+            .zip(weights.iter())
+            .map(|(s, w)| s * w)
+            .sum::<f64>()
+            / weight_sum
+    } else {
+        status_scores.iter().sum::<f64>() / status_scores.len() as f64
+    };
 
     // Trend detection
     let trend = if status_scores.len() >= 2 {
