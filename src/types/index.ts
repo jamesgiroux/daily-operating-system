@@ -1699,6 +1699,14 @@ export interface NetworkIntelligence {
   clusterSummary?: string;
 }
 
+/** A person's stakeholder role for a specific account. */
+export interface PersonAccountRole {
+  accountId: string;
+  accountName: string;
+  role: string;
+  dataSource: string;
+}
+
 /** A person-to-person relationship edge (I390, ADR-0088). */
 export interface PersonRelationshipEdge {
   id: string;
