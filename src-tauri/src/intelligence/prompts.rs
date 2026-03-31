@@ -72,6 +72,14 @@ pub struct IntelligenceContext {
     pub org_health: Option<super::io::OrgHealthData>,
     /// I555: Additional context blocks (engagement patterns, champion health, commitments).
     pub extra_blocks: Vec<String>,
+    /// I645: Formatted user corrections (dismissed items + field edits) for prompt injection.
+    pub user_corrections: String,
+    /// I645: Formatted source reliability weights for prompt injection.
+    pub signal_weights_block: String,
+    /// I647: Source-verified account facts from account_source_refs (fact kind only).
+    pub source_verified_facts: String,
+    /// I649: Technical footprint block for prompt injection.
+    pub technical_footprint_block: String,
 }
 
 /// I508c structured gap query item used for local ranking + remote fan-out.
@@ -117,6 +125,16 @@ pub fn build_intelligence_context(
                 if let Some(nps) = acct.nps {
                     facts.push(format!("NPS: {}", nps));
                 }
+                if let Ok(products) = db.get_account_products(entity_id) {
+                    if !products.is_empty() {
+                        let product_line = products
+                            .iter()
+                            .map(|product| product.name.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        facts.push(format!("Products: {}", product_line));
+                    }
+                }
                 if let Ok(team) = db.get_account_team(entity_id) {
                     if !team.is_empty() {
                         let team_line = team
@@ -128,6 +146,91 @@ pub fn build_intelligence_context(
                     }
                 }
                 ctx.facts_block = facts.join("\n");
+
+                // I647: Source-verified facts from account_source_refs
+                if let Ok(refs) = db.get_account_source_refs(entity_id) {
+                    let fact_refs: Vec<_> =
+                        refs.iter().filter(|r| r.source_kind == "fact").collect();
+                    if !fact_refs.is_empty() {
+                        let mut lines = Vec::new();
+                        // Deduplicate by field — take first (most recent due to ORDER BY)
+                        let mut seen_fields = std::collections::HashSet::new();
+                        for r in &fact_refs {
+                            if !seen_fields.insert(&r.field) {
+                                continue;
+                            }
+                            let value_str = r.source_value.as_deref().unwrap_or("unknown");
+                            let observed = &r.observed_at;
+                            let lock_note = if r.field == "champion" {
+                                " \u{2014} do not reassign"
+                            } else {
+                                ""
+                            };
+                            let display_field = match r.field.as_str() {
+                                "arr" => {
+                                    if let Ok(v) = value_str.parse::<f64>() {
+                                        // Format with commas manually
+                                        let whole = v as u64;
+                                        let s = whole.to_string();
+                                        let formatted: String = s
+                                            .as_bytes()
+                                            .rchunks(3)
+                                            .rev()
+                                            .map(|chunk| std::str::from_utf8(chunk).unwrap())
+                                            .collect::<Vec<_>>()
+                                            .join(",");
+                                        format!("ARR: ${}", formatted)
+                                    } else {
+                                        format!("ARR: {}", value_str)
+                                    }
+                                }
+                                "renewal_date" => format!("Renewal: {}", value_str),
+                                "lifecycle" => format!("Lifecycle: {}", value_str),
+                                "nps" => format!("NPS: {}", value_str),
+                                "champion" => format!("Champion: {}", value_str),
+                                other => format!("{}: {}", other, value_str),
+                            };
+                            lines.push(format!(
+                                "- {} (source: {}, fact, {}{})",
+                                display_field, r.source_system, observed, lock_note
+                            ));
+                        }
+                        ctx.source_verified_facts = format!(
+                            "ACCOUNT TRUTH (source-verified \u{2014} treat as ground truth):\n{}",
+                            lines.join("\n")
+                        );
+                    }
+                }
+
+                // I649: Technical footprint
+                if let Ok(Some(tf)) = db.get_account_technical_footprint(entity_id) {
+                    let mut lines = Vec::new();
+                    if let Some(ref tier) = tf.support_tier {
+                        lines.push(format!("- Support tier: {}", tier));
+                    }
+                    if let Some(csat) = tf.csat_score {
+                        lines.push(format!("- CSAT: {:.1}/5", csat));
+                    }
+                    if tf.open_tickets > 0 {
+                        lines.push(format!("- Open tickets: {}", tf.open_tickets));
+                    }
+                    if let Some(ref tier) = tf.usage_tier {
+                        lines.push(format!("- Usage tier: {}", tier));
+                    }
+                    if let Some(users) = tf.active_users {
+                        lines.push(format!("- Active users: {}", users));
+                    }
+                    if let Some(score) = tf.adoption_score {
+                        lines.push(format!("- Adoption score: {:.0}%", score * 100.0));
+                    }
+                    if let Some(ref stage) = tf.services_stage {
+                        lines.push(format!("- Services stage: {}", stage));
+                    }
+                    if !lines.is_empty() {
+                        ctx.technical_footprint_block =
+                            format!("Technical Footprint:\n{}", lines.join("\n"));
+                    }
+                }
             }
         }
         "project" => {
@@ -477,40 +580,51 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- Stakeholders ---
-    let people = db.get_people_for_entity(entity_id).unwrap_or_default();
-    if !people.is_empty() {
-        let lines: Vec<String> = people
-            .iter()
-            .map(|p| {
-                let role = p.role.as_deref().unwrap_or("unknown role");
-                let org = p.organization.as_deref().unwrap_or("");
-                format!(
-                    "- {} | {} | {} | {} meetings | last seen: {}",
-                    p.name,
-                    role,
-                    org,
-                    p.meeting_count,
-                    p.last_seen.as_deref().unwrap_or("never")
-                )
-            })
-            .collect();
-        ctx.stakeholders = lines.join("\n");
-
-        // I420: Canonical contacts for stakeholder reconciliation
-        let canonical_lines: Vec<String> = people
-            .iter()
-            .map(|p| {
-                format!(
-                    "- \"{}\" (role: {}, id: {}, email: {})",
-                    p.name,
-                    p.role.as_deref().unwrap_or("unknown"),
-                    p.id,
-                    p.email
-                )
-            })
-            .collect();
-        ctx.canonical_contacts = Some(canonical_lines.join("\n"));
+    // --- Stakeholders (I652: person-first, read from account_stakeholders DB) ---
+    if entity_type == "account" || entity_type == "project" {
+        let stakeholders = db
+            .get_account_stakeholders_full(entity_id)
+            .unwrap_or_default();
+        if !stakeholders.is_empty() {
+            let lines: Vec<String> = stakeholders
+                .iter()
+                .map(|s| {
+                    let engagement = s.engagement.as_deref().unwrap_or("unknown");
+                    let assessment = s.assessment.as_deref().unwrap_or("");
+                    let roles = &s.stakeholder_role; // comma-separated from GROUP_CONCAT
+                    format!(
+                        "- {} ({}): roles=[{}], engagement={}, assessment={}",
+                        s.person_name,
+                        s.person_email.as_deref().unwrap_or("no email"),
+                        roles,
+                        engagement,
+                        assessment
+                    )
+                })
+                .collect();
+            ctx.stakeholders = lines.join("\n");
+        }
+    } else {
+        // Person/other entities: use people linkage for context
+        let people = db.get_people_for_entity(entity_id).unwrap_or_default();
+        if !people.is_empty() {
+            let lines: Vec<String> = people
+                .iter()
+                .map(|p| {
+                    let role = p.role.as_deref().unwrap_or("unknown role");
+                    let org = p.organization.as_deref().unwrap_or("");
+                    format!(
+                        "- {} | {} | {} | {} meetings | last seen: {}",
+                        p.name,
+                        role,
+                        org,
+                        p.meeting_count,
+                        p.last_seen.as_deref().unwrap_or("never")
+                    )
+                })
+                .collect();
+            ctx.stakeholders = lines.join("\n");
+        }
     }
 
     // I527: Deterministic stakeholder meeting presence lines for contradiction-resistant prompts.
@@ -868,6 +982,70 @@ pub fn build_intelligence_context(
 
     // I508c: Store gap queries for Glean fan-out
     ctx.gap_queries = gap_queries;
+
+    // I645 B3: Inject user corrections (dismissed items + field edits) into prompt context
+    if let Some(p) = prior {
+        let cutoff_90d = (Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+        let mut correction_lines: Vec<String> = Vec::new();
+
+        // Dismissed items (active within 90 days)
+        for d in &p.dismissed_items {
+            if d.dismissed_at > cutoff_90d {
+                correction_lines.push(format!(
+                    "- [dismissed] {}.\"{}\" (dismissed {})",
+                    d.field,
+                    d.content.chars().take(80).collect::<String>(),
+                    d.dismissed_at.split('T').next().unwrap_or(&d.dismissed_at),
+                ));
+            }
+        }
+
+        // User field edits
+        for e in &p.user_edits {
+            correction_lines.push(format!(
+                "- [corrected] {} (edited {})",
+                e.field_path,
+                e.edited_at.split('T').next().unwrap_or(&e.edited_at),
+            ));
+        }
+
+        if !correction_lines.is_empty() {
+            ctx.user_corrections = correction_lines.join("\n");
+        }
+    }
+
+    // I645 B4: Inject signal source reliability weights into prompt context
+    {
+        let sources = [
+            "glean_crm",
+            "glean_zendesk",
+            "glean_gong",
+            "glean_slack",
+            "pty_synthesis",
+            "local_file",
+            "user_correction",
+            "clay",
+        ];
+        let mut weight_lines: Vec<String> = Vec::new();
+        for source in &sources {
+            if let Ok(Some((alpha, beta, _count))) =
+                db.get_signal_weight(source, entity_type, "enrichment_quality")
+            {
+                let reliability = if alpha + beta > 0.0 {
+                    alpha / (alpha + beta) * 100.0
+                } else {
+                    50.0
+                };
+                weight_lines.push(format!(
+                    "- {}: {:.0}% (alpha: {:.0}, beta: {:.0})",
+                    source, reliability, alpha, beta,
+                ));
+            }
+        }
+        if !weight_lines.is_empty() {
+            ctx.signal_weights_block = weight_lines.join("\n");
+        }
+    }
 
     ctx
 }
@@ -1558,6 +1736,42 @@ fn build_intelligence_prompt_inner(
     if !ctx.facts_block.is_empty() {
         prompt.push_str("## Current Facts\n");
         prompt.push_str(&wrap_user_data(&ctx.facts_block));
+        // I645 B4: Append source reliability weights to facts block
+        if !ctx.signal_weights_block.is_empty() {
+            prompt.push_str("\n\nSource reliability:\n");
+            prompt.push_str(&ctx.signal_weights_block);
+        }
+        prompt.push_str("\n\n");
+    }
+
+    // I647: Source-verified account facts (ground truth the LLM should not override)
+    if !ctx.source_verified_facts.is_empty() {
+        prompt.push_str("## ");
+        prompt.push_str(&ctx.source_verified_facts);
+        prompt.push_str("\n\n");
+        prompt.push_str(
+            "ACCOUNT TRUTH rules:\n\
+             - Fields marked \"(source: salesforce, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
+             - Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
+             - You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n",
+        );
+    }
+
+    // I649: Technical footprint context
+    if !ctx.technical_footprint_block.is_empty() {
+        prompt.push_str("## ");
+        prompt.push_str(&ctx.technical_footprint_block);
+        prompt.push_str("\n\n");
+    }
+
+    // I645 B3: User corrections — dismissed items and field edits
+    if !ctx.user_corrections.is_empty() {
+        prompt.push_str(
+            "## User Corrections (do not reproduce dismissed items)\n\
+             The user has made the following corrections. Respect these — do not \
+             re-introduce dismissed items or override corrected fields.\n\n",
+        );
+        prompt.push_str(&ctx.user_corrections);
         prompt.push_str("\n\n");
     }
 
@@ -2778,12 +2992,14 @@ fn try_parse_json_response(
         contract_context: ai_resp.contract_context,
         expansion_signals: ai_resp.expansion_signals,
         renewal_outlook: ai_resp.renewal_outlook,
+        product_classification: None,
         support_health: ai_resp.support_health,
         product_adoption: ai_resp.product_adoption,
         nps_csat: ai_resp.nps_csat,
         source_attribution: ai_resp.source_attribution,
         gong_call_summaries: Vec::new(),
         success_plan_signals: ai_resp.success_plan_signals,
+        domains: Vec::new(),
         dismissed_items: Vec::new(),
     })
 }
@@ -3140,6 +3356,10 @@ mod tests {
             computed_health: None,
             org_health: None,
             extra_blocks: Vec::new(),
+            user_corrections: String::new(),
+            signal_weights_block: String::new(),
+            source_verified_facts: String::new(),
+            technical_footprint_block: String::new(),
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
@@ -3542,6 +3762,7 @@ Hope this helps!"#;
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
+            ..Default::default()
         };
         db.upsert_account(&account).expect("upsert");
 
@@ -3979,5 +4200,147 @@ mod eval_tests {
 
         let rels2 = extract_inferred_relationships(r#"{"inferredRelationships":"not an array"}"#);
         assert!(rels2.is_empty(), "Non-array must produce empty vec");
+    }
+
+    // ── I645 Track B: Learning loop tests ──
+
+    use crate::db::test_utils::test_db;
+
+    #[test]
+    fn test_prompt_includes_user_corrections_block() {
+        let ctx = IntelligenceContext {
+            facts_block: "Health: green".to_string(),
+            user_corrections: "- [dismissed] risks.\"budget risk\" (dismissed 2026-03-20)\n\
+                               - [corrected] stakeholderInsights[0].role (edited 2026-03-18)"
+                .to_string(),
+            ..Default::default()
+        };
+        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("User Corrections"),
+            "Prompt must include User Corrections section"
+        );
+        assert!(
+            prompt.contains("do not reproduce dismissed items"),
+            "Prompt must warn against reproducing dismissed items"
+        );
+        assert!(
+            prompt.contains("budget risk"),
+            "Prompt must include the dismissed item text"
+        );
+        assert!(
+            prompt.contains("stakeholderInsights[0].role"),
+            "Prompt must include the corrected field path"
+        );
+    }
+
+    #[test]
+    fn test_prompt_includes_signal_weights_in_facts() {
+        let ctx = IntelligenceContext {
+            facts_block: "ARR: $200K".to_string(),
+            signal_weights_block: "- glean_crm: 94% (alpha: 48, beta: 4)\n\
+                                   - pty_synthesis: 78% (alpha: 15, beta: 5)"
+                .to_string(),
+            ..Default::default()
+        };
+        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("Source reliability:"),
+            "Prompt must include source reliability header"
+        );
+        assert!(
+            prompt.contains("glean_crm: 94%"),
+            "Prompt must include glean_crm weight"
+        );
+        assert!(
+            prompt.contains("pty_synthesis: 78%"),
+            "Prompt must include pty_synthesis weight"
+        );
+    }
+
+    #[test]
+    fn test_prompt_omits_empty_corrections_and_weights() {
+        let ctx = IntelligenceContext {
+            facts_block: "ARR: $200K".to_string(),
+            ..Default::default()
+        };
+        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
+        assert!(
+            !prompt.contains("User Corrections"),
+            "Empty corrections should not appear in prompt"
+        );
+        assert!(
+            !prompt.contains("Source reliability:"),
+            "Empty weights should not appear in prompt"
+        );
+    }
+
+    #[test]
+    fn test_build_context_populates_corrections_from_prior() {
+        let db = test_db();
+        let workspace = std::path::PathBuf::from("/tmp/test_workspace");
+
+        let mut prior = IntelligenceJson::default();
+        prior.dismissed_items.push(DismissedItem {
+            field: "risks".to_string(),
+            content: "outdated risk about budget".to_string(),
+            dismissed_at: chrono::Utc::now().to_rfc3339(),
+        });
+        prior.user_edits.push(UserEdit {
+            field_path: "stakeholderInsights[0].role".to_string(),
+            edited_at: chrono::Utc::now().to_rfc3339(),
+        });
+
+        let ctx = build_intelligence_context(
+            &workspace,
+            &db,
+            "test-entity",
+            "account",
+            None,
+            None,
+            Some(&prior),
+            None,
+        );
+
+        assert!(
+            ctx.user_corrections.contains("[dismissed]"),
+            "Context must include dismissed items: got '{}'",
+            ctx.user_corrections,
+        );
+        assert!(
+            ctx.user_corrections.contains("[corrected]"),
+            "Context must include corrected fields: got '{}'",
+            ctx.user_corrections,
+        );
+    }
+
+    #[test]
+    fn test_build_context_excludes_old_dismissals() {
+        let db = test_db();
+        let workspace = std::path::PathBuf::from("/tmp/test_workspace");
+
+        let old_date = (chrono::Utc::now() - chrono::Duration::days(100)).to_rfc3339();
+        let mut prior = IntelligenceJson::default();
+        prior.dismissed_items.push(DismissedItem {
+            field: "risks".to_string(),
+            content: "ancient risk".to_string(),
+            dismissed_at: old_date,
+        });
+
+        let ctx = build_intelligence_context(
+            &workspace,
+            &db,
+            "test-entity",
+            "account",
+            None,
+            None,
+            Some(&prior),
+            None,
+        );
+
+        assert!(
+            !ctx.user_corrections.contains("ancient risk"),
+            "Dismissals older than 90 days should be excluded"
+        );
     }
 }

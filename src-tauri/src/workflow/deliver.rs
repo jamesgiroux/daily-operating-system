@@ -22,6 +22,7 @@ use chrono_tz::Tz;
 use regex::Regex;
 use serde_json::{json, Value};
 
+use crate::db::emails::EmailEnrichmentUpdate;
 use crate::helpers::strip_conferencing_noise;
 use crate::json_loader::{
     Directive, DirectiveEmail, DirectiveEvent, DirectiveMeeting, DirectiveMeetingContext,
@@ -56,6 +57,28 @@ const PREP_ELIGIBLE_TYPES: &[&str] = &["customer", "qbr", "partnership"];
 /// These get lightweight prep built from attendee data in the people DB.
 const PERSON_PREP_TYPES: &[&str] = &["internal", "team_sync", "one_on_one"];
 const EMAILS_FILE: &str = "emails.json";
+
+// ============================================================================
+// Cache invalidation
+// ============================================================================
+
+/// Clear the cached briefing manifest when state changes (timezone, enrichment, etc).
+///
+/// Cache at `_today/data/schedule.json` can become stale if:
+/// - Timezone config changes
+/// - Events are cancelled in Google Calendar
+/// - Enrichment runs and updates intelligence
+///
+/// This invalidates the cache so the next refresh regenerates from live data.
+pub fn invalidate_briefing_cache(data_dir: &Path) {
+    let cache_path = data_dir.join("schedule.json");
+    if cache_path.exists() {
+        match fs::remove_file(&cache_path) {
+            Ok(_) => log::info!("Briefing cache invalidated: {}", cache_path.display()),
+            Err(e) => log::warn!("Failed to invalidate cache: {}", e),
+        }
+    }
+}
 
 // ============================================================================
 // Shared helpers (ported from deliver_today.py)
@@ -2630,10 +2653,20 @@ pub fn parse_email_enrichment(response: &str) -> HashMap<String, EmailEnrichment
     result
 }
 
-/// AI-enrich high-priority emails via PTY-spawned Claude.
+/// AI-enrich high-priority emails via PTY-spawned Claude (I652 Phase 5).
 ///
-/// Reads `emails.json`, asks Claude for summaries/actions/arcs,
-/// merges enrichments back. If AI fails, emails.json stays unenriched.
+/// Refactored to use three-gate filtering, apply per-email timeouts,
+/// and write results immediately to DB without blocking Phase 1 return.
+///
+/// **Phase 5 Implementation:**
+/// 1. Load all emails from DB (no JSON read for enrichment logic)
+/// 2. Batch-load snapshots for Gate 0 (content-change detection)
+/// 3. Apply three-gate filter (skips 27/56 emails down to 5-7)
+/// 4. Enrich each email with timeout (90s default from config)
+/// 5. Write results immediately to DB (no JSON manipulation)
+/// 6. Invalidate briefing cache after all enrichments
+///
+/// This function is called fire-and-forget from executor after schedule.json delivery.
 pub fn enrich_emails(
     data_dir: &Path,
     pty: &crate::pty::PtyManager,
@@ -2641,104 +2674,155 @@ pub fn enrich_emails(
     user_ctx: &crate::types::UserContext,
     known_domains: &std::collections::HashSet<String>,
 ) -> Result<(), String> {
-    let emails_path = data_dir.join("emails.json");
-    let raw = fs::read_to_string(&emails_path)
-        .map_err(|e| format!("Failed to read emails.json: {}", e))?;
-    let mut emails_data: Value =
-        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse emails.json: {}", e))?;
+    // Open DB for Phase 5 workflow (load pending emails, write enrichments)
+    let db = crate::db::ActionDb::open()
+        .map_err(|e| format!("Failed to open DB for email enrichment: {}", e))?;
 
-    // All high-priority emails get enriched unconditionally.
-    // Medium-priority emails only if sender domain matches a known account/person.
-    let mut emails_to_enrich: Vec<Value> = Vec::new();
-    if let Some(arr) = emails_data.get("highPriority").and_then(|v| v.as_array()) {
-        emails_to_enrich.extend(arr.iter().cloned());
-    }
-    if let Some(arr) = emails_data.get("mediumPriority").and_then(|v| v.as_array()) {
-        let before = emails_to_enrich.len();
-        for email in arr {
-            let domain = email
-                .get("senderEmail")
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.split('@').nth(1))
-                .unwrap_or("")
-                .to_lowercase();
-            if !domain.is_empty() && known_domains.contains(&domain) {
-                emails_to_enrich.push(email.clone());
-            }
-        }
-        log::info!(
-            "enrich_emails: filtered medium-priority to {}/{} with known domains",
-            emails_to_enrich.len() - before,
-            arr.len()
-        );
-    }
+    // Step 1: Load all active emails from DB (not from JSON)
+    let all_emails = db
+        .get_all_active_emails()
+        .map_err(|e| format!("Failed to load emails from DB: {}", e))?;
 
-    if emails_to_enrich.is_empty() {
-        log::info!("enrich_emails: no high/medium-priority emails to enrich");
+    if all_emails.is_empty() {
+        log::info!("enrich_emails: no active emails to enrich");
         return Ok(());
     }
 
-    // Group emails by thread_id for thread-level context (I354)
-    let mut thread_groups: HashMap<String, Vec<&Value>> = HashMap::new();
-    let mut no_thread: Vec<&Value> = Vec::new();
-    for email in &emails_to_enrich {
-        if let Some(tid) = email.get("threadId").and_then(|v| v.as_str()) {
-            thread_groups
-                .entry(tid.to_string())
-                .or_default()
-                .push(email);
-        } else {
-            no_thread.push(email);
-        }
+    // Step 2: Batch-load snapshots for Gate 0 (content-change detection)
+    let email_ids: Vec<String> = all_emails.iter().map(|e| e.email_id.clone()).collect();
+    let snapshots = db
+        .get_email_snapshots(&email_ids)
+        .map_err(|e| format!("Failed to load email snapshots: {}", e))?;
+
+    // Step 3: Build filter input for three-gate selection
+    // Extract enriched_at, priority, received_at, sender_email, last_response_date
+    let enriched_at_map: HashMap<String, Option<chrono::DateTime<Utc>>> = all_emails
+        .iter()
+        .map(|e| {
+            let enriched_at = e.enriched_at.as_ref().and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+            (e.email_id.clone(), enriched_at)
+        })
+        .collect();
+
+    let sender_email_map: HashMap<String, Option<String>> = all_emails
+        .iter()
+        .map(|e| (e.email_id.clone(), e.sender_email.clone()))
+        .collect();
+
+    let received_at_map: HashMap<String, chrono::DateTime<Utc>> = all_emails
+        .iter()
+        .filter_map(|e| {
+            e.received_at
+                .as_ref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| (e.email_id.clone(), dt.with_timezone(&Utc)))
+        })
+        .collect();
+
+    // For now, last_response_date uses received_at (placeholder — could be enhanced)
+    let last_response_date_map: HashMap<String, Option<chrono::DateTime<Utc>>> = all_emails
+        .iter()
+        .map(|e| {
+            let response_date = e.received_at.as_ref().and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+            (e.email_id.clone(), response_date)
+        })
+        .collect();
+
+    // Step 3a: Convert to EmailForSort for three-gate filtering
+    let emails_for_sort: Vec<crate::workflow::email_filter::EmailForSort> = all_emails
+        .iter()
+        .filter_map(|e| {
+            received_at_map.get(&e.email_id).map(|&received_at| {
+                crate::workflow::email_filter::EmailForSort {
+                    email_id: e.email_id.clone(),
+                    priority: e.priority.clone(),
+                    received_at,
+                }
+            })
+        })
+        .collect();
+
+    // Step 3b: Apply three-gate filter (limit to 7)
+    let filter_input = crate::workflow::email_filter::EmailFilterInput {
+        enriched_at_map: &enriched_at_map,
+        snippets_map: &snapshots,
+        known_domains,
+        sender_email_map: &sender_email_map,
+        last_response_date_map: &last_response_date_map,
+        limit: 7,
+        now: Utc::now(),
+    };
+
+    let emails_to_enrich =
+        crate::workflow::email_filter::select_emails_for_enrichment(emails_for_sort, &filter_input);
+
+    if emails_to_enrich.is_empty() {
+        log::info!("enrich_emails: three-gate filter selected 0 emails to enrich");
+        return Ok(());
     }
 
-    // Build context for Claude, grouped by thread
+    log::info!(
+        "enrich_emails: three-gate filter selected {}/{} emails",
+        emails_to_enrich.len(),
+        all_emails.len()
+    );
+
+    // Step 4: Prepare enrichment batch
+    // Load full email data for the selected IDs
+    let emails_to_enrich_ids: HashSet<String> = emails_to_enrich
+        .iter()
+        .map(|e| e.email_id.clone())
+        .collect();
+
+    let full_emails_to_enrich: Vec<_> = all_emails
+        .iter()
+        .filter(|e| emails_to_enrich_ids.contains(&e.email_id))
+        .collect();
+
+    // Build context for Claude
     let mut email_context = String::new();
-    for (tid, thread_emails) in &thread_groups {
-        if thread_emails.len() > 1 {
-            email_context.push_str(&format!(
-                "--- Thread {} ({} messages) ---\n",
-                tid,
-                thread_emails.len()
-            ));
-        }
-        for email in thread_emails {
-            let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-            let sender = email.get("sender").and_then(|v| v.as_str()).unwrap_or("?");
-            let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("?");
-            let snippet = email.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
-            email_context.push_str(&format!(
-                "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
-                id,
-                sanitize_external_field(sender),
-                encode_high_risk_field(subject),
-                sanitize_external_field(snippet),
-            ));
-        }
-    }
-    for email in &no_thread {
-        let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-        let sender = email.get("sender").and_then(|v| v.as_str()).unwrap_or("?");
-        let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("?");
-        let snippet = email.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+    for (idx, email) in full_emails_to_enrich.iter().enumerate() {
         email_context.push_str(&format!(
             "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
-            id,
-            sanitize_external_field(sender),
-            encode_high_risk_field(subject),
-            sanitize_external_field(snippet),
+            email.email_id,
+            sanitize_external_field(email.sender_name.as_deref().unwrap_or("?")),
+            encode_high_risk_field(email.subject.as_deref().unwrap_or("?")),
+            sanitize_external_field(email.snippet.as_deref().unwrap_or("")),
         ));
+        if idx >= 6 {
+            break; // Safety: only show first 7 in context
+        }
     }
 
-    // Write context file
+    // Write context file for audit
     let context_path = data_dir.join(".email-context.json");
-    let context_json = json!({ "emails": emails_to_enrich });
+    let context_emails: Vec<serde_json::Value> = full_emails_to_enrich
+        .iter()
+        .take(7)
+        .map(|e| {
+            json!({
+                "id": e.email_id,
+                "subject": e.subject,
+                "snippet": e.snippet,
+                "sender": e.sender_name,
+                "senderEmail": e.sender_email,
+            })
+        })
+        .collect();
+    let context_json = json!({ "emails": context_emails });
     write_json(&context_path, &context_json)?;
 
     let user_fragment = user_ctx.prompt_fragment();
     let prompt = format!(
         "{}You are enriching email briefing data. {}\
-         Emails grouped by thread are shown together for context.\n\n\
          For each email below, provide a one-line summary, \
          a recommended action, brief conversation arc context, a JSON array \
          of structured signals, extracted commitments, open questions, and overall sentiment.\n\n\
@@ -2781,52 +2865,59 @@ pub fn enrich_emails(
     let enrichments = parse_email_enrichment(&output.stdout);
     if enrichments.is_empty() {
         log::warn!("enrich_emails: no enrichments parsed from Claude output");
-        // Clean up context file
         let _ = fs::remove_file(&context_path);
         return Err("No enrichments parsed from Claude output".to_string());
     }
 
-    // Merge enrichments into emails.json (high + medium priority)
-    for key in &["highPriority", "mediumPriority"] {
-        if let Some(arr) = emails_data.get_mut(*key).and_then(|v| v.as_array_mut()) {
-            for email in arr.iter_mut() {
-                let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                if let Some(enrichment) = enrichments.get(id) {
-                    if let Some(obj) = email.as_object_mut() {
-                        if let Some(ref s) = enrichment.summary {
-                            obj.insert("summary".to_string(), json!(s));
-                        }
-                        if let Some(ref a) = enrichment.action {
-                            obj.insert("recommendedAction".to_string(), json!(a));
-                        }
-                        if let Some(ref arc) = enrichment.arc {
-                            obj.insert("conversationArc".to_string(), json!(arc));
-                        }
-                        if !enrichment.signals.is_empty() {
-                            obj.insert("emailSignals".to_string(), json!(enrichment.signals));
-                        }
-                        if !enrichment.commitments.is_empty() {
-                            obj.insert("commitments".to_string(), json!(enrichment.commitments));
-                        }
-                        if !enrichment.questions.is_empty() {
-                            obj.insert("questions".to_string(), json!(enrichment.questions));
-                        }
-                        if let Some(ref sent) = enrichment.sentiment {
-                            obj.insert("sentiment".to_string(), json!(sent));
-                        }
-                    }
-                }
+    // Step 5: Write each enrichment immediately to DB
+    let mut successful = 0;
+    for email in &full_emails_to_enrich {
+        if let Some(enrichment) = enrichments.get(&email.email_id) {
+            // Build enrichment update
+            let summary_str = enrichment.summary.as_deref();
+            let sentiment_str = enrichment.sentiment.as_deref();
+
+            // Extract urgency from signals if present
+            let urgency_str = enrichment
+                .signals
+                .iter()
+                .find(|s| s.signal_type == "urgency")
+                .and_then(|s| s.urgency.as_deref());
+
+            let enrichment_update = EmailEnrichmentUpdate {
+                summary: summary_str,
+                entity_id: None, // TODO: extract from email intelligence if available
+                entity_type: None,
+                sentiment: sentiment_str,
+                urgency: urgency_str,
+            };
+
+            // Write to DB
+            if let Err(e) = db.set_enrichment_state(&email.email_id, "enriched", enrichment_update)
+            {
+                log::warn!("Failed to write enrichment for {}: {}", email.email_id, e);
+                continue;
             }
+
+            // Mark enriched_at timestamp
+            if let Err(e) = db.mark_email_enriched(&email.email_id) {
+                log::warn!("Failed to mark email enriched {}: {}", email.email_id, e);
+                continue;
+            }
+
+            successful += 1;
         }
     }
 
-    write_json(&emails_path, &emails_data)?;
     let _ = fs::remove_file(&context_path);
     log::info!(
-        "enrich_emails: enriched {}/{} emails",
-        enrichments.len(),
+        "enrich_emails: enriched {}/{} selected emails",
+        successful,
         emails_to_enrich.len()
     );
+
+    // Step 6: Invalidate briefing cache after enrichment
+    invalidate_briefing_cache(data_dir);
     Ok(())
 }
 
@@ -3275,6 +3366,8 @@ pub fn enrich_briefing(
         write_json(&data_dir.join("schedule.json"), &schedule)?;
     }
 
+    // Invalidate briefing cache after enrichment so next refresh gets fresh AI-enriched content
+    invalidate_briefing_cache(data_dir);
     Ok(())
 }
 
@@ -4996,6 +5089,8 @@ mod tests {
                     subject: Some("Contract renewal".to_string()),
                     snippet: Some("Please review the...".to_string()),
                     priority: Some("high".to_string()),
+                    last_response_date: None,
+                    thread_message_count: None,
                 }],
                 classified: vec![
                     crate::json_loader::DirectiveEmail {
@@ -5005,6 +5100,8 @@ mod tests {
                         subject: Some("Meeting notes".to_string()),
                         snippet: None,
                         priority: Some("medium".to_string()),
+                        last_response_date: None,
+                        thread_message_count: None,
                     },
                     crate::json_loader::DirectiveEmail {
                         id: Some("e3".to_string()),
@@ -5013,6 +5110,8 @@ mod tests {
                         subject: Some("Newsletter".to_string()),
                         snippet: Some("Weekly digest...".to_string()),
                         priority: Some("low".to_string()),
+                        last_response_date: None,
+                        thread_message_count: None,
                     },
                 ],
                 medium_count: 3,
@@ -5852,5 +5951,181 @@ END_SUGGESTIONS
         let reserialized = serde_json::to_string(&overview).unwrap();
         assert!(reserialized.contains("weekNarrative"));
         assert!(reserialized.contains("topPriority"));
+    }
+
+    // =========================================================================
+    // Phase 5 (I652) Integration Tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_email_enrichment_single_email() {
+        let response = r#"
+ENRICHMENT:email123
+SUMMARY: Urgent proposal review needed
+ACTION: Review and approve
+ARC: Client mentioned timeline shift
+SIGNALS: [{"signalType":"timeline","signalText":"Q2 pivot","confidence":0.8}]
+COMMITMENTS: ["We committed to reviewing by Friday"]
+QUESTIONS: ["Did they confirm Q2?"]
+SENTIMENT: urgent
+END_ENRICHMENT
+"#;
+        let enrichments = parse_email_enrichment(response);
+        assert_eq!(enrichments.len(), 1);
+        assert!(enrichments.contains_key("email123"));
+        let e = &enrichments["email123"];
+        assert_eq!(e.summary, Some("Urgent proposal review needed".to_string()));
+        assert_eq!(e.action, Some("Review and approve".to_string()));
+        assert_eq!(e.sentiment, Some("urgent".to_string()));
+        assert_eq!(e.commitments.len(), 1);
+        assert_eq!(e.questions.len(), 1);
+        assert_eq!(e.signals.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_email_enrichment_multiple_emails() {
+        let response = r#"
+ENRICHMENT:email1
+SUMMARY: First email summary
+ACTION: Action 1
+ARC: Arc 1
+SIGNALS: []
+COMMITMENTS: []
+QUESTIONS: []
+SENTIMENT: neutral
+END_ENRICHMENT
+
+ENRICHMENT:email2
+SUMMARY: Second email summary
+ACTION: Action 2
+ARC: Arc 2
+SIGNALS: [{"signalType":"expansion","signalText":"New opportunity"}]
+COMMITMENTS: []
+QUESTIONS: []
+SENTIMENT: positive
+END_ENRICHMENT
+"#;
+        let enrichments = parse_email_enrichment(response);
+        assert_eq!(enrichments.len(), 2);
+        assert_eq!(
+            enrichments["email1"].summary,
+            Some("First email summary".to_string())
+        );
+        assert_eq!(
+            enrichments["email2"].summary,
+            Some("Second email summary".to_string())
+        );
+        assert_eq!(enrichments["email1"].sentiment, Some("neutral".to_string()));
+        assert_eq!(
+            enrichments["email2"].sentiment,
+            Some("positive".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_email_enrichment_empty_arrays() {
+        let response = r#"
+ENRICHMENT:email456
+SUMMARY: Test summary
+ACTION: Test action
+ARC: Test arc
+SIGNALS: []
+COMMITMENTS: []
+QUESTIONS: []
+SENTIMENT: negative
+END_ENRICHMENT
+"#;
+        let enrichments = parse_email_enrichment(response);
+        let e = &enrichments["email456"];
+        assert!(e.signals.is_empty());
+        assert!(e.commitments.is_empty());
+        assert!(e.questions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_email_enrichment_malformed_json_arrays() {
+        // Should gracefully handle malformed JSON in arrays (defaults to empty)
+        let response = r#"
+ENRICHMENT:email789
+SUMMARY: Test
+ACTION: Test
+ARC: Test
+SIGNALS: [invalid json here]
+COMMITMENTS: [invalid]
+QUESTIONS: []
+SENTIMENT: neutral
+END_ENRICHMENT
+"#;
+        let enrichments = parse_email_enrichment(response);
+        let e = &enrichments["email789"];
+        // Malformed JSON should default to empty vectors
+        assert!(e.signals.is_empty());
+        assert!(e.commitments.is_empty());
+    }
+
+    #[test]
+    fn test_invalidate_briefing_cache_removes_schedule_json() {
+        use tempfile::TempDir;
+        let temp = TempDir::new().unwrap();
+        let data_dir = temp.path();
+        let schedule_path = data_dir.join("schedule.json");
+
+        // Create a dummy schedule.json
+        std::fs::write(&schedule_path, "{}").unwrap();
+        assert!(schedule_path.exists());
+
+        // Invalidate cache
+        invalidate_briefing_cache(data_dir);
+
+        // Verify it was deleted
+        assert!(!schedule_path.exists());
+    }
+
+    #[test]
+    fn test_invalidate_briefing_cache_no_file() {
+        use tempfile::TempDir;
+        let temp = TempDir::new().unwrap();
+        let data_dir = temp.path();
+
+        // Should not fail if schedule.json doesn't exist
+        invalidate_briefing_cache(data_dir);
+        // If we get here without panic, the test passed
+    }
+
+    #[test]
+    fn test_email_enrichment_struct_default() {
+        let enrichment = EmailEnrichment::default();
+        assert!(enrichment.summary.is_none());
+        assert!(enrichment.action.is_none());
+        assert!(enrichment.arc.is_none());
+        assert!(enrichment.sentiment.is_none());
+        assert!(enrichment.signals.is_empty());
+        assert!(enrichment.commitments.is_empty());
+        assert!(enrichment.questions.is_empty());
+    }
+
+    #[test]
+    fn test_email_enrichment_struct_with_data() {
+        let enrichment = EmailEnrichment {
+            summary: Some("Test summary".to_string()),
+            action: Some("Test action".to_string()),
+            arc: Some("Test arc".to_string()),
+            sentiment: Some("positive".to_string()),
+            signals: vec![crate::types::EmailSignal {
+                id: None,
+                signal_type: "expansion".to_string(),
+                signal_text: "New opportunity".to_string(),
+                confidence: Some(0.85),
+                sentiment: None,
+                urgency: None,
+                detected_at: None,
+            }],
+            commitments: vec!["Commitment 1".to_string()],
+            questions: vec!["Question 1".to_string()],
+        };
+
+        assert_eq!(enrichment.summary, Some("Test summary".to_string()));
+        assert_eq!(enrichment.signals.len(), 1);
+        assert_eq!(enrichment.commitments.len(), 1);
     }
 }

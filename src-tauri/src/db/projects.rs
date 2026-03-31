@@ -26,6 +26,10 @@ impl ActionDb {
             keywords: row.get(10).unwrap_or(None),
             keywords_extracted_at: row.get(11).unwrap_or(None),
             metadata: row.get(12).unwrap_or(None),
+            // I644: dashboard.json fields promoted to DB (migration 083)
+            description: row.get(13).unwrap_or(None),
+            milestones: row.get(14).unwrap_or(None),
+            notes: row.get(15).unwrap_or(None),
         })
     }
 
@@ -81,7 +85,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, parent_id, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata,
+                    description, milestones, notes
              FROM projects WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], Self::map_project_row)?;
@@ -96,7 +101,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, parent_id, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata,
+                    description, milestones, notes
              FROM projects WHERE LOWER(name) = LOWER(?1)",
         )?;
         let mut rows = stmt.query_map(params![name], Self::map_project_row)?;
@@ -111,7 +117,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, parent_id, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata,
+                    description, milestones, notes
              FROM projects WHERE archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_project_row)?;
@@ -170,7 +177,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, parent_id, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata,
+                    description, milestones, notes
              FROM projects WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_project_row)?;
@@ -182,7 +190,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, parent_id, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+                    keywords, keywords_extracted_at, metadata,
+                    description, milestones, notes
              FROM projects WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map(params![parent_id], Self::map_project_row)?;
@@ -615,16 +624,30 @@ impl ActionDb {
         project_id: Option<&str>,
     ) -> Result<usize, DbError> {
         // Route: accounts → account_stakeholders, projects → entity_members
+        // I652: Only auto-add after attendee appears in 2+ meetings with the account
         if let Some(acct_id) = account_id {
-            let count = self.conn.execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type)
-                 SELECT ?1, ma.person_id, 'associated', 'attendee'
+            self.conn.execute(
+                "INSERT INTO account_stakeholders (account_id, person_id)
+                 SELECT ?1, ma.person_id
                  FROM meeting_attendees ma
                  JOIN people p ON ma.person_id = p.id
                  WHERE ma.meeting_id = ?2
                    AND p.relationship = 'external'
+                   AND (SELECT COUNT(DISTINCT ma2.meeting_id)
+                        FROM meeting_attendees ma2
+                        JOIN meeting_entities me2 ON me2.meeting_id = ma2.meeting_id
+                        WHERE ma2.person_id = ma.person_id
+                          AND me2.entity_id = ?1 AND me2.entity_type = 'account') >= 2
                  ON CONFLICT(account_id, person_id) DO NOTHING",
                 params![acct_id, meeting_id],
+            )?;
+            let count = self.conn.execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 SELECT as_.account_id, as_.person_id, 'associated', 'google'
+                 FROM account_stakeholders as_
+                 WHERE as_.account_id = ?1
+                 ON CONFLICT(account_id, person_id, role) DO NOTHING",
+                params![acct_id],
             )?;
             return Ok(count);
         }
