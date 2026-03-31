@@ -23,13 +23,20 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 /// Google OAuth2 scopes used by DailyOS.
+///
+/// Minimized to actual API usage (CSO audit 2026-03-31):
+/// - calendar.readonly: event fetching + calendar metadata (no write calls)
+/// - gmail.modify: batchModify for archive/unarchive (add/remove INBOX label)
+/// - drive.readonly: change tracking, file metadata, export (all GET requests)
+///
+/// Removed scopes with no API calls in the codebase:
+/// - gmail.compose (no draft/send calls)
+/// - spreadsheets (sheets exported via Drive export, not Sheets API)
+/// - documents (docs exported via Drive export, not Docs API)
 pub const SCOPES: &[&str] = &[
-    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/gmail.compose",
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/documents",
-    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/drive.readonly",
 ];
 
 // ============================================================================
