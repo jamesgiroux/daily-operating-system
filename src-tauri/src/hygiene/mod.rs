@@ -522,11 +522,8 @@ pub(crate) mod tests_common {
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,
-<<<<<<< HEAD
             email_enrichment_timeout_seconds: 90,
-=======
             notifications: crate::types::NotificationConfig::default(),
->>>>>>> ff434ac1 (feat: batch transcript notifications with 5-min cooldown + notification preferences)
         }
     }
 }
