@@ -11,11 +11,11 @@
  */
 
 import { useState, useCallback, useMemo } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useSuggestedActions } from "@/hooks/useSuggestedActions";
-import { SuggestedActionRow } from "@/components/shared/SuggestedActionRow";
+// SuggestedActionRow removed from briefing — suggestions live on /actions page
 import clsx from "clsx";
 import { useCalendar } from "@/hooks/useCalendar";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -561,9 +561,9 @@ function AttentionSection({
   onConfirmLifecycle,
   onOpenLifecycleCorrection,
   pendingLifecycleChangeId,
-  suggestedActions,
-  acceptAction,
-  rejectAction,
+  suggestedActions: _suggestedActions,
+  acceptAction: _acceptAction,
+  rejectAction: _rejectAction,
   focus,
   pendingActions,
   completedIds,
@@ -595,8 +595,6 @@ function AttentionSection({
   todayMeetingIds: Set<string>;
   emailSyncTimestamp?: string;
 }) {
-  const navigate = useNavigate();
-
   // Filter attention-worthy actions: meeting-relevant for today OR overdue (max 3)
   const attentionActions = useMemo(() => {
     const prioritized = focus?.prioritizedActions ?? [];
@@ -623,16 +621,18 @@ function AttentionSection({
     return [...overdueRaw, ...meetingRaw].slice(0, 3);
   }, [focus, pendingActions, todayMeetingIds]);
 
-  const hasSuggested = suggestedActions.length > 0;
+  // Suggested actions removed from briefing — too noisy. Live on /actions page.
   const hasActions = attentionActions.length > 0;
   const hasEmails = briefingEmails.length > 0;
-  const hasLifecycle = lifecycleUpdates.length > 0;
-  // Callouts disabled: the signal propagation pipeline is populating
-  // briefing_callouts with raw signal data (e.g., "Support health: tickets
-  // updated") that violates ADR-0083 vocabulary rules. Until callouts are
-  // filtered to curated, user-meaningful intelligence items, suppress them.
-  const hasCallouts = false; // briefingCallouts.length > 0;
-  const hasAnything = hasLifecycle || hasCallouts || hasSuggested || hasActions || hasEmails;
+  // Filter lifecycle to today only — stale updates belong on the account detail page
+  const todayLifecycle = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return lifecycleUpdates.filter((u) => u.createdAt?.startsWith(today));
+  }, [lifecycleUpdates]);
+  const hasLifecycle = todayLifecycle.length > 0;
+  // Callouts disabled: raw signal data violates ADR-0083 vocabulary rules.
+  const hasCallouts = false;
+  const hasAnything = hasLifecycle || hasActions || hasEmails;
 
   if (!hasAnything) return null;
 
@@ -656,7 +656,7 @@ function AttentionSection({
                 Lifecycle
               </div>
               <div className={s.priorityItems}>
-                {lifecycleUpdates.slice(0, 3).map((update) => (
+                {todayLifecycle.slice(0, 3).map((update) => (
                   <LifecycleUpdateItem
                     key={update.changeId}
                     update={update}
@@ -693,35 +693,11 @@ function AttentionSection({
             </div>
           )}
 
-          {/* Suggested action triage (max 3) */}
-          {hasSuggested && (
-            <>
-              <div className={briefingStyles.suggestedColumn}>
-                {suggestedActions.slice(0, 3).map((action, i) => (
-                  <SuggestedActionRow
-                    key={action.id}
-                    action={action}
-                    onAccept={() => acceptAction(action.id)}
-                    onReject={() => rejectAction(action.id, "daily_briefing")}
-                    showBorder={i < Math.min(suggestedActions.length, 3) - 1}
-                    compact
-                  />
-                ))}
-              </div>
-              {suggestedActions.length > 3 && (
-                <button
-                  onClick={() => navigate({ to: "/actions", search: { search: undefined } })}
-                  className={briefingStyles.seeAllSuggestionsBtn}
-                >
-                  See all {suggestedActions.length} suggestions &rarr;
-                </button>
-              )}
-            </>
-          )}
+          {/* Suggested actions removed — live on /actions page */}
 
           {/* Actions: meeting-relevant + overdue (max 3) */}
           {hasActions && (
-            <div className={hasLifecycle || hasSuggested ? briefingStyles.actionsGroupSpaced : briefingStyles.actionsGroupFlush}>
+            <div className={hasLifecycle ? briefingStyles.actionsGroupSpaced : briefingStyles.actionsGroupFlush}>
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
                 Actions
               </div>
