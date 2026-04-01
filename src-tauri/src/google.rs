@@ -371,7 +371,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     "auth_expired",
                     "Google account needs reconnection",
                 );
-                let _ = crate::notification::notify_auth_expired(&app_handle);
+                let _ = crate::notification::notify_auth_expired(&app_handle, &state);
             }
             Err(PollError::ApiError(ref e)) => {
                 // I428: Record calendar sync failure
