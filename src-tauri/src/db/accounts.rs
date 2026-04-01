@@ -290,18 +290,19 @@ impl ActionDb {
     ///
     /// Safe to run multiple times (idempotent via INSERT OR IGNORE).
     pub fn backfill_account_domains_from_meetings(&self) -> Result<usize, DbError> {
-        // Load user domains from config to exclude the CSM's own company domains.
-        // Without this, every customer account gets the CSM's domain stored,
-        // causing every meeting to resolve to every account.
+        // Domain-base matching: only store a domain on an account when the domain
+        // base (before first dot) matches the account's normalized name or slug.
+        // Prevents cross-contamination where a partner's domain (e.g. salesforce.com)
+        // gets stored on every account they attend meetings with.
         let user_domains: Vec<String> = crate::state::load_config()
             .map(|c| c.resolved_user_domains())
             .unwrap_or_default();
 
-        // Query all meetings with their linked accounts
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT m.id, m.attendees, me.entity_id
+            "SELECT DISTINCT m.id, m.attendees, me.entity_id, a.name
              FROM meetings m
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             INNER JOIN accounts a ON a.id = me.entity_id
              WHERE me.entity_type = 'account'
                AND m.attendees IS NOT NULL
                AND m.attendees != ''
@@ -314,14 +315,28 @@ impl ActionDb {
         while let Some(row) = rows.next()? {
             let attendees_str: String = row.get(1)?;
             let account_id: String = row.get(2)?;
+            let account_name: String = row.get(3)?;
 
-            // Extract domains from attendee string, excluding user domains
+            let account_name_key = crate::helpers::normalize_key(&account_name);
+            let account_slug_key = crate::helpers::normalize_key(&account_id);
+
             let domains = self.extract_domains_from_attendees_str(&attendees_str);
-            if !domains.is_empty() {
-                for domain in domains {
-                    if user_domains.iter().any(|ud| ud == &domain) {
-                        continue;
-                    }
+            for domain in &domains {
+                if user_domains.iter().any(|ud| ud == domain) {
+                    continue;
+                }
+                let domain_base = domain.split('.').next().unwrap_or(domain);
+                let domain_base_key = crate::helpers::normalize_key(domain_base);
+
+                // Only store domain if domain base matches account name or slug
+                if !domain_base_key.is_empty()
+                    && (domain_base_key == account_name_key
+                        || domain_base_key == account_slug_key
+                        || (domain_base_key.len() >= 4
+                            && account_name_key.contains(&domain_base_key))
+                        || (account_name_key.len() >= 4
+                            && domain_base_key.contains(&account_name_key)))
+                {
                     self.conn.execute(
                         "INSERT OR IGNORE INTO account_domains (account_id, domain) VALUES (?1, ?2)",
                         params![&account_id, &domain],
