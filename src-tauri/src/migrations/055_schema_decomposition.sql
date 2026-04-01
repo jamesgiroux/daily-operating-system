@@ -50,23 +50,36 @@ CREATE TABLE IF NOT EXISTS meeting_transcripts (
     last_viewed_at TEXT
 );
 
--- Copy data from meetings_history
+-- Copy data from meetings_history.
+--
+-- Pre-framework databases may be missing columns that were added by inline
+-- ALTER TABLE statements in the old open_at() method (description,
+-- calendar_event_id, prep_*, user_*, transcript_*). Migration 023 should
+-- have rebuilt the table with all columns, but its error was silently
+-- swallowed by the migration runner's benign-error logic (no BEGIN →
+-- "no such column" treated as benign). Using NULL for potentially-missing
+-- columns is safe: if the column never existed, there is no data to lose;
+-- if it did exist, this migration already succeeded and won't re-run.
+--
+-- Clean up leftover temp table from partially-applied migration 023.
+DROP TABLE IF EXISTS meetings_history_new;
+
 INSERT OR IGNORE INTO meetings (id, title, meeting_type, start_time, end_time,
     attendees, notes_path, description, created_at, calendar_event_id)
 SELECT id, title, meeting_type, start_time, end_time,
-    attendees, notes_path, description, created_at, calendar_event_id
+    attendees, notes_path, NULL, created_at, NULL
 FROM meetings_history;
 
 INSERT OR IGNORE INTO meeting_prep (meeting_id, prep_context_json, user_agenda_json,
     user_notes, prep_frozen_json, prep_frozen_at, prep_snapshot_path, prep_snapshot_hash)
-SELECT id, prep_context_json, user_agenda_json, user_notes,
-    prep_frozen_json, prep_frozen_at, prep_snapshot_path, prep_snapshot_hash
+SELECT id, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL
 FROM meetings_history;
 
 INSERT OR IGNORE INTO meeting_transcripts (meeting_id, summary, transcript_path,
     transcript_processed_at, intelligence_state, intelligence_quality,
     last_enriched_at, signal_count, has_new_signals, last_viewed_at)
-SELECT id, summary, transcript_path, transcript_processed_at,
+SELECT id, summary, NULL, NULL,
     intelligence_state, intelligence_quality, last_enriched_at,
     signal_count, has_new_signals, last_viewed_at
 FROM meetings_history;
