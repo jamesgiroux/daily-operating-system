@@ -28,7 +28,7 @@ import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { formatDayTime, formatShortDate, stripMarkdown } from "@/lib/utils";
+import { formatShortDate, stripMarkdown } from "@/lib/utils";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import {
   Dialog,
@@ -136,7 +136,7 @@ function formatMinutes(minutes: number): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
+export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [pendingLifecycleChangeId, setPendingLifecycleChangeId] = useState<number | null>(null);
