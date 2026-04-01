@@ -379,12 +379,8 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
           </div>
         )}
 
-        {/* Staleness indicator */}
-        {freshness.freshness === "stale" && (
-          <div className={s.staleness}>
-            Last updated {formatDayTime(freshness.generatedAt)}
-          </div>
-        )}
+        {/* Staleness indicator removed — orphaned "Last updated" with no date
+            was confusing. The hero headline already communicates state. */}
       </section>
 
       {/* ═══ SCHEDULE (with Up Next) ═══ */}
