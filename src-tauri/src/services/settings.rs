@@ -194,6 +194,32 @@ pub fn set_hygiene_config(
     })
 }
 
+/// Update notification preferences.
+pub fn set_notification_config(
+    config_update: crate::types::NotificationConfig,
+    state: &AppState,
+) -> Result<Config, String> {
+    // Validate quiet hours
+    if let Some(start) = config_update.quiet_hours_start {
+        if start > 23 {
+            return Err("Quiet hours start must be 0-23".to_string());
+        }
+    }
+    if let Some(end) = config_update.quiet_hours_end {
+        if end > 23 {
+            return Err("Quiet hours end must be 0-23".to_string());
+        }
+    }
+    // Both must be set or both must be None
+    if config_update.quiet_hours_start.is_some() != config_update.quiet_hours_end.is_some() {
+        return Err("Both quiet hours start and end must be set, or neither".to_string());
+    }
+
+    crate::state::create_or_update_config(state, |config| {
+        config.notifications = config_update.clone();
+    })
+}
+
 /// Set schedule for a workflow.
 pub fn set_schedule(
     workflow: &str,
