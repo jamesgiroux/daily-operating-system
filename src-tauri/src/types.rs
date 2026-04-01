@@ -107,6 +107,9 @@ pub struct Config {
     /// without blocking the briefing workflow. Validated in `validate_config()`.
     #[serde(default = "default_email_enrichment_timeout_seconds")]
     pub email_enrichment_timeout_seconds: u32,
+    /// User notification preferences (toggles + quiet hours).
+    #[serde(default)]
+    pub notifications: NotificationConfig,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -122,6 +125,44 @@ pub struct ProfileConfig {
     /// How many past meetings to include per account
     #[serde(default = "default_history_count")]
     pub history_meeting_count: u32,
+}
+
+/// User-configurable notification preferences.
+/// All toggles default to `true` (notifications enabled).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationConfig {
+    /// "Daily briefing alerts" — fires when a workflow completes.
+    #[serde(default = "default_true")]
+    pub workflow_completion: bool,
+    /// "Meeting notes alerts" — fires when transcripts are processed.
+    #[serde(default = "default_true")]
+    pub transcript_ready: bool,
+    /// "Connection alerts" — fires when Google auth expires.
+    #[serde(default = "default_true")]
+    pub auth_expiry: bool,
+    /// Hour (0-23) to start suppressing notifications. Both must be set.
+    #[serde(default)]
+    pub quiet_hours_start: Option<u8>,
+    /// Hour (0-23) to stop suppressing notifications. Both must be set.
+    #[serde(default)]
+    pub quiet_hours_end: Option<u8>,
+}
+
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        Self {
+            workflow_completion: true,
+            transcript_ready: true,
+            auth_expiry: true,
+            quiet_hours_start: None,
+            quiet_hours_end: None,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_history_lookback() -> u32 {
@@ -2804,7 +2845,11 @@ mod tests {
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,
+<<<<<<< HEAD
             email_enrichment_timeout_seconds: 90,
+=======
+            notifications: NotificationConfig::default(),
+>>>>>>> ff434ac1 (feat: batch transcript notifications with 5-min cooldown + notification preferences)
         }
     }
 
