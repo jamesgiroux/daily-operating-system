@@ -459,6 +459,7 @@ pub fn run() {
             commands::reset_ai_models_to_recommended,
             commands::set_google_poll_settings,
             commands::set_hygiene_config,
+            commands::set_notification_config,
             commands::set_schedule,
             commands::get_actions_from_db,
             commands::complete_action,
