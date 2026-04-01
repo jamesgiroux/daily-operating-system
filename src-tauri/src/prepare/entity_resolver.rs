@@ -321,10 +321,20 @@ fn signal_attendee_inference(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSi
         };
         person_matches.push((person.id.clone(), email.clone()));
         if let Ok(entities) = db.get_entities_for_person(&person.id) {
+            // Dilute vote weight for multi-account stakeholders: a person linked
+            // to 14 accounts shouldn't give a full vote to each. Weight decreases
+            // as inverse sqrt of linked count (capped at 5 to avoid near-zero).
+            let num_links = entities.len();
+            let vote_weight = if num_links > 1 {
+                let capped = num_links.min(5) as f64;
+                (1.0 / capped.sqrt() * 100.0).round() as usize
+            } else {
+                100 // full vote = 100 cents
+            };
             for entity in entities {
                 *entity_votes
                     .entry((entity.id, entity.entity_type))
-                    .or_insert(0) += 1;
+                    .or_insert(0) += vote_weight;
             }
         }
     }
@@ -335,16 +345,18 @@ fn signal_attendee_inference(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSi
         entity_votes
             .entry((person_id.clone(), EntityType::Person))
             .or_insert(0);
-        // Give the person a direct vote so it gets a meaningful confidence
+        // Give the person a direct vote at full weight (100 cents)
         *entity_votes
             .entry((person_id.clone(), EntityType::Person))
-            .or_insert(0) += 1;
+            .or_insert(0) += 100;
     }
 
     entity_votes
         .into_iter()
-        .map(|((entity_id, entity_type), votes)| {
-            let raw = 0.5 + 0.4 * (votes as f64 / total);
+        .map(|((entity_id, entity_type), vote_cents)| {
+            // vote_cents is in hundredths: 100 = one full vote, 45 = diluted vote
+            let effective_votes = vote_cents as f64 / 100.0;
+            let raw = 0.5 + 0.4 * (effective_votes / total);
             let confidence = raw.min(0.90);
             ResolutionSignal {
                 entity_id,

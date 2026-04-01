@@ -670,40 +670,58 @@ impl ActionDb {
     ///
     /// Runs exactly once. Subsequent calls are guarded by init_tasks table.
     fn run_guarded_init_backfill_account_domains(&self) -> Result<(), DbError> {
-        // v2: purge user domains that were incorrectly stored in v1, then re-backfill
-        const TASK_NAME: &str = "backfill_account_domains_v2";
+        // v3: purge ALL domains (v1 and v2 both stored contaminated data),
+        // then re-backfill with domain-base matching (only stores a domain
+        // on an account when the domain base matches the account name/slug).
+        const TASK_NAME: &str = "backfill_account_domains_v3";
 
         if Self::is_init_task_completed(&self.conn, TASK_NAME)? {
             return Ok(());
         }
 
-        // Purge user domains that v1 incorrectly stored for every account
-        let user_domains: Vec<String> = crate::state::load_config()
-            .map(|c| c.resolved_user_domains())
-            .unwrap_or_default();
-        let mut purged = 0usize;
-        for ud in &user_domains {
-            let count = self.conn.execute(
-                "DELETE FROM account_domains WHERE domain = ?1",
-                params![ud],
-            )?;
-            purged += count;
-        }
+        // Purge all contaminated domains — the new backfill will repopulate correctly
+        let purged = self.conn.execute("DELETE FROM account_domains", [])?;
         if purged > 0 {
             log::info!(
-                "Entity resolution: purged {} user-domain rows from account_domains",
+                "Entity resolution: purged all {} account_domains rows (v3 clean slate)",
                 purged,
             );
         }
 
-        // Re-backfill with user domain filtering
+        // Also clean up over-linked future meetings (>2 entity links = contamination symptom)
+        let cleaned = self.conn.execute(
+            "DELETE FROM meeting_entities WHERE meeting_id IN (
+                SELECT me.meeting_id FROM meeting_entities me
+                JOIN meetings m ON m.id = me.meeting_id
+                WHERE m.start_time > datetime('now')
+                GROUP BY me.meeting_id HAVING COUNT(*) > 2
+            )",
+            [],
+        )?;
+        if cleaned > 0 {
+            log::info!(
+                "Entity resolution: purged {} over-linked future meeting_entities rows",
+                cleaned,
+            );
+            // Clear prep for those meetings so they regenerate
+            let _ = self.conn.execute(
+                "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_context_json = NULL
+                 WHERE meeting_id IN (
+                     SELECT id FROM meetings WHERE start_time > datetime('now')
+                     AND id NOT IN (SELECT meeting_id FROM meeting_entities)
+                 )",
+                [],
+            );
+        }
+
+        // Re-backfill with domain-base matching
         let inserted = self.backfill_account_domains_from_meetings()?;
 
         Self::mark_init_task_completed(&self.conn, TASK_NAME)?;
 
         if inserted > 0 {
             log::info!(
-                "Entity resolution: backfilled {} account→domain mappings from meeting attendees",
+                "Entity resolution: backfilled {} account→domain mappings (domain-base matching)",
                 inserted
             );
         }
