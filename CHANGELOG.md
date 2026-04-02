@@ -5,6 +5,53 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.1.1] — 2026-04-02
+
+### Added
+
+- **Notification preferences** — new Settings section with per-type toggles (briefing alerts, meeting notes, connection alerts) and quiet hours. Transcript notifications batched with 5-minute cooldown.
+- **PTY agenda enrichment for all meetings** — mechanical meeting prep now receives AI refinement with strategic context (intelligence summary, since-last, meeting type). Previously only the legacy file pipeline got AI-refined agendas.
+- **Meeting-type-aware agenda generation** — QBRs prioritize risks and strategy, 1:1s prioritize action items, training meetings skip account intelligence entirely.
+- **47 frontend tests** for StakeholderGallery, EditableVitalsStrip, AccountOutlook, AccountDetailEditorial, and DailyBriefing.
+
+### Changed
+
+- **Entity linking centralized into service layer (I653)** — two service functions (`persist_classification_entities`, `persist_and_invalidate_entity_links_sync`) replace all inline entity linking. 9 gap fixes: entity IDs carried through CalendarEvent, prepare_today persists links, background auto-link invalidates stale prep, mechanical prep passes attendees, person-to-account chaining at classification time, 7-day resolution lookback window.
+- **Domain-base matching for account_domains** — backfill only stores a domain when the domain base matches the account name/slug. Prevents cross-contamination from partnership contacts.
+- **Attendee vote dilution** — multi-account stakeholders (linked to 5+ accounts) vote at reduced weight (inverse sqrt) instead of full weight per account.
+- **Champion health temporal decay** — recent assessments weighted more heavily than old ones (30-day half-life exponential decay).
+- **Signal momentum uses canonical decay** — replaces hardcoded exp(-age/15) with per-source half-lives and Bayesian learned reliability.
+- **DB is the read model (ADR-0101)** — briefing display, user edits, and prediction scorecard now read from DB-native `prep_context_json`, not frozen JSON blobs. Dual-write ensures MCP export format is still populated.
+- **AccountDetailEditorial decomposed** — 1,245-line god component split into 12 focused components (241 lines remaining). Each section is independently modifiable.
+- **God function refactor** — 15 oversized function signatures replaced with params structs across services, DB, and processor layers.
+- **Attention section cleaned up** — suggested actions removed from daily briefing (live on /actions page). Lifecycle updates filtered to today only.
+- **Stakeholder role changes replace instead of accumulate** — selecting a new role removes the old one. Synthetic "associated" label removed.
+- **Role badges removable regardless of source** — users can remove any stakeholder role, not just user-assigned ones.
+- **AI suggestions deduped against confirmed stakeholders** — by email first, name second.
+- **Coverage counter includes roles** — counts stakeholders with roles OR engagement, not just engagement.
+- **Email signal text humanized (ADR-0083)** — "Email via josh-ruud-a8c-com: email:..." replaced with "Josh Ruud: Book of Business Review".
+- **Google OAuth scopes minimized** — 6 scopes reduced to 3 (calendar.readonly, gmail.modify, drive.readonly). Removed unused gmail.compose, spreadsheets, documents.
+
+### Fixed
+
+- **Meeting briefing failures (I653)** — meetings identified by title or attendee matching now reliably generate briefings. Root cause: 6 gaps in the entity linking pipeline caused entity IDs to be dropped, name-vs-ID comparisons to fail silently, and prep to never regenerate after late entity linking.
+- **User domain contamination** — CSM's own company domains were stored as account domains for every customer, causing every meeting to resolve to every account. Fixed with user domain exclusion and v3 backfill purge.
+- **Cross-entity intelligence contamination** — Glean's unbounded search returned unrelated company data (e.g., third-party ad revenue stats appearing on customer accounts). Fixed with entity grounding in prompts and post-parse validation filtering.
+- **Team member over-linking** — co-attendance hygiene fixer was adding internal team members as stakeholders. Fixed with external-only filter. 604 incorrectly added rows purged.
+- **Name-only stakeholder suggestions** — accepting AI suggestions with no email (name only) now creates a person entity instead of failing silently.
+- **Migration 055 crash on pre-framework databases** — fixed column-missing errors for users upgrading from very early versions (PR #11, contributed by @dknauss).
+- **Vitals strip suggestions disabled** — enrichment field suggestions reappeared after dismissal. Disabled until dismissal persistence is fixed.
+- **DB size warning toast removed** — internal diagnostic noise no longer surfaced to users.
+- **Orphaned "Last updated" label removed** — staleness indicator showed empty text on daily briefing.
+
+### Security
+
+- **GitHub Actions pinned to commit SHA** — all 12 action references across both workflows.
+- **Gravatar API key migrated to macOS Keychain** — was plaintext in config.json.
+- **CODEOWNERS added** — workflow file modifications require owner approval.
+- **DOMPurify sanitization** — release notes HTML rendering now sanitized before DOM insertion.
+- **Glean id_token trust boundary documented** — JWT decoded without signature verification confirmed as display-only, not authorization.
+
 ## [1.1.0] — 2026-03-30
 
 ### Added
