@@ -10,6 +10,28 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.1.1 — Making the magic reliable
+
+v1.1.0 introduced lifecycle intelligence and stakeholder management. v1.1.1 makes it all work consistently. Meetings that should have generated briefings now do. Intelligence that referenced the wrong company is filtered out. The daily briefing focuses on what matters today, not yesterday's noise.
+
+**Meetings actually show up now.** Some meetings with customer names in the title or known contacts on the invite weren't generating briefings at all. We traced this to six independent gaps in how meetings get linked to accounts and fixed all of them. If a meeting should have a briefing, it gets one.
+
+**Smarter about who's who.** When someone from a partner company attends meetings across multiple accounts, the system no longer links every meeting to every account they're associated with. The linking is now proportional. Three people from Acme on a call? That's clearly an Acme meeting. One person who works across twelve accounts? Their vote is weighted accordingly.
+
+**Your team list makes sense.** The "Your Team" section was showing 20+ internal colleagues for some accounts. Now it only includes people you've intentionally added, not everyone who ever sat in on a call.
+
+**Stakeholder roles work properly.** Changing someone's role from "End User" to "Decision Maker" no longer adds a second badge. You can remove any role, not just ones you assigned yourself. AI-suggested stakeholders that already appear in your confirmed list are automatically hidden.
+
+**Cleaner daily briefing.** Suggested actions moved to the Actions page where they belong. Lifecycle updates only show if they happened today. The "Last updated" orphan label is gone. The DB size warning toast is gone. Less noise, more signal.
+
+**Meeting agendas know what kind of meeting it is.** A QBR now gets strategic risks and programs. A 1:1 gets action items. A training meeting skips account intelligence entirely. And all meetings, not just the first batch of the day, get AI-refined agendas with "why this matters" context.
+
+**Notification controls.** New section in Settings lets you toggle briefing alerts, meeting note alerts, and connection alerts independently. Set quiet hours so the app doesn't interrupt you outside work hours. Transcript notifications are batched instead of one per meeting.
+
+**Under the hood.** All GitHub Actions pinned to commit SHA. Gravatar API key moved from config file to macOS Keychain. Google OAuth trimmed from 6 scopes to 3. The main account detail page was decomposed from one 1,245-line file into 12 focused components. Intelligence scoring now applies time decay so recent assessments matter more than six-month-old ones.
+
+---
+
 ## v1.1.0 — It should just know
 
 This release makes DailyOS act on what it learns. The system now detects lifecycle transitions — renewals confirmed, accounts going quiet, contracts approaching — and reports what it did in your daily briefing. You confirm with one click or correct what's wrong. No pipeline to manage. No stages to update. It just knows.
