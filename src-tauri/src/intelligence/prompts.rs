@@ -2651,6 +2651,38 @@ pub fn parse_intelligence_response(
     intel.recent_wins.truncate(10);
     intel.stakeholder_insights.truncate(20);
     intel.value_delivered.truncate(10);
+
+    // Entity grounding: filter out value_delivered items that reference
+    // companies unrelated to this entity. Cross-entity contamination from
+    // Glean's unbounded search can produce stats about other companies.
+    if !intel.value_delivered.is_empty() {
+        let entity_key = crate::helpers::normalize_key(
+            entity_id.split("--").last().unwrap_or(entity_id),
+        );
+        let before = intel.value_delivered.len();
+        intel.value_delivered.retain(|v| {
+            let stmt_lower = v.statement.to_lowercase();
+            // Keep if: the statement mentions the entity, OR has no third-party company names,
+            // OR the source is a direct first-party source (not web/unknown)
+            let mentions_entity = stmt_lower.contains(&entity_key)
+                || entity_key.len() < 4; // skip check for very short slugs
+            let is_first_party = matches!(
+                v.source.as_deref(),
+                Some("meeting" | "email" | "capture" | "salescloud" | "glean_crm"
+                    | "glean_gong" | "glean_zendesk")
+            );
+            mentions_entity || is_first_party
+        });
+        let filtered = before - intel.value_delivered.len();
+        if filtered > 0 {
+            log::info!(
+                "Entity grounding: filtered {} cross-entity value_delivered items for {}",
+                filtered,
+                entity_id,
+            );
+        }
+    }
+
     if let Some(ref mut state) = intel.current_state {
         state.working.truncate(10);
         state.not_working.truncate(10);
