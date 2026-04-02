@@ -2573,8 +2573,25 @@ pub fn accept_stakeholder_suggestion(
                 | crate::db::people::PersonResolution::Created(p) => p.id,
                 crate::db::people::PersonResolution::FoundByName { person, .. } => person.id,
             }
+        } else if let Some(name) = suggestion.suggested_name.as_deref() {
+            // Name-only suggestion (no email): find by name or create with synthetic email
+            let config = state
+                .config
+                .read()
+                .map_err(|_| "Lock poisoned")?
+                .clone()
+                .ok_or("Config not loaded")?;
+            let user_domains = config.resolved_user_domains();
+            let resolution =
+                tx.find_or_create_person(None, name, None, "external", &user_domains)
+                    .map_err(|e| e.to_string())?;
+            match resolution {
+                crate::db::people::PersonResolution::FoundByEmail(p)
+                | crate::db::people::PersonResolution::Created(p) => p.id,
+                crate::db::people::PersonResolution::FoundByName { person, .. } => person.id,
+            }
         } else {
-            return Err("Cannot accept suggestion: no person_id and no email".to_string());
+            return Err("Cannot accept suggestion: no person_id, email, or name".to_string());
         };
 
         // Ensure stakeholder link exists
