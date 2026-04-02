@@ -1,6 +1,6 @@
 {
   "name": "dailyos",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Operational intelligence for your workday. Open the app, your day is ready.",
   "type": "module",
   "pnpm": {
@@ -45,6 +45,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "dompurify": "^3.3.3",
     "lucide-react": "^0.575.0",
     "react": "^18.3.1",
     "react-day-picker": "^9.14.0",

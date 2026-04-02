@@ -382,6 +382,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         }
     }
 

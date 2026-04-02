@@ -14,7 +14,6 @@ use crate::db::ActionDb;
 ///
 /// Records the feedback, adjusts source weights (Bayesian alpha/beta),
 /// and emits a signal for downstream propagation.
-#[allow(clippy::too_many_arguments)]
 pub fn submit_intelligence_feedback(
     db: &ActionDb,
     entity_id: &str,
@@ -26,15 +25,15 @@ pub fn submit_intelligence_feedback(
     let id = uuid::Uuid::new_v4().to_string();
 
     // Insert or replace feedback record (UNIQUE on entity_id+entity_type+field per AC16)
-    db.insert_intelligence_feedback(
-        &id,
+    db.insert_intelligence_feedback(&crate::db::intelligence_feedback::FeedbackInput {
+        id: &id,
         entity_id,
         entity_type,
         field,
         feedback_type,
-        None,
+        previous_value: None,
         context,
-    )?;
+    })?;
 
     // Resolve the source that produced this intelligence.
     let prior_source = resolve_intelligence_source(db, entity_id, entity_type, field);

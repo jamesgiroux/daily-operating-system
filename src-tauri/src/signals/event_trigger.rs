@@ -50,11 +50,17 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
         None => return Ok(()),
     };
     let accounts_dir = workspace.join("Accounts");
+    let user_domains = config
+        .as_ref()
+        .map(|c| c.resolved_user_domains())
+        .unwrap_or_default();
 
     let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
+    // I653: Widened from 30 minutes to 7 days (10080 minutes) so meetings
+    // created during app downtime still get entity resolution on restart.
     let meetings = db
-        .get_meetings_needing_resolution(30)
+        .get_meetings_needing_resolution(10080)
         .map_err(|e| format!("Failed to query meetings: {}", e))?;
 
     if meetings.is_empty() {
@@ -111,20 +117,27 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
         // one entity per type to avoid multi-account contamination.
         let selected = select_auto_link_candidates(&outcomes);
 
-        let mut linked = 0;
-        let mut linked_account_id: Option<String> = None;
-        for entity in &selected {
-            let _ = db.link_meeting_entity_if_absent(
-                &meeting.id,
-                &entity.entity_id,
-                entity.entity_type.as_str(),
-            );
-            linked += 1;
-            // Track the first account linked (for domain extraction)
-            if linked_account_id.is_none() && entity.entity_type.as_str() == "account" {
-                linked_account_id = Some(entity.entity_id.clone());
-            }
-        }
+        // I653 AC4: Use centralized service function for entity linking.
+        // Collects selected entities as (id, type) pairs for the service layer.
+        let selected_pairs: Vec<(String, String)> = selected
+            .iter()
+            .map(|e| (e.entity_id.clone(), e.entity_type.as_str().to_string()))
+            .collect();
+
+        let linked_account_id: Option<String> = selected
+            .iter()
+            .find(|e| e.entity_type.as_str() == "account")
+            .map(|e| e.entity_id.clone());
+
+        let linked = crate::services::meetings::persist_and_invalidate_entity_links_sync(
+            &db,
+            &meeting.id,
+            &selected_pairs,
+            &state.meeting_prep_queue,
+            &state.integrations.prep_queue_wake,
+        )
+        .unwrap_or(0);
+
         if linked > 0 {
             log::debug!(
                 "Entity resolution trigger: linked {} entities for meeting '{}'",
@@ -135,7 +148,8 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
             // Path 2a: Extract domains from attendee emails and store in account_domains.
             // This ensures newly-linked accounts gain domain knowledge for future matching.
             if let Some(account_id) = linked_account_id {
-                let discovered_domains = extract_domains_from_attendees(&attendees_array);
+                let discovered_domains =
+                    extract_domains_from_attendees(&attendees_array, &user_domains);
                 if !discovered_domains.is_empty() {
                     if let Err(e) = db.set_account_domains(&account_id, &discovered_domains) {
                         log::warn!(
@@ -226,15 +240,24 @@ fn select_auto_link_candidates(
 
 /// Extract unique domains from attendee email addresses.
 /// Handles both valid emails and malformed strings gracefully.
-fn extract_domains_from_attendees(attendees: &[String]) -> Vec<String> {
+fn extract_domains_from_attendees(
+    attendees: &[String],
+    user_domains: &[String],
+) -> Vec<String> {
     let mut domains = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
     for email in attendees {
         if let Some(domain_part) = email.split('@').nth(1) {
             let domain = domain_part.to_lowercase();
-            // Filter out obviously invalid domains and duplicates
-            if !domain.is_empty() && !domain.contains(' ') && seen.insert(domain.clone()) {
+            // Exclude the user's own company domains. Without this filter,
+            // the CSM's domain gets stored as a domain for every customer
+            // account, causing every meeting to resolve to every account.
+            if !domain.is_empty()
+                && !domain.contains(' ')
+                && !user_domains.iter().any(|ud| ud == &domain)
+                && seen.insert(domain.clone())
+            {
                 domains.push(domain);
             }
         }
