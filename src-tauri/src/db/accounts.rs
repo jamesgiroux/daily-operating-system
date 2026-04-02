@@ -418,7 +418,7 @@ impl ActionDb {
                         (SELECT GROUP_CONCAT(asr.role, ',')
                          FROM account_stakeholder_roles asr
                          WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
-                        'associated'
+                        ''
                     ) AS roles,
                     as_.created_at
              FROM account_stakeholders as_
@@ -451,7 +451,7 @@ impl ActionDb {
                         (SELECT GROUP_CONCAT(asr.role, ',')
                          FROM account_stakeholder_roles asr
                          WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
-                        'associated'
+                        ''
                     ) AS roles,
                     as_.created_at
              FROM account_stakeholders as_
@@ -613,6 +613,33 @@ impl ActionDb {
                 data_source = 'user'",
             params![account_id, person_id, role, now],
         )?;
+        Ok(())
+    }
+
+    /// Replace all roles for a team member (single-select role change).
+    /// Deletes existing roles and inserts the new one in a single transaction.
+    /// If new_role is empty, removes all roles (person stays as stakeholder with no role).
+    pub fn set_team_member_role(
+        &self,
+        account_id: &str,
+        person_id: &str,
+        new_role: &str,
+    ) -> Result<(), DbError> {
+        let role = new_role.trim().to_lowercase();
+        // Remove all existing roles for this person-account pair
+        self.conn.execute(
+            "DELETE FROM account_stakeholder_roles WHERE account_id = ?1 AND person_id = ?2",
+            params![account_id, person_id],
+        )?;
+        // Insert the new role (if non-empty)
+        if !role.is_empty() {
+            let now = Utc::now().to_rfc3339();
+            self.conn.execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
+                 VALUES (?1, ?2, ?3, 'user', ?4)",
+                params![account_id, person_id, role, now],
+            )?;
+        }
         Ok(())
     }
 
