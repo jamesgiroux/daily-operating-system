@@ -1814,6 +1814,35 @@ pub fn add_account_team_member(
     })
 }
 
+/// Replace all roles for a team member (single-select role change).
+pub fn set_team_member_role(
+    db: &ActionDb,
+    state: &crate::state::AppState,
+    account_id: &str,
+    person_id: &str,
+    new_role: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.set_team_member_role(account_id, person_id, new_role)
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            &state.signals.engine,
+            "account",
+            account_id,
+            "team_member_role_changed",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
+                person_id, new_role
+            )),
+            0.8,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
 /// Remove a person-role pair from an account team with signal emission.
 pub fn remove_account_team_member(
     db: &ActionDb,
