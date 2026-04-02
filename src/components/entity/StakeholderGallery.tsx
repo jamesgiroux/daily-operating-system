@@ -313,7 +313,16 @@ export function StakeholderGallery({
 
   // DB-backed confirmed stakeholders are the primary source
   const confirmedStakeholders = stakeholdersFull ?? [];
-  const pendingSuggestions = (suggestions ?? []).filter((s) => s.status === "pending");
+  // Dedup suggestions against confirmed stakeholders (by email first, name second)
+  const confirmedEmails = new Set(confirmedStakeholders.map((s) => s.personEmail?.toLowerCase()).filter(Boolean));
+  const confirmedNames = new Set(confirmedStakeholders.map((s) => s.personName?.toLowerCase()).filter(Boolean));
+  const pendingSuggestions = (suggestions ?? [])
+    .filter((s) => s.status === "pending")
+    .filter((s) => {
+      if (s.suggestedEmail && confirmedEmails.has(s.suggestedEmail.toLowerCase())) return false;
+      if (s.suggestedName && confirmedNames.has(s.suggestedName.toLowerCase())) return false;
+      return true;
+    });
 
   const hasStakeholders = confirmedStakeholders.length > 0 || pendingSuggestions.length > 0;
   const epigraphSource = confirmedStakeholders.map((s) => ({ name: s.personName }));
@@ -359,8 +368,11 @@ export function StakeholderGallery({
 
   // ── Coverage analysis ──
   const totalKnown = confirmedStakeholders.length;
+  // Count stakeholders with defined engagement OR at least one role assigned
   const engagedCount = confirmedStakeholders.filter(
-    (s) => s.engagement && s.engagement !== "unknown" && s.engagement !== "none",
+    (s) =>
+      (s.engagement && s.engagement !== "unknown" && s.engagement !== "none") ||
+      (s.roles && s.roles.length > 0),
   ).length;
 
   // ── Search people as user types ──
@@ -722,7 +734,7 @@ export function StakeholderGallery({
       {totalKnown > 0 && (
         <div className={css.coverageStrip}>
           <span className={css.coverageNumbers}>{engagedCount} of {totalKnown}</span>
-          <span className={css.coverageLabel}>stakeholders with defined engagement</span>
+          <span className={css.coverageLabel}>stakeholders with defined roles</span>
         </div>
       )}
 
