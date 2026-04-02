@@ -7,7 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Person, StakeholderSuggestion } from "@/types";
 
 function normalizeTeamRole(role: string): string {
-  return role.trim() || "associated";
+  return role.trim(); // empty = no role (unassigned), not "associated"
 }
 
 function syntheticUnknownEmail(name: string): string {
@@ -234,10 +234,10 @@ export function useTeamManagement(
     async (personId: string, newRole: string) => {
       const normalizedRole = normalizeTeamRole(newRole);
       await performTeamOperation(async () => {
-        await invoke("add_account_team_member", {
+        await invoke("set_team_member_role", {
           accountId,
           personId,
-          role: normalizedRole,
+          newRole: normalizedRole,
         });
       });
     },
