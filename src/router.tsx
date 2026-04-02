@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { toast } from "sonner";
+// toast import removed — DB size warning no longer shown to users
 import { ThemeProvider } from "@/components/theme-provider";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
@@ -328,18 +328,9 @@ function RootLayout() {
     if (htmlWelcome) htmlWelcome.remove();
   }, [showWelcomeOverlay, showWelcomeShellOnly]);
 
-  // I614: Show toast when DB size exceeds 500MB
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    listen<number>("db-size-warning", (event) => {
-      const sizeMb = Math.round((event.payload ?? 0) / 1_048_576);
-      toast.warning(`Database is ${sizeMb} MB. Old data is automatically purged daily.`, {
-        duration: 10_000,
-        id: "db-size-warning",
-      });
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, []);
+  // I614: DB size warning removed from user-facing UI.
+  // Auto-purge handles large databases silently. Size info
+  // is available in Settings > Diagnostics for developers.
 
   useEffect(() => {
     if (startupGate !== "checking" && startupGate !== "app") {
