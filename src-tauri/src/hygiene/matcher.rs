@@ -366,7 +366,7 @@ pub(super) fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDe
             "SELECT ma.person_id, p.name, me.entity_id, a.name, COUNT(*) AS shared
              FROM meeting_attendees ma
              JOIN meeting_entities me ON me.meeting_id = ma.meeting_id AND me.entity_type = 'account'
-             JOIN people p ON p.id = ma.person_id AND p.archived = 0
+             JOIN people p ON p.id = ma.person_id AND p.archived = 0 AND p.relationship = 'external'
              JOIN accounts a ON a.id = me.entity_id AND a.archived = 0
              WHERE NOT EXISTS (
                  SELECT 1 FROM account_stakeholders as_
