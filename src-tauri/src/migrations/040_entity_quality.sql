@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS entity_quality (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_entity_quality_score ON entity_quality(quality_score);
-CREATE INDEX idx_entity_quality_blocked ON entity_quality(coherence_blocked);
+CREATE INDEX IF NOT EXISTS idx_entity_quality_score ON entity_quality(quality_score);
+CREATE INDEX IF NOT EXISTS idx_entity_quality_blocked ON entity_quality(coherence_blocked);
 
 ALTER TABLE entity_intelligence ADD COLUMN coherence_score REAL;
 ALTER TABLE entity_intelligence ADD COLUMN coherence_flagged INTEGER DEFAULT 0;
