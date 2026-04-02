@@ -371,7 +371,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     "auth_expired",
                     "Google account needs reconnection",
                 );
-                let _ = crate::notification::notify_auth_expired(&app_handle);
+                let _ = crate::notification::notify_auth_expired(&app_handle, &state);
             }
             Err(PollError::ApiError(ref e)) => {
                 // I428: Record calendar sync failure
@@ -725,12 +725,18 @@ fn populate_people_from_events(
                         .map(|e| e.id.as_str())
                         .collect();
 
-                    let new_account = event.account.as_deref().unwrap_or("");
-                    let entity_changed = if new_account.is_empty() {
-                        !old_account_ids.is_empty()
-                    } else {
-                        !old_account_ids.contains(new_account)
-                    };
+                    // I653 FIX 5: Compare entity IDs, not name strings
+                    let new_entity_ids: std::collections::HashSet<&str> = event
+                        .classified_entities
+                        .as_ref()
+                        .map(|es| {
+                            es.iter()
+                                .filter(|(_, t)| t == "account")
+                                .map(|(id, _)| id.as_str())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let entity_changed = old_account_ids != new_entity_ids;
 
                     if entity_changed {
                         log::info!(
@@ -749,6 +755,17 @@ fn populate_people_from_events(
                     "Failed to ensure meeting '{}' in history: {}",
                     event.title,
                     e
+                );
+            }
+        }
+
+        // I653 FIX 3: Persist classification-time entity links to meeting_entities
+        if let Some(ref entities) = event.classified_entities {
+            if !entities.is_empty() {
+                let _ = crate::services::meetings::persist_classification_entities(
+                    &db,
+                    &meeting_id,
+                    entities,
                 );
             }
         }
@@ -783,9 +800,12 @@ fn populate_people_from_events(
                 }
             };
             if let Some(ref person) = existing {
-                // Person already tracked — auto-link to entity if applicable
-                if let Some(ref account) = event.account {
-                    let _ = db.link_person_to_entity(&person.id, account, "associated");
+                // Person already tracked — auto-link to entity if applicable (I653 FIX 2)
+                // Use entity IDs from classification, not account name string
+                if let Some(ref entities) = event.classified_entities {
+                    for (entity_id, _entity_type) in entities {
+                        let _ = db.link_person_to_entity(&person.id, entity_id, "associated");
+                    }
                 }
                 // Record attendance (idempotent — safe across repeated polls)
                 let _ = db.record_meeting_attendance(&meeting_id, &person.id);
@@ -849,9 +869,11 @@ fn populate_people_from_events(
                     );
                 }
 
-                // Auto-link to entity if meeting has an account
-                if let Some(ref account) = event.account {
-                    let _ = db.link_person_to_entity(&id, account, "associated");
+                // Auto-link to entity if meeting has classified entities (I653 FIX 2)
+                if let Some(ref entities) = event.classified_entities {
+                    for (entity_id, _entity_type) in entities {
+                        let _ = db.link_person_to_entity(&id, entity_id, "associated");
+                    }
                 }
 
                 // Record attendance for the new person
@@ -1473,6 +1495,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         }
     }
 
@@ -1607,6 +1630,7 @@ mod tests {
             attendees: vec![],
             is_all_day: true,
             linked_entities: None,
+            classified_entities: None,
         };
 
         assert!(event.is_all_day || !PREP_ELIGIBLE_TYPES.contains(&event.meeting_type));

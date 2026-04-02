@@ -264,6 +264,26 @@ pub fn emit_enriched_email_signals(
             &source_context
         };
 
+        // ADR-0083: Human-readable display text for user-facing surfaces.
+        // Use email subject (not raw "email:addr:subject" format).
+        // Look up sender name from DB (fall back to email local part).
+        let email_subject = subject.as_deref().unwrap_or("(no subject)");
+        let sender_display = sender
+            .as_deref()
+            .and_then(|email| {
+                db.get_person_by_email_or_alias(email)
+                    .ok()
+                    .flatten()
+                    .map(|p| p.name)
+            })
+            .unwrap_or_else(|| {
+                sender
+                    .as_deref()
+                    .and_then(|e| e.split('@').next())
+                    .unwrap_or("someone")
+                    .replace('.', " ")
+            });
+
         // Direct-entity signal emission — skipped if this email+entity_type already processed.
         if !skip_direct {
             // Emit email_sentiment for non-neutral sentiments
@@ -292,20 +312,20 @@ pub fn emit_enriched_email_signals(
                     }
 
                     // I633: Also populate email_signals table for health scoring
-                    let _ = db.upsert_email_signal_with_source(
+                    let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                         email_id,
-                        sender.as_deref(),
-                        None,
+                        sender_email: sender.as_deref(),
+                        person_id: None,
                         entity_id,
                         entity_type,
-                        "sentiment",
-                        &format!("{} sentiment: {}", s, ctx),
-                        Some(0.7),
-                        Some(s.as_str()),
-                        urgency.as_deref(),
-                        None,
-                        Some("email_enrichment"),
-                    );
+                        signal_type: "sentiment",
+                        signal_text: &format!("{} tone: {}", s, email_subject),
+                        confidence: Some(0.7),
+                        sentiment: Some(s.as_str()),
+                        urgency: urgency.as_deref(),
+                        detected_at: None,
+                        source: Some("email_enrichment"),
+                    });
                 }
             }
 
@@ -352,20 +372,20 @@ pub fn emit_enriched_email_signals(
                         }
 
                         // I633: Also populate email_signals for health scoring
-                        let _ = db.upsert_email_signal_with_source(
+                        let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                             email_id,
-                            sender.as_deref(),
-                            None,
+                            sender_email: sender.as_deref(),
+                            person_id: None,
                             entity_id,
                             entity_type,
-                            "timeline",
-                            &format!("Commitment: {}", ctx),
-                            Some(0.65),
-                            sentiment.as_deref(),
-                            urgency.as_deref(),
-                            None,
-                            Some("email_enrichment"),
-                        );
+                            signal_type: "timeline",
+                            signal_text: &format!("Commitment noted: {}", email_subject),
+                            confidence: Some(0.65),
+                            sentiment: sentiment.as_deref(),
+                            urgency: urgency.as_deref(),
+                            detected_at: None,
+                            source: Some("email_enrichment"),
+                        });
                     }
                 }
             }
@@ -394,40 +414,40 @@ pub fn emit_enriched_email_signals(
                 }
 
                 // I633: Also populate email_signals for health scoring
-                let _ = db.upsert_email_signal_with_source(
+                let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                     email_id,
-                    sender.as_deref(),
-                    None,
+                    sender_email: sender.as_deref(),
+                    person_id: None,
                     entity_id,
                     entity_type,
-                    "feedback",
-                    &format!("High urgency: {}", ctx),
-                    Some(0.8),
-                    sentiment.as_deref(),
-                    Some("high"),
-                    None,
-                    Some("email_enrichment"),
-                );
+                    signal_type: "feedback",
+                    signal_text: &format!("Urgent: {}", email_subject),
+                    confidence: Some(0.8),
+                    sentiment: sentiment.as_deref(),
+                    urgency: Some("high"),
+                    detected_at: None,
+                    source: Some("email_enrichment"),
+                });
             }
 
             // I633: For ALL enriched emails (even neutral sentiment), create a
             // baseline email_signal so health scoring sees email activity.
             // Uses "relationship" type — the email demonstrates active relationship.
             if sentiment.as_deref() == Some("neutral") || sentiment.is_none() {
-                let _ = db.upsert_email_signal_with_source(
+                let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                     email_id,
-                    sender.as_deref(),
-                    None,
+                    sender_email: sender.as_deref(),
+                    person_id: None,
                     entity_id,
                     entity_type,
-                    "relationship",
-                    &format!("Email activity: {}", ctx),
-                    Some(0.5),
-                    sentiment.as_deref(),
-                    urgency.as_deref(),
-                    None,
-                    Some("email_enrichment"),
-                );
+                    signal_type: "relationship",
+                    signal_text: &format!("{}: {}", sender_display, email_subject),
+                    confidence: Some(0.5),
+                    sentiment: sentiment.as_deref(),
+                    urgency: urgency.as_deref(),
+                    detected_at: None,
+                    source: Some("email_enrichment"),
+                });
             }
         } // end !skip_direct
 
@@ -480,20 +500,20 @@ pub fn emit_enriched_email_signals(
                         emitted += 1;
 
                         // I633: Propagate to account email_signals for health scoring
-                        let _ = db.upsert_email_signal_with_source(
+                        let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                             email_id,
-                            sender.as_deref(),
-                            Some(entity_id),
-                            account_id,
-                            "account",
-                            "sentiment",
-                            &format!("{} sentiment via {}: {}", s, entity_id, ctx),
-                            Some(0.42),
-                            Some(s.as_str()),
-                            urgency.as_deref(),
-                            None,
-                            Some("email_enrichment"),
-                        );
+                            sender_email: sender.as_deref(),
+                            person_id: Some(entity_id),
+                            entity_id: account_id,
+                            entity_type: "account",
+                            signal_type: "sentiment",
+                            signal_text: &format!("{} tone from {}: {}", s, sender_display, email_subject),
+                            confidence: Some(0.42),
+                            sentiment: Some(s.as_str()),
+                            urgency: urgency.as_deref(),
+                            detected_at: None,
+                            source: Some("email_enrichment"),
+                        });
                     }
                 }
                 if urgency.as_deref() == Some("high") {
@@ -510,37 +530,37 @@ pub fn emit_enriched_email_signals(
                     emitted += 1;
 
                     // I633: Propagate to account email_signals for health scoring
-                    let _ = db.upsert_email_signal_with_source(
+                    let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                         email_id,
-                        sender.as_deref(),
-                        Some(entity_id),
-                        account_id,
-                        "account",
-                        "feedback",
-                        &format!("High urgency via {}: {}", entity_id, ctx),
-                        Some(0.48),
-                        sentiment.as_deref(),
-                        Some("high"),
-                        None,
-                        Some("email_enrichment"),
-                    );
+                        sender_email: sender.as_deref(),
+                        person_id: Some(entity_id),
+                        entity_id: account_id,
+                        entity_type: "account",
+                        signal_type: "feedback",
+                        signal_text: &format!("Urgent from {}: {}", sender_display, email_subject),
+                        confidence: Some(0.48),
+                        sentiment: sentiment.as_deref(),
+                        urgency: Some("high"),
+                        detected_at: None,
+                        source: Some("email_enrichment"),
+                    });
                 }
 
                 // I633: Baseline relationship signal for all propagated emails
-                let _ = db.upsert_email_signal_with_source(
+                let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                     email_id,
-                    sender.as_deref(),
-                    Some(entity_id),
-                    account_id,
-                    "account",
-                    "relationship",
-                    &format!("Email via {}: {}", entity_id, ctx),
-                    Some(0.4),
-                    sentiment.as_deref(),
-                    urgency.as_deref(),
-                    None,
-                    Some("email_enrichment"),
-                );
+                    sender_email: sender.as_deref(),
+                    person_id: Some(entity_id),
+                    entity_id: account_id,
+                    entity_type: "account",
+                    signal_type: "relationship",
+                    signal_text: &format!("{}: {}", sender_display, email_subject),
+                    confidence: Some(0.4),
+                    sentiment: sentiment.as_deref(),
+                    urgency: urgency.as_deref(),
+                    detected_at: None,
+                    source: Some("email_enrichment"),
+                });
             }
         }
     }

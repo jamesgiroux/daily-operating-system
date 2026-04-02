@@ -996,6 +996,15 @@ pub fn set_schedule(
     Ok(config)
 }
 
+/// Update notification preferences (toggles + quiet hours).
+#[tauri::command]
+pub fn set_notification_config(
+    config: crate::types::NotificationConfig,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Config, String> {
+    crate::services::settings::set_notification_config(config, &state)
+}
+
 /// Save user profile fields (name, company, title, focus, domains)
 #[tauri::command]
 pub async fn set_user_profile(

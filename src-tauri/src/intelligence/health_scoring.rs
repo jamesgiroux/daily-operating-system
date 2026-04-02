@@ -5,6 +5,7 @@
 
 use crate::db::types::DbAccount;
 use crate::db::ActionDb;
+use crate::signals::fusion;
 
 use super::io::{
     AccountHealth, DimensionScore, HealthDivergence, HealthSource, HealthTrend, OrgHealthData,
@@ -784,7 +785,28 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
         })
         .collect();
 
-    let avg_score = status_scores.iter().sum::<f64>() / status_scores.len() as f64;
+    // Temporal weighting: recent assessments matter more (30-day half-life)
+    let now = chrono::Utc::now();
+    let weights: Vec<f64> = champion_assessments
+        .iter()
+        .map(|(start_time, _, _)| {
+            let age_days = chrono::DateTime::parse_from_rfc3339(start_time)
+                .map(|d| (now - d.with_timezone(&chrono::Utc)).num_days().max(0) as f64)
+                .unwrap_or(0.0);
+            crate::signals::decay::decayed_weight(1.0, age_days, 30.0)
+        })
+        .collect();
+    let weight_sum: f64 = weights.iter().sum();
+    let avg_score = if weight_sum > 0.0 {
+        status_scores
+            .iter()
+            .zip(weights.iter())
+            .map(|(s, w)| s * w)
+            .sum::<f64>()
+            / weight_sum
+    } else {
+        status_scores.iter().sum::<f64>() / status_scores.len() as f64
+    };
 
     // Trend detection
     let trend = if status_scores.len() >= 2 {
@@ -803,11 +825,14 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
 
     // Build evidence with specific meeting dates and statuses
     let champion_name = champion.map(|(_, name)| name).unwrap_or("Champion");
-    let mut evidence = vec![format!(
-        "{champion_name}: {} across {} meetings",
-        champion_assessments[0].1,
-        champion_assessments.len()
-    )];
+    let mut evidence = vec![
+        format!(
+            "{champion_name}: {} across {} meetings",
+            champion_assessments[0].1,
+            champion_assessments.len()
+        ),
+        "Weighted by recency (30-day half-life)".to_string(),
+    ];
     for (date, status, ev) in &champion_assessments {
         let short_date = date.split('T').next().unwrap_or(date);
         let detail = ev.as_deref().map(|e| format!(" — {e}")).unwrap_or_default();
@@ -1064,16 +1089,12 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
         };
     }
 
-    let now = chrono::Utc::now();
     let mut weighted_sum = 0.0f64;
     let mut evidence = vec![format!("{} signals in 30d", signals.len())];
-    for (_, _, confidence, created_at) in &signals {
-        let age_days = chrono::DateTime::parse_from_rfc3339(created_at)
-            .map(|d| (now - d.with_timezone(&chrono::Utc)).num_days() as f64)
-            .unwrap_or(30.0);
-        // Time decay: newer signals weighted higher
-        let decay = (-age_days / 15.0).exp();
-        weighted_sum += confidence * decay;
+    for signal in &signals {
+        // Use canonical signal weight: tier weight * half-life decay * Bayesian reliability
+        let weight = fusion::compute_signal_weight(db, signal);
+        weighted_sum += signal.confidence * weight;
     }
 
     let base_momentum = (weighted_sum * 10.0).clamp(10.0, 100.0);
@@ -1131,7 +1152,9 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
             }
 
             let age_days = chrono::DateTime::parse_from_rfc3339(latest_created_at)
-                .map(|d| (now - d.with_timezone(&chrono::Utc)).num_days())
+                .map(|d| {
+                    (chrono::Utc::now() - d.with_timezone(&chrono::Utc)).num_days()
+                })
                 .unwrap_or(30);
             evidence.push(format!(
                 "Zendesk velocity signal {}d ago ({:.0}% confidence)",

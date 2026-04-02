@@ -1078,13 +1078,15 @@ pub fn accept_account_field_conflict(
         })
         .to_string();
         db.insert_intelligence_feedback(
-            &feedback_id,
-            account_id,
-            "account",
-            &feedback_key,
-            "positive",
-            None,
-            Some(&context),
+            &crate::db::intelligence_feedback::FeedbackInput {
+                id: &feedback_id,
+                entity_id: account_id,
+                entity_type: "account",
+                field: &feedback_key,
+                feedback_type: "positive",
+                previous_value: None,
+                context: Some(&context),
+            },
         )?;
 
         let accepted_signal_id =
@@ -1155,13 +1157,15 @@ pub fn dismiss_account_field_conflict(
     })
     .to_string();
     db.insert_intelligence_feedback(
-        &feedback_id,
-        account_id,
-        "account",
-        &feedback_key,
-        "negative",
-        None,
-        Some(&context),
+        &crate::db::intelligence_feedback::FeedbackInput {
+            id: &feedback_id,
+            entity_id: account_id,
+            entity_type: "account",
+            field: &feedback_key,
+            feedback_type: "negative",
+            previous_value: None,
+            context: Some(&context),
+        },
     )?;
 
     // I645: Record feedback event + suppression tombstone for rejected field conflict.
@@ -1802,6 +1806,35 @@ pub fn add_account_team_member(
             Some(&format!(
                 "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
                 person_id, role
+            )),
+            0.8,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+/// Replace all roles for a team member (single-select role change).
+pub fn set_team_member_role(
+    db: &ActionDb,
+    state: &crate::state::AppState,
+    account_id: &str,
+    person_id: &str,
+    new_role: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.set_team_member_role(account_id, person_id, new_role)
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            &state.signals.engine,
+            "account",
+            account_id,
+            "team_member_role_changed",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
+                person_id, new_role
             )),
             0.8,
         )
@@ -2540,8 +2573,25 @@ pub fn accept_stakeholder_suggestion(
                 | crate::db::people::PersonResolution::Created(p) => p.id,
                 crate::db::people::PersonResolution::FoundByName { person, .. } => person.id,
             }
+        } else if let Some(name) = suggestion.suggested_name.as_deref() {
+            // Name-only suggestion (no email): find by name or create with synthetic email
+            let config = state
+                .config
+                .read()
+                .map_err(|_| "Lock poisoned")?
+                .clone()
+                .ok_or("Config not loaded")?;
+            let user_domains = config.resolved_user_domains();
+            let resolution =
+                tx.find_or_create_person(None, name, None, "external", &user_domains)
+                    .map_err(|e| e.to_string())?;
+            match resolution {
+                crate::db::people::PersonResolution::FoundByEmail(p)
+                | crate::db::people::PersonResolution::Created(p) => p.id,
+                crate::db::people::PersonResolution::FoundByName { person, .. } => person.id,
+            }
         } else {
-            return Err("Cannot accept suggestion: no person_id and no email".to_string());
+            return Err("Cannot accept suggestion: no person_id, email, or name".to_string());
         };
 
         // Ensure stakeholder link exists

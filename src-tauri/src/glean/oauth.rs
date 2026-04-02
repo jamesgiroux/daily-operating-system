@@ -633,7 +633,9 @@ pub async fn run_glean_consent_flow(instance_url: &str) -> Result<GleanAuthResul
     let (email, name) = if let Some(ref userinfo_url) = endpoints.userinfo_endpoint {
         fetch_userinfo(&client, userinfo_url, &access_token).await
     } else {
-        // Try to extract from id_token if present
+        // Fallback: extract display-only claims from id_token (unverified).
+        // SAFETY: email/name are used only for UI labels, not authorization.
+        // See extract_from_id_token doc comment for full trust boundary rationale.
         extract_from_id_token(body.get("id_token"))
     };
 
@@ -704,7 +706,35 @@ async fn fetch_userinfo(
     (None, None)
 }
 
-/// Extract email and name from a JWT id_token (without verification — just for display).
+/// Extract email and name from a JWT id_token **without cryptographic signature
+/// verification**. The returned values are used exclusively for display purposes
+/// (UI status labels and log messages) — never for authorization decisions.
+///
+/// # Trust boundary
+///
+/// This function decodes the JWT payload via base64 without verifying the
+/// signature against the issuer's JWKS. This is acceptable here because:
+///
+/// 1. **The token was received over a direct TLS connection** from the Glean
+///    authorization server's token endpoint, authenticated via PKCE + state
+///    parameter. A network attacker who could tamper with this response could
+///    also substitute the access_token itself, so signature verification on
+///    the id_token alone would not raise the security bar.
+///
+/// 2. **The extracted claims are display-only.** The email and name are stored
+///    in the Keychain token blob and surfaced in `GleanAuthStatus::Authenticated`
+///    for the Settings UI. They are not used for access control, entitlement
+///    checks, or any authorization decision. The actual Glean API authorization
+///    is performed server-side using the access_token.
+///
+/// 3. **`fetch_userinfo` is preferred when available.** This function is only
+///    the fallback path when the authorization server metadata does not advertise
+///    a `userinfo_endpoint`.
+///
+/// If the email is ever needed for authorization (e.g., entitlement gating),
+/// this function MUST be replaced with full OIDC id_token validation:
+/// fetch the issuer's JWKS via the `jwks_uri` from AS metadata and verify the
+/// JWT signature, issuer, audience, and expiry before trusting any claims.
 fn extract_from_id_token(
     id_token_value: Option<&serde_json::Value>,
 ) -> (Option<String>, Option<String>) {
@@ -713,7 +743,7 @@ fn extract_from_id_token(
         return (None, None);
     };
 
-    // JWT format: header.payload.signature — decode the payload
+    // JWT format: header.payload.signature — decode the payload (unverified).
     let parts: Vec<&str> = token_str.split('.').collect();
     if parts.len() != 3 {
         return (None, None);

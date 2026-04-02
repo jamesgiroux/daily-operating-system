@@ -255,25 +255,16 @@ pub fn collect_meeting_outcomes_from_db(
 }
 
 /// Load meeting prep from DB sources (mechanical assembly).
+///
+/// ADR-0101: DB is the read model. We try `prep_context_json` (DB-native) first,
+/// then fall back to `prep_frozen_json` (cached export blob). This ensures user
+/// edits persisted to `prep_context_json` are always reflected, even if the frozen
+/// export hasn't been regenerated yet.
 pub fn load_meeting_prep_from_sources(
     _today_dir: &Path,
     meeting: &crate::db::DbMeeting,
 ) -> Option<crate::types::FullMeetingPrep> {
-    // Source 1: prep_frozen_json — mechanical assembly from entity intelligence (ADR-0086)
-    if let Some(ref frozen) = meeting.prep_frozen_json {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(frozen) {
-            if let Some(prep_val) = value.get("prep") {
-                if let Ok(prep) =
-                    serde_json::from_value::<crate::types::FullMeetingPrep>(prep_val.clone())
-                {
-                    return Some(prep);
-                }
-            }
-            if let Ok(prep) = serde_json::from_value::<crate::types::FullMeetingPrep>(value) {
-                return Some(prep);
-            }
-        }
-    }
+    // Check for rebuild in progress — return None so the UI shows a loading state
     let rebuild_in_progress = meeting.prep_frozen_json.is_none()
         && matches!(
             meeting.intelligence_state.as_deref(),
@@ -282,7 +273,8 @@ pub fn load_meeting_prep_from_sources(
     if rebuild_in_progress {
         return None;
     }
-    // Source 2: prep_context_json from DB (I513 — no disk prep file fallback)
+
+    // Source 1 (ADR-0101): prep_context_json — the DB-native read model
     if let Some(ref prep_json) = meeting.prep_context_json {
         // Try direct deserialization first
         if let Ok(prep) = serde_json::from_str::<crate::types::FullMeetingPrep>(prep_json) {
@@ -358,6 +350,23 @@ pub fn load_meeting_prep_from_sources(
                             .collect(),
                     );
                 }
+                return Some(prep);
+            }
+        }
+    }
+
+    // Source 2 (ADR-0101 fallback): prep_frozen_json — cached export blob.
+    // Used when prep_context_json is absent or not in FullMeetingPrep format.
+    if let Some(ref frozen) = meeting.prep_frozen_json {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(frozen) {
+            if let Some(prep_val) = value.get("prep") {
+                if let Ok(prep) =
+                    serde_json::from_value::<crate::types::FullMeetingPrep>(prep_val.clone())
+                {
+                    return Some(prep);
+                }
+            }
+            if let Ok(prep) = serde_json::from_value::<crate::types::FullMeetingPrep>(value) {
                 return Some(prep);
             }
         }
@@ -1678,6 +1687,193 @@ pub async fn unlink_meeting_entity_with_prep_queue(
     Ok(())
 }
 
+/// Persist classification-time entity links (I653).
+///
+/// Called at meeting creation time (calendar poll, prepare_today, prepare_week).
+/// At this point, prep does not exist yet, so no invalidation is needed.
+/// Additive: INSERT OR IGNORE preserves existing manual user links.
+/// No signal emission — classification is detection, not user mutation.
+pub fn persist_classification_entities(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    entities: &[(String, String)], // (entity_id, entity_type)
+) -> Result<usize, String> {
+    let mut linked = 0usize;
+    for (entity_id, entity_type) in entities {
+        match db.link_meeting_entity(meeting_id, entity_id, entity_type) {
+            Ok(_) => linked += 1,
+            Err(e) => {
+                // INSERT OR IGNORE — duplicates are expected, real errors are not
+                let msg = e.to_string();
+                if !msg.contains("UNIQUE constraint") {
+                    log::warn!(
+                        "persist_classification_entities: failed to link {} → {} ({}): {}",
+                        meeting_id,
+                        entity_id,
+                        entity_type,
+                        msg,
+                    );
+                }
+            }
+        }
+    }
+    if linked > 0 {
+        log::info!(
+            "persist_classification_entities: linked {} entities to meeting {}",
+            linked,
+            meeting_id,
+        );
+    }
+    Ok(linked)
+}
+
+/// Persist entity links from background auto-resolution, invalidating stale prep (I653).
+///
+/// Called by the background entity resolution trigger (event_trigger.rs) which runs
+/// minutes to hours after meeting creation. Prep may already exist and be stale.
+/// If prep exists: clears prep_frozen_json and enqueues re-generation.
+pub async fn persist_and_invalidate_entity_links(
+    state: &AppState,
+    meeting_id: &str,
+    entities: &[(String, String)], // (entity_id, entity_type)
+) -> Result<usize, String> {
+    if entities.is_empty() {
+        return Ok(0);
+    }
+
+    let meeting_id_s = meeting_id.to_string();
+    let entities_owned: Vec<(String, String)> = entities.to_vec();
+
+    let (linked, had_prep) = state
+        .db_write(move |db| {
+            let mut count = 0usize;
+            for (entity_id, entity_type) in &entities_owned {
+                match db.link_meeting_entity_if_absent(&meeting_id_s, entity_id, entity_type) {
+                    Ok(true) => count += 1,
+                    Ok(false) => {} // already linked
+                    Err(e) => {
+                        log::warn!(
+                            "persist_and_invalidate: failed to link {} → {}: {}",
+                            meeting_id_s,
+                            entity_id,
+                            e,
+                        );
+                    }
+                }
+            }
+
+            // Check if stale prep exists that needs invalidation
+            let prep_exists: bool = db
+                .conn_ref()
+                .query_row(
+                    "SELECT prep_frozen_json IS NOT NULL FROM meeting_prep WHERE meeting_id = ?1",
+                    rusqlite::params![meeting_id_s],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+
+            if prep_exists && count > 0 {
+                let _ = db.conn_ref().execute(
+                    "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                    rusqlite::params![meeting_id_s],
+                );
+            }
+
+            Ok::<(usize, bool), String>((count, prep_exists && count > 0))
+        })
+        .await?;
+
+    if had_prep {
+        state
+            .meeting_prep_queue
+            .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                meeting_id.to_string(),
+                crate::meeting_prep_queue::PrepPriority::Background,
+            ));
+        state.integrations.prep_queue_wake.notify_one();
+        log::info!(
+            "persist_and_invalidate: linked {} entities to {}, invalidated stale prep",
+            linked,
+            meeting_id,
+        );
+    } else if linked > 0 {
+        log::info!(
+            "persist_and_invalidate: linked {} entities to {} (no prep to invalidate)",
+            linked,
+            meeting_id,
+        );
+    }
+
+    Ok(linked)
+}
+
+/// Sync variant of persist_and_invalidate_entity_links for callers that
+/// already hold a DB handle (e.g., event_trigger background task).
+/// AC4 requires all entity linking to go through service functions.
+pub fn persist_and_invalidate_entity_links_sync(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    entities: &[(String, String)],
+    prep_queue: &crate::meeting_prep_queue::MeetingPrepQueue,
+    prep_queue_wake: &tokio::sync::Notify,
+) -> Result<usize, String> {
+    if entities.is_empty() {
+        return Ok(0);
+    }
+
+    let mut linked = 0usize;
+    for (entity_id, entity_type) in entities {
+        match db.link_meeting_entity_if_absent(meeting_id, entity_id, entity_type) {
+            Ok(true) => linked += 1,
+            Ok(false) => {}
+            Err(e) => {
+                log::warn!(
+                    "persist_and_invalidate_sync: failed to link {} → {}: {}",
+                    meeting_id,
+                    entity_id,
+                    e,
+                );
+            }
+        }
+    }
+
+    if linked > 0 {
+        let prep_exists: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT prep_frozen_json IS NOT NULL FROM meeting_prep WHERE meeting_id = ?1",
+                rusqlite::params![meeting_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if prep_exists {
+            let _ = db.conn_ref().execute(
+                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                rusqlite::params![meeting_id],
+            );
+            prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                meeting_id.to_string(),
+                crate::meeting_prep_queue::PrepPriority::Background,
+            ));
+            prep_queue_wake.notify_one();
+            log::info!(
+                "persist_and_invalidate_sync: linked {} entities to {}, invalidated stale prep",
+                linked,
+                meeting_id,
+            );
+        } else {
+            log::info!(
+                "persist_and_invalidate_sync: linked {} entities to {} (no prep to invalidate)",
+                linked,
+                meeting_id,
+            );
+        }
+    }
+
+    Ok(linked)
+}
+
 /// List available meeting prep files from the workspace.
 pub fn list_meeting_preps(state: &AppState) -> Result<Vec<String>, String> {
     let config = state
@@ -1869,7 +2065,11 @@ pub fn update_meeting_user_notes(
     Ok(())
 }
 
-/// Update a single field in a meeting's frozen prep JSON with signal emission.
+/// Update a single field in a meeting's prep with signal emission.
+///
+/// ADR-0101: User edits are written to both `prep_context_json` (the DB read model)
+/// and `prep_frozen_json` (the MCP export blob). This ensures edits survive
+/// re-assembly and are immediately visible through the DB-first read path.
 ///
 /// Supports field paths like:
 /// - `"meetingContext"` (simple key)
@@ -1888,13 +2088,16 @@ pub fn update_meeting_prep_field(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
-    let frozen = meeting
-        .prep_frozen_json
+    // ADR-0101: Read from prep_context_json (DB read model) first, fall back to
+    // prep_frozen_json. This matches the read priority in load_meeting_prep_from_sources.
+    let source_json = meeting
+        .prep_context_json
         .as_deref()
-        .ok_or_else(|| "No frozen prep JSON to update".to_string())?;
+        .or(meeting.prep_frozen_json.as_deref())
+        .ok_or_else(|| "No prep JSON to update".to_string())?;
 
     let mut json: serde_json::Value =
-        serde_json::from_str(frozen).map_err(|e| format!("Invalid prep JSON: {}", e))?;
+        serde_json::from_str(source_json).map_err(|e| format!("Invalid prep JSON: {}", e))?;
 
     // Parse field_path and apply update
     apply_field_path_update(&mut json, field_path, value)?;
@@ -1910,6 +2113,11 @@ pub fn update_meeting_prep_field(
         .map_err(|e| e.to_string())?;
 
     db.with_transaction(|tx| {
+        // ADR-0101: Write to both prep_context_json (DB read model) and
+        // prep_frozen_json (MCP export). prep_context_json is the primary
+        // read source; prep_frozen_json is kept in sync for MCP tools.
+        tx.update_meeting_prep_context(meeting_id, &updated)
+            .map_err(|e| e.to_string())?;
         tx.update_prep_frozen_json(meeting_id, &updated)
             .map_err(|e| e.to_string())?;
 
@@ -2700,6 +2908,7 @@ pub async fn reprocess_meeting_transcript(
         is_all_day: false,
         account: None, // Resolved by transcript pipeline from meeting_entities
         linked_entities: None,
+        classified_entities: None,
     };
 
     // Re-run the full pipeline via the existing attach path

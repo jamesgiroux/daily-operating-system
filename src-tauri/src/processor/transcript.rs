@@ -86,39 +86,12 @@ struct TranscriptRoleReviewPayload {
     champion_health: Option<ChampionHealth>,
 }
 
-#[allow(clippy::too_many_arguments)]
 fn emit_transcript_progress(
     app_handle: Option<&AppHandle>,
-    meeting_id: &str,
-    phase: &str,
-    completed: u32,
-    summary_ready: bool,
-    outcomes_ready: bool,
-    post_intel_ready: bool,
-    actions_count: usize,
-    wins_count: usize,
-    risks_count: usize,
-    decisions_count: usize,
-    commitments_count: usize,
+    payload: TranscriptProgressPayload,
 ) {
     if let Some(app_handle) = app_handle {
-        let _ = app_handle.emit(
-            "transcript-progress",
-            TranscriptProgressPayload {
-                meeting_id: meeting_id.to_string(),
-                phase: phase.to_string(),
-                completed,
-                total: 3,
-                summary_ready,
-                outcomes_ready,
-                post_intel_ready,
-                actions_count,
-                wins_count,
-                risks_count,
-                decisions_count,
-                commitments_count,
-            },
-        );
+        let _ = app_handle.emit("transcript-progress", payload);
     }
 }
 
@@ -375,17 +348,20 @@ pub fn process_transcript_with_kind(
     }
     emit_transcript_progress(
         app_handle,
-        &meeting.id,
-        "phase1",
-        1,
-        !summary.trim().is_empty(),
-        false,
-        false,
-        extracted_actions.len(),
-        0,
-        0,
-        0,
-        0,
+        TranscriptProgressPayload {
+            meeting_id: meeting.id.clone(),
+            phase: "phase1".to_string(),
+            completed: 1,
+            total: 3,
+            summary_ready: !summary.trim().is_empty(),
+            outcomes_ready: false,
+            post_intel_ready: false,
+            actions_count: extracted_actions.len(),
+            wins_count: 0,
+            risks_count: 0,
+            decisions_count: 0,
+            commitments_count: 0,
+        },
     );
 
     // ── Phase 2: Intelligence extraction (wins, risks, decisions, sentiment, champion) ──
@@ -459,14 +435,16 @@ pub fn process_transcript_with_kind(
         if !wins.is_empty() || !risks.is_empty() || !decisions.is_empty() {
             if let Err(e) = crate::services::mutations::persist_transcript_outcomes(
                 db,
-                entity_type,
-                entity_id,
-                &meeting.id,
-                &meeting.title,
-                meeting.account.as_deref(),
-                &wins,
-                &risks,
-                &decisions,
+                &crate::services::mutations::TranscriptOutcomesParams {
+                    entity_type,
+                    entity_id,
+                    meeting_id: &meeting.id,
+                    meeting_title: &meeting.title,
+                    account_id: meeting.account.as_deref(),
+                    wins: &wins,
+                    risks: &risks,
+                    decisions: &decisions,
+                },
             ) {
                 log::warn!(
                     "Failed to persist transcript captures/outcomes signal transactionally: {}",
@@ -497,17 +475,20 @@ pub fn process_transcript_with_kind(
     }
     emit_transcript_progress(
         app_handle,
-        &meeting.id,
-        "phase2",
-        2,
-        !summary.trim().is_empty(),
-        true,
-        false,
-        extracted_actions.len(),
-        wins.len(),
-        risks.len(),
-        decisions.len(),
-        0,
+        TranscriptProgressPayload {
+            meeting_id: meeting.id.clone(),
+            phase: "phase2".to_string(),
+            completed: 2,
+            total: 3,
+            summary_ready: !summary.trim().is_empty(),
+            outcomes_ready: true,
+            post_intel_ready: false,
+            actions_count: extracted_actions.len(),
+            wins_count: wins.len(),
+            risks_count: risks.len(),
+            decisions_count: decisions.len(),
+            commitments_count: 0,
+        },
     );
 
     // ── Phase 3: Deep analysis (dynamics, commitments, role changes) ──
@@ -561,13 +542,15 @@ pub fn process_transcript_with_kind(
         meeting,
         db,
         effective_config,
-        &summary,
-        &discussion,
-        analysis.as_deref(),
-        &wins,
-        &risks,
-        &decisions,
-        champion_health.as_ref(),
+        &RoleReviewInput {
+            summary: &summary,
+            discussion: &discussion,
+            analysis: analysis.as_deref(),
+            wins: &wins,
+            risks: &risks,
+            decisions: &decisions,
+            champion_health: champion_health.as_ref(),
+        },
     ) {
         summary = reviewed.summary;
         discussion = reviewed.discussion;
@@ -671,28 +654,33 @@ pub fn process_transcript_with_kind(
     if let Some(db) = db {
         persist_enriched_transcript_data(
             db,
-            &meeting.id,
-            &meeting.title,
-            meeting.account.as_deref(),
-            interaction_dynamics.as_ref(),
-            None, // champion_health already persisted in Phase 2
-            &role_changes,
-            &commitments,
+            &EnrichedTranscriptData {
+                meeting_id: &meeting.id,
+                meeting_title: &meeting.title,
+                account_id: meeting.account.as_deref(),
+                interaction_dynamics: interaction_dynamics.as_ref(),
+                champion_health: None, // champion_health already persisted in Phase 2
+                role_changes: &role_changes,
+                commitments: &commitments,
+            },
         );
     }
     emit_transcript_progress(
         app_handle,
-        &meeting.id,
-        "phase3",
-        3,
-        !summary.trim().is_empty(),
-        true,
-        true,
-        extracted_actions.len(),
-        wins.len(),
-        risks.len(),
-        decisions.len(),
-        commitments.len(),
+        TranscriptProgressPayload {
+            meeting_id: meeting.id.clone(),
+            phase: "phase3".to_string(),
+            completed: 3,
+            total: 3,
+            summary_ready: !summary.trim().is_empty(),
+            outcomes_ready: true,
+            post_intel_ready: true,
+            actions_count: extracted_actions.len(),
+            wins_count: wins.len(),
+            risks_count: risks.len(),
+            decisions_count: decisions.len(),
+            commitments_count: commitments.len(),
+        },
     );
 
     // Recompute health after transcript phases write champion_health + interaction_dynamics
@@ -774,17 +762,18 @@ pub fn process_transcript_with_kind(
     if let Some(db) = db {
         generate_and_persist_meeting_record(
             workspace,
-            meeting,
-            &summary,
-            &destination,
-            &wins,
-            &risks,
-            &decisions,
-            &extracted_actions,
-            &commitments,
-            interaction_dynamics.as_ref(),
-            champion_health.as_ref(),
-            db,
+            &MeetingRecordData {
+                meeting,
+                summary: &summary,
+                wins: &wins,
+                risks: &risks,
+                decisions: &decisions,
+                actions: &extracted_actions,
+                commitments: &commitments,
+                interaction_dynamics: interaction_dynamics.as_ref(),
+                champion_health: champion_health.as_ref(),
+                db,
+            },
         );
     }
 
@@ -936,19 +925,35 @@ fn build_meeting_thread_markdown(
     Some(md)
 }
 
+/// ADR-0101: Reads prep via `load_meeting_prep_from_sources` (DB-first) instead
+/// of parsing `prep_frozen_json` directly.
 fn build_prediction_scorecard_markdown(
     meeting: &CalendarEvent,
     db: &crate::db::ActionDb,
 ) -> Option<String> {
     let meeting_row = db.get_meeting_by_id(&meeting.id).ok().flatten()?;
-    let frozen_json = meeting_row.prep_frozen_json?;
     let captures = db.get_enriched_captures(&meeting.id).ok()?;
     if captures.is_empty() {
         return None;
     }
 
-    let prep_risks = crate::intelligence::predictions::extract_prep_risks(&frozen_json);
-    let prep_wins = crate::intelligence::predictions::extract_prep_wins(&frozen_json);
+    // ADR-0101: Try DB-first struct extraction, fall back to frozen JSON
+    let today_dir = std::path::PathBuf::new();
+    let (prep_risks, prep_wins) = if let Some(ref prep) =
+        crate::services::meetings::load_meeting_prep_from_sources(&today_dir, &meeting_row)
+    {
+        (
+            crate::intelligence::predictions::extract_prep_risks_from_struct(prep),
+            crate::intelligence::predictions::extract_prep_wins_from_struct(prep),
+        )
+    } else if let Some(ref frozen_json) = meeting_row.prep_frozen_json {
+        (
+            crate::intelligence::predictions::extract_prep_risks(frozen_json),
+            crate::intelligence::predictions::extract_prep_wins(frozen_json),
+        )
+    } else {
+        return None;
+    };
     if prep_risks.is_empty() && prep_wins.is_empty() {
         return None;
     }
@@ -1334,36 +1339,18 @@ fn compute_meeting_record_path(
 }
 
 /// I636: Generate, write, persist, and index the meeting record.
-#[allow(clippy::too_many_arguments)]
 fn generate_and_persist_meeting_record(
     workspace: &Path,
-    meeting: &CalendarEvent,
-    summary: &str,
-    _transcript_destination: &Path,
-    wins: &[String],
-    risks: &[String],
-    decisions: &[String],
-    actions: &[CapturedAction],
-    commitments: &[TranscriptCommitment],
-    interaction_dynamics: Option<&InteractionDynamics>,
-    champion_health: Option<&ChampionHealth>,
-    db: &crate::db::ActionDb,
+    data: &MeetingRecordData<'_>,
 ) {
-    let record_path = compute_meeting_record_path(workspace, meeting, db);
+    let record_path = compute_meeting_record_path(workspace, data.meeting, data.db);
+
+    let meeting = data.meeting;
+    let summary = data.summary;
+    let db = data.db;
 
     // Generate markdown content
-    let markdown = generate_meeting_record_markdown(&MeetingRecordData {
-        meeting,
-        summary,
-        wins,
-        risks,
-        decisions,
-        actions,
-        commitments,
-        interaction_dynamics,
-        champion_health,
-        db,
-    });
+    let markdown = generate_meeting_record_markdown(data);
 
     // Create directory and write file
     if let Some(parent) = record_path.parent() {
@@ -1522,19 +1509,23 @@ fn resolve_account_id(db: &ActionDb, candidate: &str) -> Option<String> {
         })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Phase 2 extraction data to review for role attribution accuracy.
+struct RoleReviewInput<'a> {
+    summary: &'a str,
+    discussion: &'a [String],
+    analysis: Option<&'a str>,
+    wins: &'a [String],
+    risks: &'a [String],
+    decisions: &'a [String],
+    champion_health: Option<&'a ChampionHealth>,
+}
+
 fn review_transcript_role_attribution(
     workspace: &Path,
     meeting: &CalendarEvent,
     db: Option<&ActionDb>,
     ai_config: &AiModelConfig,
-    summary: &str,
-    discussion: &[String],
-    analysis: Option<&str>,
-    wins: &[String],
-    risks: &[String],
-    decisions: &[String],
-    champion_health: Option<&ChampionHealth>,
+    input: &RoleReviewInput<'_>,
 ) -> Option<TranscriptRoleReviewPayload> {
     let config = crate::state::load_config().ok()?;
     let user_domains = config.resolved_user_domains();
@@ -1554,13 +1545,13 @@ fn review_transcript_role_attribution(
     }
 
     let payload = TranscriptRoleReviewPayload {
-        summary: summary.to_string(),
-        discussion: discussion.to_vec(),
-        analysis: analysis.map(|s| s.to_string()),
-        wins: wins.to_vec(),
-        risks: risks.to_vec(),
-        decisions: decisions.to_vec(),
-        champion_health: champion_health.cloned(),
+        summary: input.summary.to_string(),
+        discussion: input.discussion.to_vec(),
+        analysis: input.analysis.map(|s| s.to_string()),
+        wins: input.wins.to_vec(),
+        risks: input.risks.to_vec(),
+        decisions: input.decisions.to_vec(),
+        champion_health: input.champion_health.cloned(),
     };
 
     let context_json = serde_json::json!({
@@ -1861,18 +1852,29 @@ fn extract_transcript_actions(
 /// Persist I555 enriched transcript data (interaction dynamics, champion health,
 /// role changes, commitments) to their respective tables.
 ///
+/// Phase 3 enrichment data to persist.
+struct EnrichedTranscriptData<'a> {
+    meeting_id: &'a str,
+    meeting_title: &'a str,
+    account_id: Option<&'a str>,
+    interaction_dynamics: Option<&'a InteractionDynamics>,
+    champion_health: Option<&'a ChampionHealth>,
+    role_changes: &'a [RoleChange],
+    commitments: &'a [TranscriptCommitment],
+}
+
 /// Backwards-compatible: silently skips any block that wasn't parsed (None/empty).
-#[allow(clippy::too_many_arguments)]
 fn persist_enriched_transcript_data(
     db: &crate::db::ActionDb,
-    meeting_id: &str,
-    meeting_title: &str,
-    account_id: Option<&str>,
-    interaction_dynamics: Option<&InteractionDynamics>,
-    champion_health: Option<&ChampionHealth>,
-    role_changes: &[RoleChange],
-    commitments: &[TranscriptCommitment],
+    data: &EnrichedTranscriptData<'_>,
 ) {
+    let meeting_id = data.meeting_id;
+    let meeting_title = data.meeting_title;
+    let account_id = data.account_id;
+    let interaction_dynamics = data.interaction_dynamics;
+    let champion_health = data.champion_health;
+    let role_changes = data.role_changes;
+    let commitments = data.commitments;
     // Persist interaction dynamics
     if let Some(dynamics) = interaction_dynamics {
         let db_dynamics = convert_dynamics_to_db(meeting_id, dynamics);
@@ -1960,16 +1962,16 @@ fn persist_enriched_transcript_data(
             // flow into intel context and meeting prep via existing queries
             // DIRECT_DB_ALLOWED: Transcript extraction dual-writes commitments into
             // captures so existing prep/intelligence queries can consume them immediately.
-            if let Err(e) = db.insert_capture_enriched(
+            if let Err(e) = db.insert_capture_enriched(&crate::db::signals::CaptureInput {
                 meeting_id,
                 meeting_title,
                 account_id,
-                "commitment",
-                &commitment.commitment,
-                None,
-                None,
-                commitment.success_criteria.as_deref(),
-            ) {
+                capture_type: "commitment",
+                content: &commitment.commitment,
+                sub_type: None,
+                urgency: None,
+                evidence_quote: commitment.success_criteria.as_deref(),
+            }) {
                 log::warn!("Failed to insert commitment capture: {}", e);
             }
         }
@@ -3377,6 +3379,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         }
     }
 
@@ -3684,6 +3687,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         };
 
         assert!(build_prediction_scorecard_markdown(&meeting, &db).is_none());
@@ -3714,16 +3718,16 @@ mod tests {
             Some(prep_frozen_json),
         );
         db.upsert_meeting(&meeting_row).expect("upsert meeting row");
-        db.insert_capture_enriched(
-            "mtg-score",
-            "Acme QBR",
-            Some("acc-scorecard"),
-            "risk",
-            "Security review delays signature this week",
-            None,
-            Some("red"),
-            Some("Procurement is blocked on security."),
-        )
+        db.insert_capture_enriched(&crate::db::signals::CaptureInput {
+            meeting_id: "mtg-score",
+            meeting_title: "Acme QBR",
+            account_id: Some("acc-scorecard"),
+            capture_type: "risk",
+            content: "Security review delays signature this week",
+            sub_type: None,
+            urgency: Some("red"),
+            evidence_quote: Some("Procurement is blocked on security."),
+        })
         .expect("insert confirmed risk capture");
 
         let meeting = CalendarEvent {
@@ -3736,6 +3740,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         };
 
         let markdown = build_prediction_scorecard_markdown(&meeting, &db)
@@ -3762,6 +3767,7 @@ mod tests {
                 name: "Acme Corp".to_string(),
                 entity_type: "account".to_string(),
             }]),
+            classified_entities: None,
         };
         let wins = vec!["Expansion budget approved".to_string()];
         let risks = vec!["Legal review is blocking procurement".to_string()];
@@ -3897,6 +3903,7 @@ mod tests {
                 name: "Platform Migration".to_string(),
                 entity_type: "project".to_string(),
             }]),
+        classified_entities: None,
         };
         let project_meeting = CalendarEvent {
             id: "mtg-project-route".to_string(),
@@ -3912,6 +3919,7 @@ mod tests {
                 name: "Platform Migration".to_string(),
                 entity_type: "project".to_string(),
             }]),
+        classified_entities: None,
         };
         let person_meeting = CalendarEvent {
             id: "mtg-person-route".to_string(),
@@ -3927,6 +3935,7 @@ mod tests {
                 name: "Pat Kim".to_string(),
                 entity_type: "person".to_string(),
             }]),
+        classified_entities: None,
         };
         let archive_meeting = CalendarEvent {
             id: "mtg-archive-route".to_string(),
@@ -3938,6 +3947,7 @@ mod tests {
             attendees: vec![],
             is_all_day: false,
             linked_entities: None,
+            classified_entities: None,
         };
 
         let account_path = compute_meeting_record_path(workspace, &account_meeting, &db);

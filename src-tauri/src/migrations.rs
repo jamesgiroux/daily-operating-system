@@ -733,16 +733,37 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
                 let msg = e.to_string();
                 // SQLite DDL statements like ALTER TABLE ADD COLUMN and RENAME COLUMN
                 // are not idempotent (no IF NOT EXISTS / IF EXISTS variants).
-                // Tolerate these specific benign errors ONLY for single-statement
-                // ALTER TABLE migrations (no BEGIN/COMMIT transactions):
+                // Tolerate these specific benign errors ONLY for true single-statement
+                // ALTER TABLE migrations:
                 // - "duplicate column name": ADD COLUMN when column already exists
                 // - "no such column": RENAME COLUMN when column was already renamed
-                // Migrations with explicit transactions must NOT be tolerated — a
-                // swallowed error leaves the transaction open, corrupting later migrations.
-                let is_single_alter = !migration.sql.contains("BEGIN");
-                let is_benign =
-                    msg.contains("duplicate column name") || msg.contains("no such column");
-                if is_single_alter && is_benign {
+                //
+                // Detection: check that every non-empty, non-comment statement in
+                // the migration is an ALTER TABLE. Checking `!contains("BEGIN")`
+                // is insufficient — multi-statement non-transactional migrations
+                // (e.g. 023 with CREATE/INSERT/DROP/ALTER) would pass that check,
+                // silently swallowing real data-copy failures.
+                let is_single_alter = migration
+                    .sql
+                    .split(';')
+                    .map(|s| {
+                        s.lines()
+                            .filter(|l| !l.trim_start().starts_with("--"))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    })
+                    .map(|s| s.trim().to_uppercase())
+                    .filter(|s| !s.is_empty())
+                    .all(|s| s.starts_with("ALTER"));
+                // "duplicate column name" is always safe: can only come from
+                // ALTER TABLE ADD COLUMN when the column already exists.
+                // "no such column" is only safe for pure ALTER TABLE migrations
+                // (PR #11: multi-statement migrations with CREATE/INSERT/DROP
+                // must not silently swallow this error).
+                let is_dup_column = msg.contains("duplicate column name");
+                let is_benign_alter =
+                    is_single_alter && msg.contains("no such column");
+                if is_dup_column || is_benign_alter {
                     log::warn!(
                         "Migration v{}: benign schema conflict ({}), continuing",
                         migration.version,
