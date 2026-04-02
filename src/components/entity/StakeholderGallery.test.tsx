@@ -3,7 +3,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StakeholderGallery } from "./StakeholderGallery";
-import type { StakeholderInsight, Person, AccountTeamMember, EntityIntelligence, StakeholderFull } from "@/types";
+import type { Person, AccountTeamMember, EntityIntelligence, StakeholderFull } from "@/types";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
@@ -64,15 +64,6 @@ vi.mock("./TeamRoleSelector", () => ({
 
 // ── Test Data ──────────────────────────────────────────────────────────────────
 
-function makeStakeholder(overrides: Partial<StakeholderInsight> = {}): StakeholderInsight {
-  return {
-    name: "Jane Champion",
-    role: "VP Engineering",
-    assessment: "Strong champion who drives adoption across the org.",
-    engagement: "active",
-    ...overrides,
-  };
-}
 
 function makeStakeholderFull(overrides: Partial<StakeholderFull> = {}): StakeholderFull {
   return {
@@ -89,20 +80,6 @@ function makeStakeholderFull(overrides: Partial<StakeholderFull> = {}): Stakehol
   };
 }
 
-function makeMinimalIntelligence(overrides: Partial<EntityIntelligence> = {}): EntityIntelligence {
-  return {
-    version: 1,
-    entityId: "acct-1",
-    entityType: "account",
-    enrichedAt: "2026-03-20T00:00:00Z",
-    sourceFileCount: 3,
-    sourceManifest: [],
-    risks: [],
-    recentWins: [],
-    stakeholderInsights: [],
-    ...overrides,
-  };
-}
 
 const baseProps = {
   intelligence: null as EntityIntelligence | null,
