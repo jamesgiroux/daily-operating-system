@@ -2166,8 +2166,14 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
     let mut seen_topics: HashSet<String> = HashSet::new();
     const MAX_ITEMS: usize = 7;
 
-    // 1. Calendar agenda first (I188) — enrich around user/organizer agenda.
-    for item in extract_calendar_agenda_items(prep).iter().take(MAX_ITEMS) {
+    let meeting_type = prep
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("external");
+
+    // 1. Calendar agenda always comes first — enrich around user/organizer agenda.
+    let calendar_items = extract_calendar_agenda_items(prep);
+    for item in calendar_items.iter().take(MAX_ITEMS) {
         push_unique_agenda_item(
             &mut agenda,
             &mut seen_topics,
@@ -2178,7 +2184,86 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
         );
     }
 
-    // 2. Overdue items next (most urgent operational follow-up)
+    // If no calendar agenda exists and meeting type is known, add a purpose framing item.
+    if calendar_items.is_empty() {
+        if let Some((topic, why)) = meeting_type_framing(meeting_type) {
+            push_unique_agenda_item(
+                &mut agenda,
+                &mut seen_topics,
+                topic,
+                Some(why),
+                "meeting_type",
+                MAX_ITEMS,
+            );
+        }
+    }
+
+    // Remaining items vary by meeting type.
+    match meeting_type {
+        "training" => {
+            // Training meetings are about learning — skip account intelligence.
+        }
+
+        "internal" | "team_sync" | "all_hands" => {
+            // Internal meetings: overdue action items only, no entity risks/wins.
+            push_overdue_open_items(&mut agenda, &mut seen_topics, prep, MAX_ITEMS);
+        }
+
+        "qbr" => {
+            // QBRs are strategic: more risks, strategic programs, overdue-only actions.
+            push_risks(&mut agenda, &mut seen_topics, prep, 3, MAX_ITEMS);
+            push_strategic_programs(&mut agenda, &mut seen_topics, prep, MAX_ITEMS);
+            push_overdue_open_items(&mut agenda, &mut seen_topics, prep, MAX_ITEMS);
+            push_questions(&mut agenda, &mut seen_topics, prep, 2, MAX_ITEMS);
+        }
+
+        "one_on_one" => {
+            // 1:1s are operational: action items first, then questions, one risk max.
+            push_open_items_all(&mut agenda, &mut seen_topics, prep, 3, MAX_ITEMS);
+            push_questions(&mut agenda, &mut seen_topics, prep, 2, MAX_ITEMS);
+            push_risks(&mut agenda, &mut seen_topics, prep, 1, MAX_ITEMS);
+        }
+
+        _ => {
+            // Default (customer, external, partnership, unknown): existing priority order.
+            push_overdue_open_items(&mut agenda, &mut seen_topics, prep, MAX_ITEMS);
+            push_risks(&mut agenda, &mut seen_topics, prep, 2, MAX_ITEMS);
+            push_questions(&mut agenda, &mut seen_topics, prep, 2, MAX_ITEMS);
+            push_non_overdue_open_items(&mut agenda, &mut seen_topics, prep, 4, MAX_ITEMS);
+
+            // Wins are fallback only when agenda is still sparse.
+            if agenda.len() < 3 {
+                push_wins(&mut agenda, &mut seen_topics, prep, MAX_ITEMS);
+            }
+        }
+    }
+
+    // Truncate to max
+    agenda.truncate(MAX_ITEMS);
+    agenda
+}
+
+/// Returns a framing topic and reason for known meeting types when no calendar
+/// agenda is present, giving the user context about the meeting purpose.
+fn meeting_type_framing(meeting_type: &str) -> Option<(&'static str, &'static str)> {
+    match meeting_type {
+        "qbr" => Some(("Quarterly Business Review", "Strategic review meeting")),
+        "training" => Some(("Training Session", "Learning-focused meeting")),
+        "one_on_one" => Some(("1:1 Check-in", "Operational check-in")),
+        "team_sync" => Some(("Team Sync", "Internal team alignment")),
+        "all_hands" => Some(("All Hands", "Company-wide update")),
+        "internal" => Some(("Internal Meeting", "Internal discussion")),
+        "partnership" => Some(("Partnership Discussion", "Partner alignment meeting")),
+        _ => None,
+    }
+}
+
+fn push_overdue_open_items(
+    agenda: &mut Vec<Value>,
+    seen_topics: &mut HashSet<String>,
+    prep: &Value,
+    max_items: usize,
+) {
     if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
         for item in items {
             let is_overdue = item
@@ -2191,52 +2276,27 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown item");
                 push_unique_agenda_item(
-                    &mut agenda,
-                    &mut seen_topics,
+                    agenda,
+                    seen_topics,
                     &format!("Follow up: {}", title),
                     Some("Overdue — needs resolution"),
                     "open_item",
-                    MAX_ITEMS,
+                    max_items,
                 );
             }
         }
     }
+}
 
-    // 3. Risks (limit 2)
-    if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
-        for risk in risks.iter().take(2) {
-            if let Some(text) = risk.as_str() {
-                push_unique_agenda_item(
-                    &mut agenda,
-                    &mut seen_topics,
-                    text,
-                    None,
-                    "risk",
-                    MAX_ITEMS,
-                );
-            }
-        }
-    }
-
-    // 4. Questions (limit 2)
-    if let Some(questions) = prep.get("questions").and_then(|v| v.as_array()) {
-        for q in questions.iter().take(2) {
-            if let Some(text) = q.as_str() {
-                push_unique_agenda_item(
-                    &mut agenda,
-                    &mut seen_topics,
-                    text,
-                    None,
-                    "question",
-                    MAX_ITEMS,
-                );
-            }
-        }
-    }
-
-    // 5. Non-overdue open items (limit 2)
+fn push_non_overdue_open_items(
+    agenda: &mut Vec<Value>,
+    seen_topics: &mut HashSet<String>,
+    prep: &Value,
+    limit: usize,
+    max_items: usize,
+) {
     if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
-        for item in items.iter().take(4) {
+        for item in items.iter().take(limit) {
             let is_overdue = item
                 .get("isOverdue")
                 .and_then(|v| v.as_bool())
@@ -2247,45 +2307,163 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown item");
                 push_unique_agenda_item(
-                    &mut agenda,
-                    &mut seen_topics,
+                    agenda,
+                    seen_topics,
                     title,
                     None,
                     "open_item",
-                    MAX_ITEMS,
+                    max_items,
                 );
             }
         }
     }
+}
 
-    // 6. Wins are fallback only when agenda is still sparse.
-    if agenda.len() < 3 {
-        if let Some(wins) = prep
-            .get("recentWins")
-            .and_then(|v| v.as_array())
-            .or_else(|| prep.get("talkingPoints").and_then(|v| v.as_array()))
-        {
-            for win in wins.iter().take(3) {
-                if let Some(text) = win.as_str() {
-                    let Some(clean_win) = sanitize_recent_win_line(text) else {
-                        continue;
-                    };
-                    push_unique_agenda_item(
-                        &mut agenda,
-                        &mut seen_topics,
-                        &clean_win,
-                        None,
-                        "talking_point",
-                        MAX_ITEMS,
-                    );
-                }
+/// Push all open items (overdue first, then non-overdue) up to `limit` total.
+fn push_open_items_all(
+    agenda: &mut Vec<Value>,
+    seen_topics: &mut HashSet<String>,
+    prep: &Value,
+    limit: usize,
+    max_items: usize,
+) {
+    if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
+        let mut count = 0usize;
+        // Overdue items first
+        for item in items {
+            if count >= limit {
+                break;
+            }
+            let is_overdue = item
+                .get("isOverdue")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if is_overdue {
+                let title = item
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown item");
+                push_unique_agenda_item(
+                    agenda,
+                    seen_topics,
+                    &format!("Follow up: {}", title),
+                    Some("Overdue — needs resolution"),
+                    "open_item",
+                    max_items,
+                );
+                count += 1;
+            }
+        }
+        // Then non-overdue
+        for item in items {
+            if count >= limit {
+                break;
+            }
+            let is_overdue = item
+                .get("isOverdue")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if !is_overdue {
+                let title = item
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown item");
+                push_unique_agenda_item(
+                    agenda,
+                    seen_topics,
+                    title,
+                    None,
+                    "open_item",
+                    max_items,
+                );
+                count += 1;
             }
         }
     }
+}
 
-    // Truncate to max
-    agenda.truncate(MAX_ITEMS);
-    agenda
+fn push_risks(
+    agenda: &mut Vec<Value>,
+    seen_topics: &mut HashSet<String>,
+    prep: &Value,
+    limit: usize,
+    max_items: usize,
+) {
+    if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
+        for risk in risks.iter().take(limit) {
+            if let Some(text) = risk.as_str() {
+                push_unique_agenda_item(agenda, seen_topics, text, None, "risk", max_items);
+            }
+        }
+    }
+}
+
+fn push_questions(
+    agenda: &mut Vec<Value>,
+    seen_topics: &mut HashSet<String>,
+    prep: &Value,
+    limit: usize,
+    max_items: usize,
+) {
+    if let Some(questions) = prep.get("questions").and_then(|v| v.as_array()) {
+        for q in questions.iter().take(limit) {
+            if let Some(text) = q.as_str() {
+                push_unique_agenda_item(agenda, seen_topics, text, None, "question", max_items);
+            }
+        }
+    }
+}
+
+fn push_strategic_programs(
+    agenda: &mut Vec<Value>,
+    seen_topics: &mut HashSet<String>,
+    prep: &Value,
+    max_items: usize,
+) {
+    if let Some(programs) = prep.get("strategicPrograms").and_then(|v| v.as_array()) {
+        for prog in programs.iter().take(2) {
+            let Some(name) = prog.get("name").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            push_unique_agenda_item(
+                agenda,
+                seen_topics,
+                &format!("Strategic program: {}", name),
+                None,
+                "strategic_program",
+                max_items,
+            );
+        }
+    }
+}
+
+fn push_wins(
+    agenda: &mut Vec<Value>,
+    seen_topics: &mut HashSet<String>,
+    prep: &Value,
+    max_items: usize,
+) {
+    if let Some(wins) = prep
+        .get("recentWins")
+        .and_then(|v| v.as_array())
+        .or_else(|| prep.get("talkingPoints").and_then(|v| v.as_array()))
+    {
+        for win in wins.iter().take(3) {
+            if let Some(text) = win.as_str() {
+                let Some(clean_win) = sanitize_recent_win_line(text) else {
+                    continue;
+                };
+                push_unique_agenda_item(
+                    agenda,
+                    seen_topics,
+                    &clean_win,
+                    None,
+                    "talking_point",
+                    max_items,
+                );
+            }
+        }
+    }
 }
 
 /// Build and write emails.json from directive data.
@@ -3833,6 +4011,266 @@ pub fn enrich_preps(
         prep_files.len()
     );
     Ok(())
+}
+
+/// AI-enrich a single meeting's prep JSON via PTY-spawned Claude.
+///
+/// Used by the MeetingPrepQueue (Track 2) to add AI-refined agenda items
+/// with "why" rationale to meetings that would otherwise only have
+/// mechanical agenda output.
+///
+/// Returns the enriched prep JSON on success, or the original on failure.
+/// Never panics — graceful degradation is the contract.
+pub fn enrich_single_prep(
+    prep: &Value,
+    pty: &crate::pty::PtyManager,
+    workspace: &Path,
+) -> Value {
+    let meeting_id = prep
+        .get("meetingId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let title = prep
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Meeting");
+
+    // Build context from prep ingredients
+    let mut prep_context = String::new();
+    prep_context.push_str(&format!(
+        "--- Meeting: {} (ID: {}) ---\n",
+        title, meeting_id
+    ));
+
+    // Meeting type context (QBR vs check-in vs training)
+    if let Some(meeting_type) = prep.get("meetingType").and_then(|v| v.as_str()) {
+        if !meeting_type.is_empty() {
+            prep_context.push_str(&format!("Meeting Type: {}\n", meeting_type));
+        }
+    }
+
+    // Intelligence summary (what matters right now for this account)
+    if let Some(summary) = prep.get("intelligenceSummary").and_then(|v| v.as_str()) {
+        if !summary.trim().is_empty() {
+            prep_context.push_str("Intelligence Summary:\n");
+            prep_context.push_str(summary.trim());
+            prep_context.push('\n');
+        }
+    }
+
+    // Since last meeting context
+    if let Some(since_last) = prep.get("sinceLast").and_then(|v| v.as_str()) {
+        if !since_last.trim().is_empty() {
+            prep_context.push_str("Since Last Meeting:\n");
+            prep_context.push_str(since_last.trim());
+            prep_context.push('\n');
+        }
+    }
+
+    if let Some(points) = prep
+        .get("recentWins")
+        .and_then(|v| v.as_array())
+        .or_else(|| prep.get("talkingPoints").and_then(|v| v.as_array()))
+    {
+        prep_context.push_str("Recent Wins:\n");
+        for p in points {
+            if let Some(t) = p.as_str() {
+                prep_context.push_str(&format!("- {}\n", t));
+            }
+        }
+    }
+    if let Some(notes) = prep.get("calendarNotes").and_then(|v| v.as_str()) {
+        if !notes.trim().is_empty() {
+            prep_context.push_str("Meeting Purpose (from calendar):\n");
+            prep_context.push_str(notes.trim());
+            prep_context.push('\n');
+        }
+    }
+    let calendar_agenda = extract_calendar_agenda_items(prep);
+    if !calendar_agenda.is_empty() {
+        prep_context.push_str("Calendar Agenda:\n");
+        for item in &calendar_agenda {
+            prep_context.push_str(&format!("- {}\n", item));
+        }
+    }
+    if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
+        prep_context.push_str("Risks:\n");
+        for r in risks {
+            if let Some(t) = r.as_str() {
+                prep_context.push_str(&format!("- {}\n", t));
+            }
+        }
+    }
+    if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
+        prep_context.push_str("Open Items:\n");
+        for item in items {
+            let item_title = item.get("title").and_then(|v| v.as_str()).unwrap_or("?");
+            let overdue = item
+                .get("isOverdue")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            prep_context.push_str(&format!(
+                "- {}{}\n",
+                item_title,
+                if overdue { " [OVERDUE]" } else { "" }
+            ));
+        }
+    }
+    if let Some(questions) = prep.get("questions").and_then(|v| v.as_array()) {
+        prep_context.push_str("Questions:\n");
+        for q in questions {
+            if let Some(t) = q.as_str() {
+                prep_context.push_str(&format!("- {}\n", t));
+            }
+        }
+    }
+    if let Some(agenda) = prep.get("proposedAgenda").and_then(|v| v.as_array()) {
+        prep_context.push_str("Current Mechanical Agenda:\n");
+        for (i, item) in agenda.iter().enumerate() {
+            let topic = item.get("topic").and_then(|v| v.as_str()).unwrap_or("?");
+            prep_context.push_str(&format!("{}. {}\n", i + 1, topic));
+        }
+    }
+
+    let prompt = format!(
+        "{}You are refining a meeting prep report for a Customer Success Manager.\n\n\
+         Review recent wins, risks, open items, questions, intelligence summary, \
+         since-last-meeting context, meeting purpose, and current mechanical agenda. Produce:\n\
+         1) A refined agenda that:\n\
+         0. When a 'Meeting Purpose (from calendar)' is provided, treat it as the primary framing constraint: \
+         steer agenda items, risks, and talking points toward that stated purpose. \
+         Deprioritize entity-level intelligence that does not directly relate to the meeting topic.\n\
+         1. Keeps calendar agenda items as primary structure when they exist (enrich around them, do not replace them)\n\
+         2. Orders items by impact (highest-stakes first)\n\
+         3. Adds a brief 'why' rationale for each item\n\
+         4. Uses source category (calendar_note, risk, talking_point, question, open_item, intelligence)\n\
+         5. Avoids duplicating recent wins unless there are no other substantive topics\n\
+         6. Caps at 7 items per meeting\n\
+         2) A clean recent wins list (max 4) with source provenance separated.\n\n\
+         Format your response as:\n\
+         AGENDA:{meeting_id}\n\
+         ITEM:topic text\n\
+         WHY:rationale\n\
+         SOURCE:source_category\n\
+         END_ITEM\n\
+         ... more items ...\n\
+         END_AGENDA\n\
+         WINS:{meeting_id}\n\
+         WIN:concise win statement (no markdown, no inline source: tail)\n\
+         SOURCE:path-or-label (optional, only if known)\n\
+         END_WIN\n\
+         ... more wins ...\n\
+         END_WINS\n\n\
+         {prep_context}",
+        INJECTION_PREAMBLE,
+        meeting_id = meeting_id,
+        prep_context = prep_context,
+    );
+
+    let output = match pty.spawn_claude(workspace, &prompt) {
+        Ok(o) => o,
+        Err(e) => {
+            log::warn!(
+                "enrich_single_prep: Claude enrichment failed for {}: {}",
+                meeting_id,
+                e
+            );
+            return prep.clone();
+        }
+    };
+
+    // Audit trail
+    let _ = crate::audit::write_audit_entry(workspace, "meeting_prep_enrichment", meeting_id, &output.stdout);
+
+    let enrichments = parse_prep_enrichment(&output.stdout);
+    let Some(enrichment) = enrichments.get(meeting_id) else {
+        log::warn!(
+            "enrich_single_prep: no enrichment parsed for {}",
+            meeting_id
+        );
+        return prep.clone();
+    };
+
+    let mut enriched = prep.clone();
+
+    // Apply agenda enrichment
+    let mut agenda_seen: HashSet<String> = HashSet::new();
+    let agenda_json: Vec<Value> = enrichment
+        .agenda
+        .iter()
+        .filter_map(|item| {
+            let topic = sanitize_prep_line(&item.topic)?;
+            let key = topic.to_lowercase();
+            if agenda_seen.contains(&key) {
+                return None;
+            }
+            agenda_seen.insert(key);
+            let mut obj = json!({"topic": topic});
+            if let Some(m) = obj.as_object_mut() {
+                if let Some(ref why) = item.why {
+                    if let Some(clean_why) = sanitize_prep_line(why) {
+                        m.insert("why".to_string(), json!(clean_why));
+                    }
+                }
+                if let Some(ref source) = item.source {
+                    let clean_source = sanitize_inline_markdown(source).to_lowercase();
+                    if !clean_source.is_empty() {
+                        m.insert("source".to_string(), json!(clean_source));
+                    }
+                }
+            }
+            Some(obj)
+        })
+        .take(7)
+        .collect();
+
+    // Apply wins enrichment
+    let mut win_seen: HashSet<String> = HashSet::new();
+    let mut source_seen: HashSet<String> = HashSet::new();
+    let mut wins_json: Vec<String> = Vec::new();
+    let mut win_sources_json: Vec<Value> = Vec::new();
+    for win in &enrichment.wins {
+        let (win_without_source, embedded_source) = split_inline_source_tail(&win.win);
+        if let Some(clean_win) = sanitize_recent_win_line(&win_without_source) {
+            let key = clean_win.to_lowercase();
+            if !win_seen.contains(&key) {
+                win_seen.insert(key);
+                wins_json.push(clean_win);
+            }
+        }
+
+        let source_text = win.source.clone().or(embedded_source);
+        if let Some(source_text) = source_text {
+            let source_key = source_text.to_lowercase();
+            if !source_seen.contains(&source_key) {
+                if let Some(source_ref) = source_reference_value(&source_text) {
+                    source_seen.insert(source_key);
+                    win_sources_json.push(source_ref);
+                }
+            }
+        }
+    }
+
+    if let Some(obj) = enriched.as_object_mut() {
+        if !agenda_json.is_empty() {
+            obj.insert("proposedAgenda".to_string(), json!(agenda_json));
+        }
+        if !wins_json.is_empty() {
+            obj.insert("recentWins".to_string(), json!(wins_json.clone()));
+            obj.insert("talkingPoints".to_string(), json!(wins_json));
+        }
+        if !win_sources_json.is_empty() {
+            obj.insert("recentWinSources".to_string(), json!(win_sources_json));
+        }
+    }
+
+    log::info!(
+        "enrich_single_prep: enriched {} ({} agenda items, {} wins)",
+        meeting_id,
+        agenda_json.len(),
+        wins_json.len(),
+    );
+    enriched
 }
 
 /// Build and write manifest.json.
@@ -5767,6 +6205,160 @@ END_AGENDA
         assert_eq!(agenda.len(), 1);
         assert_eq!(agenda[0]["topic"], "Expansion signal from sponsor");
         assert_eq!(agenda[0]["source"], "talking_point");
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_qbr_prioritizes_risks() {
+        let prep = json!({
+            "type": "qbr",
+            "openItems": [
+                {"title": "Send SOW", "isOverdue": true},
+                {"title": "Update docs", "isOverdue": false},
+            ],
+            "risks": ["Budget risk", "Timeline risk", "Staffing risk"],
+            "questions": ["Q1?", "Q2?"],
+            "strategicPrograms": [
+                {"name": "Enterprise Expansion", "status": "in_progress"},
+            ],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+
+        // QBR framing item first (no calendar agenda)
+        assert_eq!(agenda[0]["source"], "meeting_type");
+        assert_eq!(agenda[0]["topic"], "Quarterly Business Review");
+
+        // Then risks (up to 3 for QBRs)
+        assert_eq!(agenda[1]["source"], "risk");
+        assert_eq!(agenda[2]["source"], "risk");
+        assert_eq!(agenda[3]["source"], "risk");
+
+        // Then strategic program
+        assert_eq!(agenda[4]["source"], "strategic_program");
+
+        // Then overdue item (non-overdue skipped for QBR)
+        assert_eq!(agenda[5]["source"], "open_item");
+        assert!(agenda[5]["topic"]
+            .as_str()
+            .unwrap()
+            .starts_with("Follow up:"));
+
+        // No non-overdue "Update docs" in agenda
+        let has_non_overdue = agenda
+            .iter()
+            .any(|a| a["topic"].as_str().unwrap_or("") == "Update docs");
+        assert!(!has_non_overdue, "QBR should skip non-overdue open items");
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_training_only_calendar() {
+        let prep = json!({
+            "type": "training",
+            "openItems": [
+                {"title": "Send SOW", "isOverdue": true},
+            ],
+            "risks": ["Budget risk"],
+            "questions": ["Q1?"],
+            "recentWins": ["Big win"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+
+        // Training: only the framing item (no calendar notes in this prep)
+        assert_eq!(agenda.len(), 1);
+        assert_eq!(agenda[0]["source"], "meeting_type");
+        assert_eq!(agenda[0]["topic"], "Training Session");
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_training_with_calendar() {
+        let prep = json!({
+            "type": "training",
+            "calendarNotes": "Agenda:\n1. Module overview\n2. Hands-on exercise",
+            "risks": ["Budget risk"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+
+        // Training with calendar agenda: calendar items only, no risks
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0]["source"], "calendar_note");
+        assert_eq!(agenda[1]["source"], "calendar_note");
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_one_on_one_prioritizes_actions() {
+        let prep = json!({
+            "type": "one_on_one",
+            "openItems": [
+                {"title": "Send SOW", "isOverdue": true},
+                {"title": "Review deck", "isOverdue": false},
+                {"title": "Schedule follow-up", "isOverdue": false},
+            ],
+            "risks": ["Budget risk", "Timeline risk"],
+            "questions": ["Q1?"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+
+        // 1:1 framing first
+        assert_eq!(agenda[0]["source"], "meeting_type");
+        assert_eq!(agenda[0]["topic"], "1:1 Check-in");
+
+        // Then open items (up to 3: 1 overdue + 2 non-overdue)
+        assert_eq!(agenda[1]["source"], "open_item");
+        assert_eq!(agenda[2]["source"], "open_item");
+        assert_eq!(agenda[3]["source"], "open_item");
+
+        // Then question
+        assert_eq!(agenda[4]["source"], "question");
+
+        // Only 1 risk max for 1:1
+        let risk_count = agenda.iter().filter(|a| a["source"] == "risk").count();
+        assert_eq!(risk_count, 1, "1:1 should show at most 1 risk");
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_internal_skips_entity_intel() {
+        let prep = json!({
+            "type": "internal",
+            "openItems": [
+                {"title": "Send SOW", "isOverdue": true},
+                {"title": "Review deck", "isOverdue": false},
+            ],
+            "risks": ["Budget risk"],
+            "questions": ["Q1?"],
+            "recentWins": ["Big win"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+
+        // Internal framing + overdue item only
+        assert_eq!(agenda[0]["source"], "meeting_type");
+        assert_eq!(agenda[1]["source"], "open_item");
+        assert_eq!(agenda.len(), 2);
+
+        // No risks, questions, or wins for internal meetings
+        let has_risk = agenda.iter().any(|a| a["source"] == "risk");
+        assert!(!has_risk, "Internal meetings should skip entity risks");
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_default_unchanged_for_external() {
+        // Verify the default/external path still works like the original
+        let prep = json!({
+            "type": "customer",
+            "openItems": [
+                {"title": "Send SOW", "isOverdue": true},
+                {"title": "Update docs", "isOverdue": false},
+            ],
+            "risks": ["Budget risk", "Timeline risk", "Staffing risk"],
+            "questions": ["Q1?", "Q2?", "Q3?"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+
+        // Same behavior as before: overdue → risks (2) → questions (2) → non-overdue
+        assert_eq!(agenda[0]["source"], "open_item"); // overdue
+        assert_eq!(agenda[1]["source"], "risk");
+        assert_eq!(agenda[2]["source"], "risk");
+        assert_eq!(agenda[3]["source"], "question");
+        assert_eq!(agenda[4]["source"], "question");
+        assert_eq!(agenda[5]["source"], "open_item"); // non-overdue
     }
 
     #[test]
