@@ -755,9 +755,15 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
                     .map(|s| s.trim().to_uppercase())
                     .filter(|s| !s.is_empty())
                     .all(|s| s.starts_with("ALTER"));
-                let is_benign =
-                    msg.contains("duplicate column name") || msg.contains("no such column");
-                if is_single_alter && is_benign {
+                // "duplicate column name" is always safe: can only come from
+                // ALTER TABLE ADD COLUMN when the column already exists.
+                // "no such column" is only safe for pure ALTER TABLE migrations
+                // (PR #11: multi-statement migrations with CREATE/INSERT/DROP
+                // must not silently swallow this error).
+                let is_dup_column = msg.contains("duplicate column name");
+                let is_benign_alter =
+                    is_single_alter && msg.contains("no such column");
+                if is_dup_column || is_benign_alter {
                     log::warn!(
                         "Migration v{}: benign schema conflict ({}), continuing",
                         migration.version,

@@ -213,7 +213,7 @@ describe("DailyBriefing", () => {
     expect(screen.getByText("Prepare for the Acme renewal conversation.")).toBeInTheDocument();
   });
 
-  it("renders staleness indicator when data is stale", () => {
+  it("does not render staleness indicator (removed for v1.1.1)", () => {
     const staleFreshness: DataFreshness = {
       freshness: "stale",
       dataDate: "2026-03-30",
@@ -227,7 +227,7 @@ describe("DailyBriefing", () => {
       />,
     );
 
-    expect(screen.getByText(/Last updated/)).toBeInTheDocument();
+    expect(screen.queryByText(/Last updated/)).not.toBeInTheDocument();
   });
 
   it("renders finis marker at the end", () => {

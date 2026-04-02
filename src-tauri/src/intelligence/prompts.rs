@@ -2662,16 +2662,17 @@ pub fn parse_intelligence_response(
         let before = intel.value_delivered.len();
         intel.value_delivered.retain(|v| {
             let stmt_lower = v.statement.to_lowercase();
-            // Keep if: the statement mentions the entity, OR has no third-party company names,
-            // OR the source is a direct first-party source (not web/unknown)
+            // Keep if: the statement mentions the entity, OR the source is NOT
+            // a known-bad external source. Only reject items from "web" or empty
+            // sources that don't mention the entity — everything else (meeting,
+            // email, file, QBR deck, etc.) is trusted first-party context.
             let mentions_entity = stmt_lower.contains(&entity_key)
                 || entity_key.len() < 4; // skip check for very short slugs
-            let is_first_party = matches!(
+            let is_untrusted_source = matches!(
                 v.source.as_deref(),
-                Some("meeting" | "email" | "capture" | "salescloud" | "glean_crm"
-                    | "glean_gong" | "glean_zendesk")
+                Some("web") | None
             );
-            mentions_entity || is_first_party
+            mentions_entity || !is_untrusted_source
         });
         let filtered = before - intel.value_delivered.len();
         if filtered > 0 {
