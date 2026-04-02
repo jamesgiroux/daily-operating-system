@@ -404,6 +404,22 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
                     },
                 );
                 log::info!("MeetingPrepProcessor: completed {}", request.meeting_id);
+
+                // Non-blocking PTY enrichment: refine the mechanical agenda via AI.
+                // Spawned as a separate task so the prep queue keeps processing.
+                // If PTY is unavailable, budget exhausted, or enrichment fails,
+                // the mechanical prep remains untouched (graceful degradation).
+                let enrich_state = Arc::clone(&state);
+                let enrich_app = app.clone();
+                let enrich_meeting_id = request.meeting_id.clone();
+                tokio::spawn(async move {
+                    enrich_prep_via_pty(
+                        &enrich_state,
+                        &enrich_app,
+                        &enrich_meeting_id,
+                    )
+                    .await;
+                });
             }
             Ok(Ok(false)) => {
                 log::debug!(
@@ -493,12 +509,19 @@ fn generate_mechanical_prep_with_inputs(
 
     // Resolve workspace path for context gathering
     // Phase 3: Build classified meeting JSON for gather_meeting_context
+    // I653 FIX 6: Include attendees so entity resolver signals fire during prep
+    let attendees_val: serde_json::Value = meeting
+        .attendees
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or(serde_json::Value::Array(vec![]));
     let classified = json!({
         "id": meeting.id,
         "title": meeting.title,
         "type": meeting.meeting_type,
         "start": meeting.start_time,
         "description": meeting.description.as_deref().unwrap_or(""),
+        "attendees": attendees_val,
     });
 
     // Phase 4: Gather context (mechanical — no AI)
@@ -554,19 +577,29 @@ fn generate_mechanical_prep_with_inputs(
         }
     }
 
-    // Phase 6: Write result to prep_frozen_json in DB.
+    // Phase 6: Write result to both prep_context_json (DB read model) and
+    // prep_frozen_json (MCP export blob).
+    //
+    // ADR-0101: prep_context_json is the primary read source. prep_frozen_json
+    // is kept in sync as the MCP tool export format.
+    //
     // Deliberately does NOT set prep_frozen_at — that column is owned by the AI
     // workflow (reconcile.rs freeze_meeting_prep_snapshot) and gates on IS NULL.
     // Setting it here would prevent the workflow from ever writing real AI content.
     let frozen_str =
         serde_json::to_string(&prep_json).map_err(|e| format!("Serialize error: {}", e))?;
 
+    // Write to prep_context_json (DB read model) — UPSERT so row is created if absent
+    db.update_meeting_prep_context(meeting_id, &frozen_str)
+        .map_err(|e| format!("Failed to write prep_context_json: {}", e))?;
+
+    // Write to prep_frozen_json (MCP export)
     db.conn_ref()
         .execute(
             "UPDATE meeting_prep SET prep_frozen_json = ?1 WHERE meeting_id = ?2",
             rusqlite::params![frozen_str, meeting_id],
         )
-        .map_err(|e| format!("Failed to write prep: {}", e))?;
+        .map_err(|e| format!("Failed to write prep_frozen_json: {}", e))?;
 
     let quality = crate::intelligence::assess_intelligence_quality(&db, meeting_id);
     let _ = db.update_intelligence_state(
@@ -646,6 +679,168 @@ pub fn regenerate_mechanical_prep_now_blocking(
     meeting_id: String,
 ) -> Result<bool, String> {
     generate_mechanical_prep_with_inputs(workspace, embedding_model, &meeting_id, true)
+}
+
+/// PTY enrichment timeout for a single meeting (30 seconds).
+const ENRICHMENT_TIMEOUT_SECS: u64 = 30;
+
+/// Enrich a single meeting's prep via PTY-spawned Claude (async wrapper).
+///
+/// Reads the mechanical prep from DB, builds an AI enrichment prompt,
+/// parses structured output, and writes the enriched prep back.
+/// On any failure — PTY unavailable, budget exhausted, timeout,
+/// parse failure — the mechanical prep remains untouched.
+async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str) {
+    // Gate: is Claude CLI available?
+    if !crate::pty::PtyManager::is_claude_available() {
+        log::debug!(
+            "enrich_prep_via_pty: Claude CLI not available, skipping {}",
+            meeting_id
+        );
+        return;
+    }
+
+    // Gate: is background AI paused (budget / timeout guard)?
+    if crate::pty::background_ai_paused() {
+        log::debug!(
+            "enrich_prep_via_pty: background AI paused, skipping {}",
+            meeting_id
+        );
+        return;
+    }
+
+    // Resolve workspace path
+    let workspace = match state.config_read_or_recover() {
+        Ok(guard) => match guard.as_ref() {
+            Some(config) => std::path::PathBuf::from(&config.workspace_path),
+            None => {
+                log::warn!("enrich_prep_via_pty: no config, skipping {}", meeting_id);
+                return;
+            }
+        },
+        Err(e) => {
+            log::warn!("enrich_prep_via_pty: config error: {}, skipping {}", e, meeting_id);
+            return;
+        }
+    };
+
+    // Read AI model config for extraction tier
+    let ai_config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+        .unwrap_or_default();
+
+    let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config)
+        .with_timeout(ENRICHMENT_TIMEOUT_SECS)
+        .with_nice_priority(15)
+        .with_usage_context(
+            crate::pty::AiUsageContext::new("meeting_prep", "agenda_enrichment")
+                .with_trigger("prep_queue")
+                .with_background(true)
+                .with_tier(crate::pty::ModelTier::Extraction),
+        );
+
+    // Acquire PTY semaphore to serialize AI calls
+    let _permit = match state.permits.pty.acquire().await {
+        Ok(p) => p,
+        Err(_) => {
+            log::warn!("enrich_prep_via_pty: PTY semaphore closed, skipping {}", meeting_id);
+            return;
+        }
+    };
+
+    // Read current prep from DB on a blocking thread
+    let mid = meeting_id.to_string();
+    let prep_json = match tokio::task::spawn_blocking(move || {
+        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open: {}", e))?;
+        let meeting = db
+            .get_meeting_by_id(&mid)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Meeting not found: {}", mid))?;
+        meeting
+            .prep_frozen_json
+            .ok_or_else(|| format!("No prep_frozen_json for {}", mid))
+    })
+    .await
+    {
+        Ok(Ok(json_str)) => json_str,
+        Ok(Err(e)) => {
+            log::warn!("enrich_prep_via_pty: {}", e);
+            return;
+        }
+        Err(e) => {
+            log::warn!("enrich_prep_via_pty: task panicked: {}", e);
+            return;
+        }
+    };
+
+    let prep: serde_json::Value = match serde_json::from_str(&prep_json) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("enrich_prep_via_pty: JSON parse error for {}: {}", meeting_id, e);
+            return;
+        }
+    };
+
+    // Run enrichment on a blocking thread (PTY is synchronous)
+    let ws = workspace.clone();
+    let prep_clone = prep.clone();
+    let enriched = match tokio::task::spawn_blocking(move || {
+        crate::workflow::deliver::enrich_single_prep(&prep_clone, &pty, &ws)
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("enrich_prep_via_pty: enrichment task panicked for {}: {}", meeting_id, e);
+            return;
+        }
+    };
+
+    // Check if enrichment actually changed anything
+    if enriched == prep {
+        log::debug!("enrich_prep_via_pty: no changes for {}", meeting_id);
+        return;
+    }
+
+    // Write enriched prep back to DB
+    let enriched_str = match serde_json::to_string(&enriched) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("enrich_prep_via_pty: serialize error for {}: {}", meeting_id, e);
+            return;
+        }
+    };
+
+    let mid = meeting_id.to_string();
+    let write_result = state
+        .db_write(move |db| {
+            db.conn_ref()
+                .execute(
+                    "UPDATE meeting_prep SET prep_frozen_json = ?1 WHERE meeting_id = ?2",
+                    rusqlite::params![enriched_str, mid],
+                )
+                .map_err(|e| format!("DB write: {}", e))
+        })
+        .await;
+
+    match write_result {
+        Ok(_) => {
+            log::info!("enrich_prep_via_pty: enriched prep written for {}", meeting_id);
+            // Emit prep-ready again so the UI refreshes with the enriched version
+            let _ = app.emit(
+                "prep-ready",
+                PrepReadyPayload {
+                    meeting_id: meeting_id.to_string(),
+                },
+            );
+        }
+        Err(e) => {
+            log::warn!("enrich_prep_via_pty: DB write failed for {}: {}", meeting_id, e);
+        }
+    }
 }
 
 // =============================================================================

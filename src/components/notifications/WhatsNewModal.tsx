@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import DOMPurify from "dompurify";
 import { useUpdate } from "@/contexts/UpdateContext";
 import { X } from "lucide-react";
 
@@ -49,7 +50,7 @@ export function WhatsNewModal({ open, onClose }: WhatsNewModalProps) {
   const storedNotes = useMemo(() => localStorage.getItem(STORED_RELEASE_NOTES_KEY), []);
   const displayNotes = notes || storedNotes;
   const notesHtml = useMemo(
-    () => (displayNotes ? renderMarkdownToHtml(displayNotes) : null),
+    () => (displayNotes ? DOMPurify.sanitize(renderMarkdownToHtml(displayNotes)) : null),
     [displayNotes],
   );
 

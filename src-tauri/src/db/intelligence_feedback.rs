@@ -16,20 +16,25 @@ pub struct FeedbackRow {
     pub created_at: String,
 }
 
+/// Parameters for inserting intelligence feedback.
+#[derive(Debug)]
+pub struct FeedbackInput<'a> {
+    pub id: &'a str,
+    pub entity_id: &'a str,
+    pub entity_type: &'a str,
+    pub field: &'a str,
+    pub feedback_type: &'a str,
+    pub previous_value: Option<&'a str>,
+    pub context: Option<&'a str>,
+}
+
 impl ActionDb {
     /// Insert or replace an intelligence feedback record.
     /// Uses ON CONFLICT on the UNIQUE(entity_id, entity_type, field) constraint
     /// so changing a vote replaces the previous one (AC16).
-    #[allow(clippy::too_many_arguments)]
     pub fn insert_intelligence_feedback(
         &self,
-        id: &str,
-        entity_id: &str,
-        entity_type: &str,
-        field: &str,
-        feedback_type: &str,
-        previous_value: Option<&str>,
-        context: Option<&str>,
+        input: &FeedbackInput<'_>,
     ) -> Result<(), String> {
         self.conn_ref()
             .execute(
@@ -43,13 +48,13 @@ impl ActionDb {
                  context = excluded.context, \
                  created_at = datetime('now')",
                 rusqlite::params![
-                    id,
-                    entity_id,
-                    entity_type,
-                    field,
-                    feedback_type,
-                    previous_value,
-                    context,
+                    input.id,
+                    input.entity_id,
+                    input.entity_type,
+                    input.field,
+                    input.feedback_type,
+                    input.previous_value,
+                    input.context,
                 ],
             )
             .map_err(|e| format!("Insert intelligence feedback: {e}"))?;
