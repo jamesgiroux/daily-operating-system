@@ -3,7 +3,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StakeholderGallery } from "./StakeholderGallery";
-import type { StakeholderInsight, Person, AccountTeamMember, EntityIntelligence } from "@/types";
+import type { StakeholderInsight, Person, AccountTeamMember, EntityIntelligence, StakeholderFull } from "@/types";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
@@ -49,6 +49,7 @@ vi.mock("./EngagementSelector", () => ({
     </select>
   ),
   getEngagementDisplay: () => ({ background: "#eee", color: "#333" }),
+  getEngagementLabel: (v: string) => v,
 }));
 
 vi.mock("./TeamRoleSelector", () => ({
@@ -69,6 +70,21 @@ function makeStakeholder(overrides: Partial<StakeholderInsight> = {}): Stakehold
     role: "VP Engineering",
     assessment: "Strong champion who drives adoption across the org.",
     engagement: "active",
+    ...overrides,
+  };
+}
+
+function makeStakeholderFull(overrides: Partial<StakeholderFull> = {}): StakeholderFull {
+  return {
+    personId: "p-1",
+    personName: "Jane Champion",
+    personRole: "VP Engineering",
+    stakeholderRole: "champion",
+    roles: [],
+    dataSource: "ai",
+    engagement: "active",
+    createdAt: "2026-03-20T00:00:00Z",
+    assessment: "Strong champion who drives adoption across the org.",
     ...overrides,
   };
 }
@@ -107,18 +123,16 @@ describe("StakeholderGallery", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("renders stakeholder cards from intelligence stakeholderInsights", () => {
-    const intelligence = makeMinimalIntelligence({
-      stakeholderInsights: [
-        makeStakeholder({ name: "Jane Champion" }),
-        makeStakeholder({ name: "Bob Exec", role: "CTO" }),
-      ],
-    });
+  it("renders stakeholder cards from stakeholdersFull", () => {
+    const stakeholdersFull = [
+      makeStakeholderFull({ personId: "p-1", personName: "Jane Champion" }),
+      makeStakeholderFull({ personId: "p-2", personName: "Bob Exec", personRole: "CTO" }),
+    ];
 
     render(
       <StakeholderGallery
         {...baseProps}
-        intelligence={intelligence}
+        stakeholdersFull={stakeholdersFull}
       />,
     );
 
@@ -128,12 +142,12 @@ describe("StakeholderGallery", () => {
   });
 
   it("renders role text for stakeholders", () => {
-    const intelligence = makeMinimalIntelligence({
-      stakeholderInsights: [makeStakeholder({ name: "Jane", role: "VP Engineering" })],
-    });
+    const stakeholdersFull = [
+      makeStakeholderFull({ personId: "p-1", personName: "Jane", personRole: "VP Engineering" }),
+    ];
 
     render(
-      <StakeholderGallery {...baseProps} intelligence={intelligence} />,
+      <StakeholderGallery {...baseProps} stakeholdersFull={stakeholdersFull} />,
     );
 
     expect(screen.getByText("VP Engineering")).toBeInTheDocument();
@@ -151,17 +165,18 @@ describe("StakeholderGallery", () => {
     expect(screen.getByText("Add Stakeholder")).toBeInTheDocument();
   });
 
-  it("shows engagement selector when canEdit and engagement exists", () => {
-    const intelligence = makeMinimalIntelligence({
-      stakeholderInsights: [makeStakeholder({ engagement: "active" })],
-    });
+  it("shows engagement selector when onUpdateEngagement and engagement exists", () => {
+    const stakeholdersFull = [
+      makeStakeholderFull({ personId: "p-1", engagement: "active" }),
+    ];
 
     render(
       <StakeholderGallery
         {...baseProps}
-        intelligence={intelligence}
+        stakeholdersFull={stakeholdersFull}
         entityId="acct-1"
         entityType="account"
+        onUpdateEngagement={vi.fn()}
       />,
     );
 
@@ -194,19 +209,17 @@ describe("StakeholderGallery", () => {
   });
 
   it("shows coverage analysis strip", () => {
-    const intelligence = makeMinimalIntelligence({
-      stakeholderInsights: [
-        makeStakeholder({ engagement: "active" }),
-        makeStakeholder({ name: "Person 2", engagement: "unknown" }),
-      ],
-    });
+    const stakeholdersFull = [
+      makeStakeholderFull({ personId: "p-1", engagement: "active", roles: [{ role: "champion", dataSource: "user" }] }),
+      makeStakeholderFull({ personId: "p-2", personName: "Person 2", engagement: "unknown", roles: [] }),
+    ];
 
     render(
-      <StakeholderGallery {...baseProps} intelligence={intelligence} />,
+      <StakeholderGallery {...baseProps} stakeholdersFull={stakeholdersFull} />,
     );
 
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
-    expect(screen.getByText("stakeholders with defined engagement")).toBeInTheDocument();
+    expect(screen.getByText("stakeholders with defined roles")).toBeInTheDocument();
   });
 
   it("renders linked people fallback when no intelligence stakeholders exist", () => {
@@ -232,31 +245,29 @@ describe("StakeholderGallery", () => {
   });
 
   it("shows 'Show N more' button when more than 6 stakeholders", () => {
-    const intelligence = makeMinimalIntelligence({
-      stakeholderInsights: Array.from({ length: 8 }, (_, i) =>
-        makeStakeholder({ name: `Person ${i}` }),
-      ),
-    });
+    const stakeholdersFull = Array.from({ length: 8 }, (_, i) =>
+      makeStakeholderFull({ personId: `p-${i}`, personName: `Person ${i}` }),
+    );
 
     render(
-      <StakeholderGallery {...baseProps} intelligence={intelligence} />,
+      <StakeholderGallery {...baseProps} stakeholdersFull={stakeholdersFull} />,
     );
 
     expect(screen.getByText("Show 2 more")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Show 2 more"));
-    // After expanding, all 8 should be visible (avatar + name span = 2 matches each)
+    // After expanding, all 8 should be visible
     expect(screen.getAllByText("Person 7").length).toBeGreaterThan(0);
   });
 
   it("renders assessment text with truncation", () => {
     const longAssessment = "A".repeat(200);
-    const intelligence = makeMinimalIntelligence({
-      stakeholderInsights: [makeStakeholder({ assessment: longAssessment })],
-    });
+    const stakeholdersFull = [
+      makeStakeholderFull({ personId: "p-1", assessment: longAssessment }),
+    ];
 
     render(
-      <StakeholderGallery {...baseProps} intelligence={intelligence} />,
+      <StakeholderGallery {...baseProps} stakeholdersFull={stakeholdersFull} />,
     );
 
     expect(screen.getByText("Read more")).toBeInTheDocument();
