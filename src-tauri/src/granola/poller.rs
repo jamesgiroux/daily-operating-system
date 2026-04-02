@@ -179,7 +179,7 @@ fn poll_once(
         emit_transcript_processed(state, app_handle, &matched.meeting_id);
 
         if result.is_ok() {
-            let _ = crate::notification::notify_transcript_ready(app_handle, &doc.title, None);
+            let _ = crate::notification::notify_transcript_ready(app_handle, &doc.title, None, state);
         }
     }
 
