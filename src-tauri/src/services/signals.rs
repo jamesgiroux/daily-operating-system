@@ -15,7 +15,6 @@ use crate::signals::callouts::BriefingCallout;
 use crate::signals::propagation::PropagationEngine;
 
 /// Emit a signal event (no propagation). Convenience wrapper around bus::emit_signal.
-#[allow(clippy::too_many_arguments)]
 pub fn emit(
     db: &ActionDb,
     entity_type: &str,

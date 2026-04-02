@@ -107,6 +107,9 @@ pub struct Config {
     /// without blocking the briefing workflow. Validated in `validate_config()`.
     #[serde(default = "default_email_enrichment_timeout_seconds")]
     pub email_enrichment_timeout_seconds: u32,
+    /// User notification preferences (toggles + quiet hours).
+    #[serde(default)]
+    pub notifications: NotificationConfig,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -122,6 +125,44 @@ pub struct ProfileConfig {
     /// How many past meetings to include per account
     #[serde(default = "default_history_count")]
     pub history_meeting_count: u32,
+}
+
+/// User-configurable notification preferences.
+/// All toggles default to `true` (notifications enabled).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationConfig {
+    /// "Daily briefing alerts" — fires when a workflow completes.
+    #[serde(default = "default_true")]
+    pub workflow_completion: bool,
+    /// "Meeting notes alerts" — fires when transcripts are processed.
+    #[serde(default = "default_true")]
+    pub transcript_ready: bool,
+    /// "Connection alerts" — fires when Google auth expires.
+    #[serde(default = "default_true")]
+    pub auth_expiry: bool,
+    /// Hour (0-23) to start suppressing notifications. Both must be set.
+    #[serde(default)]
+    pub quiet_hours_start: Option<u8>,
+    /// Hour (0-23) to stop suppressing notifications. Both must be set.
+    #[serde(default)]
+    pub quiet_hours_end: Option<u8>,
+}
+
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        Self {
+            workflow_completion: true,
+            transcript_ready: true,
+            auth_expiry: true,
+            quiet_hours_start: None,
+            quiet_hours_end: None,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_history_lookback() -> u32 {
@@ -1574,7 +1615,7 @@ pub struct EmailBriefingData {
 // =============================================================================
 
 /// Complete meeting prep from individual prep file
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FullMeetingPrep {
     #[serde(default)]
@@ -1890,6 +1931,12 @@ pub struct CalendarEvent {
     /// Entities linked via M2M junction table or entity resolution (I339)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked_entities: Option<Vec<LinkedEntity>>,
+    /// Entity IDs resolved at classification time (I653).
+    /// Carried through from ClassifiedMeeting.resolved_entities so callers
+    /// can persist entity links without losing the IDs in the conversion.
+    /// Default empty — only populated by classify_meeting_multi → to_calendar_event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classified_entities: Option<Vec<(String, String)>>, // (entity_id, entity_type)
 }
 
 // =============================================================================
@@ -2799,6 +2846,7 @@ mod tests {
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,
             email_enrichment_timeout_seconds: 90,
+            notifications: NotificationConfig::default(),
         }
     }
 
