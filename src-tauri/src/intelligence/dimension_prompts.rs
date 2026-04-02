@@ -134,12 +134,15 @@ pub fn build_glean_dimension_prompt(
     let role_desc = dimension_role_description(dimension);
     let entity_label = entity_label_for(entity_type, relationship);
 
-    // System role — Glean-specific
+    // System role — Glean-specific with entity grounding
     prompt.push_str(&format!(
         "You are {} for the {} \"{}\". \
          Search ALL available data sources (Salesforce, Zendesk, Gong, Slack, \
-         internal docs, org directory) for this dimension.\n\n",
-        role_desc, entity_label, entity_name
+         internal docs, org directory) for this dimension.\n\
+         IMPORTANT: Only include information that is specifically about \"{}\". \
+         Do not include case studies, metrics, or outcomes from other companies \
+         or accounts. Every data point must reference \"{}\" or their products/services.\n\n",
+        role_desc, entity_label, entity_name, entity_name, entity_name
     ));
 
     // Relationship context
