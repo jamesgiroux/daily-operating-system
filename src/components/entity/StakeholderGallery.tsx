@@ -488,7 +488,7 @@ export function StakeholderGallery({
                     {roles.map((r) => (
                       <span key={r.role} className={css.roleBadge} data-source={r.dataSource} style={{ background: getRoleConfig(r.role).bg, color: getRoleConfig(r.role).fg }}>
                         {getRoleConfig(r.role).label}
-                        {onRemoveRole && r.dataSource === "user" && (
+                        {onRemoveRole && (
                           <button
                             className={css.roleRemove}
                             onClick={(e) => {
