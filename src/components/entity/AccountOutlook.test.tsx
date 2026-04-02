@@ -97,18 +97,19 @@ describe("AccountOutlook", () => {
     expect(screen.getByText("high")).toBeInTheDocument();
   });
 
-  it("renders risk factors as list items", () => {
+  it("renders risk factors as editorial prose", () => {
     render(<AccountOutlook intelligence={renewalIntelligence} />);
 
-    expect(screen.getByText("Executive sponsor departure")).toBeInTheDocument();
-    expect(screen.getByText("Budget freeze in Q4")).toBeInTheDocument();
+    // Risk factors are rendered as prose: "Watch for ... and ..."
+    expect(screen.getByText(/executive sponsor departure/i)).toBeInTheDocument();
+    expect(screen.getByText(/budget freeze in q4/i)).toBeInTheDocument();
   });
 
-  it("renders expansion potential in the heading", () => {
+  it("renders renewal section when expansionPotential is set", () => {
     render(<AccountOutlook intelligence={renewalIntelligence} />);
 
-    // expansionPotential appended as "— moderate"
-    expect(screen.getByText(/moderate/)).toBeInTheDocument();
+    // expansionPotential contributes to hasRenewal check; renewal section renders
+    expect(screen.getByText(/Renewal confidence is/)).toBeInTheDocument();
   });
 
   it("renders recommended start date", () => {
@@ -124,7 +125,7 @@ describe("AccountOutlook", () => {
   it("renders expansion signals section", () => {
     render(<AccountOutlook intelligence={expansionIntelligence} />);
 
-    expect(screen.getByText("Expansion Signals")).toBeInTheDocument();
+    expect(screen.getByText("Growth Opportunities")).toBeInTheDocument();
     expect(screen.getByText(/Analytics add-on module/)).toBeInTheDocument();
     expect(screen.getByText(/Enterprise tier upgrade/)).toBeInTheDocument();
   });
@@ -158,7 +159,7 @@ describe("AccountOutlook", () => {
     render(<AccountOutlook intelligence={fullIntelligence} />);
 
     expect(screen.getByText(/Renewal confidence is/)).toBeInTheDocument();
-    expect(screen.getByText("Expansion Signals")).toBeInTheDocument();
+    expect(screen.getByText("Growth Opportunities")).toBeInTheDocument();
     expect(screen.getByText("Annual")).toBeInTheDocument();
   });
 
