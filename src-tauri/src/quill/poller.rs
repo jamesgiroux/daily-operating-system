@@ -471,7 +471,7 @@ async fn process_sync_row(
 
     // Send native notification on success
     if result.is_ok() {
-        let _ = crate::notification::notify_transcript_ready(app_handle, &meeting.title, None);
+        let _ = crate::notification::notify_transcript_ready(app_handle, &meeting.title, None, state);
     }
 }
 

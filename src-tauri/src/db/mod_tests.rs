@@ -3653,35 +3653,37 @@ fn test_insert_and_query_email_signals() {
     let db = test_db();
     setup_account(&db, "acc1", "Acme Corp");
 
-    db.upsert_email_signal(
-        "email-1",
-        Some("owner@acme.com"),
-        None,
-        "acc1",
-        "account",
-        "timeline",
-        "Customer asked to move launch date by two weeks",
-        Some(0.86),
-        Some("neutral"),
-        Some("high"),
-        Some("2026-02-12T09:00:00Z"),
-    )
+    db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
+        email_id: "email-1",
+        sender_email: Some("owner@acme.com"),
+        person_id: None,
+        entity_id: "acc1",
+        entity_type: "account",
+        signal_type: "timeline",
+        signal_text: "Customer asked to move launch date by two weeks",
+        confidence: Some(0.86),
+        sentiment: Some("neutral"),
+        urgency: Some("high"),
+        detected_at: Some("2026-02-12T09:00:00Z"),
+        source: None,
+    })
     .expect("insert signal");
 
     // Duplicate should be ignored by dedupe unique index.
-    db.upsert_email_signal(
-        "email-1",
-        Some("owner@acme.com"),
-        None,
-        "acc1",
-        "account",
-        "timeline",
-        "Customer asked to move launch date by two weeks",
-        Some(0.86),
-        Some("neutral"),
-        Some("high"),
-        Some("2026-02-12T09:00:00Z"),
-    )
+    db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
+        email_id: "email-1",
+        sender_email: Some("owner@acme.com"),
+        person_id: None,
+        entity_id: "acc1",
+        entity_type: "account",
+        signal_type: "timeline",
+        signal_text: "Customer asked to move launch date by two weeks",
+        confidence: Some(0.86),
+        sentiment: Some("neutral"),
+        urgency: Some("high"),
+        detected_at: Some("2026-02-12T09:00:00Z"),
+        source: None,
+    })
     .expect("insert duplicate signal");
 
     let signals = db
@@ -3698,20 +3700,20 @@ fn test_email_signal_source_attribution_roundtrip() {
     let db = test_db();
     setup_account(&db, "acc1", "Acme Corp");
 
-    db.upsert_email_signal_with_source(
-        "email-source",
-        Some("owner@acme.com"),
-        None,
-        "acc1",
-        "account",
-        "timeline",
-        "Updated timeline requested",
-        Some(0.8),
-        Some("neutral"),
-        Some("medium"),
-        Some("2026-02-20T10:00:00Z"),
-        Some("ai_classification"),
-    )
+    db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
+        email_id: "email-source",
+        sender_email: Some("owner@acme.com"),
+        person_id: None,
+        entity_id: "acc1",
+        entity_type: "account",
+        signal_type: "timeline",
+        signal_text: "Updated timeline requested",
+        confidence: Some(0.8),
+        sentiment: Some("neutral"),
+        urgency: Some("medium"),
+        detected_at: Some("2026-02-20T10:00:00Z"),
+        source: Some("ai_classification"),
+    })
     .expect("insert signal with source");
 
     let source = db
@@ -3725,35 +3727,35 @@ fn test_email_signal_source_lookup_ignores_feedback_rows() {
     let db = test_db();
     setup_account(&db, "acc1", "Acme Corp");
 
-    db.upsert_email_signal_with_source(
-        "email-feedback",
-        Some("owner@acme.com"),
-        None,
-        "acc1",
-        "account",
-        "timeline",
-        "Original signal",
-        Some(0.8),
-        Some("neutral"),
-        Some("medium"),
-        Some("2026-02-20T10:00:00Z"),
-        Some("ai_classification"),
-    )
+    db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
+        email_id: "email-feedback",
+        sender_email: Some("owner@acme.com"),
+        person_id: None,
+        entity_id: "acc1",
+        entity_type: "account",
+        signal_type: "timeline",
+        signal_text: "Original signal",
+        confidence: Some(0.8),
+        sentiment: Some("neutral"),
+        urgency: Some("medium"),
+        detected_at: Some("2026-02-20T10:00:00Z"),
+        source: Some("ai_classification"),
+    })
     .expect("insert original signal");
-    db.upsert_email_signal_with_source(
-        "email-feedback",
-        None,
-        None,
-        "system",
-        "account",
-        "feedback",
-        "User corrected priority",
-        Some(1.0),
-        None,
-        None,
-        Some("2026-02-20T11:00:00Z"),
-        Some("user_feedback"),
-    )
+    db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
+        email_id: "email-feedback",
+        sender_email: None,
+        person_id: None,
+        entity_id: "system",
+        entity_type: "account",
+        signal_type: "feedback",
+        signal_text: "User corrected priority",
+        confidence: Some(1.0),
+        sentiment: None,
+        urgency: None,
+        detected_at: Some("2026-02-20T11:00:00Z"),
+        source: Some("user_feedback"),
+    })
     .expect("insert feedback row");
 
     let source = db
@@ -3806,19 +3808,33 @@ fn test_email_signal_pipeline_person_direct_match() {
     assert_eq!(entities[0].id, "acc1");
 
     let inserted = db
-        .upsert_email_signal(
-            "email-1",
-            Some(sender),
-            Some(&found.id),
-            &entities[0].id,
-            entities[0].entity_type.as_str(),
-            "expansion",
-            "Wants to add 50 seats in Q2",
-            Some(0.85),
-            Some("positive"),
-            Some("medium"),
-            Some("2026-02-13T10:00:00Z"),
-        )
+        .upsert_email_signal(&crate::db::signals::EmailSignalInput {
+
+            email_id: "email-1",
+
+            sender_email: Some(sender),
+
+            person_id: Some(&found.id),
+
+            entity_id: &entities[0].id,
+
+            entity_type: entities[0].entity_type.as_str(),
+
+            signal_type: "expansion",
+
+            signal_text: "Wants to add 50 seats in Q2",
+
+            confidence: Some(0.85),
+
+            sentiment: Some("positive"),
+
+            urgency: Some("medium"),
+
+            detected_at: Some("2026-02-13T10:00:00Z"),
+
+            source: None,
+
+        })
         .expect("insert signal");
     assert!(inserted);
 
@@ -3851,19 +3867,34 @@ fn test_email_signal_pipeline_domain_fallback() {
     assert_eq!(candidates.len(), 1);
 
     let inserted = db
-        .upsert_email_signal(
-            "email-2",
-            Some(sender),
-            None, // no person_id
+        .upsert_email_signal(&crate::db::signals::EmailSignalInput {
+
+            email_id: "email-2",
+
+            sender_email: Some(sender),
+
+            person_id: None,
+
+            entity_id: // no person_id
             &candidates[0].id,
-            "account",
-            "question",
-            "Asking about enterprise pricing",
-            Some(0.75),
-            Some("neutral"),
-            Some("low"),
-            None,
-        )
+
+            entity_type: "account",
+
+            signal_type: "question",
+
+            signal_text: "Asking about enterprise pricing",
+
+            confidence: Some(0.75),
+
+            sentiment: Some("neutral"),
+
+            urgency: Some("low"),
+
+            detected_at: None,
+
+            source: None,
+
+        })
         .expect("insert signal");
     assert!(inserted);
 
@@ -3882,36 +3913,64 @@ fn test_email_signal_pipeline_deduplication() {
 
     // Insert same signal twice (same email_id + entity)
     let first = db
-        .upsert_email_signal(
-            "email-dup",
-            Some("alice@acme.com"),
-            None,
-            "acc1",
-            "account",
-            "expansion",
-            "Wants to expand",
-            Some(0.85),
-            Some("positive"),
-            Some("high"),
-            Some("2026-02-13T10:00:00Z"),
-        )
+        .upsert_email_signal(&crate::db::signals::EmailSignalInput {
+
+            email_id: "email-dup",
+
+            sender_email: Some("alice@acme.com"),
+
+            person_id: None,
+
+            entity_id: "acc1",
+
+            entity_type: "account",
+
+            signal_type: "expansion",
+
+            signal_text: "Wants to expand",
+
+            confidence: Some(0.85),
+
+            sentiment: Some("positive"),
+
+            urgency: Some("high"),
+
+            detected_at: Some("2026-02-13T10:00:00Z"),
+
+            source: None,
+
+        })
         .expect("first insert");
     assert!(first);
 
     let second = db
-        .upsert_email_signal(
-            "email-dup",
-            Some("alice@acme.com"),
-            None,
-            "acc1",
-            "account",
-            "expansion",
-            "Wants to expand",
-            Some(0.85),
-            Some("positive"),
-            Some("high"),
-            Some("2026-02-13T10:00:00Z"),
-        )
+        .upsert_email_signal(&crate::db::signals::EmailSignalInput {
+
+            email_id: "email-dup",
+
+            sender_email: Some("alice@acme.com"),
+
+            person_id: None,
+
+            entity_id: "acc1",
+
+            entity_type: "account",
+
+            signal_type: "expansion",
+
+            signal_text: "Wants to expand",
+
+            confidence: Some(0.85),
+
+            sentiment: Some("positive"),
+
+            urgency: Some("high"),
+
+            detected_at: Some("2026-02-13T10:00:00Z"),
+
+            source: None,
+
+        })
         .expect("second insert");
     assert!(!second, "duplicate should return false");
 
@@ -3942,19 +4001,20 @@ fn test_email_signal_pipeline_multi_entity_targets() {
 
     // Insert signal for each entity (mirrors executor loop)
     for entity in &entities {
-        db.upsert_email_signal(
-            "email-multi",
-            Some("alice@acme.com"),
-            Some(&person.id),
-            &entity.id,
-            entity.entity_type.as_str(),
-            "feedback",
-            "Great experience with the new feature",
-            Some(0.9),
-            Some("positive"),
-            None,
-            Some("2026-02-13T11:00:00Z"),
-        )
+        db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
+            email_id: "email-multi",
+            sender_email: Some("alice@acme.com"),
+            person_id: Some(&person.id),
+            entity_id: &entity.id,
+            entity_type: entity.entity_type.as_str(),
+            signal_type: "feedback",
+            signal_text: "Great experience with the new feature",
+            confidence: Some(0.9),
+            sentiment: Some("positive"),
+            urgency: None,
+            detected_at: Some("2026-02-13T11:00:00Z"),
+            source: None,
+        })
         .expect("insert");
     }
 

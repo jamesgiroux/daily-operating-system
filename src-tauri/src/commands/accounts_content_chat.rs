@@ -212,6 +212,28 @@ pub async fn add_account_team_member(
         .await
 }
 
+/// Replace all roles for a team member (single-select role change).
+#[tauri::command]
+pub async fn set_team_member_role(
+    account_id: String,
+    person_id: String,
+    new_role: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::set_team_member_role(
+                db,
+                &app_state,
+                &account_id,
+                &person_id,
+                &new_role,
+            )
+        })
+        .await
+}
+
 /// Remove a person-role pair from an account team (I207).
 #[tauri::command]
 pub async fn remove_account_team_member(

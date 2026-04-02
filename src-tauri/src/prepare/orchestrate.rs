@@ -82,6 +82,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                         keywords: vec![],
                         emails: vec![],
                         account_type: None,
+                        linked_account_ids: vec![],
                     })
                     .collect()
             }
@@ -714,6 +715,26 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     log::warn!("prepare_today: failed to upsert meeting '{}': {}", title, e);
                     continue;
                 }
+
+                // I653 FIX 5: Persist classification-time entity links (mirrors prepare_week:1139)
+                if let Some(entities) = cm.get("entities").and_then(|v| v.as_array()) {
+                    let entity_pairs: Vec<(String, String)> = entities
+                        .iter()
+                        .filter_map(|e| {
+                            let id = e.get("entity_id").and_then(|v| v.as_str())?;
+                            let t = e.get("entity_type").and_then(|v| v.as_str())?;
+                            Some((id.to_string(), t.to_string()))
+                        })
+                        .collect();
+                    if !entity_pairs.is_empty() {
+                        let _ = crate::services::meetings::persist_classification_entities(
+                            &db,
+                            calendar_event_id,
+                            &entity_pairs,
+                        );
+                    }
+                }
+
                 ensured += 1;
             }
             if ensured > 0 {
@@ -1136,20 +1157,22 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                     new_id
                 };
 
-                // Link meeting entities (I336)
+                // Link meeting entities (I336, refactored I653 to use centralized service)
                 if let Some(entities) = cm.get("entities").and_then(|v| v.as_array()) {
-                    for entity in entities {
-                        let entity_type = entity
-                            .get("entity_type")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        let entity_id = entity
-                            .get("entity_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        if !entity_id.is_empty() {
-                            let _ = db.link_meeting_entity(&meeting_id, entity_id, entity_type);
-                        }
+                    let entity_pairs: Vec<(String, String)> = entities
+                        .iter()
+                        .filter_map(|e| {
+                            let id = e.get("entity_id").and_then(|v| v.as_str())?;
+                            let t = e.get("entity_type").and_then(|v| v.as_str())?;
+                            Some((id.to_string(), t.to_string()))
+                        })
+                        .collect();
+                    if !entity_pairs.is_empty() {
+                        let _ = crate::services::meetings::persist_classification_entities(
+                            &db,
+                            &meeting_id,
+                            &entity_pairs,
+                        );
                     }
                 }
 

@@ -115,6 +115,9 @@ pub fn run() {
                 }
             }
 
+            // One-time migration: move Gravatar API key from config.json to Keychain
+            gravatar::keychain::migrate_from_config(&state);
+
             // Initialize async DbService (read/write separated connections).
             // Skip when startup recovery screens are active.
             if !state
@@ -456,6 +459,7 @@ pub fn run() {
             commands::reset_ai_models_to_recommended,
             commands::set_google_poll_settings,
             commands::set_hygiene_config,
+            commands::set_notification_config,
             commands::set_schedule,
             commands::get_actions_from_db,
             commands::complete_action,
@@ -608,6 +612,7 @@ pub fn run() {
             commands::update_account_notes,
             commands::update_account_programs,
             commands::add_account_team_member,
+            commands::set_team_member_role,
             commands::remove_account_team_member,
             // I652 Phase 2: Person-first stakeholder commands
             commands::get_person_stakeholder_roles,
