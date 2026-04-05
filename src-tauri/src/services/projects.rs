@@ -232,7 +232,7 @@ pub async fn create_project(
     let id = crate::util::slugify(validated_name);
     let validated_name = validated_name.to_string();
 
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let config = state.config.read().clone();
 
     let id_clone = id.clone();
     let validated_name_clone = validated_name.clone();
@@ -287,7 +287,7 @@ pub async fn update_project_field(
     value: &str,
     state: &AppState,
 ) -> Result<(), String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let config = state.config.read().clone();
     let intel_queue = state.intel_queue.clone();
 
     let project_id = project_id.to_string();
@@ -372,7 +372,7 @@ pub async fn update_project_notes(
     notes: &str,
     state: &AppState,
 ) -> Result<(), String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let config = state.config.read().clone();
 
     let project_id = project_id.to_string();
     let notes = notes.to_string();

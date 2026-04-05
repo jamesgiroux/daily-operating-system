@@ -77,7 +77,7 @@ pub fn enrich_file(
     // Build the prompt for Claude
     // I313: Read vocabulary from active preset for domain-specific prompt language
     let vocabulary = state
-        .and_then(|s| s.active_preset.read().ok())
+        .map(|s| s.active_preset.read())
         .and_then(|guard| guard.as_ref().map(|p| p.vocabulary.clone()));
     let prompt = build_enrichment_prompt(filename, &content, user_ctx, vocabulary.as_ref());
 

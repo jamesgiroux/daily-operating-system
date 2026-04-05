@@ -9,7 +9,7 @@
 //! split-lock DB access so the UI stays responsive.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 
 use std::sync::Arc;
@@ -143,24 +143,21 @@ impl MeetingPrepQueue {
             && (request.priority == PrepPriority::Background
                 || request.priority == PrepPriority::PageLoad)
         {
-            if let Ok(last) = self.last_enqueued.lock() {
-                if let Some(last_time) = last.get(&request.meeting_id) {
-                    if last_time.elapsed().as_secs() < DEBOUNCE_SECS {
-                        log::debug!(
-                            "MeetingPrepQueue: debounced {} ({}s since last)",
-                            request.meeting_id,
-                            last_time.elapsed().as_secs()
-                        );
-                        return;
-                    }
+            let last = self.last_enqueued.lock();
+            if let Some(last_time) = last.get(&request.meeting_id) {
+                if last_time.elapsed().as_secs() < DEBOUNCE_SECS {
+                    log::debug!(
+                        "MeetingPrepQueue: debounced {} ({}s since last)",
+                        request.meeting_id,
+                        last_time.elapsed().as_secs()
+                    );
+                    return;
                 }
             }
+            drop(last);
         }
 
-        let mut queue = match self.queue.lock() {
-            Ok(q) => q,
-            Err(_) => return,
-        };
+        let mut queue = self.queue.lock();
 
         // Dedup: if meeting already in queue, keep higher priority
         if let Some(existing) = queue
@@ -193,14 +190,15 @@ impl MeetingPrepQueue {
         queue.push_back(request.clone());
 
         // Update debounce tracker
-        if let Ok(mut last) = self.last_enqueued.lock() {
+        {
+            let mut last = self.last_enqueued.lock();
             last.insert(request.meeting_id, Instant::now());
         }
     }
 
     /// Dequeue the highest-priority request.
     pub fn dequeue(&self) -> Option<PrepRequest> {
-        let mut queue = self.queue.lock().ok()?;
+        let mut queue = self.queue.lock();
         if queue.is_empty() {
             return None;
         }
@@ -221,7 +219,7 @@ impl MeetingPrepQueue {
 
     /// Current queue depth (for diagnostics).
     pub fn len(&self) -> usize {
-        self.queue.lock().map(|q| q.len()).unwrap_or(0)
+        self.queue.lock().len()
     }
 
     /// Whether the queue is empty.
@@ -232,13 +230,12 @@ impl MeetingPrepQueue {
     /// Remove stale entries from the debounce tracker.
     pub fn prune_stale_entries(&self) {
         let stale_threshold_secs = DEBOUNCE_SECS * 10;
-        if let Ok(mut last) = self.last_enqueued.lock() {
-            let before = last.len();
-            last.retain(|_, instant| instant.elapsed().as_secs() < stale_threshold_secs);
-            let pruned = before - last.len();
-            if pruned > 0 {
-                log::debug!("MeetingPrepQueue: pruned {} stale debounce entries", pruned);
-            }
+        let mut last = self.last_enqueued.lock();
+        let before = last.len();
+        last.retain(|_, instant| instant.elapsed().as_secs() < stale_threshold_secs);
+        let pruned = before - last.len();
+        if pruned > 0 {
+            log::debug!("MeetingPrepQueue: pruned {} stale debounce entries", pruned);
         }
     }
 }
@@ -390,7 +387,8 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
                     .await;
 
                 // Audit: meeting prep generated
-                if let Ok(mut audit) = state.audit_log.lock() {
+                {
+                    let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "ai",
                         "meeting_prep_generated",
@@ -728,8 +726,8 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
     let ai_config = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+        .as_ref()
+        .map(|c| c.ai_models.clone())
         .unwrap_or_default();
 
     let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config)
@@ -942,13 +940,13 @@ mod tests {
         let queue = MeetingPrepQueue::new();
 
         {
-            let mut last = queue.last_enqueued.lock().unwrap();
+            let mut last = queue.last_enqueued.lock();
             last.insert("fresh".to_string(), Instant::now());
         }
 
         queue.prune_stale_entries();
 
-        let last = queue.last_enqueued.lock().unwrap();
+        let last = queue.last_enqueued.lock();
         assert!(
             last.contains_key("fresh"),
             "fresh entry should survive pruning"
