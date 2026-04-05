@@ -4,8 +4,9 @@
  * from EntityIntelligence. Collapses entirely when all three are empty.
  *
  * I550: Per-item inline editing, dismiss, and feedback controls.
+ * I585: Shows confirmed badge for user-confirmed value items.
  */
-import { X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import type { EntityIntelligence } from "@/types";
 import { EditableText } from "@/components/ui/EditableText";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
@@ -128,8 +129,14 @@ export function ValueCommitments({
   getItemFeedback,
   onItemFeedback,
 }: ValueCommitmentsProps) {
+  // I585: Prefer persisted value delivered (confirmed items survive re-enrichment).
+  // Fall back to AI-inferred value_delivered if no persisted data.
+  const persistedItems = intelligence.persistedValueDelivered ?? [];
+  const aiItems = intelligence.valueDelivered ?? [];
+  const rawValueDelivered = persistedItems.length > 0 ? persistedItems : aiItems;
+
   // Filter out dismissed items (empty description/statement = removed by user)
-  const valueDelivered = (intelligence.valueDelivered ?? []).filter((v) => v.statement?.trim());
+  const valueDelivered = rawValueDelivered.filter((v) => v.statement?.trim());
   const successMetrics = (intelligence.successMetrics ?? []).filter((m) => m.name?.trim());
   const openCommitments = (intelligence.openCommitments ?? []).filter((c) => c.description?.trim());
 
@@ -193,6 +200,17 @@ export function ValueCommitments({
                       </div>
                     )}
                     <ProvenanceTag itemSource={item.itemSource} discrepancy={item.discrepancy} />
+                    {/* I585: Visual indicator for user-confirmed vs AI-inferred items */}
+                    {item.confirmedByUser && (
+                      <span
+                        className={css.confirmedBadge}
+                        title="Confirmed by you"
+                        aria-label="User confirmed"
+                      >
+                        <Check size={10} />
+                        {" confirmed"}
+                      </span>
+                    )}
                   </div>
                   {(onUpdateField || onItemFeedback) && (
                     <span className={css.itemActions}>

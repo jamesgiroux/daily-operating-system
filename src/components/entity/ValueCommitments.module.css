@@ -353,6 +353,18 @@
   color: var(--color-spice-terracotta);
 }
 
+/* I585: Confirmed badge for user-verified value items */
+.confirmedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-spice-sage);
+  opacity: 0.75;
+  margin-top: 4px;
+}
+
 /* -- Responsive -- */
 
 @media (max-width: 700px) {

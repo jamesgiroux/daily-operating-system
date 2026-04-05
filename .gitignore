@@ -58,3 +58,4 @@ src-tauri/Accounts/
 .dailyos-test
 tauri-dev.log
 .gstack/
+src-tauri/gen

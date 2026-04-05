@@ -135,8 +135,24 @@ export default function AccountHealthPage() {
     (updated: AccountHealthContent) => {
       setContent(updated);
       debouncedSave(updated);
+      // I585: Persist valueDelivered edits to entity_assessment.value_delivered_json
+      // so they survive report regeneration.
+      if (accountId && updated.valueDelivered) {
+        const persistItems = updated.valueDelivered.map((s) => ({
+          statement: s.text,
+          source: s.source ?? undefined,
+          confirmedByUser: true,
+        }));
+        invoke("update_value_delivered", {
+          entityId: accountId,
+          entityType: "account",
+          itemsJson: JSON.stringify(persistItems),
+        }).catch((e) => {
+          console.warn("Failed to persist value delivered edits:", e);
+        });
+      }
     },
-    [debouncedSave],
+    [accountId, debouncedSave],
   );
 
   const feedback = useIntelligenceFeedback(accountId, "account");

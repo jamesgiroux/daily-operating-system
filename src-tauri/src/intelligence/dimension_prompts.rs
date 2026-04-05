@@ -684,6 +684,16 @@ fn inject_existing_intelligence(prompt: &mut String, dimension: &str, ctx: &Inte
             }
         }
         "value_success" => {
+            // I585: Inject user-confirmed items first (sacred — LLM must not contradict)
+            for v in &prior.persisted_value_delivered {
+                if v.confirmed_by_user {
+                    items_block.push_str(&format_tagged_item(
+                        "Value [user_correction]",
+                        &v.statement,
+                        v.item_source(),
+                    ));
+                }
+            }
             for v in &prior.value_delivered {
                 items_block.push_str(&format_tagged_item("Value", &v.statement, v.item_source()));
             }

@@ -770,6 +770,12 @@ pub struct IntelligenceJson {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_delivered: Vec<ValueItem>,
 
+    /// I585: Persisted value delivered items — survives re-enrichment.
+    /// User-confirmed items (confirmed_by_user = true) are never overwritten.
+    /// This is the authoritative source for reports and meeting prep context.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub persisted_value_delivered: Vec<ValueItem>,
+
     /// Prep items for the next meeting with this entity.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_meeting_readiness: Option<MeetingReadiness>,
@@ -1153,11 +1159,17 @@ pub struct StakeholderInsight {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValueItem {
+    /// I585: Stable UUID for this value item. Assigned on first persistence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date: Option<String>,
     pub statement: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// I585: ID of the source record (meeting ID, email ID, etc.) this was extracted from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub impact: Option<String>,
     /// I576: Structured source attribution with confidence.
@@ -1166,6 +1178,13 @@ pub struct ValueItem {
     /// I576: True if multiple sources disagree on this item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
+    /// I585: True when the user has explicitly confirmed or edited this item.
+    /// User-confirmed items are never overwritten by re-enrichment.
+    #[serde(default)]
+    pub confirmed_by_user: bool,
+    /// I585: ISO timestamp when this item was first added to the persisted store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1901,6 +1920,22 @@ impl ActionDb {
         Ok(())
     }
 
+    /// I585: Update only the value_delivered_json column for an entity.
+    /// This is the authoritative write path for persisted value delivered items.
+    /// Unlike upsert_entity_intelligence, this never touches other columns.
+    pub fn update_value_delivered_json(
+        &self,
+        entity_id: &str,
+        items: &[ValueItem],
+    ) -> Result<(), rusqlite::Error> {
+        let json = serde_json::to_string(items).unwrap_or_else(|_| "[]".to_string());
+        self.conn_ref().execute(
+            "UPDATE entity_assessment SET value_delivered_json = ?1 WHERE entity_id = ?2",
+            rusqlite::params![json, entity_id],
+        )?;
+        Ok(())
+    }
+
     /// Get cached entity intelligence (from entity_assessment + entity_quality).
     pub fn get_entity_intelligence(
         &self,
@@ -1916,7 +1951,7 @@ impl ActionDb {
                     ea.relationship_depth, ea.consistency_status, ea.consistency_findings_json,
                     ea.consistency_checked_at, ea.portfolio_json, ea.network_json,
                     ea.user_edits_json, ea.source_manifest_json, ea.dimensions_json,
-                    ea.pull_quote
+                    ea.pull_quote, ea.value_delivered_json
              FROM entity_assessment ea
              LEFT JOIN entity_quality eq ON eq.entity_id = ea.entity_id
              WHERE ea.entity_id = ?1",
@@ -1945,6 +1980,8 @@ impl ActionDb {
             let source_manifest_json: Option<String> = row.get(25)?;
             let dimensions_json_raw: Option<String> = row.get(26)?;
             let pull_quote: Option<String> = row.get(27)?;
+            // I585: Persisted value delivered (separate from AI output column)
+            let persisted_vd_json: Option<String> = row.get(28)?;
 
             let health = health_json
                 .as_deref()
@@ -1974,6 +2011,9 @@ impl ActionDb {
                     .and_then(|j| serde_json::from_str(&j).ok())
                     .unwrap_or_default(),
                 value_delivered: value_delivered_json
+                    .and_then(|j| serde_json::from_str(&j).ok())
+                    .unwrap_or_default(),
+                persisted_value_delivered: persisted_vd_json
                     .and_then(|j| serde_json::from_str(&j).ok())
                     .unwrap_or_default(),
                 next_meeting_readiness: readiness_json.and_then(|j| serde_json::from_str(&j).ok()),

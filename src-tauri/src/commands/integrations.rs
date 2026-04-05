@@ -222,6 +222,24 @@ pub async fn update_stakeholders(
     .await
 }
 
+/// I585: Persist a full replacement of value_delivered items for an entity.
+/// Items are marked confirmed_by_user = true and a signal is emitted.
+#[tauri::command]
+pub async fn update_value_delivered(
+    entity_id: String,
+    entity_type: String,
+    items_json: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::intelligence::update_value_delivered(
+        &entity_id,
+        &entity_type,
+        &items_json,
+        &state,
+    )
+    .await
+}
+
 /// Create a person entity from a stakeholder name (no email required).
 ///
 /// Used when a stakeholder card references someone who doesn't yet exist as

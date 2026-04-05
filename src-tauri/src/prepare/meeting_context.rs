@@ -839,6 +839,24 @@ fn inject_entity_intelligence(
             ctx["products"] = json!(classification.products);
         }
     }
+
+    // I585: Inject persisted value delivered statements into meeting prep context.
+    // CS user walks in knowing what value has already been proven for this account.
+    if !intel.persisted_value_delivered.is_empty() {
+        let value_statements: Vec<Value> = intel
+            .persisted_value_delivered
+            .iter()
+            .map(|v| {
+                json!({
+                    "statement": v.statement,
+                    "date": v.date,
+                    "impact": v.impact,
+                    "confirmedByUser": v.confirmed_by_user,
+                })
+            })
+            .collect();
+        ctx["value_already_delivered"] = json!(value_statements);
+    }
 }
 
 /// I425: Inject active Linear issues linked to this entity via linear_entity_links.

@@ -1963,7 +1963,9 @@ export interface EntityIntelligence {
   /** I500 org-health baseline payload (when available). */
   orgHealth?: OrgHealthData | null;
   /** I396: Value delivered to the account. */
-  valueDelivered?: Array<{ date?: string; statement: string; source?: string; impact?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
+  valueDelivered?: Array<{ id?: string; date?: string; statement: string; source?: string; sourceId?: string; impact?: string; itemSource?: ItemSource; discrepancy?: boolean; confirmedByUser?: boolean; addedAt?: string }> | null;
+  /** I585: Persisted value delivered items — survives re-enrichment, user-confirmed items never overwritten. */
+  persistedValueDelivered?: Array<{ id?: string; date?: string; statement: string; source?: string; sourceId?: string; impact?: string; itemSource?: ItemSource; discrepancy?: boolean; confirmedByUser?: boolean; addedAt?: string }> | null;
   /** I396: Success metrics / KPIs tracked for this entity. */
   successMetrics?: Array<{ name: string; target?: string; current?: string; status?: string; owner?: string }> | null;
   /** I396: Open commitments (promises made to/from the account). */
