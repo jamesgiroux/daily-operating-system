@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS - Account Intelligence Ledger v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --linen: #e8e2d9;
+    --warm-white: #faf8f6;
+    --charcoal: #1e2530;
+    --ink: #2a2b3d;
+    --turmeric: #c9a227;
+    --saffron: #deb841;
+    --terracotta: #c4654a;
+    --sage: #7eaa7b;
+    --larkspur: #8fa3c4;
+    --text-primary: #1e2530;
+    --text-secondary: #5a6370;
+    --text-tertiary: #8a919a;
+    --rule-heavy: rgba(30, 37, 48, 0.14);
+    --rule-light: rgba(30, 37, 48, 0.08);
+    --shadow: 0 18px 48px rgba(30, 37, 48, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    color: var(--text-primary);
+    font-family: "DM Sans", sans-serif;
+    background:
+      radial-gradient(circle at 18% 10%, rgba(201, 162, 39, 0.14), transparent 22%),
+      radial-gradient(circle at 84% 14%, rgba(143, 163, 196, 0.12), transparent 20%),
+      var(--cream);
+  }
+
+  .folio {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    padding: 12px 28px;
+    background: rgba(245, 242, 239, 0.84);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(245, 242, 239, 0.6);
+  }
+
+  .folio__left,
+  .folio__right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .asterisk {
+    font-family: "Montserrat", sans-serif;
+    font-size: 18px;
+    line-height: 1;
+    color: var(--turmeric);
+  }
+
+  .mono {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--rule-light);
+    background: rgba(250, 248, 246, 0.72);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .status::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+
+  .status.good { color: var(--sage); }
+  .status.warn { color: var(--saffron); }
+  .status.alert { color: var(--terracotta); }
+
+  .page {
+    width: min(1120px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 40px 0 120px;
+    position: relative;
+  }
+
+  .watermark {
+    position: absolute;
+    top: 88px;
+    right: 24px;
+    font-family: "Montserrat", sans-serif;
+    font-size: 320px;
+    line-height: 0.8;
+    color: rgba(201, 162, 39, 0.06);
+    transform: rotate(12deg);
+    pointer-events: none;
+  }
+
+  .hero {
+    padding: 48px 0 72px;
+    border-bottom: 1px solid var(--rule-heavy);
+  }
+
+  .hero__headline {
+    margin: 14px 0 0;
+    max-width: 880px;
+    font-family: "Newsreader", serif;
+    font-size: clamp(58px, 7vw, 88px);
+    font-weight: 400;
+    line-height: 1.01;
+    letter-spacing: -0.05em;
+  }
+
+  .hero__narrative {
+    margin: 24px 0 0;
+    max-width: 760px;
+    font-family: "Newsreader", serif;
+    font-size: 25px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.58;
+    color: var(--text-secondary);
+  }
+
+  .vitals {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 30px;
+  }
+
+  .vitals__item {
+    padding-top: 12px;
+    border-top: 1px solid var(--rule-heavy);
+  }
+
+  .vitals__item strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .section {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 32px;
+    align-items: start;
+    padding: 56px 0 0;
+  }
+
+  .section__content {
+    min-width: 0;
+    padding-top: 2px;
+  }
+
+  .chapter {
+    margin: 0 0 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule-heavy);
+    font-family: "Newsreader", serif;
+    font-size: 30px;
+    font-weight: 400;
+    letter-spacing: -0.03em;
+  }
+
+  .lede {
+    margin: 0 0 24px;
+    max-width: 780px;
+    font-size: 16px;
+    line-height: 1.8;
+    color: var(--text-secondary);
+  }
+
+  .lede strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .triptych {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .triptych__block {
+    padding: 18px 0 0;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .triptych__block h3,
+  .list-block h3,
+  .record-grid h3,
+  .reports h3 {
+    margin: 8px 0 10px;
+    font-size: 17px;
+    font-weight: 600;
+  }
+
+  .triptych__block ul,
+  .watch-columns ul,
+  .work-grid ul,
+  .reports ul {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--text-secondary);
+    line-height: 1.82;
+  }
+
+  .health-grid {
+    display: grid;
+    gap: 16px;
+  }
+
+  .health-row {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr) 84px;
+    gap: 18px;
+    align-items: center;
+    padding: 12px 0;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .health-row:first-child { border-top: 0; }
+
+  .bar {
+    height: 10px;
+    background: rgba(232, 226, 217, 0.85);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .bar > span {
+    display: block;
+    height: 100%;
+    background: var(--turmeric);
+  }
+
+  .bar.red > span { background: var(--terracotta); }
+  .bar.green > span { background: var(--sage); }
+
+  .room {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .person {
+    padding: 18px 18px 20px;
+    background: rgba(250, 248, 246, 0.72);
+    border: 1px solid var(--rule-light);
+    box-shadow: var(--shadow);
+  }
+
+  .person--transition { border-top: 3px solid var(--terracotta); }
+  .person--active { border-top: 3px solid var(--turmeric); }
+  .person--periodic { border-top: 3px solid var(--larkspur); }
+
+  .person p,
+  .fact p,
+  .report-note {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.72;
+    color: var(--text-secondary);
+  }
+
+  .watch-columns,
+  .work-grid,
+  .record-grid,
+  .reference-grid,
+  .reports {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px;
+  }
+
+  .fact,
+  .report-card {
+    padding: 18px 0 0;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .record-grid {
+    grid-template-columns: 1.2fr 0.8fr;
+  }
+
+  .timeline {
+    display: grid;
+    gap: 16px;
+  }
+
+  .timeline__item {
+    padding-left: 16px;
+    border-left: 2px solid var(--turmeric);
+  }
+
+  .timeline__item--sage { border-left-color: var(--sage); }
+  .timeline__item--terracotta { border-left-color: var(--terracotta); }
+
+  .timeline__item h4 {
+    margin: 6px 0 8px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .timeline__item p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+  }
+
+  .reports ul { padding-left: 0; list-style: none; }
+  .reports li {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 14px 0;
+    border-top: 1px solid var(--rule-light);
+    font-size: 14px;
+  }
+
+  .reports li:first-child { border-top: 0; }
+
+  .finis {
+    padding: 68px 0 12px;
+    text-align: center;
+    font-family: "Newsreader", serif;
+    color: var(--text-secondary);
+  }
+
+  .finis strong {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 28px;
+    letter-spacing: 0.28em;
+    color: var(--turmeric);
+    font-weight: 400;
+  }
+
+  @media (max-width: 980px) {
+    .section,
+    .triptych,
+    .room,
+    .watch-columns,
+    .work-grid,
+    .record-grid,
+    .reference-grid,
+    .reports,
+    .vitals {
+      grid-template-columns: 1fr;
+    }
+
+    .health-row {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .folio {
+      padding: 12px 16px;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .page {
+      width: min(100%, calc(100% - 20px));
+      padding-top: 20px;
+    }
+
+    .hero__headline { font-size: 50px; }
+    .hero__narrative { font-size: 21px; }
+  }
+</style>
+</head>
+<body>
+  <div class="folio">
+    <div class="folio__left">
+      <span class="asterisk">*</span>
+      <div>
+        <div class="mono">DailyOS / account / ledger v2</div>
+        <div>Acme Corp</div>
+      </div>
+    </div>
+    <div class="folio__right">
+      <span class="status good">health 78 / stable</span>
+      <span class="status warn">3 risks in play</span>
+      <span class="status alert">alex transition window</span>
+    </div>
+  </div>
+
+  <main class="page">
+    <div class="watermark">*</div>
+
+    <section class="hero">
+      <div class="mono">Thursday, March 12, 2026 / source file count 4 / account detail reimagination</div>
+      <h1 class="hero__headline">Acme remains one of the strongest accounts in the book, but the next 30 days are defined by one transition risk and one trust signal that cannot be ignored.</h1>
+      <p class="hero__narrative">Phase 1 landed ahead of schedule and above benchmark, Sarah Chen has already secured Phase 2 sponsorship, and the commercial story is still constructive. The tension is elsewhere: Alex Torres is departing during the scoping window, legal is stalled on the amendment, and NPS softness in engineering now deserves editorial weight rather than a footnote.</p>
+      <div class="vitals">
+        <div class="vitals__item"><div class="mono">headline read</div><strong>strong account, real execution drag</strong></div>
+        <div class="vitals__item"><div class="mono">value delivered</div><strong>$200K ARR expansion from phase 1</strong></div>
+        <div class="vitals__item"><div class="mono">critical watch</div><strong>knowledge transfer before March departure</strong></div>
+        <div class="vitals__item"><div class="mono">customer signal</div><strong>NPS 42 with three detractors</strong></div>
+        <div class="vitals__item"><div class="mono">next commercial move</div><strong>unblock legal and hold QBR with confidence</strong></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">State of Play</div>
+      <div class="section__content">
+        <h2 class="chapter">What is working, what is straining, what is still unknown</h2>
+        <p class="lede"><strong>The account does not need rescuing.</strong> It needs careful stewardship. Executive sponsorship is strong, platform adoption across engineering is solid, and the operational proof from Phase 1 remains powerful. But the page should let the user feel the account's asymmetry: there is a lot going right, and the few things going wrong are concentrated in places that can reshape the next quarter if left unattended.</p>
+        <div class="triptych">
+          <div class="triptych__block">
+            <div class="mono">Working</div>
+            <h3>Momentum is real</h3>
+            <ul>
+              <li>Executive sponsorship is strong. Sarah Chen is fully bought in.</li>
+              <li>Phase 1 delivered on time and above benchmark.</li>
+              <li>Platform adoption across the engineering team is solid.</li>
+            </ul>
+          </div>
+          <div class="triptych__block">
+            <div class="mono">Not Working</div>
+            <h3>The weak spots are specific</h3>
+            <ul>
+              <li>NPS is trending down with three detractors in engineering.</li>
+              <li>Legal review of the MSA amendment is still a bottleneck.</li>
+              <li>No knowledge-transfer plan is underway despite Alex Torres' departure.</li>
+            </ul>
+          </div>
+          <div class="triptych__block">
+            <div class="mono">Unknowns</div>
+            <h3>The page should preserve uncertainty</h3>
+            <ul>
+              <li>APAC expansion viability is still not scoped.</li>
+              <li>Alex's replacement has not been identified.</li>
+              <li>The account team still lacks a confident read on the Singapore pilot.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">Health</div>
+      <div class="section__content">
+        <h2 class="chapter">Relationship Health</h2>
+        <p class="lede">The current account page already treats health as one chapter. This version keeps that model but makes it more editorial: one line of judgment above, then a measured breakdown below, so the reader sees both the gestalt and the mechanics of the score.</p>
+        <div class="health-grid">
+          <div class="health-row"><strong>Meeting cadence</strong><div class="bar green"><span style="width:85%"></span></div><div class="mono">85 / stable</div></div>
+          <div class="health-row"><strong>Email engagement</strong><div class="bar green"><span style="width:80%"></span></div><div class="mono">80 / stable</div></div>
+          <div class="health-row"><strong>Stakeholder coverage</strong><div class="bar"><span style="width:70%"></span></div><div class="mono">70 / declining</div></div>
+          <div class="health-row"><strong>Champion health</strong><div class="bar green"><span style="width:90%"></span></div><div class="mono">90 / stable</div></div>
+          <div class="health-row"><strong>Financial proximity</strong><div class="bar"><span style="width:75%"></span></div><div class="mono">75 / stable</div></div>
+          <div class="health-row"><strong>Signal momentum</strong><div class="bar red"><span style="width:72%"></span></div><div class="mono">72 / declining</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">The Room</div>
+      <div class="section__content">
+        <h2 class="chapter">Stakeholder intelligence</h2>
+        <p class="lede">This reimagining keeps the existing chapter logic, but gives the people more breathing room and more authored point of view. The account is not only a set of signals. It is a room with power, succession risk, and uneven information flow.</p>
+        <div class="room">
+          <article class="person person--active">
+            <div class="mono">Sarah Chen / VP Engineering / active</div>
+            <h3>Primary champion and budget setter</h3>
+            <p>Sarah secured Phase 2 budget independently, which is the clearest sign of account strength anywhere in the record. She is not the risk. She is the reason the account still feels expansive instead of defensive.</p>
+          </article>
+          <article class="person person--transition">
+            <div class="mono">Alex Torres / Tech Lead / transitioning</div>
+            <h3>Backbone of the first phase</h3>
+            <p>Alex carried critical technical knowledge through Phase 1. His March departure is the most immediate operational risk because it threatens continuity exactly when the account is moving into scoping and expansion planning.</p>
+          </article>
+          <article class="person person--periodic">
+            <div class="mono">Pat Kim / CTO / periodic</div>
+            <h3>Strategic decision maker</h3>
+            <p>Pat remains focused on APAC expansion and cost consolidation. The opportunity is clear: when the page talks about regional expansion, it should do so in Pat's language, not in generic success vocabulary.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">Watch List</div>
+      <div class="section__content">
+        <h2 class="chapter">Risks, wins, and what deserves the eye first</h2>
+        <div class="watch-columns">
+          <div class="fact">
+            <div class="mono">Risks</div>
+            <h3>Three items that can bend the quarter</h3>
+            <ul>
+              <li>Alex Torres is departing in March, leaving a critical knowledge gap during Phase 2 scoping.</li>
+              <li>NPS is trending down, with three detractors in engineering that need direct attention before QBR.</li>
+              <li>Legal review of the MSA amendment has stalled for ten days and now risks looking like drift.</li>
+            </ul>
+          </div>
+          <div class="fact">
+            <div class="mono">Wins</div>
+            <h3>Why the account still feels expandable</h3>
+            <ul>
+              <li>Phase 1 migration completed ahead of schedule.</li>
+              <li>Performance benchmarks exceeded targets by 15 percent.</li>
+              <li>The resulting ROI narrative remains strong enough to support the next commercial ask.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">The Work</div>
+      <div class="section__content">
+        <h2 class="chapter">Open commitments and the editorial case for each one</h2>
+        <div class="work-grid">
+          <div class="fact">
+            <div class="mono">Immediate work</div>
+            <h3>What must move now</h3>
+            <ul>
+              <li>Finalize the Phase 2 SOW with legal in the next seven days.</li>
+              <li>Begin Alex Torres knowledge transfer before the transition window closes.</li>
+              <li>Prepare direct responses to the three detractor concerns before QBR.</li>
+            </ul>
+          </div>
+          <div class="fact">
+            <div class="mono">Why it matters</div>
+            <h3>What these commitments are protecting</h3>
+            <ul>
+              <li>The legal item protects commercial momentum.</li>
+              <li>The knowledge transfer item protects delivery confidence.</li>
+              <li>The detractor work protects the emotional truth of the account before it hardens into narrative.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">The Record</div>
+      <div class="section__content">
+        <h2 class="chapter">Value delivered, evidence, and recent history</h2>
+        <div class="record-grid">
+          <div class="timeline">
+            <div class="timeline__item timeline__item--sage">
+              <div class="mono">90 days ago</div>
+              <h4>Phase 1 deployment drove $200K ARR expansion</h4>
+              <p>Commercially, this is still the strongest proof line on the page. It shows that the account is not merely healthy in tone, but materially valuable.</p>
+            </div>
+            <div class="timeline__item timeline__item--sage">
+              <div class="mono">60 days ago</div>
+              <h4>Performance benchmarks exceeded target by 15%</h4>
+              <p>This is the bridge between product value and expansion narrative. It should be treated as headline evidence, not buried in appendix logic.</p>
+            </div>
+            <div class="timeline__item timeline__item--terracotta">
+              <div class="mono">Now</div>
+              <h4>Transition and sentiment are starting to compete with proof</h4>
+              <p>Alex's departure, detractor softness, and legal delay are not larger than the wins, but they are more recent, which is why they carry outsized editorial weight.</p>
+            </div>
+          </div>
+          <div class="fact">
+            <div class="mono">Source context</div>
+            <h3>What the system is grounded in</h3>
+            <p>Four source files, live account history, stakeholder records, value-delivered artifacts, health dimensions, and commitment tracking. This layout is intentionally dense enough to feel like a document you can trust, not just a page that feels good to scan.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">Reference</div>
+      <div class="section__content">
+        <h2 class="chapter">Context and appendix</h2>
+        <div class="reference-grid">
+          <div class="fact">
+            <div class="mono">Company context</div>
+            <h3>Acme in brief</h3>
+            <p>Enterprise SaaS company serving mid-market and enterprise customers. Headquarters in San Francisco. Estimated size 500-1000 employees. The reference chapter stays demoted, but it remains present, because this page is still a document, not only a narrative artifact.</p>
+          </div>
+          <div class="fact">
+            <div class="mono">Recommended actions</div>
+            <h3>The system's current recommendation set</h3>
+            <ul>
+              <li>Address NPS detractors before QBR.</li>
+              <li>Accelerate Alex Torres knowledge transfer.</li>
+              <li>Unblock legal review on the MSA amendment.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">Reports</div>
+      <div class="section__content">
+        <h2 class="chapter">Related reporting surfaces</h2>
+        <div class="reports">
+          <div class="report-card">
+            <div class="mono">Editorial output</div>
+            <h3>Where this page should bridge next</h3>
+            <p class="report-note">The account detail page should feel complete on its own and still route naturally into the Account Health Review, EBR/QBR, and risk briefing surfaces.</p>
+          </div>
+          <div class="report-card">
+            <div class="mono">Available reports</div>
+            <ul>
+              <li><span>Account Health Review</span><span class="mono">view</span></li>
+              <li><span>EBR / QBR</span><span class="mono">view</span></li>
+              <li><span>Risk Briefing</span><span class="mono">view</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="finis">
+      <strong>* * *</strong>
+      Same account. Same intelligence. A denser, more faithful ledger.
+    </div>
+  </main>
+</body>
+</html>

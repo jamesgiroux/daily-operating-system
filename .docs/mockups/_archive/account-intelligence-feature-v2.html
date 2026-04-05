@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS - Account Intelligence Feature v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --linen: #e8e2d9;
+    --warm-white: #faf8f6;
+    --charcoal: #1e2530;
+    --turmeric: #c9a227;
+    --terracotta: #c4654a;
+    --sage: #7eaa7b;
+    --larkspur: #8fa3c4;
+    --text-primary: #1e2530;
+    --text-secondary: #59616d;
+    --text-tertiary: #8a919a;
+    --rule-heavy: rgba(30, 37, 48, 0.14);
+    --rule-light: rgba(30, 37, 48, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "DM Sans", sans-serif;
+    color: var(--text-primary);
+    background:
+      radial-gradient(circle at 10% 14%, rgba(201, 162, 39, 0.12), transparent 18%),
+      radial-gradient(circle at 88% 24%, rgba(143, 163, 196, 0.12), transparent 18%),
+      var(--cream);
+  }
+
+  .page {
+    width: min(1180px, calc(100% - 32px));
+    margin: 18px auto 80px;
+    padding: 26px 30px 56px;
+    background: rgba(250, 248, 246, 0.72);
+    border: 1px solid rgba(30, 37, 48, 0.08);
+  }
+
+  .masthead,
+  .section,
+  .footer {
+    border-top: 1px solid var(--rule-heavy);
+  }
+
+  .masthead {
+    border-top: 0;
+    padding-bottom: 20px;
+  }
+
+  .masthead__top,
+  .issue-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .issue-line {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .asterisk {
+    font-family: "Montserrat", sans-serif;
+    font-size: 18px;
+    color: var(--turmeric);
+  }
+
+  .wordmark {
+    font-family: "Newsreader", serif;
+    font-size: 24px;
+    letter-spacing: -0.03em;
+  }
+
+  .mono {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: 1.6fr 0.8fr;
+    gap: 32px;
+    padding: 34px 0 30px;
+    border-top: 1px solid var(--rule-heavy);
+  }
+
+  .hero h1 {
+    margin: 10px 0 0;
+    font-family: "Newsreader", serif;
+    font-size: clamp(60px, 7vw, 96px);
+    line-height: 0.95;
+    font-weight: 400;
+    letter-spacing: -0.05em;
+  }
+
+  .hero p {
+    margin: 22px 0 0;
+    max-width: 780px;
+    font-family: "Newsreader", serif;
+    font-size: 24px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.58;
+    color: var(--text-secondary);
+  }
+
+  .hero-aside {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+  }
+
+  .hero-note {
+    padding-top: 14px;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .hero-note strong,
+  .stat strong,
+  .mini h3,
+  .subhead {
+    display: block;
+    margin-top: 8px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .hero-note p,
+  .story p,
+  .mini p,
+  .quote,
+  .column p,
+  .timeline p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.72;
+    color: var(--text-secondary);
+  }
+
+  .spread {
+    display: grid;
+    grid-template-columns: 1.25fr 0.75fr;
+    gap: 34px;
+    padding-top: 28px;
+  }
+
+  .columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 26px;
+  }
+
+  .column .subhead {
+    margin: 10px 0 10px;
+    font-size: 26px;
+    font-family: "Newsreader", serif;
+    font-weight: 400;
+    letter-spacing: -0.03em;
+  }
+
+  .quote {
+    margin-top: 18px;
+    padding: 16px 18px;
+    border-left: 3px solid var(--turmeric);
+    background: rgba(201, 162, 39, 0.08);
+    font-family: "Newsreader", serif;
+    font-size: 24px;
+    line-height: 1.5;
+  }
+
+  .story {
+    display: grid;
+    gap: 22px;
+  }
+
+  .story-block,
+  .mini,
+  .timeline-item {
+    padding-top: 14px;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .section {
+    padding-top: 28px;
+    margin-top: 26px;
+  }
+
+  .section-title {
+    margin: 0 0 20px;
+    font-family: "Newsreader", serif;
+    font-size: 34px;
+    font-weight: 400;
+    letter-spacing: -0.03em;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .stat {
+    padding-top: 14px;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+  }
+
+  .stakeholders {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .person {
+    padding-top: 14px;
+    border-top: 2px solid var(--turmeric);
+  }
+
+  .person.transition { border-top-color: var(--terracotta); }
+  .person.periodic { border-top-color: var(--larkspur); }
+
+  .person p,
+  .list p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.72;
+    color: var(--text-secondary);
+  }
+
+  .list ul {
+    margin: 0;
+    padding-left: 18px;
+    line-height: 1.82;
+    color: var(--text-secondary);
+  }
+
+  .timeline {
+    display: grid;
+    gap: 14px;
+  }
+
+  .timeline-item h3,
+  .person h3 {
+    margin: 8px 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .footer {
+    margin-top: 34px;
+    padding-top: 22px;
+    text-align: center;
+    font-family: "Newsreader", serif;
+    color: var(--text-secondary);
+  }
+
+  .footer span {
+    margin-right: 8px;
+    color: var(--turmeric);
+    letter-spacing: 0.28em;
+  }
+
+  @media (max-width: 980px) {
+    .hero,
+    .spread,
+    .columns,
+    .grid-2,
+    .stats,
+    .stakeholders {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .page {
+      width: min(100%, calc(100% - 12px));
+      padding: 18px 16px 40px;
+      margin-top: 6px;
+    }
+
+    .masthead__top,
+    .issue-line {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .hero h1 { font-size: 52px; }
+    .hero p, .quote { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div class="masthead__top">
+        <div class="brand">
+          <span class="asterisk">*</span>
+          <div>
+            <div class="mono">DailyOS / account feature study</div>
+            <div class="wordmark">Acme, Spring Issue</div>
+          </div>
+        </div>
+        <div class="mono">Account detail / editorial feature / full intelligence retained</div>
+      </div>
+      <div class="issue-line">
+        <div class="mono">Source: current chapter model + mock-acme-corp intelligence fixture</div>
+        <div class="mono">State of play / health / room / watch / work / record / reference</div>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div>
+        <div class="mono">Lead story</div>
+        <h1>Acme is still a success story, but it has stopped being a simple one.</h1>
+        <p>In the current product language, this account is green and stable. In editorial language, it is stronger and more complicated: a high-performing relationship with one departure, one trust wobble, and one legal stall that now deserve to sit in the foreground of the page.</p>
+      </div>
+      <aside class="hero-aside">
+        <div class="hero-note">
+          <div class="mono">Health read</div>
+          <strong>78 / green / stable</strong>
+          <p>Strong execution offsets sentiment softness, but the balance is getting thinner.</p>
+        </div>
+        <div class="hero-note">
+          <div class="mono">Commercial proof</div>
+          <strong>$200K ARR expansion from Phase 1</strong>
+          <p>The account still has a legitimate value-delivered case, not only positive tone.</p>
+        </div>
+        <div class="hero-note">
+          <div class="mono">Immediate concern</div>
+          <strong>Alex Torres departure during scoping</strong>
+          <p>This is the operational hinge the page should keep in view from top to bottom.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="spread">
+      <div class="columns">
+        <article class="column">
+          <div class="mono">State of play</div>
+          <h2 class="subhead">What the account feels like right now</h2>
+          <p>Acme is our strongest enterprise account because it combines three things that rarely coexist for long: executive sponsorship, delivered value, and a believable next phase. Sarah Chen's sponsorship is real, the first phase overperformed, and there is still room to grow. That is the upward story.</p>
+          <p>The downward story is more concentrated. NPS softness inside engineering is beginning to matter. Legal is moving too slowly on the amendment. Most importantly, the technical backbone of the first phase is walking out the door before the next one is fully framed. The account is not under threat. It is under pressure.</p>
+          <div class="quote">The page should preserve this tension instead of flattening it into a tidy green state.</div>
+        </article>
+        <aside class="story">
+          <div class="story-block">
+            <div class="mono">Working</div>
+            <p>Executive sponsorship is strong. Phase 1 delivered above benchmark. Adoption across engineering remains solid and usable as proof.</p>
+          </div>
+          <div class="story-block">
+            <div class="mono">Not Working</div>
+            <p>NPS is down, legal is stalled, and no knowledge-transfer plan exists despite a visible transition risk.</p>
+          </div>
+          <div class="story-block">
+            <div class="mono">Unknowns</div>
+            <p>APAC expansion viability, Singapore pilot scope, and Alex's replacement path remain unresolved.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">Relationship health</div>
+      <h2 class="section-title">The score as a story, not a widget</h2>
+      <div class="stats">
+        <div class="stat"><div class="mono">Champion health</div><strong>90 / strongest dimension</strong><p>Sarah secured budget independently, which is why the page still feels expansive.</p></div>
+        <div class="stat"><div class="mono">Stakeholder coverage</div><strong>70 / slipping</strong><p>Coverage is fine until Alex leaves. Then the gap becomes structural, not cosmetic.</p></div>
+        <div class="stat"><div class="mono">Signal momentum</div><strong>72 / declining</strong><p>Recent detractor signals are starting to compete with the strong historical proof.</p></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">The room</div>
+      <h2 class="section-title">Stakeholders as characters, not rows</h2>
+      <div class="stakeholders">
+        <article class="person">
+          <div class="mono">Sarah Chen / active</div>
+          <h3>Champion with real leverage</h3>
+          <p>She secured Phase 2 budget without needing the team to rescue the conversation. That should change how prominently her confidence is surfaced on the page.</p>
+        </article>
+        <article class="person transition">
+          <div class="mono">Alex Torres / transitioning</div>
+          <h3>The technical center of gravity</h3>
+          <p>His departure is not just a risk entry. It is a chapter-shaping fact because it changes the account's continuity story.</p>
+        </article>
+        <article class="person periodic">
+          <div class="mono">Pat Kim / periodic</div>
+          <h3>Strategic decision maker</h3>
+          <p>Focused on APAC and cost consolidation. This is where the page should hold its more ambitious future-facing language.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">Watch list</div>
+      <h2 class="section-title">A richer page still needs clean emphasis</h2>
+      <div class="grid-2">
+        <article class="list">
+          <div class="mono">Risks</div>
+          <h3 class="subhead">What needs attention</h3>
+          <ul>
+            <li>Alex Torres departing in March creates a knowledge-transfer gap during Phase 2 scoping.</li>
+            <li>Three engineering detractors are pushing NPS in the wrong direction before QBR.</li>
+            <li>Legal review of the MSA amendment has already lost ten days.</li>
+          </ul>
+        </article>
+        <article class="list">
+          <div class="mono">Wins</div>
+          <h3 class="subhead">Why the narrative still holds</h3>
+          <ul>
+            <li>Phase 1 migration completed ahead of schedule.</li>
+            <li>Performance exceeded benchmark by 15 percent.</li>
+            <li>The account has already produced a credible ROI story for expansion.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">The work</div>
+      <h2 class="section-title">Commitments deserve editorial framing too</h2>
+      <div class="grid-2">
+        <article class="mini">
+          <div class="mono">Open commitments</div>
+          <h3>What is on the hook</h3>
+          <p>Finalize the Phase 2 SOW with legal. Complete Alex Torres knowledge transfer. Address detractor concerns before the QBR window closes.</p>
+        </article>
+        <article class="mini">
+          <div class="mono">Why now</div>
+          <h3>What each item is protecting</h3>
+          <p>Commercial momentum, delivery continuity, and customer confidence. The work section should make that causal chain visible rather than listing generic tasks.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">The record</div>
+      <h2 class="section-title">Value delivered and recent history</h2>
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="mono">90 days ago</div>
+          <h3>$200K ARR expansion</h3>
+          <p>Phase 1 deployment translated into measurable commercial value. This belongs in the body, not hidden as a KPI.</p>
+        </div>
+        <div class="timeline-item">
+          <div class="mono">60 days ago</div>
+          <h3>Performance exceeded target by 15%</h3>
+          <p>The account earned the right to talk about expansion because the delivered outcomes are already visible in the record.</p>
+        </div>
+        <div class="timeline-item">
+          <div class="mono">Now</div>
+          <h3>Recent friction is more editorially urgent than older wins</h3>
+          <p>Not because it outweighs them, but because it threatens the user's confidence if the page underplays it.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="mono">Reference & reports</div>
+      <h2 class="section-title">Appendix without feeling like an afterthought</h2>
+      <div class="grid-2">
+        <article class="mini">
+          <div class="mono">Reference</div>
+          <h3>Company context</h3>
+          <p>Enterprise SaaS company, San Francisco, roughly 500-1000 employees. In the page hierarchy this remains secondary, but it should still feel art-directed and deliberate.</p>
+        </article>
+        <article class="mini">
+          <div class="mono">Reports</div>
+          <h3>Linked surfaces</h3>
+          <p>Account Health Review, EBR/QBR, and Risk Briefing. This feature-style layout is designed so parts of the account can lift cleanly into those downstream documents.</p>
+        </article>
+      </div>
+    </section>
+
+    <footer class="footer"><span>* * *</span>Keep the feature-length calm. Keep the full record on the page.</footer>
+  </main>
+</body>
+</html>
