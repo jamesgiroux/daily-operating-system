@@ -28,8 +28,8 @@ pub async fn run_drive_poller(state: Arc<AppState>) {
         let enabled = state
             .config
             .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(|c| c.drive.enabled))
+            .as_ref()
+            .map(|c| c.drive.enabled)
             .unwrap_or(false);
 
         if !enabled {
@@ -39,12 +39,10 @@ pub async fn run_drive_poller(state: Arc<AppState>) {
         }
 
         // Check if user is authenticated with Google
-        let authenticated = state
-            .calendar
-            .google_auth
-            .lock()
-            .map(|guard| matches!(*guard, crate::types::GoogleAuthStatus::Authenticated { .. }))
-            .unwrap_or(false);
+        let authenticated = {
+            let guard = state.calendar.google_auth.lock();
+            matches!(*guard, crate::types::GoogleAuthStatus::Authenticated { .. })
+        };
 
         if !authenticated {
             log::debug!("GoogleDrivePoller: not authenticated, skipping");
@@ -209,8 +207,8 @@ fn save_content_to_entity(
     let workspace = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
+        .as_ref()
+        .map(|c| c.workspace_path.clone())
         .ok_or("Workspace not configured")?;
 
     save_to_entity_docs(

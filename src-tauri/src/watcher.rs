@@ -497,12 +497,10 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
         None => return,
     };
 
-    let user_domains = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
-        .unwrap_or_default();
+    let user_domains = {
+        let g = state.config.read();
+        g.as_ref().map(|c| c.resolved_user_domains()).unwrap_or_default()
+    };
 
     for path in paths {
         if !path.exists() {
@@ -804,7 +802,7 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
 
 /// Read workspace path from the config state
 fn get_workspace_from_config(state: &AppState) -> Option<PathBuf> {
-    let guard = state.config.read().ok()?;
+    let guard = state.config.read();
     let config = guard.as_ref()?;
     let path = PathBuf::from(&config.workspace_path);
     if path.exists() {

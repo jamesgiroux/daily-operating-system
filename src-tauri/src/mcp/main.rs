@@ -7,7 +7,9 @@
 //! Usage: spawned by Claude Desktop as configured in claude_desktop_config.json.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use rmcp::model::*;
 use rmcp::schemars::JsonSchema;
@@ -194,10 +196,7 @@ impl DailyOsMcp {
         description = "Look up a specific account, project, or person in the DailyOS workspace. Returns entity details, intelligence summary, open actions, and upcoming meetings. Use this when the user asks about a specific customer, project, or contact."
     )]
     fn query_entity(&self, #[tool(aggr)] params: QueryEntityParams) -> String {
-        let db = match self.db.lock() {
-            Ok(db) => db,
-            Err(_) => return "Error: DB lock poisoned".to_string(),
-        };
+        let db = self.db.lock();
         let query_lower = params.query.to_lowercase();
         let entity_type = params.entity_type.as_deref().unwrap_or("all");
 
@@ -309,10 +308,7 @@ impl DailyOsMcp {
         description = "List all accounts, projects, or people in the DailyOS workspace. Use this when the user asks to see their portfolio, customer list, project list, or contacts."
     )]
     fn list_entities(&self, #[tool(aggr)] params: ListEntitiesParams) -> String {
-        let db = match self.db.lock() {
-            Ok(db) => db,
-            Err(_) => return "Error: DB lock poisoned".to_string(),
-        };
+        let db = self.db.lock();
         let entity_type = params.entity_type.as_deref().unwrap_or("all");
         let mut items: Vec<EntityListItem> = Vec::new();
 
@@ -363,10 +359,7 @@ impl DailyOsMcp {
             return "[]".to_string();
         }
 
-        let db = match self.db.lock() {
-            Ok(db) => db,
-            Err(_) => return "Error: DB lock poisoned".to_string(),
-        };
+        let db = self.db.lock();
         let pattern = format!("%{}%", params.query.trim());
         let limit = params.limit.unwrap_or(20).min(50) as i64;
 
@@ -447,10 +440,7 @@ impl DailyOsMcp {
             return "[]".to_string();
         }
 
-        let db = match self.db.lock() {
-            Ok(db) => db,
-            Err(_) => return "Error: DB lock poisoned".to_string(),
-        };
+        let db = self.db.lock();
 
         // Resolve entity_id: try exact match first, then fuzzy match on name
         let resolved_id = resolve_entity_id(&db, &params.entity_id);

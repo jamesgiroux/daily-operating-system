@@ -6,8 +6,10 @@
 //! - periodic sweep every 5 minutes for missed updates
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
 
 use chrono::Utc;
 use tauri::AppHandle;
@@ -39,27 +41,22 @@ impl EmbeddingQueue {
     }
 
     pub fn enqueue(&self, request: EmbeddingRequest) {
-        let mut queue = match self.queue.lock() {
-            Ok(q) => q,
-            Err(_) => return,
-        };
+        let mut queue = self.queue.lock();
 
         if queue.iter().any(|r| r.entity_id == request.entity_id) {
             return;
         }
 
         queue.push_back(request.clone());
-        if let Ok(mut guard) = self.last_enqueued.lock() {
-            guard.insert(request.entity_id, Instant::now());
-        }
+        self.last_enqueued.lock().insert(request.entity_id, Instant::now());
     }
 
     pub fn dequeue(&self) -> Option<EmbeddingRequest> {
-        self.queue.lock().ok()?.pop_front()
+        self.queue.lock().pop_front()
     }
 
     pub fn len(&self) -> usize {
-        self.queue.lock().map(|q| q.len()).unwrap_or(0)
+        self.queue.lock().len()
     }
 }
 
@@ -118,7 +115,8 @@ pub async fn run_embedding_processor(state: Arc<AppState>, _app: AppHandle) {
             continue;
         }
 
-        let config = match state.config.read().ok().and_then(|g| g.clone()) {
+        let config_clone = { state.config.read().clone() };
+        let config = match config_clone {
             Some(c) => c,
             None => {
                 let interval = crate::activity::adaptive_poll_interval(&state.activity, true);
@@ -216,7 +214,6 @@ fn process_request(state: &AppState, request: &EmbeddingRequest) -> Result<usize
     let config = state
         .config
         .read()
-        .map_err(|_| "config lock poisoned".to_string())?
         .clone()
         .ok_or_else(|| "config unavailable".to_string())?;
 
