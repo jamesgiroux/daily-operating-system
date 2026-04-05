@@ -3070,14 +3070,14 @@ pub fn enrich_emails(
                 urgency: urgency_str,
             };
 
-            // Write to DB
+            // DIRECT_DB_ALLOWED: internal workflow pipeline — enrichment writes are background processing, not user-facing mutations
             if let Err(e) = db.set_enrichment_state(&email.email_id, "enriched", enrichment_update)
             {
                 log::warn!("Failed to write enrichment for {}: {}", email.email_id, e);
                 continue;
             }
 
-            // Mark enriched_at timestamp
+            // DIRECT_DB_ALLOWED: internal workflow pipeline — timestamp update is part of background enrichment, not user-facing
             if let Err(e) = db.mark_email_enriched(&email.email_id) {
                 log::warn!("Failed to mark email enriched {}: {}", email.email_id, e);
                 continue;
