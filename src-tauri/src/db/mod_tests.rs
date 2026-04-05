@@ -3649,6 +3649,29 @@ fn test_get_all_accounts_with_domains_filters_archived() {
 }
 
 #[test]
+fn test_merge_account_domains_additive() {
+    let db = test_db();
+
+    let acct = sample_account("acme", "Acme Corp");
+    db.upsert_account(&acct).unwrap();
+
+    // First merge: add two domains
+    db.merge_account_domains("acme", &["acme.com".to_string(), "acme.io".to_string()])
+        .unwrap();
+    let domains = db.get_account_domains("acme").unwrap();
+    assert_eq!(domains.len(), 2);
+
+    // Second merge: add one new, one duplicate
+    db.merge_account_domains("acme", &["acme.com".to_string(), "acme.co.uk".to_string()])
+        .unwrap();
+    let domains = db.get_account_domains("acme").unwrap();
+    assert_eq!(domains.len(), 3, "should add new without clobbering existing");
+    assert!(domains.contains(&"acme.com".to_string()));
+    assert!(domains.contains(&"acme.io".to_string()));
+    assert!(domains.contains(&"acme.co.uk".to_string()));
+}
+
+#[test]
 fn test_insert_and_query_email_signals() {
     let db = test_db();
     setup_account(&db, "acc1", "Acme Corp");

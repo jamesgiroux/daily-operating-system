@@ -186,6 +186,26 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Additively merge domains into an account's domain list.
+    ///
+    /// Unlike `set_account_domains` which replaces all domains, this function
+    /// only adds new domains without removing existing ones. Used when accumulating
+    /// domains from multiple meetings for the same account.
+    pub fn merge_account_domains(
+        &self,
+        account_id: &str,
+        domains: &[String],
+    ) -> Result<(), DbError> {
+        let normalized = crate::helpers::normalize_domains(domains);
+        for domain in normalized {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO account_domains (account_id, domain) VALUES (?1, ?2)",
+                params![account_id, &domain],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Get account domains for an account.
     pub fn get_account_domains(&self, account_id: &str) -> Result<Vec<String>, DbError> {
         let mut stmt = self
