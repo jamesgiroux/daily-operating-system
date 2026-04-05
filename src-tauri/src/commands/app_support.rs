@@ -57,7 +57,6 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
     let workspace_path = state
         .config
         .read()
-        .map_err(|_| "Config lock failed")?
         .as_ref()
         .and_then(|c| {
             if c.workspace_path.is_empty() {
@@ -81,7 +80,6 @@ pub async fn clear_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, 
     let workspace_path = state
         .config
         .read()
-        .map_err(|_| "Config lock failed")?
         .as_ref()
         .and_then(|c| {
             if c.workspace_path.is_empty() {
@@ -153,7 +151,6 @@ pub async fn populate_workspace(
     let workspace_path = state
         .config
         .read()
-        .map_err(|_| "Config lock failed")?
         .as_ref()
         .map(|c| c.workspace_path.clone())
         .ok_or("No workspace configured")?;
@@ -362,7 +359,6 @@ pub async fn get_onboarding_priming_context(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("Config not loaded")?;
     let user_domains = config.resolved_user_domains();
@@ -669,7 +665,8 @@ pub async fn check_claude_status() -> ClaudeStatus {
     let ttl = std::time::Duration::from_secs(CLAUDE_STATUS_CACHE_TTL_SECS);
 
     // Fast path: return cached result without blocking
-    if let Ok(guard) = cache.lock() {
+    {
+        let guard = cache.lock();
         if let Some(entry) = guard.as_ref() {
             if entry.checked_at.elapsed() < ttl {
                 log_command_latency("check_claude_status", started, READ_CMD_LATENCY_BUDGET_MS);
@@ -700,12 +697,10 @@ pub async fn check_claude_status() -> ClaudeStatus {
         node_installed: false,
     });
 
-    if let Ok(mut guard) = cache.lock() {
-        *guard = Some(ClaudeStatusCacheEntry {
-            status: status.clone(),
-            checked_at: std::time::Instant::now(),
-        });
-    }
+    *cache.lock() = Some(ClaudeStatusCacheEntry {
+        status: status.clone(),
+        checked_at: std::time::Instant::now(),
+    });
 
     log_command_latency("check_claude_status", started, READ_CMD_LATENCY_BUDGET_MS);
     status
@@ -722,9 +717,7 @@ pub async fn check_claude_status() -> ClaudeStatus {
 #[tauri::command]
 pub fn launch_claude_login() -> Result<(), String> {
     // Clear cached status so the next check returns a fresh result.
-    if let Ok(mut guard) = claude_status_cache().lock() {
-        *guard = None;
-    }
+    *claude_status_cache().lock() = None;
 
     open::that("https://claude.ai/login").map_err(|e| e.to_string())
 }
@@ -734,9 +727,7 @@ pub fn launch_claude_login() -> Result<(), String> {
 /// installing Node/Claude while the app is running is detected immediately.
 #[tauri::command]
 pub fn clear_claude_status_cache() {
-    if let Ok(mut guard) = claude_status_cache().lock() {
-        *guard = None;
-    }
+    *claude_status_cache().lock() = None;
 }
 
 // =============================================================================
@@ -751,7 +742,6 @@ pub fn install_inbox_sample(state: State<'_, Arc<AppState>>) -> Result<String, S
     let workspace_path = state
         .config
         .read()
-        .map_err(|_| "Config lock failed")?
         .as_ref()
         .map(|c| c.workspace_path.clone())
         .ok_or("No workspace configured")?;

@@ -68,8 +68,8 @@ pub async fn set_workspace_path(path: &str, state: &AppState) -> Result<Config, 
     let entity_mode = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.entity_mode.clone()))
+        .as_ref()
+        .map(|c| c.entity_mode.clone())
         .unwrap_or_else(|| "account".to_string());
 
     crate::state::initialize_workspace(workspace, &entity_mode)?;

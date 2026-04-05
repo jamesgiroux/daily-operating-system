@@ -502,7 +502,6 @@ pub async fn get_internal_team_setup_status(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("Config not loaded")?;
 
@@ -594,7 +593,6 @@ pub async fn create_team(
     let cfg = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("Config not loaded")?;
 
@@ -803,7 +801,6 @@ pub async fn index_entity_files(
     let workspace_path = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .as_ref()
         .ok_or("Config not loaded")?
         .workspace_path
@@ -882,8 +879,8 @@ pub fn reveal_in_finder(path: String, state: State<'_, Arc<AppState>>) -> Result
     let workspace_ok = state
         .config
         .read()
-        .ok()
-        .and_then(|c| c.as_ref().map(|cfg| cfg.workspace_path.clone()))
+        .as_ref()
+        .map(|cfg| cfg.workspace_path.clone())
         .map(|wp| {
             std::fs::canonicalize(&wp)
                 .map(|cwp| canonical_str.starts_with(&*cwp.to_string_lossy()))

@@ -70,7 +70,7 @@ pub fn get_user_entity_from_db(db: &ActionDb) -> Result<UserEntity, String> {
 
 /// Get the user entity, seeding from config if no row exists yet.
 pub async fn get_user_entity(state: &AppState) -> Result<UserEntity, String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let config = state.config.read().clone();
 
     let result = state
         .db_write(move |db| {
@@ -137,7 +137,7 @@ pub async fn update_user_entity_field(
             .map_err(|e| format!("Invalid JSON for field '{}': {}", field, e))?;
     }
 
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let config = state.config.read().clone();
 
     let field = field.to_string();
     let value = value.to_string();
@@ -427,7 +427,7 @@ pub(crate) fn embed_context_text(
 
 /// Write the user entity to `_user/context.json` in the workspace.
 fn write_user_context_json(db: &ActionDb, state: &AppState) -> Result<(), String> {
-    let config_guard = state.config.read().map_err(|_| "Lock poisoned")?;
+    let config_guard = state.config.read();
     let config = config_guard.as_ref().ok_or("Config not initialized")?;
 
     if config.workspace_path.is_empty() {

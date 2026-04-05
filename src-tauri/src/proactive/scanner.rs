@@ -15,8 +15,8 @@ pub fn run_proactive_scan(state: &AppState) -> Result<usize, String> {
     let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
     let (profile, user_domains) = {
-        let config_guard = state.config.read().ok();
-        let config = config_guard.as_ref().and_then(|g| g.as_ref());
+        let config_guard = state.config.read();
+        let config = config_guard.as_ref();
         let profile = config
             .map(|c| c.profile.clone())
             .unwrap_or_else(|| "general".to_string());

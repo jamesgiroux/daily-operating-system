@@ -551,15 +551,13 @@ pub fn build_intelligence_hygiene_status(
         .hygiene
         .last_scan_at
         .lock()
-        .ok()
-        .and_then(|g| g.clone())
+        .clone()
         .or_else(|| report.map(|r| r.scanned_at.clone()));
     let next_scan_time = state
         .hygiene
         .next_scan_at
         .lock()
-        .ok()
-        .and_then(|g| g.clone());
+        .clone();
 
     let fix_details = report.map(|r| r.fix_details.clone()).unwrap_or_default();
 

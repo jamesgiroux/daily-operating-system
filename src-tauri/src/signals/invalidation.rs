@@ -4,7 +4,7 @@
 //! to that entity. If the meeting has stale prep, push its ID to the existing
 //! `prep_invalidation_queue` for regeneration.
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::db::ActionDb;
 
@@ -62,7 +62,8 @@ pub fn check_and_invalidate_preps(
         return;
     }
 
-    if let Ok(mut queue) = prep_queue.lock() {
+    {
+        let mut queue = prep_queue.lock();
         for mid in &meeting_ids {
             if !queue.contains(mid) {
                 queue.push(mid.clone());
@@ -117,7 +118,7 @@ impl ActionDb {
 mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
-    use std::sync::Mutex;
+    use parking_lot::Mutex;
 
     fn make_signal(signal_type: &str, confidence: f64) -> SignalEvent {
         SignalEvent {
@@ -143,7 +144,7 @@ mod tests {
 
         check_and_invalidate_preps(&db, &signal, &queue);
 
-        let q = queue.lock().unwrap();
+        let q = queue.lock();
         assert!(q.is_empty(), "low-confidence signal should not invalidate");
     }
 
@@ -155,7 +156,7 @@ mod tests {
 
         check_and_invalidate_preps(&db, &signal, &queue);
 
-        let q = queue.lock().unwrap();
+        let q = queue.lock();
         assert!(q.is_empty(), "entity_resolution should not invalidate prep");
     }
 
@@ -198,7 +199,7 @@ mod tests {
 
         check_and_invalidate_preps(&db, &signal, &queue);
 
-        let q = queue.lock().unwrap();
+        let q = queue.lock();
         assert_eq!(q.len(), 1);
         assert_eq!(q[0], "m1");
     }
@@ -254,7 +255,7 @@ mod tests {
 
         check_and_invalidate_preps(&db, &signal, &queue);
 
-        let q = queue.lock().unwrap();
+        let q = queue.lock();
         assert_eq!(q.len(), 1);
         assert_eq!(q[0], "m-person");
     }

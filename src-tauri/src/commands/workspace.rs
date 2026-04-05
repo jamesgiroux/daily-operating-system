@@ -40,20 +40,11 @@ pub enum InboxResult {
 /// Get files from the _inbox/ directory
 #[tauri::command]
 pub async fn get_inbox_files(state: State<'_, Arc<AppState>>) -> Result<InboxResult, String> {
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
-                return Ok(InboxResult::Error {
-                    message: "No configuration loaded".to_string(),
-                    files: Vec::new(),
-                    count: 0,
-                })
-            }
-        },
-        Err(_) => {
+    let config = match state.config.read().clone() {
+        Some(c) => c,
+        None => {
             return Ok(InboxResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
+                message: "No configuration loaded".to_string(),
                 files: Vec::new(),
                 count: 0,
             })
@@ -105,7 +96,6 @@ pub async fn process_inbox_file(
     let config = state
         .config
         .read()
-        .map_err(|_| "Internal error")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -150,7 +140,6 @@ pub async fn process_all_inbox(
     let config = state
         .config
         .read()
-        .map_err(|_| "Internal error")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -181,7 +170,6 @@ pub async fn enrich_inbox_file(
     let config = state
         .config
         .read()
-        .map_err(|_| "Internal error")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -230,7 +218,6 @@ pub fn get_inbox_file_content(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -292,7 +279,6 @@ pub fn copy_to_inbox(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -413,18 +399,11 @@ pub enum EmailsResult {
 #[tauri::command]
 pub fn get_all_emails(state: State<'_, Arc<AppState>>) -> EmailsResult {
     // Get config
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
-                return EmailsResult::Error {
-                    message: "No configuration loaded".to_string(),
-                }
-            }
-        },
-        Err(_) => {
+    let config = match state.config.read().clone() {
+        Some(c) => c,
+        None => {
             return EmailsResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
+                message: "No configuration loaded".to_string(),
             }
         }
     };
@@ -608,25 +587,24 @@ pub async fn set_workspace_path(
 ) -> Result<Config, String> {
     let result = crate::services::settings::set_workspace_path(&path, &state).await;
     if result.is_ok() {
-        if let Ok(mut audit) = state.audit_log.lock() {
-            let category = {
-                let home = dirs::home_dir().unwrap_or_default();
-                let documents = home.join("Documents");
-                let p = std::path::Path::new(&path);
-                if p.starts_with(&documents) {
-                    "documents"
-                } else if p.starts_with(&home) {
-                    "home"
-                } else {
-                    "custom"
-                }
-            };
-            let _ = audit.append(
-                "config",
-                "workspace_path_changed",
-                serde_json::json!({"category": category}),
-            );
-        }
+        let mut audit = state.audit_log.lock();
+        let category = {
+            let home = dirs::home_dir().unwrap_or_default();
+            let documents = home.join("Documents");
+            let p = std::path::Path::new(&path);
+            if p.starts_with(&documents) {
+                "documents"
+            } else if p.starts_with(&home) {
+                "home"
+            } else {
+                "custom"
+            }
+        };
+        let _ = audit.append(
+            "config",
+            "workspace_path_changed",
+            serde_json::json!({"category": category}),
+        );
     }
     result
 }
@@ -652,8 +630,9 @@ pub async fn set_developer_mode(
     }
 
     // Return the current config (which is now either dev or live)
-    let guard = state.config.read().map_err(|_| "Lock poisoned")?;
-    guard
+    state
+        .config
+        .read()
         .clone()
         .ok_or_else(|| "No configuration loaded".to_string())
 }
@@ -661,8 +640,9 @@ pub async fn set_developer_mode(
 /// Check if workspace is under iCloud sync and warning hasn't been dismissed (I464).
 #[tauri::command]
 pub fn check_icloud_warning(state: State<'_, Arc<AppState>>) -> Result<Option<String>, String> {
-    let guard = state.config.read().map_err(|_| "Lock poisoned")?;
-    let config = guard
+    let config = state
+        .config
+        .read()
         .clone()
         .ok_or_else(|| "No configuration loaded".to_string())?;
 
@@ -694,11 +674,7 @@ pub fn dismiss_icloud_warning(state: State<'_, Arc<AppState>>) -> Result<(), Str
 /// Get whether the app is currently locked.
 #[tauri::command]
 pub fn get_lock_status(state: State<'_, Arc<AppState>>) -> bool {
-    state
-        .lock_state
-        .lock()
-        .map(|g| g.is_locked)
-        .unwrap_or(false)
+    state.lock_state.lock().is_locked
 }
 
 /// Check if the encryption key is missing (I462 recovery screen).
@@ -715,7 +691,8 @@ pub async fn lock_app(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    if let Ok(mut guard) = state.lock_state.lock() {
+    {
+        let mut guard = state.lock_state.lock();
         guard.is_locked = true;
     }
     let _ = app.emit("app-locked", ());
@@ -731,7 +708,7 @@ pub async fn unlock_app(
     // I610: All lock state operations go through a single mutex acquisition.
     // Check cooldown: 30s after 3 consecutive failures
     {
-        let mut ls = state.lock_state.lock().expect("lock_state poisoned");
+        let mut ls = state.lock_state.lock();
         if ls.failed_unlock_count >= 3 {
             if let Some(last) = ls.last_failed_unlock {
                 if last.elapsed().as_secs() < 30 {
@@ -751,12 +728,13 @@ pub async fn unlock_app(
     match attempt_system_auth().await {
         Ok(true) => {
             {
-                let mut ls = state.lock_state.lock().expect("lock_state poisoned");
+                let mut ls = state.lock_state.lock();
                 ls.is_locked = false;
                 ls.failed_unlock_count = 0;
                 ls.last_activity = std::time::Instant::now();
             }
-            if let Ok(mut audit) = state.audit_log.lock() {
+            {
+                let mut audit = state.audit_log.lock();
                 let _ = audit.append("security", "app_unlock_succeeded", serde_json::json!({}));
             }
             let _ = app.emit("app-unlocked", ());
@@ -765,12 +743,13 @@ pub async fn unlock_app(
         Ok(false) => {
             let new_count;
             {
-                let mut ls = state.lock_state.lock().expect("lock_state poisoned");
+                let mut ls = state.lock_state.lock();
                 ls.failed_unlock_count += 1;
                 new_count = ls.failed_unlock_count;
                 ls.last_failed_unlock = Some(std::time::Instant::now());
             }
-            if let Ok(mut audit) = state.audit_log.lock() {
+            {
+                let mut audit = state.audit_log.lock();
                 let _ = audit.append(
                     "security",
                     "app_unlock_failed",
@@ -812,18 +791,14 @@ pub fn set_lock_timeout(
 /// Signal user activity (click/keypress) to reset the idle lock timer.
 #[tauri::command]
 pub fn signal_user_activity(state: State<'_, Arc<AppState>>) {
-    if let Ok(mut ls) = state.lock_state.lock() {
-        ls.last_activity = std::time::Instant::now();
-    }
+    state.lock_state.lock().last_activity = std::time::Instant::now();
 }
 
 /// Signal window focus change to reset the idle lock timer.
 #[tauri::command]
 pub fn signal_window_focus(focused: bool, state: State<'_, Arc<AppState>>) {
     if focused {
-        if let Ok(mut ls) = state.lock_state.lock() {
-            ls.last_activity = std::time::Instant::now();
-        }
+        state.lock_state.lock().last_activity = std::time::Instant::now();
     }
 }
 
@@ -855,7 +830,7 @@ async fn attempt_system_auth() -> Result<bool, String> {
 
             let reason = NSString::from_str("DailyOS requires authentication to unlock.");
             let done_clone = done.clone();
-            let tx = std::sync::Mutex::new(Some(tx));
+            let tx = Mutex::new(Some(tx));
             let block = RcBlock::new(move |success: Bool, err: *mut objc2_foundation::NSError| {
                 let result = if success.as_bool() {
                     Ok(true)
@@ -874,7 +849,8 @@ async fn attempt_system_auth() -> Result<bool, String> {
                 } else {
                     Ok(false)
                 };
-                if let Some(tx) = tx.lock().unwrap().take() {
+                // SAFETY: This lock runs inside an objc2 RcBlock callback (Touch ID). parking_lot::Mutex guarantees infallibility.
+                if let Some(tx) = tx.lock().take() {
                     let _ = tx.send(result);
                 }
                 done_clone.store(true, std::sync::atomic::Ordering::Release);
@@ -985,7 +961,8 @@ pub fn set_schedule(
         crate::services::settings::set_schedule(&workflow, hour, minute, &timezone, &state)?;
 
     // Invalidate briefing cache when timezone changes (schedule.json is rendered with new tz)
-    if let Ok(guard) = state.config.read() {
+    {
+        let guard = state.config.read();
         if let Some(ref cfg) = *guard {
             use std::path::Path;
             let data_dir = Path::new(&cfg.workspace_path).join("_today").join("data");
@@ -1143,7 +1120,6 @@ pub async fn process_user_attachment(
     let config = state
         .config
         .read()
-        .map_err(|_| "Internal error")?
         .clone()
         .ok_or("No configuration loaded")?;
 

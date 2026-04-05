@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{mpsc, Mutex};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -22,7 +22,7 @@ use crate::types::AiModelConfig;
 /// Cached resolved path to the `claude` binary.
 /// Caches `Some` results; re-probes on `None` so installing Claude while
 /// the app is running gets detected on the next check.
-static CLAUDE_BINARY: Mutex<Option<PathBuf>> = Mutex::new(None);
+static CLAUDE_BINARY: parking_lot::Mutex<Option<PathBuf>> = parking_lot::const_mutex(None);
 
 /// Resolve the absolute path to the `claude` CLI binary.
 ///
@@ -32,7 +32,7 @@ static CLAUDE_BINARY: Mutex<Option<PathBuf>> = Mutex::new(None);
 ///
 /// Caches successful lookups. Re-probes if not yet found.
 fn resolve_claude_binary() -> Option<PathBuf> {
-    let mut guard = CLAUDE_BINARY.lock().ok()?;
+    let mut guard = CLAUDE_BINARY.lock();
     if let Some(ref path) = *guard {
         return Some(path.clone());
     }

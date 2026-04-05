@@ -98,9 +98,10 @@ pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
     let current_ws = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
-    if let Ok(mut guard) = state.pre_dev_workspace.lock() {
+        .as_ref()
+        .map(|c| c.workspace_path.clone());
+    {
+        let mut guard = state.pre_dev_workspace.lock();
         *guard = current_ws;
     }
 
@@ -114,27 +115,13 @@ pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
     //     and capture state are all in-memory — they must be wiped here,
     //     not just in reset_all(), because the user may view the app
     //     between enter_dev_mode and a scenario switch.
-    if let Ok(mut guard) = state.calendar.events.write() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.workflow.status.write() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.workflow.history.lock() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.workflow.last_scheduled_run.write() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.capture.dismissed.lock() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.capture.captured.lock() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
-        guard.clear();
-    }
+    state.calendar.events.write().clear();
+    state.workflow.status.write().clear();
+    state.workflow.history.lock().clear();
+    state.workflow.last_scheduled_run.write().clear();
+    state.capture.dismissed.lock().clear();
+    state.capture.captured.lock().clear();
+    state.capture.transcript_processed.lock().clear();
 
     // 6. Copy live config to config-dev.json and set dev mode fields
     let live_path = crate::state::live_config_path()?;
@@ -153,12 +140,10 @@ pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
 
     // 7. Create dev workspace if needed
     if !dev_ws.exists() {
-        let entity_mode = state
-            .config
-            .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(|c| c.entity_mode.clone()))
-            .unwrap_or_else(|| "account".to_string());
+        let entity_mode = {
+            let g = state.config.read();
+            g.as_ref().map(|c| c.entity_mode.clone()).unwrap_or_else(|| "account".to_string())
+        };
         crate::state::initialize_workspace(&dev_ws, &entity_mode)?;
     }
 
@@ -197,18 +182,14 @@ pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
     // 3. Reload live config from config.json (it was never modified)
     match crate::state::load_config() {
         Ok(config) => {
-            if let Ok(mut guard) = state.config.write() {
-                *guard = Some(config);
-            }
+            *state.config.write() = Some(config);
         }
         Err(e) => {
             log::warn!("Failed to reload live config: {}; trying backup restore", e);
             // Fallback: restore from backup
             restore_config_backup()?;
             if let Ok(config) = crate::state::load_config() {
-                if let Ok(mut guard) = state.config.write() {
-                    *guard = Some(config);
-                }
+                *state.config.write() = Some(config);
             }
         }
     }
@@ -220,14 +201,10 @@ pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
     match crate::google_api::token_store::load_token() {
         Ok(token) => {
             let email = token.account.unwrap_or_else(|| "unknown".to_string());
-            if let Ok(mut guard) = state.calendar.google_auth.lock() {
-                *guard = GoogleAuthStatus::Authenticated { email };
-            }
+            *state.calendar.google_auth.lock() = GoogleAuthStatus::Authenticated { email };
         }
         Err(_) => {
-            if let Ok(mut guard) = state.calendar.google_auth.lock() {
-                *guard = GoogleAuthStatus::NotConfigured;
-            }
+            *state.calendar.google_auth.lock() = GoogleAuthStatus::NotConfigured;
         }
     }
 
@@ -250,32 +227,16 @@ pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
     // 9. Clear all in-memory volatile state so mock data doesn't bleed
     //    back into live mode. The calendar poller will refill real events
     //    once it resumes (it pauses during dev mode via is_dev_db_mode check).
-    if let Ok(mut guard) = state.calendar.events.write() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.workflow.status.write() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.workflow.history.lock() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.workflow.last_scheduled_run.write() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.capture.dismissed.lock() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.capture.captured.lock() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
-        guard.clear();
-    }
+    state.calendar.events.write().clear();
+    state.workflow.status.write().clear();
+    state.workflow.history.lock().clear();
+    state.workflow.last_scheduled_run.write().clear();
+    state.capture.dismissed.lock().clear();
+    state.capture.captured.lock().clear();
+    state.capture.transcript_processed.lock().clear();
 
     // 10. Clear stashed workspace
-    if let Ok(mut guard) = state.pre_dev_workspace.lock() {
-        *guard = None;
-    }
+    *state.pre_dev_workspace.lock() = None;
 
     log::info!("Dev mode exited — back to live");
     Ok(())
@@ -306,11 +267,10 @@ pub struct DevState {
 
 /// Check if the current workspace is the dev sandbox (not a real user workspace).
 pub(crate) fn is_dev_workspace(state: &AppState) -> bool {
-    let current = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
+    let current = {
+        let g = state.config.read();
+        g.as_ref().map(|c| c.workspace_path.clone())
+    };
     match current {
         None => true,
         Some(path) => Path::new(&path) == dev_workspace().as_path(),
@@ -389,12 +349,10 @@ pub fn restore_live(state: &AppState) -> Result<String, String> {
     crate::commands::DEV_CLAUDE_OVERRIDE.store(0, std::sync::atomic::Ordering::Relaxed);
     crate::commands::DEV_GOOGLE_OVERRIDE.store(0, std::sync::atomic::Ordering::Relaxed);
 
-    let ws = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
-        .unwrap_or_else(|| "unknown".to_string());
+    let ws = {
+        let g = state.config.read();
+        g.as_ref().map(|c| c.workspace_path.clone()).unwrap_or_else(|| "unknown".to_string())
+    };
     Ok(format!("Restored to live mode — workspace: {}", ws))
 }
 
@@ -654,13 +612,12 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         return Err("Dev tools not available in release builds".into());
     }
 
-    let has_config = state.config.read().map(|g| g.is_some()).unwrap_or(false);
+    let has_config = state.config.read().is_some();
 
-    let workspace_path = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
+    let workspace_path = {
+        let g = state.config.read();
+        g.as_ref().map(|c| c.workspace_path.clone())
+    };
 
     let has_today_data = workspace_path
         .as_ref()
@@ -707,16 +664,14 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
             Err(_) => (false, 0, 0, 0, 0, 0),
         };
 
-    let google_auth_status = state
-        .calendar
-        .google_auth
-        .lock()
-        .map(|g| match &*g {
+    let google_auth_status = {
+        let g = state.calendar.google_auth.lock();
+        match &*g {
             GoogleAuthStatus::NotConfigured => "not_configured".to_string(),
             GoogleAuthStatus::Authenticated { email } => format!("authenticated ({})", email),
             GoogleAuthStatus::TokenExpired => "token_expired".to_string(),
-        })
-        .unwrap_or_else(|_| "unknown".to_string());
+        }
+    };
 
     let (has_dev_db_file, has_dev_workspace) = check_dev_artifacts();
 
@@ -748,11 +703,10 @@ fn reset_all(state: &AppState) -> Result<(), String> {
     let dailyos_dir = home.join(".dailyos");
 
     // 1. Read workspace path before deleting config
-    let workspace_path = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
+    let workspace_path = {
+        let g = state.config.read();
+        g.as_ref().map(|c| c.workspace_path.clone())
+    };
 
     // 2. Delete config and state files.
     // I298: When dev DB mode is active, only delete the dev DB — not the live one.
@@ -811,34 +765,16 @@ fn reset_all(state: &AppState) -> Result<(), String> {
     }
 
     // 4. Reset all AppState mutexes in-place
-    if let Ok(mut guard) = state.config.write() {
-        *guard = None;
-    }
+    *state.config.write() = None;
     // (I609) No sync DB handle to reset — ActionDb::open() handles reconnection.
-    if let Ok(mut guard) = state.calendar.google_auth.lock() {
-        *guard = GoogleAuthStatus::NotConfigured;
-    }
-    if let Ok(mut guard) = state.workflow.status.write() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.workflow.history.lock() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.workflow.last_scheduled_run.write() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.calendar.events.write() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.capture.dismissed.lock() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.capture.captured.lock() {
-        guard.clear();
-    }
-    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
-        guard.clear();
-    }
+    *state.calendar.google_auth.lock() = GoogleAuthStatus::NotConfigured;
+    state.workflow.status.write().clear();
+    state.workflow.history.lock().clear();
+    state.workflow.last_scheduled_run.write().clear();
+    state.calendar.events.write().clear();
+    state.capture.dismissed.lock().clear();
+    state.capture.captured.lock().clear();
+    state.capture.transcript_processed.lock().clear();
 
     Ok(())
 }
@@ -867,7 +803,8 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
     // Seed transcript record for today's past Acme meeting (#1)
     let today_str = Local::now().format("%Y-%m-%d").to_string();
     let acme_meeting_id = format!("mock-mtg-acme-weekly-{}", today_str);
-    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+    {
+        let mut guard = state.capture.transcript_processed.lock();
         guard.insert(
             acme_meeting_id.clone(),
             TranscriptRecord {
@@ -887,11 +824,9 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
 
     // Google auth — set in-memory only, NEVER write to Keychain (I298 fix)
     if with_auth {
-        if let Ok(mut guard) = state.calendar.google_auth.lock() {
-            *guard = GoogleAuthStatus::Authenticated {
-                email: "dev@dailyos.test".to_string(),
-            };
-        }
+        *state.calendar.google_auth.lock() = GoogleAuthStatus::Authenticated {
+            email: "dev@dailyos.test".to_string(),
+        };
     }
 
     Ok(())
@@ -1012,12 +947,10 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
     )?;
 
     // --- AI enrichment ---
-    let ai_config = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
-        .unwrap_or_default();
+    let ai_config = {
+        let g = state.config.read();
+        g.as_ref().map(|c| c.ai_models.clone()).unwrap_or_default()
+    };
     let extraction_pty =
         crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config)
             .with_usage_context(
@@ -1032,11 +965,10 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
                     .with_trigger("devtools")
                     .with_tier(crate::pty::ModelTier::Synthesis),
             );
-    let user_ctx = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+    let user_ctx = {
+        let g = state.config.read();
+        g.as_ref().map(crate::types::UserContext::from_config)
+    }
         .unwrap_or(crate::types::UserContext {
             name: None,
             company: None,
@@ -1094,14 +1026,9 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
 
 /// Helper: get workspace path from config.
 fn get_workspace(state: &AppState) -> Result<std::path::PathBuf, String> {
-    state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| {
-            g.as_ref()
-                .map(|c| std::path::PathBuf::from(&c.workspace_path))
-        })
+    let g = state.config.read();
+    g.as_ref()
+        .map(|c| std::path::PathBuf::from(&c.workspace_path))
         .ok_or_else(|| "No workspace configured".to_string())
 }
 
@@ -5789,9 +5716,7 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
         ),
     ];
 
-    if let Ok(mut guard) = state.calendar.events.write() {
-        *guard = events;
-    }
+    *state.calendar.events.write() = events;
 
     Ok(())
 }

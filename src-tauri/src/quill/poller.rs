@@ -41,11 +41,10 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
         }
 
         // Check if Quill is enabled in config
-        let quill_config = state
-            .config
-            .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(|c| c.quill.clone()));
+        let quill_config = {
+            let g = state.config.read();
+            g.as_ref().map(|c| c.quill.clone())
+        };
 
         let config = match quill_config {
             Some(cfg) if cfg.enabled => cfg,
@@ -276,8 +275,8 @@ async fn process_sync_row(
     let calendar_event = sync::db_meeting_to_calendar_event(&meeting);
 
     let (workspace, profile, ai_config) = {
-        let config_guard = state.config.read().ok();
-        match config_guard.as_ref().and_then(|g| g.as_ref()) {
+        let config_guard = state.config.read();
+        match config_guard.as_ref() {
             Some(cfg) => (
                 std::path::PathBuf::from(&cfg.workspace_path),
                 cfg.profile.clone(),
@@ -522,21 +521,16 @@ fn resolve_meeting_account_id(db: &crate::db::ActionDb, meeting_id: &str) -> Opt
 /// if Quill integration is enabled in config.
 pub fn check_ended_meetings_for_sync(state: &AppState) {
     // Check if Quill is enabled
-    let enabled = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.quill.enabled))
-        .unwrap_or(false);
+    let enabled = {
+        let g = state.config.read();
+        g.as_ref().map(|c| c.quill.enabled).unwrap_or(false)
+    };
 
     if !enabled {
         return;
     }
 
-    let events = match state.calendar.events.read() {
-        Ok(guard) => guard.clone(),
-        Err(_) => return,
-    };
+    let events = state.calendar.events.read().clone();
 
     let db = match crate::db::ActionDb::open() {
         Ok(d) => d,
@@ -554,10 +548,8 @@ pub fn check_ended_meetings_for_sync(state: &AppState) {
         }
 
         // Check transcript immutability — skip if already processed
-        if let Ok(processed) = state.capture.transcript_processed.lock() {
-            if processed.contains_key(&event.id) {
-                continue;
-            }
+        if state.capture.transcript_processed.lock().contains_key(&event.id) {
+            continue;
         }
 
         let meeting_id = crate::workflow::deliver::meeting_primary_id(

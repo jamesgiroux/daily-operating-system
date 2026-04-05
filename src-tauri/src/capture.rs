@@ -130,7 +130,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
         }
 
         // Check if capture is enabled
-        let config = state.config.read().ok().and_then(|g| g.clone());
+        let config = state.config.read().clone();
         let enabled = config
             .as_ref()
             .map(|c| c.post_meeting_capture.enabled)
@@ -149,12 +149,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
         let now = Utc::now();
 
         // Get current events
-        let current_events = state
-            .calendar
-            .events
-            .read()
-            .map(|guard| guard.clone())
-            .unwrap_or_default();
+        let current_events = state.calendar.events.read().clone();
 
         // Find events currently in progress
         let mut current_in_progress: HashMap<String, CalendarEvent> = HashMap::new();
@@ -176,18 +171,8 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
         }
 
         // Find meetings that just ended (were in progress, now aren't)
-        let dismissed = state
-            .capture
-            .dismissed
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        let captured = state
-            .capture
-            .captured
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default();
+        let dismissed = state.capture.dismissed.lock().clone();
+        let captured = state.capture.captured.lock().clone();
 
         for (id, event) in &previous_in_progress {
             if !current_in_progress.contains_key(id)
@@ -272,8 +257,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                             .capture
                             .transcript_processed
                             .lock()
-                            .map(|g| g.contains_key(&prompt.meeting.id))
-                            .unwrap_or(false);
+                            .contains_key(&prompt.meeting.id);
 
                         if already_processed {
                             log::info!(
@@ -320,13 +304,15 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                                     summary: result.summary.clone(),
                                     processed_at: Utc::now().to_rfc3339(),
                                 };
-                                if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+                                {
+                                    let mut guard = state.capture.transcript_processed.lock();
                                     guard.insert(prompt.meeting.id.clone(), record);
                                     let _ = crate::state::save_transcript_records(&guard);
                                 }
 
                                 // Mark as captured
-                                if let Ok(mut guard) = state.capture.captured.lock() {
+                                {
+                                    let mut guard = state.capture.captured.lock();
                                     guard.insert(prompt.meeting.id.clone());
                                 }
 
@@ -382,12 +368,10 @@ fn build_auto_outcome(
         .and_then(|db| db.get_actions_for_meeting(meeting_id).ok())
         .unwrap_or_default();
 
-    let transcript_path = state
-        .capture
-        .transcript_processed
-        .lock()
-        .ok()
-        .and_then(|guard| guard.get(meeting_id).map(|r| r.destination.clone()));
+    let transcript_path = {
+        let guard = state.capture.transcript_processed.lock();
+        guard.get(meeting_id).map(|r| r.destination.clone())
+    };
 
     crate::types::MeetingOutcomeData {
         meeting_id: meeting_id.to_string(),

@@ -47,11 +47,8 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
         let interval = state
             .config
             .read()
-            .ok()
-            .and_then(|g| {
-                g.as_ref()
-                    .map(|c| c.hygiene_scan_interval_hours as u64 * 3600)
-            })
+            .as_ref()
+            .map(|c| c.hygiene_scan_interval_hours as u64 * 3600)
             .unwrap_or(SCAN_INTERVAL_SECS);
 
         // Prevent overlap with manual scan runs.
@@ -106,10 +103,12 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
             log_scan_report(&report);
 
             // Store report for frontend access
-            if let Ok(mut guard) = state.hygiene.report.lock() {
+            {
+                let mut guard = state.hygiene.report.lock();
                 *guard = Some(report);
             }
-            if let Ok(mut guard) = state.hygiene.last_scan_at.lock() {
+            {
+                let mut guard = state.hygiene.last_scan_at.lock();
                 *guard = Some(Utc::now().to_rfc3339());
             }
         }
@@ -122,7 +121,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
         }
 
         // Prune old audit trail files (I297)
-        if let Some(config) = state.config.read().ok().and_then(|g| g.clone()) {
+        if let Some(config) = state.config.read().clone() {
             let workspace = std::path::Path::new(&config.workspace_path);
             let pruned = crate::audit::prune_audit_files(workspace);
             if pruned > 0 {
@@ -138,7 +137,8 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
             last_purge_date = Some(today);
         }
 
-        if let Ok(mut guard) = state.hygiene.next_scan_at.lock() {
+        {
+            let mut guard = state.hygiene.next_scan_at.lock();
             *guard = Some((Utc::now() + chrono::Duration::seconds(interval as i64)).to_rfc3339());
         }
         state
@@ -196,7 +196,8 @@ fn run_daily_purge(state: &AppState, app: &AppHandle) {
                 purge_report.emails_purged,
                 purge_report.embeddings_purged,
             );
-            if let Ok(mut audit) = state.audit_log.lock() {
+            {
+                let mut audit = state.audit_log.lock();
                 let _ = audit.append(
                     "system",
                     "age_based_purge",
@@ -221,7 +222,7 @@ fn run_daily_purge(state: &AppState, app: &AppHandle) {
 
 /// Run overnight scan with expanded budget.
 fn try_run_overnight(state: &AppState) -> Option<narrative::OvernightReport> {
-    let config = state.config.read().ok()?.clone()?;
+    let config = state.config.read().clone()?;
     let db = crate::db::ActionDb::open().ok()?;
     let workspace = std::path::Path::new(&config.workspace_path);
     Some(narrative::run_overnight_scan(
@@ -234,7 +235,7 @@ fn try_run_overnight(state: &AppState) -> Option<narrative::OvernightReport> {
 
 /// Synchronous scan attempt — releases everything when done.
 fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
-    let config = state.config.read().ok()?.clone()?;
+    let config = state.config.read().clone()?;
     let db = crate::db::ActionDb::open().ok()?;
 
     let first_run = !state

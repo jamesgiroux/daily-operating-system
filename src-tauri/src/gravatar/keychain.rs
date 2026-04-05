@@ -108,10 +108,9 @@ pub fn delete_gravatar_api_key() -> Result<(), String> {
 /// in the Keychain, copies it over and clears the config field.
 pub fn migrate_from_config(state: &crate::state::AppState) {
     let legacy_key = {
-        let config = state.config.read().ok();
+        let config = state.config.read();
         config
             .as_ref()
-            .and_then(|g| g.as_ref())
             .and_then(|c| c.gravatar.api_key.clone())
     };
 
@@ -130,7 +129,8 @@ pub fn migrate_from_config(state: &crate::state::AppState) {
             log::info!("Migrated Gravatar API key from config.json to Keychain");
             // Clear the legacy field — skip_serializing prevents it from being
             // written back, but we clear it in memory for consistency.
-            if let Ok(mut guard) = state.config.write() {
+            {
+                let mut guard = state.config.write();
                 if let Some(ref mut config) = *guard {
                     config.gravatar.api_key = None;
                 }

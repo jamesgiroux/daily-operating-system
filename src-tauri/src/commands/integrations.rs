@@ -276,8 +276,8 @@ pub async fn get_quill_status(state: State<'_, Arc<AppState>>) -> Result<QuillSt
     let config = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.quill.clone()));
+        .as_ref()
+        .map(|c| c.quill.clone());
 
     let quill_config = config.unwrap_or_default();
     let bridge_exists = std::path::Path::new(&quill_config.bridge_path).exists();
@@ -424,7 +424,6 @@ pub async fn test_quill_connection(state: State<'_, Arc<AppState>>) -> Result<bo
     let bridge_path = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned".to_string())?
         .as_ref()
         .map(|c| c.quill.bridge_path.clone())
         .unwrap_or_default();
@@ -574,8 +573,8 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
     let config = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.granola.clone()));
+        .as_ref()
+        .map(|c| c.granola.clone());
 
     let granola_config = config.unwrap_or_default();
     let resolved_path = crate::granola::resolve_cache_path(&granola_config);
@@ -727,7 +726,6 @@ pub fn test_granola_cache(state: State<'_, Arc<AppState>>) -> Result<usize, Stri
     let granola_config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned".to_string())?
         .as_ref()
         .map(|c| c.granola.clone())
         .unwrap_or_default();
@@ -757,8 +755,8 @@ pub fn get_gravatar_status(state: State<'_, Arc<AppState>>) -> GravatarStatus {
     let config = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.gravatar.clone()));
+        .as_ref()
+        .map(|c| c.gravatar.clone());
 
     let gravatar_config = config.unwrap_or_default();
 
@@ -1002,8 +1000,8 @@ pub async fn get_clay_status(state: State<'_, Arc<AppState>>) -> Result<ClayStat
     let config = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.clay.clone()));
+        .as_ref()
+        .map(|c| c.clay.clone());
 
     let clay_config = config.unwrap_or_default();
 
@@ -1085,8 +1083,8 @@ fn resolve_smithery_config(state: &AppState) -> Result<(String, String, String),
     let config = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.clay.clone()));
+        .as_ref()
+        .map(|c| c.clay.clone());
     let clay = config.ok_or("Config not loaded")?;
     let ns = clay
         .smithery_namespace
@@ -1408,14 +1406,12 @@ pub fn get_smithery_status(state: State<'_, Arc<AppState>>) -> serde_json::Value
     let (namespace, connection_id) = state
         .config
         .read()
-        .ok()
-        .and_then(|g| {
-            g.as_ref().map(|c| {
-                (
-                    c.clay.smithery_namespace.clone(),
-                    c.clay.smithery_connection_id.clone(),
-                )
-            })
+        .as_ref()
+        .map(|c| {
+            (
+                c.clay.smithery_namespace.clone(),
+                c.clay.smithery_connection_id.clone(),
+            )
         })
         .unwrap_or((None, None));
 
@@ -1451,8 +1447,8 @@ pub fn get_linear_status(state: State<'_, Arc<AppState>>) -> LinearStatusData {
     let config = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.linear.clone()));
+        .as_ref()
+        .map(|c| c.linear.clone());
 
     let linear_config = config.unwrap_or_default();
 
@@ -1514,8 +1510,8 @@ pub async fn test_linear_connection(state: State<'_, Arc<AppState>>) -> Result<S
     let api_key = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.linear.api_key.clone()))
+        .as_ref()
+        .and_then(|c| c.linear.api_key.clone())
         .ok_or("No Linear API key configured")?;
 
     let client = crate::linear::client::LinearClient::new(&api_key);
@@ -1752,9 +1748,7 @@ pub async fn set_role(
         c.profile = crate::types::profile_for_entity_mode(&c.entity_mode);
     })?;
 
-    if let Ok(mut guard) = state.active_preset.write() {
-        *guard = Some(preset);
-    }
+    *state.active_preset.write() = Some(preset);
 
     let _ = app_handle.emit("config-updated", ());
     Ok("ok".to_string())
@@ -1765,11 +1759,7 @@ pub async fn set_role(
 pub async fn get_active_preset(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<crate::presets::schema::RolePreset>, String> {
-    Ok(state
-        .active_preset
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone())
+    Ok(state.active_preset.read().clone())
 }
 
 /// List all available role presets.
@@ -1971,8 +1961,8 @@ pub async fn get_meeting_timeline(
     let user_domains = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
+        .as_ref()
+        .map(|c| c.resolved_user_domains())
         .unwrap_or_default();
     let entity_hints = state
         .db_read(|db| Ok(crate::helpers::build_entity_hints(db)))
@@ -2233,17 +2223,15 @@ pub async fn get_google_drive_status(
     let config = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.drive.clone()));
+        .as_ref()
+        .map(|c| c.drive.clone());
 
     let drive_config = config.unwrap_or_default();
 
-    let connected = state
-        .calendar
-        .google_auth
-        .lock()
-        .map(|guard| matches!(*guard, crate::types::GoogleAuthStatus::Authenticated { .. }))
-        .unwrap_or(false);
+    let connected = matches!(
+        *state.calendar.google_auth.lock(),
+        crate::types::GoogleAuthStatus::Authenticated { .. }
+    );
 
     let (watched_count, synced_count, last_sync) = state
         .db_read(|db| {
@@ -2318,8 +2306,8 @@ pub async fn import_google_drive_file(
     let workspace = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
+        .as_ref()
+        .map(|c| c.workspace_path.clone())
         .ok_or("Workspace not configured")?;
 
     let path = crate::google_drive::poller::save_to_entity_docs(
@@ -2423,11 +2411,7 @@ pub fn get_audit_log_records(
     category_filter: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Vec<crate::audit_log::AuditRecord> {
-    let path = if let Ok(guard) = state.audit_log.lock() {
-        guard.path().to_path_buf()
-    } else {
-        return Vec::new();
-    };
+    let path = state.audit_log.lock().path().to_path_buf();
 
     crate::audit_log::read_records(&path, limit.unwrap_or(100), category_filter.as_deref())
 }
@@ -2435,11 +2419,7 @@ pub fn get_audit_log_records(
 /// Export the audit log to a user-selected path.
 #[tauri::command]
 pub fn export_audit_log(dest_path: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let src = if let Ok(guard) = state.audit_log.lock() {
-        guard.path().to_path_buf()
-    } else {
-        return Err("Audit log unavailable".to_string());
-    };
+    let src = state.audit_log.lock().path().to_path_buf();
 
     if !src.exists() {
         return Err("No audit log file exists yet".to_string());
@@ -2452,11 +2432,7 @@ pub fn export_audit_log(dest_path: String, state: State<'_, Arc<AppState>>) -> R
 /// Verify the audit log hash chain integrity.
 #[tauri::command]
 pub fn verify_audit_log_integrity(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    let path = if let Ok(guard) = state.audit_log.lock() {
-        guard.path().to_path_buf()
-    } else {
-        return Err("Audit log unavailable".to_string());
-    };
+    let path = state.audit_log.lock().path().to_path_buf();
 
     if !path.exists() {
         return Ok("No audit log file exists yet.".to_string());
@@ -2510,7 +2486,8 @@ pub fn set_context_mode(
             crate::context_provider::ContextMode::Glean { .. } => "glean",
         }
     };
-    if let Ok(mut audit) = state.audit_log.lock() {
+    {
+        let mut audit = state.audit_log.lock();
         let _ = audit.append(
             "config",
             "context_mode_changed",
@@ -2576,7 +2553,8 @@ pub async fn start_glean_auth(
             };
 
             // Audit: oauth_connected
-            if let Ok(mut audit) = state.audit_log.lock() {
+            {
+        let mut audit = state.audit_log.lock();
                 let _ = audit.append(
                     "security",
                     "oauth_connected",
@@ -2599,7 +2577,8 @@ pub async fn start_glean_auth(
             state.swap_context_provider(new_provider);
 
             // Audit: context mode auto-set
-            if let Ok(mut audit) = state.audit_log.lock() {
+            {
+        let mut audit = state.audit_log.lock();
                 let _ = audit.append(
                     "config",
                     "context_mode_changed",
@@ -2676,7 +2655,8 @@ pub fn disconnect_glean(
     })?;
 
     // Audit: oauth_revoked
-    if let Ok(mut audit) = state.audit_log.lock() {
+    {
+        let mut audit = state.audit_log.lock();
         let _ = audit.append(
             "security",
             "oauth_revoked",
@@ -2695,7 +2675,8 @@ pub fn disconnect_glean(
     state.swap_context_provider(new_provider);
 
     // Audit: context mode reverted
-    if let Ok(mut audit) = state.audit_log.lock() {
+    {
+        let mut audit = state.audit_log.lock();
         let _ = audit.append(
             "config",
             "context_mode_changed",
@@ -3512,16 +3493,12 @@ pub async fn discover_accounts_from_glean(
         .ok_or_else(|| "Glean not connected".to_string())?;
 
     // 2. Resolve user identity from config + Google token
-    let user_name = {
-        let guard = state
-            .config
-            .read()
-            .map_err(|_| "Config lock poisoned".to_string())?;
-        guard
-            .as_ref()
-            .and_then(|cfg| cfg.user_name.clone())
-            .unwrap_or_default()
-    };
+    let user_name = state
+        .config
+        .read()
+        .as_ref()
+        .and_then(|cfg| cfg.user_name.clone())
+        .unwrap_or_default();
     let user_email = crate::google_api::token_store::peek_account_email().unwrap_or_default();
 
     if user_email.is_empty() {

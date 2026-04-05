@@ -17,8 +17,8 @@ pub async fn run_linear_poller(state: Arc<AppState>) {
         }
 
         let (enabled, api_key, poll_interval) = {
-            let config = state.config.read().ok();
-            match config.as_ref().and_then(|g| g.as_ref()) {
+            let config = state.config.read();
+            match config.as_ref() {
                 Some(c) => (
                     c.linear.enabled,
                     c.linear.api_key.clone(),

@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 // ─── Node.js Binary Resolution ─────────────────────────────────────────────
 //
@@ -17,7 +17,7 @@ static NPX_BINARY: Mutex<Option<PathBuf>> = Mutex::new(None);
 /// Caches successful lookups. Re-probes on every call if not yet found,
 /// so installing Node while the app is running will be detected.
 pub fn resolve_node_binary() -> Option<PathBuf> {
-    let mut guard = NODE_BINARY.lock().ok()?;
+    let mut guard = NODE_BINARY.lock();
     if let Some(ref path) = *guard {
         return Some(path.clone());
     }
@@ -32,7 +32,7 @@ pub fn resolve_node_binary() -> Option<PathBuf> {
 ///
 /// Caches successful lookups. Re-probes if not yet found.
 pub fn resolve_npx_binary() -> Option<PathBuf> {
-    let mut guard = NPX_BINARY.lock().ok()?;
+    let mut guard = NPX_BINARY.lock();
     if let Some(ref path) = *guard {
         return Some(path.clone());
     }

@@ -44,7 +44,7 @@ pub async fn run_entity_resolution_trigger(state: Arc<AppState>) {
 /// Find meetings created in the last 30 minutes without entity resolution
 /// signals and run resolution on them.
 fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
-    let config = state.config.read().ok().and_then(|g| g.clone());
+    let config = state.config.read().clone();
     let workspace = match config.as_ref() {
         Some(c) => std::path::PathBuf::from(&c.workspace_path),
         None => return Ok(()),
@@ -147,11 +147,13 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
 
             // Path 2a: Extract domains from attendee emails and store in account_domains.
             // This ensures newly-linked accounts gain domain knowledge for future matching.
+            // Uses merge (additive) rather than set (replace-all) so domains from
+            // multiple meetings accumulate rather than clobber each other.
             if let Some(account_id) = linked_account_id {
                 let discovered_domains =
                     extract_domains_from_attendees(&attendees_array, &user_domains);
                 if !discovered_domains.is_empty() {
-                    if let Err(e) = db.set_account_domains(&account_id, &discovered_domains) {
+                    if let Err(e) = db.merge_account_domains(&account_id, &discovered_domains) {
                         log::warn!(
                             "Entity resolution trigger: failed to store domains for account {}: {}",
                             account_id,
@@ -162,6 +164,16 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
                             "Entity resolution trigger: stored {} domains for account '{}'",
                             discovered_domains.len(),
                             account_id
+                        );
+                        // Emit signal for audit trail
+                        let _ = crate::signals::bus::emit_signal(
+                            &db,
+                            "account",
+                            &account_id,
+                            "account_domains_updated",
+                            "entity_resolution",
+                            Some(&format!("{} domains", discovered_domains.len())),
+                            0.9,
                         );
                     }
                 }
@@ -240,10 +252,14 @@ fn select_auto_link_candidates(
 
 /// Extract unique domains from attendee email addresses.
 /// Handles both valid emails and malformed strings gracefully.
-fn extract_domains_from_attendees(
+/// Extract unique domains from attendee email addresses, filtering out
+/// the user's own company domains and personal email providers.
+pub fn extract_domains_from_attendees(
     attendees: &[String],
     user_domains: &[String],
 ) -> Vec<String> {
+    use crate::google_api::classify::PERSONAL_EMAIL_DOMAINS;
+
     let mut domains = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -253,9 +269,12 @@ fn extract_domains_from_attendees(
             // Exclude the user's own company domains. Without this filter,
             // the CSM's domain gets stored as a domain for every customer
             // account, causing every meeting to resolve to every account.
+            // Also exclude personal email providers (gmail, outlook, etc.)
+            // which don't represent organizational domains.
             if !domain.is_empty()
                 && !domain.contains(' ')
                 && !user_domains.iter().any(|ud| ud == &domain)
+                && !PERSONAL_EMAIL_DOMAINS.contains(&domain.as_str())
                 && seen.insert(domain.clone())
             {
                 domains.push(domain);
@@ -314,6 +333,27 @@ impl crate::db::ActionDb {
         Ok(meetings)
     }
 
+    /// Get all meetings linked to accounts, with attendees, for domain backfill.
+    ///
+    /// Returns (account_id, meeting_attendees) pairs for every meeting→account link.
+    /// Used by the backfill command to populate account_domains from historical data.
+    pub fn get_account_meetings_for_domain_backfill(
+        &self,
+    ) -> Result<Vec<(String, String)>, crate::db::DbError> {
+        let mut stmt = self.conn_ref().prepare(
+            "SELECT me.entity_id, m.attendees
+             FROM meeting_entities me
+             INNER JOIN meetings m ON m.id = me.meeting_id
+             WHERE me.entity_type = 'account'
+               AND m.attendees IS NOT NULL
+               AND m.attendees != ''",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
     /// Link a meeting to an entity if not already linked.
     pub fn link_meeting_entity_if_absent(
         &self,
@@ -345,7 +385,7 @@ mod tests {
     use crate::entity::EntityType;
     use crate::prepare::entity_resolver::{ResolutionOutcome, ResolvedEntity};
 
-    use super::select_auto_link_candidates;
+    use super::{extract_domains_from_attendees, select_auto_link_candidates};
 
     #[test]
     fn auto_link_excludes_resolved_with_flag() {
@@ -401,5 +441,38 @@ mod tests {
 
         let selected = select_auto_link_candidates(&outcomes);
         assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn test_extract_domains_filters_personal_emails() {
+        let attendees = vec![
+            "me@company.com".to_string(),
+            "contact@acme.com".to_string(),
+            "friend@gmail.com".to_string(),
+            "other@outlook.com".to_string(),
+            "buyer@bigcorp.com".to_string(),
+        ];
+        let user_domains = vec!["company.com".to_string()];
+        let result = extract_domains_from_attendees(&attendees, &user_domains);
+
+        assert!(result.contains(&"acme.com".to_string()));
+        assert!(result.contains(&"bigcorp.com".to_string()));
+        assert!(!result.contains(&"company.com".to_string()), "user domain excluded");
+        assert!(!result.contains(&"gmail.com".to_string()), "personal email excluded");
+        assert!(!result.contains(&"outlook.com".to_string()), "personal email excluded");
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_extract_domains_deduplicates() {
+        let attendees = vec![
+            "alice@acme.com".to_string(),
+            "bob@acme.com".to_string(),
+            "charlie@acme.com".to_string(),
+        ];
+        let user_domains = vec!["company.com".to_string()];
+        let result = extract_domains_from_attendees(&attendees, &user_domains);
+
+        assert_eq!(result, vec!["acme.com".to_string()]);
     }
 }

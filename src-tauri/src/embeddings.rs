@@ -1,7 +1,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 pub const DEFAULT_DIMENSION: usize = 768;
 
@@ -82,10 +82,7 @@ impl EmbeddingModel {
         match TextEmbedding::try_new(options) {
             Ok(model) => {
                 log::info!("Embedding model loaded: nomic-embed-text-v1.5 (quantized)");
-                let mut guard = self
-                    .state
-                    .lock()
-                    .map_err(|_| "embedding model lock poisoned".to_string())?;
+                let mut guard = self.state.lock();
                 *guard = EmbeddingModelInner::Fastembed {
                     model: Box::new(model),
                     dimension: DEFAULT_DIMENSION,
@@ -98,10 +95,7 @@ impl EmbeddingModel {
                     "Embedding model unavailable, using hash fallback: {}",
                     reason
                 );
-                let mut guard = self
-                    .state
-                    .lock()
-                    .map_err(|_| "embedding model lock poisoned".to_string())?;
+                let mut guard = self.state.lock();
                 *guard = EmbeddingModelInner::HashFallback {
                     dimension: DEFAULT_DIMENSION,
                 };
@@ -112,31 +106,21 @@ impl EmbeddingModel {
     }
 
     pub fn set_unavailable(&self, reason: String) {
-        match self.state.lock() {
-            Ok(mut guard) => {
-                *guard = EmbeddingModelInner::Unavailable { reason };
-            }
-            Err(_) => {
-                log::error!("Failed to update embedding model status: lock poisoned");
-            }
-        }
+        let mut guard = self.state.lock();
+        *guard = EmbeddingModelInner::Unavailable { reason };
     }
 
     pub fn status(&self) -> EmbeddingModelStatus {
-        self.state
-            .lock()
-            .map(|s| match &*s {
-                EmbeddingModelInner::Fastembed { dimension, .. }
-                | EmbeddingModelInner::HashFallback { dimension } => EmbeddingModelStatus::Ready {
-                    dimension: *dimension,
-                },
-                EmbeddingModelInner::Unavailable { reason } => EmbeddingModelStatus::Unavailable {
-                    reason: reason.clone(),
-                },
-            })
-            .unwrap_or(EmbeddingModelStatus::Unavailable {
-                reason: "embedding model lock poisoned".to_string(),
-            })
+        let guard = self.state.lock();
+        match &*guard {
+            EmbeddingModelInner::Fastembed { dimension, .. }
+            | EmbeddingModelInner::HashFallback { dimension } => EmbeddingModelStatus::Ready {
+                dimension: *dimension,
+            },
+            EmbeddingModelInner::Unavailable { reason } => EmbeddingModelStatus::Unavailable {
+                reason: reason.clone(),
+            },
+        }
     }
 
     pub fn is_ready(&self) -> bool {
@@ -145,19 +129,14 @@ impl EmbeddingModel {
 
     /// Returns true when the model is running real inference (not hash fallback).
     pub fn is_onnx(&self) -> bool {
-        self.state
-            .lock()
-            .map(|s| matches!(&*s, EmbeddingModelInner::Fastembed { .. }))
-            .unwrap_or(false)
+        let guard = self.state.lock();
+        matches!(&*guard, EmbeddingModelInner::Fastembed { .. })
     }
 
     /// Embed a single text. The caller is responsible for adding the appropriate
     /// prefix (`QUERY_PREFIX` or `DOCUMENT_PREFIX`) before calling this method.
     pub fn embed(&self, text: &str) -> Result<Vec<f32>, String> {
-        let mut guard = self
-            .state
-            .lock()
-            .map_err(|_| "embedding model lock poisoned".to_string())?;
+        let mut guard = self.state.lock();
 
         match &mut *guard {
             EmbeddingModelInner::Fastembed {
@@ -180,10 +159,7 @@ impl EmbeddingModel {
 
     /// Embed a batch of texts. Each text should already have the appropriate prefix.
     pub fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
-        let mut guard = self
-            .state
-            .lock()
-            .map_err(|_| "embedding model lock poisoned".to_string())?;
+        let mut guard = self.state.lock();
 
         match &mut *guard {
             EmbeddingModelInner::Fastembed {

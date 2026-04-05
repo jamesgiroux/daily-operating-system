@@ -3401,8 +3401,8 @@ pub fn enrich_briefing(
     let role_label = user_ctx.title_or_default();
 
     // I313: Read vocabulary and briefing emphasis from active preset
-    let preset_guard = state.active_preset.read().ok();
-    let preset_ref = preset_guard.as_ref().and_then(|g| g.as_ref());
+    let preset_guard = state.active_preset.read();
+    let preset_ref = preset_guard.as_ref();
     let vocab_context = preset_ref
         .map(|p| {
             format!(
@@ -4851,8 +4851,8 @@ pub fn enrich_week(
     let role_label = user_ctx.title_or_default();
 
     // I313: Read vocabulary and briefing emphasis from active preset
-    let week_preset_guard = state.active_preset.read().ok();
-    let week_preset_ref = week_preset_guard.as_ref().and_then(|g| g.as_ref());
+    let week_preset_guard = state.active_preset.read();
+    let week_preset_ref = week_preset_guard.as_ref();
     let week_vocab_context = week_preset_ref
         .map(|p| {
             format!(

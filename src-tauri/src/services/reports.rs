@@ -44,7 +44,7 @@ pub async fn generate_report(
         let mut input = {
             let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
-            let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+            let config_guard = state.config.read();
             let config = config_guard.as_ref().ok_or("Config not initialized")?;
             let workspace = std::path::Path::new(&config.workspace_path);
             let ai_models = config.ai_models.clone();
@@ -186,7 +186,7 @@ fn generate_swot_report(
     let gathered = {
         let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
-        let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+        let config_guard = state.config.read();
         let config = config_guard.as_ref().ok_or("Config not initialized")?;
         let workspace = std::path::Path::new(&config.workspace_path);
         let ai_models = config.ai_models.clone();
@@ -240,7 +240,7 @@ fn generate_book_of_business(
     let mut gather = {
         let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
-        let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+        let config_guard = state.config.read();
         let config = config_guard.as_ref().ok_or("Config not initialized")?;
         let workspace = std::path::Path::new(&config.workspace_path);
         let ai_models = config.ai_models.clone();
