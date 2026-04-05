@@ -228,7 +228,7 @@ pub async fn rebuild_database(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(usize, usize, usize), String> {
     let (workspace_path, user_domains) = {
-        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+        let guard = state.config.read();
         let config = guard.as_ref().ok_or("Config not loaded")?;
         (
             config.workspace_path.clone(),
@@ -257,12 +257,7 @@ fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::Acco
 pub fn get_hygiene_report(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<crate::hygiene::HygieneReport>, String> {
-    let guard = state
-        .hygiene
-        .report
-        .lock()
-        .map_err(|_| "Lock poisoned".to_string())?;
-    Ok(guard.clone())
+    Ok(state.hygiene.report.lock().clone())
 }
 
 /// Get a prose narrative summarizing the last hygiene scan.
@@ -270,7 +265,7 @@ pub fn get_hygiene_report(
 pub fn get_hygiene_narrative(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<crate::hygiene::HygieneNarrativeView>, String> {
-    let report = state.hygiene.report.lock().map_err(|_| "Lock poisoned")?;
+    let report = state.hygiene.report.lock();
     Ok(report
         .as_ref()
         .and_then(crate::hygiene::build_hygiene_narrative))
@@ -281,12 +276,7 @@ pub fn get_hygiene_narrative(
 pub fn get_intelligence_hygiene_status(
     state: State<'_, Arc<AppState>>,
 ) -> Result<HygieneStatusView, String> {
-    let report = state
-        .hygiene
-        .report
-        .lock()
-        .map_err(|_| "Lock poisoned".to_string())?
-        .clone();
+    let report = state.hygiene.report.lock().clone();
     Ok(build_intelligence_hygiene_status(&state, report.as_ref()))
 }
 
@@ -311,7 +301,6 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
         let config = state
             .config
             .read()
-            .map_err(|_| "Lock poisoned".to_string())?
             .clone()
             .ok_or("No configuration loaded".to_string())?;
 
@@ -333,21 +322,15 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
             log::info!("run_hygiene_scan_now: pruned {} old audit files", pruned);
         }
 
-        if let Ok(mut guard) = state.hygiene.report.lock() {
-            *guard = Some(report.clone());
-        }
-        if let Ok(mut guard) = state.hygiene.last_scan_at.lock() {
-            *guard = Some(report.scanned_at.clone());
-        }
-        if let Ok(mut guard) = state.hygiene.next_scan_at.lock() {
-            *guard = Some(
-                (chrono::Utc::now()
-                    + chrono::Duration::seconds(
-                        crate::hygiene::scan_interval_secs(Some(&config)) as i64
-                    ))
-                .to_rfc3339(),
-            );
-        }
+        *state.hygiene.report.lock() = Some(report.clone());
+        *state.hygiene.last_scan_at.lock() = Some(report.scanned_at.clone());
+        *state.hygiene.next_scan_at.lock() = Some(
+            (chrono::Utc::now()
+                + chrono::Duration::seconds(
+                    crate::hygiene::scan_interval_secs(Some(&config)) as i64
+                ))
+            .to_rfc3339(),
+        );
 
         Ok(report)
     })();
@@ -518,7 +501,6 @@ pub async fn bulk_create_accounts(
     let workspace_path = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .as_ref()
         .ok_or("Config not loaded")?
         .workspace_path
@@ -540,7 +522,6 @@ pub async fn bulk_create_projects(
     let workspace_path = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .as_ref()
         .ok_or("Config not loaded")?
         .workspace_path

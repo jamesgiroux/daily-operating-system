@@ -7,7 +7,8 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::Instant;
 
 use chrono::Utc;
@@ -100,24 +101,21 @@ impl IntelligenceQueue {
     /// coalesced into a single request.
     pub fn enqueue(&self, request: IntelRequest) {
         if let Some(debounce_secs) = debounce_window_secs(request.priority) {
-            if let Ok(last) = self.last_enqueued.lock() {
-                if let Some(last_time) = last.get(&request.entity_id) {
-                    if last_time.elapsed().as_secs() < debounce_secs {
-                        log::debug!(
-                            "IntelQueue: debounced {} ({}s since last)",
-                            request.entity_id,
-                            last_time.elapsed().as_secs()
-                        );
-                        return;
-                    }
+            let last = self.last_enqueued.lock();
+            if let Some(last_time) = last.get(&request.entity_id) {
+                if last_time.elapsed().as_secs() < debounce_secs {
+                    log::debug!(
+                        "IntelQueue: debounced {} ({}s since last)",
+                        request.entity_id,
+                        last_time.elapsed().as_secs()
+                    );
+                    return;
                 }
             }
+            drop(last);
         }
 
-        let mut queue = match self.queue.lock() {
-            Ok(q) => q,
-            Err(_) => return,
-        };
+        let mut queue = self.queue.lock();
 
         // Dedup: if entity already in queue, keep higher priority
         if let Some(existing) = queue.iter_mut().find(|r| r.entity_id == request.entity_id) {
@@ -142,14 +140,15 @@ impl IntelligenceQueue {
         queue.push_back(request.clone());
 
         // Update debounce tracker
-        if let Ok(mut last) = self.last_enqueued.lock() {
+        {
+            let mut last = self.last_enqueued.lock();
             last.insert(request.entity_id, Instant::now());
         }
     }
 
     /// Dequeue the highest-priority request.
     pub fn dequeue(&self) -> Option<IntelRequest> {
-        let mut queue = self.queue.lock().ok()?;
+        let mut queue = self.queue.lock();
         if queue.is_empty() {
             return None;
         }
@@ -169,10 +168,7 @@ impl IntelligenceQueue {
     /// Returns items sorted by descending priority so the highest-priority
     /// entity appears first in the batch.
     pub fn dequeue_batch(&self, max: usize) -> Vec<IntelRequest> {
-        let mut queue = match self.queue.lock() {
-            Ok(q) => q,
-            Err(_) => return Vec::new(),
-        };
+        let mut queue = self.queue.lock();
         if queue.is_empty() {
             return Vec::new();
         }
@@ -200,7 +196,7 @@ impl IntelligenceQueue {
 
     /// Current queue depth (for diagnostics).
     pub fn len(&self) -> usize {
-        self.queue.lock().map(|q| q.len()).unwrap_or(0)
+        self.queue.lock().len()
     }
 
     /// Whether the queue is empty.
@@ -214,13 +210,12 @@ impl IntelligenceQueue {
     /// to prevent unbounded memory growth over long-running sessions (I234).
     pub fn prune_stale_entries(&self) {
         let stale_threshold_secs = CONTENT_DEBOUNCE_SECS * 10;
-        if let Ok(mut last) = self.last_enqueued.lock() {
-            let before = last.len();
-            last.retain(|_, instant| instant.elapsed().as_secs() < stale_threshold_secs);
-            let pruned = before - last.len();
-            if pruned > 0 {
-                log::debug!("IntelQueue: pruned {} stale debounce entries", pruned);
-            }
+        let mut last = self.last_enqueued.lock();
+        let before = last.len();
+        last.retain(|_, instant| instant.elapsed().as_secs() < stale_threshold_secs);
+        let pruned = before - last.len();
+        if pruned > 0 {
+            log::debug!("IntelQueue: pruned {} stale debounce entries", pruned);
         }
     }
 }
@@ -475,7 +470,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             }),
         );
 
-        if let Ok(mut audit) = state.audit_log.lock() {
+        {
+            let mut audit = state.audit_log.lock();
             let _ = audit.append(
                 "ai",
                 "entity_enrichment_started",
@@ -516,8 +512,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         let ai_config = state
             .config
             .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+            .as_ref()
+            .map(|c| c.ai_models.clone())
             .unwrap_or_default();
 
         // Track original requests so we can detect failures and re-enqueue (I470)
@@ -615,7 +611,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     error_categories
                         .entry(original.entity_id.clone())
                         .or_insert("schema_validation");
-                    if let Ok(mut audit) = state.audit_log.lock() {
+                    {
+            let mut audit = state.audit_log.lock();
                         let _ = audit.append(
                             "anomaly",
                             "schema_validation_failed",
@@ -631,7 +628,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             let succeeded_count = results.len();
             let failed_count = original_requests.len() - succeeded_count;
             if succeeded_count > 0 {
-                if let Ok(mut audit) = state.audit_log.lock() {
+                {
+            let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "ai",
                         "entity_enrichment_completed",
@@ -648,7 +646,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 } else {
                     "pty_error"
                 };
-                if let Ok(mut audit) = state.audit_log.lock() {
+                {
+            let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "ai",
                         "entity_enrichment_failed",
@@ -668,7 +667,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             if let Ok(serialized) = serde_json::to_string(intel) {
                 let anomalies = crate::intelligence::validation::detect_anomalies(&serialized);
                 if !anomalies.is_empty() {
-                    if let Ok(mut audit) = state.audit_log.lock() {
+                    {
+            let mut audit = state.audit_log.lock();
                         let _ = audit.append(
                             "anomaly",
                             "injection_instruction_in_output",
@@ -851,7 +851,7 @@ pub fn gather_enrichment_input(
     request: &IntelRequest,
 ) -> Result<EnrichmentInput, String> {
     let workspace = {
-        let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+        let config_guard = state.config.read();
         let config = config_guard.as_ref().ok_or("No config")?;
         PathBuf::from(&config.workspace_path)
     };
@@ -926,7 +926,8 @@ pub fn gather_enrichment_input(
                     crate::context_provider::ContextError::Db(_) => "db",
                     crate::context_provider::ContextError::Other(_) => "other",
                 };
-                if let Ok(mut audit) = state.audit_log.lock() {
+                {
+            let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "data_access",
                         "glean_connection_failed",
@@ -943,7 +944,8 @@ pub fn gather_enrichment_input(
     // Audit successful Glean context gather
     if state.context_provider().is_remote() {
         let gather_ms = gather_start.elapsed().as_millis() as u64;
-        if let Ok(mut audit) = state.audit_log.lock() {
+        {
+            let mut audit = state.audit_log.lock();
             let _ = audit.append(
                 "data_access",
                 "glean_context_gathered",
@@ -1016,10 +1018,7 @@ pub fn gather_enrichment_input(
         .map(|p| p.relationship.as_str())
         .or_else(|| account.as_ref().map(|a| a.account_type.as_db_str()));
     // Read active preset for domain-specific prompt language (I313)
-    let preset_guard = state
-        .active_preset
-        .read()
-        .map_err(|_| "Preset lock poisoned")?;
+    let preset_guard = state.active_preset.read();
     let prompt = build_intelligence_prompt_with_preset(
         &entity_name,
         &request.entity_type,
@@ -2619,7 +2618,7 @@ mod tests {
 
         // Insert a debounce entry manually with an old timestamp
         {
-            let mut last = queue.last_enqueued.lock().unwrap();
+            let mut last = queue.last_enqueued.lock();
             // Insert an entry that's "old" by using Instant::now() minus a large duration
             // We can't easily backdate Instant, so test the structure:
             // Insert a fresh entry, prune should NOT remove it
@@ -2629,7 +2628,7 @@ mod tests {
         queue.prune_stale_entries();
 
         // Fresh entry should still be there
-        let last = queue.last_enqueued.lock().unwrap();
+        let last = queue.last_enqueued.lock();
         assert!(
             last.contains_key("fresh-entity"),
             "fresh entry should survive pruning"

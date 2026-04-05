@@ -1231,7 +1231,7 @@ pub async fn get_account_detail(
     account_id: &str,
     state: &AppState,
 ) -> Result<AccountDetailResult, String> {
-    let _config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let _config = state.config.read().clone();
     let engine = std::sync::Arc::clone(&state.signals.engine);
 
     let lifecycle_account_id = account_id.to_string();
@@ -1520,7 +1520,7 @@ pub fn update_account_field(
 
     // Regenerate workspace files
     if let Ok(Some(account)) = db.get_account(account_id) {
-        let config = state.config.read().map_err(|_| "Lock poisoned")?;
+        let config = state.config.read();
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
             let json_path =
@@ -1554,7 +1554,7 @@ pub fn update_account_notes(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let config = state.config.read();
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
@@ -1616,7 +1616,7 @@ pub fn update_account_programs(
     let programs: Vec<crate::accounts::StrategicProgram> =
         serde_json::from_str(programs_json).map_err(|e| format!("Invalid programs JSON: {}", e))?;
 
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let config = state.config.read();
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
@@ -1699,7 +1699,7 @@ pub fn create_account(
     }
 
     // Create workspace files + directory template (ADR-0059)
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let config = state.config.read();
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
         let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
@@ -2123,7 +2123,6 @@ pub async fn create_internal_organization(
     let workspace_path = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .as_ref()
         .map(|c| c.workspace_path.clone())
         .ok_or("Config not loaded")?;
@@ -2314,7 +2313,6 @@ pub async fn create_child_account_cmd(
     let workspace_path = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .as_ref()
         .map(|c| c.workspace_path.clone());
 
@@ -2561,7 +2559,6 @@ pub fn accept_stakeholder_suggestion(
             let config = state
                 .config
                 .read()
-                .map_err(|_| "Lock poisoned")?
                 .clone()
                 .ok_or("Config not loaded")?;
             let user_domains = config.resolved_user_domains();
@@ -2578,7 +2575,6 @@ pub fn accept_stakeholder_suggestion(
             let config = state
                 .config
                 .read()
-                .map_err(|_| "Lock poisoned")?
                 .clone()
                 .ok_or("Config not loaded")?;
             let user_domains = config.resolved_user_domains();

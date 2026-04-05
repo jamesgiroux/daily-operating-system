@@ -297,7 +297,6 @@ pub async fn get_executive_intelligence(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -389,8 +388,7 @@ pub async fn get_executive_intelligence(
             .calendar
             .events
             .read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
+            .clone();
         let tz: chrono_tz::Tz = config
             .schedules
             .today

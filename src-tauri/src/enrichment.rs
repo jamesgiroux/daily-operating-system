@@ -50,8 +50,8 @@ pub async fn run_enrichment_processor(state: Arc<AppState>) {
         let sweep_hours = state
             .config
             .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(|c| c.clay.sweep_interval_hours))
+            .as_ref()
+            .map(|c| c.clay.sweep_interval_hours)
             .unwrap_or(24);
 
         tokio::select! {
@@ -81,7 +81,8 @@ async fn process_one_sweep(state: &AppState) -> u32 {
     let mut total = 0;
     let clay_count = process_clay_queue(state).await;
     if clay_count > 0 {
-        if let Ok(mut audit) = state.audit_log.lock() {
+        {
+            let mut audit = state.audit_log.lock();
             let _ = audit.append(
                 "data_access",
                 "clay_enrichment",
@@ -92,7 +93,8 @@ async fn process_one_sweep(state: &AppState) -> u32 {
     total += clay_count;
     let gravatar_count = process_gravatar_queue(state).await;
     if gravatar_count > 0 {
-        if let Ok(mut audit) = state.audit_log.lock() {
+        {
+            let mut audit = state.audit_log.lock();
             let _ = audit.append(
                 "data_access",
                 "gravatar_lookup",
@@ -109,8 +111,8 @@ async fn process_one_sweep(state: &AppState) -> u32 {
 /// still makes progress through the queue without infinite retry loops.
 async fn process_clay_queue(state: &AppState) -> u32 {
     let (enabled, max_per_sweep) = {
-        let config = state.config.read().ok();
-        match config.as_ref().and_then(|g| g.as_ref()) {
+        let config = state.config.read();
+        match config.as_ref() {
             Some(c) => (c.clay.enabled, c.clay.max_per_sweep),
             None => (false, 20),
         }
@@ -129,8 +131,8 @@ async fn process_clay_queue(state: &AppState) -> u32 {
         }
     };
     let (namespace, connection_id) = {
-        let config = state.config.read().ok();
-        match config.as_ref().and_then(|g| g.as_ref()) {
+        let config = state.config.read();
+        match config.as_ref() {
             Some(c) => match (&c.clay.smithery_namespace, &c.clay.smithery_connection_id) {
                 (Some(ns), Some(conn)) => (ns.clone(), conn.clone()),
                 _ => {
@@ -228,10 +230,9 @@ async fn process_clay_queue(state: &AppState) -> u32 {
 /// Process stale Gravatar profiles.
 async fn process_gravatar_queue(state: &AppState) -> u32 {
     let enabled = {
-        let config = state.config.read().ok();
+        let config = state.config.read();
         config
             .as_ref()
-            .and_then(|g| g.as_ref())
             .map(|c| c.gravatar.enabled)
             .unwrap_or(false)
     };

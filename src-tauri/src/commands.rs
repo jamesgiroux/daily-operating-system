@@ -2,7 +2,9 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
+
+use parking_lot::Mutex;
 
 use chrono::TimeZone;
 use regex::Regex;

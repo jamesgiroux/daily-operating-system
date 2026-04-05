@@ -6,7 +6,7 @@
 //! Includes rate-limiting for transcript notifications (5-minute cooldown)
 //! and user-configurable notification preferences.
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter};
@@ -66,8 +66,8 @@ fn load_notification_config(state: &AppState) -> NotificationConfig {
     state
         .config
         .read()
-        .ok()
-        .and_then(|guard| guard.as_ref().map(|c| c.notifications.clone()))
+        .as_ref()
+        .map(|c| c.notifications.clone())
         .unwrap_or_default()
 }
 
@@ -128,9 +128,7 @@ pub fn notify_transcript_ready(
 
     // Rate-limit: check cooldown
     {
-        let mut last = LAST_TRANSCRIPT_NOTIFICATION
-            .lock()
-            .map_err(|_| "Notification lock poisoned")?;
+        let mut last = LAST_TRANSCRIPT_NOTIFICATION.lock();
         if let Some(prev) = *last {
             if prev.elapsed() < TRANSCRIPT_NOTIFICATION_COOLDOWN {
                 log::debug!(
