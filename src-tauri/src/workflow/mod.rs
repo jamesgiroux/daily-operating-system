@@ -9,6 +9,7 @@ pub mod email_filter;
 pub mod impact_rollup;
 pub mod operations;
 pub mod reconcile;
+pub mod recover;
 pub mod today;
 pub mod week;
 
