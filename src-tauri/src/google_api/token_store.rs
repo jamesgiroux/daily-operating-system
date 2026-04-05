@@ -4,7 +4,7 @@
 //! - non-macOS: token.json file backend is canonical.
 //! - Dev mode: in-memory store (never touches Keychain or disk).
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use super::{GoogleApiError, GoogleToken};
 
@@ -15,9 +15,8 @@ static DEV_TOKEN: Mutex<Option<GoogleToken>> = Mutex::new(None);
 
 /// Clear the in-memory dev token. Called by `exit_dev_mode()`.
 pub fn clear_dev_token() {
-    if let Ok(mut guard) = DEV_TOKEN.lock() {
-        *guard = None;
-    }
+    let mut guard = DEV_TOKEN.lock();
+    *guard = None;
 }
 
 /// Load the current Google OAuth token.
@@ -26,7 +25,6 @@ pub fn load_token() -> Result<GoogleToken, GoogleApiError> {
     if crate::db::is_dev_db_mode() {
         return DEV_TOKEN
             .lock()
-            .map_err(|_| GoogleApiError::Keychain("Dev token lock poisoned".into()))?
             .clone()
             .ok_or_else(|| GoogleApiError::TokenNotFound(super::token_path()));
     }
@@ -46,9 +44,7 @@ pub fn load_token() -> Result<GoogleToken, GoogleApiError> {
 pub fn save_token(token: &GoogleToken) -> Result<(), GoogleApiError> {
     // Dev mode isolation: store in-memory only, never touch Keychain
     if crate::db::is_dev_db_mode() {
-        let mut guard = DEV_TOKEN
-            .lock()
-            .map_err(|_| GoogleApiError::Keychain("Dev token lock poisoned".into()))?;
+        let mut guard = DEV_TOKEN.lock();
         *guard = Some(token.clone());
         return Ok(());
     }

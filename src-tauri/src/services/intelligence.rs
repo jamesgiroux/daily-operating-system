@@ -122,8 +122,8 @@ pub async fn enrich_entity(
     let ai_config = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+        .as_ref()
+        .map(|c| c.ai_models.clone())
         .unwrap_or_default();
 
     // I535/ADR-0100: Glean-first enrichment for manual refresh.
@@ -576,7 +576,7 @@ pub async fn update_intelligence_field(
     value: &str,
     state: &AppState,
 ) -> Result<(), String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let config = state.config.read().clone();
     let config = config.ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
 
@@ -681,7 +681,7 @@ pub async fn update_stakeholders(
     stakeholders: Vec<crate::intelligence::StakeholderInsight>,
     state: &AppState,
 ) -> Result<(), String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let config = state.config.read().clone();
     let config = config.ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
 
@@ -841,7 +841,7 @@ pub async fn dismiss_intelligence_item(
     item_text: &str,
     state: &AppState,
 ) -> Result<(), String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let config = state.config.read().clone();
     let config = config.ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
 
@@ -1087,8 +1087,7 @@ pub async fn generate_risk_briefing(
 
             let config_guard = app_state
                 .config
-                .read()
-                .map_err(|_| "Config lock poisoned".to_string())?;
+                .read();
             let config = config_guard
                 .as_ref()
                 .ok_or_else(|| "Config not initialized".to_string())?;
@@ -1133,7 +1132,7 @@ pub fn get_risk_briefing(
     }
 
     // Fall back to disk (legacy path)
-    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+    let config_guard = state.config.read();
     let config = config_guard.as_ref().ok_or("Config not initialized")?;
 
     let account = db
@@ -1590,7 +1589,6 @@ mod live_acceptance_tests {
         let workspace_path = state
             .config
             .read()
-            .expect("config lock poisoned")
             .as_ref()
             .map(|c| c.workspace_path.clone())
             .expect("No config loaded");
