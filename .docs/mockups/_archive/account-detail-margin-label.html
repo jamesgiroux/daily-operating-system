@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS - Account Detail with Margin Label Column</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --linen: #e8e2d9;
+    --warm-white: #faf8f6;
+    --charcoal: #1e2530;
+    --ink: #2a2b3d;
+    --turmeric: #c9a227;
+    --terracotta: #c4654a;
+    --sage: #7eaa7b;
+    --larkspur: #8fa3c4;
+    --text-primary: #1e2530;
+    --text-secondary: #5a6370;
+    --text-tertiary: #8a919a;
+    --rule-heavy: rgba(30, 37, 48, 0.14);
+    --rule-light: rgba(30, 37, 48, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    color: var(--text-primary);
+    font-family: "DM Sans", sans-serif;
+    background: var(--cream);
+  }
+
+  /* ── Folio bar ── */
+  .folio {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 28px;
+    background: rgba(245, 242, 239, 0.84);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(245, 242, 239, 0.6);
+  }
+  .folio-left { display: flex; align-items: center; gap: 14px; }
+  .asterisk { font-family: "Montserrat", sans-serif; font-size: 18px; color: var(--turmeric); }
+  .mono { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); }
+
+  /* ── Nav island ── */
+  .navisland {
+    display: flex; gap: 2px; align-items: center;
+    background: rgba(30, 37, 48, 0.04); border-radius: 6px; padding: 3px;
+  }
+  .navisland a {
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 10px; border-radius: 4px;
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-tertiary); text-decoration: none;
+  }
+  .navisland a:hover { background: rgba(30, 37, 48, 0.06); }
+  .navisland a.active { background: var(--warm-white); color: var(--text-primary); }
+
+  /* ── Page container ── */
+  .page {
+    width: min(1080px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 40px 0 120px;
+  }
+
+  /* ── Hero — full width, no margin label ── */
+  .hero { margin-bottom: 20px; }
+  .hero-name {
+    font-family: "Newsreader", serif;
+    font-size: 76px; font-weight: 400;
+    line-height: 0.92; letter-spacing: -0.04em;
+    margin: 0;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .health-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    display: inline-block; flex-shrink: 0;
+  }
+  .health-dot.green { background: var(--sage); }
+  .hero-narrative {
+    max-width: 720px; margin: 20px 0 0;
+    font-size: 16px; line-height: 1.75;
+    color: var(--text-secondary);
+  }
+  .vitals {
+    display: flex; gap: 24px; margin-top: 20px;
+    padding-top: 16px; border-top: 1px solid var(--rule-light);
+  }
+  .vital {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     MARGIN LABEL LAYOUT — the core idea from Ledger v2
+     Each chapter section is a 2-col grid:
+       110px left gutter (sticky mono label)
+       1fr right column (all content)
+     ═══════════════════════════════════════════════════════ */
+
+  .section {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 28px;
+    align-items: start;
+    padding-top: 64px;
+  }
+
+  .section__label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-tertiary);
+    padding-top: 20px; /* aligns with chapter title after the rule */
+    position: sticky;
+    top: 72px; /* below folio bar */
+  }
+
+  .section__content {
+    min-width: 0;
+  }
+
+  /* ── Chapter heading (inside right column) ── */
+  .chapter-rule {
+    border: none;
+    border-top: 1px solid var(--rule-heavy);
+    margin: 0 0 16px;
+  }
+  .chapter-title {
+    font-family: "Newsreader", serif;
+    font-size: 28px; font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    margin: 0 0 28px;
+    display: flex; align-items: center; gap: 8;
+  }
+
+  /* ── State of Play items ── */
+  .state-group { margin-bottom: 28px; }
+  .state-group:last-child { margin-bottom: 0; }
+  .state-group-label { margin-bottom: 12px; }
+  .state-item {
+    padding: 6px 0 6px 16px;
+    font-size: 14px; line-height: 1.7;
+    color: var(--text-secondary);
+  }
+  .state-item + .state-item { margin-top: 8px; }
+  .state-item.working { border-left: 3px solid var(--sage); }
+  .state-item.struggling { border-left: 3px solid var(--terracotta); }
+
+  /* ── Health dimensions ── */
+  .dim-row {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .dim-row:last-child { border-bottom: none; }
+  .dim-name { font-size: 14px; font-weight: 500; width: 180px; flex-shrink: 0; }
+  .dim-bar { flex: 1; height: 6px; background: var(--rule-light); border-radius: 3px; overflow: hidden; }
+  .dim-fill { height: 100%; border-radius: 3px; }
+  .dim-fill.good { background: var(--sage); }
+  .dim-fill.mid { background: var(--turmeric); }
+  .dim-fill.low { background: var(--terracotta); }
+  .dim-score { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--text-tertiary); width: 60px; text-align: right; }
+
+  /* ── Stakeholder cards ── */
+  .people-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .person-card {
+    padding: 16px;
+    border: 1px solid var(--rule-light);
+    background: var(--warm-white);
+  }
+  .person-name { font-size: 15px; font-weight: 600; margin: 6px 0 4px; }
+  .person-role { font-size: 13px; color: var(--text-secondary); margin: 0; }
+  .person-context { font-size: 13px; color: var(--text-tertiary); margin: 6px 0 0; line-height: 1.6; }
+
+  .team-chips {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-top: 18px; padding-top: 16px;
+    border-top: 1px solid var(--rule-light);
+  }
+  .team-chip {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    padding: 4px 12px; border-radius: 20px;
+    border: 1px solid var(--rule-light);
+    background: var(--warm-white);
+    font-size: 13px; text-decoration: none; color: inherit;
+  }
+  .team-chip-role { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--text-tertiary); }
+
+  /* ── Watch list sections ── */
+  .watch-section {
+    padding: 20px 24px;
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 18px;
+  }
+  .watch-section:last-child { margin-bottom: 0; }
+  .watch-section.risk {
+    border-left: 3px solid var(--terracotta);
+    background: rgba(196, 101, 74, 0.06);
+  }
+  .watch-section.win {
+    border-left: 3px solid var(--sage);
+    background: rgba(126, 170, 123, 0.06);
+  }
+  .watch-section.unknown {
+    border-left: 3px solid var(--larkspur);
+    background: rgba(143, 163, 196, 0.06);
+  }
+  .watch-section h3 { margin: 6px 0 10px; font-size: 15px; font-weight: 600; }
+  .watch-item {
+    font-size: 14px; line-height: 1.7; color: var(--text-secondary);
+    padding: 4px 0;
+  }
+
+  /* ── Actions ── */
+  .action-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .action-row:last-child { border-bottom: none; }
+  .action-check {
+    width: 16px; height: 16px; border-radius: 3px;
+    border: 1.5px solid var(--rule-heavy);
+    flex-shrink: 0; margin-top: 2px;
+  }
+  .action-text { font-size: 14px; line-height: 1.6; }
+  .action-due { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+  /* ── Timeline ── */
+  .timeline-item {
+    display: flex; gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .timeline-item:last-child { border-bottom: none; }
+  .timeline-date { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--text-tertiary); width: 80px; flex-shrink: 0; padding-top: 2px; }
+  .timeline-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+  .timeline-dot.sage { background: var(--sage); }
+  .timeline-dot.turmeric { background: var(--turmeric); }
+  .timeline-dot.larkspur { background: var(--larkspur); }
+  .timeline-body { flex: 1; min-width: 0; }
+  .timeline-title { font-size: 14px; font-weight: 500; margin: 0; }
+  .timeline-desc { font-size: 13px; color: var(--text-secondary); margin: 4px 0 0; line-height: 1.6; }
+
+  /* ── Reference ── */
+  .ref-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .ref-block { padding-top: 14px; border-top: 1px solid var(--rule-light); }
+  .ref-block h3 { margin: 6px 0 8px; font-size: 15px; font-weight: 600; }
+  .ref-block p { margin: 0; font-size: 14px; line-height: 1.7; color: var(--text-secondary); }
+
+  /* ── Reports ── */
+  .report-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule-light);
+    font-size: 14px;
+  }
+  .report-row:last-child { border-bottom: none; }
+  .report-action { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--turmeric); }
+
+  /* ── Finis ── */
+  .finis {
+    text-align: center; padding: 64px 0 32px;
+    font-family: "Montserrat", sans-serif;
+    font-size: 14px; color: var(--turmeric);
+    letter-spacing: 0.2em;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 860px) {
+    .section { grid-template-columns: 1fr; gap: 0; }
+    .section__label { position: static; padding-top: 0; margin-bottom: 8px; }
+    .hero-name { font-size: 46px; }
+    .people-grid, .ref-grid { grid-template-columns: 1fr; }
+    .navisland { display: none; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Folio bar -->
+  <header class="folio">
+    <div class="folio-left">
+      <span class="asterisk">*</span>
+      <span class="mono">Globex Holdings</span>
+    </div>
+    <nav class="navisland">
+      <a href="#headline" class="active">Headline</a>
+      <a href="#state-of-play">State of Play</a>
+      <a href="#health">Health</a>
+      <a href="#the-room">The Room</a>
+      <a href="#watch-list">Watch List</a>
+      <a href="#the-work">The Work</a>
+      <a href="#the-record">The Record</a>
+      <a href="#reference">Reference</a>
+      <a href="#reports">Reports</a>
+    </nav>
+  </header>
+
+  <main class="page">
+
+    <!-- ═══════════════════════════════════════════
+         HERO — full width, no margin label
+         ═══════════════════════════════════════════ -->
+    <section id="headline" class="hero">
+      <h1 class="hero-name">
+        <span class="health-dot green"></span>
+        Globex Holdings
+      </h1>
+      <p class="hero-narrative">
+        Globex Holdings is the strongest account in the portfolio right now and the one most likely to expand in Q2. Phase 1 delivered ahead of schedule, executive sponsorship is locked, and adoption is tracking above the cohort baseline. The only fragility is concentrated in a single person — Alex Torres — whose March departure creates a knowledge-transfer risk that needs to be managed as part of Phase 2 scoping, not treated as an afterthought.
+      </p>
+      <div class="vitals">
+        <span class="vital">$420K ARR</span>
+        <span class="vital">Healthy</span>
+        <span class="vital">Customer</span>
+        <span class="vital">NPS 72</span>
+        <span class="vital">Renewal in 94d</span>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         STATE OF PLAY — margin label layout
+         ═══════════════════════════════════════════ -->
+    <section id="state-of-play" class="section">
+      <div class="section__label">State of Play</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">State of Play</h2>
+        <div class="state-group">
+          <div class="mono state-group-label" style="color: var(--sage);">Working</div>
+          <div class="state-item working">Phase 1 migration completed two weeks ahead of schedule with zero rollback events.</div>
+          <div class="state-item working">Executive sponsorship from Sarah Chen is locked — she has confirmed Phase 2 budget allocation.</div>
+          <div class="state-item working">Support ticket volume down 40% since deployment, validating the platform's operational impact.</div>
+        </div>
+        <div class="state-group">
+          <div class="mono state-group-label" style="color: var(--terracotta);">Struggling</div>
+          <div class="state-item struggling">Alex Torres departing in March — holds critical deployment knowledge with no documented handoff plan.</div>
+          <div class="state-item struggling">Three NPS detractors concentrated in engineering; sentiment risk ahead of QBR.</div>
+          <div class="state-item struggling">Updated SOW overdue with legal — blocking formal Phase 2 contract start.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         RELATIONSHIP HEALTH
+         ═══════════════════════════════════════════ -->
+    <section id="health" class="section">
+      <div class="section__label">Health</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Relationship Health</h2>
+        <div class="dim-row">
+          <span class="dim-name">Meeting cadence</span>
+          <div class="dim-bar"><div class="dim-fill good" style="width:85%"></div></div>
+          <span class="dim-score">85 / stable</span>
+        </div>
+        <div class="dim-row">
+          <span class="dim-name">Email engagement</span>
+          <div class="dim-bar"><div class="dim-fill good" style="width:80%"></div></div>
+          <span class="dim-score">80 / stable</span>
+        </div>
+        <div class="dim-row">
+          <span class="dim-name">Stakeholder coverage</span>
+          <div class="dim-bar"><div class="dim-fill mid" style="width:70%"></div></div>
+          <span class="dim-score">70 / declining</span>
+        </div>
+        <div class="dim-row">
+          <span class="dim-name">Champion health</span>
+          <div class="dim-bar"><div class="dim-fill mid" style="width:65%"></div></div>
+          <span class="dim-score">65 / at risk</span>
+        </div>
+        <div class="dim-row">
+          <span class="dim-name">Executive access</span>
+          <div class="dim-bar"><div class="dim-fill good" style="width:90%"></div></div>
+          <span class="dim-score">90 / strong</span>
+        </div>
+        <div class="dim-row">
+          <span class="dim-name">Sentiment trend</span>
+          <div class="dim-bar"><div class="dim-fill mid" style="width:68%"></div></div>
+          <span class="dim-score">68 / mixed</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         THE ROOM
+         ═══════════════════════════════════════════ -->
+    <section id="the-room" class="section">
+      <div class="section__label">The Room</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">The Room</h2>
+        <div class="people-grid">
+          <article class="person-card">
+            <div class="mono">Executive Sponsor</div>
+            <div class="person-name">Sarah Chen</div>
+            <p class="person-role">VP Engineering</p>
+            <p class="person-context">Strongest ally. Confirmed Phase 2 budget. Best partner for moving into expansion territory.</p>
+          </article>
+          <article class="person-card">
+            <div class="mono">Technical Lead</div>
+            <div class="person-name">Alex Torres</div>
+            <p class="person-role">Senior Engineer</p>
+            <p class="person-context">Departing March. Holds critical deployment knowledge. Transition is the biggest continuity risk.</p>
+          </article>
+          <article class="person-card">
+            <div class="mono">Stakeholder</div>
+            <div class="person-name">David Kim</div>
+            <p class="person-role">Director of Operations</p>
+            <p class="person-context">Wants ROI and adoption clarity. Responds to operational proof more than celebratory framing.</p>
+          </article>
+          <article class="person-card">
+            <div class="mono">Day-to-day</div>
+            <div class="person-name">Priya Patel</div>
+            <p class="person-role">Product Manager</p>
+            <p class="person-context">Primary operational contact. Manages rollout scheduling and user onboarding coordination.</p>
+          </article>
+        </div>
+        <div class="team-chips">
+          <div class="mono" style="width: 100%; margin-bottom: 4px;">Your Team</div>
+          <a href="#" class="team-chip">Jordan Lee <span class="team-chip-role">CSM</span></a>
+          <a href="#" class="team-chip">Maria Santos <span class="team-chip-role">SA</span></a>
+          <a href="#" class="team-chip">Tom Nguyen <span class="team-chip-role">AE</span></a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         WATCH LIST
+         ═══════════════════════════════════════════ -->
+    <section id="watch-list" class="section">
+      <div class="section__label">Watch List</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Watch List</h2>
+        <div class="watch-section risk">
+          <div class="mono" style="color: var(--terracotta);">Risks</div>
+          <h3>Three items that can bend the quarter</h3>
+          <div class="watch-item">Alex Torres departure creates knowledge transfer gap — no documented handoff plan exists.</div>
+          <div class="watch-item">NPS detractor cluster in engineering could surface at QBR if not addressed proactively.</div>
+          <div class="watch-item">Legal SOW delay may push Phase 2 contract start past April target.</div>
+        </div>
+        <div class="watch-section win">
+          <div class="mono" style="color: var(--sage);">Wins</div>
+          <h3>Momentum proof</h3>
+          <div class="watch-item">Phase 1 completed two weeks early — strongest delivery in the cohort this quarter.</div>
+          <div class="watch-item">Support volume down 40% since deployment, validating platform operational impact.</div>
+        </div>
+        <div class="watch-section unknown">
+          <div class="mono" style="color: var(--larkspur);">Unknowns</div>
+          <h3>Open questions</h3>
+          <div class="watch-item">CTO sign-off on Phase 2 budget — Sarah is confident but no written confirmation yet.</div>
+          <div class="watch-item">APAC expansion interest expressed informally but not scoped or staffed.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         THE WORK
+         ═══════════════════════════════════════════ -->
+    <section id="the-work" class="section">
+      <div class="section__label">The Work</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">The Work</h2>
+        <div class="action-row">
+          <div class="action-check"></div>
+          <div>
+            <div class="action-text">Follow up with three NPS detractors in engineering before QBR</div>
+            <div class="action-due">Due Mar 21</div>
+          </div>
+        </div>
+        <div class="action-row">
+          <div class="action-check"></div>
+          <div>
+            <div class="action-text">Draft knowledge transfer plan for Alex Torres departure</div>
+            <div class="action-due">Due Mar 14</div>
+          </div>
+        </div>
+        <div class="action-row">
+          <div class="action-check"></div>
+          <div>
+            <div class="action-text">Chase legal on updated SOW — need signed before April contract start</div>
+            <div class="action-due">Due Mar 18</div>
+          </div>
+        </div>
+        <div class="action-row">
+          <div class="action-check"></div>
+          <div>
+            <div class="action-text">Prepare Phase 2 scoping deck for Sarah Chen review</div>
+            <div class="action-due">Due Mar 25</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         THE RECORD
+         ═══════════════════════════════════════════ -->
+    <section id="the-record" class="section">
+      <div class="section__label">The Record</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">The Record</h2>
+        <div class="timeline-item">
+          <span class="timeline-date">Mar 10</span>
+          <span class="timeline-dot sage"></span>
+          <div class="timeline-body">
+            <p class="timeline-title">Phase 1 deployment marked complete</p>
+            <p class="timeline-desc">Migration finished two weeks ahead of schedule. All 240 users active.</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <span class="timeline-date">Mar 7</span>
+          <span class="timeline-dot turmeric"></span>
+          <div class="timeline-body">
+            <p class="timeline-title">Weekly sync with Sarah Chen</p>
+            <p class="timeline-desc">Confirmed Phase 2 budget. Discussed April start date and APAC interest.</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <span class="timeline-date">Mar 3</span>
+          <span class="timeline-dot larkspur"></span>
+          <div class="timeline-body">
+            <p class="timeline-title">NPS survey results received</p>
+            <p class="timeline-desc">Overall 72 (+4). Three detractors identified in engineering team.</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <span class="timeline-date">Feb 28</span>
+          <span class="timeline-dot turmeric"></span>
+          <div class="timeline-body">
+            <p class="timeline-title">Alex Torres gave notice</p>
+            <p class="timeline-desc">Last day March 28. Knowledge transfer plan not yet started.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         REFERENCE
+         ═══════════════════════════════════════════ -->
+    <section id="reference" class="section">
+      <div class="section__label">Reference</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Reference</h2>
+        <div class="ref-grid">
+          <div class="ref-block">
+            <div class="mono">Lifecycle</div>
+            <h3>Contract timeline</h3>
+            <p>Customer since January 2025. Initial 12-month contract. Renewal date June 15, 2026. Phase 1 scope: core platform migration for 240 users.</p>
+          </div>
+          <div class="ref-block">
+            <div class="mono">Context</div>
+            <h3>Company profile</h3>
+            <p>Global investment firm. ~3,200 employees. Headquarters in New York. Technology modernization initiative driving platform consolidation across business units.</p>
+          </div>
+          <div class="ref-block">
+            <div class="mono">Files</div>
+            <h3>Linked documents</h3>
+            <p>Phase 1 SOW (signed) · Phase 2 proposal (draft) · QBR deck Q4 2025 · Deployment runbook</p>
+          </div>
+          <div class="ref-block">
+            <div class="mono">Notes</div>
+            <h3>Working context</h3>
+            <p>David Kim prefers data-led conversations — always lead with metrics. Sarah responds well to strategic framing. Avoid surprises in group settings.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         REPORTS
+         ═══════════════════════════════════════════ -->
+    <section id="reports" class="section">
+      <div class="section__label">Reports</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Reports</h2>
+        <div class="report-row">
+          <span>Account Health Review</span>
+          <span class="report-action">View</span>
+        </div>
+        <div class="report-row">
+          <span>EBR / QBR</span>
+          <span class="report-action">View</span>
+        </div>
+        <div class="report-row">
+          <span>Risk Briefing</span>
+          <span class="report-action">View</span>
+        </div>
+        <div class="report-row">
+          <span>SWOT Analysis</span>
+          <span class="report-action">View</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Finis -->
+    <div class="finis">* * *</div>
+
+  </main>
+</body>
+</html>

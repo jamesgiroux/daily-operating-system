@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS - Intelligence Briefing Concept - Constellation</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #111827;
+    --midnight: #1f2937;
+    --paper: #eef2f2;
+    --fog: rgba(238, 242, 242, 0.72);
+    --turmeric: #d5ab2f;
+    --larkspur: #8fa3c4;
+    --sage: #7eaa7b;
+    --terracotta: #c4654a;
+    --signal: rgba(143, 163, 196, 0.38);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "DM Sans", sans-serif;
+    color: var(--paper);
+    background:
+      radial-gradient(circle at 15% 20%, rgba(143, 163, 196, 0.18), transparent 18%),
+      radial-gradient(circle at 82% 24%, rgba(213, 171, 47, 0.18), transparent 22%),
+      radial-gradient(circle at 60% 78%, rgba(126, 170, 123, 0.12), transparent 22%),
+      linear-gradient(180deg, #0f172a 0%, #111827 100%);
+    min-height: 100vh;
+  }
+
+  .page {
+    width: min(1280px, calc(100% - 36px));
+    margin: 18px auto 40px;
+    padding: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(17, 24, 39, 0.42);
+    backdrop-filter: blur(16px);
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: center;
+    padding: 8px 10px 22px;
+  }
+
+  .brand, .meta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .asterisk { font-family: "Montserrat", sans-serif; font-size: 18px; color: var(--turmeric); }
+  .mono { font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(238,242,242,0.58); }
+
+  .pill {
+    padding: 6px 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: rgba(238,242,242,0.84);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1.45fr 0.85fr;
+    gap: 18px;
+  }
+
+  .sky, .rail {
+    min-width: 0;
+  }
+
+  .sky {
+    position: relative;
+    min-height: 820px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+      radial-gradient(circle at center, rgba(143, 163, 196, 0.08), transparent 40%),
+      linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px),
+      rgba(255,255,255,0.02);
+    background-size: auto, 36px 36px, 36px 36px, auto;
+    overflow: hidden;
+  }
+
+  .meeting-core {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 340px;
+    transform: translate(-50%, -50%);
+    padding: 24px 24px 26px;
+    border-radius: 999px;
+    text-align: center;
+    background: radial-gradient(circle, rgba(213,171,47,0.14), rgba(213,171,47,0.02));
+    border: 1px solid rgba(213,171,47,0.35);
+    box-shadow: 0 0 80px rgba(213,171,47,0.12);
+  }
+
+  .meeting-core h1 {
+    margin: 12px 0 10px;
+    font-family: "Newsreader", serif;
+    font-size: 46px;
+    font-weight: 400;
+    line-height: 0.96;
+    letter-spacing: -0.05em;
+  }
+
+  .meeting-core p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: rgba(238,242,242,0.8);
+  }
+
+  .orbit {
+    position: absolute;
+    border: 1px dashed rgba(255,255,255,0.08);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .orbit.one { width: 520px; height: 520px; left: 50%; top: 50%; }
+  .orbit.two { width: 720px; height: 720px; left: 50%; top: 50%; }
+
+  .node {
+    position: absolute;
+    width: 220px;
+    padding: 14px 14px 16px;
+    background: rgba(17,24,39,0.82);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .node h3 { margin: 8px 0 8px; font-size: 15px; font-weight: 600; }
+  .node p { margin: 0; font-size: 13px; line-height: 1.62; color: rgba(238,242,242,0.78); }
+  .node.person { border-left: 3px solid var(--larkspur); }
+  .node.risk { border-left: 3px solid var(--terracotta); }
+  .node.work { border-left: 3px solid var(--turmeric); }
+  .node.win { border-left: 3px solid var(--sage); }
+
+  .node.sarah { left: 58%; top: 8%; }
+  .node.alex { left: 12%; top: 32%; }
+  .node.legal { left: 68%; top: 68%; }
+  .node.nps { left: 6%; top: 70%; }
+  .node.proof { left: 72%; top: 24%; }
+  .node.phase2 { left: 40%; top: 80%; }
+
+  .line {
+    position: absolute;
+    height: 1px;
+    background: var(--signal);
+    transform-origin: left center;
+  }
+
+  .rail {
+    display: grid;
+    gap: 18px;
+  }
+
+  .card {
+    padding: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+  }
+
+  .card h2 {
+    margin: 8px 0 12px;
+    font-family: "Newsreader", serif;
+    font-size: 30px;
+    font-weight: 400;
+    letter-spacing: -0.03em;
+  }
+
+  .card p, .card li {
+    font-size: 14px;
+    line-height: 1.72;
+    color: rgba(238,242,242,0.8);
+  }
+
+  .card ul { margin: 0; padding-left: 18px; }
+
+  @media (max-width: 1100px) {
+    .grid { grid-template-columns: 1fr; }
+    .sky { min-height: 1000px; }
+  }
+
+  @media (max-width: 720px) {
+    .page { width: min(100%, calc(100% - 10px)); padding: 10px; }
+    .header { flex-direction: column; align-items: flex-start; }
+    .meeting-core { width: 260px; }
+    .meeting-core h1 { font-size: 34px; }
+    .node { width: 180px; }
+  }
+</style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div class="brand">
+        <span class="asterisk">*</span>
+        <div>
+          <div class="mono">DailyOS / briefing concept / constellation</div>
+          <div>Acme Corp Weekly Sync</div>
+        </div>
+      </div>
+      <div class="meta">
+        <span class="pill">8:00 - 8:45</span>
+        <span class="pill">phase 2 scoping</span>
+        <span class="pill">knowledge transfer risk</span>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="sky">
+        <div class="orbit one"></div>
+        <div class="orbit two"></div>
+
+        <div class="line" style="left:50%;top:50%;width:210px;transform:rotate(-62deg);"></div>
+        <div class="line" style="left:50%;top:50%;width:250px;transform:rotate(165deg);"></div>
+        <div class="line" style="left:50%;top:50%;width:230px;transform:rotate(40deg);"></div>
+        <div class="line" style="left:50%;top:50%;width:290px;transform:rotate(118deg);"></div>
+        <div class="line" style="left:50%;top:50%;width:260px;transform:rotate(-18deg);"></div>
+        <div class="line" style="left:50%;top:50%;width:300px;transform:rotate(82deg);"></div>
+
+        <div class="meeting-core">
+          <div class="mono">Meeting core</div>
+          <h1>Walk in ready for the Phase 2 conversation.</h1>
+          <p>Acme is strong post-Phase 1. The briefing's real job is to show what is exerting force on this room: Sarah's sponsorship, Alex's departure, legal drag, and the need to keep the NPS wobble from becoming the story.</p>
+        </div>
+
+        <article class="node person sarah">
+          <div class="mono">Primary gravity</div>
+          <h3>Sarah Chen</h3>
+          <p>Executive sponsor. Confirmed Phase 2 budget. Strongest stabilizing force in the room.</p>
+        </article>
+        <article class="node person alex">
+          <div class="mono">Volatile edge</div>
+          <h3>Alex Torres</h3>
+          <p>Departing in March. Holds critical deployment knowledge. Transition is the briefing's biggest destabilizer.</p>
+        </article>
+        <article class="node risk legal">
+          <div class="mono">Drag</div>
+          <h3>Legal delay</h3>
+          <p>Updated SOW still needs to move. The room may feel more hesitant if this remains unresolved.</p>
+        </article>
+        <article class="node risk nps">
+          <div class="mono">Distortion risk</div>
+          <h3>NPS detractors</h3>
+          <p>Three detractors in engineering. Important, but should not displace the larger value-delivered narrative.</p>
+        </article>
+        <article class="node win proof">
+          <div class="mono">Proof mass</div>
+          <h3>Phase 1 outperformed</h3>
+          <p>Migration completed ahead of schedule. Support volume down 40%. This is the gravitational center of the expansion story.</p>
+        </article>
+        <article class="node work phase2">
+          <div class="mono">Next orbit</div>
+          <h3>Phase 2 timeline</h3>
+          <p>Propose April start, June delivery, and APAC expansion as the next structured arc.</p>
+        </article>
+      </div>
+
+      <aside class="rail">
+        <article class="card">
+          <div class="mono">How to read this</div>
+          <h2>The briefing becomes a force map.</h2>
+          <p>Instead of organizing by chapter or list type, the page shows what is pulling the meeting toward confidence, hesitation, or distraction. The user can see, before reading a word of detail, which signals are central and which are peripheral.</p>
+        </article>
+
+        <article class="card">
+          <div class="mono">Agenda clusters</div>
+          <h2>What the room should actually cover</h2>
+          <ul>
+            <li>Celebrate Phase 1 completion as proof of execution.</li>
+            <li>Propose the Phase 2 timeline and expansion path.</li>
+            <li>Handle Alex's transition as a continuity topic, not a surprise.</li>
+            <li>Close overdue work: legal SOW and detractor follow-up.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <div class="mono">Why this concept is interesting</div>
+          <h2>It visualizes influence, not just information.</h2>
+          <p>A typical briefing tells you what is present. This tells you what matters because of its pull on the conversation. It is useful for relationship-heavy meetings where the center of gravity is more important than the chronology.</p>
+        </article>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

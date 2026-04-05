@@ -1,0 +1,1734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS — Design Language Exploration</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,300;1,6..72,400&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --cream-warm: #eee9e3;
+    --charcoal: #1a1f24;
+    --charcoal-soft: #2a3038;
+    --charcoal-muted: #4a5260;
+    --gold: #c9a227;
+    --gold-soft: #d4b44a;
+    --gold-bg: rgba(201, 162, 39, 0.08);
+    --gold-bg-strong: rgba(201, 162, 39, 0.14);
+    --sage: #7fb685;
+    --sage-bg: rgba(127, 182, 133, 0.10);
+    --sage-bg-strong: rgba(127, 182, 133, 0.18);
+    --peach: #e8967a;
+    --peach-bg: rgba(232, 150, 122, 0.10);
+    --peach-bg-strong: rgba(232, 150, 122, 0.18);
+    --text-primary: #1a1f24;
+    --text-secondary: #5a6370;
+    --text-tertiary: #8a919a;
+    --border-subtle: rgba(26, 31, 36, 0.06);
+    --border-light: rgba(26, 31, 36, 0.10);
+    --shadow-card: 0 1px 3px rgba(26, 31, 36, 0.04), 0 8px 24px rgba(26, 31, 36, 0.06);
+    --shadow-float: 0 2px 8px rgba(26, 31, 36, 0.06), 0 16px 48px rgba(26, 31, 36, 0.10);
+    --radius-soft: 16px;
+    --radius-pill: 100px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', -apple-system, sans-serif;
+    background: var(--charcoal);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* === App Shell === */
+  .app-shell {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    width: 240px;
+    background: var(--charcoal);
+    color: rgba(255,255,255,0.5);
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .sidebar-brand {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 18px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.9);
+    padding: 8px 12px;
+    margin-bottom: 32px;
+    letter-spacing: -0.01em;
+  }
+
+  .sidebar-brand span {
+    color: var(--gold);
+  }
+
+  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+
+  .sidebar-item {
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: rgba(255,255,255,0.45);
+    font-weight: 400;
+  }
+
+  .sidebar-item:hover {
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.7);
+  }
+
+  .sidebar-item.active {
+    background: rgba(201, 162, 39, 0.12);
+    color: var(--gold-soft);
+    font-weight: 500;
+  }
+
+  .sidebar-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: currentColor;
+    opacity: 0.3;
+    flex-shrink: 0;
+  }
+
+  .sidebar-item.active .sidebar-icon { opacity: 0.6; }
+
+  .sidebar-section-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 24px 12px 8px;
+    color: rgba(255,255,255,0.2);
+    font-weight: 500;
+  }
+
+  /* === Content Area === */
+  .content-area {
+    flex: 1;
+    background: var(--cream);
+    border-radius: 16px 0 0 16px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* === Page Navigation (demo only) === */
+  .demo-nav {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 4px;
+    background: var(--charcoal);
+    padding: 6px;
+    border-radius: var(--radius-pill);
+    z-index: 100;
+    box-shadow: var(--shadow-float);
+  }
+
+  .demo-nav button {
+    padding: 8px 18px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: rgba(255,255,255,0.5);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .demo-nav button:hover { color: rgba(255,255,255,0.8); }
+  .demo-nav button.active {
+    background: var(--gold);
+    color: var(--charcoal);
+  }
+
+  /* === Shared Typography === */
+  .editorial-date {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .editorial-headline {
+    font-family: 'Newsreader', Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--text-primary);
+  }
+
+  .editorial-subhead {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-tertiary);
+  }
+
+  .editorial-body {
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--text-secondary);
+    font-weight: 300;
+  }
+
+  .editorial-body strong {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  /* === Pill / Tag === */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: var(--radius-pill);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+
+  .pill-gold { background: var(--gold-bg-strong); color: #8a6e10; }
+  .pill-sage { background: var(--sage-bg-strong); color: #3d7a44; }
+  .pill-peach { background: var(--peach-bg-strong); color: #a05a40; }
+  .pill-neutral { background: var(--border-subtle); color: var(--text-secondary); }
+
+  .pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  /* === Floating Card === */
+  .float-card {
+    background: white;
+    border-radius: var(--radius-soft);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+
+  /* === Organic Accent Line (signature element) === */
+  .organic-line {
+    position: absolute;
+    pointer-events: none;
+    opacity: 0.06;
+  }
+
+
+  /* ============================================
+     PAGE 1: DAILY BRIEFING
+     ============================================ */
+  .daily-briefing {
+    padding: 56px 64px 120px;
+    max-width: 900px;
+  }
+
+  .daily-greeting {
+    margin-bottom: 48px;
+  }
+
+  .daily-greeting .editorial-date {
+    margin-bottom: 16px;
+  }
+
+  .daily-greeting .editorial-headline {
+    font-size: 44px;
+    margin-bottom: 20px;
+  }
+
+  .daily-narrative {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 20px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    font-weight: 300;
+    font-style: italic;
+    max-width: 640px;
+  }
+
+  .daily-readiness {
+    display: flex;
+    gap: 12px;
+    margin-top: 28px;
+  }
+
+  .daily-section {
+    margin-top: 64px;
+  }
+
+  .daily-section-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .daily-section-title {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 26px;
+    font-weight: 400;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+  }
+
+  .daily-section-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--text-tertiary);
+  }
+
+  /* Meeting Cards */
+  .meeting-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .meeting-card {
+    padding: 28px 32px;
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+    transition: box-shadow 0.2s ease;
+  }
+
+  .meeting-card:hover {
+    box-shadow: var(--shadow-float);
+  }
+
+  .meeting-time {
+    flex-shrink: 0;
+    width: 72px;
+    text-align: right;
+  }
+
+  .meeting-time-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .meeting-time-duration {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+  }
+
+  .meeting-divider {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border-light);
+    flex-shrink: 0;
+  }
+
+  .meeting-content { flex: 1; min-width: 0; }
+
+  .meeting-title {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 20px;
+    font-weight: 400;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+    letter-spacing: -0.01em;
+  }
+
+  .meeting-meta {
+    font-size: 14px;
+    color: var(--text-tertiary);
+    margin-bottom: 14px;
+  }
+
+  .meeting-prep {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    font-weight: 300;
+  }
+
+  .meeting-accent {
+    width: 4px;
+    align-self: stretch;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .meeting-accent-gold { background: var(--gold); }
+  .meeting-accent-sage { background: var(--sage); }
+  .meeting-accent-neutral { background: var(--border-light); }
+
+  /* Focus strip */
+  .focus-strip {
+    padding: 32px 36px;
+    background: var(--gold-bg);
+    border-left: 3px solid var(--gold);
+  }
+
+  .focus-strip-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--gold);
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+
+  .focus-strip-text {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 20px;
+    font-weight: 400;
+    color: var(--text-primary);
+    line-height: 1.4;
+  }
+
+  /* Action items */
+  .action-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .action-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .action-item:last-child { border-bottom: none; }
+
+  .action-checkbox {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    border: 1.5px solid var(--border-light);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .action-checkbox.overdue { border-color: var(--peach); }
+
+  .action-text {
+    font-size: 15px;
+    color: var(--text-primary);
+    line-height: 1.5;
+    font-weight: 400;
+  }
+
+  .action-context {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+    font-weight: 300;
+  }
+
+  .action-context em {
+    color: var(--peach);
+    font-style: normal;
+    font-weight: 500;
+  }
+
+
+  /* ============================================
+     PAGE 2: INTELLIGENCE REPORT
+     ============================================ */
+  .intel-report {
+    padding: 56px 64px 120px;
+    max-width: 860px;
+  }
+
+  .intel-header {
+    margin-bottom: 56px;
+    position: relative;
+  }
+
+  .intel-header .editorial-date { margin-bottom: 14px; }
+
+  .intel-entity-name {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 42px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+
+  .intel-entity-meta {
+    font-size: 15px;
+    color: var(--text-tertiary);
+    font-weight: 300;
+    margin-bottom: 24px;
+  }
+
+  .intel-health-bar {
+    display: flex;
+    gap: 24px;
+    padding: 24px 0;
+    border-top: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .health-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .health-metric-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-tertiary);
+    font-weight: 500;
+  }
+
+  .health-metric-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .health-metric-value.sage { color: var(--sage); }
+  .health-metric-value.gold { color: var(--gold); }
+  .health-metric-value.peach { color: var(--peach); }
+
+  /* Intel sections */
+  .intel-section {
+    margin-top: 56px;
+  }
+
+  .intel-section-title {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 24px;
+    font-weight: 400;
+    margin-bottom: 20px;
+    letter-spacing: -0.01em;
+  }
+
+  .intel-paragraph {
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    font-weight: 300;
+    margin-bottom: 16px;
+  }
+
+  .intel-paragraph strong {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  /* Signal cards */
+  .signal-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .signal-card {
+    padding: 24px 28px;
+  }
+
+  .signal-card-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+
+  .signal-card-label.risk { color: var(--peach); }
+  .signal-card-label.win { color: var(--sage); }
+
+  .signal-card-text {
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--text-primary);
+    font-weight: 400;
+  }
+
+  .signal-card-source {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: 10px;
+    font-weight: 300;
+  }
+
+  /* Stakeholder row */
+  .stakeholder-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .stakeholder-row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .stakeholder-row:last-child { border-bottom: none; }
+
+  .stakeholder-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--cream-warm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+
+  .stakeholder-info { flex: 1; }
+
+  .stakeholder-name {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .stakeholder-role {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    font-weight: 300;
+    margin-top: 2px;
+  }
+
+  .stakeholder-signal {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 400;
+    font-style: italic;
+    max-width: 280px;
+    text-align: right;
+  }
+
+
+  /* ============================================
+     PAGE 3: WEEKLY BRIEFING
+     ============================================ */
+  .weekly-briefing {
+    padding: 56px 64px 120px;
+    max-width: 900px;
+  }
+
+  .weekly-header {
+    margin-bottom: 56px;
+  }
+
+  .weekly-header .editorial-date { margin-bottom: 14px; }
+
+  .weekly-headline {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 40px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    margin-bottom: 20px;
+    line-height: 1.15;
+  }
+
+  .weekly-narrative {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 19px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    font-weight: 300;
+    max-width: 680px;
+  }
+
+  .weekly-shape {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin-top: 36px;
+    margin-bottom: 0;
+  }
+
+  .shape-day {
+    text-align: center;
+    padding: 16px 8px;
+    border-radius: 12px;
+    background: white;
+  }
+
+  .shape-day.heavy { background: var(--gold-bg-strong); }
+  .shape-day.moderate { background: var(--border-subtle); }
+
+  .shape-day-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
+  }
+
+  .shape-day-count {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 28px;
+    font-weight: 400;
+    color: var(--text-primary);
+  }
+
+  .shape-day.heavy .shape-day-count { color: #8a6e10; }
+
+  .shape-day-sublabel {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+  }
+
+  /* Priority section */
+  .priority-section {
+    margin-top: 56px;
+  }
+
+  .priority-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .priority-card {
+    padding: 28px 32px;
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+  }
+
+  .priority-number {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 36px;
+    font-weight: 300;
+    color: var(--gold);
+    flex-shrink: 0;
+    width: 40px;
+    text-align: center;
+    line-height: 1;
+    padding-top: 4px;
+  }
+
+  .priority-content { flex: 1; }
+
+  .priority-title {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 19px;
+    font-weight: 400;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+
+  .priority-why {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-weight: 300;
+    line-height: 1.55;
+  }
+
+  .priority-when {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: 8px;
+  }
+
+  /* Meeting readiness table */
+  .readiness-section {
+    margin-top: 56px;
+  }
+
+  .readiness-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .readiness-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 160px 120px;
+    gap: 20px;
+    align-items: center;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .readiness-row:last-child { border-bottom: none; }
+
+  .readiness-day {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+  }
+
+  .readiness-title {
+    font-size: 15px;
+    color: var(--text-primary);
+    font-weight: 400;
+  }
+
+  .readiness-account {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    font-weight: 300;
+  }
+
+  .readiness-status {
+    text-align: right;
+  }
+
+
+  /* ============================================
+     PAGE 4: ACCOUNT DETAIL
+     ============================================ */
+  .account-detail {
+    padding: 56px 64px 120px;
+    max-width: 920px;
+  }
+
+  .account-header {
+    margin-bottom: 48px;
+  }
+
+  .account-breadcrumb {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-bottom: 16px;
+    font-weight: 300;
+  }
+
+  .account-breadcrumb a {
+    color: var(--text-tertiary);
+    text-decoration: none;
+  }
+
+  .account-breadcrumb a:hover { color: var(--text-primary); }
+
+  .account-name {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 42px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+
+  .account-tags {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 28px;
+  }
+
+  .account-assessment {
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    font-weight: 300;
+    max-width: 720px;
+    padding: 24px 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .account-assessment strong {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  /* Account grid layout */
+  .account-grid {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 48px;
+    margin-top: 48px;
+  }
+
+  .account-main { }
+  .account-sidebar { }
+
+  .account-section {
+    margin-bottom: 48px;
+  }
+
+  .account-section-title {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 22px;
+    font-weight: 400;
+    margin-bottom: 20px;
+    letter-spacing: -0.01em;
+  }
+
+  /* Timeline */
+  .timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+  }
+
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 24px;
+    bottom: 24px;
+    width: 1px;
+    background: var(--border-light);
+  }
+
+  .timeline-item {
+    display: flex;
+    gap: 20px;
+    padding: 16px 0;
+    position: relative;
+  }
+
+  .timeline-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--cream-warm);
+    border: 2px solid var(--border-light);
+    flex-shrink: 0;
+    margin-top: 6px;
+    z-index: 1;
+    margin-left: 10px;
+  }
+
+  .timeline-dot.active {
+    background: var(--gold);
+    border-color: var(--gold);
+  }
+
+  .timeline-content { flex: 1; }
+
+  .timeline-title {
+    font-size: 15px;
+    color: var(--text-primary);
+    font-weight: 400;
+    margin-bottom: 4px;
+  }
+
+  .timeline-meta {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    font-weight: 300;
+  }
+
+  /* Sidebar sections */
+  .sidebar-section {
+    margin-bottom: 36px;
+  }
+
+  .sidebar-section-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-tertiary);
+    font-weight: 500;
+    margin-bottom: 14px;
+  }
+
+  .sidebar-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .sidebar-field:last-child { border-bottom: none; }
+
+  .sidebar-field-label {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    font-weight: 400;
+  }
+
+  .sidebar-field-value {
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 500;
+    text-align: right;
+  }
+
+  /* Team list */
+  .team-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .team-member {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .team-member-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--cream-warm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+
+  .team-member-name {
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 400;
+  }
+
+  .team-member-role {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-weight: 300;
+  }
+
+  /* Organic decorative element */
+  .organic-flow {
+    position: absolute;
+    top: 40px;
+    right: -80px;
+    width: 400px;
+    height: 400px;
+    pointer-events: none;
+    opacity: 0.03;
+  }
+
+  .organic-flow svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Briefing end marker */
+  .briefing-end {
+    margin-top: 64px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border-subtle);
+    text-align: center;
+  }
+
+  .briefing-end-text {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 15px;
+    font-style: italic;
+    color: var(--text-tertiary);
+    font-weight: 300;
+  }
+
+  /* Scrollbar styling */
+  .content-area::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .content-area::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .content-area::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.08);
+    border-radius: 4px;
+  }
+
+  .content-area::-webkit-scrollbar-thumb:hover {
+    background: rgba(0,0,0,0.14);
+  }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">Daily<span>OS</span></div>
+    <div class="sidebar-nav">
+      <div class="sidebar-item active" onclick="showPage('daily')">
+        <div class="sidebar-icon"></div>Today
+      </div>
+      <div class="sidebar-item" onclick="showPage('weekly')">
+        <div class="sidebar-icon"></div>This Week
+      </div>
+      <div class="sidebar-item">
+        <div class="sidebar-icon"></div>Focus
+      </div>
+      <div class="sidebar-item">
+        <div class="sidebar-icon"></div>Actions
+      </div>
+      <div class="sidebar-item">
+        <div class="sidebar-icon"></div>Inbox
+      </div>
+
+      <div class="sidebar-section-label">Accounts</div>
+      <div class="sidebar-item" onclick="showPage('account')">
+        <div class="sidebar-icon"></div>Meridian Health
+      </div>
+      <div class="sidebar-item" onclick="showPage('intel')">
+        <div class="sidebar-icon"></div>Cobalt Systems
+      </div>
+      <div class="sidebar-item">
+        <div class="sidebar-icon"></div>Apex Financial
+      </div>
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <main class="content-area">
+
+    <!-- ====== DAILY BRIEFING ====== -->
+    <div class="page active" id="page-daily">
+      <div class="daily-briefing">
+        <div class="daily-greeting">
+          <div class="editorial-date">Thursday, February 13, 2026</div>
+          <h1 class="editorial-headline" style="font-size: 44px;">
+            Your Thursday is<br>customer-heavy.
+          </h1>
+          <p class="daily-narrative">
+            Four external meetings today, two with renewal implications.
+            Meridian's QBR at 2pm is the one that matters most &mdash;
+            they've been quiet since the escalation resolved.
+          </p>
+          <div class="daily-readiness">
+            <span class="pill pill-sage"><span class="pill-dot"></span>4 of 6 prepped</span>
+            <span class="pill pill-peach"><span class="pill-dot"></span>2 actions overdue</span>
+          </div>
+        </div>
+
+        <!-- Focus -->
+        <div class="focus-strip" style="border-radius: var(--radius-soft);">
+          <div class="focus-strip-label">Today's Focus</div>
+          <div class="focus-strip-text">
+            Nail the Meridian QBR. Their renewal decision is this quarter
+            and the last interaction was the support escalation three weeks ago.
+          </div>
+        </div>
+
+        <!-- Schedule -->
+        <div class="daily-section">
+          <div class="daily-section-header">
+            <h2 class="daily-section-title">Schedule</h2>
+            <span class="daily-section-count">6 meetings</span>
+          </div>
+
+          <div class="meeting-list">
+            <div class="meeting-card float-card">
+              <div class="meeting-accent meeting-accent-neutral"></div>
+              <div class="meeting-time">
+                <div class="meeting-time-value">9:00a</div>
+                <div class="meeting-time-duration">30 min</div>
+              </div>
+              <div class="meeting-divider"></div>
+              <div class="meeting-content">
+                <div class="meeting-title">Team Standup</div>
+                <div class="meeting-meta">Internal &middot; Engineering</div>
+              </div>
+            </div>
+
+            <div class="meeting-card float-card">
+              <div class="meeting-accent meeting-accent-gold"></div>
+              <div class="meeting-time">
+                <div class="meeting-time-value">10:30a</div>
+                <div class="meeting-time-duration">45 min</div>
+              </div>
+              <div class="meeting-divider"></div>
+              <div class="meeting-content">
+                <div class="meeting-title">Cobalt Systems &mdash; Integration Check-in</div>
+                <div class="meeting-meta">Cobalt Systems &middot; Sarah Chen, Marcus Rivera</div>
+                <div class="meeting-prep">
+                  They're mid-migration on the v3 API. Last call flagged a concern about
+                  rate limits on their batch endpoint. Have the engineering update ready.
+                </div>
+              </div>
+            </div>
+
+            <div class="meeting-card float-card">
+              <div class="meeting-accent meeting-accent-gold"></div>
+              <div class="meeting-time">
+                <div class="meeting-time-value">2:00p</div>
+                <div class="meeting-time-duration">60 min</div>
+              </div>
+              <div class="meeting-divider"></div>
+              <div class="meeting-content">
+                <div class="meeting-title">Meridian Health &mdash; Quarterly Business Review</div>
+                <div class="meeting-meta">Meridian Health &middot; David Park, Lisa Huang, Tom Nakamura</div>
+                <div class="meeting-prep">
+                  <strong>Renewal this quarter.</strong> Post-escalation recovery meeting.
+                  Come with usage data showing stability since the fix,
+                  and the roadmap items they requested in January.
+                </div>
+              </div>
+            </div>
+
+            <div class="meeting-card float-card">
+              <div class="meeting-accent meeting-accent-sage"></div>
+              <div class="meeting-time">
+                <div class="meeting-time-value">4:00p</div>
+                <div class="meeting-time-duration">30 min</div>
+              </div>
+              <div class="meeting-divider"></div>
+              <div class="meeting-content">
+                <div class="meeting-title">Apex Financial &mdash; Onboarding Week 3</div>
+                <div class="meeting-meta">Apex Financial &middot; Rachel Torres</div>
+                <div class="meeting-prep">
+                  Smooth so far. They're ahead of schedule on data migration.
+                  This is the SSO configuration walkthrough.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="daily-section">
+          <div class="daily-section-header">
+            <h2 class="daily-section-title">Actions</h2>
+            <span class="daily-section-count">5 open</span>
+          </div>
+
+          <div class="action-list">
+            <div class="action-item">
+              <div class="action-checkbox overdue"></div>
+              <div>
+                <div class="action-text">Send post-escalation summary to Meridian stakeholders</div>
+                <div class="action-context"><em>2 days overdue</em> &middot; Meridian Health &middot; QBR prep</div>
+              </div>
+            </div>
+            <div class="action-item">
+              <div class="action-checkbox overdue"></div>
+              <div>
+                <div class="action-text">Review Cobalt's v3 migration progress doc</div>
+                <div class="action-context"><em>1 day overdue</em> &middot; Cobalt Systems &middot; meeting today at 10:30a</div>
+              </div>
+            </div>
+            <div class="action-item">
+              <div class="action-checkbox"></div>
+              <div>
+                <div class="action-text">Draft renewal talking points for Meridian QBR</div>
+                <div class="action-context">Due today &middot; Meridian Health</div>
+              </div>
+            </div>
+            <div class="action-item">
+              <div class="action-checkbox"></div>
+              <div>
+                <div class="action-text">Schedule Apex SSO follow-up if config isn't complete</div>
+                <div class="action-context">Due Friday &middot; Apex Financial</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="briefing-end">
+          <div class="briefing-end-text">You're briefed. Go get it.</div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ====== INTELLIGENCE REPORT ====== -->
+    <div class="page" id="page-intel">
+      <div class="intel-report">
+        <div class="intel-header">
+          <div class="editorial-date">Intelligence Report</div>
+          <h1 class="intel-entity-name">Cobalt Systems</h1>
+          <p class="intel-entity-meta">Enterprise &middot; $280K ARR &middot; Renewed Aug 2025 &middot; Champion: Sarah Chen</p>
+
+          <div class="intel-health-bar">
+            <div class="health-metric">
+              <div class="health-metric-label">Health</div>
+              <div class="health-metric-value sage">Good</div>
+            </div>
+            <div class="health-metric">
+              <div class="health-metric-label">NPS</div>
+              <div class="health-metric-value">72</div>
+            </div>
+            <div class="health-metric">
+              <div class="health-metric-label">Next Renewal</div>
+              <div class="health-metric-value">Aug 2026</div>
+            </div>
+            <div class="health-metric">
+              <div class="health-metric-label">Meetings (90d)</div>
+              <div class="health-metric-value">14</div>
+            </div>
+            <div class="health-metric">
+              <div class="health-metric-label">Lifecycle</div>
+              <div class="health-metric-value">Expanding</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Executive Assessment -->
+        <div class="intel-section">
+          <h2 class="intel-section-title">Executive Assessment</h2>
+          <p class="intel-paragraph">
+            Cobalt is in a strong position heading into their v3 API migration, but the
+            timeline pressure is creating friction with their engineering team. <strong>Sarah Chen
+            remains your strongest advocate</strong>, though her recent promotion to VP Engineering
+            means she has less bandwidth for day-to-day integration decisions.
+          </p>
+          <p class="intel-paragraph">
+            The new technical lead, Marcus Rivera, is capable but hasn't fully bought in yet.
+            Today's check-in is an opportunity to build that relationship directly
+            rather than routing everything through Sarah.
+          </p>
+        </div>
+
+        <!-- Signals -->
+        <div class="intel-section">
+          <h2 class="intel-section-title">Recent Signals</h2>
+          <div class="signal-grid">
+            <div class="signal-card float-card">
+              <div class="signal-card-label win">Win</div>
+              <div class="signal-card-text">
+                Successfully processed 2.3M records in batch migration pilot.
+                Engineering team called it "surprisingly smooth."
+              </div>
+              <div class="signal-card-source">Integration check-in &middot; Feb 6</div>
+            </div>
+            <div class="signal-card float-card">
+              <div class="signal-card-label risk">Risk</div>
+              <div class="signal-card-text">
+                Rate limit concerns on batch endpoint could delay production cutover.
+                Marcus flagged this needs resolution before March 1 deadline.
+              </div>
+              <div class="signal-card-source">Email from Marcus Rivera &middot; Feb 10</div>
+            </div>
+            <div class="signal-card float-card">
+              <div class="signal-card-label win">Win</div>
+              <div class="signal-card-text">
+                Sarah mentioned exploring our analytics add-on for Q3.
+                Potential $40K expansion opportunity.
+              </div>
+              <div class="signal-card-source">QBR follow-up &middot; Jan 28</div>
+            </div>
+            <div class="signal-card float-card">
+              <div class="signal-card-label risk">Risk</div>
+              <div class="signal-card-text">
+                New CTO hire (starting March) — unknown relationship.
+                Sarah's influence may shift depending on reporting structure.
+              </div>
+              <div class="signal-card-source">LinkedIn signal &middot; Feb 8</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stakeholders -->
+        <div class="intel-section">
+          <h2 class="intel-section-title">Key Stakeholders</h2>
+          <div class="stakeholder-list">
+            <div class="stakeholder-row">
+              <div class="stakeholder-avatar">SC</div>
+              <div class="stakeholder-info">
+                <div class="stakeholder-name">Sarah Chen</div>
+                <div class="stakeholder-role">VP Engineering &middot; Champion</div>
+              </div>
+              <div class="stakeholder-signal">Promoted recently, less available</div>
+            </div>
+            <div class="stakeholder-row">
+              <div class="stakeholder-avatar">MR</div>
+              <div class="stakeholder-info">
+                <div class="stakeholder-name">Marcus Rivera</div>
+                <div class="stakeholder-role">Staff Engineer &middot; Technical Lead</div>
+              </div>
+              <div class="stakeholder-signal">New contact, building trust</div>
+            </div>
+            <div class="stakeholder-row">
+              <div class="stakeholder-avatar">JL</div>
+              <div class="stakeholder-info">
+                <div class="stakeholder-name">Jennifer Liu</div>
+                <div class="stakeholder-role">Director of Product &middot; Decision Maker</div>
+              </div>
+              <div class="stakeholder-signal">Quiet since renewal &mdash; re-engage</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="briefing-end">
+          <div class="briefing-end-text">Intelligence current as of today.</div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ====== WEEKLY BRIEFING ====== -->
+    <div class="page" id="page-weekly">
+      <div class="weekly-briefing">
+        <div class="weekly-header">
+          <div class="editorial-date">Week of February 16 &ndash; 20, 2026</div>
+          <h1 class="weekly-headline">
+            A back-loaded week with<br>two renewal conversations.
+          </h1>
+          <p class="weekly-narrative">
+            Monday and Tuesday are light &mdash; use them to prepare.
+            Wednesday through Friday is wall-to-wall customer time,
+            including the Meridian renewal decision and Cobalt's migration deadline.
+          </p>
+
+          <div class="weekly-shape">
+            <div class="shape-day">
+              <div class="shape-day-label">Mon</div>
+              <div class="shape-day-count">1</div>
+              <div class="shape-day-sublabel">meeting</div>
+            </div>
+            <div class="shape-day">
+              <div class="shape-day-label">Tue</div>
+              <div class="shape-day-count">2</div>
+              <div class="shape-day-sublabel">meetings</div>
+            </div>
+            <div class="shape-day moderate">
+              <div class="shape-day-label">Wed</div>
+              <div class="shape-day-count">5</div>
+              <div class="shape-day-sublabel">meetings</div>
+            </div>
+            <div class="shape-day heavy">
+              <div class="shape-day-label">Thu</div>
+              <div class="shape-day-count">7</div>
+              <div class="shape-day-sublabel">meetings</div>
+            </div>
+            <div class="shape-day moderate">
+              <div class="shape-day-label">Fri</div>
+              <div class="shape-day-count">4</div>
+              <div class="shape-day-sublabel">meetings</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Priorities -->
+        <div class="priority-section">
+          <div class="daily-section-header">
+            <h2 class="daily-section-title">This Week's Priorities</h2>
+          </div>
+
+          <div class="priority-list">
+            <div class="priority-card float-card">
+              <div class="priority-number">1</div>
+              <div class="priority-content">
+                <div class="priority-title">Secure Meridian renewal commitment</div>
+                <div class="priority-why">
+                  Their contract expires end of March. Thursday's follow-up is your
+                  window to get verbal confirmation before procurement cycles kick in.
+                </div>
+                <div class="priority-when">THU 2:00 PM &middot; Meridian Health</div>
+              </div>
+            </div>
+            <div class="priority-card float-card">
+              <div class="priority-number">2</div>
+              <div class="priority-content">
+                <div class="priority-title">Resolve Cobalt rate limit blocker</div>
+                <div class="priority-why">
+                  March 1 migration deadline. If the rate limit concern isn't addressed
+                  this week, they'll miss the cutover window and lose confidence.
+                </div>
+                <div class="priority-when">WED 10:30 AM &middot; Cobalt Systems</div>
+              </div>
+            </div>
+            <div class="priority-card float-card">
+              <div class="priority-number">3</div>
+              <div class="priority-content">
+                <div class="priority-title">Complete Apex onboarding milestone</div>
+                <div class="priority-why">
+                  Week 4 checkpoint. If SSO is configured and first data load is
+                  successful, they're on track for the fastest onboarding this quarter.
+                </div>
+                <div class="priority-when">FRI 11:00 AM &middot; Apex Financial</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Meeting Readiness -->
+        <div class="readiness-section">
+          <div class="daily-section-header">
+            <h2 class="daily-section-title">Meeting Readiness</h2>
+            <span class="daily-section-count">12 of 19 prepped</span>
+          </div>
+
+          <div class="readiness-list">
+            <div class="readiness-row">
+              <div class="readiness-day">Mon</div>
+              <div class="readiness-title">Team Planning</div>
+              <div class="readiness-account">Internal</div>
+              <div class="readiness-status">
+                <span class="pill pill-neutral">Internal</span>
+              </div>
+            </div>
+            <div class="readiness-row">
+              <div class="readiness-day">Wed</div>
+              <div class="readiness-title">Cobalt &mdash; Migration Sync</div>
+              <div class="readiness-account">Cobalt Systems</div>
+              <div class="readiness-status">
+                <span class="pill pill-sage"><span class="pill-dot"></span>Ready</span>
+              </div>
+            </div>
+            <div class="readiness-row">
+              <div class="readiness-day">Thu</div>
+              <div class="readiness-title">Meridian &mdash; Renewal Discussion</div>
+              <div class="readiness-account">Meridian Health</div>
+              <div class="readiness-status">
+                <span class="pill pill-peach"><span class="pill-dot"></span>Needs prep</span>
+              </div>
+            </div>
+            <div class="readiness-row">
+              <div class="readiness-day">Thu</div>
+              <div class="readiness-title">Apex &mdash; SSO Walkthrough</div>
+              <div class="readiness-account">Apex Financial</div>
+              <div class="readiness-status">
+                <span class="pill pill-sage"><span class="pill-dot"></span>Ready</span>
+              </div>
+            </div>
+            <div class="readiness-row">
+              <div class="readiness-day">Fri</div>
+              <div class="readiness-title">Apex &mdash; Week 4 Checkpoint</div>
+              <div class="readiness-account">Apex Financial</div>
+              <div class="readiness-status">
+                <span class="pill pill-gold"><span class="pill-dot"></span>Partial</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="briefing-end">
+          <div class="briefing-end-text">End of weekly briefing.</div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ====== ACCOUNT DETAIL ====== -->
+    <div class="page" id="page-account">
+      <div class="account-detail">
+        <div class="account-header">
+          <div class="account-breadcrumb">
+            <a href="#">Accounts</a> &nbsp;/&nbsp; Meridian Health
+          </div>
+          <h1 class="account-name">Meridian Health</h1>
+          <div class="account-tags">
+            <span class="pill pill-gold"><span class="pill-dot"></span>Renewing</span>
+            <span class="pill pill-neutral">Enterprise</span>
+            <span class="pill pill-neutral">Healthcare</span>
+          </div>
+          <div class="account-assessment">
+            <strong>Post-escalation recovery phase.</strong> The platform stability issues
+            from January are resolved, but trust needs rebuilding. David Park (CTO) was
+            directly involved in the escalation and will want to see concrete reliability
+            data at the QBR. Lisa Huang (VP Product) is your path to renewal &mdash;
+            she's pragmatic and responds well to roadmap alignment.
+          </div>
+        </div>
+
+        <div class="account-grid">
+          <div class="account-main">
+
+            <!-- Recent Activity -->
+            <div class="account-section">
+              <h2 class="account-section-title">Recent Activity</h2>
+              <div class="timeline">
+                <div class="timeline-item">
+                  <div class="timeline-dot active"></div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">QBR scheduled for Thursday 2:00 PM</div>
+                    <div class="timeline-meta">Today &middot; Calendar</div>
+                  </div>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot"></div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">Escalation post-mortem delivered</div>
+                    <div class="timeline-meta">Feb 7 &middot; Email to David Park</div>
+                  </div>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot"></div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">Support ticket #4891 resolved</div>
+                    <div class="timeline-meta">Jan 28 &middot; Platform stability fix deployed</div>
+                  </div>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot"></div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">Escalation: intermittent API failures</div>
+                    <div class="timeline-meta">Jan 22 &middot; David Park escalated to leadership</div>
+                  </div>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot"></div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">Renewal discussion &mdash; positive signals</div>
+                    <div class="timeline-meta">Jan 15 &middot; Meeting with Lisa Huang</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Open Actions -->
+            <div class="account-section">
+              <h2 class="account-section-title">Open Actions</h2>
+              <div class="action-list">
+                <div class="action-item">
+                  <div class="action-checkbox overdue"></div>
+                  <div>
+                    <div class="action-text">Send post-escalation summary to stakeholders</div>
+                    <div class="action-context"><em>2 days overdue</em></div>
+                  </div>
+                </div>
+                <div class="action-item">
+                  <div class="action-checkbox"></div>
+                  <div>
+                    <div class="action-text">Draft renewal talking points for QBR</div>
+                    <div class="action-context">Due today</div>
+                  </div>
+                </div>
+                <div class="action-item">
+                  <div class="action-checkbox"></div>
+                  <div>
+                    <div class="action-text">Share Q2 roadmap preview with Lisa</div>
+                    <div class="action-context">Due Feb 20</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sidebar -->
+          <div class="account-sidebar">
+            <div class="sidebar-section">
+              <div class="sidebar-section-label">Details</div>
+              <div class="sidebar-field">
+                <span class="sidebar-field-label">ARR</span>
+                <span class="sidebar-field-value">$420K</span>
+              </div>
+              <div class="sidebar-field">
+                <span class="sidebar-field-label">Health</span>
+                <span class="sidebar-field-value" style="color: var(--gold);">At Risk</span>
+              </div>
+              <div class="sidebar-field">
+                <span class="sidebar-field-label">NPS</span>
+                <span class="sidebar-field-value">48</span>
+              </div>
+              <div class="sidebar-field">
+                <span class="sidebar-field-label">Lifecycle</span>
+                <span class="sidebar-field-value">Renewing</span>
+              </div>
+              <div class="sidebar-field">
+                <span class="sidebar-field-label">Contract End</span>
+                <span class="sidebar-field-value">Mar 31, 2026</span>
+              </div>
+              <div class="sidebar-field">
+                <span class="sidebar-field-label">Meetings (90d)</span>
+                <span class="sidebar-field-value">8</span>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <div class="sidebar-section-label">Team</div>
+              <div class="team-list">
+                <div class="team-member">
+                  <div class="team-member-avatar">DP</div>
+                  <div>
+                    <div class="team-member-name">David Park</div>
+                    <div class="team-member-role">CTO &middot; Executive Sponsor</div>
+                  </div>
+                </div>
+                <div class="team-member">
+                  <div class="team-member-avatar">LH</div>
+                  <div>
+                    <div class="team-member-name">Lisa Huang</div>
+                    <div class="team-member-role">VP Product &middot; Champion</div>
+                  </div>
+                </div>
+                <div class="team-member">
+                  <div class="team-member-avatar">TN</div>
+                  <div>
+                    <div class="team-member-name">Tom Nakamura</div>
+                    <div class="team-member-role">Engineering Lead</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <div class="sidebar-section-label">Domains</div>
+              <div style="font-size: 13px; color: var(--text-tertiary); font-family: 'JetBrains Mono', monospace;">
+                meridianhealth.com<br>meridian.io
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Demo Navigation -->
+<div class="demo-nav">
+  <button class="active" onclick="showPage('daily')">Daily Briefing</button>
+  <button onclick="showPage('intel')">Intelligence</button>
+  <button onclick="showPage('weekly')">Weekly</button>
+  <button onclick="showPage('account')">Account Detail</button>
+</div>
+
+<script>
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+
+  document.querySelectorAll('.demo-nav button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  document.querySelectorAll('.sidebar-item').forEach(s => s.classList.remove('active'));
+
+  const sidebarMap = { daily: 0, weekly: 1, intel: 6, account: 5 };
+  const items = document.querySelectorAll('.sidebar-item');
+  if (sidebarMap[id] !== undefined && items[sidebarMap[id]]) {
+    items[sidebarMap[id]].classList.add('active');
+  }
+
+  document.querySelector('.content-area').scrollTop = 0;
+}
+</script>
+
+</body>
+</html>

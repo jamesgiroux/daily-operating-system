@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meeting Record — Acme Corp Weekly Sync</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --font-serif: 'Newsreader', Georgia, serif;
+    --font-sans: 'DM Sans', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    --color-paper: #f5f2ef;
+    --color-warm-white: #faf8f6;
+    --color-text-primary: #1e2530;
+    --color-text-secondary: #5a6370;
+    --color-text-tertiary: #6b7280;
+    --color-text-quaternary: #9ca3af;
+
+    --turmeric: #c9a227;
+    --saffron: #deb841;
+    --terracotta: #c4654a;
+    --chili: #9b3a2a;
+    --sage: #7eaa7b;
+    --olive: #6b7c52;
+    --larkspur: #8fa3c4;
+
+    --rule-heavy: rgba(30, 37, 48, 0.12);
+    --rule-light: rgba(30, 37, 48, 0.06);
+    --sage-tint: rgba(126, 170, 123, 0.07);
+    --turmeric-tint: rgba(201, 162, 39, 0.07);
+    --terracotta-tint: rgba(196, 101, 74, 0.06);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+  body {
+    font-family: var(--font-sans);
+    font-weight: 400;
+    font-size: 15px;
+    color: var(--color-text-primary);
+    background: var(--color-paper);
+    line-height: 1.55;
+  }
+
+  .page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 64px 32px 160px;
+  }
+  @media (min-width: 960px) { .page { padding: 80px 0 200px; } }
+
+  /* ── ChapterHeading pattern (matches React component exactly) ── */
+  .chapter {
+    padding-top: 80px;
+  }
+  .chapter-rule {
+    border: none;
+    border-top: 1px solid var(--rule-heavy);
+    margin-bottom: 16px;
+  }
+  .chapter-title {
+    font-family: var(--font-serif);
+    font-size: 28px;
+    font-weight: 400;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: var(--color-text-primary);
+    margin: 0 0 32px;
+  }
+  .chapter-epigraph {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.55;
+    color: var(--color-text-tertiary);
+    max-width: 540px;
+    margin: -16px 0 32px;
+  }
+
+  /* ── Mono overline (for sub-labels within chapters) ── */
+  .mono-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin-bottom: 16px;
+  }
+
+  /* ── 1. Record Header ── */
+  .record-overline {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--turmeric);
+    margin-bottom: 16px;
+  }
+  .record-headline {
+    font-family: var(--font-serif);
+    font-size: 46px;
+    font-weight: 400;
+    letter-spacing: -0.025em;
+    line-height: 1.08;
+    color: var(--color-text-primary);
+    margin-bottom: 24px;
+    max-width: 680px;
+  }
+  .record-meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--color-text-tertiary);
+    letter-spacing: 0.01em;
+  }
+  .record-meta .sep { margin: 0 6px; opacity: 0.4; }
+
+  /* ── 2. Executive Summary (pull quote) ── */
+  .summary-block {
+    border-left: 3px solid var(--turmeric);
+    padding: 24px 0 24px 32px;
+    margin-top: 48px;
+  }
+  .summary-text {
+    font-family: var(--font-serif);
+    font-size: 21px;
+    font-weight: 300;
+    font-style: italic;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+    max-width: 640px;
+  }
+
+  /* ── 3. The Thread ── */
+  .thread-intro {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+    margin-bottom: 24px;
+  }
+  .thread-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .thread-item {
+    display: flex;
+    align-items: first baseline;
+    gap: 12px;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .thread-icon {
+    flex-shrink: 0;
+    width: 18px;
+    text-align: center;
+    font-weight: 600;
+  }
+  .thread-icon.confirmed { color: var(--sage); }
+  .thread-icon.open { color: var(--turmeric); }
+  .thread-icon.neutral { color: var(--color-text-tertiary); font-size: 11px; }
+  .thread-icon.new-face { color: var(--saffron); }
+  .thread-detail {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-quaternary);
+    margin-left: 4px;
+    letter-spacing: 0.02em;
+  }
+  .thread-delta-up { color: var(--sage); font-weight: 600; }
+
+  /* ── 4. Predictions ── */
+  .prediction-group { margin-bottom: 32px; }
+  .prediction-group:last-child { margin-bottom: 0; }
+  .prediction-item {
+    display: flex;
+    align-items: first baseline;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 6px;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .prediction-item.confirmed { background: var(--sage-tint); }
+  .prediction-item.confirmed .p-icon { color: var(--sage); font-weight: 600; }
+  .prediction-item.surprise { background: var(--turmeric-tint); }
+  .prediction-item.surprise .p-icon { color: var(--turmeric); font-weight: 600; }
+  .prediction-item.not-raised { opacity: 0.5; }
+  .prediction-item.not-raised .p-icon { color: var(--color-text-quaternary); }
+  .p-icon { flex-shrink: 0; width: 18px; text-align: center; }
+  .prediction-match {
+    font-family: var(--font-serif);
+    font-size: 14px;
+    font-style: italic;
+    color: var(--color-text-tertiary);
+    margin-top: 4px;
+    line-height: 1.45;
+  }
+
+  /* ── 5. Engagement ── */
+  .talk-balance { margin-bottom: 40px; }
+  .talk-bar {
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    background: var(--rule-light);
+    margin-bottom: 8px;
+  }
+  .talk-bar-customer { background: var(--turmeric); }
+  .talk-bar-internal { background: var(--larkspur); }
+  .talk-labels { display: flex; justify-content: space-between; }
+  .talk-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+  .talk-label-customer { color: var(--turmeric); }
+  .talk-label-internal { color: var(--larkspur); }
+
+  .speaker-sentiments {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    margin-bottom: 40px;
+  }
+  .speaker-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .speaker-name {
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .speaker-sentiment {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .sentiment-positive { color: var(--sage); }
+  .sentiment-cautious { color: var(--turmeric); }
+  .speaker-evidence {
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-style: italic;
+    line-height: 1.55;
+    color: var(--color-text-tertiary);
+  }
+
+  /* Margin-grid key-value for engagement signals */
+  .signal-grid {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 8px 32px;
+    margin-bottom: 40px;
+  }
+  .signal-key {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    text-align: right;
+    padding-top: 2px;
+  }
+  .signal-value {
+    font-size: 15px;
+    font-weight: 400;
+  }
+
+  .escalation-block {
+    border-left: 2px solid var(--terracotta);
+    padding: 16px 0 16px 24px;
+    margin-bottom: 32px;
+  }
+  .escalation-quote {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-style: italic;
+    line-height: 1.5;
+    color: var(--color-text-primary);
+  }
+  .escalation-attribution {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    margin-top: 8px;
+    letter-spacing: 0.02em;
+  }
+  .competitor-mention {
+    font-size: 14px;
+    color: var(--color-text-tertiary);
+    line-height: 1.5;
+  }
+  .competitor-name { font-weight: 500; color: var(--color-text-secondary); }
+
+  /* ── 6. Champion ── */
+  .champion-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .champion-name { font-size: 18px; font-weight: 500; }
+  .champion-badge {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 3px;
+  }
+  .badge-strong { color: var(--sage); background: var(--sage-tint); }
+  .champion-evidence {
+    font-family: var(--font-serif);
+    font-size: 16px;
+    font-style: italic;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+    margin-bottom: 12px;
+  }
+  .champion-risk {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text-tertiary);
+  }
+
+  /* ── 7. Key Findings ── */
+  .findings-group { margin-bottom: 40px; }
+  .findings-group:last-child { margin-bottom: 0; }
+  .finding-item {
+    display: flex;
+    gap: 16px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .finding-item:last-child { border-bottom: none; }
+  .finding-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    flex-shrink: 0; margin-top: 9px;
+  }
+  .dot-sage { background: var(--sage); }
+  .dot-terracotta { background: var(--terracotta); }
+  .dot-turmeric { background: var(--turmeric); }
+  .dot-charcoal { background: var(--color-text-tertiary); }
+  .finding-content { flex: 1; min-width: 0; }
+  .finding-title {
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.45;
+    margin-bottom: 6px;
+  }
+  .finding-badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 3px;
+    margin-left: 8px;
+    vertical-align: 2px;
+  }
+  .badge-expansion { color: var(--sage); background: var(--sage-tint); }
+  .badge-value { color: var(--olive); background: rgba(107, 124, 82, 0.08); }
+  .badge-red { color: var(--terracotta); background: var(--terracotta-tint); }
+  .badge-yellow { color: var(--turmeric); background: var(--turmeric-tint); }
+  .finding-impact {
+    font-size: 14px;
+    color: var(--color-text-tertiary);
+    margin-bottom: 10px;
+    line-height: 1.5;
+  }
+  .evidence-block {
+    border-left: 2px solid var(--saffron);
+    padding: 8px 0 8px 20px;
+    margin: 10px 0 6px;
+  }
+  .evidence-text {
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-style: italic;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+  }
+  .attribution {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-quaternary);
+    margin-top: 6px;
+    letter-spacing: 0.02em;
+  }
+
+  /* ── 8. Commitments & Actions ── */
+  .commitment-item {
+    display: flex;
+    align-items: first baseline;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule-light);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .commitment-item:last-child { border-bottom: none; }
+  .commitment-icon {
+    flex-shrink: 0; width: 18px; font-size: 13px;
+    color: var(--color-text-tertiary); text-align: center;
+  }
+  .commitment-tag {
+    font-family: var(--font-mono);
+    font-size: 9px; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--color-text-quaternary);
+    margin-left: 8px;
+  }
+
+  .actions-sublabel {
+    font-family: var(--font-mono);
+    font-size: 10px; font-weight: 500;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--color-text-quaternary);
+    margin: 32px 0 12px;
+  }
+
+  .action-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 6px;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .action-item.proposed {
+    background: var(--turmeric-tint);
+    border: 1px solid rgba(201, 162, 39, 0.12);
+  }
+  .proposed-pill {
+    font-family: var(--font-mono);
+    font-size: 9px; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--turmeric);
+    background: rgba(201, 162, 39, 0.12);
+    padding: 3px 8px; border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .action-text { flex: 1; min-width: 0; }
+  .action-context {
+    display: block;
+    font-family: var(--font-serif);
+    font-size: 13px; font-style: italic;
+    color: var(--color-text-tertiary);
+    margin-top: 4px; line-height: 1.45;
+  }
+  .action-meta {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-quaternary);
+    margin-left: 6px;
+  }
+  .priority-p1 { color: var(--terracotta); }
+  .priority-p2 { color: var(--color-text-tertiary); }
+  .action-controls {
+    display: flex; gap: 6px;
+    flex-shrink: 0; margin-left: auto;
+  }
+  .action-btn {
+    font-family: var(--font-mono);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 5px 12px; border-radius: 3px;
+    border: none; cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+  .action-btn:hover { opacity: 0.75; }
+  .btn-accept {
+    color: var(--sage);
+    background: var(--sage-tint);
+    border: 1px solid rgba(126, 170, 123, 0.15);
+  }
+  .btn-dismiss {
+    color: var(--color-text-quaternary);
+    background: transparent;
+    border: 1px solid var(--rule-light);
+  }
+
+  /* ── 9. Role Changes ── */
+  .role-change { margin-bottom: 20px; }
+  .role-header {
+    font-size: 15px;
+    margin-bottom: 6px;
+  }
+  .role-name { font-weight: 500; }
+  .role-arrow { color: var(--color-text-tertiary); margin: 0 6px; }
+  .role-evidence {
+    font-family: var(--font-serif);
+    font-size: 14px; font-style: italic;
+    line-height: 1.5;
+    color: var(--color-text-tertiary);
+  }
+
+  /* ── 10. The Room ── */
+  .room-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+  }
+  .room-side-label {
+    font-family: var(--font-mono);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .room-person { padding: 8px 0; }
+  .room-name { font-size: 14px; font-weight: 500; }
+  .room-role {
+    font-size: 13px; font-weight: 300;
+    color: var(--color-text-secondary);
+  }
+  .room-new-tag {
+    font-family: var(--font-mono);
+    font-size: 9px; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--saffron);
+    margin-left: 6px;
+  }
+
+  /* ── 11. Pre-Meeting Context ── */
+  .pre-meeting {
+    margin-top: 80px;
+  }
+  .pre-meeting summary {
+    font-size: 14px;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    list-style: none;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .pre-meeting summary::before {
+    content: '\203A';
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--color-text-quaternary);
+    transition: transform 0.2s ease;
+  }
+  .pre-meeting[open] summary::before { transform: rotate(90deg); }
+  .pre-meeting summary::-webkit-details-marker { display: none; }
+  .pre-meeting-content {
+    margin-top: 24px;
+    padding: 24px;
+    background: var(--color-warm-white);
+    border-radius: 4px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--color-text-tertiary);
+    opacity: 0.7;
+  }
+
+  /* ── 12. Finis ── */
+  .finis {
+    text-align: center;
+    margin-top: 64px;
+  }
+  .finis-mark {
+    font-family: var(--font-serif);
+    font-size: 28px;
+    color: var(--color-text-tertiary);
+    opacity: 0.4;
+  }
+
+  /* ── Reveal animation ── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(12px);
+    animation: reveal 0.6s ease forwards;
+  }
+  @keyframes reveal { to { opacity: 1; transform: translateY(0); } }
+  .chapter:nth-of-type(2) { animation-delay: 0.05s; }
+  .chapter:nth-of-type(3) { animation-delay: 0.1s; }
+  .chapter:nth-of-type(4) { animation-delay: 0.15s; }
+  .chapter:nth-of-type(5) { animation-delay: 0.2s; }
+  .chapter:nth-of-type(6) { animation-delay: 0.25s; }
+  .chapter:nth-of-type(7) { animation-delay: 0.3s; }
+  .chapter:nth-of-type(8) { animation-delay: 0.35s; }
+  .chapter:nth-of-type(9) { animation-delay: 0.4s; }
+  .chapter:nth-of-type(10) { animation-delay: 0.45s; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ═══════ 1. HEADLINE ═══════ -->
+  <header class="reveal">
+    <p class="record-overline">Meeting Record</p>
+    <h1 class="record-headline">Phase 2 aligned. Sarah has&nbsp;the&nbsp;CFO.</h1>
+    <p class="record-meta">
+      March 21, 2026<span class="sep">&middot;</span>8:00&ndash;9:00 AM<span class="sep">&middot;</span>Customer<span class="sep">&middot;</span>Acme Corp<span class="sep">&middot;</span>3 attendees
+    </p>
+  </header>
+
+  <!-- ═══════ 2. EXECUTIVE SUMMARY ═══════ -->
+  <div class="summary-block reveal">
+    <p class="summary-text">
+      Acme confirmed Phase 2 scope with full executive backing. Support ticket volume is down 60% since migration, validating the platform stability narrative. The CFO wants hard ROI numbers before April&rsquo;s budget review&nbsp;&mdash; the renewal hinges on that deck.
+    </p>
+  </div>
+
+  <!-- ═══════ 3. THE THREAD ═══════ -->
+  <section class="chapter reveal">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">The Thread</h2>
+    <p class="thread-intro">Since your last meeting with Acme Corp on Mar&nbsp;14&hellip;</p>
+    <ul class="thread-list">
+      <li class="thread-item">
+        <span class="thread-icon confirmed">&check;</span>
+        <span>Send updated ROI analysis <span class="thread-detail">completed 3 days ago</span></span>
+      </li>
+      <li class="thread-item">
+        <span class="thread-icon open">&cir;</span>
+        <span>Schedule billing team feedback session <span class="thread-detail">still open</span></span>
+      </li>
+      <li class="thread-item">
+        <span class="thread-icon neutral">&diams;</span>
+        <span>Health: 60 &rarr; 72 <span class="thread-delta-up">(+12)</span> <span class="thread-detail">&mdash; email engagement improved</span></span>
+      </li>
+      <li class="thread-item">
+        <span class="thread-icon new-face">&starf;</span>
+        <span>New face: Jordan Park <span class="thread-detail">VP Engineering</span></span>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ═══════ 4. PREDICTIONS ═══════ -->
+  <section class="chapter reveal">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">What We Predicted vs What Happened</h2>
+
+    <div class="prediction-group">
+      <p class="mono-label" style="color: var(--terracotta);">Risks</p>
+      <div class="prediction-item confirmed">
+        <span class="p-icon">&check;</span>
+        <div>
+          <span>Billing team reporting frustration</span>
+          <p class="prediction-match">Confirmed &mdash; Alex flagged custom report builder issues</p>
+        </div>
+      </div>
+      <div class="prediction-item surprise">
+        <span class="p-icon">&#9889;</span>
+        <div>
+          <span>CFO budget review pressure</span>
+          <p class="prediction-match">Surprise &mdash; Sarah escalated timeline urgency beyond expectations</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="prediction-group">
+      <p class="mono-label" style="color: var(--sage);">Wins</p>
+      <div class="prediction-item confirmed">
+        <span class="p-icon">&check;</span>
+        <div>
+          <span>Phase 2 executive alignment</span>
+          <p class="prediction-match">Confirmed &mdash; full scope approval with executive backing</p>
+        </div>
+      </div>
+      <div class="prediction-item confirmed">
+        <span class="p-icon">&check;</span>
+        <div>
+          <span>Support metrics improving</span>
+          <p class="prediction-match">Confirmed &mdash; 60% ticket volume reduction since migration</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ 5. ENGAGEMENT ═══════ -->
+  <section class="chapter reveal">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Engagement</h2>
+
+    <div class="talk-balance">
+      <div class="talk-bar">
+        <div class="talk-bar-customer" style="width: 58%;"></div>
+        <div class="talk-bar-internal" style="width: 42%;"></div>
+      </div>
+      <div class="talk-labels">
+        <span class="talk-label talk-label-customer">58% Customer</span>
+        <span class="talk-label talk-label-internal">42% Internal</span>
+      </div>
+    </div>
+
+    <div class="speaker-sentiments">
+      <div>
+        <div class="speaker-header">
+          <span class="speaker-name">Sarah Chen</span>
+          <span class="speaker-sentiment sentiment-positive">Positive</span>
+        </div>
+        <p class="speaker-evidence">Enthusiastic about Phase 2 alignment and eager to show ROI to CFO. Proactively managing expectations internally.</p>
+      </div>
+      <div>
+        <div class="speaker-header">
+          <span class="speaker-name">Alex Torres</span>
+          <span class="speaker-sentiment sentiment-cautious">Cautious</span>
+        </div>
+        <p class="speaker-evidence">Flagged billing team friction but acknowledged support ticket improvements. Technical perspective grounded and constructive.</p>
+      </div>
+    </div>
+
+    <div class="signal-grid">
+      <span class="signal-key">Question Density</span>
+      <span class="signal-value">High</span>
+      <span class="signal-key">Decision Maker</span>
+      <span class="signal-value">Active</span>
+      <span class="signal-key">Forward Looking</span>
+      <span class="signal-value">High</span>
+      <span class="signal-key">Monologue Risk</span>
+      <span class="signal-value">No</span>
+    </div>
+
+    <div class="escalation-block">
+      <p class="escalation-quote">&ldquo;If we cannot show the CFO hard savings numbers by April, this gets a lot harder.&rdquo;</p>
+      <p class="escalation-attribution">&mdash; Sarah Chen</p>
+    </div>
+
+    <p class="competitor-mention">
+      <span class="competitor-name">Gainsight</span> &mdash; Sarah mentioned they evaluated Gainsight before choosing us
+    </p>
+  </section>
+
+  <!-- ═══════ 6. CHAMPION ═══════ -->
+  <section class="chapter reveal">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Champion Health</h2>
+
+    <div class="champion-header">
+      <span class="champion-name">Sarah Chen</span>
+      <span class="champion-badge badge-strong">Strong</span>
+    </div>
+    <p class="champion-evidence">
+      Driving Phase 2 internally. Proactively managing CFO expectations on ROI. Brought Alex to meeting to build multi-threaded relationship.
+    </p>
+    <p class="champion-risk">
+      CFO budget review in April could slow momentum if ROI deck is not compelling.
+    </p>
+  </section>
+
+  <!-- ═══════ 7. KEY FINDINGS ═══════ -->
+  <section class="chapter reveal">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Key Findings</h2>
+
+    <!-- WINS -->
+    <div class="findings-group">
+      <p class="mono-label" style="color: var(--sage);">Wins</p>
+
+      <div class="finding-item">
+        <div class="finding-dot dot-sage"></div>
+        <div class="finding-content">
+          <p class="finding-title">
+            Phase 2 scoping completed with full executive alignment
+            <span class="finding-badge badge-expansion">Expansion</span>
+          </p>
+          <p class="finding-impact">Sets up Q2 expansion deal worth 6% ARR increase</p>
+          <div class="evidence-block">
+            <p class="evidence-text">&ldquo;Leadership signed off on the Phase 2 scope yesterday. We are ready to move forward.&rdquo;</p>
+          </div>
+          <p class="attribution">&mdash; Sarah Chen</p>
+        </div>
+      </div>
+
+      <div class="finding-item">
+        <div class="finding-dot dot-sage"></div>
+        <div class="finding-content">
+          <p class="finding-title">
+            Support ticket volume down 60% since migration
+            <span class="finding-badge badge-value">Value Realized</span>
+          </p>
+          <p class="finding-impact">Validates platform stability narrative for renewal</p>
+          <div class="evidence-block">
+            <p class="evidence-text">&ldquo;We went from 15 tickets a week to about 6. The new platform is much more stable.&rdquo;</p>
+          </div>
+          <p class="attribution">&mdash; Alex Torres</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- RISKS -->
+    <div class="findings-group">
+      <p class="mono-label" style="color: var(--terracotta);">Risks</p>
+
+      <div class="finding-item">
+        <div class="finding-dot dot-terracotta"></div>
+        <div class="finding-content">
+          <p class="finding-title">
+            Budget review in April &mdash; CFO wants ROI justification
+            <span class="finding-badge badge-red">Red</span>
+          </p>
+          <p class="finding-impact">Renewal at risk without clear ROI story</p>
+          <div class="evidence-block" style="border-left-color: var(--terracotta);">
+            <p class="evidence-text">&ldquo;Our CFO is asking for hard numbers on cost savings before the April budget review.&rdquo;</p>
+          </div>
+          <p class="attribution">&mdash; Sarah Chen</p>
+        </div>
+      </div>
+
+      <div class="finding-item">
+        <div class="finding-dot dot-turmeric"></div>
+        <div class="finding-content">
+          <p class="finding-title">
+            Billing team still struggling with custom report builder
+            <span class="finding-badge badge-yellow">Yellow</span>
+          </p>
+          <p class="finding-impact">Could slow Phase 2 adoption if not addressed</p>
+          <div class="evidence-block" style="border-left-color: var(--turmeric);">
+            <p class="evidence-text">&ldquo;The billing team tried building their monthly reconciliation report and gave up after 20 minutes.&rdquo;</p>
+          </div>
+          <p class="attribution">&mdash; Alex Torres</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- DECISIONS -->
+    <div class="findings-group">
+      <p class="mono-label">Decisions</p>
+
+      <div class="finding-item">
+        <div class="finding-dot dot-charcoal"></div>
+        <div class="finding-content">
+          <p class="finding-title">Build custom report template for billing team before Phase 2 kickoff</p>
+          <div class="evidence-block">
+            <p class="evidence-text">&ldquo;Agreed to prioritize a billing-specific report template in the next sprint.&rdquo;</p>
+          </div>
+          <p class="attribution">&mdash; Sarah Chen</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ 8. COMMITMENTS & ACTIONS ═══════ -->
+  <section class="chapter reveal">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Commitments & Actions</h2>
+
+    <div>
+      <div class="commitment-item">
+        <span class="commitment-icon">&rarr;</span>
+        <span>Deliver ROI analysis deck to CFO by end of month <span class="commitment-tag">Deadline &middot; Mar 31</span></span>
+      </div>
+      <div class="commitment-item">
+        <span class="commitment-icon">&rarr;</span>
+        <span>Schedule billing team training session for next week <span class="commitment-tag">Follow-up</span></span>
+      </div>
+    </div>
+
+    <p class="actions-sublabel">Suggested Actions</p>
+
+    <div>
+      <div class="action-item proposed">
+        <span class="proposed-pill">Proposed</span>
+        <div class="action-text">
+          Deliver ROI analysis deck to Acme CFO
+          <span class="action-meta priority-p1">P1 &middot; due Mar 31</span>
+          <span class="action-context">&ldquo;I will put together the ROI deck with the support ticket data and send it over by the 31st.&rdquo;</span>
+        </div>
+        <div class="action-controls">
+          <button class="action-btn btn-accept">Accept</button>
+          <button class="action-btn btn-dismiss">Dismiss</button>
+        </div>
+      </div>
+      <div class="action-item proposed">
+        <span class="proposed-pill">Proposed</span>
+        <div class="action-text">
+          Build custom billing report template for Acme
+          <span class="action-meta priority-p1">P1</span>
+          <span class="action-context">Agreed to prioritize a billing-specific report template in the next sprint.</span>
+        </div>
+        <div class="action-controls">
+          <button class="action-btn btn-accept">Accept</button>
+          <button class="action-btn btn-dismiss">Dismiss</button>
+        </div>
+      </div>
+      <div class="action-item proposed">
+        <span class="proposed-pill">Proposed</span>
+        <div class="action-text">
+          Schedule billing team training session
+          <span class="action-meta priority-p2">P2</span>
+          <span class="action-context">&ldquo;Let us get a 90-minute session on the calendar for the billing team.&rdquo;</span>
+        </div>
+        <div class="action-controls">
+          <button class="action-btn btn-accept">Accept</button>
+          <button class="action-btn btn-dismiss">Dismiss</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ 9. ROLE CHANGES ═══════ -->
+  <section class="chapter reveal">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Role Changes</h2>
+
+    <div class="role-change">
+      <p class="role-header">
+        <span class="role-name">Alex Torres</span><span class="role-arrow">&rarr;</span>Technical Contact
+      </p>
+      <p class="role-evidence">
+        &ldquo;Alex brought to meeting to build multi-threaded relationship and validate billing team friction.&rdquo;
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══════ 10. THE ROOM ═══════ -->
+  <section class="chapter reveal">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">The Room</h2>
+
+    <div class="room-grid">
+      <div>
+        <p class="room-side-label">Customer Side</p>
+        <div class="room-person">
+          <span class="room-name">Sarah Chen</span>
+          <span class="room-role"> &middot; Champion</span>
+        </div>
+        <div class="room-person">
+          <span class="room-name">Alex Torres</span>
+          <span class="room-role"> &middot; Technical Contact</span>
+        </div>
+        <div class="room-person">
+          <span class="room-name">Jordan Park</span>
+          <span class="room-role"> &middot; VP Engineering</span>
+          <span class="room-new-tag">New</span>
+        </div>
+      </div>
+      <div>
+        <p class="room-side-label">Our Side</p>
+        <div class="room-person">
+          <span class="room-name">You</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ 11. PRE-MEETING CONTEXT ═══════ -->
+  <details class="pre-meeting reveal">
+    <summary>Pre-Meeting Context</summary>
+    <div class="pre-meeting-content">
+      Original meeting briefing content would appear here &mdash; key insight, since last meeting, account pulse, entity readiness, the room, your plan. This content fades into the background once the meeting has been processed, serving as a historical reference rather than the primary document.
+    </div>
+  </details>
+
+  <!-- ═══════ 12. FINIS ═══════ -->
+  <div class="finis">
+    <span class="finis-mark">*</span>
+  </div>
+
+</div>
+</body>
+</html>

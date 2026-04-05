@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS — Account Intelligence v2 (The Dossier)</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,300;1,6..72,400&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=JetBrains+Mono:wght@300;400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --linen: #e8e2d9;
+    --warm-white: #faf8f6;
+    --charcoal: #1e2530;
+    --ink: #2a2b3d;
+    --turmeric: #c9a227;
+    --terracotta: #c4654a;
+    --sage: #7eaa7b;
+    --larkspur: #8fa3c4;
+    --text-primary: #1e2530;
+    --text-secondary: #5a6370;
+    --text-tertiary: #8a919a;
+
+    --font-serif: 'Newsreader', Georgia, serif;
+    --font-sans: 'DM Sans', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-brand: 'Montserrat', sans-serif;
+
+    --page-max: 1240px;
+    --margin-col: 120px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    background-color: var(--cream);
+    color: var(--charcoal);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* Atmosphere & Watermark */
+  .atmosphere {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at center 20%, rgba(201, 162, 39, 0.05) 0%, transparent 70%);
+    z-index: 0; pointer-events: none;
+  }
+  .watermark {
+    position: fixed;
+    bottom: -10%; left: -5%;
+    font-family: var(--font-brand); font-weight: 800; font-size: 800px;
+    line-height: 1; color: var(--turmeric); opacity: 0.03;
+    transform: rotate(-15deg);
+    z-index: 0; pointer-events: none;
+  }
+
+  /* Dossier Chrome */
+  .folio {
+    position: fixed; top: 0; left: 0; right: 0; height: 48px;
+    background: rgba(245, 242, 239, 0.95);
+    border-bottom: 2px solid var(--charcoal);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 40px; z-index: 100;
+  }
+  .folio-left { display: flex; align-items: center; gap: 16px; }
+  .asterisk { font-family: var(--font-brand); font-weight: 800; color: var(--turmeric); font-size: 22px; margin-top: 4px;}
+  .pub-name { font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; }
+  .folio-right { display: flex; align-items: center; gap: 24px; font-family: var(--font-mono); font-size: 11px; font-weight: 500;}
+  .status { display: flex; align-items: center; gap: 8px; color: var(--sage); }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+  /* Page Layout */
+  .page { position: relative; z-index: 1; max-width: var(--page-max); margin: 48px auto 0; padding: 60px 40px 120px; }
+
+  /* Dossier Grid Layout */
+  .dossier-grid {
+    display: grid;
+    grid-template-columns: var(--margin-col) 1fr 340px;
+    gap: 40px;
+    align-items: start;
+    margin-bottom: 64px;
+    border-bottom: 1px solid rgba(30, 37, 48, 0.1);
+    padding-bottom: 40px;
+  }
+  .grid-label {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); padding-top: 10px;
+  }
+  .hero-dossier { grid-column: 1 / -1; margin-bottom: 40px; border-bottom: 2px solid var(--charcoal); padding-bottom: 40px; }
+  .hero-header { font-family: var(--font-serif); font-size: 84px; line-height: 1; font-weight: 300; letter-spacing: -0.02em; margin-bottom: 20px; }
+  .hero-meta { display: flex; gap: 32px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 24px; }
+  
+  .narrative-col {
+    font-size: 17px; line-height: 1.6; color: var(--charcoal);
+  }
+  .narrative-col p { margin-bottom: 24px; }
+  .narrative-col strong { font-weight: 600; }
+  
+  .data-col {
+    background: var(--linen);
+    padding: 32px;
+    border-radius: 8px;
+  }
+  
+  /* Section Blocks */
+  .section-title { font-family: var(--font-serif); font-size: 24px; font-weight: 400; margin-bottom: 24px; color: var(--charcoal); border-bottom: 1px solid rgba(30,37,48,0.1); padding-bottom: 16px; }
+
+  /* Tighter Data Rows */
+  .dossier-row {
+    display: flex; gap: 24px; padding: 16px 0; border-bottom: 1px solid rgba(30, 37, 48, 0.06);
+  }
+  .dossier-icon { flex: 0 0 24px; color: var(--turmeric); }
+  .dossier-content { flex: 1; }
+  .row-title { font-family: var(--font-serif); font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  .row-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+  .row-action { flex: 0 0 auto; }
+  
+  /* Pills */
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 4px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .pill-sage { background: rgba(126, 170, 123, 0.15); color: var(--rosemary); }
+  .pill-terracotta { background: rgba(196, 101, 74, 0.15); color: var(--chili); }
+  .pill-neutral { background: rgba(30, 37, 48, 0.05); color: var(--text-secondary); }
+
+  /* Gallery Compact */
+  .stakeholder-list { display: flex; flex-direction: column; gap: 16px; }
+  .sh-item { display: flex; align-items: center; gap: 16px; }
+  .sh-avatar { width: 40px; height: 40px; border-radius: 4px; background: var(--warm-white); border: 1px solid rgba(30,37,48,0.1); display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 14px; font-weight: 500;}
+  .sh-info { flex: 1; }
+  .sh-name { font-weight: 500; font-size: 15px; }
+  .sh-role { font-size: 13px; color: var(--text-secondary); }
+  .sh-contact { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10px; color: var(--sage); }
+
+  .finis { text-align: center; margin-top: 100px; padding-top: 40px; border-top: 2px solid var(--charcoal); font-family: var(--font-mono); color: var(--text-tertiary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; }
+
+</style>
+</head>
+<body>
+
+<div class="atmosphere"></div>
+<div class="watermark">*</div>
+
+<div class="folio">
+  <div class="folio-left">
+    <div class="asterisk">*</div>
+    <div class="pub-name">Acme Corp // Account Dossier</div>
+  </div>
+  <div class="folio-right">
+    <div>Q1 RENEWAL CYCLE</div>
+    <div class="status"><div class="status-dot"></div> READY</div>
+    <div>⌘K</div>
+  </div>
+</div>
+
+<div class="page">
+  
+  <div class="hero-dossier">
+    <div class="hero-meta">
+      <span>Id: ACME-002</span>
+      <span>ARR: $120,450</span>
+      <span>Renewal: 42 Days</span>
+      <span style="color: var(--rosemary); font-weight: 600;">Health: Green</span>
+    </div>
+    <h1 class="hero-header">Acme Corporation — Status Review</h1>
+  </div>
+
+  <div class="dossier-grid">
+    <div class="grid-label">Overview</div>
+    <div class="narrative-col">
+      <p style="font-family: var(--font-serif); font-size: 24px; font-style: italic; font-weight: 300; max-width: 90%; color: var(--turmeric); margin-bottom: 32px; line-height: 1.4;">
+        "Acme's trajectory is positive, but their recent leadership changes have introduced friction in the security review process."
+      </p>
+      <p>Over the last 90 days, Acme has successfully deployed the core platform across their European subsidiaries. The adoption metrics are robust, with daily active usage increasing by 34%. However, the story shifts when examining their security compliance workflows.</p>
+      <p>The recent departure of their VP of Infosec has triggered an impromptu audit of all vendor contracts. While our posture remains strong, the resulting bureaucratic friction is slowing down our planned Phase 2 expansion. <strong>Our primary lever right now is executive reassurance, not feature expansion.</strong> Until the compliance team gives the green light, pushing new capabilities will be perceived as aggressive rather than helpful.</p>
+      
+      <div style="margin-top: 40px;">
+        <h2 class="section-title">Key Headwinds</h2>
+        <div class="dossier-row">
+          <div class="dossier-icon">▲</div>
+          <div class="dossier-content">
+            <div class="row-title">Security Review Bottleneck</div>
+            <div class="row-desc">The new compliance director is mandating SOC 2 Type II artifact reviews before approving the Phase 2 budget.</div>
+          </div>
+          <div class="row-action"><div class="pill pill-terracotta">Needs Action</div></div>
+        </div>
+        <div class="dossier-row">
+          <div class="dossier-icon">■</div>
+          <div class="dossier-content">
+            <div class="row-title">Champion Departure Transition</div>
+            <div class="row-desc">Sarah Jenkins is transitioning out next month. Need to build rapport with Michael Chang.</div>
+          </div>
+          <div class="row-action"><div class="pill pill-neutral">Monitoring</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="data-col">
+      <h2 class="section-title" style="border-bottom: 1px solid var(--charcoal);">Stakeholder Matrix</h2>
+      <div class="stakeholder-list">
+        <div class="sh-item">
+          <div class="sh-avatar">SJ</div>
+          <div class="sh-info">
+            <div class="sh-name">Sarah Jenkins</div>
+            <div class="sh-role">VP Strategy (Outgoing)</div>
+          </div>
+          <div class="sh-contact">4d <span style="color:var(--text-tertiary);">ago</span></div>
+        </div>
+        <div class="sh-item">
+          <div class="sh-avatar">MC</div>
+          <div class="sh-info">
+            <div class="sh-name">Michael Chang</div>
+            <div class="sh-role">Incoming VP Strategy</div>
+          </div>
+          <div class="sh-contact" style="color:var(--terracotta);">--</div>
+        </div>
+        <div class="sh-item">
+          <div class="sh-avatar">DB</div>
+          <div class="sh-info">
+            <div class="sh-name">David Boles</div>
+            <div class="sh-role">Interim Infosec Dir.</div>
+          </div>
+          <div class="sh-contact">12d <span style="color:var(--text-tertiary);">ago</span></div>
+        </div>
+      </div>
+
+      <div style="margin-top: 40px;">
+        <h2 class="section-title" style="border-bottom: 1px solid var(--charcoal);">Strategic Lever</h2>
+        <p style="font-size: 14px; line-height: 1.6;">To secure the Q1 renewal, we must pivot the conversation away from feature adoption and toward risk mitigation and compliance partnership.</p>
+        <button style="margin-top: 24px; background: var(--turmeric); color: var(--cream); border: none; padding: 12px 24px; font-family: var(--font-mono); text-transform: uppercase; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; border-radius: 4px; cursor: pointer; width: 100%;">Prepare Materials</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="finis">
+    <div>* * *</div>
+    <div style="margin-top: 16px;">End of Dossier</div>
+  </div>
+
+</div>
+</body>
+</html>

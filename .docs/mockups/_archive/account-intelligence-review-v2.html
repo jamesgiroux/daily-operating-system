@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS - Account Intelligence Review v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --linen: #e8e2d9;
+    --warm-white: #faf8f6;
+    --charcoal: #1e2530;
+    --turmeric: #c9a227;
+    --terracotta: #c4654a;
+    --sage: #7eaa7b;
+    --larkspur: #8fa3c4;
+    --text-primary: #1e2530;
+    --text-secondary: #58616e;
+    --text-tertiary: #8a919a;
+    --rule-heavy: rgba(30, 37, 48, 0.14);
+    --rule-light: rgba(30, 37, 48, 0.08);
+    --shadow: 0 16px 40px rgba(30, 37, 48, 0.06);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "DM Sans", sans-serif;
+    color: var(--text-primary);
+    background:
+      radial-gradient(circle at 15% 18%, rgba(201, 162, 39, 0.12), transparent 20%),
+      radial-gradient(circle at 84% 24%, rgba(143, 163, 196, 0.12), transparent 18%),
+      var(--cream);
+  }
+
+  .page {
+    width: min(1160px, calc(100% - 30px));
+    margin: 18px auto 70px;
+  }
+
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 18px;
+    background: rgba(245, 242, 239, 0.84);
+    border: 1px solid rgba(30, 37, 48, 0.08);
+    backdrop-filter: blur(10px);
+  }
+
+  .topbar__left,
+  .topbar__right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .asterisk {
+    font-family: "Montserrat", sans-serif;
+    font-size: 18px;
+    color: var(--turmeric);
+  }
+
+  .mono {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--rule-light);
+    background: rgba(250, 248, 246, 0.78);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .pill::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 24px;
+    margin-top: 18px;
+  }
+
+  .nav,
+  .main {
+    min-width: 0;
+  }
+
+  .nav__inner {
+    position: sticky;
+    top: 18px;
+    padding: 22px 20px;
+    background: rgba(250, 248, 246, 0.74);
+    border: 1px solid rgba(30, 37, 48, 0.08);
+    box-shadow: var(--shadow);
+  }
+
+  .nav h1 {
+    margin: 10px 0 14px;
+    font-family: "Newsreader", serif;
+    font-size: 34px;
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+  }
+
+  .nav p {
+    margin: 0 0 18px;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+  }
+
+  .toc {
+    display: grid;
+    gap: 10px;
+  }
+
+  .toc div {
+    padding-top: 10px;
+    border-top: 1px solid var(--rule-light);
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .surface {
+    background: rgba(250, 248, 246, 0.74);
+    border: 1px solid rgba(30, 37, 48, 0.08);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .hero {
+    padding: 34px 34px 28px;
+    border-bottom: 1px solid var(--rule-heavy);
+    position: relative;
+  }
+
+  .watermark {
+    position: absolute;
+    right: -8px;
+    top: 8px;
+    font-family: "Montserrat", sans-serif;
+    font-size: 250px;
+    line-height: 0.8;
+    color: rgba(201, 162, 39, 0.06);
+    transform: rotate(8deg);
+  }
+
+  .hero h2 {
+    position: relative;
+    z-index: 1;
+    margin: 10px 0 0;
+    max-width: 760px;
+    font-family: "Newsreader", serif;
+    font-size: clamp(56px, 6vw, 84px);
+    font-weight: 400;
+    line-height: 0.98;
+    letter-spacing: -0.05em;
+  }
+
+  .hero p {
+    position: relative;
+    z-index: 1;
+    margin: 18px 0 0;
+    max-width: 780px;
+    font-family: "Newsreader", serif;
+    font-size: 23px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.58;
+    color: var(--text-secondary);
+  }
+
+  .hero-stats {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 24px;
+  }
+
+  .hero-stat {
+    padding-top: 12px;
+    border-top: 1px solid var(--rule-heavy);
+  }
+
+  .hero-stat strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 15px;
+  }
+
+  .block {
+    padding: 28px 34px 30px;
+    border-top: 1px solid var(--rule-heavy);
+  }
+
+  .block:first-of-type { border-top: 0; }
+
+  .title {
+    margin: 8px 0 18px;
+    font-family: "Newsreader", serif;
+    font-size: 32px;
+    font-weight: 400;
+    letter-spacing: -0.03em;
+  }
+
+  .intro {
+    margin: 0 0 18px;
+    max-width: 800px;
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--text-secondary);
+  }
+
+  .intro strong { color: var(--text-primary); font-weight: 600; }
+
+  .grid-3,
+  .grid-2 {
+    display: grid;
+    gap: 18px;
+  }
+
+  .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .panel {
+    padding: 16px 16px 18px;
+    background: rgba(245, 242, 239, 0.72);
+    border: 1px solid var(--rule-light);
+  }
+
+  .panel h3 {
+    margin: 8px 0 10px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .panel p,
+  .panel li,
+  .record p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.74;
+  }
+
+  .panel ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  .score-table {
+    display: grid;
+    gap: 12px;
+  }
+
+  .score-row {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr) 110px;
+    gap: 16px;
+    align-items: center;
+    padding-top: 12px;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .score-row:first-child { border-top: 0; }
+
+  .track {
+    height: 8px;
+    background: rgba(232, 226, 217, 0.86);
+  }
+
+  .fill {
+    height: 100%;
+    background: var(--turmeric);
+  }
+
+  .fill.green { background: var(--sage); }
+  .fill.red { background: var(--terracotta); }
+  .fill.blue { background: var(--larkspur); }
+
+  .record {
+    display: grid;
+    gap: 14px;
+  }
+
+  .record-item {
+    padding-left: 16px;
+    border-left: 2px solid var(--turmeric);
+  }
+
+  .record-item.red { border-left-color: var(--terracotta); }
+  .record-item.green { border-left-color: var(--sage); }
+
+  .record-item h3 {
+    margin: 6px 0 8px;
+    font-size: 16px;
+  }
+
+  .footer {
+    padding: 22px 34px 26px;
+    border-top: 1px solid var(--rule-heavy);
+    text-align: center;
+    font-family: "Newsreader", serif;
+    color: var(--text-secondary);
+  }
+
+  .footer span {
+    margin-right: 10px;
+    color: var(--turmeric);
+    letter-spacing: 0.28em;
+  }
+
+  @media (max-width: 1020px) {
+    .layout,
+    .hero-stats,
+    .grid-3,
+    .grid-2 {
+      grid-template-columns: 1fr;
+    }
+
+    .score-row {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .page {
+      width: min(100%, calc(100% - 12px));
+      margin-top: 6px;
+    }
+
+    .topbar,
+    .topbar__left,
+    .topbar__right {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .hero,
+    .block,
+    .footer {
+      padding-left: 18px;
+      padding-right: 18px;
+    }
+
+    .hero h2 { font-size: 50px; }
+    .hero p { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+  <main class="page">
+    <div class="topbar">
+      <div class="topbar__left">
+        <span class="asterisk">*</span>
+        <div>
+          <div class="mono">DailyOS / account review study</div>
+          <div>Acme Corp</div>
+        </div>
+      </div>
+      <div class="topbar__right">
+        <span class="pill" style="color: var(--sage);">health stable</span>
+        <span class="pill" style="color: var(--terracotta);">transition risk</span>
+        <span class="pill" style="color: var(--larkspur);">phase 2 window</span>
+      </div>
+    </div>
+
+    <div class="layout">
+      <aside class="nav">
+        <div class="nav__inner">
+          <div class="mono">Intent</div>
+          <h1>Review v2</h1>
+          <p>This version stays closest to the current chaptered account surface, but deepens the sections into a more review-like editorial issue. It is still a magazine page. It just reads with more operational weight.</p>
+          <div class="toc">
+            <div>Headline</div>
+            <div>State of Play</div>
+            <div>Relationship Health</div>
+            <div>The Room</div>
+            <div>Watch List</div>
+            <div>The Work</div>
+            <div>The Record</div>
+            <div>Reference & Reports</div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="main">
+        <div class="surface">
+          <header class="hero">
+            <div class="watermark">*</div>
+            <div class="mono">Full account intelligence using current editorial chapter anatomy</div>
+            <h2>Acme is healthy by score, but the page should let the user feel where that health is starting to fray.</h2>
+            <p>That fray is not abstract. It lives in three places: a transition risk around Alex Torres, a sentiment signal inside engineering, and a legal bottleneck that can make momentum feel more fragile than it really is. A faithful reimagination should keep all of that on the page without collapsing into product noise.</p>
+            <div class="hero-stats">
+              <div class="hero-stat"><div class="mono">Executive read</div><strong>Strong account with visible execution drag</strong></div>
+              <div class="hero-stat"><div class="mono">Delivery proof</div><strong>Phase 1 ahead of schedule, +15% benchmark</strong></div>
+              <div class="hero-stat"><div class="mono">Watch signal</div><strong>3 detractors in engineering</strong></div>
+              <div class="hero-stat"><div class="mono">Open tension</div><strong>KT gap before March departure</strong></div>
+            </div>
+          </header>
+
+          <section class="block">
+            <div class="mono">State of play</div>
+            <h2 class="title">The account does not need rescue. It needs authorship.</h2>
+            <p class="intro"><strong>Authorship</strong> here means the page should shape the intelligence into a readable argument. The wins are real: Sarah is a strong champion, Phase 1 landed ahead of schedule, and the adoption base is solid. The pressures are real too: detractor sentiment, legal delay, and the continuity problem Alex leaves behind. The reimagining challenge is not inventing a new page type. It is making this exact account feel fully read.</p>
+            <div class="grid-3">
+              <article class="panel">
+                <div class="mono">Working</div>
+                <h3>Why the account still feels strong</h3>
+                <ul>
+                  <li>Executive sponsorship is strong.</li>
+                  <li>Phase 1 delivered above benchmark.</li>
+                  <li>Platform adoption across engineering is solid.</li>
+                </ul>
+              </article>
+              <article class="panel">
+                <div class="mono">Not working</div>
+                <h3>Where strain is now visible</h3>
+                <ul>
+                  <li>NPS is down with three detractors.</li>
+                  <li>Legal review has stalled the amendment.</li>
+                  <li>No KT plan exists for Alex's exit.</li>
+                </ul>
+              </article>
+              <article class="panel">
+                <div class="mono">Unknowns</div>
+                <h3>What the page should not pretend to know</h3>
+                <ul>
+                  <li>APAC expansion viability.</li>
+                  <li>Who replaces Alex.</li>
+                  <li>How the Singapore pilot should be framed.</li>
+                </ul>
+              </article>
+            </div>
+          </section>
+
+          <section class="block">
+            <div class="mono">Relationship health</div>
+            <h2 class="title">The dimensions deserve chapter weight</h2>
+            <div class="score-table">
+              <div class="score-row"><strong>Meeting cadence</strong><div class="track"><div class="fill green" style="width:85%"></div></div><div class="mono">85 / stable</div></div>
+              <div class="score-row"><strong>Email engagement</strong><div class="track"><div class="fill green" style="width:80%"></div></div><div class="mono">80 / stable</div></div>
+              <div class="score-row"><strong>Stakeholder coverage</strong><div class="track"><div class="fill blue" style="width:70%"></div></div><div class="mono">70 / declining</div></div>
+              <div class="score-row"><strong>Champion health</strong><div class="track"><div class="fill green" style="width:90%"></div></div><div class="mono">90 / stable</div></div>
+              <div class="score-row"><strong>Financial proximity</strong><div class="track"><div class="fill" style="width:75%"></div></div><div class="mono">75 / stable</div></div>
+              <div class="score-row"><strong>Signal momentum</strong><div class="track"><div class="fill red" style="width:72%"></div></div><div class="mono">72 / declining</div></div>
+            </div>
+          </section>
+
+          <section class="block">
+            <div class="mono">The room</div>
+            <h2 class="title">Stakeholder intelligence</h2>
+            <div class="grid-3">
+              <article class="panel">
+                <div class="mono">Sarah Chen / active</div>
+                <h3>Champion with budget-setting influence</h3>
+                <p>She secured Phase 2 budget independently. The page should treat that as one of the account's most important facts, not just another stakeholder note.</p>
+              </article>
+              <article class="panel">
+                <div class="mono">Alex Torres / transitioning</div>
+                <h3>Technical backbone of Phase 1</h3>
+                <p>His March departure is the cleanest articulation of delivery risk anywhere in the account. It deserves visual emphasis across sections.</p>
+              </article>
+              <article class="panel">
+                <div class="mono">Pat Kim / periodic</div>
+                <h3>Strategic decision maker</h3>
+                <p>Focused on APAC and cost consolidation. He is the bridge between current value and future expansion logic.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="block">
+            <div class="mono">Watch list & work</div>
+            <h2 class="title">Signals and commitments in one spread</h2>
+            <div class="grid-2">
+              <article class="panel">
+                <div class="mono">Risks and wins</div>
+                <h3>What is bending the account</h3>
+                <ul>
+                  <li>Risk: Alex Torres departure creates continuity pressure during scoping.</li>
+                  <li>Risk: NPS softness may distort the emotional story before QBR.</li>
+                  <li>Risk: Legal delay can make momentum look weaker than it is.</li>
+                  <li>Win: Phase 1 completed early.</li>
+                  <li>Win: Benchmarks exceeded target by 15%.</li>
+                </ul>
+              </article>
+              <article class="panel">
+                <div class="mono">Open commitments</div>
+                <h3>What the team owes the account next</h3>
+                <ul>
+                  <li>Finalize Phase 2 SOW with legal.</li>
+                  <li>Complete Alex Torres knowledge transfer.</li>
+                  <li>Address detractor concerns before QBR.</li>
+                </ul>
+              </article>
+            </div>
+          </section>
+
+          <section class="block">
+            <div class="mono">The record</div>
+            <h2 class="title">Value delivered and recent evidence</h2>
+            <div class="record">
+              <div class="record-item green">
+                <div class="mono">90 days ago</div>
+                <h3>Phase 1 deployment drove $200K ARR expansion</h3>
+                <p>The record chapter should make the commercial proof tangible, not merely reference it in the hero.</p>
+              </div>
+              <div class="record-item green">
+                <div class="mono">60 days ago</div>
+                <h3>Performance benchmarks exceeded target by 15%</h3>
+                <p>This is the strongest adoption proof point on the page and should remain in the editorial body.</p>
+              </div>
+              <div class="record-item red">
+                <div class="mono">Current cycle</div>
+                <h3>Continuity and sentiment are now the more urgent story</h3>
+                <p>The recent friction is not larger than the wins. It is simply closer to the user, which is why the page should stage it with more urgency.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="block">
+            <div class="mono">Reference & reports</div>
+            <h2 class="title">Reference, company context, and downstream surfaces</h2>
+            <div class="grid-2">
+              <article class="panel">
+                <div class="mono">Reference</div>
+                <h3>Company context</h3>
+                <p>Enterprise SaaS company headquartered in San Francisco with roughly 500-1000 employees. The reference chapter stays secondary, but the layout should still treat it as part of the magazine, not a utilitarian afterthought.</p>
+              </article>
+              <article class="panel">
+                <div class="mono">Reports</div>
+                <h3>Bridge surfaces</h3>
+                <p>Account Health Review, EBR/QBR, and Risk Briefing. This review variant is designed to bridge naturally into those report forms without changing the intelligence model itself.</p>
+              </article>
+            </div>
+          </section>
+
+          <footer class="footer"><span>* * *</span>Review issue, not dashboard. Same intelligence, properly staged.</footer>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
