@@ -58,8 +58,8 @@ impl Executor {
         self.state
             .config
             .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+            .as_ref()
+            .map(|c| c.ai_models.clone())
             .unwrap_or_default()
     }
 
@@ -603,11 +603,8 @@ impl Executor {
                 .state
                 .config
                 .read()
-                .ok()
-                .and_then(|g| {
-                    g.as_ref()
-                        .map(|c| crate::types::is_feature_enabled(c, "impactRollup"))
-                })
+                .as_ref()
+                .map(|c| crate::types::is_feature_enabled(c, "impactRollup"))
                 .unwrap_or(false);
 
             if impact_enabled {
@@ -728,11 +725,8 @@ impl Executor {
             .state
             .config
             .read()
-            .ok()
-            .and_then(|g| {
-                g.as_ref()
-                    .map(|c| crate::types::is_feature_enabled(c, "inboxProcessing"))
-            })
+            .as_ref()
+            .map(|c| crate::types::is_feature_enabled(c, "inboxProcessing"))
             .unwrap_or(true);
         if !inbox_enabled {
             log::info!("Inbox batch skipped (feature disabled)");
@@ -751,8 +745,8 @@ impl Executor {
             .state
             .config
             .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(|c| c.profile.clone()))
+            .as_ref()
+            .map(|c| c.profile.clone())
             .unwrap_or_else(|| "general".to_string());
 
         // Step 1: Quick-classify all inbox files
@@ -788,8 +782,8 @@ impl Executor {
             .state
             .config
             .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+            .as_ref()
+            .map(crate::types::UserContext::from_config)
             .unwrap_or_default();
         let ai_config = self.ai_model_config();
 
@@ -1012,11 +1006,8 @@ impl Executor {
             .state
             .config
             .read()
-            .ok()
-            .and_then(|g| {
-                g.as_ref()
-                    .map(|c| crate::types::is_feature_enabled(c, "meetingPrep"))
-            })
+            .as_ref()
+            .map(|c| crate::types::is_feature_enabled(c, "meetingPrep"))
             .unwrap_or(true);
         let prep_paths = if prep_enabled {
             let paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)
@@ -1036,11 +1027,8 @@ impl Executor {
             .state
             .config
             .read()
-            .ok()
-            .and_then(|g| {
-                g.as_ref()
-                    .map(|c| crate::types::is_feature_enabled(c, "emailTriage"))
-            })
+            .as_ref()
+            .map(|c| crate::types::is_feature_enabled(c, "emailTriage"))
             .unwrap_or(true);
         let mut emails_data = if email_enabled {
             match crate::workflow::deliver::deliver_emails(&directive, &data_dir) {
@@ -1108,8 +1096,8 @@ impl Executor {
             .state
             .config
             .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+            .as_ref()
+            .map(crate::types::UserContext::from_config)
             .unwrap_or(crate::types::UserContext {
                 name: None,
                 company: None,
@@ -1262,13 +1250,9 @@ impl Executor {
     /// Run the three-phase week workflow (Rust-native, ADR-0049)
     /// Get workspace path from config
     fn get_workspace_path(&self) -> Result<PathBuf, ExecutionError> {
-        let config = self
-            .state
-            .config
-            .read()
-            .map_err(|_| ExecutionError::ConfigurationError("Lock poisoned".to_string()))?;
+        let config_guard = self.state.config.read();
 
-        let config = config.as_ref().ok_or_else(|| {
+        let config = config_guard.as_ref().ok_or_else(|| {
             ExecutionError::ConfigurationError("No configuration loaded".to_string())
         })?;
 
@@ -1330,8 +1314,8 @@ impl Executor {
             .state
             .config
             .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+            .as_ref()
+            .map(crate::types::UserContext::from_config)
             .unwrap_or(crate::types::UserContext {
                 name: None,
                 company: None,

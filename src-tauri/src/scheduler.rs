@@ -7,8 +7,10 @@
 //! - Missed job handling (runs if within grace period)
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
+
+use parking_lot::Mutex;
 
 use chrono::{DateTime, Datelike, Local, Utc};
 use chrono_tz::Tz;
@@ -188,15 +190,11 @@ impl Scheduler {
     /// correct entity context.
     async fn drain_prep_invalidation_queue(&self) {
         let meeting_ids: Vec<String> = {
-            match self.state.signals.prep_invalidation_queue.lock() {
-                Ok(mut queue) => {
-                    if queue.is_empty() {
-                        return;
-                    }
-                    queue.drain(..).collect()
-                }
-                Err(_) => return,
+            let mut queue = self.state.signals.prep_invalidation_queue.lock();
+            if queue.is_empty() {
+                return;
             }
+            queue.drain(..).collect()
         };
 
         log::info!(
@@ -343,10 +341,7 @@ impl Scheduler {
 
     /// Check for jobs that should run now
     async fn check_and_run_due_jobs(&self, now: DateTime<Utc>) {
-        let config = match self.state.config.read() {
-            Ok(guard) => guard.clone(),
-            Err(_) => return,
-        };
+        let config = self.state.config.read().clone();
 
         let Some(config) = config else { return };
 
@@ -430,10 +425,7 @@ impl Scheduler {
 
     /// Check for jobs that were missed during sleep
     async fn check_missed_jobs(&self, now: DateTime<Utc>) {
-        let config = match self.state.config.read() {
-            Ok(guard) => guard.clone(),
-            Err(_) => return,
-        };
+        let config = self.state.config.read().clone();
 
         let Some(config) = config else { return };
 
@@ -588,21 +580,16 @@ impl Scheduler {
     }
 
     async fn run_due_retries(&self, now: DateTime<Utc>) {
-        let due = match self.retry_queue.lock() {
-            Ok(mut retries) => {
-                let keys: Vec<String> = retries
-                    .iter()
-                    .filter(|(_, entry)| entry.due_at <= now)
-                    .map(|(key, _)| key.clone())
-                    .collect();
-                keys.into_iter()
-                    .filter_map(|key| retries.remove(&key))
-                    .collect::<Vec<_>>()
-            }
-            Err(_) => {
-                log::error!("Scheduler retry queue lock poisoned");
-                return;
-            }
+        let due = {
+            let mut retries = self.retry_queue.lock();
+            let keys: Vec<String> = retries
+                .iter()
+                .filter(|(_, entry)| entry.due_at <= now)
+                .map(|(key, _)| key.clone())
+                .collect();
+            keys.into_iter()
+                .filter_map(|key| retries.remove(&key))
+                .collect::<Vec<_>>()
         };
 
         for entry in due {
@@ -692,13 +679,9 @@ impl Scheduler {
             retry_attempt: retry_attempt + 1,
         };
 
-        match self.retry_queue.lock() {
-            Ok(mut retries) => {
-                retries.insert(key, entry);
-            }
-            Err(_) => {
-                log::error!("Scheduler retry queue lock poisoned");
-            }
+        {
+            let mut retries = self.retry_queue.lock();
+            retries.insert(key, entry);
         }
     }
 }

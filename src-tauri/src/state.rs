@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
+use parking_lot::{Mutex, RwLock};
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
@@ -41,7 +42,8 @@ impl HygieneBudget {
     /// Check if budget allows another AI call, resetting counter if day changed.
     pub fn try_consume(&self) -> bool {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        if let Ok(mut last) = self.last_reset.lock() {
+        {
+            let mut last = self.last_reset.lock();
             if *last != today {
                 self.daily_ai_calls
                     .store(0, std::sync::atomic::Ordering::Relaxed);
@@ -266,9 +268,9 @@ pub struct AppState {
     /// Context provider for intelligence enrichment (ADR-0095).
     /// Determines where entity context is gathered (local DB vs. Glean).
     /// Wrapped in RwLock to allow hot-swap without app restart.
-    context_provider: std::sync::RwLock<Arc<dyn crate::context_provider::ContextProvider>>,
+    context_provider: RwLock<Arc<dyn crate::context_provider::ContextProvider>>,
     /// Shared app handle for service-layer Tauri event emission.
-    app_handle: std::sync::RwLock<Option<tauri::AppHandle>>,
+    app_handle: RwLock<Option<tauri::AppHandle>>,
 }
 
 fn recovery_status_from_db_error(err: &crate::db::DbError) -> DatabaseRecoveryStatus {
@@ -557,54 +559,37 @@ impl AppState {
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             permits: ResourcePermits::new(),
-            context_provider: std::sync::RwLock::new(context_provider),
-            app_handle: std::sync::RwLock::new(None),
+            context_provider: RwLock::new(context_provider),
+            app_handle: RwLock::new(None),
         }
     }
 
-    /// I573: Read config with poison recovery.
+    /// I573: Read config (parking_lot — no poison possible).
     pub fn config_read_or_recover(
         &self,
-    ) -> Result<std::sync::RwLockReadGuard<'_, Option<Config>>, String> {
-        match self.config.read() {
-            Ok(guard) => Ok(guard),
-            Err(poisoned) => {
-                log::warn!("I573: Config RwLock poisoned, recovering inner data");
-                Ok(poisoned.into_inner())
-            }
-        }
+    ) -> Result<parking_lot::RwLockReadGuard<'_, Option<Config>>, String> {
+        Ok(self.config.read())
     }
 
     /// Get a snapshot of the current context provider (cheap Arc clone).
     pub fn context_provider(&self) -> Arc<dyn crate::context_provider::ContextProvider> {
-        Arc::clone(
-            &self
-                .context_provider
-                .read()
-                .expect("context_provider lock poisoned"),
-        )
+        Arc::clone(&self.context_provider.read())
     }
 
     /// Hot-swap the context provider at runtime (ADR-0095 dynamic mode switch).
     pub fn swap_context_provider(&self, new: Arc<dyn crate::context_provider::ContextProvider>) {
-        let mut guard = self
-            .context_provider
-            .write()
-            .expect("context_provider lock poisoned");
+        let mut guard = self.context_provider.write();
         *guard = new;
         log::info!("Context provider swapped to: {}", guard.provider_name());
     }
 
     pub fn set_app_handle(&self, handle: tauri::AppHandle) {
-        let mut guard = self.app_handle.write().expect("app_handle lock poisoned");
+        let mut guard = self.app_handle.write();
         *guard = Some(handle);
     }
 
     pub fn app_handle(&self) -> Option<tauri::AppHandle> {
-        self.app_handle
-            .read()
-            .expect("app_handle lock poisoned")
-            .clone()
+        self.app_handle.read().clone()
     }
 
     /// Build a context provider for the given mode, using this state's config and embedding model.
@@ -644,20 +629,20 @@ impl AppState {
         self.workflow
             .status
             .read()
-            .map(|guard| guard.get(&workflow).cloned().unwrap_or_default())
+            .get(&workflow)
+            .cloned()
             .unwrap_or_default()
     }
 
     /// Update workflow status
     pub fn set_workflow_status(&self, workflow: WorkflowId, status: WorkflowStatus) {
-        if let Ok(mut guard) = self.workflow.status.write() {
-            guard.insert(workflow, status);
-        }
+        self.workflow.status.write().insert(workflow, status);
     }
 
     /// Add an execution record to history
     pub fn add_execution_record(&self, record: ExecutionRecord) {
-        if let Ok(mut guard) = self.workflow.history.lock() {
+        {
+            let mut guard = self.workflow.history.lock();
             guard.insert(0, record);
 
             // Trim to max size
@@ -672,7 +657,8 @@ impl AppState {
 
     /// Update an existing execution record
     pub fn update_execution_record(&self, id: &str, f: impl FnOnce(&mut ExecutionRecord)) {
-        if let Ok(mut guard) = self.workflow.history.lock() {
+        {
+            let mut guard = self.workflow.history.lock();
             if let Some(record) = guard.iter_mut().find(|r| r.id == id) {
                 f(record);
             }
@@ -687,15 +673,15 @@ impl AppState {
         self.workflow
             .history
             .lock()
-            .map(|guard| guard.iter().take(limit).cloned().collect())
-            .unwrap_or_default()
+            .iter()
+            .take(limit)
+            .cloned()
+            .collect()
     }
 
     /// Record when a scheduled run last occurred
     pub fn set_last_scheduled_run(&self, workflow: WorkflowId, time: DateTime<Utc>) {
-        if let Ok(mut guard) = self.workflow.last_scheduled_run.write() {
-            guard.insert(workflow, time);
-        }
+        self.workflow.last_scheduled_run.write().insert(workflow, time);
     }
 
     /// Get when a workflow last ran on schedule
@@ -703,8 +689,8 @@ impl AppState {
         self.workflow
             .last_scheduled_run
             .read()
-            .ok()
-            .and_then(|guard| guard.get(&workflow).cloned())
+            .get(&workflow)
+            .cloned()
     }
 
     /// Sync DB read helper (I609).
@@ -732,10 +718,7 @@ impl AppState {
 
     /// Get startup database recovery status for the UI.
     pub fn get_database_recovery_status(&self) -> DatabaseRecoveryStatus {
-        self.database_recovery_status
-            .lock()
-            .map(|guard| guard.clone())
-            .unwrap_or_else(|_| DatabaseRecoveryStatus::not_required())
+        self.database_recovery_status.lock().clone()
     }
 
     /// Mark database recovery as required with a reason/detail payload.
@@ -744,24 +727,17 @@ impl AppState {
         reason: impl Into<String>,
         detail: impl Into<String>,
     ) {
-        if let Ok(mut guard) = self.database_recovery_status.lock() {
-            *guard = DatabaseRecoveryStatus::required(reason, detail);
-        }
+        *self.database_recovery_status.lock() = DatabaseRecoveryStatus::required(reason, detail);
     }
 
     /// Clear database recovery-required state after successful restore.
     pub fn clear_database_recovery_required(&self) {
-        if let Ok(mut guard) = self.database_recovery_status.lock() {
-            *guard = DatabaseRecoveryStatus::not_required();
-        }
+        *self.database_recovery_status.lock() = DatabaseRecoveryStatus::not_required();
     }
 
     /// True when startup should show DB recovery UI instead of the app.
     pub fn is_database_recovery_required(&self) -> bool {
-        self.database_recovery_status
-            .lock()
-            .map(|guard| guard.required)
-            .unwrap_or(false)
+        self.database_recovery_status.lock().required
     }
 
     // -------------------------------------------------------------------------
@@ -870,12 +846,7 @@ impl AppState {
 
     /// Save execution history to disk
     fn save_execution_history(&self) -> Result<(), String> {
-        let history = self
-            .workflow
-            .history
-            .lock()
-            .map_err(|_| "Lock poisoned")?
-            .clone();
+        let history = self.workflow.history.lock().clone();
 
         let path = get_state_dir()?.join("execution_history.json");
         let content = serde_json::to_string_pretty(&history)
@@ -904,7 +875,7 @@ pub fn run_startup_sync(state: &AppState) {
         return;
     }
 
-    let config = match state.config.read().ok().and_then(|g| g.clone()) {
+    let config = match state.config.read().clone() {
         Some(cfg) => cfg,
         None => {
             log::debug!("Startup sync skipped: no config loaded");
@@ -1096,7 +1067,7 @@ pub fn create_or_update_config(
     state: &AppState,
     mutator: impl FnOnce(&mut Config),
 ) -> Result<Config, String> {
-    let mut guard = state.config.write().map_err(|_| "Lock poisoned")?;
+    let mut guard = state.config.write();
 
     let mut config = match guard.clone() {
         Some(c) => c,
@@ -1320,7 +1291,7 @@ pub fn save_transcript_records(records: &HashMap<String, TranscriptRecord>) -> R
 /// Reload configuration from disk
 pub fn reload_config(state: &AppState) -> Result<Config, String> {
     let config = load_config()?;
-    let mut guard = state.config.write().map_err(|_| "Lock poisoned")?;
+    let mut guard = state.config.write();
     *guard = Some(config.clone());
     Ok(config)
 }

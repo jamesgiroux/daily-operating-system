@@ -19,7 +19,6 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
     let config = state
         .config
         .read()
-        .map_err(|_| "Config lock poisoned".to_string())?
         .clone()
         .ok_or_else(|| "No configuration loaded".to_string())?;
 
@@ -396,8 +395,8 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         let email_tz: chrono_tz::Tz = state
             .config
             .read()
-            .ok()
-            .and_then(|c| c.as_ref().map(|c| c.schedules.today.timezone.clone()))
+            .as_ref()
+            .map(|c| c.schedules.today.timezone.clone())
             .and_then(|t| t.parse().ok())
             .unwrap_or(chrono_tz::America::New_York);
         let tf_em = crate::helpers::today_meeting_filter(&email_tz);
@@ -1476,7 +1475,6 @@ pub async fn archive_low_priority_emails(state: &AppState) -> Result<usize, Stri
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -1539,7 +1537,6 @@ pub async fn refresh_emails(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 

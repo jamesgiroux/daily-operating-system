@@ -71,8 +71,8 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
     let user_domains = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
+        .as_ref()
+        .map(|c| c.resolved_user_domains())
         .unwrap_or_default();
 
     let entity_hints = build_entity_hints_from_state(state);
@@ -153,18 +153,14 @@ fn google_enabled(state: &AppState) -> bool {
     state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|cfg| cfg.google.enabled))
+        .as_ref()
+        .map(|cfg| cfg.google.enabled)
         .unwrap_or(false)
 }
 
 fn google_auth_valid(state: &AppState) -> bool {
-    state
-        .calendar
-        .google_auth
-        .lock()
-        .map(|guard| matches!(*guard, GoogleAuthStatus::Authenticated { .. }))
-        .unwrap_or(false)
+    let guard = state.calendar.google_auth.lock();
+    matches!(*guard, GoogleAuthStatus::Authenticated { .. })
 }
 
 fn pollers_ready(state: &AppState) -> bool {
@@ -233,7 +229,8 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
         match poll_calendar(&state).await {
             Ok(events) => {
                 // Audit: calendar sync
-                if let Ok(mut audit) = state.audit_log.lock() {
+                {
+                    let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "data_access",
                         "google_calendar_sync",
@@ -313,12 +310,13 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Detect cancelled meetings: today's DB meetings not in current poll (ADR-0081)
                 detect_cancelled_meetings(&events, &state);
 
-                if let Ok(mut guard) = state.calendar.events.write() {
+                {
+                    let mut guard = state.calendar.events.write();
                     *guard = events;
                 }
 
                 // Pre-meeting intelligence refresh (I147 — ADR-0058)
-                let cfg_for_hygiene = state.config.read().ok().and_then(|g| g.clone());
+                let cfg_for_hygiene = state.config.read().clone();
                 if let Ok(db) = crate::db::ActionDb::open() {
                     let refreshed = crate::hygiene::check_upcoming_meeting_readiness(
                         &db,
@@ -362,7 +360,8 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         "Auth token expired",
                     );
                 }
-                if let Ok(mut guard) = state.calendar.google_auth.lock() {
+                {
+                    let mut guard = state.calendar.google_auth.lock();
                     *guard = GoogleAuthStatus::TokenExpired;
                 }
                 let _ = app_handle.emit("google-auth-changed", GoogleAuthStatus::TokenExpired);
@@ -400,8 +399,7 @@ fn get_poll_interval(state: &AppState) -> u64 {
     state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.clone())
+        .as_ref()
         .map(|cfg| cfg.google.calendar_poll_interval_minutes as u64)
         .unwrap_or(5)
 }
@@ -640,21 +638,19 @@ fn populate_people_from_events(
     workspace: &Path,
 ) -> CalendarSyncIntelligence {
     // Acquire config/auth locks first (short-lived), then DB lock
-    let self_email = state
-        .calendar
-        .google_auth
-        .lock()
-        .ok()
-        .and_then(|g| match &*g {
+    let self_email = {
+        let g = state.calendar.google_auth.lock();
+        match &*g {
             GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
             _ => None,
-        });
+        }
+    };
 
     let user_domains = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
+        .as_ref()
+        .map(|c| c.resolved_user_domains())
         .unwrap_or_default();
 
     let empty_result = CalendarSyncIntelligence {
@@ -743,7 +739,8 @@ fn populate_people_from_events(
                             "Calendar sync: title change for '{}' caused entity reclassification, invalidating prep",
                             meeting_id
                         );
-                        if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
+                        {
+                            let mut queue = state.signals.prep_invalidation_queue.lock();
                             queue.push(meeting_id.clone());
                         }
                     }
@@ -974,8 +971,7 @@ fn get_workspace(state: &AppState) -> Option<PathBuf> {
     state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.clone())
+        .clone()
         .and_then(|cfg| {
             if cfg.workspace_path.trim().is_empty() {
                 return None;
@@ -994,8 +990,7 @@ fn get_email_poll_interval(state: &AppState) -> u64 {
     state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.clone())
+        .as_ref()
         .map(|cfg| cfg.google.email_poll_interval_minutes as u64)
         .unwrap_or(15)
 }
@@ -1290,7 +1285,8 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 match deliver_from_refresh_directive(&data_dir, &app_handle) {
                     Ok(after_ids) => {
                         // Audit: gmail sync (after delivery so we know the count)
-                        if let Ok(mut audit) = state.audit_log.lock() {
+                        {
+                            let mut audit = state.audit_log.lock();
                             let _ = audit.append(
                                 "data_access",
                                 "gmail_sync",
@@ -1345,10 +1341,8 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 let user_ctx = state
                                     .config
                                     .read()
-                                    .ok()
-                                    .and_then(|g| {
-                                        g.as_ref().map(crate::types::UserContext::from_config)
-                                    })
+                                    .as_ref()
+                                    .map(crate::types::UserContext::from_config)
                                     .unwrap_or_default();
                                 let ai_config = executor.ai_model_config();
                                 let background_pty =

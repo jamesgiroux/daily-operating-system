@@ -939,14 +939,14 @@ pub async fn capture_meeting_outcome(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
     let workspace = std::path::Path::new(&config.workspace_path);
 
     // Mark as captured
-    if let Ok(mut guard) = state.capture.captured.lock() {
+    {
+        let mut guard = state.capture.captured.lock();
         guard.insert(outcome.meeting_id.clone());
     }
 
@@ -1371,7 +1371,6 @@ pub fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -1404,7 +1403,6 @@ pub async fn get_meeting_intelligence(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -1435,13 +1433,14 @@ pub async fn get_meeting_intelligence(
 
     if !exists {
         // Look for matching event in the live calendar cache
-        let live_event = state.calendar.events.read().ok().and_then(|events| {
+        let live_event = {
+            let events = state.calendar.events.read();
             let raw_id = meeting_id.replace("_at_", "@");
             events
                 .iter()
                 .find(|e| e.id == raw_id || e.id == meeting_id)
                 .cloned()
-        });
+        };
 
         if let Some(event) = live_event {
             let primary_id = crate::workflow::deliver::meeting_primary_id(
@@ -1879,7 +1878,6 @@ pub fn list_meeting_preps(state: &AppState) -> Result<Vec<String>, String> {
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -2886,7 +2884,8 @@ pub async fn reprocess_meeting_transcript(
     );
 
     // Remove the TOCTOU guard so attach_meeting_transcript doesn't reject
-    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+    {
+        let mut guard = state.capture.transcript_processed.lock();
         guard.remove(meeting_id);
     }
 
@@ -2926,8 +2925,7 @@ pub async fn attach_meeting_transcript(
         let mut guard = state
             .capture
             .transcript_processed
-            .lock()
-            .map_err(|_| "Lock poisoned")?;
+            .lock();
         if guard.contains_key(&meeting.id) {
             return Err(format!(
                 "Meeting '{}' already has a processed transcript",
@@ -2949,7 +2947,6 @@ pub async fn attach_meeting_transcript(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -2980,7 +2977,8 @@ pub async fn attach_meeting_transcript(
     {
         Ok(r) => r,
         Err(e) => {
-            if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+            {
+                let mut guard = state.capture.transcript_processed.lock();
                 guard.remove(&meeting_id);
             }
             return Err(format!("Transcript processing task failed: {}", e));
@@ -3028,12 +3026,14 @@ pub async fn attach_meeting_transcript(
                 processed_at: processed_at.clone(),
             };
 
-            if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+            {
+                let mut guard = state.capture.transcript_processed.lock();
                 guard.insert(meeting_id.clone(), record);
                 let _ = crate::state::save_transcript_records(&guard);
             }
 
-            if let Ok(mut guard) = state.capture.captured.lock() {
+            {
+                let mut guard = state.capture.captured.lock();
                 guard.insert(meeting_id.clone());
             }
 
@@ -3247,12 +3247,12 @@ pub async fn attach_meeting_transcript(
             }
         } else {
             // No outcomes extracted — remove from guard so the user can retry.
-            if let Ok(mut guard) = state.capture.transcript_processed.lock() {
-                guard.remove(&meeting_id);
-                let _ = crate::state::save_transcript_records(&guard);
-            }
+            let mut guard = state.capture.transcript_processed.lock();
+            guard.remove(&meeting_id);
+            let _ = crate::state::save_transcript_records(&guard);
         }
-    } else if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+    } else {
+        let mut guard = state.capture.transcript_processed.lock();
         guard.remove(&meeting_id);
         let _ = crate::state::save_transcript_records(&guard);
     }

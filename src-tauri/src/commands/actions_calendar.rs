@@ -410,17 +410,14 @@ pub fn get_google_auth_status(state: State<'_, Arc<AppState>>) -> GoogleAuthStat
         .calendar
         .google_auth
         .lock()
-        .map(|guard| guard.clone())
-        .unwrap_or(GoogleAuthStatus::NotConfigured);
+        .clone();
 
     // If cached state says not configured, re-check storage — token may have
     // been written by a script or the browser auth flow completing late.
     if matches!(cached, GoogleAuthStatus::NotConfigured) {
         let fresh = crate::state::detect_google_auth();
         if matches!(fresh, GoogleAuthStatus::Authenticated { .. }) {
-            if let Ok(mut guard) = state.calendar.google_auth.lock() {
-                *guard = fresh.clone();
-            }
+            *state.calendar.google_auth.lock() = fresh.clone();
             log_command_latency(
                 "get_google_auth_status",
                 started,
@@ -452,9 +449,7 @@ pub async fn start_google_auth(
                 let status = GoogleAuthStatus::Authenticated {
                     email: "dev@dailyos.test".to_string(),
                 };
-                if let Ok(mut guard) = state.calendar.google_auth.lock() {
-                    *guard = status.clone();
-                }
+                *state.calendar.google_auth.lock() = status.clone();
                 return Ok(status);
             }
             2 => return Err("Google not configured (dev override)".into()),
@@ -466,7 +461,6 @@ pub async fn start_google_auth(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -493,7 +487,8 @@ pub async fn start_google_auth(
     };
 
     // Audit: oauth_connected
-    if let Ok(mut audit) = state.audit_log.lock() {
+    {
+        let mut audit = state.audit_log.lock();
         let _ = audit.append(
             "security",
             "oauth_connected",
@@ -502,9 +497,7 @@ pub async fn start_google_auth(
     }
 
     // Update state
-    if let Ok(mut guard) = state.calendar.google_auth.lock() {
-        *guard = new_status.clone();
-    }
+    *state.calendar.google_auth.lock() = new_status.clone();
 
     // Emit event
     let _ = app_handle.emit("google-auth-changed", &new_status);
@@ -540,7 +533,8 @@ pub fn disconnect_google(
     })?;
 
     // Audit: oauth_revoked
-    if let Ok(mut audit) = state.audit_log.lock() {
+    {
+        let mut audit = state.audit_log.lock();
         let _ = audit.append(
             "security",
             "oauth_revoked",
@@ -551,14 +545,10 @@ pub fn disconnect_google(
     let new_status = GoogleAuthStatus::NotConfigured;
 
     // Update state
-    if let Ok(mut guard) = state.calendar.google_auth.lock() {
-        *guard = new_status.clone();
-    }
+    *state.calendar.google_auth.lock() = new_status.clone();
 
     // Clear calendar events
-    if let Ok(mut guard) = state.calendar.events.write() {
-        guard.clear();
-    }
+    state.calendar.events.write().clear();
 
     if let Err(e) = crate::state::create_or_update_config(&state, |config| {
         config.google.enabled = false;
@@ -582,37 +572,34 @@ pub fn disconnect_google(
 /// Get calendar events from the polling cache
 #[tauri::command]
 pub fn get_calendar_events(state: State<'_, Arc<AppState>>) -> Vec<CalendarEvent> {
-    state
-        .calendar
-        .events
-        .read()
-        .map(|guard| guard.clone())
-        .unwrap_or_default()
+    state.calendar.events.read().clone()
 }
 
 /// Get the currently active meeting (if any)
 #[tauri::command]
 pub fn get_current_meeting(state: State<'_, Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
-    state.calendar.events.read().ok().and_then(|guard| {
-        guard
-            .iter()
-            .find(|e| e.start <= now && e.end > now && !e.is_all_day)
-            .cloned()
-    })
+    state
+        .calendar
+        .events
+        .read()
+        .iter()
+        .find(|e| e.start <= now && e.end > now && !e.is_all_day)
+        .cloned()
 }
 
 /// Get the next upcoming meeting
 #[tauri::command]
 pub fn get_next_meeting(state: State<'_, Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
-    state.calendar.events.read().ok().and_then(|guard| {
-        guard
-            .iter()
-            .filter(|e| e.start > now && !e.is_all_day)
-            .min_by_key(|e| e.start)
-            .cloned()
-    })
+    state
+        .calendar
+        .events
+        .read()
+        .iter()
+        .filter(|e| e.start > now && !e.is_all_day)
+        .min_by_key(|e| e.start)
+        .cloned()
 }
 
 // =============================================================================
@@ -634,9 +621,7 @@ pub fn dismiss_meeting_prompt(
     meeting_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    if let Ok(mut guard) = state.capture.dismissed.lock() {
-        guard.insert(meeting_id);
-    }
+    state.capture.dismissed.lock().insert(meeting_id);
     Ok(())
 }
 
@@ -646,8 +631,7 @@ pub fn get_capture_settings(state: State<'_, Arc<AppState>>) -> PostMeetingCaptu
     state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.clone())
+        .clone()
         .map(|c| c.post_meeting_capture)
         .unwrap_or_default()
 }

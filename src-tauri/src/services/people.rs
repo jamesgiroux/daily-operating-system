@@ -27,7 +27,7 @@ pub fn merge_people(
         .map_err(|e| e.to_string())?;
 
     // Filesystem cleanup
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let config = state.config.read();
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
 
@@ -78,7 +78,7 @@ pub fn delete_person(db: &ActionDb, state: &AppState, person_id: &str) -> Result
     );
 
     // Filesystem cleanup
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let config = state.config.read();
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
         let person_dir = if let Some(ref tp) = person.tracker_path {
@@ -99,7 +99,7 @@ pub async fn get_person_detail(
     person_id: &str,
     state: &AppState,
 ) -> Result<PersonDetailResult, String> {
-    let _config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let _config = state.config.read().clone();
 
     let person_id = person_id.to_string();
     state
@@ -243,7 +243,7 @@ pub fn update_person_field(
 
     // Regenerate workspace files
     if let Ok(Some(person)) = db.get_person(person_id) {
-        let config = state.config.read().map_err(|_| "Lock poisoned")?;
+        let config = state.config.read();
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
             let _ = crate::people::write_person_json(workspace, &person, db);
@@ -279,7 +279,7 @@ pub fn link_person_entity(
 
     // Regenerate person.json so linked_entities persists in filesystem (ADR-0048)
     if let Ok(Some(person)) = db.get_person(person_id) {
-        let config = state.config.read().map_err(|_| "Lock poisoned")?;
+        let config = state.config.read();
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
             let _ = crate::people::write_person_json(workspace, &person, db);
@@ -314,7 +314,7 @@ pub fn unlink_person_entity(
 
     // Regenerate person.json so linked_entities reflects removal (ADR-0048)
     if let Ok(Some(person)) = db.get_person(person_id) {
-        let config = state.config.read().map_err(|_| "Lock poisoned")?;
+        let config = state.config.read();
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
             let _ = crate::people::write_person_json(workspace, &person, db);
@@ -452,7 +452,7 @@ pub fn create_person_from_stakeholder(
         .map_err(|e| e.to_string())?;
 
     // Write person files to workspace
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let config = state.config.read();
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
         let _ = crate::people::write_person_json(workspace, &person, db);

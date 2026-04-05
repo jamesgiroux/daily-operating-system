@@ -164,8 +164,8 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
     let tz_for_live: chrono_tz::Tz = state
         .config
         .read()
-        .ok()
-        .and_then(|c| c.as_ref().map(|c| c.schedules.today.timezone.clone()))
+        .as_ref()
+        .map(|c| c.schedules.today.timezone.clone())
         .and_then(|t| t.parse().ok())
         .unwrap_or(chrono_tz::America::New_York);
     let tf_live = crate::helpers::today_meeting_filter(&tz_for_live);
@@ -378,7 +378,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
     };
 
     // Compute focus capacity
-    let config_guard = state.config.read().ok()?;
+    let config_guard = state.config.read();
     let config = config_guard.as_ref()?;
     let tz: chrono_tz::Tz = config
         .schedules
@@ -506,21 +506,13 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         .calendar
         .google_auth
         .lock()
-        .map(|g| g.clone())
-        .unwrap_or(GoogleAuthStatus::NotConfigured);
+        .clone();
     // Get config
-    let config = match state.config.read() {
-            Ok(guard) => match guard.clone() {
-                Some(c) => c,
-                None => {
-                    return DashboardResult::Error {
-                        message: "No configuration. Create ~/.dailyos/config.json with { \"workspacePath\": \"/path/to/workspace\" }".to_string(),
-                    }
-                }
-            },
-            Err(_) => {
+    let config = match state.config.read().clone() {
+            Some(c) => c,
+            None => {
                 return DashboardResult::Error {
-                    message: "Internal error: config lock poisoned".to_string(),
+                    message: "No configuration. Create ~/.dailyos/config.json with { \"workspacePath\": \"/path/to/workspace\" }".to_string(),
                 }
             }
         };
@@ -532,8 +524,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         .calendar
         .events
         .read()
-        .map(|g| g.clone())
-        .unwrap_or_default();
+        .clone();
     let tz: chrono_tz::Tz = config
         .schedules
         .today

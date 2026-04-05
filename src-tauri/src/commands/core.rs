@@ -2,8 +2,9 @@ use super::*;
 
 #[tauri::command]
 pub fn get_config(state: State<'_, Arc<AppState>>) -> Result<Config, String> {
-    let guard = state.config.read().map_err(|_| "Lock poisoned")?;
-    guard
+    state
+        .config
+        .read()
         .clone()
         .ok_or_else(|| "No configuration loaded. Create ~/.dailyos/config.json".to_string())
 }
@@ -72,7 +73,6 @@ pub fn get_next_run_time(
         let config = state
             .config
             .read()
-            .map_err(|_| "Lock poisoned")?
             .clone()
             .ok_or("No configuration loaded")?;
 
@@ -654,7 +654,6 @@ pub async fn backfill_prep_semantics(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -710,7 +709,6 @@ pub async fn get_live_proactive_suggestions(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -721,7 +719,8 @@ pub async fn get_live_proactive_suggestions(
 
     // Check cache unless force refresh requested
     if !force_refresh.unwrap_or(false) {
-        if let Ok(guard) = state.calendar.week_cache.read() {
+        {
+            let guard = state.calendar.week_cache.read();
             if let Some((ref events, fetched_at)) = *guard {
                 let age = fetched_at.elapsed().as_secs();
                 if age < WEEK_CACHE_FRESH_SECS {
@@ -760,9 +759,7 @@ async fn refresh_week_calendar_cache(
 ) -> Result<Vec<CalendarEvent>, String> {
     let events = crate::queries::proactive::fetch_week_events(config, &entity_hints).await?;
 
-    if let Ok(mut guard) = state.calendar.week_cache.write() {
-        *guard = Some((events.clone(), std::time::Instant::now()));
-    }
+    *state.calendar.week_cache.write() = Some((events.clone(), std::time::Instant::now()));
 
     Ok(events)
 }

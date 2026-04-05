@@ -367,7 +367,8 @@ pub fn run() {
                         let _ = window_clone.hide();
                     }
                     tauri::WindowEvent::Focused(true) => {
-                        if let Ok(mut ls) = activity_tracker.lock_state.lock() {
+                        {
+                            let mut ls = activity_tracker.lock_state.lock();
                             ls.last_activity = std::time::Instant::now();
                         }
                     }
@@ -383,10 +384,9 @@ pub fn run() {
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
                     let timeout_mins = {
-                        let config = lock_state_timer.config.read().ok();
+                        let config = lock_state_timer.config.read();
                         config
                             .as_ref()
-                            .and_then(|c| c.as_ref())
                             .and_then(|c| c.app_lock_timeout_minutes)
                             .unwrap_or(0)
                     };
@@ -397,10 +397,7 @@ pub fn run() {
 
                     // I610: Single lock acquisition for read + conditional write
                     let should_lock = {
-                        let ls = match lock_state_timer.lock_state.lock() {
-                            Ok(g) => g,
-                            Err(_) => continue,
-                        };
+                        let ls = lock_state_timer.lock_state.lock();
                         if ls.is_locked {
                             false // Already locked
                         } else {
@@ -410,7 +407,8 @@ pub fn run() {
                     };
 
                     if should_lock {
-                        if let Ok(mut ls) = lock_state_timer.lock_state.lock() {
+                        {
+                            let mut ls = lock_state_timer.lock_state.lock();
                             ls.is_locked = true;
                         }
                         let _ = lock_handle_timer.emit("app-locked", ());
@@ -481,6 +479,8 @@ pub fn run() {
             commands::search_meetings,
             commands::get_action_detail,
             commands::backfill_historical_meetings,
+            commands::backfill_account_domains,
+            commands::recover_archived_transcripts,
             // Phase 3.0: Google Auth
             commands::get_google_auth_status,
             commands::start_google_auth,

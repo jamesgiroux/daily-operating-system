@@ -4,7 +4,8 @@
 //! to derive new signals on related entities. For example, a `title_change` on
 //! a person propagates `stakeholder_change` to all linked accounts.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use rusqlite::params;
 use uuid::Uuid;

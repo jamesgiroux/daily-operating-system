@@ -109,12 +109,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4: Fetch and classify emails
     let customer_domains = extract_customer_domains(&meetings_by_type);
-    let preset_email_keywords: Vec<String> = state
-        .active_preset
-        .read()
-        .ok()
-        .and_then(|guard| guard.as_ref().map(|p| p.email_priority_keywords.clone()))
-        .unwrap_or_default();
+    let preset_email_keywords: Vec<String> = {
+        let guard = state.active_preset.read();
+        guard.as_ref().map(|p| p.email_priority_keywords.clone()).unwrap_or_default()
+    };
     // I374: Load dismissed domains for relevance learning penalty
     let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
@@ -288,9 +286,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Uses two-phase approach: short DB locks for reads/writes, no lock during PTY calls
     {
         let ai_config = {
-            let cfg = state.config.read().ok();
+            let cfg = state.config.read();
             cfg.as_ref()
-                .and_then(|g| g.as_ref())
                 .map(|c| c.ai_models.clone())
                 .unwrap_or_default()
         };
@@ -351,10 +348,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 4a3: Email commitment extraction (I321 — extract actions from high-priority email bodies)
     {
         let body_access_enabled = {
-            let config_guard = state.config.read().ok();
+            let config_guard = state.config.read();
             config_guard
                 .as_ref()
-                .and_then(|g| g.as_ref())
                 .map(|c| crate::types::is_feature_enabled(c, "emailBodyAccess"))
                 .unwrap_or(false)
         };
@@ -404,9 +400,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 // Phase 2: Extract commitments via PTY (blocking — runs in background task, not UI thread)
                 if !fetched_bodies.is_empty() {
                     let ai_config = {
-                        let cfg = state.config.read().ok();
+                        let cfg = state.config.read();
                         cfg.as_ref()
-                            .and_then(|g| g.as_ref())
                             .map(|c| c.ai_models.clone())
                             .unwrap_or_default()
                     };
@@ -522,10 +517,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let mut archived_count = 0u64;
     {
         let auto_archive_enabled = {
-            let config_guard = state.config.read().ok();
+            let config_guard = state.config.read();
             config_guard
                 .as_ref()
-                .and_then(|g| g.as_ref())
                 .map(|c| crate::types::is_feature_enabled(c, "autoArchiveEnabled"))
                 .unwrap_or(false)
         };
@@ -1264,10 +1258,11 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
     );
 
     // Gap analysis — resolve user timezone from schedule config for accurate UTC→local conversion
-    let user_tz: Option<chrono_tz::Tz> = state.config.read().ok().and_then(|g| {
+    let user_tz: Option<chrono_tz::Tz> = {
+        let g = state.config.read();
         g.as_ref()
             .and_then(|c| c.schedules.today.timezone.parse().ok())
-    });
+    };
     let gaps_by_day = gaps::compute_all_gaps(&events_by_day, monday, user_tz);
     let suggestions = gaps::suggest_focus_blocks(&gaps_by_day);
 
@@ -1408,12 +1403,10 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         }
     }
 
-    let preset_email_keywords: Vec<String> = state
-        .active_preset
-        .read()
-        .ok()
-        .and_then(|guard| guard.as_ref().map(|p| p.email_priority_keywords.clone()))
-        .unwrap_or_default();
+    let preset_email_keywords: Vec<String> = {
+        let guard = state.active_preset.read();
+        guard.as_ref().map(|p| p.email_priority_keywords.clone()).unwrap_or_default()
+    };
     // I374: Load dismissed domains for relevance learning penalty
     let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
@@ -1510,9 +1503,8 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
     // I567: Only hold orchestration permit during the PTY enrichment call.
     {
         let ai_config = {
-            let cfg = state.config.read().ok();
+            let cfg = state.config.read();
             cfg.as_ref()
-                .and_then(|g| g.as_ref())
                 .map(|c| c.ai_models.clone())
                 .unwrap_or_default()
         };
@@ -1747,8 +1739,8 @@ fn queue_person_intelligence(
 // ============================================================================
 
 fn get_config(state: &AppState) -> (String, Vec<String>, Option<String>) {
-    let config_guard = state.config.read().ok();
-    let config = config_guard.as_ref().and_then(|g| g.as_ref());
+    let config_guard = state.config.read();
+    let config = config_guard.as_ref();
 
     let profile = config
         .map(|c| c.profile.clone())

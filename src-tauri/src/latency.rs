@@ -4,7 +4,8 @@
 //! diagnostics without introducing persistent storage or production UI coupling.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 
 use chrono::{DateTime, Utc};
 
@@ -52,10 +53,7 @@ impl LatencyRecorder {
     }
 
     fn record_sample(&self, command: &str, elapsed_ms: u128, budget_ms: u128) {
-        let mut windows = match self.windows.lock() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
+        let mut windows = self.windows.lock();
 
         let window = windows.entry(command.to_string()).or_default();
         window.budget_ms = budget_ms;
@@ -70,10 +68,7 @@ impl LatencyRecorder {
     }
 
     fn increment_degraded(&self, command: &str) {
-        let mut windows = match self.windows.lock() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
+        let mut windows = self.windows.lock();
         let window = windows.entry(command.to_string()).or_default();
         window.degraded_count += 1;
         if window.last_recorded_at.is_none() {
@@ -82,15 +77,7 @@ impl LatencyRecorder {
     }
 
     fn snapshot(&self) -> LatencyRollupsPayload {
-        let windows = match self.windows.lock() {
-            Ok(guard) => guard,
-            Err(_) => {
-                return LatencyRollupsPayload {
-                    generated_at: Utc::now().to_rfc3339(),
-                    commands: Vec::new(),
-                }
-            }
-        };
+        let windows = self.windows.lock();
 
         let mut commands: Vec<LatencyCommandRollup> = windows
             .iter()
