@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS - Account Intelligence Reimagined - Broadsheet</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --linen: #e8e2d9;
+    --warm-white: #faf8f6;
+    --charcoal: #1e2530;
+    --ink: #2a2b3d;
+    --espresso: #3d2e27;
+    --turmeric: #c9a227;
+    --saffron: #deb841;
+    --terracotta: #c4654a;
+    --sage: #7eaa7b;
+    --larkspur: #8fa3c4;
+    --text-primary: #1e2530;
+    --text-secondary: #58606d;
+    --text-tertiary: #8a919a;
+    --rule: rgba(30, 37, 48, 0.12);
+    --rule-light: rgba(30, 37, 48, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "DM Sans", sans-serif;
+    color: var(--text-primary);
+    background:
+      radial-gradient(circle at top right, rgba(201, 162, 39, 0.12), transparent 26%),
+      radial-gradient(circle at 20% 100%, rgba(143, 163, 196, 0.12), transparent 24%),
+      var(--cream);
+  }
+
+  .page {
+    width: min(1280px, calc(100% - 40px));
+    margin: 18px auto 64px;
+    background: rgba(250, 248, 246, 0.72);
+    border: 1px solid rgba(30, 37, 48, 0.08);
+  }
+
+  .masthead {
+    padding: 18px 28px 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .masthead__top,
+  .masthead__bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .masthead__bottom {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .brandline {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .asterisk {
+    font-family: "Montserrat", sans-serif;
+    font-size: 18px;
+    line-height: 1;
+    color: var(--turmeric);
+  }
+
+  .wordmark {
+    font-family: "Newsreader", serif;
+    font-size: 22px;
+    letter-spacing: -0.03em;
+  }
+
+  .mono {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .stamp-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .stamp {
+    padding: 7px 10px;
+    border: 1px solid var(--rule-light);
+    background: rgba(245, 242, 239, 0.86);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+  }
+
+  .news-grid {
+    display: grid;
+    grid-template-columns: 2.2fr 1.2fr;
+    gap: 0;
+  }
+
+  .lead {
+    padding: 34px 32px 38px;
+    border-right: 1px solid var(--rule);
+  }
+
+  .lead__kicker {
+    margin-bottom: 18px;
+  }
+
+  .lead__headline {
+    margin: 0;
+    max-width: 820px;
+    font-family: "Newsreader", serif;
+    font-size: clamp(56px, 6vw, 92px);
+    line-height: 0.96;
+    font-weight: 400;
+    letter-spacing: -0.05em;
+  }
+
+  .lead__summary {
+    margin: 20px 0 0;
+    max-width: 720px;
+    font-family: "Newsreader", serif;
+    font-size: 24px;
+    font-style: italic;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+
+  .lead__columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 26px;
+    padding-top: 20px;
+    border-top: 1px solid var(--rule);
+  }
+
+  .lead__columns p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.72;
+    color: var(--text-secondary);
+  }
+
+  .lead__columns strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .sidebar {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+  }
+
+  .sidebar__box {
+    padding: 24px 24px 26px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .sidebar__box:last-child {
+    border-bottom: 0;
+  }
+
+  .sidebar__title,
+  .section__title {
+    margin: 10px 0 0;
+    font-family: "Newsreader", serif;
+    font-size: 30px;
+    font-weight: 400;
+    letter-spacing: -0.03em;
+  }
+
+  .sidebar__box p,
+  .section p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+  }
+
+  .brief-list {
+    display: grid;
+    gap: 14px;
+    margin-top: 16px;
+  }
+
+  .brief-item {
+    padding-top: 14px;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .brief-item:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .brief-item h3 {
+    margin: 6px 0 8px;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .sections {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap: 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .section {
+    padding: 26px 24px 32px;
+    border-right: 1px solid var(--rule);
+  }
+
+  .section:last-child {
+    border-right: 0;
+  }
+
+  .section__lede {
+    margin-top: 14px;
+  }
+
+  .timeline {
+    display: grid;
+    gap: 14px;
+    margin-top: 18px;
+  }
+
+  .timeline__item {
+    padding-left: 16px;
+    border-left: 2px solid var(--larkspur);
+  }
+
+  .timeline__item--risk {
+    border-left-color: var(--terracotta);
+  }
+
+  .timeline__item--win {
+    border-left-color: var(--sage);
+  }
+
+  .timeline__item h4 {
+    margin: 6px 0 8px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .tape {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .tape__cell {
+    padding: 16px 18px;
+    border-right: 1px solid var(--rule);
+  }
+
+  .tape__cell:last-child {
+    border-right: 0;
+  }
+
+  .tape__cell strong {
+    display: block;
+    margin-top: 6px;
+    font-size: 15px;
+  }
+
+  .quote-pull {
+    margin-top: 18px;
+    padding: 16px 18px;
+    border-left: 3px solid var(--turmeric);
+    background: rgba(201, 162, 39, 0.08);
+    font-family: "Newsreader", serif;
+    font-size: 23px;
+    line-height: 1.45;
+  }
+
+  .bottomline {
+    padding: 18px 28px 24px;
+    border-top: 1px solid var(--rule);
+    text-align: center;
+    font-family: "Newsreader", serif;
+    color: var(--text-secondary);
+  }
+
+  .bottomline span {
+    color: var(--turmeric);
+    letter-spacing: 0.28em;
+    margin-right: 10px;
+  }
+
+  @media (max-width: 1080px) {
+    .news-grid,
+    .sections,
+    .lead__columns,
+    .tape {
+      grid-template-columns: 1fr;
+    }
+
+    .lead {
+      border-right: 0;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .section,
+    .tape__cell {
+      border-right: 0;
+      border-bottom: 1px solid var(--rule);
+    }
+  }
+
+  @media (max-width: 720px) {
+    .page {
+      width: min(100%, calc(100% - 16px));
+      margin: 8px auto 24px;
+    }
+
+    .masthead,
+    .lead,
+    .sidebar__box,
+    .section,
+    .bottomline {
+      padding-left: 18px;
+      padding-right: 18px;
+    }
+
+    .masthead__top,
+    .masthead__bottom {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .lead__headline { font-size: 52px; }
+    .lead__summary,
+    .quote-pull { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div class="masthead__top">
+        <div class="brandline">
+          <span class="asterisk">*</span>
+          <div>
+            <div class="mono">DailyOS morning edition / account intelligence</div>
+            <div class="wordmark">The Acme Desk</div>
+          </div>
+        </div>
+        <div class="stamp-row">
+          <span class="stamp">March 12, 2026</span>
+          <span class="stamp">42 days to renewal</span>
+          <span class="stamp">1 executive review pending</span>
+        </div>
+      </div>
+      <div class="masthead__bottom">
+        <div class="mono">Edition focus: account detail, meeting prep, and report surfaces merged into one front page</div>
+        <div class="mono">Lead story / now / next / watch / stakeholder desk</div>
+      </div>
+    </header>
+
+    <section class="news-grid">
+      <article class="lead">
+        <div class="lead__kicker mono">Lead story</div>
+        <h1 class="lead__headline">Acme is still winnable on momentum, but the renewal now hinges on a smaller, sharper proof story.</h1>
+        <p class="lead__summary">This interpretation turns the account into a publication. The user can scan the page like a front page, absorb the strategic frame, then decide which column deserves deeper reading.</p>
+
+        <div class="lead__columns">
+          <p><strong>What changed:</strong> the account is no longer presented as a single long magazine chapter. Instead, intelligence is broken into editorial blocks with clear jobs. The page answers the same questions as the current detail page, but it does so with faster scannability and stronger front-page hierarchy.</p>
+          <p><strong>How intelligence reads:</strong> the conclusion lands first, followed by a set of compact briefs that explain what matters now, what changes next, and which people or signals are bending the account toward risk or expansion.</p>
+        </div>
+      </article>
+
+      <aside class="sidebar">
+        <div class="sidebar__box">
+          <div class="mono">Now</div>
+          <h2 class="sidebar__title">The immediate read</h2>
+          <div class="brief-list">
+            <div class="brief-item">
+              <div class="mono">Commercial frame</div>
+              <h3>Lead with workflow compression, not transformation.</h3>
+              <p>Finance needs a restrained proof line tied to launch operations and editorial throughput.</p>
+            </div>
+            <div class="brief-item">
+              <div class="mono">Meeting posture</div>
+              <h3>Use Dana as translator, not sole closer.</h3>
+              <p>The champion still has influence, but she now needs a stronger leave-behind than conviction.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar__box">
+          <div class="mono">Next</div>
+          <h2 class="sidebar__title">What has to happen</h2>
+          <p>Package the last 60 days into a clean before-and-after operating story, then route that narrative through Dana before the executive review. The system should surface this as the page's main action spine.</p>
+        </div>
+
+        <div class="sidebar__box">
+          <div class="mono">Watch</div>
+          <p>What makes this layout useful for reports and meeting detail is the modularity. Each box can stand alone in a shared deck, briefing, or linked account page without rewriting the full story.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="tape">
+      <div class="tape__cell">
+        <div class="mono">Narrative confidence</div>
+        <strong>High on people, medium on usage depth</strong>
+      </div>
+      <div class="tape__cell">
+        <div class="mono">Strongest signal</div>
+        <strong>Executive attention stayed constructive</strong>
+      </div>
+      <div class="tape__cell">
+        <div class="mono">Softest spot</div>
+        <strong>Cross-team adoption still reads uneven</strong>
+      </div>
+      <div class="tape__cell">
+        <div class="mono">Best next artifact</div>
+        <strong>Forwardable one-page proof memo</strong>
+      </div>
+    </section>
+
+    <section class="sections">
+      <article class="section">
+        <div class="mono">Why this matters</div>
+        <h2 class="section__title">The account brief</h2>
+        <p class="section__lede">Acme does not need another immersive story about your product vision. It needs one specific argument for why the platform makes the editorial organization materially easier to run. That is why this direction leans into headline hierarchy and short-form briefs: it mirrors the way an operator actually absorbs information before a decision meeting.</p>
+        <div class="quote-pull">"Keep the warmth of a magazine page, but let the information behave more like a well-edited front page."</div>
+      </article>
+
+      <article class="section">
+        <div class="mono">Signals and shifts</div>
+        <h2 class="section__title">What moved</h2>
+        <div class="timeline">
+          <div class="timeline__item timeline__item--win">
+            <div class="mono">Mar 11 / win</div>
+            <h4>Sarah stayed future-oriented.</h4>
+            <p>Her questions centered on rollout sequencing and operational maturity, not vendor replacement.</p>
+          </div>
+          <div class="timeline__item timeline__item--risk">
+            <div class="mono">Mar 09 / risk</div>
+            <h4>Proof threshold tightened.</h4>
+            <p>Finance asked for a more concrete line between usage and launch efficiency.</p>
+          </div>
+          <div class="timeline__item">
+            <div class="mono">Mar 06 / context</div>
+            <h4>Two teams are carrying the adoption story.</h4>
+            <p>That is enough to win a narrow narrative, but not enough to imply broad internal inevitability.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="section">
+        <div class="mono">People and power</div>
+        <h2 class="section__title">Who bends the room</h2>
+        <div class="timeline">
+          <div class="timeline__item">
+            <div class="mono">Dana Walsh</div>
+            <h4>Champion and primary translator</h4>
+            <p>Needs a leave-behind she can recirculate internally without embellishing the argument herself.</p>
+          </div>
+          <div class="timeline__item">
+            <div class="mono">Sarah Kim</div>
+            <h4>Exec sponsor and tone-setter</h4>
+            <p>Responds to clear operating language. Less interested in product breadth than disciplined execution.</p>
+          </div>
+          <div class="timeline__item timeline__item--risk">
+            <div class="mono">Owen Patel</div>
+            <h4>Budget skeptic</h4>
+            <p>Has not objected, but will default to caution unless he sees concrete workflow outcomes.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <footer class="bottomline"><span>* * *</span>Brief me first. Let the long read happen second.</footer>
+  </main>
+</body>
+</html>

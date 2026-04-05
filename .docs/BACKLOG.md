@@ -430,7 +430,7 @@ Dissolved 2026-03-02. I494, I495 moved to v1.1.0 (Teams + Portfolio). See ADR-00
 | I622 | Fix past-meeting opacity — outcomes full brightness, prep faded | P1 | Frontend / Meeting Detail |
 | I629 | Briefing expansion panel restoration — reconnect PrepGrid + action checklist (regression fix) | P1 | Frontend / Briefing |
 | I630 | Reconnection audit — sweep for built-but-not-wired components | P2 | Code Quality |
-| I631 | Transcript filing for person + project entities — extend routing beyond accounts | P2 | Backend / Transcripts |
+| I631 | ~~Transcript filing for person + project entities~~ — SHIPPED in v1.0.2, but blocked by I660 (empty account_domains) | Done | Backend / Transcripts |
 | I632 | MCP query_entity reads intelligence from DB — replace stale intelligence.json reads | P2 | Backend / MCP |
 
 Version brief: `.docs/plans/v1.0.2.md`.
@@ -468,6 +468,33 @@ Version brief: `.docs/plans/v1.0.3.md`. Umbrella spec: `.docs/issues/i634.md`.
 Killed: ~~I626 (breadcrumb bar — management artifact)~~, ~~I627 (briefing quick actions — replaced by automatic detection)~~.
 
 Version brief: `.docs/plans/v1.1.0.md`. Umbrella spec: `.docs/issues/i623.md`.
+
+---
+
+### v1.1.2 — Transcript Routing Fix [PLANNED]
+
+**Theme:** Since mid-February, every transcript and meeting record has been silently dumped into `_archive/{date}/` instead of routing to account directories. Root cause: empty account_domains table kills entity resolution, transcript processor has no fallback routing, and 57+ files need recovery. Origin: investigation 2026-04-03.
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I660 | Populate account_domains table from meeting attendees | P0 | Backend / Entity Resolution |
+| I661 | Defensive fallback in transcript routing | P0 | Backend / Transcripts |
+| I662 | Archive recovery — re-route stranded transcripts and records | P1 | Backend / Transcripts |
+
+Version brief: `.docs/plans/v1.1.2.md`.
+
+---
+
+### v1.1.3 — Design Hardening [PLANNED]
+
+**Theme:** UX architecture issues — navigation model and account detail page IA. Requires design sessions before implementation. Origin: bumped from v1.1.2 to prioritize transcript routing fix.
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| D1 | Navigation rethink — navisland global/local switching | P1 | Frontend / Navigation |
+| D2 | Account detail page information architecture redesign | P1 | Frontend / Account Detail |
+
+Version brief: `.docs/plans/v1.1.3.md`.
 
 ---
 
@@ -760,3 +787,4 @@ Acknowledged, not scheduled.
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
 | I199 | Archived account recovery UX — restore + relink | P2 | Entity |
+| T001 | Drop dead `relationship_type` column from account_stakeholders — never read, `data_source` is authoritative. Needs migration. Depends on I652. | P3 | Schema cleanup |
