@@ -153,33 +153,16 @@ pub fn process_transcript_with_kind(
     let slug = slugify(&meeting.title);
     let dest_filename = format!("{}-{}-transcript.md", date, slug);
 
-    // I631: Priority-ordered routing: account > project > person (1:1) > archive
-    let destination = if let Some(ref account) = meeting.account {
-        // Validate account exists in DB before routing to its folder
-        let account_exists = db
-            .and_then(|db| db.get_account_by_name(account).ok().flatten())
-            .is_some();
-        if account_exists {
-            let account_dir = sanitize_account_dir(account);
-            workspace
-                .join("Accounts")
-                .join(&account_dir)
-                .join("Call-Transcripts")
-                .join(&dest_filename)
-        } else {
-            log::info!(
-                "Account '{}' not found in DB — routing transcript to archive",
-                account
-            );
-            workspace.join("_archive").join(&date).join(&dest_filename)
-        }
-    } else if let Some(dest) = route_to_project(meeting, db, workspace, &dest_filename) {
-        dest
-    } else if let Some(dest) = route_to_person(meeting, db, workspace, &dest_filename) {
-        dest
-    } else {
-        workspace.join("_archive").join(&date).join(&dest_filename)
-    };
+    // I631+I661: Priority-ordered routing with domain fallback
+    let (destination, routing_method) = resolve_transcript_destination(
+        meeting,
+        db,
+        workspace,
+        &dest_filename,
+        "Call-Transcripts",
+        &date,
+        Some(&content),
+    );
 
     // Build frontmatter
     let frontmatter = build_frontmatter(meeting, &date);
@@ -205,8 +188,9 @@ pub fn process_transcript_with_kind(
     }
 
     log::info!(
-        "Transcript for '{}' written to '{}'",
+        "Transcript for '{}' routed via {} to '{}'",
         meeting.title,
+        routing_method,
         destination.display()
     );
 
@@ -1278,7 +1262,7 @@ fn generate_meeting_record_markdown(data: &MeetingRecordData<'_>) -> String {
 }
 
 /// I636: Determine the meeting record destination path, mirroring transcript
-/// routing (account > project > person > archive) but under `Meeting-Records/`.
+/// routing (account > project > person > domain fallback > archive).
 fn compute_meeting_record_path(
     workspace: &Path,
     meeting: &CalendarEvent,
@@ -1288,54 +1272,22 @@ fn compute_meeting_record_path(
     let slug = crate::util::slugify(&meeting.title);
     let record_filename = format!("{}-{}-record.md", date, slug);
 
-    // Same priority routing as transcript: account > project > person > archive
-    if let Some(ref account) = meeting.account {
-        let account_exists = db.get_account_by_name(account).ok().flatten().is_some();
-        if account_exists {
-            let account_dir = sanitize_account_dir(account);
-            return workspace
-                .join("Accounts")
-                .join(&account_dir)
-                .join("Meeting-Records")
-                .join(&record_filename);
-        }
-    }
-
-    // Project routing
-    if let Some(ref entities) = meeting.linked_entities {
-        if let Some(project) = entities.iter().find(|e| e.entity_type == "project") {
-            if db.get_project(&project.id).ok().flatten().is_some() {
-                let project_dir = sanitize_account_dir(&project.name);
-                return workspace
-                    .join("Projects")
-                    .join(&project_dir)
-                    .join("Meeting-Records")
-                    .join(&record_filename);
-            }
-        }
-    }
-
-    // Person routing (1:1 only)
-    if meeting.meeting_type == MeetingType::OneOnOne {
-        if let Some(ref entities) = meeting.linked_entities {
-            if let Some(person) = entities.iter().find(|e| e.entity_type == "person") {
-                if db.get_person(&person.id).ok().flatten().is_some() {
-                    let person_dir = sanitize_account_dir(&person.name);
-                    return workspace
-                        .join("People")
-                        .join(&person_dir)
-                        .join("Meeting-Records")
-                        .join(&record_filename);
-                }
-            }
-        }
-    }
-
-    // Archive fallback
-    workspace
-        .join("_archive")
-        .join(&date)
-        .join(&record_filename)
+    let (path, method) = resolve_transcript_destination(
+        meeting,
+        Some(db),
+        workspace,
+        &record_filename,
+        "Meeting-Records",
+        &date,
+        None, // No source content for meeting records (generated, not parsed)
+    );
+    log::debug!(
+        "Meeting record for '{}' routed via {} to '{}'",
+        meeting.title,
+        method,
+        path.display()
+    );
+    path
 }
 
 /// I636: Generate, write, persist, and index the meeting record.
@@ -2653,6 +2605,176 @@ Transcript:
     )
 }
 
+/// I631+I661: Shared routing logic for transcripts and meeting records.
+///
+/// Priority: account (classification) > project (linked) > person (1:1 linked)
+/// > account (attendee domain fallback) > account (source frontmatter) > archive.
+///
+/// Returns (destination_path, routing_method) for audit logging.
+pub fn resolve_transcript_destination(
+    meeting: &CalendarEvent,
+    db: Option<&ActionDb>,
+    workspace: &Path,
+    dest_filename: &str,
+    subdirectory: &str,
+    date: &str,
+    source_content: Option<&str>,
+) -> (PathBuf, &'static str) {
+    // 1. Account from classification
+    if let Some(ref account) = meeting.account {
+        let account_exists = db
+            .and_then(|db| db.get_account_by_name(account).ok().flatten())
+            .is_some();
+        if account_exists {
+            let account_dir = sanitize_account_dir(account);
+            return (
+                workspace
+                    .join("Accounts")
+                    .join(&account_dir)
+                    .join(subdirectory)
+                    .join(dest_filename),
+                "account_classification",
+            );
+        } else {
+            log::info!(
+                "Account '{}' not found in DB — trying fallback routing",
+                account
+            );
+        }
+    }
+
+    // 2. Project entity
+    if let Some(ref entities) = meeting.linked_entities {
+        if let Some(project) = entities.iter().find(|e| e.entity_type == "project") {
+            if let Some(db) = db {
+                if db.get_project(&project.id).ok().flatten().is_some() {
+                    let project_dir = sanitize_account_dir(&project.name);
+                    log::info!("Routing to project '{}' directory", project.name);
+                    return (
+                        workspace
+                            .join("Projects")
+                            .join(&project_dir)
+                            .join(subdirectory)
+                            .join(dest_filename),
+                        "linked_project",
+                    );
+                }
+            }
+        }
+    }
+
+    // 3. Person entity (1:1 only)
+    if meeting.meeting_type == MeetingType::OneOnOne {
+        if let Some(ref entities) = meeting.linked_entities {
+            if let Some(person) = entities.iter().find(|e| e.entity_type == "person") {
+                if let Some(db) = db {
+                    if db.get_person(&person.id).ok().flatten().is_some() {
+                        let person_dir = sanitize_account_dir(&person.name);
+                        log::info!("Routing to person '{}' directory (1:1)", person.name);
+                        return (
+                            workspace
+                                .join("People")
+                                .join(&person_dir)
+                                .join(subdirectory)
+                                .join(dest_filename),
+                            "linked_person",
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. I661: Attendee domain fallback — match attendee emails against account_domains
+    if let Some(db) = db {
+        let external_domains: Vec<String> = meeting
+            .attendees
+            .iter()
+            .filter_map(|email| email.split('@').nth(1))
+            .map(|d| d.to_lowercase())
+            .filter(|d| {
+                !d.is_empty()
+                    && !crate::google_api::classify::PERSONAL_EMAIL_DOMAINS
+                        .contains(&d.as_str())
+            })
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        // Try each external domain, collect unique account matches
+        let mut matched_accounts: Vec<(String, String)> = Vec::new(); // (id, name)
+        let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for domain in &external_domains {
+            if let Ok(candidates) = db.lookup_account_candidates_by_domain(domain) {
+                for acct in candidates {
+                    if seen_ids.insert(acct.id.clone()) {
+                        matched_accounts.push((acct.id, acct.name));
+                    }
+                }
+            }
+        }
+
+        // Only route if exactly one account matches (avoid ambiguity)
+        if matched_accounts.len() == 1 {
+            let (_, ref name) = matched_accounts[0];
+            let account_dir = sanitize_account_dir(name);
+            log::info!(
+                "I661: Routed '{}' via attendee domain fallback to account '{}'",
+                meeting.title,
+                name
+            );
+            return (
+                workspace
+                    .join("Accounts")
+                    .join(&account_dir)
+                    .join(subdirectory)
+                    .join(dest_filename),
+                "attendee_domain_fallback",
+            );
+        } else if matched_accounts.len() > 1 {
+            log::info!(
+                "I661: Ambiguous domain match for '{}' — {} candidate accounts, routing to archive",
+                meeting.title,
+                matched_accounts.len()
+            );
+        }
+    }
+
+    // 5. I661: Source file frontmatter fallback
+    // If the source transcript already has an account field in its YAML frontmatter
+    // (e.g., from a previous processing attempt or from the transcription service),
+    // use it to route the file.
+    if let Some(content) = source_content {
+        if let Some(account_name) = crate::workflow::recover::frontmatter_value(content, "account")
+        {
+            if let Some(db) = db {
+                if db.get_account_by_name(&account_name).ok().flatten().is_some() {
+                    let account_dir = sanitize_account_dir(&account_name);
+                    log::info!(
+                        "I661: Routed '{}' via source frontmatter account '{}'",
+                        meeting.title,
+                        account_name
+                    );
+                    return (
+                        workspace
+                            .join("Accounts")
+                            .join(&account_dir)
+                            .join(subdirectory)
+                            .join(dest_filename),
+                        "source_frontmatter",
+                    );
+                }
+            }
+        }
+    }
+
+    // 6. Archive fallback
+    (
+        workspace.join("_archive").join(date).join(dest_filename),
+        "archive_fallback",
+    )
+}
+
 /// Build YAML frontmatter for the transcript file.
 fn build_frontmatter(meeting: &CalendarEvent, date: &str) -> String {
     let meeting_type = format!("{:?}", meeting.meeting_type).to_lowercase();
@@ -3206,7 +3328,7 @@ fn extract_inline_field(text: &str, field_prefix: &str) -> Option<String> {
 }
 
 /// Title-case and hyphenate account name for directory routing.
-fn sanitize_account_dir(name: &str) -> String {
+pub fn sanitize_account_dir(name: &str) -> String {
     name.split_whitespace()
         .map(|word| {
             let mut chars = word.chars();
