@@ -35,8 +35,8 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let granola_config = state
             .config
             .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(|c| c.granola.clone()));
+            .as_ref()
+            .map(|c| c.granola.clone());
 
         let config = match granola_config {
             Some(cfg) if cfg.enabled => cfg,
@@ -216,7 +216,7 @@ fn process_granola_document(
         let calendar_event = crate::quill::sync::db_meeting_to_calendar_event(&meeting);
 
         let (workspace, profile, ai_config) = {
-            let config_guard = state.config.read().map_err(|_| "Lock poisoned")?;
+            let config_guard = state.config.read();
             match config_guard.as_ref() {
                 Some(cfg) => (
                     std::path::PathBuf::from(&cfg.workspace_path),
@@ -480,7 +480,6 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
     let granola_config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .as_ref()
         .map(|c| c.granola.clone())
         .unwrap_or_default();
@@ -557,8 +556,8 @@ pub fn trigger_granola_sync_for_meeting(
     let granola_config = state
         .config
         .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.granola.clone()))
+        .as_ref()
+        .map(|c| c.granola.clone())
         .unwrap_or_default();
 
     let cache_path =
