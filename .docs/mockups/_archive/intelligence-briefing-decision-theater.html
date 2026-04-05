@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS - Intelligence Briefing Concept - Decision Theater</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --curtain: #6e2d1d;
+    --curtain-dark: #4c1d14;
+    --stage: #1f2430;
+    --paper: #f6f2ec;
+    --ink: #1f2430;
+    --muted: #626a76;
+    --turmeric: #c9a227;
+    --larkspur: #8fa3c4;
+    --sage: #7eaa7b;
+    --terracotta: #c4654a;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; font-family:"DM Sans", sans-serif; color:var(--ink);
+    background:
+      linear-gradient(180deg, var(--curtain) 0%, var(--curtain-dark) 220px, var(--paper) 220px, var(--paper) 100%);
+  }
+  .page { width:min(1260px, calc(100% - 32px)); margin:18px auto 48px; }
+  .proscenium {
+    padding:18px 22px 26px; color:rgba(255,255,255,0.92);
+    border:1px solid rgba(255,255,255,0.08);
+    background: rgba(0,0,0,0.08);
+  }
+  .header { display:flex; justify-content:space-between; gap:18px; align-items:center; }
+  .brand { display:flex; gap:12px; align-items:center; }
+  .asterisk { font-family:"Montserrat", sans-serif; font-size:18px; color:var(--turmeric);}
+  .mono { font-family:"JetBrains Mono", monospace; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; opacity:0.72; }
+  .hero {
+    display:grid; grid-template-columns: 1.2fr 0.8fr; gap:24px; margin-top:20px;
+  }
+  .hero h1 { margin:10px 0 12px; font-family:"Newsreader", serif; font-size:62px; line-height:0.96; letter-spacing:-0.05em; font-weight:400; }
+  .hero p, .cast p, .script p, .cues li, .rail p { font-size:14px; line-height:1.74; margin:0; }
+  .canvas {
+    display:grid; grid-template-columns: 0.9fr 1.1fr 0.8fr; gap:22px; margin-top:22px;
+  }
+  .panel {
+    padding:18px; background:rgba(255,255,255,0.78); border:1px solid rgba(31,36,48,0.08);
+  }
+  .panel h2 { margin:8px 0 12px; font-family:"Newsreader", serif; font-size:30px; font-weight:400; letter-spacing:-0.03em; }
+  .cast-list, .cue-list { display:grid; gap:14px; }
+  .cast { padding-top:12px; border-top:1px solid rgba(31,36,48,0.08); }
+  .cast:first-child, .script-block:first-child, .cue:first-child { border-top:0; padding-top:0; }
+  .cast h3, .script-block h3, .cue h3 { margin:8px 0 8px; font-size:16px; font-weight:600; }
+  .cast.sarah { border-left:3px solid var(--larkspur); padding-left:12px; }
+  .cast.alex { border-left:3px solid var(--terracotta); padding-left:12px; }
+  .cast.david { border-left:3px solid var(--turmeric); padding-left:12px; }
+  .script-block { padding-top:14px; border-top:1px solid rgba(31,36,48,0.08); }
+  .cue { padding:12px 0 0; border-top:1px solid rgba(31,36,48,0.08); }
+  .cues ul { margin:0; padding-left:18px; color:var(--muted); }
+  .script-stage {
+    padding:18px; background: linear-gradient(180deg, rgba(31,36,48,0.95), rgba(31,36,48,0.86)); color:var(--paper);
+    border:1px solid rgba(31,36,48,0.15);
+  }
+  .script-stage h2 { color:var(--paper); }
+  .script-block p { color:rgba(246,242,236,0.82); }
+  .script-block strong { color:var(--paper); }
+  @media (max-width: 1080px) { .hero, .canvas { grid-template-columns:1fr; } }
+  @media (max-width: 720px) {
+    .page { width:min(100%, calc(100% - 10px)); }
+    .header { flex-direction:column; align-items:flex-start; }
+    .hero h1 { font-size:46px; }
+  }
+</style>
+</head>
+<body>
+  <main class="page">
+    <section class="proscenium">
+      <header class="header">
+        <div class="brand">
+          <span class="asterisk">*</span>
+          <div>
+            <div class="mono">DailyOS / briefing concept / decision theater</div>
+            <div>Acme Corp Weekly Sync</div>
+          </div>
+        </div>
+        <div class="mono">briefing as scene, cast, script, and cues</div>
+      </header>
+      <div class="hero">
+        <div>
+          <div class="mono">Opening scene</div>
+          <h1>The meeting is a stage. The briefing should rehearse the scene.</h1>
+          <p>This concept reframes intelligence as live performance. Who is on stage? What conflict is likely to surface? Which lines need to land? What should not become the scene's accidental center? It turns the briefing into a run-of-show for judgment, not just a dossier of facts.</p>
+        </div>
+        <div>
+          <div class="mono">Scene stakes</div>
+          <p>Goal: move from celebrating Phase 1 into confident Phase 2 scoping. Risk: the room gets dragged into transition anxiety, budget hesitation, or unresolved legal details. Hidden challenge: let the detractor signal inform the meeting without letting it seize the script.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="canvas">
+      <aside class="panel">
+        <div class="mono">Cast</div>
+        <h2>Who is on stage</h2>
+        <div class="cast-list">
+          <article class="cast sarah">
+            <div class="mono">Lead sponsor</div>
+            <h3>Sarah Chen</h3>
+            <p>Exec sponsor. Strongest ally in the room. Best placed to validate the expansion arc.</p>
+          </article>
+          <article class="cast alex">
+            <div class="mono">Risk-bearing actor</div>
+            <h3>Alex Torres</h3>
+            <p>Technical backbone, departing in March. Presence changes the emotional subtext of continuity.</p>
+          </article>
+          <article class="cast david">
+            <div class="mono">Skeptical audience</div>
+            <h3>David Kim</h3>
+            <p>Wants ROI and adoption clarity. Responds to operational proof more than celebratory framing.</p>
+          </article>
+        </div>
+      </aside>
+
+      <article class="script-stage">
+        <div class="mono">Script</div>
+        <h2>The sequence the briefing wants the room to follow</h2>
+        <div class="script-block">
+          <div class="mono">Beat 1</div>
+          <h3>Open with proof, not housekeeping</h3>
+          <p><strong>Line to land:</strong> Phase 1 completed ahead of schedule, support volume is down, and the account now has a credible base for Phase 2. This establishes the meeting's opening energy.</p>
+        </div>
+        <div class="script-block">
+          <div class="mono">Beat 2</div>
+          <h3>Pivot quickly into the next arc</h3>
+          <p><strong>Line to land:</strong> propose April start and June delivery for advanced analytics, with APAC expansion as the optional second act.</p>
+        </div>
+        <div class="script-block">
+          <div class="mono">Beat 3</div>
+          <h3>Name the fragility without letting it dominate</h3>
+          <p><strong>Line to land:</strong> Alex's transition is understood and a handoff plan is being treated as part of Phase 2 readiness, not as a destabilizing surprise.</p>
+        </div>
+        <div class="script-block">
+          <div class="mono">Beat 4</div>
+          <h3>Resolve the loose backstage work</h3>
+          <p><strong>Line to land:</strong> legal SOW and NPS detractor follow-up are underway, with owners and dates, so the room does not have to improvise around them.</p>
+        </div>
+      </article>
+
+      <aside class="panel cues">
+        <div class="mono">Cue sheet</div>
+        <h2>Moments to watch for</h2>
+        <div class="cue-list">
+          <article class="cue">
+            <div class="mono">Red cue</div>
+            <h3>If Alex's departure becomes the room</h3>
+            <ul>
+              <li>Shift immediately to the KT plan.</li>
+              <li>Frame continuity as a managed transition.</li>
+            </ul>
+          </article>
+          <article class="cue">
+            <div class="mono">Amber cue</div>
+            <h3>If ROI concerns surface</h3>
+            <ul>
+              <li>Use support-volume and delivery-speed proof.</li>
+              <li>Keep the story in execution outcomes.</li>
+            </ul>
+          </article>
+          <article class="cue">
+            <div class="mono">Green cue</div>
+            <h3>If Sarah endorses the next phase early</h3>
+            <ul>
+              <li>Advance to timeline and sequencing.</li>
+              <li>Pull APAC expansion into the frame.</li>
+            </ul>
+          </article>
+        </div>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

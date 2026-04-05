@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS - Intelligence Briefing Concept - Signal River</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f6f4ef;
+    --ink: #20252c;
+    --muted: #68717d;
+    --turmeric: #c9a227;
+    --larkspur: #8fa3c4;
+    --sage: #7eaa7b;
+    --terracotta: #c4654a;
+    --river: #88a7be;
+    --sand: #e9e1d6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "DM Sans", sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(circle at 10% 20%, rgba(143,163,196,0.18), transparent 18%),
+      radial-gradient(circle at 88% 18%, rgba(201,162,39,0.16), transparent 18%),
+      var(--paper);
+  }
+  .page {
+    width: min(1240px, calc(100% - 36px));
+    margin: 18px auto 50px;
+    padding: 20px;
+  }
+  .header {
+    display:flex; justify-content:space-between; gap:18px; align-items:center;
+    padding-bottom:20px; border-bottom:1px solid rgba(32,37,44,0.12);
+  }
+  .mono { font-family:"JetBrains Mono", monospace; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted);}
+  .title { font-family:"Newsreader", serif; font-size:26px; letter-spacing:-0.03em; }
+  .layout { display:grid; grid-template-columns: 1.3fr 0.9fr; gap:22px; margin-top:22px; }
+  .river {
+    position: relative; min-height: 1100px; overflow:hidden;
+    border:1px solid rgba(32,37,44,0.08); background:rgba(255,255,255,0.42);
+  }
+  .channel {
+    position:absolute; left: 38%; top: 0; width: 220px; height: 100%;
+    background: linear-gradient(180deg, rgba(136,167,190,0.08) 0%, rgba(136,167,190,0.22) 14%, rgba(136,167,190,0.34) 46%, rgba(136,167,190,0.24) 74%, rgba(136,167,190,0.18) 100%);
+    clip-path: polygon(28% 0, 72% 0, 84% 10%, 67% 22%, 79% 33%, 57% 45%, 76% 58%, 46% 70%, 64% 82%, 34% 100%, 12% 100%, 25% 82%, 9% 69%, 26% 56%, 6% 41%, 25% 29%, 12% 17%, 22% 7%);
+  }
+  .source, .meeting {
+    position:absolute; width: 260px; padding: 16px 16px 18px;
+    background: rgba(255,255,255,0.82); border:1px solid rgba(32,37,44,0.1);
+  }
+  .source h3, .meeting h1 { margin:8px 0 8px; }
+  .source h3 { font-size:16px; }
+  .source p, .meeting p, .note p, .rail p, .rail li { margin:0; font-size:14px; line-height:1.72; color:var(--muted);}
+  .source.history { left: 6%; top: 8%; border-left: 3px solid var(--sage); }
+  .source.people { right: 6%; top: 18%; border-left: 3px solid var(--larkspur); }
+  .source.work { left: 7%; top: 39%; border-left: 3px solid var(--turmeric); }
+  .source.risk { right: 7%; top: 51%; border-left: 3px solid var(--terracotta); }
+  .source.programs { left: 9%; top: 70%; border-left: 3px solid var(--larkspur); }
+  .meeting {
+    left: 50%; bottom: 8%; transform: translateX(-50%);
+    width: 420px; text-align:center; border: 1px solid rgba(32,37,44,0.14);
+    box-shadow: 0 18px 36px rgba(32,37,44,0.08);
+  }
+  .meeting h1 {
+    font-family:"Newsreader", serif; font-size:48px; font-weight:400; line-height:0.98; letter-spacing:-0.04em;
+  }
+  .tributary {
+    position:absolute; height:2px; background:rgba(136,167,190,0.65); transform-origin:left center;
+  }
+  .rail { display:grid; gap:18px; }
+  .note {
+    padding:18px; border:1px solid rgba(32,37,44,0.08); background:rgba(255,255,255,0.52);
+  }
+  .note h2 { margin:8px 0 12px; font-family:"Newsreader", serif; font-size:30px; font-weight:400; letter-spacing:-0.03em; }
+  .note ul { margin:0; padding-left:18px; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  @media (max-width: 760px) {
+    .page { width:min(100%, calc(100% - 10px)); padding:10px; }
+    .header { flex-direction:column; align-items:flex-start; }
+    .channel { left: 50%; transform: translateX(-50%); }
+    .source, .meeting { position: relative; left: auto; right:auto; top:auto; bottom:auto; transform:none; width:auto; margin: 18px; }
+    .tributary { display:none; }
+    .river { min-height: auto; padding-top:18px; }
+  }
+</style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <div class="mono">DailyOS / briefing concept / signal river</div>
+        <div class="title">Acme Corp Weekly Sync</div>
+      </div>
+      <div class="mono">briefing as flow, causality, and convergence</div>
+    </header>
+
+    <section class="layout">
+      <div class="river">
+        <div class="channel"></div>
+        <div class="tributary" style="left:28%;top:18%;width:180px;transform:rotate(18deg);"></div>
+        <div class="tributary" style="left:54%;top:27%;width:150px;transform:rotate(162deg);"></div>
+        <div class="tributary" style="left:24%;top:49%;width:220px;transform:rotate(10deg);"></div>
+        <div class="tributary" style="left:56%;top:61%;width:180px;transform:rotate(170deg);"></div>
+        <div class="tributary" style="left:27%;top:80%;width:160px;transform:rotate(-6deg);"></div>
+
+        <article class="source history">
+          <div class="mono">Upstream history</div>
+          <h3>What changed since last meeting</h3>
+          <p>Phase 1 completed two weeks ahead of schedule. Three new users onboarded. NPS improved earlier, but the richer account view now says three detractors need direct attention before QBR.</p>
+        </article>
+
+        <article class="source people">
+          <div class="mono">People current</div>
+          <h3>Who the signal flows through</h3>
+          <p>Sarah Chen remains the sponsor and stabilizer. Alex Torres is the technical hinge and transition risk. David Kim wants ROI and adoption clarity.</p>
+        </article>
+
+        <article class="source work">
+          <div class="mono">Open work</div>
+          <h3>What is still unresolved</h3>
+          <p>Updated SOW is overdue with legal. NPS detractor follow-up is overdue. These are not side tasks; they alter the tone of the conversation if they remain stuck.</p>
+        </article>
+
+        <article class="source risk">
+          <div class="mono">Pressure current</div>
+          <h3>Where the river narrows</h3>
+          <p>Alex leaving in March, budget approval waiting on CTO sign-off, and the chance that detractor sentiment crowds out the bigger success story.</p>
+        </article>
+
+        <article class="source programs">
+          <div class="mono">Future channel</div>
+          <h3>Where the account wants to go</h3>
+          <p>Phase 2 analytics rollout with April start. Enterprise SSO pending review. APAC expansion as the adjacent opportunity if the room stays confident.</p>
+        </article>
+
+        <article class="meeting">
+          <div class="mono">Meeting mouth</div>
+          <h1>This is where all signals arrive.</h1>
+          <p>The briefing is not a stack of sections. It is a flow model: the meeting is the point where history, people, unresolved work, and future intent converge into one room and one conversation.</p>
+        </article>
+      </div>
+
+      <aside class="rail">
+        <article class="note">
+          <div class="mono">How to use it</div>
+          <h2>The room becomes a downstream event.</h2>
+          <p>This concept helps the user understand not just what exists, but how different strands of signal are arriving at the meeting moment. It is good for accounts where momentum and unresolved work matter as much as stakeholder dynamics.</p>
+        </article>
+
+        <article class="note">
+          <div class="mono">Talking points at the river mouth</div>
+          <h2>What should surface in the conversation</h2>
+          <ul>
+            <li>Celebrate Phase 1 completion as the dominant upstream proof.</li>
+            <li>Propose the Phase 2 timeline with confidence, not apology.</li>
+            <li>Name Alex's transition and define the handoff path.</li>
+            <li>Close legal and NPS follow-up so they stop muddying the channel.</li>
+          </ul>
+        </article>
+
+        <article class="note">
+          <div class="mono">Why it is different</div>
+          <h2>It emphasizes causality.</h2>
+          <p>Most briefings freeze the world into categories. This one treats intelligence as motion. The user sees what is flowing into the room, what is likely to collide there, and what needs to be redirected before the meeting starts.</p>
+        </article>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

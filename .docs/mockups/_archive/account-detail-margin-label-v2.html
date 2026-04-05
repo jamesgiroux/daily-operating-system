@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS - Account Detail Margin Label v2 — Full Fidelity</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --linen: #e8e2d9;
+    --warm-white: #faf8f6;
+    --charcoal: #1e2530;
+    --ink: #2a2b3d;
+    --turmeric: #c9a227;
+    --saffron: #deb841;
+    --terracotta: #c4654a;
+    --sage: #7eaa7b;
+    --larkspur: #8fa3c4;
+    --eucalyptus: #4a8c72;
+    --text-primary: #1e2530;
+    --text-secondary: #5a6370;
+    --text-tertiary: #8a919a;
+    --rule-heavy: rgba(30, 37, 48, 0.14);
+    --rule-light: rgba(30, 37, 48, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    color: var(--text-primary);
+    font-family: "DM Sans", sans-serif;
+    background: var(--cream);
+  }
+
+  /* ── Folio bar ── */
+  .folio {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 28px;
+    background: rgba(245, 242, 239, 0.84);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(245, 242, 239, 0.6);
+  }
+  .folio-left { display: flex; align-items: center; gap: 14px; }
+  .folio-right { display: flex; align-items: center; gap: 10px; }
+  .asterisk { font-family: "Montserrat", sans-serif; font-size: 18px; color: var(--turmeric); }
+  .mono {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .folio-action {
+    font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    background: none; border: 1px solid; border-radius: 4px;
+    padding: 2px 10px; cursor: pointer;
+  }
+  .folio-action.reports { color: var(--turmeric); border-color: var(--turmeric); }
+  .folio-action.add-bu { color: var(--eucalyptus); border-color: var(--eucalyptus); }
+
+  /* ── Nav island ── */
+  .navisland {
+    display: flex; gap: 2px; align-items: center;
+    background: rgba(30, 37, 48, 0.04); border-radius: 6px; padding: 3px;
+  }
+  .navisland a {
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 10px; border-radius: 4px;
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-tertiary); text-decoration: none; white-space: nowrap;
+  }
+  .navisland a:hover { background: rgba(30, 37, 48, 0.06); }
+  .navisland a.active { background: var(--warm-white); color: var(--text-primary); }
+
+  /* ── Page ── */
+  .page {
+    width: min(1080px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 40px 0 120px;
+  }
+
+  /* ═══════════════════════════════════════════
+     HERO — full width
+     ═══════════════════════════════════════════ */
+  .hero { margin-bottom: 0; }
+  .hero-name {
+    font-family: "Newsreader", serif;
+    font-size: 76px; font-weight: 400;
+    line-height: 0.92; letter-spacing: -0.04em;
+    margin: 0;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .health-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    display: inline-block; flex-shrink: 0;
+  }
+  .health-dot.green { background: var(--sage); }
+  .health-dot.yellow { background: var(--saffron); }
+  .health-dot.red { background: var(--terracotta); }
+
+  .hero-narrative {
+    max-width: 720px; margin: 24px 0 0;
+    font-size: 16px; line-height: 1.75;
+    color: var(--text-secondary);
+  }
+  .hero-narrative strong { color: var(--text-primary); font-weight: 500; }
+
+  /* ── Vitals strip ── */
+  .vitals-strip {
+    margin-top: 48px;
+    border-top: 1px solid var(--rule-heavy);
+    border-bottom: 1px solid var(--rule-heavy);
+    padding: 14px 0;
+    display: flex; align-items: center; gap: 24; flex-wrap: wrap;
+  }
+  .vital-item {
+    display: flex; align-items: center; gap: 24px;
+  }
+  .vital-dot {
+    width: 3px; height: 3px; border-radius: 50%;
+    background: var(--text-tertiary); flex-shrink: 0;
+  }
+  .vital-text {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-secondary); white-space: nowrap;
+  }
+  .vital-text.highlight-turmeric { color: var(--turmeric); }
+  .vital-text.highlight-sage { color: var(--sage); }
+  .vital-text.highlight-larkspur { color: var(--larkspur); }
+
+  /* ═══════════════════════════════════════════
+     MARGIN LABEL LAYOUT
+     ═══════════════════════════════════════════ */
+  .section {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 28px;
+    align-items: start;
+    padding-top: 80px;
+  }
+  .section__label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-tertiary);
+    padding-top: 20px;
+    position: sticky; top: 72px;
+  }
+  .section__content { min-width: 0; }
+
+  /* ── Chapter heading ── */
+  .chapter-rule {
+    border: none;
+    border-top: 1px solid var(--rule-heavy);
+    margin: 0 0 16px;
+  }
+  .chapter-title {
+    font-family: "Newsreader", serif;
+    font-size: 28px; font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    margin: 0 0 8px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* ── Epigraph ── */
+  .epigraph {
+    font-family: "Newsreader", serif;
+    font-size: 17px; font-style: italic; font-weight: 300;
+    line-height: 1.55; color: var(--text-tertiary);
+    margin: 0 0 32px; max-width: 540px;
+  }
+
+  /* ── Feedback controls (thumbs up/down) ── */
+  .feedback {
+    display: inline-flex; align-items: center; gap: 4px;
+    opacity: 0; transition: opacity 0.2s;
+    margin-left: 8px; vertical-align: middle;
+  }
+  .chapter-title:hover .feedback,
+  .feedback.voted { opacity: 1; }
+  .fb-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; padding: 0;
+    border: none; border-radius: 2px;
+    background: transparent; color: var(--text-tertiary);
+    cursor: pointer; font-size: 13px;
+  }
+  .fb-btn:hover { background: rgba(30,37,48,0.06); color: var(--text-secondary); }
+  .fb-btn.positive { color: var(--sage); }
+  .fb-btn.negative { color: var(--terracotta); }
+
+  /* ── Item-level feedback (hover reveal) ── */
+  .item-feedback {
+    display: inline-flex; gap: 2px; opacity: 0; transition: opacity 0.15s;
+    margin-left: 6px; vertical-align: middle;
+  }
+  .item-row:hover .item-feedback { opacity: 1; }
+  .item-feedback.voted { opacity: 1; }
+  .ifb {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; padding: 0;
+    border: none; border-radius: 2px;
+    background: transparent; color: var(--text-tertiary);
+    cursor: pointer; font-size: 11px;
+  }
+  .ifb:hover { background: rgba(30,37,48,0.06); }
+  .ifb.positive { color: var(--sage); }
+  .ifb.negative { color: var(--terracotta); }
+
+  /* ── State of Play items ── */
+  .state-group { margin-bottom: 28px; }
+  .state-group:last-child { margin-bottom: 0; }
+  .state-group-label { margin-bottom: 14px; }
+  .state-items { display: flex; flex-direction: column; gap: 12px; }
+  .state-item {
+    padding: 6px 0 6px 16px;
+    font-size: 14px; line-height: 1.7;
+    color: var(--text-secondary);
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  .state-item.working { border-left: 3px solid var(--sage); }
+  .state-item.struggling { border-left: 3px solid var(--terracotta); }
+  .state-text { flex: 1; }
+  .show-more {
+    font-family: "JetBrains Mono", monospace; font-size: 11px;
+    color: var(--text-tertiary); background: none; border: none;
+    cursor: pointer; padding: 8px 0 0;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+
+  /* ── Health dimensions ── */
+  .dim-container { display: flex; flex-direction: column; gap: 16px; }
+  .dimension { }
+  .dim-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px;
+  }
+  .dim-label {
+    font-size: 14px; font-weight: 500;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .dim-trend { display: inline-flex; align-items: center; }
+  .dim-trend.improving { color: var(--sage); }
+  .dim-trend.declining { color: var(--terracotta); }
+  .dim-trend.stable { color: var(--text-tertiary); }
+  .dim-score-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; color: var(--text-tertiary);
+  }
+  .dim-weight { opacity: 0.6; }
+  .dim-track {
+    height: 6px; background: var(--rule-light);
+    border-radius: 3px; overflow: hidden;
+  }
+  .dim-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+  .dim-fill.green { background: var(--sage); }
+  .dim-fill.yellow { background: var(--saffron); }
+  .dim-fill.red { background: var(--terracotta); }
+  .evidence-toggle {
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    color: var(--text-tertiary); background: none; border: none;
+    cursor: pointer; padding: 4px 0 0; text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .evidence-list {
+    margin: 6px 0 0; padding: 0 0 0 14px;
+    font-size: 13px; line-height: 1.6; color: var(--text-secondary);
+    list-style: disc;
+  }
+  .evidence-list li { margin-bottom: 4px; }
+
+  /* ── Stakeholder cards ── */
+  .people-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .person-card {
+    padding: 18px;
+    border: 1px solid var(--rule-light);
+    background: var(--warm-white);
+    position: relative;
+  }
+  .person-card:hover .remove-x { opacity: 1; }
+  .remove-x {
+    position: absolute; top: 8px; right: 8px;
+    width: 20px; height: 20px; border-radius: 3px;
+    border: none; background: transparent; cursor: pointer;
+    color: var(--text-tertiary); opacity: 0; transition: opacity 0.15s;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .remove-x:hover { background: rgba(30,37,48,0.06); color: var(--terracotta); }
+  .card-header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 4px;
+  }
+  .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    flex-shrink: 0; object-fit: cover;
+  }
+  .avatar-ring { border: 2px solid var(--larkspur); border-radius: 50%; padding: 1px; flex-shrink: 0; }
+  .avatar-initials {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--linen); display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 500; color: var(--text-tertiary); flex-shrink: 0;
+  }
+  .person-name {
+    font-size: 15px; font-weight: 500; color: var(--text-primary);
+    text-decoration: none;
+  }
+  .person-name:hover { text-decoration: underline; }
+  .link-icon { color: var(--larkspur); font-size: 11px; }
+  .engagement-badge {
+    margin-left: auto;
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 3px;
+  }
+  .engagement-badge.active { background: rgba(126,170,123,0.12); color: var(--sage); }
+  .engagement-badge.warm { background: rgba(222,184,65,0.12); color: var(--saffron); }
+  .engagement-badge.cooling { background: rgba(196,101,74,0.12); color: var(--terracotta); }
+  .engagement-badge.new { background: rgba(143,163,196,0.12); color: var(--larkspur); }
+  .person-title { font-size: 13px; color: var(--text-tertiary); margin: 2px 0 0; }
+  .person-role { font-size: 13px; color: var(--text-tertiary); margin: 0 0 8px; font-style: italic; }
+  .person-assessment {
+    font-size: 14px; line-height: 1.6; color: var(--text-secondary); margin: 6px 0 0;
+  }
+  .person-bio {
+    font-family: "Newsreader", serif; font-size: 13px; font-style: italic;
+    line-height: 1.55; color: var(--text-tertiary); margin: 8px 0 0;
+    padding-top: 8px; border-top: 1px solid var(--rule-light);
+  }
+  .person-enrichment {
+    display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;
+  }
+  .enrichment-tag {
+    font-family: "JetBrains Mono", monospace; font-size: 9px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 2px;
+    background: rgba(30,37,48,0.04); color: var(--text-tertiary);
+  }
+  .enrichment-tag.clay { background: rgba(201,162,39,0.08); color: var(--turmeric); }
+  .enrichment-tag.gravatar { background: rgba(143,163,196,0.08); color: var(--larkspur); }
+  .last-seen {
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    color: var(--text-tertiary); margin-top: 8px;
+    letter-spacing: 0.04em;
+  }
+  .action-create {
+    display: flex; align-items: center; gap: 4px;
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    color: var(--larkspur); background: none; border: none; cursor: pointer;
+    padding: 4px 0 0; text-transform: uppercase; letter-spacing: 0.06em;
+  }
+
+  /* Coverage strip */
+  .coverage-strip {
+    margin-top: 18px; padding: 10px 0;
+    border-top: 1px solid var(--rule-light);
+    font-family: "JetBrains Mono", monospace; font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+  .coverage-count { font-weight: 600; color: var(--text-primary); }
+  .coverage-label { color: var(--text-tertiary); margin-left: 6px; }
+
+  /* Add stakeholder trigger */
+  .add-trigger {
+    display: flex; align-items: center; gap: 6px;
+    font-family: "JetBrains Mono", monospace; font-size: 11px;
+    color: var(--text-tertiary); background: none; border: none;
+    cursor: pointer; padding: 12px 0 0;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .add-trigger:hover { color: var(--text-secondary); }
+
+  /* Team chips */
+  .team-section {
+    margin-top: 24px; padding-top: 18px;
+    border-top: 1px solid var(--rule-light);
+  }
+  .team-chips {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;
+  }
+  .team-chip {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    padding: 4px 12px; border-radius: 20px;
+    border: 1px solid var(--rule-light);
+    background: var(--warm-white);
+    font-size: 13px; text-decoration: none; color: inherit;
+  }
+  .team-chip:hover { border-color: var(--larkspur); }
+  .team-chip-role {
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    color: var(--text-tertiary);
+  }
+
+  /* ── Watch list sections ── */
+  .watch-section {
+    padding: 24px 28px;
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 32px;
+  }
+  .watch-section:last-child { margin-bottom: 0; }
+  .watch-section.risk {
+    border-left: 3px solid var(--terracotta);
+    background: rgba(196, 101, 74, 0.06);
+  }
+  .watch-section.win {
+    border-left: 3px solid var(--sage);
+    background: rgba(126, 170, 123, 0.06);
+  }
+  .watch-section.unknown {
+    border-left: 3px solid var(--larkspur);
+    background: rgba(143, 163, 196, 0.06);
+  }
+  .watch-item {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule-light);
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  .watch-item:last-child { border-bottom: none; }
+  .watch-text {
+    font-size: 14px; line-height: 1.6; color: var(--text-primary);
+    flex: 1;
+  }
+  .watch-urgency {
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 2px 8px; border-radius: 3px; flex-shrink: 0; margin-left: 12px;
+    white-space: nowrap;
+  }
+  .watch-urgency.act-now { background: rgba(196,101,74,0.10); color: var(--terracotta); }
+  .watch-urgency.watch { background: rgba(222,184,65,0.10); color: var(--saffron); }
+  .watch-urgency.monitor { background: rgba(143,163,196,0.10); color: var(--larkspur); }
+  .watch-impact {
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    color: var(--text-tertiary); margin-left: 12px; flex-shrink: 0;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Actions ── */
+  .action-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .action-row:last-child { border-bottom: none; }
+  .action-check {
+    width: 16px; height: 16px; border-radius: 3px;
+    border: 1.5px solid var(--rule-heavy);
+    flex-shrink: 0; margin-top: 2px; cursor: pointer;
+  }
+  .action-body { flex: 1; }
+  .action-text { font-size: 14px; line-height: 1.6; }
+  .action-meta {
+    display: flex; gap: 12px; margin-top: 4px; align-items: center;
+  }
+  .action-due {
+    font-family: "JetBrains Mono", monospace; font-size: 11px;
+    color: var(--text-tertiary); letter-spacing: 0.04em;
+  }
+  .action-owner {
+    font-family: "JetBrains Mono", monospace; font-size: 11px;
+    color: var(--larkspur); letter-spacing: 0.04em;
+  }
+  .action-status {
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 1px 6px; border-radius: 2px;
+  }
+  .action-status.blocked { background: rgba(196,101,74,0.10); color: var(--terracotta); }
+  .action-status.in-progress { background: rgba(222,184,65,0.10); color: var(--saffron); }
+
+  /* ── Timeline ── */
+  .timeline-item {
+    display: flex; gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .timeline-item:last-child { border-bottom: none; }
+  .timeline-date {
+    font-family: "JetBrains Mono", monospace; font-size: 11px;
+    color: var(--text-tertiary); width: 80px; flex-shrink: 0;
+    padding-top: 2px; letter-spacing: 0.04em;
+  }
+  .timeline-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    flex-shrink: 0; margin-top: 5px;
+  }
+  .timeline-dot.sage { background: var(--sage); }
+  .timeline-dot.turmeric { background: var(--turmeric); }
+  .timeline-dot.larkspur { background: var(--larkspur); }
+  .timeline-dot.terracotta { background: var(--terracotta); }
+  .timeline-body { flex: 1; min-width: 0; }
+  .timeline-title { font-size: 14px; font-weight: 500; margin: 0; }
+  .timeline-desc {
+    font-size: 13px; color: var(--text-secondary);
+    margin: 4px 0 0; line-height: 1.6;
+  }
+  .timeline-source {
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    color: var(--text-tertiary); margin-top: 4px;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Reference grid ── */
+  .ref-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .ref-block { padding-top: 14px; border-top: 1px solid var(--rule-light); }
+  .ref-block h3 { margin: 6px 0 8px; font-size: 15px; font-weight: 600; }
+  .ref-block p {
+    margin: 0; font-size: 14px; line-height: 1.7; color: var(--text-secondary);
+  }
+
+  /* ── Reports ── */
+  .report-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule-light);
+    font-size: 14px;
+  }
+  .report-row:last-child { border-bottom: none; }
+  .report-action {
+    font-family: "JetBrains Mono", monospace; font-size: 11px;
+    color: var(--turmeric); text-transform: uppercase; letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+
+  /* ── Enrichment quality badge ── */
+  .enriched-at {
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    color: var(--text-tertiary); letter-spacing: 0.04em;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .quality-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+  .quality-dot.fresh { background: var(--sage); }
+  .quality-dot.aging { background: var(--saffron); }
+
+  /* ── Finis ── */
+  .finis {
+    text-align: center; padding: 64px 0 32px;
+    font-family: "Montserrat", sans-serif;
+    font-size: 14px; color: var(--turmeric);
+    letter-spacing: 0.2em;
+  }
+  .finis-meta {
+    font-family: "JetBrains Mono", monospace; font-size: 10px;
+    color: var(--text-tertiary); letter-spacing: 0.06em;
+    margin-top: 8px;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 860px) {
+    .section { grid-template-columns: 1fr; gap: 0; }
+    .section__label { position: static; padding-top: 0; margin-bottom: 8px; }
+    .hero-name { font-size: 46px; }
+    .people-grid, .ref-grid { grid-template-columns: 1fr; }
+    .navisland { display: none; }
+    .folio-right { display: none; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Folio bar -->
+  <header class="folio">
+    <div class="folio-left">
+      <span class="asterisk">*</span>
+      <span class="mono">Acme Corp</span>
+      <nav class="navisland">
+        <a href="#headline" class="active">Headline</a>
+        <a href="#state-of-play">State of Play</a>
+        <a href="#health">Health</a>
+        <a href="#the-room">The Room</a>
+        <a href="#watch-list">Watch List</a>
+        <a href="#the-work">The Work</a>
+        <a href="#the-record">The Record</a>
+        <a href="#reference">Reference</a>
+        <a href="#reports">Reports</a>
+      </nav>
+    </div>
+    <div class="folio-right">
+      <button class="folio-action reports">Reports</button>
+      <button class="folio-action add-bu">+ Business Unit</button>
+      <span class="enriched-at">
+        <span class="quality-dot fresh"></span>
+        Updated 2h ago
+      </span>
+    </div>
+  </header>
+
+  <main class="page">
+
+    <!-- ═══════════════════════════════════════════
+         HERO
+         ═══════════════════════════════════════════ -->
+    <section id="headline" class="hero">
+      <h1 class="hero-name">
+        <span class="health-dot green"></span>
+        Acme Corp
+      </h1>
+      <p class="hero-narrative">
+        Acme Corp is our strongest enterprise account and the clearest expansion opportunity this quarter. <strong>Phase 1 migration completed two weeks ahead of schedule</strong>, executive sponsorship from Sarah Chen is locked, and platform adoption across engineering is tracking above the cohort baseline. The only real fragility is concentrated in Alex Torres — whose March departure creates a knowledge-transfer risk that needs to be managed as part of Phase 2 scoping, not treated as an afterthought. Three NPS detractors in engineering need direct attention before the next QBR, but they should not be allowed to overshadow the larger value-delivered story.
+      </p>
+
+      <!-- Vitals strip -->
+      <div class="vitals-strip">
+        <span class="vital-item">
+          <span class="vital-text highlight-turmeric">$1.2M ARR</span>
+        </span>
+        <span class="vital-item">
+          <span class="vital-dot"></span>
+          <span class="vital-text highlight-sage">Healthy</span>
+        </span>
+        <span class="vital-item">
+          <span class="vital-dot"></span>
+          <span class="vital-text">Customer</span>
+        </span>
+        <span class="vital-item">
+          <span class="vital-dot"></span>
+          <span class="vital-text">NPS 42</span>
+        </span>
+        <span class="vital-item">
+          <span class="vital-dot"></span>
+          <span class="vital-text">Renewal in 94d</span>
+        </span>
+        <span class="vital-item">
+          <span class="vital-dot"></span>
+          <span class="vital-text">Annual · Auto-renew</span>
+        </span>
+        <span class="vital-item">
+          <span class="vital-dot"></span>
+          <span class="vital-text highlight-larkspur">4 meetings / 30d</span>
+        </span>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         STATE OF PLAY
+         ═══════════════════════════════════════════ -->
+    <section id="state-of-play" class="section">
+      <div class="section__label">State of Play</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">
+          State of Play
+          <span class="feedback">
+            <button class="fb-btn" title="Helpful">&#x1F44D;</button>
+            <button class="fb-btn" title="Not helpful">&#x1F44E;</button>
+          </span>
+        </h2>
+
+        <div class="state-group">
+          <div class="mono state-group-label" style="color: var(--sage);">What's Working</div>
+          <div class="state-items">
+            <div class="state-item working item-row">
+              <span class="state-text">Phase 1 migration completed two weeks ahead of schedule with zero rollback events.</span>
+              <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+            </div>
+            <div class="state-item working item-row">
+              <span class="state-text">Executive sponsorship from Sarah Chen is locked — she has confirmed Phase 2 budget allocation.</span>
+              <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+            </div>
+            <div class="state-item working item-row">
+              <span class="state-text">Performance benchmarks exceeded targets by 15% — strongest delivery proof in the cohort.</span>
+              <span class="item-feedback"><button class="ifb positive" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+            </div>
+          </div>
+          <button class="show-more">Show 2 more</button>
+        </div>
+
+        <div class="state-group">
+          <div class="mono state-group-label" style="color: var(--terracotta);">Where It's Struggling</div>
+          <div class="state-items">
+            <div class="state-item struggling item-row">
+              <span class="state-text">Alex Torres departing March — critical knowledge transfer gap with no documented handoff plan.</span>
+              <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+            </div>
+            <div class="state-item struggling item-row">
+              <span class="state-text">NPS trending down: 3 detractors in engineering team need direct outreach before QBR.</span>
+              <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb negative" title="Not helpful">&#x1F44E;</button></span>
+            </div>
+            <div class="state-item struggling item-row">
+              <span class="state-text">Updated SOW overdue with legal — blocking formal Phase 2 contract start.</span>
+              <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         RELATIONSHIP HEALTH
+         ═══════════════════════════════════════════ -->
+    <section id="health" class="section">
+      <div class="section__label">Health</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">
+          Relationship Health
+          <span class="feedback">
+            <button class="fb-btn" title="Helpful">&#x1F44D;</button>
+            <button class="fb-btn" title="Not helpful">&#x1F44E;</button>
+          </span>
+        </h2>
+        <p style="font-size:14px; line-height:1.7; color:var(--text-secondary); margin:0 0 28px; max-width:640px;">
+          <strong style="color:var(--text-primary)">Score: 78 / 100</strong> · Green · Confidence 0.85 · Stable over 90 days. Strong Phase 1 execution offset by NPS concerns and key-person dependency on Alex Torres.
+        </p>
+
+        <div class="dim-container">
+          <div class="dimension">
+            <div class="dim-header">
+              <span class="dim-label">Meeting Cadence <span class="dim-trend stable" title="Stable">—</span></span>
+              <span class="dim-score-label">85 <span class="dim-weight">/ w0.15</span></span>
+            </div>
+            <div class="dim-track"><div class="dim-fill green" style="width:85%"></div></div>
+            <button class="evidence-toggle">Show evidence</button>
+          </div>
+
+          <div class="dimension">
+            <div class="dim-header">
+              <span class="dim-label">Email Engagement <span class="dim-trend stable" title="Stable">—</span></span>
+              <span class="dim-score-label">80 <span class="dim-weight">/ w0.10</span></span>
+            </div>
+            <div class="dim-track"><div class="dim-fill green" style="width:80%"></div></div>
+          </div>
+
+          <div class="dimension">
+            <div class="dim-header">
+              <span class="dim-label">Stakeholder Coverage <span class="dim-trend declining" title="Declining">&#x2198;</span></span>
+              <span class="dim-score-label">70 <span class="dim-weight">/ w0.20</span></span>
+            </div>
+            <div class="dim-track"><div class="dim-fill green" style="width:70%"></div></div>
+            <button class="evidence-toggle">Show evidence</button>
+          </div>
+
+          <div class="dimension">
+            <div class="dim-header">
+              <span class="dim-label">Champion Health <span class="dim-trend stable" title="Stable">—</span></span>
+              <span class="dim-score-label">90 <span class="dim-weight">/ w0.25</span></span>
+            </div>
+            <div class="dim-track"><div class="dim-fill green" style="width:90%"></div></div>
+          </div>
+
+          <div class="dimension">
+            <div class="dim-header">
+              <span class="dim-label">Financial Proximity <span class="dim-trend stable" title="Stable">—</span></span>
+              <span class="dim-score-label">75 <span class="dim-weight">/ w0.15</span></span>
+            </div>
+            <div class="dim-track"><div class="dim-fill green" style="width:75%"></div></div>
+          </div>
+
+          <div class="dimension">
+            <div class="dim-header">
+              <span class="dim-label">Momentum <span class="dim-trend declining" title="Declining">&#x2198;</span></span>
+              <span class="dim-score-label">72 <span class="dim-weight">/ w0.15</span></span>
+            </div>
+            <div class="dim-track"><div class="dim-fill green" style="width:72%"></div></div>
+            <button class="evidence-toggle">Show evidence</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         THE ROOM
+         ═══════════════════════════════════════════ -->
+    <section id="the-room" class="section">
+      <div class="section__label">The Room</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">The Room</h2>
+        <p class="epigraph">Four stakeholders shape this relationship across the organization.</p>
+
+        <div class="people-grid">
+          <!-- Sarah Chen — Clay + Gravatar enriched, linked person -->
+          <article class="person-card">
+            <button class="remove-x" title="Remove stakeholder">&times;</button>
+            <div class="card-header">
+              <span class="avatar-ring">
+                <img class="avatar" src="https://i.pravatar.cc/56?img=47" alt="Sarah Chen">
+              </span>
+              <a href="#" class="person-name">Sarah Chen</a>
+              <span class="link-icon" title="Linked to person record">&#x1F517;</span>
+              <span class="engagement-badge active">Active</span>
+            </div>
+            <p class="person-title">VP Engineering · Acme Corp</p>
+            <p class="person-role">Executive Sponsor &amp; Champion</p>
+            <p class="person-assessment">Strongest ally in the room. Confirmed Phase 2 budget. Best partner for steering expansion conversation. Responds well to strategic framing.</p>
+            <p class="person-bio">Former Director of Platform at Stripe. MIT CS. Board advisor at two early-stage infrastructure startups.</p>
+            <div class="person-enrichment">
+              <span class="enrichment-tag clay">Clay</span>
+              <span class="enrichment-tag gravatar">Gravatar</span>
+            </div>
+            <div class="last-seen">Last seen 3 days ago</div>
+          </article>
+
+          <!-- Alex Torres — Gravatar only, linked person -->
+          <article class="person-card">
+            <button class="remove-x" title="Remove stakeholder">&times;</button>
+            <div class="card-header">
+              <span class="avatar-ring">
+                <img class="avatar" src="https://i.pravatar.cc/56?img=12" alt="Alex Torres">
+              </span>
+              <a href="#" class="person-name">Alex Torres</a>
+              <span class="link-icon" title="Linked to person record">&#x1F517;</span>
+              <span class="engagement-badge cooling">Cooling</span>
+            </div>
+            <p class="person-title">Senior Engineer · Acme Corp</p>
+            <p class="person-role">Technical Lead — departing March</p>
+            <p class="person-assessment">Holds critical deployment knowledge. Transition is the biggest destabilizer. Presence changes the emotional subtext of any continuity conversation.</p>
+            <div class="person-enrichment">
+              <span class="enrichment-tag gravatar">Gravatar</span>
+            </div>
+            <div class="last-seen">Last seen 8 days ago</div>
+          </article>
+
+          <!-- David Kim — Clay enriched, linked person -->
+          <article class="person-card">
+            <button class="remove-x" title="Remove stakeholder">&times;</button>
+            <div class="card-header">
+              <span class="avatar-ring">
+                <img class="avatar" src="https://i.pravatar.cc/56?img=33" alt="David Kim">
+              </span>
+              <a href="#" class="person-name">David Kim</a>
+              <span class="link-icon" title="Linked to person record">&#x1F517;</span>
+              <span class="engagement-badge warm">Warm</span>
+            </div>
+            <p class="person-title">Director of Operations · Acme Corp</p>
+            <p class="person-role">Budget Influencer</p>
+            <p class="person-assessment">Wants ROI and adoption clarity. Responds to operational proof more than celebratory framing. Prefers data-led conversations — always lead with metrics.</p>
+            <div class="person-enrichment">
+              <span class="enrichment-tag clay">Clay</span>
+            </div>
+            <div class="last-seen">Last seen 12 days ago</div>
+          </article>
+
+          <!-- Priya Patel — no enrichment, not linked -->
+          <article class="person-card">
+            <button class="remove-x" title="Remove stakeholder">&times;</button>
+            <div class="card-header">
+              <span class="avatar-initials">P</span>
+              <span class="person-name" style="text-decoration:none; cursor:default;">Priya Patel</span>
+              <span class="engagement-badge new">New</span>
+            </div>
+            <p class="person-role">Product Manager</p>
+            <p class="person-assessment">Primary operational contact. Manages rollout scheduling and user onboarding coordination. Recently introduced — relationship still forming.</p>
+            <button class="action-create">&#x2795; Create contact</button>
+          </article>
+        </div>
+
+        <div class="coverage-strip">
+          <span class="coverage-count">3 of 4</span>
+          <span class="coverage-label">known stakeholders with defined roles</span>
+        </div>
+
+        <button class="add-trigger">+ Add Stakeholder</button>
+
+        <!-- Your Team -->
+        <div class="team-section">
+          <div class="mono">Your Team</div>
+          <div class="team-chips">
+            <a href="#" class="team-chip">Jordan Lee <span class="team-chip-role">CSM</span></a>
+            <a href="#" class="team-chip">Maria Santos <span class="team-chip-role">SA</span></a>
+            <a href="#" class="team-chip">Tom Nguyen <span class="team-chip-role">AE</span></a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         WATCH LIST
+         ═══════════════════════════════════════════ -->
+    <section id="watch-list" class="section">
+      <div class="section__label">Watch List</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">
+          Watch List
+          <span class="feedback">
+            <button class="fb-btn" title="Helpful">&#x1F44D;</button>
+            <button class="fb-btn" title="Not helpful">&#x1F44E;</button>
+          </span>
+        </h2>
+
+        <div class="watch-section risk">
+          <div class="mono" style="color: var(--terracotta); margin-bottom: 16px;">Risks</div>
+          <div class="watch-item item-row">
+            <span class="watch-text">Alex Torres departing March — critical knowledge transfer gap</span>
+            <span class="watch-urgency act-now">Act Now</span>
+            <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+          </div>
+          <div class="watch-item item-row">
+            <span class="watch-text">NPS trending down: 3 detractors in engineering team</span>
+            <span class="watch-urgency watch">Watch</span>
+            <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+          </div>
+          <div class="watch-item item-row">
+            <span class="watch-text">Budget approval waiting on CTO sign-off — no written confirmation yet</span>
+            <span class="watch-urgency watch">Watch</span>
+            <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+          </div>
+        </div>
+
+        <div class="watch-section win">
+          <div class="mono" style="color: var(--sage); margin-bottom: 16px;">Wins</div>
+          <div class="watch-item item-row">
+            <span class="watch-text">Phase 1 migration completed ahead of schedule</span>
+            <span class="watch-impact">High Impact</span>
+            <span class="item-feedback"><button class="ifb positive" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+          </div>
+          <div class="watch-item item-row">
+            <span class="watch-text">Performance benchmarks exceeded targets by 15%</span>
+            <span class="watch-impact">Strong ROI</span>
+            <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+          </div>
+          <div class="watch-item item-row">
+            <span class="watch-text">Support ticket volume down 40% since deployment</span>
+            <span class="watch-impact">Operational</span>
+            <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+          </div>
+        </div>
+
+        <div class="watch-section unknown">
+          <div class="mono" style="color: var(--larkspur); margin-bottom: 16px;">Unknowns</div>
+          <div class="watch-item item-row">
+            <span class="watch-text">APAC expansion interest expressed informally but not scoped or staffed</span>
+            <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+          </div>
+          <div class="watch-item item-row">
+            <span class="watch-text">Engineering team reorg rumored — impact on stakeholder map unclear</span>
+            <span class="item-feedback"><button class="ifb" title="Helpful">&#x1F44D;</button><button class="ifb" title="Not helpful">&#x1F44E;</button></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         THE WORK
+         ═══════════════════════════════════════════ -->
+    <section id="the-work" class="section">
+      <div class="section__label">The Work</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">The Work</h2>
+
+        <div class="action-row">
+          <div class="action-check"></div>
+          <div class="action-body">
+            <div class="action-text">Follow up with three NPS detractors in engineering before QBR</div>
+            <div class="action-meta">
+              <span class="action-due">Due Mar 21</span>
+              <span class="action-owner">Jordan Lee</span>
+            </div>
+          </div>
+        </div>
+        <div class="action-row">
+          <div class="action-check"></div>
+          <div class="action-body">
+            <div class="action-text">Draft knowledge transfer plan for Alex Torres departure</div>
+            <div class="action-meta">
+              <span class="action-due">Due Mar 14</span>
+              <span class="action-owner">Maria Santos</span>
+              <span class="action-status blocked">Blocked</span>
+            </div>
+          </div>
+        </div>
+        <div class="action-row">
+          <div class="action-check"></div>
+          <div class="action-body">
+            <div class="action-text">Finalize Phase 2 SOW with legal</div>
+            <div class="action-meta">
+              <span class="action-due">Due Mar 20</span>
+              <span class="action-owner">Tom Nguyen</span>
+              <span class="action-status blocked">Blocked</span>
+            </div>
+          </div>
+        </div>
+        <div class="action-row">
+          <div class="action-check"></div>
+          <div class="action-body">
+            <div class="action-text">Prepare Phase 2 scoping deck for Sarah Chen review</div>
+            <div class="action-meta">
+              <span class="action-due">Due Mar 25</span>
+              <span class="action-owner">Jordan Lee</span>
+              <span class="action-status in-progress">In Progress</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="add-trigger">+ Add Action</button>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         THE RECORD
+         ═══════════════════════════════════════════ -->
+    <section id="the-record" class="section">
+      <div class="section__label">The Record</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">The Record</h2>
+
+        <div class="timeline-item">
+          <span class="timeline-date">Mar 10</span>
+          <span class="timeline-dot sage"></span>
+          <div class="timeline-body">
+            <p class="timeline-title">Phase 1 deployment marked complete</p>
+            <p class="timeline-desc">Migration finished two weeks ahead of schedule. All 240 users active. Zero rollback events.</p>
+            <p class="timeline-source">Source: meeting note · Sarah Chen sync</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <span class="timeline-date">Mar 7</span>
+          <span class="timeline-dot turmeric"></span>
+          <div class="timeline-body">
+            <p class="timeline-title">Weekly sync with Sarah Chen</p>
+            <p class="timeline-desc">Confirmed Phase 2 budget. Discussed April start date. APAC expansion mentioned as possibility if Phase 2 goes well.</p>
+            <p class="timeline-source">Source: calendar · Google Calendar</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <span class="timeline-date">Mar 3</span>
+          <span class="timeline-dot larkspur"></span>
+          <div class="timeline-body">
+            <p class="timeline-title">NPS survey results received</p>
+            <p class="timeline-desc">Overall score 42 (was 50). Three detractors identified in engineering. Sentiment shift concentrated in deployment team.</p>
+            <p class="timeline-source">Source: signal · NPS update</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <span class="timeline-date">Feb 28</span>
+          <span class="timeline-dot terracotta"></span>
+          <div class="timeline-body">
+            <p class="timeline-title">Alex Torres gave notice</p>
+            <p class="timeline-desc">Last day March 28. Knowledge transfer plan not yet started. Holds critical deployment runbook context.</p>
+            <p class="timeline-source">Source: email · Alex Torres</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <span class="timeline-date">Feb 15</span>
+          <span class="timeline-dot sage"></span>
+          <div class="timeline-body">
+            <p class="timeline-title">Performance benchmarks exceeded by 15%</p>
+            <p class="timeline-desc">Platform response times 15% better than contract SLA. Support ticket volume down 40% since deployment.</p>
+            <p class="timeline-source">Source: signal · metric update</p>
+          </div>
+        </div>
+
+        <button class="show-more">Show earlier</button>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         REFERENCE
+         ═══════════════════════════════════════════ -->
+    <section id="reference" class="section">
+      <div class="section__label">Reference</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Reference</h2>
+
+        <div class="ref-grid">
+          <div class="ref-block">
+            <div class="mono">Contract</div>
+            <h3>Commercial context</h3>
+            <p>Annual contract, auto-renew. Started March 2025. $1.2M ARR. Standard PO process with 30-day legal review. Renewal date March 1, 2026.</p>
+          </div>
+          <div class="ref-block">
+            <div class="mono">Expansion</div>
+            <h3>Growth signals</h3>
+            <p><strong style="color:var(--text-primary)">Phase 2 platform expansion</strong> — $200K potential, evaluating. <strong style="color:var(--text-primary)">APAC Singapore pilot</strong> — $150K potential, exploring. Total expansion potential: $350K.</p>
+          </div>
+          <div class="ref-block">
+            <div class="mono">Company</div>
+            <h3>Acme Corp</h3>
+            <p>Enterprise SaaS serving mid-market and enterprise. HQ San Francisco. 500-1000 employees. Technology modernization initiative driving platform consolidation.</p>
+          </div>
+          <div class="ref-block">
+            <div class="mono">Success</div>
+            <h3>Success metrics</h3>
+            <p><strong style="color:var(--sage)">Time to Value:</strong> 45 days (target &lt;60) — on track.<br>
+            <strong style="color:var(--terracotta)">NPS Score:</strong> 42 (target 50+) — at risk.</p>
+          </div>
+          <div class="ref-block">
+            <div class="mono">Renewal</div>
+            <h3>Renewal outlook</h3>
+            <p>Confidence: high. Leverage: Phase 1 exceeded benchmarks, strong champion in Sarah Chen. Risk factors: NPS trending down, Alex Torres departure creates uncertainty.</p>
+          </div>
+          <div class="ref-block">
+            <div class="mono">Files</div>
+            <h3>Linked documents</h3>
+            <p>Phase 1 SOW (signed) · Phase 2 proposal (draft) · QBR deck Q4 2025 · Deployment runbook · NPS survey raw data</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         REPORTS
+         ═══════════════════════════════════════════ -->
+    <section id="reports" class="section">
+      <div class="section__label">Reports</div>
+      <div class="section__content">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Reports</h2>
+
+        <div class="report-row">
+          <span>Account Health Review</span>
+          <span class="report-action">View</span>
+        </div>
+        <div class="report-row">
+          <span>EBR / QBR</span>
+          <span class="report-action">View</span>
+        </div>
+        <div class="report-row">
+          <span>Risk Briefing</span>
+          <span class="report-action">View</span>
+        </div>
+        <div class="report-row">
+          <span>SWOT Analysis</span>
+          <span class="report-action">View</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Finis -->
+    <div class="finis">
+      * * *
+      <div class="finis-meta">Last enriched Mar 13, 2026 at 10:42 AM · 4 sources · v12</div>
+    </div>
+
+  </main>
+</body>
+</html>

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS - Account Intelligence Reimagined - Atlas</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --linen: #e8e2d9;
+    --warm-white: #faf8f6;
+    --charcoal: #1e2530;
+    --ink: #2a2b3d;
+    --turmeric: #c9a227;
+    --terracotta: #c4654a;
+    --sage: #7eaa7b;
+    --olive: #6b7c52;
+    --larkspur: #8fa3c4;
+    --text-primary: #1e2530;
+    --text-secondary: #5a6370;
+    --text-tertiary: #8a919a;
+    --rule-heavy: rgba(30, 37, 48, 0.12);
+    --rule-light: rgba(30, 37, 48, 0.08);
+    --shadow: 0 20px 42px rgba(30, 37, 48, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "DM Sans", sans-serif;
+    color: var(--text-primary);
+    background:
+      radial-gradient(circle at 15% 18%, rgba(143, 163, 196, 0.14), transparent 18%),
+      radial-gradient(circle at 80% 24%, rgba(201, 162, 39, 0.14), transparent 22%),
+      radial-gradient(circle at 52% 88%, rgba(126, 170, 123, 0.12), transparent 18%),
+      var(--cream);
+  }
+
+  .shell {
+    width: min(1260px, calc(100% - 40px));
+    margin: 24px auto 80px;
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .mono {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .aside,
+  .main {
+    min-width: 0;
+  }
+
+  .aside__card,
+  .surface {
+    background: rgba(250, 248, 246, 0.74);
+    border: 1px solid rgba(30, 37, 48, 0.08);
+    box-shadow: var(--shadow);
+  }
+
+  .aside__card {
+    position: sticky;
+    top: 24px;
+    padding: 24px 22px;
+  }
+
+  .aside h1 {
+    margin: 10px 0 12px;
+    font-family: "Newsreader", serif;
+    font-size: 36px;
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+  }
+
+  .aside p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+  }
+
+  .mini-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 20px;
+  }
+
+  .mini-list__item {
+    padding-top: 12px;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .mini-list__item strong {
+    display: block;
+    margin-top: 6px;
+    font-size: 14px;
+  }
+
+  .surface {
+    overflow: hidden;
+  }
+
+  .hero {
+    position: relative;
+    padding: 34px 34px 28px;
+    border-bottom: 1px solid var(--rule-heavy);
+  }
+
+  .watermark {
+    position: absolute;
+    right: -12px;
+    top: -8px;
+    font-family: "Montserrat", sans-serif;
+    font-size: 250px;
+    line-height: 0.8;
+    color: rgba(143, 163, 196, 0.08);
+    transform: rotate(-10deg);
+  }
+
+  .hero h2 {
+    position: relative;
+    z-index: 1;
+    margin: 12px 0 0;
+    max-width: 720px;
+    font-family: "Newsreader", serif;
+    font-size: clamp(52px, 5vw, 78px);
+    font-weight: 400;
+    line-height: 0.98;
+    letter-spacing: -0.05em;
+  }
+
+  .hero p {
+    position: relative;
+    z-index: 1;
+    margin: 18px 0 0;
+    max-width: 760px;
+    font-family: "Newsreader", serif;
+    font-size: 23px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+
+  .canvas {
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1.35fr 0.95fr;
+    gap: 20px;
+  }
+
+  .map {
+    position: relative;
+    min-height: 640px;
+    padding: 20px;
+    background:
+      linear-gradient(rgba(232, 226, 217, 0.6) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232, 226, 217, 0.6) 1px, transparent 1px),
+      rgba(245, 242, 239, 0.54);
+    background-size: 28px 28px, 28px 28px, auto;
+    border: 1px solid var(--rule-light);
+  }
+
+  .node {
+    position: absolute;
+    max-width: 260px;
+    padding: 14px 15px 15px;
+    background: rgba(250, 248, 246, 0.92);
+    border: 1px solid var(--rule-light);
+  }
+
+  .node--account {
+    left: 50%;
+    top: 52%;
+    width: 280px;
+    transform: translate(-50%, -50%);
+    border-left: 3px solid var(--turmeric);
+  }
+
+  .node--person {
+    border-left: 3px solid var(--larkspur);
+  }
+
+  .node--risk {
+    border-left: 3px solid var(--terracotta);
+  }
+
+  .node--win {
+    border-left: 3px solid var(--sage);
+  }
+
+  .node h3 {
+    margin: 8px 0 8px;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .node p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.62;
+    color: var(--text-secondary);
+  }
+
+  .line {
+    position: absolute;
+    background: var(--rule-heavy);
+    transform-origin: left center;
+    height: 1px;
+  }
+
+  .line::after {
+    content: "";
+    position: absolute;
+    right: -3px;
+    top: -2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+
+  .line--warm { color: var(--turmeric); }
+  .line--cool { color: var(--larkspur); }
+  .line--risk { color: var(--terracotta); }
+  .line--win { color: var(--sage); }
+
+  .sidebar {
+    display: grid;
+    gap: 18px;
+  }
+
+  .story,
+  .strip,
+  .moves {
+    padding: 20px;
+    border: 1px solid var(--rule-light);
+    background: rgba(245, 242, 239, 0.64);
+  }
+
+  .story h3,
+  .moves h3 {
+    margin: 10px 0 12px;
+    font-family: "Newsreader", serif;
+    font-size: 30px;
+    font-weight: 400;
+    letter-spacing: -0.03em;
+  }
+
+  .story p,
+  .moves p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.74;
+    color: var(--text-secondary);
+  }
+
+  .strip {
+    display: grid;
+    gap: 12px;
+  }
+
+  .strip__item {
+    padding-top: 12px;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .strip__item:first-child {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .strip__item strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 14px;
+  }
+
+  .moves ul {
+    margin: 14px 0 0 18px;
+    padding: 0;
+    color: var(--text-secondary);
+    line-height: 1.8;
+  }
+
+  .footer {
+    padding: 18px 24px 24px;
+    border-top: 1px solid var(--rule-heavy);
+    text-align: center;
+    font-family: "Newsreader", serif;
+    color: var(--text-secondary);
+  }
+
+  .footer span {
+    margin-right: 10px;
+    letter-spacing: 0.28em;
+    color: var(--larkspur);
+  }
+
+  @media (max-width: 1120px) {
+    .shell,
+    .canvas {
+      grid-template-columns: 1fr;
+    }
+
+    .aside__card {
+      position: static;
+    }
+
+    .map {
+      min-height: 900px;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .shell {
+      width: min(100%, calc(100% - 16px));
+      margin: 8px auto 24px;
+      gap: 14px;
+    }
+
+    .hero,
+    .canvas,
+    .aside__card,
+    .footer {
+      padding-left: 18px;
+      padding-right: 18px;
+    }
+
+    .hero h2 { font-size: 48px; }
+    .hero p { font-size: 20px; }
+    .map { min-height: 980px; padding: 14px; }
+  }
+</style>
+</head>
+<body>
+  <main class="shell">
+    <aside class="aside">
+      <div class="aside__card">
+        <div class="mono">Reading model</div>
+        <h1>Atlas</h1>
+        <p>This direction treats intelligence as a field map. Instead of reading one long editorial sequence, the user sees the account's power structure, pressure points, and next moves spatially. It is especially strong for meeting detail and stakeholder-heavy prep.</p>
+
+        <div class="mini-list">
+          <div class="mini-list__item">
+            <div class="mono">Best use</div>
+            <strong>Prep for live rooms with multiple actors.</strong>
+          </div>
+          <div class="mini-list__item">
+            <div class="mono">What changes</div>
+            <strong>The page privileges relationships and momentum over chapter order.</strong>
+          </div>
+          <div class="mini-list__item">
+            <div class="mono">Why it still fits</div>
+            <strong>Warm materials, serif hierarchy, and finite reading remain intact.</strong>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="main">
+      <div class="surface">
+        <header class="hero">
+          <div class="watermark">*</div>
+          <div class="mono">DailyOS / account atlas / Acme / relationship and momentum map</div>
+          <h2>The real story at Acme is not account health. It is alignment between three people who need different kinds of proof.</h2>
+          <p>This concept shifts the page from magazine spread to navigable terrain. The first read is structural: where influence lives, where risk is pooling, and which conversation changes the shape of the account next.</p>
+        </header>
+
+        <div class="canvas">
+          <section class="map">
+            <div class="line line--cool" style="left: 52%; top: 34%; width: 150px; transform: rotate(-38deg);"></div>
+            <div class="line line--warm" style="left: 43%; top: 52%; width: 124px; transform: rotate(182deg);"></div>
+            <div class="line line--risk" style="left: 56%; top: 56%; width: 170px; transform: rotate(20deg);"></div>
+            <div class="line line--win" style="left: 50%; top: 61%; width: 150px; transform: rotate(110deg);"></div>
+            <div class="line line--cool" style="left: 31%; top: 61%; width: 210px; transform: rotate(9deg);"></div>
+
+            <article class="node node--account">
+              <div class="mono">Account center</div>
+              <h3>Acme / renewal likely if the story stays operational</h3>
+              <p>The account is stable, but the renewal case has narrowed. The system should orient the user toward alignment work, not account recovery work.</p>
+            </article>
+
+            <article class="node node--person" style="left: 56%; top: 18%;">
+              <div class="mono">Executive sponsor</div>
+              <h3>Sarah Kim</h3>
+              <p>Supports the relationship and values disciplined execution. Influence is high, patience for abstract storytelling is low.</p>
+            </article>
+
+            <article class="node node--person" style="left: 8%; top: 48%;">
+              <div class="mono">Champion</div>
+              <h3>Dana Walsh</h3>
+              <p>Still the most effective internal advocate, but now needs a tighter proof artifact she can recirculate without translation.</p>
+            </article>
+
+            <article class="node node--risk" style="left: 69%; top: 48%;">
+              <div class="mono">Pressure point</div>
+              <h3>Finance wants workflow evidence</h3>
+              <p>The objection is not product fit. It is whether incremental spend can be justified with hard operating outcomes.</p>
+            </article>
+
+            <article class="node node--win" style="left: 50%; top: 74%;">
+              <div class="mono">Momentum</div>
+              <h3>Launch operations is the strongest expansion wedge</h3>
+              <p>Multiple recent signals point to cycle-time compression as the cleanest story to carry into the renewal review.</p>
+            </article>
+          </section>
+
+          <aside class="sidebar">
+            <article class="story">
+              <div class="mono">Narrative frame</div>
+              <h3>What the map is telling you</h3>
+              <p>There is enough goodwill in this account to win, but the center of gravity has shifted away from product enthusiasm and toward operational proof. Mapping the room makes that obvious in a way linear chapters often do not. The user can see, in one glance, that the next meeting is about translating between a champion, an executive sponsor, and a cautious finance voice.</p>
+            </article>
+
+            <div class="strip">
+              <div class="strip__item">
+                <div class="mono">Meeting mode</div>
+                <strong>Use the same map with attendee-specific annotations for briefing pages.</strong>
+              </div>
+              <div class="strip__item">
+                <div class="mono">Report mode</div>
+                <strong>Collapse the map into one hero slide, then follow with signal cards and actions.</strong>
+              </div>
+              <div class="strip__item">
+                <div class="mono">Account mode</div>
+                <strong>Keep the map pinned at top and let chapters deepen below it.</strong>
+              </div>
+            </div>
+
+            <article class="moves">
+              <div class="mono">Best next moves</div>
+              <h3>How the page would direct action</h3>
+              <p>The UI should turn this map into a planning surface, not a static diagram.</p>
+              <ul>
+                <li>Prepare one forwardable proof memo for Dana by Tuesday.</li>
+                <li>Anchor the next executive review on workflow reliability metrics.</li>
+                <li>Avoid broad expansion language until Owen has a concrete value line.</li>
+              </ul>
+            </article>
+          </aside>
+        </div>
+
+        <footer class="footer"><span>* * *</span>Show the shape first. Let the prose confirm it.</footer>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
