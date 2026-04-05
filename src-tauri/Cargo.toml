@@ -71,6 +71,9 @@ strsim = "0.11"
 # ADR-0095: Glean context provider cache (concurrent hash map)
 dashmap = "6"
 
+# Non-poisoning Mutex/RwLock — prevents cascade crashes when a task panics while holding a lock
+parking_lot = "0.12"
+
 # MCP Server (ADR-0075) + Quill MCP client
 rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-child-process", "macros"] }
 schemars = { version = "0.8", optional = true }
@@ -99,7 +102,7 @@ objc2-local-authentication = { version = "0.3", features = ["block2"] }
 block2 = "0.6"
 
 [profile.release]
-panic = "abort"
+panic = "unwind"    # was "abort" — enables task supervisor to catch/restart panicking tasks
 codegen-units = 1
 lto = true
 opt-level = "s"
