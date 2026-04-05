@@ -9,8 +9,10 @@
 //! On failure, the caller falls back to the PTY path transparently.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
 
 use tauri::{AppHandle, Emitter};
 
@@ -575,7 +577,8 @@ impl GleanIntelligenceProvider {
         user_name: &str,
     ) -> Result<Vec<DiscoveredAccount>, String> {
         let cache_key = format!("{}::{}", self.endpoint, user_email.to_lowercase());
-        if let Ok(cache) = discovery_cache().lock() {
+        {
+            let cache = discovery_cache().lock();
             if let Some(entry) = cache.get(&cache_key) {
                 if entry.cached_at.elapsed() < DISCOVERY_CACHE_TTL {
                     log::info!(
@@ -609,7 +612,8 @@ impl GleanIntelligenceProvider {
             user_email
         );
 
-        if let Ok(mut cache) = discovery_cache().lock() {
+        {
+            let mut cache = discovery_cache().lock();
             cache.insert(
                 cache_key,
                 DiscoveryCacheEntry {

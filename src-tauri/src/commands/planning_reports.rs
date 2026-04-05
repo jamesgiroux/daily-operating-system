@@ -291,7 +291,6 @@ pub async fn generate_meeting_agenda_message_draft(
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
@@ -388,7 +387,6 @@ fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path::Pa
     let config = state
         .config
         .read()
-        .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
@@ -824,12 +822,109 @@ pub async fn backfill_historical_meetings(
     let config = state
         .config
         .read()
-        .map_err(|_| "Config lock poisoned")?
         .clone()
         .ok_or("Config not initialized")?;
 
     state
         .db_write(move |db| crate::backfill_meetings::backfill_historical_meetings(db, &config))
+        .await
+}
+
+// ==================== Domain Backfill ====================
+
+/// I660: Backfill account_domains from historical meeting→account links.
+///
+/// Walks all meeting_entities where entity_type='account', extracts attendee
+/// email domains, and merges them into account_domains. This populates the
+/// domain data that entity resolution and transcript routing depend on.
+#[tauri::command]
+pub async fn backfill_account_domains(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(usize, usize, Vec<String>), String> {
+    let user_domains = state
+        .config
+        .read()
+        .as_ref()
+        .map(|c| c.resolved_user_domains())
+        .unwrap_or_default();
+
+    state
+        .db_write(move |db| {
+            let pairs = db
+                .get_account_meetings_for_domain_backfill()
+                .map_err(|e| format!("Failed to query meetings: {e}"))?;
+
+            let mut accounts_populated: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            let mut domains_added: usize = 0;
+            let mut errors: Vec<String> = Vec::new();
+
+            for (account_id, attendees_raw) in &pairs {
+                let attendees: Vec<String> =
+                    if let Ok(arr) = serde_json::from_str::<Vec<String>>(attendees_raw) {
+                        arr
+                    } else {
+                        attendees_raw
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    };
+
+                let discovered =
+                    crate::signals::event_trigger::extract_domains_from_attendees(
+                        &attendees,
+                        &user_domains,
+                    );
+
+                if discovered.is_empty() {
+                    continue;
+                }
+
+                match db.merge_account_domains(account_id, &discovered) {
+                    Ok(()) => {
+                        domains_added += discovered.len();
+                        accounts_populated.insert(account_id.clone());
+                    }
+                    Err(e) => {
+                        errors.push(format!("Account {}: {}", account_id, e));
+                    }
+                }
+            }
+
+            log::info!(
+                "I660 backfill: populated {} accounts with {} domains ({} errors)",
+                accounts_populated.len(),
+                domains_added,
+                errors.len()
+            );
+
+            Ok((accounts_populated.len(), domains_added, errors))
+        })
+        .await
+}
+
+// ==================== Archive Recovery ====================
+
+/// I662: Re-route stranded transcripts and meeting records from _archive/
+/// to their correct entity directories.
+#[tauri::command]
+pub async fn recover_archived_transcripts(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::workflow::recover::RecoveryReport, String> {
+    let config = state
+        .config
+        .read()
+        .clone()
+        .ok_or("Config not initialized")?;
+
+    let workspace = std::path::PathBuf::from(&config.workspace_path);
+    let user_domains = config.resolved_user_domains();
+
+    state
+        .db_write(move |db| {
+            crate::workflow::recover::recover_archived_transcripts(&workspace, db, &user_domains)
+        })
         .await
 }
 

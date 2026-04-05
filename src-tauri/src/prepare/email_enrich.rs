@@ -293,13 +293,12 @@ pub fn enrich_pending_emails_two_phase(
         ];
         for (field_name, value) in &fields_to_check {
             if crate::util::contains_tag_escape(value) {
-                if let Ok(mut audit) = state.audit_log.lock() {
-                    let _ = audit.append(
-                        "anomaly",
-                        "injection_tag_escape_detected",
-                        serde_json::json!({"source": format!("email_{}", field_name), "escaped": true}),
-                    );
-                }
+                let mut audit = state.audit_log.lock();
+                let _ = audit.append(
+                    "anomaly",
+                    "injection_tag_escape_detected",
+                    serde_json::json!({"source": format!("email_{}", field_name), "escaped": true}),
+                );
             }
         }
         // Build context prompt — needs DB for relationship context
@@ -392,7 +391,8 @@ pub fn enrich_pending_emails_two_phase(
             pending.len()
         );
         // Audit: email enrichment batch
-        if let Ok(mut audit) = state.audit_log.lock() {
+        {
+            let mut audit = state.audit_log.lock();
             let _ = audit.append(
                 "ai",
                 "email_enrichment_batch",
