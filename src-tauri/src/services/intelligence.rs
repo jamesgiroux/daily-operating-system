@@ -980,6 +980,62 @@ pub async fn dismiss_intelligence_item(
         .await
 }
 
+/// I585: Persist a full replacement of value_delivered items for an entity.
+///
+/// Items that the user explicitly edited are marked with `confirmed_by_user: true`.
+/// Any item without an ID gets a new UUID. The full array is written to
+/// `entity_assessment.value_delivered_json`. A `value_delivered_updated` signal
+/// is emitted with `source: "user_correction"` and confidence 1.0.
+pub async fn update_value_delivered(
+    entity_id: &str,
+    entity_type: &str,
+    items_json: &str,
+    state: &AppState,
+) -> Result<(), String> {
+    let entity_id = entity_id.to_string();
+    let entity_type = entity_type.to_string();
+    let items_json = items_json.to_string();
+
+    state
+        .db_write(move |db| {
+            let mut items: Vec<crate::intelligence::io::ValueItem> =
+                serde_json::from_str(&items_json)
+                    .map_err(|e| format!("Invalid items JSON: {e}"))?;
+
+            let now = chrono::Utc::now().to_rfc3339();
+            for item in &mut items {
+                if item.id.is_none() {
+                    item.id = Some(uuid::Uuid::new_v4().to_string());
+                }
+                if item.added_at.is_none() {
+                    item.added_at = Some(now.clone());
+                }
+                // All items submitted via this method are user-confirmed
+                item.confirmed_by_user = true;
+            }
+
+            db.with_transaction(|tx| {
+                tx.update_value_delivered_json(&entity_id, &items)
+                    .map_err(|e| e.to_string())?;
+
+                crate::services::signals::emit(
+                    tx,
+                    &entity_type,
+                    &entity_id,
+                    "value_delivered_updated",
+                    "user_correction",
+                    Some("{\"field\":\"valueDelivered\"}"),
+                    1.0,
+                )
+                .map_err(|e| format!("signal emit failed: {e}"))?;
+                Ok(())
+            })?;
+
+            Ok(())
+        })
+        .await
+}
+
 /// Recompute health dimensions for an account without full re-enrichment.
 ///
 /// Called when signals arrive that affect health (meetings, emails, stakeholder changes).

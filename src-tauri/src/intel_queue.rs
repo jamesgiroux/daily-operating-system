@@ -1907,6 +1907,12 @@ pub fn write_enrichment_results(
         dual_write_enrichment_products(&db, &input.entity_id, &final_intel);
     }
 
+    // I585: Merge newly extracted value_delivered items into the persisted column.
+    // User-confirmed items are never overwritten; new AI items are appended.
+    if !final_intel.value_delivered.is_empty() {
+        merge_persisted_value_delivered(&db, &input.entity_id, &final_intel.value_delivered);
+    }
+
     // I338: Regenerate person files after intelligence enrichment
     if input.entity_type == "person" {
         if let Ok(Some(person)) = db.get_person(&input.entity_id) {
@@ -2241,6 +2247,59 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
         meeting_ids.len(),
         entity_id,
     );
+}
+
+/// I585: Merge newly-extracted value_delivered items into the persisted value_delivered_json
+/// column, preserving user-confirmed items and avoiding duplicates (fuzzy statement match).
+fn merge_persisted_value_delivered(
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    new_items: &[crate::intelligence::io::ValueItem],
+) {
+    use crate::intelligence::io::ValueItem;
+
+    // Read the existing persisted items (best-effort — tolerate missing column on older DBs)
+    let existing: Vec<ValueItem> = db
+        .conn_ref()
+        .query_row(
+            "SELECT value_delivered_json FROM entity_assessment WHERE entity_id = ?1",
+            rusqlite::params![entity_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+        .and_then(|j| serde_json::from_str(&j).ok())
+        .unwrap_or_default();
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut merged: Vec<ValueItem> = existing.clone();
+
+    'outer: for new_item in new_items {
+        let new_lower = new_item.statement.to_lowercase();
+        for existing_item in &merged {
+            // Fuzzy match: if the statements share significant overlap, treat as same item
+            let ex_lower = existing_item.statement.to_lowercase();
+            // Simple containment check: if either is a substring of the other
+            if ex_lower.contains(&new_lower) || new_lower.contains(&ex_lower) {
+                // Don't update user-confirmed items
+                continue 'outer;
+            }
+        }
+        // New item — append with an ID and added_at timestamp
+        let mut item = new_item.clone();
+        if item.id.is_none() {
+            item.id = Some(uuid::Uuid::new_v4().to_string());
+        }
+        if item.added_at.is_none() {
+            item.added_at = Some(now.clone());
+        }
+        merged.push(item);
+    }
+
+    // Only write if something changed
+    if merged.len() != existing.len() {
+        let _ = db.update_value_delivered_json(entity_id, &merged);
+    }
 }
 
 /// I535 Step 11: Dual-write commitments from Glean enrichment to `captured_commitments`.

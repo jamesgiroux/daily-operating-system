@@ -736,6 +736,71 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     conn.execute("UPDATE app_state SET demo_mode_active = 1 WHERE id = 1", [])
         .map_err(|e| format!("Set demo_mode_active: {}", e))?;
 
+    // I585: Seed persisted value_delivered_json for demo accounts.
+    // Acme: 2 items (1 user-confirmed, 1 AI-inferred), Globex: 1 confirmed, Initech: empty.
+    let acme_vd = r#"[
+        {
+            "id": "demo-vd-acme-1",
+            "date": "2026-01-15T00:00:00Z",
+            "statement": "Reduced support ticket volume by 60% after platform migration",
+            "source": "meeting",
+            "sourceId": "demo-mh-acme-7d",
+            "impact": "cost",
+            "itemSource": {"source": "meeting", "confidence": 0.95, "sourcedAt": "2026-01-15T00:00:00Z", "reference": "Acme Corp Status Call"},
+            "confirmedByUser": true,
+            "addedAt": "2026-01-20T10:00:00Z"
+        },
+        {
+            "id": "demo-vd-acme-2",
+            "date": "2026-02-10T00:00:00Z",
+            "statement": "Phase 1 migration completed 2 weeks ahead of schedule, reducing onboarding time by 40%",
+            "source": "meeting",
+            "sourceId": "demo-mh-acme-7d",
+            "impact": "speed",
+            "itemSource": {"source": "meeting", "confidence": 0.85, "sourcedAt": "2026-02-10T00:00:00Z", "reference": "Acme Corp Status Call"},
+            "confirmedByUser": false,
+            "addedAt": "2026-02-12T08:00:00Z"
+        }
+    ]"#;
+
+    let globex_vd = r#"[
+        {
+            "id": "demo-vd-globex-1",
+            "date": "2026-02-28T00:00:00Z",
+            "statement": "Teams A and C fully adopted platform — 100% utilization within 60 days of rollout",
+            "source": "meeting",
+            "sourceId": "demo-mh-globex-14d",
+            "impact": "revenue",
+            "itemSource": {"source": "meeting", "confidence": 0.9, "sourcedAt": "2026-02-28T00:00:00Z", "reference": "Globex Sprint Demo"},
+            "confirmedByUser": true,
+            "addedAt": "2026-03-01T09:00:00Z"
+        }
+    ]"#;
+
+    conn.execute(
+        "INSERT INTO entity_assessment (entity_id, entity_type, value_delivered_json) \
+         VALUES ('demo-acme', 'account', ?1) \
+         ON CONFLICT(entity_id) DO UPDATE SET value_delivered_json = excluded.value_delivered_json",
+        rusqlite::params![acme_vd],
+    )
+    .map_err(|e| format!("Demo Acme value_delivered_json: {}", e))?;
+
+    conn.execute(
+        "INSERT INTO entity_assessment (entity_id, entity_type, value_delivered_json) \
+         VALUES ('demo-globex', 'account', ?1) \
+         ON CONFLICT(entity_id) DO UPDATE SET value_delivered_json = excluded.value_delivered_json",
+        rusqlite::params![globex_vd],
+    )
+    .map_err(|e| format!("Demo Globex value_delivered_json: {}", e))?;
+
+    conn.execute(
+        "INSERT INTO entity_assessment (entity_id, entity_type, value_delivered_json) \
+         VALUES ('demo-initech', 'account', '[]') \
+         ON CONFLICT(entity_id) DO UPDATE SET value_delivered_json = '[]'",
+        [],
+    )
+    .map_err(|e| format!("Demo Initech value_delivered_json: {}", e))?;
+
     // Write fixture files if workspace provided
     if let Some(ws) = workspace {
         write_demo_fixtures(ws)?;
@@ -766,6 +831,13 @@ pub fn clear_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), String>
         [],
     )
     .map_err(|e| format!("Clear demo health history: {}", e))?;
+
+    // I585: Clean up entity_assessment rows for demo accounts
+    conn.execute(
+        "DELETE FROM entity_assessment WHERE entity_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo entity_assessment: {}", e))?;
 
     // Clean up v1.0.3 meeting intelligence tables for demo meetings
     conn.execute("DELETE FROM captures WHERE meeting_id LIKE 'demo-%'", [])

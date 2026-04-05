@@ -1167,6 +1167,14 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
             (base_momentum * 0.65 + zendesk_velocity.clamp(10.0, 100.0) * 0.35).clamp(10.0, 100.0);
     }
 
+    // I585: Blend in a value_delivered bonus based on count and recency of persisted items.
+    // User-confirmed items carry more weight than AI-inferred items.
+    let value_bonus = compute_value_delivered_bonus(db, account_id);
+    if let Some((bonus, ev)) = value_bonus {
+        momentum = (momentum * 0.85 + bonus * 0.15).clamp(10.0, 100.0);
+        evidence.push(ev);
+    }
+
     DimensionScore {
         score: momentum,
         weight: 1.0,
@@ -1179,6 +1187,65 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
             "stable".to_string()
         },
     }
+}
+
+/// I585: Compute a value_success bonus from persisted value_delivered_json.
+/// Returns (score 0–100, evidence string) or None if no persisted data.
+/// - User-confirmed items contribute more than AI-inferred items.
+/// - Recent items (< 90 days) count more than older ones.
+fn compute_value_delivered_bonus(db: &ActionDb, account_id: &str) -> Option<(f64, String)> {
+    use crate::intelligence::io::ValueItem;
+
+    let items_json: Option<String> = db
+        .conn_ref()
+        .query_row(
+            "SELECT value_delivered_json FROM entity_assessment WHERE entity_id = ?1",
+            rusqlite::params![account_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
+    let items: Vec<ValueItem> = items_json
+        .and_then(|j| serde_json::from_str(&j).ok())
+        .unwrap_or_default();
+
+    if items.is_empty() {
+        return None;
+    }
+
+    let now = chrono::Utc::now();
+    let mut score = 0.0f64;
+    let confirmed_count = items.iter().filter(|i| i.confirmed_by_user).count();
+    let total_count = items.len();
+
+    for item in &items {
+        let base = if item.confirmed_by_user { 20.0 } else { 10.0 };
+        // Recency factor: items with a date within 90 days get full weight
+        let recency = item
+            .date
+            .as_deref()
+            .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+            .map(|d| {
+                let age_days = (now - d.with_timezone(&chrono::Utc)).num_days();
+                if age_days <= 90 {
+                    1.0
+                } else if age_days <= 365 {
+                    0.6
+                } else {
+                    0.3
+                }
+            })
+            .unwrap_or(0.7); // no date → moderate weight
+        score += base * recency;
+    }
+
+    let bonus = score.clamp(0.0, 100.0);
+    let ev = format!(
+        "{} value delivered items ({} user-confirmed)",
+        total_count, confirmed_count
+    );
+    Some((bonus, ev))
 }
 
 /// Apply lifecycle-stage weight multipliers to each dimension.

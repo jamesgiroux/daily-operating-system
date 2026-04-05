@@ -708,6 +708,7 @@ pub fn run() {
             commands::update_intelligence_field,
             commands::dismiss_intelligence_item,
             commands::update_stakeholders,
+            commands::update_value_delivered,
             commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
