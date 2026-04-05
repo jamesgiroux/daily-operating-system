@@ -4,7 +4,8 @@
 //! `crate::signals::bus` directly.  Infrastructure callers that only have
 //! a raw `db` handle (prepare/, processor/, gravatar/) stay direct.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use serde_json::Value;
 
@@ -125,7 +126,6 @@ pub fn run_propagation(
 
 /// Queue affected meeting preps for regeneration after entity correction.
 pub fn invalidate_preps(queue: &Arc<Mutex<Vec<String>>>, meeting_ids: Vec<String>) {
-    if let Ok(mut q) = queue.lock() {
-        q.extend(meeting_ids);
-    }
+    let mut q = queue.lock();
+    q.extend(meeting_ids);
 }
