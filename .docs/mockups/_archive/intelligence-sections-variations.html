@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS — Intelligence Sections: 3 Variations</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200;0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,200;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --linen: #e8e2d9;
+    --warm-white: #faf8f6;
+    --charcoal: #1e2530;
+    --ink: #2a2b3d;
+    --turmeric: #c9a227;
+    --saffron: #deb841;
+    --terracotta: #c4654a;
+    --sage: #7eaa7b;
+    --larkspur: #8fa3c4;
+    --eucalyptus: #4a8c72;
+    --text-primary: #1e2530;
+    --text-secondary: #5a6370;
+    --text-tertiary: #8a919a;
+    --rule-heavy: rgba(30, 37, 48, 0.14);
+    --rule-light: rgba(30, 37, 48, 0.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: "DM Sans", sans-serif;
+    background: var(--cream);
+    color: var(--text-primary);
+    line-height: 1.5;
+  }
+
+  /* ── Shared layout ── */
+  .page { width: min(960px, calc(100% - 48px)); margin: 0 auto; padding: 60px 0 120px; }
+  .variation-header {
+    padding: 80px 0 40px;
+    border-bottom: 3px double var(--charcoal);
+    margin-bottom: 80px;
+  }
+  .variation-header h1 {
+    font-family: "Newsreader", serif;
+    font-size: 42px; font-weight: 300;
+    letter-spacing: -0.02em;
+  }
+  .variation-header .subtitle {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--text-tertiary);
+    margin-top: 8px;
+  }
+  .variation-header .brief {
+    font-family: "Newsreader", serif;
+    font-size: 17px; font-style: italic;
+    color: var(--text-secondary);
+    margin-top: 16px; max-width: 600px;
+    line-height: 1.6;
+  }
+
+  .section {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 28px;
+    align-items: start;
+    padding-top: 100px;
+  }
+  .section__label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-tertiary);
+    padding-top: 20px;
+    position: sticky; top: 20px;
+  }
+  .section__content { min-width: 0; }
+  .chapter-rule { border: none; border-top: 1px solid var(--rule-heavy); margin: 0 0 20px; }
+  .chapter-title {
+    font-family: "Newsreader", serif;
+    font-size: 28px; font-weight: 400;
+    letter-spacing: -0.01em;
+    margin: 0 0 40px;
+  }
+
+  .mono {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.06em; text-transform: uppercase;
+  }
+
+  /* ── Hover-reveal actions ── */
+  .item-actions {
+    display: flex; align-items: center; gap: 2px;
+    opacity: 0; transition: opacity 0.15s ease;
+    flex-shrink: 0;
+  }
+  .hoverable:hover .item-actions { opacity: 1; }
+  .act-btn {
+    width: 20px; height: 20px; padding: 0;
+    border: none; border-radius: 2px;
+    background: transparent; color: var(--text-tertiary);
+    cursor: pointer; font-size: 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .act-btn:hover { background: rgba(30,37,48,0.06); }
+  .act-btn.pos:hover { color: var(--sage); }
+  .act-btn.neg:hover { color: var(--terracotta); }
+  .act-btn.dismiss:hover { color: var(--terracotta); }
+
+  .badge {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 3px;
+    white-space: nowrap;
+  }
+  .badge-sage { background: rgba(126,170,123,0.12); color: var(--sage); }
+  .badge-turmeric { background: rgba(201,162,39,0.12); color: var(--turmeric); }
+  .badge-terracotta { background: rgba(196,101,74,0.12); color: var(--terracotta); }
+  .badge-larkspur { background: rgba(143,163,196,0.12); color: var(--larkspur); }
+  .badge-neutral { background: rgba(30,37,48,0.06); color: var(--text-secondary); }
+
+  .separator { height: 1px; background: var(--rule-heavy); margin: 80px 0; }
+
+  @media (max-width: 860px) {
+    .section { grid-template-columns: 1fr; gap: 0; }
+    .section__label { position: static; padding-top: 0; margin-bottom: 8px; }
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     VARIATION A — "THE LEDGER"
+     Data-forward. Financial report meets magazine.
+     ══════════════════════════════════════════════════════════════ */
+
+  /* Value Delivered — large date timeline */
+  .ledger-value-item {
+    display: grid;
+    grid-template-columns: 100px 1fr auto;
+    gap: 20px;
+    padding: 28px 0;
+    border-bottom: 1px solid var(--rule-light);
+    align-items: start;
+  }
+  .ledger-value-item:last-child { border-bottom: none; }
+  .ledger-date-block { text-align: right; }
+  .ledger-date-month {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--text-tertiary);
+  }
+  .ledger-date-day {
+    font-family: "Newsreader", serif;
+    font-size: 36px; font-weight: 300;
+    line-height: 0.9; color: var(--turmeric);
+    letter-spacing: -0.02em;
+  }
+  .ledger-value-statement {
+    font-family: "Newsreader", serif;
+    font-size: 17px; line-height: 1.55;
+    color: var(--text-primary);
+  }
+  .ledger-value-impact {
+    font-family: "DM Sans", sans-serif;
+    font-size: 13px; line-height: 1.5;
+    color: var(--text-tertiary);
+    font-style: italic;
+    margin-top: 6px;
+  }
+
+  /* Metrics — dashboard strip */
+  .ledger-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin-top: 40px;
+    border-top: 2px solid var(--charcoal);
+    border-bottom: 1px solid var(--rule-heavy);
+  }
+  .ledger-metric {
+    padding: 24px 20px;
+    border-right: 1px solid var(--rule-light);
+  }
+  .ledger-metric:last-child { border-right: none; }
+  .ledger-metric-name {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-tertiary);
+    margin-bottom: 12px;
+  }
+  .ledger-metric-value {
+    font-family: "Newsreader", serif;
+    font-size: 28px; font-weight: 300;
+    letter-spacing: -0.02em;
+    margin-bottom: 4px;
+  }
+  .ledger-metric-target {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; color: var(--text-tertiary);
+    letter-spacing: 0.04em;
+  }
+  .ledger-metric-bar {
+    height: 3px; background: var(--rule-light);
+    border-radius: 2px; margin-top: 12px; overflow: hidden;
+  }
+  .ledger-metric-fill { height: 100%; border-radius: 2px; }
+
+  /* Commitments — ledger rows */
+  .ledger-commitment {
+    display: grid;
+    grid-template-columns: 1fr 120px 100px auto;
+    gap: 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--rule-light);
+    align-items: center;
+    font-size: 14px;
+  }
+  .ledger-commitment:last-child { border-bottom: none; }
+  .ledger-commitment-desc {
+    font-family: "Newsreader", serif;
+    font-size: 15px; line-height: 1.5;
+  }
+  .ledger-commitment-owner { color: var(--text-tertiary); }
+  .ledger-commitment-due { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--text-tertiary); letter-spacing: 0.04em; }
+  .ledger-commitment-due.overdue { color: var(--terracotta); }
+
+  /* Competitive — threat matrix */
+  .ledger-threat-matrix {
+    display: grid;
+    grid-template-columns: 140px 1fr auto;
+    gap: 16px;
+    margin-top: 32px;
+  }
+  .ledger-threat-row {
+    display: contents;
+  }
+  .ledger-threat-row > * {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--rule-light);
+    align-self: center;
+  }
+  .ledger-competitor {
+    font-family: "Newsreader", serif;
+    font-size: 17px; font-weight: 500;
+  }
+  .ledger-threat-context {
+    font-size: 14px; line-height: 1.55;
+    color: var(--text-secondary);
+  }
+
+  /* Strategic priorities — numbered list with status */
+  .ledger-priority {
+    display: flex; align-items: start; gap: 16px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .ledger-priority:last-child { border-bottom: none; }
+  .ledger-priority-num {
+    font-family: "Newsreader", serif;
+    font-size: 32px; font-weight: 200;
+    color: var(--text-tertiary);
+    line-height: 0.9;
+    width: 32px; text-align: center; flex-shrink: 0;
+    padding-top: 4px;
+  }
+  .ledger-priority-body { flex: 1; }
+  .ledger-priority-text {
+    font-family: "Newsreader", serif;
+    font-size: 17px; line-height: 1.5;
+  }
+  .ledger-priority-meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; color: var(--text-tertiary);
+    letter-spacing: 0.04em; margin-top: 6px;
+    display: flex; gap: 12px; align-items: center;
+  }
+
+  /* Org changes — compact timeline */
+  .ledger-change {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule-light);
+    font-size: 14px;
+  }
+  .ledger-change:last-child { border-bottom: none; }
+  .ledger-change-icon {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; flex-shrink: 0;
+  }
+  .ledger-change-icon.departure { background: rgba(196,101,74,0.1); color: var(--terracotta); }
+  .ledger-change-icon.hire { background: rgba(126,170,123,0.1); color: var(--sage); }
+  .ledger-change-icon.promotion { background: rgba(201,162,39,0.1); color: var(--turmeric); }
+  .ledger-change-body { flex: 1; }
+  .ledger-change-name { font-weight: 500; }
+  .ledger-change-detail { color: var(--text-secondary); }
+  .ledger-change-date { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--text-tertiary); letter-spacing: 0.04em; }
+
+  /* Blockers — terracotta accent */
+  .ledger-blocker {
+    border-left: 3px solid var(--terracotta);
+    padding: 16px 24px;
+    margin-bottom: 16px;
+    background: rgba(196,101,74,0.03);
+  }
+  .ledger-blocker:last-child { margin-bottom: 0; }
+  .ledger-blocker-desc {
+    font-family: "Newsreader", serif;
+    font-size: 16px; line-height: 1.55;
+  }
+  .ledger-blocker-meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; color: var(--text-tertiary);
+    letter-spacing: 0.04em; margin-top: 8px;
+    display: flex; gap: 16px;
+  }
+
+  /* Outlook — forecast card */
+  .ledger-forecast {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    margin-top: 32px;
+  }
+  .ledger-forecast-left { }
+  .ledger-confidence-gauge {
+    display: flex; align-items: end; gap: 16px;
+    margin-bottom: 32px;
+  }
+  .ledger-gauge-number {
+    font-family: "Newsreader", serif;
+    font-size: 64px; font-weight: 200;
+    line-height: 0.85; letter-spacing: -0.04em;
+  }
+  .ledger-gauge-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding-bottom: 8px;
+  }
+  .ledger-risk-factors { list-style: none; padding: 0; }
+  .ledger-risk-factors li {
+    font-size: 14px; line-height: 1.6;
+    color: var(--text-secondary);
+    padding: 8px 0;
+    border-bottom: 1px solid var(--rule-light);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .ledger-risk-factors li:last-child { border-bottom: none; }
+  .ledger-risk-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--terracotta); flex-shrink: 0;
+  }
+
+  /* Expansion pipeline */
+  .ledger-pipeline { margin-top: 0; }
+  .ledger-pipeline-item {
+    display: flex; align-items: center; gap: 16px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .ledger-pipeline-item:last-child { border-bottom: none; }
+  .ledger-pipeline-stage {
+    width: 80px; flex-shrink: 0; text-align: center;
+  }
+  .ledger-pipeline-stage-bar {
+    height: 4px; border-radius: 2px;
+    margin-bottom: 6px;
+  }
+  .ledger-pipeline-stage-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .ledger-pipeline-body { flex: 1; }
+  .ledger-pipeline-opp {
+    font-family: "Newsreader", serif;
+    font-size: 16px; line-height: 1.4;
+  }
+  .ledger-pipeline-arr {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px; font-weight: 600;
+    color: var(--turmeric);
+  }
+
+  /* Contract vitals strip */
+  .ledger-contract {
+    display: flex; gap: 32px;
+    padding: 20px 0;
+    border-top: 2px solid var(--charcoal);
+    margin-top: 32px;
+  }
+  .ledger-contract-item { }
+  .ledger-contract-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-tertiary);
+    margin-bottom: 4px;
+  }
+  .ledger-contract-value {
+    font-family: "Newsreader", serif;
+    font-size: 17px; font-weight: 400;
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     VARIATION B — "THE NARRATIVE"
+     Story-first. Prose with highlighted data inline.
+     ══════════════════════════════════════════════════════════════ */
+
+  .narrative-prose {
+    font-family: "Newsreader", serif;
+    font-size: 18px; line-height: 1.7;
+    color: var(--text-primary);
+    max-width: 640px;
+  }
+  .narrative-prose strong { font-weight: 500; }
+  .narrative-highlight {
+    background: rgba(201,162,39,0.12);
+    padding: 1px 6px;
+    border-radius: 2px;
+  }
+  .narrative-highlight-sage {
+    background: rgba(126,170,123,0.12);
+    padding: 1px 6px;
+    border-radius: 2px;
+  }
+  .narrative-highlight-terracotta {
+    background: rgba(196,101,74,0.12);
+    padding: 1px 6px;
+    border-radius: 2px;
+  }
+
+  /* Metrics woven inline as sidebar annotations */
+  .narrative-metric-sidebar {
+    float: right;
+    width: 200px;
+    margin: 0 0 24px 40px;
+    padding: 20px;
+    border-left: 2px solid var(--turmeric);
+  }
+  .narrative-metric-name {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-tertiary);
+    margin-bottom: 8px;
+  }
+  .narrative-metric-number {
+    font-family: "Newsreader", serif;
+    font-size: 32px; font-weight: 300;
+    letter-spacing: -0.02em;
+    margin-bottom: 2px;
+  }
+  .narrative-metric-context {
+    font-size: 12px; color: var(--text-tertiary);
+  }
+
+  /* Commitments as editorial pull-out */
+  .narrative-commitment-block {
+    margin: 48px 0;
+    padding: 40px 0;
+    border-top: 1px solid var(--rule-heavy);
+    border-bottom: 1px solid var(--rule-heavy);
+  }
+  .narrative-commitment-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--text-tertiary);
+    margin-bottom: 20px;
+  }
+  .narrative-commitment-item {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .narrative-commitment-item:last-child { border-bottom: none; }
+  .narrative-commitment-text {
+    font-family: "Newsreader", serif;
+    font-size: 17px; line-height: 1.55;
+  }
+  .narrative-commitment-meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; color: var(--text-tertiary);
+    letter-spacing: 0.04em; margin-top: 6px;
+  }
+
+  /* Strategic priorities — editorial callout blocks (like WatchList) */
+  .narrative-callout {
+    border-left: 3px solid;
+    padding: 28px 32px;
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 24px;
+  }
+  .narrative-callout.active { border-color: var(--sage); background: rgba(126,170,123,0.04); }
+  .narrative-callout.at-risk { border-color: var(--terracotta); background: rgba(196,101,74,0.04); }
+  .narrative-callout.paused { border-color: var(--larkspur); background: rgba(143,163,196,0.04); }
+  .narrative-callout-status {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.08em; margin-bottom: 12px;
+  }
+  .narrative-callout.active .narrative-callout-status { color: var(--sage); }
+  .narrative-callout.at-risk .narrative-callout-status { color: var(--terracotta); }
+  .narrative-callout.paused .narrative-callout-status { color: var(--larkspur); }
+  .narrative-callout-text {
+    font-family: "Newsreader", serif;
+    font-size: 17px; line-height: 1.55;
+  }
+  .narrative-callout-meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; color: var(--text-tertiary);
+    letter-spacing: 0.04em; margin-top: 10px;
+  }
+
+  /* Outlook — large editorial statement */
+  .narrative-outlook-statement {
+    font-family: "Newsreader", serif;
+    font-size: 32px; font-weight: 300;
+    line-height: 1.35; letter-spacing: -0.02em;
+    max-width: 640px;
+    margin-bottom: 40px;
+  }
+  .narrative-outlook-detail {
+    font-size: 15px; line-height: 1.65;
+    color: var(--text-secondary);
+    max-width: 560px;
+  }
+  .narrative-expansion-item {
+    padding: 20px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .narrative-expansion-item:last-child { border-bottom: none; }
+  .narrative-expansion-opp {
+    font-family: "Newsreader", serif;
+    font-size: 17px; line-height: 1.5;
+  }
+  .narrative-expansion-meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; color: var(--text-tertiary);
+    letter-spacing: 0.04em; margin-top: 6px;
+    display: flex; gap: 16px; align-items: center;
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     VARIATION C — "THE DOSSIER"
+     Intelligence briefing. Dense, professional, color-coded.
+     ══════════════════════════════════════════════════════════════ */
+
+  .dossier-subsection-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--text-tertiary);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--rule-heavy);
+    margin-bottom: 16px;
+    margin-top: 40px;
+  }
+  .dossier-subsection-label:first-child { margin-top: 0; }
+
+  /* Two-column layouts */
+  .dossier-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+
+  /* Value delivered — compact rows with status dot */
+  .dossier-value-row {
+    display: flex; align-items: start; gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .dossier-value-row:last-child { border-bottom: none; }
+  .dossier-status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    flex-shrink: 0; margin-top: 7px;
+  }
+  .dossier-status-dot.sage { background: var(--sage); }
+  .dossier-status-dot.turmeric { background: var(--turmeric); }
+  .dossier-status-dot.terracotta { background: var(--terracotta); }
+  .dossier-value-body { flex: 1; min-width: 0; }
+  .dossier-value-statement {
+    font-family: "Newsreader", serif;
+    font-size: 15px; line-height: 1.5;
+  }
+  .dossier-value-meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; color: var(--text-tertiary);
+    letter-spacing: 0.04em; margin-top: 4px;
+  }
+
+  /* Metrics — horizontal bar chart */
+  .dossier-metric {
+    margin-bottom: 20px;
+  }
+  .dossier-metric-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .dossier-metric-name {
+    font-size: 14px; font-weight: 500;
+  }
+  .dossier-metric-values {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; color: var(--text-tertiary);
+    letter-spacing: 0.04em;
+  }
+  .dossier-metric-bar {
+    height: 6px; background: var(--rule-light);
+    border-radius: 3px; overflow: hidden;
+    position: relative;
+  }
+  .dossier-metric-fill {
+    height: 100%; border-radius: 3px;
+    position: absolute; left: 0; top: 0;
+  }
+  .dossier-metric-target-line {
+    position: absolute; top: -2px; bottom: -2px;
+    width: 2px; background: var(--charcoal);
+    border-radius: 1px;
+  }
+
+  /* Competitive — dense table */
+  .dossier-threat-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .dossier-threat-table th {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-tertiary);
+    text-align: left; padding: 8px 12px;
+    border-bottom: 1px solid var(--rule-heavy);
+    font-weight: 500;
+  }
+  .dossier-threat-table td {
+    padding: 12px;
+    border-bottom: 1px solid var(--rule-light);
+    font-size: 14px; vertical-align: top;
+  }
+  .dossier-threat-table tr:last-child td { border-bottom: none; }
+  .dossier-competitor-name { font-weight: 500; }
+
+  /* Priorities — numbered with status bars */
+  .dossier-priority {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--rule-light);
+    align-items: center;
+  }
+  .dossier-priority:last-child { border-bottom: none; }
+  .dossier-priority-status-bar {
+    width: 4px; height: 32px; border-radius: 2px;
+  }
+  .dossier-priority-text {
+    font-size: 14px; line-height: 1.5;
+  }
+  .dossier-priority-meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; color: var(--text-tertiary);
+    letter-spacing: 0.04em; text-align: right;
+  }
+
+  /* Blockers — dense cards */
+  .dossier-blocker {
+    background: rgba(196,101,74,0.04);
+    border: 1px solid rgba(196,101,74,0.15);
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .dossier-blocker:last-child { margin-bottom: 0; }
+  .dossier-blocker-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+  }
+  .dossier-blocker-desc { font-size: 14px; line-height: 1.5; }
+  .dossier-blocker-meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px; color: var(--text-tertiary);
+    letter-spacing: 0.04em; margin-top: 8px;
+  }
+
+  /* Renewal countdown */
+  .dossier-countdown {
+    display: flex; align-items: end; gap: 20px;
+    padding: 24px 0;
+    border-bottom: 2px solid var(--charcoal);
+    margin-bottom: 24px;
+  }
+  .dossier-countdown-number {
+    font-family: "Newsreader", serif;
+    font-size: 72px; font-weight: 200;
+    line-height: 0.85; letter-spacing: -0.04em;
+  }
+  .dossier-countdown-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-tertiary);
+    padding-bottom: 12px;
+  }
+
+  /* Expansion pipeline stages */
+  .dossier-pipeline {
+    display: flex;
+    gap: 0;
+    margin-top: 24px;
+    border: 1px solid var(--rule-light);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .dossier-pipeline-stage {
+    flex: 1;
+    padding: 16px;
+    border-right: 1px solid var(--rule-light);
+    position: relative;
+  }
+  .dossier-pipeline-stage:last-child { border-right: none; }
+  .dossier-pipeline-stage-header {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-tertiary);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .dossier-pipeline-stage.active { background: rgba(126,170,123,0.04); }
+  .dossier-pipeline-stage.active .dossier-pipeline-stage-header { color: var(--sage); border-color: var(--sage); }
+  .dossier-pipeline-opp {
+    font-size: 13px; line-height: 1.5;
+    margin-bottom: 8px;
+  }
+  .dossier-pipeline-arr {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px; font-weight: 600;
+    color: var(--turmeric);
+  }
+
+  /* Contract strip */
+  .dossier-contract-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border: 1px solid var(--rule-light);
+    border-radius: 4px;
+    margin-top: 24px;
+  }
+  .dossier-contract-cell {
+    padding: 16px;
+    border-right: 1px solid var(--rule-light);
+    text-align: center;
+  }
+  .dossier-contract-cell:last-child { border-right: none; }
+  .dossier-contract-cell-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-tertiary);
+    margin-bottom: 6px;
+  }
+  .dossier-contract-cell-value {
+    font-family: "Newsreader", serif;
+    font-size: 18px; font-weight: 400;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ══════════════════════════════════════════════════════════════
+     VARIATION A — "THE LEDGER"
+     ══════════════════════════════════════════════════════════════ -->
+<div class="variation-header">
+  <div class="subtitle">Variation A</div>
+  <h1>The Ledger</h1>
+  <p class="brief">Structured and data-forward. Financial report meets editorial magazine. Large serif dates anchor the timeline, metrics read like a dashboard strip, competitive context as a threat matrix.</p>
+</div>
+
+<!-- Value & Commitments -->
+<div class="section">
+  <div class="section__label">Value &<br>Commitments</div>
+  <div class="section__content">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Value & Commitments</h2>
+
+    <div>
+      <div class="ledger-value-item hoverable">
+        <div class="ledger-date-block">
+          <div class="ledger-date-month">Mar</div>
+          <div class="ledger-date-day">5</div>
+        </div>
+        <div>
+          <div class="ledger-value-statement">Reported <strong>40% reduction in deployment time</strong> since platform adoption — engineering team citing it as primary productivity gain.</div>
+          <div class="ledger-value-impact">Directly supports Q1 efficiency OKR. CFO referenced in board update.</div>
+        </div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+      <div class="ledger-value-item hoverable">
+        <div class="ledger-date-block">
+          <div class="ledger-date-month">Feb</div>
+          <div class="ledger-date-day">18</div>
+        </div>
+        <div>
+          <div class="ledger-value-statement">Compliance audit passed with <strong>zero manual interventions</strong> — first clean audit in three years.</div>
+          <div class="ledger-value-impact">Risk mitigation. Legal team confirmed reduced liability exposure.</div>
+        </div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+      <div class="ledger-value-item hoverable">
+        <div class="ledger-date-block">
+          <div class="ledger-date-month">Jan</div>
+          <div class="ledger-date-day">22</div>
+        </div>
+        <div>
+          <div class="ledger-value-statement">Engineering onboarded <strong>15 new users</strong> across three teams with self-serve — no professional services engagement.</div>
+          <div class="ledger-value-impact">Adoption expansion. Proves land-and-expand motion is working.</div>
+        </div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Metrics strip -->
+    <div class="ledger-metrics">
+      <div class="ledger-metric">
+        <div class="ledger-metric-name">Platform Adoption</div>
+        <div class="ledger-metric-value" style="color: var(--sage)">78%</div>
+        <div class="ledger-metric-target">Target: 85%</div>
+        <div class="ledger-metric-bar"><div class="ledger-metric-fill" style="width: 78%; background: var(--sage);"></div></div>
+      </div>
+      <div class="ledger-metric">
+        <div class="ledger-metric-name">Deployment Velocity</div>
+        <div class="ledger-metric-value" style="color: var(--sage)">3.2x</div>
+        <div class="ledger-metric-target">Target: 2.5x</div>
+        <div class="ledger-metric-bar"><div class="ledger-metric-fill" style="width: 100%; background: var(--sage);"></div></div>
+      </div>
+      <div class="ledger-metric">
+        <div class="ledger-metric-name">Time to Resolution</div>
+        <div class="ledger-metric-value" style="color: var(--turmeric)">4.2h</div>
+        <div class="ledger-metric-target">Target: 3h</div>
+        <div class="ledger-metric-bar"><div class="ledger-metric-fill" style="width: 60%; background: var(--turmeric);"></div></div>
+      </div>
+      <div class="ledger-metric">
+        <div class="ledger-metric-name">NPS Score</div>
+        <div class="ledger-metric-value">42</div>
+        <div class="ledger-metric-target">Target: 50</div>
+        <div class="ledger-metric-bar"><div class="ledger-metric-fill" style="width: 84%; background: var(--turmeric);"></div></div>
+      </div>
+    </div>
+
+    <!-- Open commitments -->
+    <div style="margin-top: 40px;">
+      <div class="mono" style="color: var(--text-tertiary); margin-bottom: 16px;">Open Commitments</div>
+      <div class="ledger-commitment hoverable">
+        <div class="ledger-commitment-desc">Deliver migration performance report for Phase 2 scoping</div>
+        <div class="ledger-commitment-owner mono" style="font-size: 10px;">Sarah Chen</div>
+        <div class="ledger-commitment-due">Mar 15</div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+      <div class="ledger-commitment hoverable">
+        <div class="ledger-commitment-desc">Provide API access documentation for custom dashboard project</div>
+        <div class="ledger-commitment-owner mono" style="font-size: 10px;">Our Team</div>
+        <div class="ledger-commitment-due overdue">Feb 28 <span style="color: var(--terracotta);">[OVERDUE]</span></div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+      <div class="ledger-commitment hoverable">
+        <div class="ledger-commitment-desc">Share Q1 usage analytics for executive business review</div>
+        <div class="ledger-commitment-owner mono" style="font-size: 10px;">Joint</div>
+        <div class="ledger-commitment-due">Apr 1</div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Competitive & Strategic -->
+<div class="section">
+  <div class="section__label">Competitive &<br>Strategic</div>
+  <div class="section__content">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Competitive & Strategic</h2>
+
+    <!-- Strategic Priorities -->
+    <div>
+      <div class="ledger-priority hoverable">
+        <div class="ledger-priority-num">1</div>
+        <div class="ledger-priority-body">
+          <div class="ledger-priority-text">Complete Phase 2 migration for APAC engineering teams</div>
+          <div class="ledger-priority-meta">
+            <span class="badge badge-sage">Active</span>
+            <span>Owner: Sarah Chen</span>
+            <span>Q2 2026</span>
+          </div>
+        </div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+      <div class="ledger-priority hoverable">
+        <div class="ledger-priority-num">2</div>
+        <div class="ledger-priority-body">
+          <div class="ledger-priority-text">Achieve SOC 2 compliance certification before renewal</div>
+          <div class="ledger-priority-meta">
+            <span class="badge badge-terracotta">At Risk</span>
+            <span>Owner: Mike Torres</span>
+            <span>Q3 2026</span>
+          </div>
+        </div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+      <div class="ledger-priority hoverable">
+        <div class="ledger-priority-num">3</div>
+        <div class="ledger-priority-body">
+          <div class="ledger-priority-text">Evaluate enterprise tier for consolidated billing across BUs</div>
+          <div class="ledger-priority-meta">
+            <span class="badge badge-larkspur">Paused</span>
+            <span>Owner: CFO Office</span>
+            <span>TBD</span>
+          </div>
+        </div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Threat matrix -->
+    <div style="margin-top: 48px;">
+      <div class="mono" style="color: var(--text-tertiary); margin-bottom: 16px;">Competitive Landscape</div>
+      <div class="ledger-threat-matrix">
+        <div class="ledger-threat-row hoverable">
+          <div class="ledger-competitor" style="display:flex; align-items:center; gap:8px;">Datadog <span class="badge badge-terracotta">Evaluation</span></div>
+          <div class="ledger-threat-context">Engineering team running a parallel PoC. Decision expected by end of Q2. Primary draw is unified observability stack.</div>
+          <div class="item-actions" style="padding-top:16px;">
+            <button class="act-btn pos">&#x1F44D;</button>
+            <button class="act-btn neg">&#x1F44E;</button>
+            <button class="act-btn dismiss">&times;</button>
+          </div>
+        </div>
+        <div class="ledger-threat-row hoverable">
+          <div class="ledger-competitor" style="display:flex; align-items:center; gap:8px;">Grafana <span class="badge badge-neutral">Mentioned</span></div>
+          <div class="ledger-threat-context">Referenced in passing during QBR. No active evaluation. SRE team familiar from previous company.</div>
+          <div class="item-actions" style="padding-top:16px;">
+            <button class="act-btn pos">&#x1F44D;</button>
+            <button class="act-btn neg">&#x1F44E;</button>
+            <button class="act-btn dismiss">&times;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Org changes -->
+    <div style="margin-top: 48px;">
+      <div class="mono" style="color: var(--text-tertiary); margin-bottom: 16px;">Organizational Changes</div>
+      <div class="ledger-change">
+        <div class="ledger-change-icon departure">&#8599;</div>
+        <div class="ledger-change-body">
+          <div><span class="ledger-change-name">Alex Torres</span> <span class="ledger-change-detail">— departing VP Engineering, last day March 15</span></div>
+        </div>
+        <div class="ledger-change-date">Detected Feb 20</div>
+      </div>
+      <div class="ledger-change">
+        <div class="ledger-change-icon promotion">&#8593;</div>
+        <div class="ledger-change-body">
+          <div><span class="ledger-change-name">Priya Sharma</span> <span class="ledger-change-detail">— promoted from Sr Director to interim VP Engineering</span></div>
+        </div>
+        <div class="ledger-change-date">Detected Mar 1</div>
+      </div>
+      <div class="ledger-change">
+        <div class="ledger-change-icon hire">+</div>
+        <div class="ledger-change-body">
+          <div><span class="ledger-change-name">James Liu</span> <span class="ledger-change-detail">— new Director of Platform Engineering, starts April 1</span></div>
+        </div>
+        <div class="ledger-change-date">Detected Mar 10</div>
+      </div>
+    </div>
+
+    <!-- Blockers -->
+    <div style="margin-top: 48px;">
+      <div class="mono" style="color: var(--text-tertiary); margin-bottom: 16px;">Blockers</div>
+      <div class="ledger-blocker hoverable">
+        <div style="display:flex; justify-content:space-between; align-items:start;">
+          <div>
+            <div class="ledger-blocker-desc">SSO integration blocked on identity provider migration — customer's Okta → Azure AD transition delayed twice.</div>
+            <div class="ledger-blocker-meta">
+              <span>Owner: Mike Torres</span>
+              <span>Since: Jan 15</span>
+              <span class="badge badge-terracotta">Critical</span>
+            </div>
+          </div>
+          <div class="item-actions" style="margin-top:4px;">
+            <button class="act-btn pos">&#x1F44D;</button>
+            <button class="act-btn neg">&#x1F44E;</button>
+            <button class="act-btn dismiss">&times;</button>
+          </div>
+        </div>
+      </div>
+      <div class="ledger-blocker hoverable">
+        <div style="display:flex; justify-content:space-between; align-items:start;">
+          <div>
+            <div class="ledger-blocker-desc">Data residency requirement for EU operations — needs dedicated cluster before APAC expansion can proceed.</div>
+            <div class="ledger-blocker-meta">
+              <span>Owner: Our Team</span>
+              <span>Since: Feb 3</span>
+              <span class="badge badge-turmeric">High</span>
+            </div>
+          </div>
+          <div class="item-actions" style="margin-top:4px;">
+            <button class="act-btn pos">&#x1F44D;</button>
+            <button class="act-btn neg">&#x1F44E;</button>
+            <button class="act-btn dismiss">&times;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Outlook -->
+<div class="section">
+  <div class="section__label">Outlook</div>
+  <div class="section__content">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Outlook</h2>
+
+    <div class="ledger-forecast">
+      <div class="ledger-forecast-left">
+        <div class="ledger-confidence-gauge">
+          <div class="ledger-gauge-number" style="color: var(--sage);">High</div>
+          <div class="ledger-gauge-label" style="color: var(--sage);">Renewal<br>Confidence</div>
+        </div>
+        <div class="mono" style="color: var(--text-tertiary); margin-bottom: 12px;">Risk Factors</div>
+        <ul class="ledger-risk-factors">
+          <li><span class="ledger-risk-dot"></span>Champion departure creates knowledge gap in Phase 2</li>
+          <li><span class="ledger-risk-dot"></span>Competitive evaluation with Datadog could shift budget</li>
+          <li><span class="ledger-risk-dot"></span>SOC 2 compliance deadline may not be met before renewal</li>
+        </ul>
+        <div style="margin-top: 20px; font-size: 14px; color: var(--text-secondary);">
+          <strong>Expansion potential:</strong> $180K upsell to enterprise tier if APAC expansion proceeds. Recommend starting renewal conversation by May 1.
+        </div>
+      </div>
+      <div>
+        <div class="mono" style="color: var(--text-tertiary); margin-bottom: 16px;">Expansion Pipeline</div>
+        <div class="ledger-pipeline">
+          <div class="ledger-pipeline-item hoverable">
+            <div class="ledger-pipeline-stage">
+              <div class="ledger-pipeline-stage-bar" style="background: var(--sage);"></div>
+              <div class="ledger-pipeline-stage-label" style="color: var(--sage);">Evaluating</div>
+            </div>
+            <div class="ledger-pipeline-body">
+              <div class="ledger-pipeline-opp">Enterprise tier for APAC region</div>
+              <div class="ledger-pipeline-arr">+$180K ARR</div>
+            </div>
+            <div class="item-actions">
+              <button class="act-btn pos">&#x1F44D;</button>
+              <button class="act-btn neg">&#x1F44E;</button>
+              <button class="act-btn dismiss">&times;</button>
+            </div>
+          </div>
+          <div class="ledger-pipeline-item hoverable">
+            <div class="ledger-pipeline-stage">
+              <div class="ledger-pipeline-stage-bar" style="background: var(--turmeric);"></div>
+              <div class="ledger-pipeline-stage-label" style="color: var(--turmeric);">Exploring</div>
+            </div>
+            <div class="ledger-pipeline-body">
+              <div class="ledger-pipeline-opp">Custom analytics module for exec reporting</div>
+              <div class="ledger-pipeline-arr">+$45K ARR</div>
+            </div>
+            <div class="item-actions">
+              <button class="act-btn pos">&#x1F44D;</button>
+              <button class="act-btn neg">&#x1F44E;</button>
+              <button class="act-btn dismiss">&times;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contract strip -->
+    <div class="ledger-contract">
+      <div class="ledger-contract-item">
+        <div class="ledger-contract-label">Contract Type</div>
+        <div class="ledger-contract-value">Annual</div>
+      </div>
+      <div class="ledger-contract-item">
+        <div class="ledger-contract-label">Auto-Renew</div>
+        <div class="ledger-contract-value">Yes</div>
+      </div>
+      <div class="ledger-contract-item">
+        <div class="ledger-contract-label">Renewal Date</div>
+        <div class="ledger-contract-value">Jun 15, 2026</div>
+      </div>
+      <div class="ledger-contract-item">
+        <div class="ledger-contract-label">Current ARR</div>
+        <div class="ledger-contract-value" style="color: var(--turmeric);">$1.2M</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="separator"></div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     VARIATION B — "THE NARRATIVE"
+     ══════════════════════════════════════════════════════════════ -->
+<div class="variation-header">
+  <div class="subtitle">Variation B</div>
+  <h1>The Narrative</h1>
+  <p class="brief">Story-first and minimal. Value delivered woven into editorial prose with highlighted metrics. Strategic context as callout blocks. Outlook as a large editorial statement.</p>
+</div>
+
+<!-- Value & Commitments -->
+<div class="section">
+  <div class="section__label">Value &<br>Commitments</div>
+  <div class="section__content">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Value & Commitments</h2>
+
+    <div class="narrative-metric-sidebar">
+      <div class="narrative-metric-name">Platform Adoption</div>
+      <div class="narrative-metric-number" style="color:var(--sage);">78%</div>
+      <div class="narrative-metric-context">Target: 85% &middot; On track</div>
+    </div>
+
+    <div class="narrative-prose">
+      The story of this quarter is <strong>measurable ROI</strong>. In January, engineering onboarded <span class="narrative-highlight">15 new users across three teams</span> without a single professional services engagement — proof the land-and-expand motion works. By February, the compliance team passed their first <span class="narrative-highlight-sage">clean audit in three years</span>, citing the platform's guardrails as the differentiator. And in early March, the team reported a <span class="narrative-highlight">40% reduction in deployment time</span>, a number the CFO referenced in the board update.
+    </div>
+
+    <div style="clear:both;"></div>
+
+    <div class="narrative-metric-sidebar" style="margin-top: 32px;">
+      <div class="narrative-metric-name">Deployment Velocity</div>
+      <div class="narrative-metric-number" style="color:var(--sage);">3.2x</div>
+      <div class="narrative-metric-context">Target: 2.5x &middot; Achieved</div>
+    </div>
+
+    <div class="narrative-prose" style="margin-top: 32px;">
+      The deployment velocity metric — <span class="narrative-highlight-sage">3.2x improvement</span> against a 2.5x target — is the strongest proof point for the renewal conversation. Time to resolution remains the one area of concern at <span class="narrative-highlight-terracotta">4.2 hours versus a 3-hour target</span>, driven by complexity in the APAC deployment pipeline.
+    </div>
+
+    <div style="clear:both;"></div>
+
+    <!-- Commitments -->
+    <div class="narrative-commitment-block">
+      <div class="narrative-commitment-label">Open Commitments</div>
+      <div class="narrative-commitment-item hoverable" style="display:flex; gap:16px; align-items:start;">
+        <div style="flex:1;">
+          <div class="narrative-commitment-text">Deliver migration performance report for Phase 2 scoping</div>
+          <div class="narrative-commitment-meta">Sarah Chen &middot; Due Mar 15</div>
+        </div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+      <div class="narrative-commitment-item hoverable" style="display:flex; gap:16px; align-items:start;">
+        <div style="flex:1;">
+          <div class="narrative-commitment-text">Provide API access documentation for custom dashboard project</div>
+          <div class="narrative-commitment-meta" style="color: var(--terracotta);">Our Team &middot; Due Feb 28 [OVERDUE]</div>
+        </div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Competitive & Strategic -->
+<div class="section">
+  <div class="section__label">Competitive &<br>Strategic</div>
+  <div class="section__content">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Competitive & Strategic</h2>
+
+    <div class="narrative-callout active hoverable" style="display:flex; gap:16px; align-items:start;">
+      <div style="flex:1;">
+        <div class="narrative-callout-status">Active Priority</div>
+        <div class="narrative-callout-text">Complete Phase 2 migration for APAC engineering teams — on track for Q2 delivery with Priya Sharma now leading.</div>
+        <div class="narrative-callout-meta">Owner: Sarah Chen &middot; Timeline: Q2 2026</div>
+      </div>
+      <div class="item-actions">
+        <button class="act-btn pos">&#x1F44D;</button>
+        <button class="act-btn neg">&#x1F44E;</button>
+        <button class="act-btn dismiss">&times;</button>
+      </div>
+    </div>
+    <div class="narrative-callout at-risk hoverable" style="display:flex; gap:16px; align-items:start;">
+      <div style="flex:1;">
+        <div class="narrative-callout-status">At Risk</div>
+        <div class="narrative-callout-text">SOC 2 compliance certification — SSO integration blocked on customer's identity provider migration. May not be met before renewal deadline.</div>
+        <div class="narrative-callout-meta">Owner: Mike Torres &middot; Timeline: Q3 2026</div>
+      </div>
+      <div class="item-actions">
+        <button class="act-btn pos">&#x1F44D;</button>
+        <button class="act-btn neg">&#x1F44E;</button>
+        <button class="act-btn dismiss">&times;</button>
+      </div>
+    </div>
+    <div class="narrative-callout paused hoverable" style="display:flex; gap:16px; align-items:start;">
+      <div style="flex:1;">
+        <div class="narrative-callout-status">Paused</div>
+        <div class="narrative-callout-text">Enterprise tier evaluation for consolidated billing — on hold pending CFO office budget cycle review.</div>
+        <div class="narrative-callout-meta">Owner: CFO Office &middot; Timeline: TBD</div>
+      </div>
+      <div class="item-actions">
+        <button class="act-btn pos">&#x1F44D;</button>
+        <button class="act-btn neg">&#x1F44E;</button>
+        <button class="act-btn dismiss">&times;</button>
+      </div>
+    </div>
+
+    <div class="narrative-prose" style="margin-top: 40px;">
+      The competitive picture is straightforward: <strong>Datadog is running a parallel PoC</strong> with the engineering team, attracted by the unified observability story. Decision is expected by end of Q2. This is the primary competitive risk and should inform how we position Phase 2's monitoring capabilities. Grafana was mentioned in passing but shows no active evaluation energy.
+    </div>
+
+    <div class="narrative-prose" style="margin-top: 24px;">
+      On the people front, <strong>Alex Torres's departure</strong> (VP Engineering, last day March 15) creates a knowledge-transfer gap. <strong>Priya Sharma</strong> has stepped into the interim VP role and is our new primary contact for Phase 2 scoping. <strong>James Liu</strong> joins as Director of Platform Engineering in April — an onboarding opportunity.
+    </div>
+  </div>
+</div>
+
+<!-- Outlook -->
+<div class="section">
+  <div class="section__label">Outlook</div>
+  <div class="section__content">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Outlook</h2>
+
+    <div class="narrative-outlook-statement">
+      Renewal confidence is <span style="color: var(--sage);">high</span> — the value story is strong, executive sponsorship is intact, and the expansion conversation has natural momentum.
+    </div>
+
+    <div class="narrative-outlook-detail">
+      Three factors to watch: the champion transition (Alex → Priya), the Datadog evaluation timeline, and whether the SOC 2 blocker resolves before the renewal window opens. Start the formal renewal conversation by May 1. The enterprise tier upsell for APAC ($180K) is the strongest expansion lever and should be positioned as part of the renewal package, not a separate negotiation.
+    </div>
+
+    <div style="margin-top: 48px;">
+      <div class="mono" style="color: var(--text-tertiary); margin-bottom: 16px;">Expansion Signals</div>
+      <div class="narrative-expansion-item hoverable" style="display:flex; gap:16px; align-items:start;">
+        <div style="flex:1;">
+          <div class="narrative-expansion-opp">Enterprise tier for APAC region — engineering team evaluating capacity needs</div>
+          <div class="narrative-expansion-meta">
+            <span class="badge badge-sage">Evaluating</span>
+            <span style="color: var(--turmeric); font-weight: 600;">+$180K ARR</span>
+          </div>
+        </div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+      <div class="narrative-expansion-item hoverable" style="display:flex; gap:16px; align-items:start;">
+        <div style="flex:1;">
+          <div class="narrative-expansion-opp">Custom analytics module — executive team exploring reporting capabilities</div>
+          <div class="narrative-expansion-meta">
+            <span class="badge badge-turmeric">Exploring</span>
+            <span style="color: var(--turmeric); font-weight: 600;">+$45K ARR</span>
+          </div>
+        </div>
+        <div class="item-actions">
+          <button class="act-btn pos">&#x1F44D;</button>
+          <button class="act-btn neg">&#x1F44E;</button>
+          <button class="act-btn dismiss">&times;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="separator"></div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     VARIATION C — "THE DOSSIER"
+     ══════════════════════════════════════════════════════════════ -->
+<div class="variation-header">
+  <div class="subtitle">Variation C</div>
+  <h1>The Dossier</h1>
+  <p class="brief">Intelligence briefing aesthetic. Dense, professional, two-column where appropriate. Color-coded status on everything. Pipeline stages for expansion. Renewal countdown prominent.</p>
+</div>
+
+<!-- Value & Commitments -->
+<div class="section">
+  <div class="section__label">Value &<br>Commitments</div>
+  <div class="section__content">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Value & Commitments</h2>
+
+    <div class="dossier-two-col">
+      <div>
+        <div class="dossier-subsection-label">Value Delivered</div>
+        <div class="dossier-value-row hoverable">
+          <div class="dossier-status-dot sage"></div>
+          <div class="dossier-value-body">
+            <div class="dossier-value-statement">40% reduction in deployment time — cited by CFO in board update</div>
+            <div class="dossier-value-meta">Mar 5 &middot; Engineering</div>
+          </div>
+          <div class="item-actions">
+            <button class="act-btn pos">&#x1F44D;</button>
+            <button class="act-btn neg">&#x1F44E;</button>
+            <button class="act-btn dismiss">&times;</button>
+          </div>
+        </div>
+        <div class="dossier-value-row hoverable">
+          <div class="dossier-status-dot sage"></div>
+          <div class="dossier-value-body">
+            <div class="dossier-value-statement">Clean compliance audit — zero manual interventions, first in three years</div>
+            <div class="dossier-value-meta">Feb 18 &middot; Legal / Risk</div>
+          </div>
+          <div class="item-actions">
+            <button class="act-btn pos">&#x1F44D;</button>
+            <button class="act-btn neg">&#x1F44E;</button>
+            <button class="act-btn dismiss">&times;</button>
+          </div>
+        </div>
+        <div class="dossier-value-row hoverable">
+          <div class="dossier-status-dot turmeric"></div>
+          <div class="dossier-value-body">
+            <div class="dossier-value-statement">15 new users onboarded via self-serve across 3 teams</div>
+            <div class="dossier-value-meta">Jan 22 &middot; Adoption</div>
+          </div>
+          <div class="item-actions">
+            <button class="act-btn pos">&#x1F44D;</button>
+            <button class="act-btn neg">&#x1F44E;</button>
+            <button class="act-btn dismiss">&times;</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="dossier-subsection-label">Success Metrics</div>
+        <div class="dossier-metric">
+          <div class="dossier-metric-header">
+            <span class="dossier-metric-name">Platform Adoption</span>
+            <span class="dossier-metric-values">78% <span style="color:var(--text-tertiary);">/ 85%</span></span>
+          </div>
+          <div class="dossier-metric-bar">
+            <div class="dossier-metric-fill" style="width: 78%; background: var(--sage);"></div>
+            <div class="dossier-metric-target-line" style="left: 85%;"></div>
+          </div>
+        </div>
+        <div class="dossier-metric">
+          <div class="dossier-metric-header">
+            <span class="dossier-metric-name">Deployment Velocity</span>
+            <span class="dossier-metric-values">3.2x <span style="color:var(--sage);">&#9650;</span></span>
+          </div>
+          <div class="dossier-metric-bar">
+            <div class="dossier-metric-fill" style="width: 100%; background: var(--sage);"></div>
+            <div class="dossier-metric-target-line" style="left: 78%;"></div>
+          </div>
+        </div>
+        <div class="dossier-metric">
+          <div class="dossier-metric-header">
+            <span class="dossier-metric-name">Time to Resolution</span>
+            <span class="dossier-metric-values">4.2h <span style="color:var(--terracotta);">&#9660;</span></span>
+          </div>
+          <div class="dossier-metric-bar">
+            <div class="dossier-metric-fill" style="width: 60%; background: var(--turmeric);"></div>
+            <div class="dossier-metric-target-line" style="left: 42%;"></div>
+          </div>
+        </div>
+        <div class="dossier-metric">
+          <div class="dossier-metric-header">
+            <span class="dossier-metric-name">NPS Score</span>
+            <span class="dossier-metric-values">42 <span style="color:var(--text-tertiary);">&mdash;</span></span>
+          </div>
+          <div class="dossier-metric-bar">
+            <div class="dossier-metric-fill" style="width: 84%; background: var(--turmeric);"></div>
+            <div class="dossier-metric-target-line" style="left: 100%;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dossier-subsection-label">Open Commitments</div>
+    <div class="dossier-value-row hoverable">
+      <div class="dossier-status-dot turmeric"></div>
+      <div class="dossier-value-body">
+        <div class="dossier-value-statement">Deliver migration performance report for Phase 2 scoping</div>
+        <div class="dossier-value-meta">Sarah Chen &middot; Due Mar 15 &middot; <span class="badge badge-sage" style="font-size:8px;">Open</span></div>
+      </div>
+      <div class="item-actions">
+        <button class="act-btn pos">&#x1F44D;</button>
+        <button class="act-btn neg">&#x1F44E;</button>
+        <button class="act-btn dismiss">&times;</button>
+      </div>
+    </div>
+    <div class="dossier-value-row hoverable">
+      <div class="dossier-status-dot terracotta"></div>
+      <div class="dossier-value-body">
+        <div class="dossier-value-statement">Provide API access documentation for custom dashboard project</div>
+        <div class="dossier-value-meta" style="color:var(--terracotta);">Our Team &middot; Due Feb 28 [OVERDUE] &middot; <span class="badge badge-terracotta" style="font-size:8px;">Overdue</span></div>
+      </div>
+      <div class="item-actions">
+        <button class="act-btn pos">&#x1F44D;</button>
+        <button class="act-btn neg">&#x1F44E;</button>
+        <button class="act-btn dismiss">&times;</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Competitive & Strategic -->
+<div class="section">
+  <div class="section__label">Competitive &<br>Strategic</div>
+  <div class="section__content">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Competitive & Strategic</h2>
+
+    <div class="dossier-two-col">
+      <div>
+        <div class="dossier-subsection-label">Strategic Priorities</div>
+        <div class="dossier-priority hoverable">
+          <div class="dossier-priority-status-bar" style="background: var(--sage);"></div>
+          <div class="dossier-priority-text">Complete Phase 2 migration for APAC engineering teams</div>
+          <div class="dossier-priority-meta">
+            <span class="badge badge-sage">Active</span><br>
+            Sarah Chen &middot; Q2
+          </div>
+        </div>
+        <div class="dossier-priority hoverable">
+          <div class="dossier-priority-status-bar" style="background: var(--terracotta);"></div>
+          <div class="dossier-priority-text">Achieve SOC 2 compliance certification before renewal</div>
+          <div class="dossier-priority-meta">
+            <span class="badge badge-terracotta">At Risk</span><br>
+            Mike Torres &middot; Q3
+          </div>
+        </div>
+        <div class="dossier-priority hoverable">
+          <div class="dossier-priority-status-bar" style="background: var(--larkspur);"></div>
+          <div class="dossier-priority-text">Evaluate enterprise tier for consolidated billing</div>
+          <div class="dossier-priority-meta">
+            <span class="badge badge-larkspur">Paused</span><br>
+            CFO Office &middot; TBD
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="dossier-subsection-label">Competitive Landscape</div>
+        <table class="dossier-threat-table">
+          <thead>
+            <tr><th>Competitor</th><th>Threat</th><th>Context</th></tr>
+          </thead>
+          <tbody>
+            <tr class="hoverable">
+              <td class="dossier-competitor-name">Datadog</td>
+              <td><span class="badge badge-terracotta">Evaluation</span></td>
+              <td>Parallel PoC. Decision by Q2. Unified observability draw.</td>
+            </tr>
+            <tr class="hoverable">
+              <td class="dossier-competitor-name">Grafana</td>
+              <td><span class="badge badge-neutral">Mentioned</span></td>
+              <td>Referenced in QBR. No active evaluation.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="dossier-subsection-label">Blockers & Risks</div>
+    <div class="dossier-two-col">
+      <div class="dossier-blocker hoverable">
+        <div class="dossier-blocker-header">
+          <span class="badge badge-terracotta">Critical</span>
+          <div class="item-actions">
+            <button class="act-btn pos">&#x1F44D;</button>
+            <button class="act-btn neg">&#x1F44E;</button>
+            <button class="act-btn dismiss">&times;</button>
+          </div>
+        </div>
+        <div class="dossier-blocker-desc">SSO integration blocked on identity provider migration — Okta → Azure AD transition delayed twice.</div>
+        <div class="dossier-blocker-meta">Owner: Mike Torres &middot; Since Jan 15</div>
+      </div>
+      <div class="dossier-blocker hoverable">
+        <div class="dossier-blocker-header">
+          <span class="badge badge-turmeric">High</span>
+          <div class="item-actions">
+            <button class="act-btn pos">&#x1F44D;</button>
+            <button class="act-btn neg">&#x1F44E;</button>
+            <button class="act-btn dismiss">&times;</button>
+          </div>
+        </div>
+        <div class="dossier-blocker-desc">Data residency requirement for EU operations — needs dedicated cluster before APAC expansion.</div>
+        <div class="dossier-blocker-meta">Owner: Our Team &middot; Since Feb 3</div>
+      </div>
+    </div>
+
+    <div class="dossier-subsection-label">Organizational Changes</div>
+    <div class="ledger-change">
+      <div class="ledger-change-icon departure">&#8599;</div>
+      <div class="ledger-change-body">
+        <div><span class="ledger-change-name">Alex Torres</span> <span class="ledger-change-detail">VP Engineering → Departing Mar 15</span></div>
+      </div>
+      <div class="ledger-change-date">Feb 20</div>
+    </div>
+    <div class="ledger-change">
+      <div class="ledger-change-icon promotion">&#8593;</div>
+      <div class="ledger-change-body">
+        <div><span class="ledger-change-name">Priya Sharma</span> <span class="ledger-change-detail">Sr Director → Interim VP Engineering</span></div>
+      </div>
+      <div class="ledger-change-date">Mar 1</div>
+    </div>
+    <div class="ledger-change">
+      <div class="ledger-change-icon hire">+</div>
+      <div class="ledger-change-body">
+        <div><span class="ledger-change-name">James Liu</span> <span class="ledger-change-detail">New Dir. Platform Engineering, starts Apr 1</span></div>
+      </div>
+      <div class="ledger-change-date">Mar 10</div>
+    </div>
+  </div>
+</div>
+
+<!-- Outlook -->
+<div class="section">
+  <div class="section__label">Outlook</div>
+  <div class="section__content">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Outlook</h2>
+
+    <div class="dossier-countdown">
+      <div class="dossier-countdown-number" style="color: var(--sage);">94</div>
+      <div class="dossier-countdown-label">Days to<br>Renewal</div>
+      <div style="flex:1;"></div>
+      <div style="text-align: right; padding-bottom: 12px;">
+        <div class="mono" style="color: var(--sage); margin-bottom: 4px;">High Confidence</div>
+        <div style="font-size: 13px; color: var(--text-tertiary);">Start conversation by May 1</div>
+      </div>
+    </div>
+
+    <div class="dossier-two-col">
+      <div>
+        <div class="dossier-subsection-label" style="margin-top:0;">Risk Factors</div>
+        <div class="dossier-value-row">
+          <div class="dossier-status-dot terracotta"></div>
+          <div class="dossier-value-body">
+            <div class="dossier-value-statement">Champion departure creates knowledge gap in Phase 2</div>
+          </div>
+        </div>
+        <div class="dossier-value-row">
+          <div class="dossier-status-dot terracotta"></div>
+          <div class="dossier-value-body">
+            <div class="dossier-value-statement">Competitive evaluation with Datadog could shift budget</div>
+          </div>
+        </div>
+        <div class="dossier-value-row">
+          <div class="dossier-status-dot turmeric"></div>
+          <div class="dossier-value-body">
+            <div class="dossier-value-statement">SOC 2 compliance deadline may not be met before renewal</div>
+          </div>
+        </div>
+
+        <div style="margin-top: 24px; font-size: 14px; color: var(--text-secondary); line-height: 1.6;">
+          <strong>Expansion potential:</strong> $180K enterprise tier upsell if APAC expansion proceeds. Position as part of renewal package.
+        </div>
+      </div>
+      <div>
+        <div class="dossier-subsection-label" style="margin-top:0;">Expansion Pipeline</div>
+        <div class="dossier-pipeline">
+          <div class="dossier-pipeline-stage">
+            <div class="dossier-pipeline-stage-header">Exploring</div>
+            <div class="dossier-pipeline-opp">Custom analytics module</div>
+            <div class="dossier-pipeline-arr">+$45K</div>
+          </div>
+          <div class="dossier-pipeline-stage active">
+            <div class="dossier-pipeline-stage-header">Evaluating</div>
+            <div class="dossier-pipeline-opp">Enterprise tier APAC</div>
+            <div class="dossier-pipeline-arr">+$180K</div>
+          </div>
+          <div class="dossier-pipeline-stage">
+            <div class="dossier-pipeline-stage-header">Committed</div>
+          </div>
+          <div class="dossier-pipeline-stage">
+            <div class="dossier-pipeline-stage-header">Blocked</div>
+          </div>
+        </div>
+
+        <div class="dossier-contract-strip" style="margin-top: 24px;">
+          <div class="dossier-contract-cell">
+            <div class="dossier-contract-cell-label">Type</div>
+            <div class="dossier-contract-cell-value">Annual</div>
+          </div>
+          <div class="dossier-contract-cell">
+            <div class="dossier-contract-cell-label">Auto-Renew</div>
+            <div class="dossier-contract-cell-value">Yes</div>
+          </div>
+          <div class="dossier-contract-cell">
+            <div class="dossier-contract-cell-label">Renewal</div>
+            <div class="dossier-contract-cell-value">Jun 15</div>
+          </div>
+          <div class="dossier-contract-cell">
+            <div class="dossier-contract-cell-label">ARR</div>
+            <div class="dossier-contract-cell-value" style="color: var(--turmeric);">$1.2M</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="text-align: center; padding: 80px 0 40px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-tertiary); letter-spacing: 0.1em; text-transform: uppercase;">
+  End of Variations
+</div>
+
+</div>
+</body>
+</html>
