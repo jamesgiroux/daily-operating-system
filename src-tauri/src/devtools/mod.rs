@@ -1242,8 +1242,9 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     ).map_err(|e| e.to_string())?;
 
     // --- Account Domains (inbox-to-account matching) ---
-    // Populated here from mock data. In production, account_domains can be backfilled from
-    // meeting attendees via db.backfill_account_domains_from_meetings() (Path 2 entity resolution).
+    // Populated here from mock data. In production, domains are populated via:
+    // 1. event_trigger.rs: merge_account_domains() after entity linking (forward path)
+    // 2. backfill_account_domains command: walks historical meeting→account links (I660)
     let account_domain_rows: Vec<(&str, &str)> = vec![
         ("mock-acme-corp", "acme.com"),
         ("mock-globex-industries", "globex.com"),
