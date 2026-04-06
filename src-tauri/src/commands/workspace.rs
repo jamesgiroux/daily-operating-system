@@ -902,6 +902,15 @@ pub fn set_personality(
     })
 }
 
+/// Set UI text scale percentage (DOS-45)
+#[tauri::command]
+pub fn set_text_scale(
+    percent: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Config, String> {
+    crate::services::settings::set_text_scale(percent, &state)
+}
+
 /// Set AI model for a tier (synthesis, extraction, background, mechanical)
 #[tauri::command]
 pub fn set_ai_model(
