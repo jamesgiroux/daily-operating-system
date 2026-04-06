@@ -198,7 +198,13 @@ function RootLayout() {
       try {
         const config = await invoke<{
           workspacePath?: string;
+          textScalePercent?: number;
         }>("get_config");
+        // Apply persisted text scale (DOS-45)
+        const scale = config.textScalePercent ?? 100;
+        if (scale !== 100) {
+          document.documentElement.style.zoom = `${scale / 100}`;
+        }
         if (!config.workspacePath) {
           // No workspace path — but check if wizard was already completed
           // (workspace creation may have failed silently)

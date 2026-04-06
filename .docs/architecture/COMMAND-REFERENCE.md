@@ -2,8 +2,8 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-04-03 by `.docs/generators/gen-command-reference.sh`
-**Registered in lib.rs:** ~359 commands
+**Auto-generated:** 2026-04-06 by `.docs/generators/gen-command-reference.sh`
+**Registered in lib.rs:** ~360 commands
 **Source files:** 11
 
 ---
@@ -405,6 +405,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `set_personality` | — | personality |
 | `set_profile` | — | profile |
 | `set_schedule` | — | workflow, hour, minute, timezone |
+| `set_text_scale` | — | percent |
 | `set_user_profile` | yes | name, company, title, focus, domain, domains |
 | `set_workspace_path` | yes | path |
 | `signal_user_activity` | — | — |
