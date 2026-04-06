@@ -1,0 +1,32 @@
+# Repo Cleanup Progress — 2026-04-05
+
+## Chunk: Linear migration batch 1 + migration notes
+- **What changed**
+  - Created Linear projects for `v1.1.2`, `v1.1.3`, `v1.3.0`, and `v1.4.0` based on the existing markdown plan briefs.
+  - Created missing Linear issues for the requested active sets: `I660`, `I661`, `I662`, `I604`, `I605`, `I606`, `I607`, `I608`.
+  - Added small README migration notes to `.docs/issues/` and `.docs/plans/` so the repo now states that active issue/planning execution lives in Linear.
+  - Preserved the migration policy and inventory docs already prepared in `.docs/`.
+- **What was migrated to Linear**
+  - Projects:
+    - `v1.1.2 — Transcript Routing Fix`
+    - `v1.1.3 — Design Hardening`
+    - `v1.3.0 — Report Engine Rebuild: Intelligence-First, Display-Only Reports`
+    - `v1.4.0 — Publication + Portfolio + Intelligence Quality`
+  - Issues:
+    - `I660` → `DOS-36`
+    - `I661` → `DOS-37`
+    - `I662` → `DOS-38`
+    - `I604` → `DOS-39`
+    - `I605` → `DOS-40`
+    - `I606` → `DOS-41`
+    - `I607` → `DOS-42`
+    - `I608` → `DOS-43`
+- **Commit hash if committed**
+  - _Pending_
+- **Rollback notes**
+  - Repo-side changes are limited to additive docs/notes and can be reverted with a single commit.
+  - Linear-side objects are now created; rollback there would require manual deletion/cancellation if desired.
+- **Next recommended step**
+  - Commit this migration/docs chunk.
+  - Then do a conservative non-destructive cleanup pass for clearly misplaced docs only.
+  - After that, reassess whether any obviously safe destructive cleanup remains worth doing tonight.
