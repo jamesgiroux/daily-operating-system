@@ -453,6 +453,7 @@ pub fn run() {
             commands::set_workspace_path,
             commands::set_developer_mode,
             commands::set_personality,
+            commands::set_text_scale,
             commands::set_ai_model,
             commands::reset_ai_models_to_recommended,
             commands::set_google_poll_settings,

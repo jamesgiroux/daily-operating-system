@@ -3,6 +3,8 @@
 //! All public functions check `cfg!(debug_assertions)` at runtime so that
 //! `generate_handler!` can resolve them in release builds (where they return
 //! errors immediately). The cost is two string comparisons — negligible.
+//! Note: Config fields like `text_scale_percent` (DOS-45) use serde defaults
+//! and don't require mock data seeds — they auto-default in all scenarios.
 
 use std::path::Path;
 

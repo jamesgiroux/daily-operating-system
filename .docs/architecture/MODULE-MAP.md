@@ -36,7 +36,7 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0 (I397). |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (I406–I410). |
-| `services/` | 20 | 236 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 20 | 237 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 20 | 53 | Universal signal bus for intelligence fusion (I306 / ADR-0080 Phase 2). |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
@@ -44,7 +44,7 @@
 
 | Module | Lines | Public Fns | Purpose |
 |--------|-------|-----------|---------|
-| `accounts.rs` | 1853 | 11 | Account workspace file I/O (I72 / ADR-0047). |
+| `accounts.rs` | 1852 | 11 | Account workspace file I/O (I72 / ADR-0047). |
 | `activity.rs` | 187 | 3 | User activity monitoring for background task throttling. |
 | `audit_log.rs` | 453 | 4 | Tamper-evident audit log for enterprise observability (I471, ADR-0094). |
 | `audit.rs` | 150 | 2 | Audit trail for AI-generated data (I297). |
@@ -87,7 +87,7 @@
 | `scheduler.rs` | 748 | 2 | Scheduler for cron-based workflow execution |
 | `state.rs` | 1586 | 12 | AppState — DB, PTY, config |
 | `task_supervisor.rs` | 34 | 1 | — |
-| `types.rs` | 3184 | 7 | Shared type definitions |
+| `types.rs` | 3192 | 7 | Shared type definitions |
 | `util.rs` | 1184 | 26 | — |
 | `watcher.rs` | 869 | 1 | File watcher for _inbox/ directory |
 

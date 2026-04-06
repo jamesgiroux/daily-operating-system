@@ -1111,6 +1111,7 @@ pub fn create_or_update_config(
                 hygiene_pre_meeting_hours: 12,
                 email_enrichment_timeout_seconds: 90,
                 notifications: crate::types::NotificationConfig::default(),
+                text_scale_percent: 100,
             }
         }
     };
