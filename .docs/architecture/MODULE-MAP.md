@@ -1,7 +1,7 @@
 # Module Map
 
 > Rust backend module inventory (`src-tauri/src/`).
-> **Auto-generated:** 2026-04-05 by `.docs/generators/gen-module-map.sh`
+> **Auto-generated:** 2026-04-06 by `.docs/generators/gen-module-map.sh`
 
 **236** Rust files across **30** module directories and **43** standalone modules.
 
@@ -44,7 +44,7 @@
 
 | Module | Lines | Public Fns | Purpose |
 |--------|-------|-----------|---------|
-| `accounts.rs` | 1837 | 11 | Account workspace file I/O (I72 / ADR-0047). |
+| `accounts.rs` | 1853 | 11 | Account workspace file I/O (I72 / ADR-0047). |
 | `activity.rs` | 187 | 3 | User activity monitoring for background task throttling. |
 | `audit_log.rs` | 453 | 4 | Tamper-evident audit log for enterprise observability (I471, ADR-0094). |
 | `audit.rs` | 150 | 2 | Audit trail for AI-generated data (I297). |
@@ -89,7 +89,7 @@
 | `task_supervisor.rs` | 34 | 1 | — |
 | `types.rs` | 3184 | 7 | Shared type definitions |
 | `util.rs` | 1184 | 26 | — |
-| `watcher.rs` | 813 | 1 | File watcher for _inbox/ directory |
+| `watcher.rs` | 869 | 1 | File watcher for _inbox/ directory |
 
 ## Cross-Module Dependencies
 
