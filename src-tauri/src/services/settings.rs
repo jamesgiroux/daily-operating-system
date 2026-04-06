@@ -220,6 +220,20 @@ pub fn set_notification_config(
     })
 }
 
+/// Set UI text scale percentage (DOS-45).
+pub fn set_text_scale(percent: u32, state: &AppState) -> Result<Config, String> {
+    if !(80..=150).contains(&percent) {
+        return Err(format!(
+            "Invalid text scale: {}%. Must be between 80% and 150%.",
+            percent
+        ));
+    }
+
+    crate::state::create_or_update_config(state, |config| {
+        config.text_scale_percent = percent;
+    })
+}
+
 /// Set schedule for a workflow.
 pub fn set_schedule(
     workflow: &str,
