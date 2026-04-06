@@ -45,6 +45,8 @@ enum WatchSource {
     Projects(PathBuf),
     ProjectContent(PathBuf),
     UserAttachments(PathBuf),
+    /// DOS-44: New directory created under Accounts/ or Projects/
+    NewEntityDir,
 }
 
 /// Start watching the _inbox/ directory for changes.
@@ -213,6 +215,25 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             }) {
                                 let _ = tx.try_send(WatchSource::Projects(path.clone()));
                             }
+                        // DOS-44: Detect new directory creation under Accounts/ or Projects/.
+                        // A new top-level directory means a user manually created an account
+                        // or project folder. Trigger a full workspace resync so it gets
+                        // bootstrapped into the DB.
+                        } else if matches!(event.kind, EventKind::Create(_))
+                            && event.paths.iter().any(|p| {
+                                p.is_dir()
+                                    && (p.parent() == Some(accounts_dir_clone.as_path())
+                                        || p.parent() == Some(projects_dir_clone.as_path()))
+                                    && p.file_name()
+                                        .and_then(|n| n.to_str())
+                                        .is_some_and(|n| {
+                                            !n.starts_with('_')
+                                                && !n.starts_with('.')
+                                                && n != "Internal"
+                                        })
+                            })
+                        {
+                            let _ = tx.try_send(WatchSource::NewEntityDir);
                         } else if event
                             .paths
                             .iter()
@@ -304,6 +325,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
         let mut projects_dirty: Vec<PathBuf> = Vec::new();
         let mut project_content_dirty: Vec<PathBuf> = Vec::new();
         let mut user_attachments_dirty: Vec<PathBuf> = Vec::new();
+        let mut new_entity_dirty = false;
         loop {
             // Wait for an event
             let source = match fs_rx.recv().await {
@@ -343,6 +365,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                         user_attachments_dirty.push(p);
                     }
                 }
+                WatchSource::NewEntityDir => new_entity_dirty = true,
             }
 
             // Debounce: drain any events that arrive within the window
@@ -380,6 +403,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             user_attachments_dirty.push(p);
                         }
                     }
+                    WatchSource::NewEntityDir => new_entity_dirty = true,
                 }
             }
 
@@ -474,6 +498,38 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
             if !user_attachments_dirty.is_empty() {
                 handle_user_attachment_changes(&user_attachments_dirty, &state, &workspace);
                 user_attachments_dirty.clear();
+            }
+
+            // DOS-44: New entity directory discovered — lightweight bootstrap only.
+            // Creates DB records and writes dashboard files so the account/project
+            // appears in the UI immediately. Does NOT trigger expensive PTY/intel
+            // operations — those happen lazily on next scheduled intel cycle or
+            // when the user opens the entity detail page.
+            if new_entity_dirty {
+                log::info!("DOS-44: New entity directory detected, running workspace sync");
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    let accounts_synced =
+                        crate::accounts::sync_accounts_from_workspace(&workspace, &db)
+                            .unwrap_or(0);
+                    let projects_synced =
+                        crate::projects::sync_projects_from_workspace(&workspace, &db)
+                            .unwrap_or(0);
+                    if accounts_synced > 0 {
+                        log::info!(
+                            "DOS-44: Bootstrapped {} new account(s) from workspace",
+                            accounts_synced
+                        );
+                        let _ = app_handle.emit("accounts-updated", ());
+                    }
+                    if projects_synced > 0 {
+                        log::info!(
+                            "DOS-44: Bootstrapped {} new project(s) from workspace",
+                            projects_synced
+                        );
+                        let _ = app_handle.emit("projects-updated", ());
+                    }
+                }
+                new_entity_dirty = false;
             }
         }
 
