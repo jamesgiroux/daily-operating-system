@@ -110,6 +110,10 @@ pub struct Config {
     /// User notification preferences (toggles + quiet hours).
     #[serde(default)]
     pub notifications: NotificationConfig,
+    /// UI text scale percentage (DOS-45). Default: 100. Valid range: 80–150.
+    /// Applied as CSS zoom on the document root for global text scaling.
+    #[serde(default = "default_text_scale_percent")]
+    pub text_scale_percent: u32,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -321,6 +325,10 @@ fn default_hygiene_pre_meeting_hours() -> u32 {
 
 fn default_email_enrichment_timeout_seconds() -> u32 {
     90
+}
+
+fn default_text_scale_percent() -> u32 {
+    100
 }
 
 impl Config {
@@ -2847,6 +2855,7 @@ mod tests {
             hygiene_pre_meeting_hours: 12,
             email_enrichment_timeout_seconds: 90,
             notifications: NotificationConfig::default(),
+            text_scale_percent: 100,
         }
     }
 
