@@ -376,6 +376,121 @@ fn resolve_recovery_destination(
         }
     }
 
+    // Title-based matching: use EntityHint slugs and keywords against the meeting title,
+    // replicating the same matching logic as classify.rs resolve_entities().
+    let title = meeting
+        .as_ref()
+        .map(|m| m.title.to_lowercase())
+        .unwrap_or_default();
+
+    if !title.is_empty() {
+        let hints = crate::helpers::build_entity_hints(db);
+        let mut best_match: Option<(String, String, f64)> = None; // (id, name, confidence)
+
+        for hint in &hints {
+            if hint.entity_type != crate::entity::EntityType::Account {
+                continue;
+            }
+            // Skip internal accounts
+            if hint.id.starts_with("internal-") {
+                continue;
+            }
+
+            let mut confidence = 0.0_f64;
+
+            // Keyword matching (0.70)
+            for kw in &hint.keywords {
+                if title.contains(&kw.to_lowercase()) {
+                    confidence = 0.70;
+                    break;
+                }
+            }
+
+            // Slug matching (0.50) — same 4-char minimum as classify.rs
+            if confidence < 0.50 {
+                for slug in &hint.slugs {
+                    if slug.len() >= 4 && title.contains(slug.as_str()) {
+                        confidence = 0.50;
+                        break;
+                    }
+                }
+            }
+
+            // Also try matching the account name directly (case-insensitive)
+            if confidence < 0.50 {
+                let name_lower = hint.name.to_lowercase();
+                if name_lower.len() >= 4 && title.contains(&name_lower) {
+                    confidence = 0.55;
+                }
+            }
+
+            if confidence > 0.0 {
+                let dominated = match &best_match {
+                    Some((_, _, c)) => confidence > *c,
+                    None => true,
+                };
+                if dominated {
+                    best_match = Some((hint.id.clone(), hint.name.clone(), confidence));
+                }
+            }
+        }
+
+        // Only route if exactly one account matched (check for ties)
+        if let Some((_, ref name, best_conf)) = best_match {
+            let tie_count = hints
+                .iter()
+                .filter(|h| {
+                    h.entity_type == crate::entity::EntityType::Account
+                        && !h.id.starts_with("internal-")
+                })
+                .filter(|h| {
+                    // Re-check: does this hint also match at best_conf level?
+                    let mut c = 0.0_f64;
+                    for kw in &h.keywords {
+                        if title.contains(&kw.to_lowercase()) {
+                            c = 0.70;
+                            break;
+                        }
+                    }
+                    if c < 0.50 {
+                        for slug in &h.slugs {
+                            if slug.len() >= 4 && title.contains(slug.as_str()) {
+                                c = 0.50;
+                                break;
+                            }
+                        }
+                    }
+                    if c < 0.50 {
+                        let nl = h.name.to_lowercase();
+                        if nl.len() >= 4 && title.contains(&nl) {
+                            c = 0.55;
+                        }
+                    }
+                    c >= best_conf
+                })
+                .count();
+
+            if tie_count == 1 {
+                let account_dir =
+                    crate::processor::transcript::sanitize_account_dir(name);
+                log::info!(
+                    "I662: Title-matched '{}' to account '{}' (confidence {:.2})",
+                    title,
+                    name,
+                    best_conf
+                );
+                return Some((
+                    workspace
+                        .join("Accounts")
+                        .join(&account_dir)
+                        .join(subdirectory)
+                        .join(filename),
+                    "title_match_recovery",
+                ));
+            }
+        }
+    }
+
     // Internal meetings are expected in archive — don't try to route them
     let is_internal = matches!(
         meeting_type_str,
