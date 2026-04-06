@@ -20,6 +20,7 @@ import DiagnosticsSection from "@/components/settings/DiagnosticsSection";
 import DatabaseRecoveryCard from "@/components/settings/DatabaseRecoveryCard";
 import DataPrivacySection from "@/components/settings/DataPrivacySection";
 import NotificationSection from "@/components/settings/NotificationSection";
+import TextSizeSection from "@/components/settings/TextSizeSection";
 import s from "./SettingsPage.module.css";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -271,6 +272,7 @@ export default function SettingsPage() {
         </div>
         <SystemStatus />
         <NotificationSection />
+        <TextSizeSection />
         {appState.wizardCompletedAt && (
           <div className={s.systemAction}>
             <button onClick={resumeOnboarding} className={s.systemActionButton}>
