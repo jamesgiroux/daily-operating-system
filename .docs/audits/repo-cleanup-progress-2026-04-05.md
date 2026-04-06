@@ -22,11 +22,25 @@
     - `I607` → `DOS-42`
     - `I608` → `DOS-43`
 - **Commit hash if committed**
-  - _Pending_
+  - `97e1e86` — `docs: record Linear migration policy and first migration batch`
 - **Rollback notes**
-  - Repo-side changes are limited to additive docs/notes and can be reverted with a single commit.
+  - Repo-side changes are limited to additive docs/notes and can be reverted with `git revert 97e1e86`.
   - Linear-side objects are now created; rollback there would require manual deletion/cancellation if desired.
 - **Next recommended step**
-  - Commit this migration/docs chunk.
-  - Then do a conservative non-destructive cleanup pass for clearly misplaced docs only.
-  - After that, reassess whether any obviously safe destructive cleanup remains worth doing tonight.
+  - Conservative non-destructive cleanup pass for clearly misplaced docs only.
+  - Reassess whether any obviously safe destructive cleanup remains worth doing tonight.
+
+## Chunk: Non-destructive misplaced-doc normalization
+- **What changed**
+  - Moved `design/CSS-DESIGN-SYSTEM-AUDIT-2026-03-21.md` into `.docs/audits/`.
+  - Moved `docs/ai-poller-token-reduction-proposal-2026-03-29.md` into `.docs/research/`.
+  - No files were deleted in this chunk.
+- **What was migrated to Linear**
+  - None.
+- **Commit hash if committed**
+  - `b3adc8b` — `docs: normalize misplaced audit and research notes`
+- **Rollback notes**
+  - Both moves can be reverted with `git revert b3adc8b`.
+- **Next recommended step**
+  - Only consider obviously safe destructive cleanup items next.
+  - Safe candidates still visible tonight: `notification-demo.html` and `.stash/bob-phase4a-changes.patch`, but only remove them if James is comfortable losing local residue/history in git-tracked form.
