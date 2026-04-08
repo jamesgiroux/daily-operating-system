@@ -10,6 +10,20 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.1.2 — Your meetings, in the right place
+
+Since mid-February, meeting transcripts and notes were quietly piling up in a catch-all archive instead of filing themselves under the right account. v1.1.2 fixes the pipeline, recovers what it can, and makes the whole system smarter about where things belong.
+
+**Transcripts route to the right account again.** The system now matches meeting attendees to known accounts by email domain. A call with someone from a customer's company files under that account automatically. When that doesn't work, it falls back to matching account names in the meeting title, then checks if the transcript itself already knows which account it belongs to. If nothing matches, it goes to the archive. Every routing decision is logged so you can see why a file ended up where it did.
+
+**We recovered the backlog.** A one-time recovery command scans the archive for customer meeting transcripts that should have been filed under accounts. It matched about a third of the stranded files automatically. Internal meetings (team syncs, all-hands) are correctly left in the archive.
+
+**Drop a folder, get an account.** Create a new folder under Accounts in Finder and it automatically appears in DailyOS within seconds. Rename it and the app updates to match. Rename it in the app and the folder updates to match. No more manual setup required.
+
+**Adjustable text size.** New control in Settings to increase or decrease the base font size across the entire app. Your preference is saved between sessions.
+
+---
+
 ## v1.1.1 — Making the magic reliable
 
 v1.1.0 introduced lifecycle intelligence and stakeholder management. v1.1.1 makes it all work consistently. Meetings that should have generated briefings now do. Intelligence that referenced the wrong company is filtered out. The daily briefing focuses on what matters today, not yesterday's noise.

@@ -5,6 +5,28 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.1.2] — 2026-04-08
+
+### Added
+
+- **Account domain population (I660)** — `account_domains` table is now populated from meeting attendee emails when entity resolution links a meeting to an account. `merge_account_domains()` accumulates domains additively across meetings. Personal email domains (gmail, outlook, etc.) and the user's own company domains are filtered out. Backfill command `backfill_account_domains` populates domains from all historical meeting-account links.
+- **Defensive transcript routing fallback (I661)** — new shared `resolve_transcript_destination()` with 6-step priority chain: account classification, linked project, linked person, attendee domain fallback, source frontmatter fallback, archive. Every route logs its method for audit. Both transcripts and meeting records use the same chain.
+- **Archive recovery command (I662)** — `recover_archived_transcripts` walks `_archive/` directories, parses YAML frontmatter, resolves entity links and attendee domains, and moves customer files to correct account directories. Title-based matching (slug + keyword + name, 4-char minimum) recovers files without entity links. Internal meetings correctly left in archive. Idempotent. Emits `transcript_recovered` signal per file.
+- **Auto-discover new account directories (DOS-44)** — bare account directories created in Finder are auto-bootstrapped into the DB at startup and via live filesystem watcher. 5-second debounce lets Finder rename complete before bootstrap. Bidirectional name sync: renaming a directory updates the DB, renaming in-app renames the directory.
+- **Adjustable text size (DOS-45)** — UI control to increase/decrease base font size across the app. Preference persists across restarts.
+- **`.docs/` now version-controlled** — backlog, plans, issues, decisions, architecture, and research documents committed and pushed to remote for multi-contributor visibility.
+
+### Changed
+
+- **`parking_lot` replaces `std::sync`** — all `Mutex` and `RwLock` usage migrated to `parking_lot` for better performance and no poisoning. Enables `panic = "unwind"` in Cargo profile.
+- **Signal emission on domain population** — `account_domains_updated` signal emitted after successful domain merge for audit trail.
+
+### Fixed
+
+- **Transcript routing broken since mid-February** — root cause: empty `account_domains` table prevented entity resolution from matching attendee emails to accounts. All transcripts and meeting records were falling through to `_archive/` instead of routing to account directories. 22 accounts backfilled with correct primary domains.
+- **Personal email contamination in domain extraction** — `extract_domains_from_attendees()` was not filtering gmail.com, outlook.com, etc., allowing personal email providers to be stored as account domains.
+- **`set_account_domains` destructive replace** — changed to `merge_account_domains` (additive INSERT OR IGNORE) so domains from multiple meetings accumulate rather than clobber each other.
+
 ## [1.1.1] — 2026-04-02
 
 ### Added
