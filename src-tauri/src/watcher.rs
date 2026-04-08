@@ -215,24 +215,27 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             }) {
                                 let _ = tx.try_send(WatchSource::Projects(path.clone()));
                             }
-                        // DOS-44: Detect new directory creation under Accounts/ or Projects/.
-                        // A new top-level directory means a user manually created an account
-                        // or project folder. Trigger a full workspace resync so it gets
-                        // bootstrapped into the DB.
-                        } else if matches!(event.kind, EventKind::Create(_))
-                            && event.paths.iter().any(|p| {
-                                p.is_dir()
-                                    && (p.parent() == Some(accounts_dir_clone.as_path())
-                                        || p.parent() == Some(projects_dir_clone.as_path()))
-                                    && p.file_name()
-                                        .and_then(|n| n.to_str())
-                                        .is_some_and(|n| {
-                                            !n.starts_with('_')
-                                                && !n.starts_with('.')
-                                                && n != "Internal"
-                                        })
-                            })
-                        {
+                        // DOS-44: Detect new or renamed directories under Accounts/ or Projects/.
+                        // Create: user made a new folder. Rename/Modify: user renamed it
+                        // in Finder. Both trigger a workspace resync so the DB stays in
+                        // sync with the filesystem. The sync is idempotent — existing
+                        // accounts with matching IDs won't be duplicated, and renamed
+                        // directories get a fresh bootstrap under the new name.
+                        } else if matches!(
+                            event.kind,
+                            EventKind::Create(_) | EventKind::Modify(_)
+                        ) && event.paths.iter().any(|p| {
+                            p.is_dir()
+                                && (p.parent() == Some(accounts_dir_clone.as_path())
+                                    || p.parent() == Some(projects_dir_clone.as_path()))
+                                && p.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .is_some_and(|n| {
+                                        !n.starts_with('_')
+                                            && !n.starts_with('.')
+                                            && n != "Internal"
+                                    })
+                        }) {
                             let _ = tx.try_send(WatchSource::NewEntityDir);
                         } else if event
                             .paths
@@ -505,7 +508,17 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
             // appears in the UI immediately. Does NOT trigger expensive PTY/intel
             // operations — those happen lazily on next scheduled intel cycle or
             // when the user opens the entity detail page.
+            //
+            // Extra 3s delay: when a user creates a directory in Finder, the OS
+            // fires Create with a temporary name ("untitled folder"), then a Rename
+            // event once the user types the real name. Without this delay we'd
+            // bootstrap with the wrong name and write dashboard files before the
+            // rename completes.
             if new_entity_dirty {
+                // Short delay to let Finder complete rename operations.
+                // Without this, we bootstrap "untitled folder" before the
+                // user finishes typing the real name.
+                sleep(Duration::from_secs(5)).await;
                 log::info!("DOS-44: New entity directory detected, running workspace sync");
                 if let Ok(db) = crate::db::ActionDb::open() {
                     let accounts_synced =

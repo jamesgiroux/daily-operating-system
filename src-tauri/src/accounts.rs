@@ -643,6 +643,33 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
             }) => {
                 match db.get_account(&file_account.id) {
                     Ok(Some(db_account)) => {
+                        // DOS-44: Detect directory rename — if the folder name
+                        // doesn't match the DB name, the user renamed the directory
+                        // in Finder. Update the account name + tracker_path to match.
+                        let dir_name_str = name_str.to_string();
+                        let db_name_normalized = db_account.name.replace(' ', "-");
+                        if dir_name_str != db_name_normalized
+                            && dir_name_str != db_account.name
+                        {
+                            let new_name = dir_name_str.replace('-', " ");
+                            log::info!(
+                                "DOS-44: Directory renamed '{}' → '{}', updating account",
+                                db_account.name,
+                                new_name
+                            );
+                            let mut renamed = db_account.clone();
+                            renamed.name = new_name;
+                            renamed.tracker_path =
+                                Some(format!("Accounts/{}", dir_name_str));
+                            renamed.updated_at = chrono::Utc::now().to_rfc3339();
+                            let _ = db.upsert_account(&renamed);
+                            let _ = write_account_json(workspace, &renamed, Some(&json), db);
+                            let _ =
+                                write_account_markdown(workspace, &renamed, Some(&json), db);
+                            synced += 1;
+                            continue;
+                        }
+
                         if file_account.updated_at > db_account.updated_at {
                             // File is newer — update SQLite, regen markdown
                             let mut merged = file_account;
