@@ -1523,6 +1523,54 @@ pub fn update_account_field(
         let config = state.config.read();
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
+
+            // DOS-44: When the name changes, rename the workspace directory to match.
+            // The old directory path is resolved from the account's current tracker_path
+            // or the old name; the new path uses the updated name.
+            if field == "name" {
+                let old_dir = crate::accounts::resolve_account_dir(workspace, &account);
+                let new_dir_name =
+                    crate::processor::transcript::sanitize_account_dir(&normalized_value);
+                let new_dir = if let Some(parent) = old_dir.parent() {
+                    parent.join(&new_dir_name)
+                } else {
+                    workspace.join("Accounts").join(&new_dir_name)
+                };
+
+                if old_dir.exists() && old_dir != new_dir && !new_dir.exists() {
+                    if let Err(e) = std::fs::rename(&old_dir, &new_dir) {
+                        log::warn!(
+                            "DOS-44: Failed to rename account dir '{}' → '{}': {}",
+                            old_dir.display(),
+                            new_dir.display(),
+                            e
+                        );
+                    } else {
+                        log::info!(
+                            "DOS-44: Renamed account dir '{}' → '{}'",
+                            old_dir.display(),
+                            new_dir.display()
+                        );
+                        // Update tracker_path in DB
+                        let new_tracker = format!(
+                            "Accounts/{}",
+                            new_dir_name
+                        );
+                        let _ = db.update_account_field(
+                            account_id,
+                            "tracker_path",
+                            &new_tracker,
+                        );
+                    }
+                }
+            }
+
+            // Re-fetch account after potential tracker_path update
+            let account = db
+                .get_account(account_id)
+                .ok()
+                .flatten()
+                .unwrap_or(account);
             let json_path =
                 crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
             let existing = if json_path.exists() {
