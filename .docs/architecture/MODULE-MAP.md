@@ -1,7 +1,7 @@
 # Module Map
 
 > Rust backend module inventory (`src-tauri/src/`).
-> **Auto-generated:** 2026-04-06 by `.docs/generators/gen-module-map.sh`
+> **Auto-generated:** 2026-04-08 by `.docs/generators/gen-module-map.sh`
 
 **236** Rust files across **30** module directories and **43** standalone modules.
 
@@ -13,7 +13,7 @@
 |--------|-------|-----------|---------|
 | `bin/` | 0 | 0 | Binary entry points |
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment (I228). |
-| `commands/` | 10 | 360 | Tauri IPC command handlers |
+| `commands/` | 10 | 361 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
 | `db/` | 22 | 25 | SQLite database modules |
 | `devtools/` | 1 | 11 | Dev tools for scenario switching and mock data. |
@@ -74,7 +74,7 @@
 | `intel_queue.rs` | 2804 | 4 | Background intelligence enrichment queue (I132). |
 | `json_loader.rs` | 615 | 3 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
-| `lib.rs` | 856 | 1 | App setup, command registration, plugin init |
+| `lib.rs` | 857 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 982 | 7 | Background meeting prep queue. |
 | `migrations.rs` | 1570 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
@@ -85,11 +85,11 @@
 | `pty.rs` | 991 | 2 | PTY Manager for Claude Code subprocess management |
 | `risk_briefing.rs` | 596 | 5 | Risk Briefing generation for at-risk accounts. |
 | `scheduler.rs` | 748 | 2 | Scheduler for cron-based workflow execution |
-| `state.rs` | 1586 | 12 | AppState — DB, PTY, config |
+| `state.rs` | 1587 | 12 | AppState — DB, PTY, config |
 | `task_supervisor.rs` | 34 | 1 | — |
-| `types.rs` | 3192 | 7 | Shared type definitions |
+| `types.rs` | 3193 | 7 | Shared type definitions |
 | `util.rs` | 1184 | 26 | — |
-| `watcher.rs` | 869 | 1 | File watcher for _inbox/ directory |
+| `watcher.rs` | 879 | 1 | File watcher for _inbox/ directory |
 
 ## Cross-Module Dependencies
 
