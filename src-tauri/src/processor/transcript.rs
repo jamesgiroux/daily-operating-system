@@ -43,6 +43,60 @@ pub enum TranscriptContentKind {
     Notes,
 }
 
+/// Processing profile determines which extraction phases run and how prompts
+/// are framed based on meeting type category.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessingProfile {
+    /// Customer, QBR, Partnership, External — full 3-phase extraction
+    CustomerFacing,
+    /// Internal, TeamSync, AllHands — 2 phases, team-oriented extraction
+    InternalTeam,
+    /// OneOnOne — 2 phases, personal/coaching-oriented extraction
+    OneOnOne,
+    /// Training, Personal — single phase, summary only
+    Lightweight,
+}
+
+impl ProcessingProfile {
+    fn from_meeting_type(mt: &MeetingType) -> Self {
+        match mt {
+            MeetingType::Customer
+            | MeetingType::Qbr
+            | MeetingType::Partnership
+            | MeetingType::External => Self::CustomerFacing,
+            MeetingType::Internal | MeetingType::TeamSync | MeetingType::AllHands => {
+                Self::InternalTeam
+            }
+            MeetingType::OneOnOne => Self::OneOnOne,
+            MeetingType::Training | MeetingType::Personal => Self::Lightweight,
+        }
+    }
+
+    fn run_phase2(&self) -> bool {
+        *self != Self::Lightweight
+    }
+
+    fn run_phase3(&self) -> bool {
+        *self == Self::CustomerFacing
+    }
+
+    fn extract_champion_health(&self) -> bool {
+        *self == Self::CustomerFacing
+    }
+
+    fn recompute_account_health(&self) -> bool {
+        *self == Self::CustomerFacing
+    }
+
+    fn total_phases(&self) -> u32 {
+        match self {
+            Self::Lightweight => 1,
+            Self::CustomerFacing => 3,
+            _ => 2,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TranscriptProgressPayload {
@@ -148,6 +202,15 @@ pub fn process_transcript_with_kind(
         }
     };
 
+    let proc_profile = ProcessingProfile::from_meeting_type(&meeting.meeting_type);
+    log::info!(
+        "Transcript processing: title='{}', meeting_type={:?}, profile={:?}, phases={}",
+        meeting.title,
+        meeting.meeting_type,
+        proc_profile,
+        proc_profile.total_phases()
+    );
+
     // 2. Generate destination path and copy with frontmatter
     let date = meeting.end.format("%Y-%m-%d").to_string();
     let slug = slugify(&meeting.title);
@@ -210,7 +273,7 @@ pub fn process_transcript_with_kind(
     let gong_context = build_gong_pre_context(db, meeting);
 
     // ── Phase 1: Core extraction (summary, discussion, analysis, actions) ──
-    let mut phase1_prompt = build_phase1_prompt(meeting, &content, content_kind);
+    let mut phase1_prompt = build_phase1_prompt(meeting, &content, content_kind, proc_profile);
     if let Some(ref ctx) = gong_context {
         phase1_prompt = format!("{}\n\n{}", ctx, phase1_prompt);
     }
@@ -336,7 +399,7 @@ pub fn process_transcript_with_kind(
             meeting_id: meeting.id.clone(),
             phase: "phase1".to_string(),
             completed: 1,
-            total: 3,
+            total: proc_profile.total_phases(),
             summary_ready: !summary.trim().is_empty(),
             outcomes_ready: false,
             post_intel_ready: false,
@@ -349,16 +412,19 @@ pub fn process_transcript_with_kind(
     );
 
     // ── Phase 2: Intelligence extraction (wins, risks, decisions, sentiment, champion) ──
-    let phase2_prompt = build_phase2_prompt(meeting, &content, content_kind, &summary);
-    let pty2 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
-        .with_usage_context(
-            AiUsageContext::new("transcript", "phase2_intelligence_extraction")
-                .with_trigger("transcript_process")
-                .with_tier(ModelTier::Extraction),
-        )
-        .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
+    let (mut wins, mut risks, mut decisions, sentiment, mut champion_health) = if proc_profile
+        .run_phase2()
+    {
+        let phase2_prompt =
+            build_phase2_prompt(meeting, &content, content_kind, &summary, proc_profile);
+        let pty2 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+            .with_usage_context(
+                AiUsageContext::new("transcript", "phase2_intelligence_extraction")
+                    .with_trigger("transcript_process")
+                    .with_tier(ModelTier::Extraction),
+            )
+            .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
 
-    let (mut wins, mut risks, mut decisions, sentiment, mut champion_health) =
         match pty2.spawn_claude(workspace, &phase2_prompt) {
             Ok(o) => {
                 let phase2_output = o.stdout;
@@ -381,7 +447,11 @@ pub fn process_transcript_with_kind(
 
                 let parsed_p2 = parse_enrichment_response(&phase2_output);
                 let sentiment = parse_sentiment_block(&phase2_output);
-                let champion_health = parse_champion_health_block(&phase2_output);
+                let champion_health = if proc_profile.extract_champion_health() {
+                    parse_champion_health_block(&phase2_output)
+                } else {
+                    None
+                };
                 (
                     parsed_p2.wins,
                     parsed_p2.risks,
@@ -392,13 +462,16 @@ pub fn process_transcript_with_kind(
             }
             Err(e) => {
                 log::warn!(
-                "Phase 2 (intelligence extraction) failed for '{}': {} — Phase 1 results preserved",
-                meeting.title,
-                e
-            );
+                    "Phase 2 (intelligence extraction) failed for '{}': {} — Phase 1 results preserved",
+                    meeting.title,
+                    e
+                );
                 (Vec::new(), Vec::new(), Vec::new(), None, None)
             }
-        };
+        }
+    } else {
+        (vec![], vec![], vec![], None, None)
+    };
 
     // Persist Phase 2: transcript captures + outcomes signal
     if let Some(db) = db {
@@ -437,23 +510,25 @@ pub fn process_transcript_with_kind(
             }
         }
 
-        // Persist champion health from Phase 2
-        if let Some(ref health) = champion_health {
-            let db_health = crate::db::types::ChampionHealthAssessment {
-                meeting_id: meeting.id.clone(),
-                champion_name: Some(health.champion_name.clone()),
-                champion_status: health.champion_status.clone(),
-                champion_evidence: health.champion_evidence.clone(),
-                champion_risk: health.champion_risk.clone(),
-            };
-            // DIRECT_DB_ALLOWED: Transcript extraction owns persistence of per-meeting
-            // champion health artifacts before downstream signal propagation runs.
-            if let Err(e) = db.upsert_champion_health(&meeting.id, &db_health) {
-                log::warn!(
-                    "Failed to persist champion health for {}: {}",
-                    meeting.id,
-                    e
-                );
+        // Persist champion health from Phase 2 (only for CustomerFacing)
+        if proc_profile.extract_champion_health() {
+            if let Some(ref health) = champion_health {
+                let db_health = crate::db::types::ChampionHealthAssessment {
+                    meeting_id: meeting.id.clone(),
+                    champion_name: Some(health.champion_name.clone()),
+                    champion_status: health.champion_status.clone(),
+                    champion_evidence: health.champion_evidence.clone(),
+                    champion_risk: health.champion_risk.clone(),
+                };
+                // DIRECT_DB_ALLOWED: Transcript extraction owns persistence of per-meeting
+                // champion health artifacts before downstream signal propagation runs.
+                if let Err(e) = db.upsert_champion_health(&meeting.id, &db_health) {
+                    log::warn!(
+                        "Failed to persist champion health for {}: {}",
+                        meeting.id,
+                        e
+                    );
+                }
             }
         }
     }
@@ -462,10 +537,10 @@ pub fn process_transcript_with_kind(
         TranscriptProgressPayload {
             meeting_id: meeting.id.clone(),
             phase: "phase2".to_string(),
-            completed: 2,
-            total: 3,
+            completed: if proc_profile.run_phase2() { 2 } else { 1 },
+            total: proc_profile.total_phases(),
             summary_ready: !summary.trim().is_empty(),
-            outcomes_ready: true,
+            outcomes_ready: proc_profile.run_phase2(),
             post_intel_ready: false,
             actions_count: extracted_actions.len(),
             wins_count: wins.len(),
@@ -476,16 +551,17 @@ pub fn process_transcript_with_kind(
     );
 
     // ── Phase 3: Deep analysis (dynamics, commitments, role changes) ──
-    let phase3_prompt = build_phase3_prompt(meeting, &content, content_kind, &summary);
-    let pty3 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
-        .with_usage_context(
-            AiUsageContext::new("transcript", "phase3_deep_analysis")
-                .with_trigger("transcript_process")
-                .with_tier(ModelTier::Extraction),
-        )
-        .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
+    let (interaction_dynamics, role_changes, commitments) = if proc_profile.run_phase3() {
+        let phase3_prompt =
+            build_phase3_prompt(meeting, &content, content_kind, &summary, proc_profile);
+        let pty3 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+            .with_usage_context(
+                AiUsageContext::new("transcript", "phase3_deep_analysis")
+                    .with_trigger("transcript_process")
+                    .with_tier(ModelTier::Extraction),
+            )
+            .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
 
-    let (interaction_dynamics, role_changes, commitments) =
         match pty3.spawn_claude(workspace, &phase3_prompt) {
             Ok(o) => {
                 let phase3_output = o.stdout;
@@ -519,7 +595,10 @@ pub fn process_transcript_with_kind(
                 );
                 (None, Vec::new(), Vec::new())
             }
-        };
+        }
+    } else {
+        (None, vec![], vec![])
+    };
 
     if let Some(reviewed) = review_transcript_role_attribution(
         workspace,
@@ -653,12 +732,12 @@ pub fn process_transcript_with_kind(
         app_handle,
         TranscriptProgressPayload {
             meeting_id: meeting.id.clone(),
-            phase: "phase3".to_string(),
-            completed: 3,
-            total: 3,
+            phase: "complete".to_string(),
+            completed: proc_profile.total_phases(),
+            total: proc_profile.total_phases(),
             summary_ready: !summary.trim().is_empty(),
-            outcomes_ready: true,
-            post_intel_ready: true,
+            outcomes_ready: proc_profile.run_phase2(),
+            post_intel_ready: proc_profile.run_phase3(),
             actions_count: extracted_actions.len(),
             wins_count: wins.len(),
             risks_count: risks.len(),
@@ -669,30 +748,32 @@ pub fn process_transcript_with_kind(
 
     // Recompute health after transcript phases write champion_health + interaction_dynamics
     if let Some(db) = db {
-        let transcript_entity_id = meeting
-            .linked_entities
-            .as_ref()
-            .and_then(|e| e.first())
-            .map(|e| (e.id.as_str(), e.entity_type.as_str()));
+        if proc_profile.recompute_account_health() {
+            let transcript_entity_id = meeting
+                .linked_entities
+                .as_ref()
+                .and_then(|e| e.first())
+                .map(|e| (e.id.as_str(), e.entity_type.as_str()));
 
-        if let Some((eid, etype)) = transcript_entity_id {
-            if etype == "account" {
-                if let Err(e) =
-                    crate::services::intelligence::recompute_entity_health(db, eid, "account")
-                {
-                    log::warn!(
-                        "Health recompute failed for {} after transcript: {}",
-                        eid,
-                        e
-                    );
-                } else if let Some(app_handle) = app_handle {
-                    let _ = app_handle.emit(
-                        "intelligence-updated",
-                        serde_json::json!({
-                            "entityId": eid,
-                            "entityType": "account",
-                        }),
-                    );
+            if let Some((eid, etype)) = transcript_entity_id {
+                if etype == "account" {
+                    if let Err(e) =
+                        crate::services::intelligence::recompute_entity_health(db, eid, "account")
+                    {
+                        log::warn!(
+                            "Health recompute failed for {} after transcript: {}",
+                            eid,
+                            e
+                        );
+                    } else if let Some(app_handle) = app_handle {
+                        let _ = app_handle.emit(
+                            "intelligence-updated",
+                            serde_json::json!({
+                                "entityId": eid,
+                                "entityType": "account",
+                            }),
+                        );
+                    }
                 }
             }
         }
@@ -761,8 +842,8 @@ pub fn process_transcript_with_kind(
         );
     }
 
-    // Append wins to impact log
-    if !wins.is_empty() {
+    // Append wins to impact log (only for customer-facing meetings)
+    if proc_profile == ProcessingProfile::CustomerFacing && !wins.is_empty() {
         append_to_impact_log(workspace, meeting, &wins);
     }
 
@@ -2047,6 +2128,7 @@ fn build_prompt_header(
     meeting: &CalendarEvent,
     content: &str,
     content_kind: TranscriptContentKind,
+    proc_profile: ProcessingProfile,
 ) -> (String, String) {
     let truncated = truncate_transcript(content);
     let meeting_type = format!("{:?}", meeting.meeting_type).to_lowercase();
@@ -2069,20 +2151,30 @@ fn build_prompt_header(
         ),
     };
 
+    let focus_instruction = match proc_profile {
+        ProcessingProfile::CustomerFacing =>
+            "IMPORTANT: Focus on the substantive business discussion. Skip social chitchat,\ninternal team banter, and small talk that typically occurs at the start of calls.\nPrioritize customer-facing content — what the customer said, asked, or committed to.",
+        ProcessingProfile::InternalTeam =>
+            "IMPORTANT: Focus on decisions made, ownership assignments, blockers surfaced,\nand team commitments. This is an internal meeting — skip customer-framed analysis.\nSkip social chitchat and small talk.",
+        ProcessingProfile::OneOnOne =>
+            "IMPORTANT: Focus on feedback exchanged, coaching moments, personal commitments,\nand relationship dynamics between the two participants. Skip small talk.",
+        ProcessingProfile::Lightweight =>
+            "IMPORTANT: Provide a concise summary and key takeaways only.\nSkip detailed extraction of wins, risks, or interaction dynamics.",
+    };
+
     let header = format!(
         r#"{preamble}{source_intro}
 
 Meeting: "{title}"
 {account_line}Date: {date}
 
-IMPORTANT: Focus on the substantive business discussion. Skip social chitchat,
-internal team banter, and small talk that typically occurs at the start of calls.
-Prioritize customer-facing content — what the customer said, asked, or committed to."#,
+{focus_instruction}"#,
         preamble = INJECTION_PREAMBLE,
         source_intro = source_intro,
         title = encode_high_risk_field(title),
         account_line = account_line,
         date = date,
+        focus_instruction = focus_instruction,
     );
 
     (header, wrap_user_data(&truncated).to_string())
@@ -2095,10 +2187,12 @@ fn build_phase1_prompt(
     meeting: &CalendarEvent,
     content: &str,
     content_kind: TranscriptContentKind,
+    proc_profile: ProcessingProfile,
 ) -> String {
-    let (header, wrapped_content) = build_prompt_header(meeting, content, content_kind);
+    let (header, wrapped_content) =
+        build_prompt_header(meeting, content, content_kind, proc_profile);
 
-    format!(
+    let base = format!(
         r#"{header}
 
 Respond in exactly this format:
@@ -2135,7 +2229,19 @@ Transcript:
 "#,
         header = header,
         content = wrapped_content,
-    )
+    );
+
+    let profile_suffix = match proc_profile {
+        ProcessingProfile::Lightweight =>
+            "\n\nIMPORTANT: Respond with SUMMARY and DISCUSSION sections only. Do NOT include ANALYSIS or ACTIONS sections. Keep the summary concise (2-3 sentences) with key takeaways.",
+        ProcessingProfile::OneOnOne =>
+            "\n\nFor the ACTIONS section: frame all actions as personal commitments and follow-ups between the two participants, not customer follow-ups.",
+        ProcessingProfile::InternalTeam =>
+            "\n\nFor the ACTIONS section: frame actions as team action items and ownership assignments, not customer follow-ups. Include who owns each action.",
+        ProcessingProfile::CustomerFacing => "",
+    };
+
+    format!("{}{}", base, profile_suffix)
 }
 
 /// Phase 2 prompt: Intelligence extraction — WINS, RISKS, DECISIONS, SENTIMENT, CHAMPION_HEALTH.
@@ -2146,8 +2252,10 @@ fn build_phase2_prompt(
     content: &str,
     content_kind: TranscriptContentKind,
     phase1_summary: &str,
+    proc_profile: ProcessingProfile,
 ) -> String {
-    let (header, wrapped_content) = build_prompt_header(meeting, content, content_kind);
+    let (header, wrapped_content) =
+        build_prompt_header(meeting, content, content_kind, proc_profile);
 
     let summary_context = if phase1_summary.is_empty() {
         String::new()
@@ -2158,12 +2266,8 @@ fn build_phase2_prompt(
         )
     };
 
-    format!(
-        r#"{header}
-{summary_context}
-Respond in exactly this format:
-
-WINS:
+    let wins_framing = match proc_profile {
+        ProcessingProfile::CustomerFacing => r#"WINS:
 Extract only verifiable positive outcomes — not vague sentiment. Each win MUST include
 a specific, observable event. "Customer seems happy" is NOT a win.
 
@@ -2176,8 +2280,20 @@ Sub-types (tag each):
 - ADVOCACY: public endorsement, referral, conference speaking, internal win-sharing to leadership
 
 Format: - [SUB_TYPE] <specific win with evidence> #"verbatim quote if available"
-END_WINS
-RISKS:
+END_WINS"#,
+        ProcessingProfile::InternalTeam => r#"WINS:
+List team achievements, milestones reached, blockers cleared, or progress made.
+One win per line. Be specific — include what was accomplished and who drove it.
+END_WINS"#,
+        ProcessingProfile::OneOnOne => r#"WINS:
+List personal achievements, growth milestones, positive feedback shared, or skills demonstrated.
+One win per line.
+END_WINS"#,
+        ProcessingProfile::Lightweight => "", // Lightweight doesn't run Phase 2
+    };
+
+    let risks_framing = match proc_profile {
+        ProcessingProfile::CustomerFacing => r#"RISKS:
 Categorize each risk by urgency. Be specific — name the person, the competitor, the timeline.
 
 RED (critical — requires immediate action):
@@ -2203,11 +2319,20 @@ GREEN_WATCH (early warning — monitor):
 - Reduced energy or engagement without stated reason
 
 Format: - [RED|YELLOW|GREEN_WATCH] <specific risk with named people/timelines> #"verbatim quote"
-END_RISKS
-DECISIONS:
-- [CUSTOMER_COMMITMENT|INTERNAL_DECISION|JOINT_AGREEMENT] <decision> @owner #"verbatim quote"
-END_DECISIONS
+END_RISKS"#,
+        ProcessingProfile::InternalTeam => r#"RISKS:
+List team blockers, resource constraints, process failures, or missed commitments.
+Tag urgency: [RED] immediate, [YELLOW] upcoming, [GREEN_WATCH] monitor.
+END_RISKS"#,
+        ProcessingProfile::OneOnOne => r#"RISKS:
+List concerns raised, misalignments, dissatisfaction signals, or relationship strain.
+Tag urgency: [RED] immediate, [YELLOW] upcoming, [GREEN_WATCH] monitor.
+END_RISKS"#,
+        ProcessingProfile::Lightweight => "",
+    };
 
+    let champion_section = if proc_profile.extract_champion_health() {
+        r#"
 CHAMPION_HEALTH:
 - champion_name: <name or "unidentified">
 - champion_status: strong|weak|lost|none
@@ -2217,8 +2342,81 @@ CHAMPION_HEALTH:
   none = no identifiable champion in the meeting
 - champion_evidence: <specific behavioral evidence from the call>
 - champion_risk: <if weak/lost, what is the risk and recommended action>
-END_CHAMPION_HEALTH
+END_CHAMPION_HEALTH"#
+    } else {
+        ""
+    };
 
+    let champion_rules = if proc_profile.extract_champion_health() {
+        r#"
+Rules for champion health:
+- Focus on the PRIMARY champion/advocate at the customer org
+- "strong" requires evidence of all three: influence, investment, and advocacy
+- "weak" means helpful but missing one or more of the three pillars
+- "lost" means champion has departed, moved roles, or visibly disengaged
+- If no champion is identifiable from this interaction, use "none"
+- champion_risk is only needed for weak/lost status"#
+    } else {
+        ""
+    };
+
+    let wins_rules = match proc_profile {
+        ProcessingProfile::CustomerFacing => r#"
+Rules for wins:
+- Evidence threshold: only extract if specific evidence exists
+- Tag each win with its sub-type ([ADOPTION], [EXPANSION], [VALUE_REALIZED], [RELATIONSHIP], [COMMERCIAL], [ADVOCACY])
+- Include verbatim quotes via #"..." suffix when available
+- If none are apparent, leave the section empty (just the markers)"#,
+        _ => r#"
+Rules for wins:
+- Be specific about what was accomplished
+- If none are apparent, leave the section empty (just the markers)"#,
+    };
+
+    let risks_rules = match proc_profile {
+        ProcessingProfile::CustomerFacing => r#"
+Rules for risks:
+- Tag each risk with urgency: [RED], [YELLOW], or [GREEN_WATCH]
+- Name the specific person, competitor, or timeline
+- Include verbatim quotes via #"..." suffix when available
+- If none are apparent, leave the section empty (just the markers)"#,
+        _ => r#"
+Rules for risks:
+- Tag each risk with urgency: [RED], [YELLOW], or [GREEN_WATCH]
+- Be specific about the blocker or concern
+- If none are apparent, leave the section empty (just the markers)"#,
+    };
+
+    let extra_sections = match proc_profile {
+        ProcessingProfile::InternalTeam => r#"
+
+COMMITMENTS:
+List commitments made with owner and target date. Format:
+- COMMITMENT | Owner: @name | Target: YYYY-MM-DD | Type: team
+END_COMMITMENTS"#,
+        ProcessingProfile::OneOnOne => r#"
+
+COACHING_MOMENTS:
+List coaching or mentoring moments where advice, feedback, or guidance was exchanged. One per line.
+END_COACHING_MOMENTS
+
+RELATIONSHIP_HEALTH:
+One line: aligned | strained | growing | neutral — with brief evidence.
+END_RELATIONSHIP_HEALTH"#,
+        _ => "",
+    };
+
+    format!(
+        r#"{header}
+{summary_context}
+Respond in exactly this format:
+
+{wins_framing}
+{risks_framing}
+DECISIONS:
+- [CUSTOMER_COMMITMENT|INTERNAL_DECISION|JOINT_AGREEMENT] <decision> @owner #"verbatim quote"
+END_DECISIONS
+{champion_section}
 SENTIMENT:
 - overall: positive|neutral|negative|mixed
 - customer: positive|neutral|negative|mixed|n/a
@@ -2233,33 +2431,15 @@ SENTIMENT:
 - internal_advocacy_visible: yes|no (did the customer mention sharing results internally?)
 - roadmap_interest: yes|no (did the customer ask about future features or roadmap?)
 END_SENTIMENT
-
-Rules for wins:
-- Evidence threshold: only extract if specific evidence exists
-- Tag each win with its sub-type ([ADOPTION], [EXPANSION], [VALUE_REALIZED], [RELATIONSHIP], [COMMERCIAL], [ADVOCACY])
-- Include verbatim quotes via #"..." suffix when available
-- If none are apparent, leave the section empty (just the markers)
-
-Rules for risks:
-- Tag each risk with urgency: [RED], [YELLOW], or [GREEN_WATCH]
-- Name the specific person, competitor, or timeline
-- Include verbatim quotes via #"..." suffix when available
-- If none are apparent, leave the section empty (just the markers)
+{wins_rules}
+{risks_rules}
 
 Rules for decisions:
 - Tag each with [CUSTOMER_COMMITMENT], [INTERNAL_DECISION], or [JOINT_AGREEMENT]
 - Include the decision owner via @owner
 - Note any conditions or caveats attached to the decision
 - If no decisions were made, leave the section empty
-
-Rules for champion health:
-- Focus on the PRIMARY champion/advocate at the customer org
-- "strong" requires evidence of all three: influence, investment, and advocacy
-- "weak" means helpful but missing one or more of the three pillars
-- "lost" means champion has departed, moved roles, or visibly disengaged
-- If no champion is identifiable from this interaction, use "none"
-- champion_risk is only needed for weak/lost status
-
+{champion_rules}
 Rules for sentiment:
 - Overall sentiment reflects the general tone of the entire meeting
 - Customer sentiment focuses specifically on the customer's tone and language
@@ -2271,12 +2451,19 @@ Rules for sentiment:
 - data_export_interest: "yes" if customer asks about data portability or export capabilities
 - internal_advocacy_visible: "yes" if customer mentions sharing results or promoting product internally
 - roadmap_interest: "yes" if customer asks about future features or product direction
-
+{extra_sections}
 Transcript:
 {content}
 "#,
         header = header,
         summary_context = summary_context,
+        wins_framing = wins_framing,
+        risks_framing = risks_framing,
+        champion_section = champion_section,
+        wins_rules = wins_rules,
+        risks_rules = risks_rules,
+        champion_rules = champion_rules,
+        extra_sections = extra_sections,
         content = wrapped_content,
     )
 }
@@ -2289,8 +2476,10 @@ fn build_phase3_prompt(
     content: &str,
     content_kind: TranscriptContentKind,
     phase1_summary: &str,
+    proc_profile: ProcessingProfile,
 ) -> String {
-    let (header, wrapped_content) = build_prompt_header(meeting, content, content_kind);
+    let (header, wrapped_content) =
+        build_prompt_header(meeting, content, content_kind, proc_profile);
 
     let summary_context = if phase1_summary.is_empty() {
         String::new()
@@ -4580,6 +4769,145 @@ END_DECISIONS";
         assert!(parsed.risks[0].starts_with("[RED]"));
         assert!(parsed.risks[1].starts_with("[YELLOW]"));
         assert!(parsed.risks[2].starts_with("[GREEN_WATCH]"));
+    }
+
+    // ── DOS-46: ProcessingProfile tests ──
+
+    #[test]
+    fn test_profile_from_meeting_types() {
+        assert_eq!(
+            ProcessingProfile::from_meeting_type(&MeetingType::Customer),
+            ProcessingProfile::CustomerFacing
+        );
+        assert_eq!(
+            ProcessingProfile::from_meeting_type(&MeetingType::Qbr),
+            ProcessingProfile::CustomerFacing
+        );
+        assert_eq!(
+            ProcessingProfile::from_meeting_type(&MeetingType::Partnership),
+            ProcessingProfile::CustomerFacing
+        );
+        assert_eq!(
+            ProcessingProfile::from_meeting_type(&MeetingType::External),
+            ProcessingProfile::CustomerFacing
+        );
+        assert_eq!(
+            ProcessingProfile::from_meeting_type(&MeetingType::Internal),
+            ProcessingProfile::InternalTeam
+        );
+        assert_eq!(
+            ProcessingProfile::from_meeting_type(&MeetingType::TeamSync),
+            ProcessingProfile::InternalTeam
+        );
+        assert_eq!(
+            ProcessingProfile::from_meeting_type(&MeetingType::AllHands),
+            ProcessingProfile::InternalTeam
+        );
+        assert_eq!(
+            ProcessingProfile::from_meeting_type(&MeetingType::OneOnOne),
+            ProcessingProfile::OneOnOne
+        );
+        assert_eq!(
+            ProcessingProfile::from_meeting_type(&MeetingType::Training),
+            ProcessingProfile::Lightweight
+        );
+        assert_eq!(
+            ProcessingProfile::from_meeting_type(&MeetingType::Personal),
+            ProcessingProfile::Lightweight
+        );
+    }
+
+    #[test]
+    fn test_profile_phase_helpers() {
+        assert!(ProcessingProfile::CustomerFacing.run_phase2());
+        assert!(ProcessingProfile::CustomerFacing.run_phase3());
+        assert_eq!(ProcessingProfile::CustomerFacing.total_phases(), 3);
+
+        assert!(ProcessingProfile::InternalTeam.run_phase2());
+        assert!(!ProcessingProfile::InternalTeam.run_phase3());
+        assert_eq!(ProcessingProfile::InternalTeam.total_phases(), 2);
+
+        assert!(ProcessingProfile::OneOnOne.run_phase2());
+        assert!(!ProcessingProfile::OneOnOne.run_phase3());
+        assert_eq!(ProcessingProfile::OneOnOne.total_phases(), 2);
+
+        assert!(!ProcessingProfile::Lightweight.run_phase2());
+        assert!(!ProcessingProfile::Lightweight.run_phase3());
+        assert_eq!(ProcessingProfile::Lightweight.total_phases(), 1);
+    }
+
+    #[test]
+    fn test_profile_champion_health_extraction() {
+        assert!(ProcessingProfile::CustomerFacing.extract_champion_health());
+        assert!(!ProcessingProfile::InternalTeam.extract_champion_health());
+        assert!(!ProcessingProfile::OneOnOne.extract_champion_health());
+        assert!(!ProcessingProfile::Lightweight.extract_champion_health());
+    }
+
+    #[test]
+    fn test_phase1_prompt_lightweight_omits_actions() {
+        let mut meeting = test_meeting();
+        meeting.meeting_type = MeetingType::Training;
+        let prompt =
+            build_phase1_prompt(&meeting, "test content", TranscriptContentKind::Transcript, ProcessingProfile::Lightweight);
+        assert!(
+            prompt.contains("SUMMARY and DISCUSSION sections only"),
+            "Lightweight phase1 prompt must instruct summary-only output"
+        );
+        assert!(
+            prompt.contains("Do NOT include ANALYSIS or ACTIONS"),
+            "Lightweight phase1 prompt must suppress ACTIONS"
+        );
+    }
+
+    #[test]
+    fn test_phase2_prompt_internal_omits_champion() {
+        let mut meeting = test_meeting();
+        meeting.meeting_type = MeetingType::Internal;
+        let prompt = build_phase2_prompt(
+            &meeting,
+            "test content",
+            TranscriptContentKind::Transcript,
+            "summary",
+            ProcessingProfile::InternalTeam,
+        );
+        assert!(
+            !prompt.contains("CHAMPION_HEALTH"),
+            "Internal phase2 prompt must NOT contain CHAMPION_HEALTH"
+        );
+    }
+
+    #[test]
+    fn test_phase2_prompt_one_on_one_has_coaching() {
+        let mut meeting = test_meeting();
+        meeting.meeting_type = MeetingType::OneOnOne;
+        let prompt = build_phase2_prompt(
+            &meeting,
+            "test content",
+            TranscriptContentKind::Transcript,
+            "summary",
+            ProcessingProfile::OneOnOne,
+        );
+        assert!(
+            prompt.contains("COACHING") || prompt.contains("coaching"),
+            "OneOnOne phase2 prompt must contain coaching moments section"
+        );
+    }
+
+    #[test]
+    fn test_phase2_prompt_customer_has_champion() {
+        let meeting = test_meeting(); // default is Customer type
+        let prompt = build_phase2_prompt(
+            &meeting,
+            "test content",
+            TranscriptContentKind::Transcript,
+            "summary",
+            ProcessingProfile::CustomerFacing,
+        );
+        assert!(
+            prompt.contains("CHAMPION_HEALTH"),
+            "CustomerFacing phase2 prompt must contain CHAMPION_HEALTH"
+        );
     }
 }
 
