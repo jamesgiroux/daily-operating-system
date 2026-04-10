@@ -348,10 +348,12 @@ pub async fn create_person(
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let email = crate::util::validate_email(&email)?;
+    let app_state = state.inner().clone();
     state
         .db_write(move |db| {
             crate::services::people::create_person(
                 db,
+                &app_state,
                 &email,
                 &name,
                 organization.as_deref(),
