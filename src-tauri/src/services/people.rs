@@ -328,6 +328,7 @@ pub fn unlink_person_entity(
 /// Create a new person manually. Returns the generated person ID.
 pub fn create_person(
     db: &ActionDb,
+    state: &AppState,
     email: &str,
     name: &str,
     organization: Option<&str>,
@@ -368,6 +369,18 @@ pub fn create_person(
 
     // Self-healing: initialize quality row for new entity (I406)
     crate::self_healing::quality::ensure_quality_row(db, &id, "person");
+
+    // Write workspace files (write-only exports for external systems)
+    let config = state.config.read();
+    if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let person_dir = crate::people::person_dir(workspace, &person.name);
+        let _ = std::fs::create_dir_all(&person_dir);
+        let _ = crate::util::bootstrap_entity_directory(&person_dir, &person.name, "person");
+        let _ = crate::people::write_person_json(workspace, &person, db);
+        let _ = crate::people::write_person_markdown(workspace, &person, db);
+        let _ = crate::people::write_person_dashboard_json(workspace, &person, db);
+    }
 
     Ok(id)
 }
@@ -455,8 +468,12 @@ pub fn create_person_from_stakeholder(
     let config = state.config.read();
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
+        let person_dir = crate::people::person_dir(workspace, &person.name);
+        let _ = std::fs::create_dir_all(&person_dir);
+        let _ = crate::util::bootstrap_entity_directory(&person_dir, &person.name, "person");
         let _ = crate::people::write_person_json(workspace, &person, db);
         let _ = crate::people::write_person_markdown(workspace, &person, db);
+        let _ = crate::people::write_person_dashboard_json(workspace, &person, db);
     }
 
     log::info!(
