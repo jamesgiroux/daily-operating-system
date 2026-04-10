@@ -10,6 +10,20 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.1.3 — Smarter meetings, easier setup
+
+Setting up DailyOS just got simpler, and your meeting briefings just got smarter.
+
+**Install Claude Code with one click.** No more copying terminal commands. If you have Node.js installed, a single button in the setup wizard handles everything. If you don't have Node.js yet, the app now points you to the right place instead of a confusing download page.
+
+**Meeting briefings now speak the right language.** Customer meetings still get the full treatment: wins, risks, champion health, and commitment tracking. But internal team meetings now focus on what actually matters for those conversations: decisions made, who owns what, and blockers surfaced. Your 1:1s extract coaching moments and personal commitments instead of trying to find a "champion." Training sessions and personal calls get a quick summary without burning time on analysis that doesn't apply.
+
+**People get proper workspaces.** When you manually add a person, they now get a full workspace directory with the same structure as accounts and projects: a profile, organized subfolders for transcripts and notes, and files that Claude Desktop and other tools can read.
+
+**Status checks actually work now.** The Settings page was linking to the wrong product (Claude Desktop instead of Claude Code) and the "Check again" button was using a stale cache. Both are fixed. All status indicators across the app now update together when you refresh.
+
+---
+
 ## v1.1.2 — Your meetings, in the right place
 
 Since mid-February, meeting transcripts and notes were quietly piling up in a catch-all archive instead of filing themselves under the right account. v1.1.2 fixes the pipeline, recovers what it can, and makes the whole system smarter about where things belong.

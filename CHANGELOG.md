@@ -5,6 +5,23 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.1.3] — 2026-04-10
+
+### Added
+
+- **One-click Claude Code CLI install (DOS-57)** — onboarding and Settings now offer a single "Install Claude Code" button when Node.js is present. Runs `npm install -g` automatically via a new `install_claude_cli` Tauri command with single-flight guard. When Node.js is missing, shows correct instructions with nodejs.org link instead of the wrong claude.ai/download URL. `resolve_npm_binary()` added for reliable npm detection in Finder-launched apps.
+- **Meeting-type-aware transcript processing (DOS-46)** — transcript pipeline now uses 4 processing profiles (CustomerFacing, InternalTeam, OneOnOne, Lightweight) instead of identical 3-phase extraction for all meeting types. Customer meetings unchanged. Internal meetings extract team decisions, ownership, and blockers instead of champion health. 1:1s extract coaching moments and relationship health. Training/Personal meetings get summary-only processing (1 PTY call instead of 3). Profile selection logged for audit.
+
+### Changed
+
+- **Shared Claude status context (DOS-58)** — `useClaudeStatus` refactored from independent per-component hook instances to a shared `ClaudeStatusCtx` context provider. All consumers (Settings section, Settings banner, dashboard Header) now share state. `forceRefresh()` clears backend TTL cache before re-checking so fresh installs are detected immediately.
+
+### Fixed
+
+- **Settings "Download Claude Code" linked to wrong product (DOS-58)** — button opened claude.ai/download which serves Claude Desktop (wrong product). Replaced with install action for Claude Code CLI. "Check again" button now clears the 5-minute status cache for immediate detection.
+- **Manual person creation skipped directory bootstrapping (DOS-59)** — `create_person()` and `create_person_from_stakeholder()` now create full workspace directories (person.json, person.md, dashboard.json, README, Call-Transcripts/, Meeting-Notes/, Documents/) matching the account/project pattern. `bootstrap_entity_directory` README generalized to be entity-type-aware.
+- **Internal meeting outcomes polluting account health (DOS-46)** — health scoring recompute, champion health persistence, and impact log writes now guarded by processing profile. Only customer-facing meetings trigger these.
+
 ## [1.1.2] — 2026-04-08
 
 ### Added
