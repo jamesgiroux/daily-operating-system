@@ -546,6 +546,7 @@ pub fn run() {
             commands::check_claude_status,
             commands::launch_claude_login,
             commands::clear_claude_status_cache,
+            commands::install_claude_cli,
             commands::get_latency_rollups,
             commands::get_ai_usage_diagnostics,
             commands::install_inbox_sample,
