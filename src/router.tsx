@@ -71,6 +71,7 @@ import { useAppLock } from "@/hooks/useAppLock";
 import { EncryptionRecovery, useEncryptionStatus } from "@/components/EncryptionRecovery";
 import { DatabaseRecovery } from "@/components/DatabaseRecovery";
 import { AppStateCtx, useAppStateProvider } from "@/hooks/useAppState";
+import { ClaudeStatusCtx, useClaudeStatusProvider } from "@/hooks/useClaudeStatus";
 import { useDatabaseRecoveryStatus } from "@/hooks/useDatabaseRecoveryStatus";
 import { TourTips } from "@/components/tour/TourTips";
 import { resolveStartupGate } from "@/routerStartupGate";
@@ -185,6 +186,7 @@ function RootLayout() {
   const encryptionKeyMissing = useEncryptionStatus();
   const { status: dbRecoveryStatus } = useDatabaseRecoveryStatus();
   const appStateCtx = useAppStateProvider();
+  const claudeStatusCtx = useClaudeStatusProvider();
 
   // Magazine shell context — pages register their config, layout consumes it
   const magazineShell = useMagazineShellProvider();
@@ -427,6 +429,7 @@ function RootLayout() {
       <ThemeProvider>
         <PersonalityProvider>
           <AppStateCtx.Provider value={appStateCtx}>
+          <ClaudeStatusCtx.Provider value={claudeStatusCtx}>
             <MagazineShellContext.Provider value={magazineShell}>
               <MagazinePageLayout
                 onFolioSearch={() => setCommandOpen(true)}
@@ -446,6 +449,7 @@ function RootLayout() {
             <Toaster position="bottom-right" />
             <DevToolsPanel />
             {showWelcomeOverlay && <StartupWelcomeOverlay fading={welcomeFading} />}
+          </ClaudeStatusCtx.Provider>
           </AppStateCtx.Provider>
         </PersonalityProvider>
       </ThemeProvider>
@@ -457,6 +461,7 @@ function RootLayout() {
     <ThemeProvider>
       <PersonalityProvider>
         <AppStateCtx.Provider value={appStateCtx}>
+        <ClaudeStatusCtx.Provider value={claudeStatusCtx}>
           <SidebarProvider defaultOpen={false}>
             <SidebarInset>
               <UpdateBanner onWhatsNew={() => setWhatsNewOpen(true)} />
@@ -472,6 +477,7 @@ function RootLayout() {
           <Toaster position="bottom-right" />
           <DevToolsPanel />
           {showWelcomeOverlay && <StartupWelcomeOverlay fading={welcomeFading} />}
+        </ClaudeStatusCtx.Provider>
         </AppStateCtx.Provider>
       </PersonalityProvider>
     </ThemeProvider>
