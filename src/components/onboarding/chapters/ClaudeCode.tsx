@@ -137,44 +137,74 @@ export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
         </div>
       )}
 
-      {status && !status.installed && (
+      {/* Node available — one-click install */}
+      {status && !status.installed && status.nodeInstalled && (
         <div className={`${styles.flexCol} ${styles.gap12}`}>
-          {/* Node.js not found — show install instructions first */}
-          {!status.nodeInstalled && (
-            <div className={styles.ruleSection}>
-              <div className={styles.sectionLabel}>
-                <span className={styles.dangerColor}>Node.js required</span>
-              </div>
-              <p className={`${styles.actionText} ${styles.mb4}`}>
-                Claude Code requires Node.js. Install it first:
-              </p>
-              <p className={`${styles.actionText} ${styles.mt8}`}>
-                Download from{" "}
-                <a
-                  href="https://nodejs.org"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={styles.installLink}
-                >
-                  nodejs.org
-                </a>{" "}
-                (recommended: LTS version)
-              </p>
-              <p className={styles.installHint}>
-                Or via Homebrew:
-              </p>
-              <code className={styles.codeBlock}>brew install node</code>
-            </div>
-          )}
-
-          {/* Claude Code install instructions */}
-          <div
-            className={status.nodeInstalled ? styles.ruleSection : undefined}
-          >
+          <div className={styles.ruleSection}>
             <div className={styles.sectionLabel}>
-              <span className={styles.dangerColor}>
-                {status.nodeInstalled ? "Not found" : "Then install Claude Code"}
-              </span>
+              <span className={styles.dangerColor}>Not found</span>
+            </div>
+            <p className={`${styles.actionText} ${styles.mb4}`}>
+              Click below to install Claude Code automatically.
+            </p>
+          </div>
+          <Button
+            className="w-full"
+            onClick={async () => {
+              try {
+                await invoke("install_claude_cli");
+                checkStatus(true);
+              } catch {
+                // Re-check status to show current state
+                checkStatus(true);
+              }
+            }}
+            disabled={checking}
+          >
+            {checking && <Loader2 className="mr-2 size-4 animate-spin" />}
+            Install Claude Code
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => checkStatus(true)}
+            disabled={checking}
+          >
+            Re-check
+          </Button>
+        </div>
+      )}
+
+      {/* Node not available — show install instructions */}
+      {status && !status.installed && !status.nodeInstalled && (
+        <div className={`${styles.flexCol} ${styles.gap12}`}>
+          <div className={styles.ruleSection}>
+            <div className={styles.sectionLabel}>
+              <span className={styles.dangerColor}>Node.js required</span>
+            </div>
+            <p className={`${styles.actionText} ${styles.mb4}`}>
+              Claude Code requires Node.js. Install it first:
+            </p>
+            <p className={`${styles.actionText} ${styles.mt8}`}>
+              Download from{" "}
+              <a
+                href="https://nodejs.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.installLink}
+              >
+                nodejs.org
+              </a>{" "}
+              (recommended: LTS version)
+            </p>
+            <p className={styles.installHint}>
+              Or via Homebrew:
+            </p>
+            <code className={styles.codeBlock}>brew install node</code>
+          </div>
+          <div className={styles.ruleSection}>
+            <div className={styles.sectionLabel}>
+              <span className={styles.dangerColor}>Then install Claude Code</span>
             </div>
             <p className={`${styles.actionText} ${styles.mb4}`}>
               Install Claude Code from your terminal:
