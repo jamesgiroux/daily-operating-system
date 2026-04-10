@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 
 static NODE_BINARY: Mutex<Option<PathBuf>> = Mutex::new(None);
 static NPX_BINARY: Mutex<Option<PathBuf>> = Mutex::new(None);
+static NPM_BINARY: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// Resolve the absolute path to the `node` binary.
 ///
@@ -37,6 +38,21 @@ pub fn resolve_npx_binary() -> Option<PathBuf> {
         return Some(path.clone());
     }
     let found = resolve_node_tool("npx");
+    if found.is_some() {
+        *guard = found.clone();
+    }
+    found
+}
+
+/// Resolve the absolute path to the `npm` binary, or `None` if not installed.
+///
+/// Caches successful lookups. Re-probes if not yet found.
+pub fn resolve_npm_binary() -> Option<PathBuf> {
+    let mut guard = NPM_BINARY.lock();
+    if let Some(ref path) = *guard {
+        return Some(path.clone());
+    }
+    let found = resolve_node_tool("npm");
     if found.is_some() {
         *guard = found.clone();
     }
@@ -1227,5 +1243,15 @@ mod tests {
         assert!(dir.path().join("Meeting-Notes").exists());
         assert!(dir.path().join("Documents").exists());
         assert!(dir.path().join("Call-Transcripts/README.md").exists());
+    }
+
+    #[test]
+    fn test_resolve_npm_binary_returns_path_or_none() {
+        // Verify the function doesn't panic. On CI with Node installed it
+        // should return Some; without Node it returns None.
+        let result = resolve_npm_binary();
+        if let Some(path) = result {
+            assert!(path.to_str().unwrap().contains("npm"));
+        }
     }
 }
