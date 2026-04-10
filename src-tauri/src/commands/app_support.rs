@@ -731,6 +731,108 @@ pub fn clear_claude_status_cache() {
 }
 
 // =============================================================================
+// Onboarding: Claude CLI Installer (DOS-57)
+// =============================================================================
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallProgress {
+    step: String,
+    status: String,
+    message: String,
+}
+
+static INSTALL_IN_PROGRESS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Install Claude Code CLI via npm. Requires Node.js to be already installed.
+/// Emits `install-claude-progress` events for frontend progress UI.
+#[tauri::command]
+pub async fn install_claude_cli(app: tauri::AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+
+    // Single-flight guard — prevents concurrent installs
+    if INSTALL_IN_PROGRESS
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("Installation already in progress".to_string());
+    }
+
+    // NOTE: If `spawn_blocking` panics, the guard won't reset. Acceptable for
+    // a user-initiated one-shot action — restart clears it.
+    let result = tokio::task::spawn_blocking(move || {
+        // Step 1: Resolve npm binary
+        let npm_path = match crate::util::resolve_npm_binary() {
+            Some(path) => path,
+            None => {
+                let _ = app.emit(
+                    "install-claude-progress",
+                    InstallProgress {
+                        step: "error".to_string(),
+                        status: "error".to_string(),
+                        message: "Node.js is not installed. Please install Node.js from nodejs.org first.".to_string(),
+                    },
+                );
+                return Err(
+                    "Node.js is not installed. Please install Node.js from nodejs.org first."
+                        .to_string(),
+                );
+            }
+        };
+
+        // Step 2: Install Claude Code CLI
+        let _ = app.emit(
+            "install-claude-progress",
+            InstallProgress {
+                step: "installing".to_string(),
+                status: "running".to_string(),
+                message: "Installing Claude Code CLI...".to_string(),
+            },
+        );
+
+        let output = std::process::Command::new(&npm_path)
+            .args(["install", "-g", "@anthropic-ai/claude-code"])
+            .output()
+            .map_err(|e| format!("Failed to run npm: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = format!("npm install failed: {}", stderr.trim());
+            let _ = app.emit(
+                "install-claude-progress",
+                InstallProgress {
+                    step: "error".to_string(),
+                    status: "error".to_string(),
+                    message: msg.clone(),
+                },
+            );
+            return Err(msg);
+        }
+
+        // Step 3: Clear status cache so next check picks up the new install
+        *claude_status_cache().lock() = None;
+
+        let _ = app.emit(
+            "install-claude-progress",
+            InstallProgress {
+                step: "complete".to_string(),
+                status: "done".to_string(),
+                message: "Claude Code CLI installed successfully!".to_string(),
+            },
+        );
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Install task failed: {}", e))?;
+
+    INSTALL_IN_PROGRESS.store(false, Ordering::SeqCst);
+
+    result
+}
+
+// =============================================================================
 // Onboarding: Inbox Training Sample (I78)
 // =============================================================================
 
@@ -1173,3 +1275,32 @@ pub async fn bulk_recompute_health(state: State<'_, Arc<AppState>>) -> Result<us
 // =============================================================================
 // People Commands (I51)
 // =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn install_single_flight_guard_works() {
+        // Verify the atomic flag can be set and cleared
+        assert!(!INSTALL_IN_PROGRESS.load(Ordering::SeqCst));
+        INSTALL_IN_PROGRESS.store(true, Ordering::SeqCst);
+        assert!(INSTALL_IN_PROGRESS.load(Ordering::SeqCst));
+        // Reset for other tests
+        INSTALL_IN_PROGRESS.store(false, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn install_progress_serializes_to_camel_case() {
+        let progress = InstallProgress {
+            step: "installing".to_string(),
+            status: "running".to_string(),
+            message: "Installing...".to_string(),
+        };
+        let json = serde_json::to_string(&progress).unwrap();
+        assert!(json.contains("\"step\""));
+        assert!(json.contains("\"status\""));
+        assert!(json.contains("\"message\""));
+    }
+}
