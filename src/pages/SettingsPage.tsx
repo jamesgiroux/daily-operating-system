@@ -1,8 +1,7 @@
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { User, Link2, Monitor, Shield, Wrench, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-shell";
 import { useAppState } from "@/hooks/useAppState";
 import { useClaudeStatus } from "@/hooks/useClaudeStatus";
 
@@ -28,15 +27,24 @@ import s from "./SettingsPage.module.css";
 // ═══════════════════════════════════════════════════════════════════════════
 
 function ClaudeCodeSection() {
-  const { status, aiUnavailable, checking, refresh } = useClaudeStatus();
+  const { status, aiUnavailable, checking, forceRefresh } = useClaudeStatus();
   const ready = status !== null && !aiUnavailable;
+  const [installing, setInstalling] = useState(false);
 
   async function handleSignIn() {
     await invoke("launch_claude_login");
   }
 
-  async function handleDownload() {
-    await open("https://claude.ai/download");
+  async function handleInstall() {
+    setInstalling(true);
+    try {
+      await invoke("install_claude_cli");
+      await forceRefresh();
+    } catch {
+      // Error is shown via the status check
+    } finally {
+      setInstalling(false);
+    }
   }
 
   return (
@@ -72,7 +80,7 @@ function ClaudeCodeSection() {
             <button onClick={handleSignIn} className={s.ctaButton}>
               Sign in to Claude &rarr;
             </button>
-            <button onClick={refresh} disabled={checking} className={s.ctaButton}>
+            <button onClick={forceRefresh} disabled={checking} className={s.ctaButton}>
               {checking && <Loader2 size={11} className="animate-spin" />}
               Check again
             </button>
@@ -80,8 +88,8 @@ function ClaudeCodeSection() {
         </div>
       )}
 
-      {/* Not installed */}
-      {status && !status.installed && (
+      {/* Not installed — Node available: offer one-click install */}
+      {status && !status.installed && status.nodeInstalled && (
         <div className={s.claudeCodeColumn}>
           <div className={s.claudeCodeRow}>
             <StatusDot status="disconnected" />
@@ -90,10 +98,36 @@ function ClaudeCodeSection() {
             </span>
           </div>
           <div className={s.claudeCodeActions}>
-            <button onClick={handleDownload} className={s.ctaButton}>
-              Download Claude Code &rarr;
+            <button onClick={handleInstall} disabled={installing} className={s.ctaButton}>
+              {installing && <Loader2 size={11} className="animate-spin" />}
+              Install Claude Code &rarr;
             </button>
-            <button onClick={refresh} disabled={checking} className={s.ctaButton}>
+            <button onClick={forceRefresh} disabled={checking} className={s.ctaButton}>
+              {checking && <Loader2 size={11} className="animate-spin" />}
+              Check again
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Not installed — Node not available: show install instructions */}
+      {status && !status.installed && !status.nodeInstalled && (
+        <div className={s.claudeCodeColumn}>
+          <div className={s.claudeCodeRow}>
+            <StatusDot status="disconnected" />
+            <span className={s.claudeCodeTextMuted}>
+              Claude Code requires Node.js
+            </span>
+          </div>
+          <p className={s.claudeCodeTextTertiary}>
+            Install Node.js from{" "}
+            <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer" className={s.ctaButton}>
+              nodejs.org
+            </a>
+            , then click Check again.
+          </p>
+          <div className={s.claudeCodeActions}>
+            <button onClick={forceRefresh} disabled={checking} className={s.ctaButton}>
               {checking && <Loader2 size={11} className="animate-spin" />}
               Check again
             </button>
