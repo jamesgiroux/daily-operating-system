@@ -131,11 +131,16 @@ pub const MANAGED_ENTITY_DIRS: &[&str] = &["Call-Transcripts", "Meeting-Notes", 
 pub fn bootstrap_entity_directory(
     entity_dir: &Path,
     entity_name: &str,
-    entity_type: &str, // "account" or "project"
+    entity_type: &str, // "account", "project", or "person"
 ) -> Result<(), String> {
     // Root README
     let root_readme = entity_dir.join("README.md");
     if !root_readme.exists() {
+        let file_list = if entity_type == "person" {
+            "- `person.json` — Structured person data (contact, role, relationships). Machine-readable.\n- `person.md` — Generated person overview. Human and AI readable. Do not edit directly.\n- `dashboard.json` — Structured metrics and activity data. Machine-readable."
+        } else {
+            "- `dashboard.json` — Structured data (factual fields, metrics). Machine-readable.\n- `dashboard.md` — Generated overview. Human and AI readable. Do not edit directly."
+        };
         let content = format!(
             r#"# {name}
 
@@ -143,8 +148,7 @@ This directory is managed by [DailyOS](https://dailyos.dev). It contains operati
 
 ## Structure
 
-- `dashboard.json` — Structured data (factual fields, metrics). Machine-readable.
-- `dashboard.md` — Generated overview. Human and AI readable. Do not edit directly.
+{files}
 - `intelligence.json` — AI-synthesized intelligence. Auto-updated when content changes.
 - `Call-Transcripts/` — Meeting call transcripts with YAML frontmatter.
 - `Meeting-Notes/` — Meeting summaries, notes, and outcomes.
@@ -152,10 +156,11 @@ This directory is managed by [DailyOS](https://dailyos.dev). It contains operati
 
 ## For AI Tools
 
-Read `dashboard.md` for a comprehensive overview of this {etype}. For structured data, read `dashboard.json` and `intelligence.json`. All markdown files in this directory tree are indexed for intelligence enrichment — adding files here improves the AI's understanding of this {etype}.
+Read the generated overview for a comprehensive summary of this {etype}. For structured data, read the JSON files and `intelligence.json`. All markdown files in this directory tree are indexed for intelligence enrichment — adding files here improves the AI's understanding of this {etype}.
 "#,
             name = entity_name,
             etype = entity_type,
+            files = file_list,
         );
         std::fs::write(&root_readme, content)
             .map_err(|e| format!("Failed to write README: {}", e))?;
@@ -1180,5 +1185,47 @@ mod tests {
             .decode(inner)
             .unwrap();
         assert_eq!(String::from_utf8(decoded).unwrap(), "Re: Q2 Planning");
+    }
+
+    #[test]
+    fn test_bootstrap_entity_directory_person_readme() {
+        let dir = tempfile::tempdir().unwrap();
+        bootstrap_entity_directory(dir.path(), "Test Person", "person").unwrap();
+        let readme = std::fs::read_to_string(dir.path().join("README.md")).unwrap();
+        assert!(
+            readme.contains("person.json"),
+            "README should reference person.json"
+        );
+        assert!(
+            readme.contains("person.md"),
+            "README should reference person.md"
+        );
+        assert!(
+            readme.contains("dashboard.json"),
+            "README should reference dashboard.json"
+        );
+        assert!(
+            !readme.contains("dashboard.md"),
+            "README should NOT reference dashboard.md for persons"
+        );
+    }
+
+    #[test]
+    fn test_bootstrap_entity_directory_account_readme_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        bootstrap_entity_directory(dir.path(), "Test Account", "account").unwrap();
+        let readme = std::fs::read_to_string(dir.path().join("README.md")).unwrap();
+        assert!(readme.contains("dashboard.json"));
+        assert!(readme.contains("dashboard.md"));
+    }
+
+    #[test]
+    fn test_bootstrap_entity_directory_creates_subdirs() {
+        let dir = tempfile::tempdir().unwrap();
+        bootstrap_entity_directory(dir.path(), "Test", "person").unwrap();
+        assert!(dir.path().join("Call-Transcripts").exists());
+        assert!(dir.path().join("Meeting-Notes").exists());
+        assert!(dir.path().join("Documents").exists());
+        assert!(dir.path().join("Call-Transcripts/README.md").exists());
     }
 }
