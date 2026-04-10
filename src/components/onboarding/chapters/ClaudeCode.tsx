@@ -24,6 +24,7 @@ interface ClaudeStatus {
 export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
   const [checking, setChecking] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [isDevMode, setIsDevMode] = useState(false);
 
   // Check if dev sandbox is active — enables skip button
@@ -151,24 +152,26 @@ export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
           <Button
             className="w-full"
             onClick={async () => {
+              setInstalling(true);
               try {
                 await invoke("install_claude_cli");
                 checkStatus(true);
               } catch {
-                // Re-check status to show current state
                 checkStatus(true);
+              } finally {
+                setInstalling(false);
               }
             }}
-            disabled={checking}
+            disabled={checking || installing}
           >
-            {checking && <Loader2 className="mr-2 size-4 animate-spin" />}
-            Install Claude Code
+            {installing && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {installing ? "Installing..." : "Install Claude Code"}
           </Button>
           <Button
             variant="outline"
             className="w-full"
             onClick={() => checkStatus(true)}
-            disabled={checking}
+            disabled={checking || installing}
           >
             Re-check
           </Button>
