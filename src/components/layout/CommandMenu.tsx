@@ -1,6 +1,6 @@
 import * as React from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Building2,
   CalendarDays,
@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Mail,
   Play,
+  Plus,
   RefreshCw,
   Settings,
   UserCircle,
@@ -50,12 +51,73 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
   email: "Emails",
 };
 
+/** Extract entity context from the current route for auto-linking actions. */
+function useEntityContext(): {
+  accountId?: string;
+  projectId?: string;
+  personId?: string;
+} {
+  const routerState = useRouterState();
+  const params = routerState.matches[routerState.matches.length - 1]?.params as
+    | Record<string, string>
+    | undefined;
+  if (!params) return {};
+  return {
+    accountId: params.accountId,
+    projectId: params.projectId,
+    personId: params.personId,
+  };
+}
+
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<
     GlobalSearchResult[]
   >([]);
+  const [addActionMode, setAddActionMode] = React.useState(false);
+  const [actionTitle, setActionTitle] = React.useState("");
+  const actionInputRef = React.useRef<HTMLInputElement>(null);
+  const entityContext = useEntityContext();
+
+  // Reset state when dialog closes
+  React.useEffect(() => {
+    if (!open) {
+      setAddActionMode(false);
+      setActionTitle("");
+    }
+  }, [open]);
+
+  // Focus the action title input when entering add-action mode
+  React.useEffect(() => {
+    if (addActionMode) {
+      // Small delay to let the input render
+      const t = setTimeout(() => actionInputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [addActionMode]);
+
+  const handleCreateAction = React.useCallback(async () => {
+    const trimmed = actionTitle.trim();
+    if (!trimmed) return;
+    try {
+      await invoke("create_action", {
+        request: {
+          title: trimmed,
+          priority: "P2",
+          accountId: entityContext.accountId,
+          projectId: entityContext.projectId,
+          personId: entityContext.personId,
+        },
+      });
+      toast.success("Action created");
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to create action"
+      );
+    }
+  }, [actionTitle, entityContext, onOpenChange]);
 
   // Debounced global search
   React.useEffect(() => {
@@ -101,6 +163,49 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   }, [searchResults]);
 
   const hasResults = searchResults.length > 0;
+
+  // Inline add-action mode: replace the command list with a title input
+  if (addActionMode) {
+    return (
+      <CommandDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title="Add Action"
+        description="Create a new action item"
+      >
+        <div className="flex items-center border-b px-3">
+          <Plus className="mr-2 size-4 shrink-0 opacity-50" />
+          <input
+            ref={actionInputRef}
+            className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
+            placeholder="Action title..."
+            value={actionTitle}
+            onChange={(e) => setActionTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleCreateAction();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setAddActionMode(false);
+                setActionTitle("");
+              }
+            }}
+          />
+        </div>
+        <div className="px-3 py-2 text-xs text-muted-foreground">
+          {entityContext.accountId
+            ? "Linked to current account"
+            : entityContext.projectId
+              ? "Linked to current project"
+              : entityContext.personId
+                ? "Linked to current person"
+                : "No entity link"}
+          {" \u00b7 "}Enter to create, Escape to cancel
+        </div>
+      </CommandDialog>
+    );
+  }
 
   return (
     <CommandDialog
@@ -194,6 +299,13 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         <CommandSeparator />
 
         <CommandGroup heading="Quick Actions">
+          <CommandItem
+            value="add action task todo"
+            onSelect={() => setAddActionMode(true)}
+          >
+            <Plus className="mr-2 size-4" />
+            <span>Add Action</span>
+          </CommandItem>
           <CommandItem onSelect={() => {
             onOpenChange(false);
             invoke("run_workflow", { workflow: "today" })
