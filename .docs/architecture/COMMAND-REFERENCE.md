@@ -2,8 +2,8 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-04-06 by `.docs/generators/gen-command-reference.sh`
-**Registered in lib.rs:** ~360 commands
+**Auto-generated:** 2026-04-12 by `.docs/generators/gen-command-reference.sh`
+**Registered in lib.rs:** ~361 commands
 **Source files:** 11
 
 ---
@@ -129,6 +129,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `get_onboarding_priming_context` | yes | — |
 | `get_processing_history` | yes | limit |
 | `get_sync_freshness` | yes | — |
+| `install_claude_cli` | yes | — |
 | `install_demo_data` | yes | — |
 | `install_inbox_sample` | — | — |
 | `launch_claude_login` | — | — |

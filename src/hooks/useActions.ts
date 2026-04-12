@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { DbAction } from "@/types";
 
-type StatusFilter = "all" | "suggested" | "pending" | "completed" | "waiting";
-type PriorityFilter = "all" | "P1" | "P2" | "P3";
+type StatusFilter = "all" | "backlog" | "unstarted" | "started" | "completed" | "cancelled" | "archived";
+type PriorityFilter = "all" | 0 | 1 | 2 | 3 | 4;
 
 export interface CreateActionParams {
   title: string;
-  priority?: string;
+  priority?: number;
   dueDate?: string;
   accountId?: string;
   projectId?: string;
@@ -43,7 +43,7 @@ export function useActions(initialSearch?: string): UseActionsReturn {
   const [allActions, setAllActions] = useState<DbAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("unstarted");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [searchQuery, setSearchQuery] = useState(initialSearch ?? "");
 
@@ -63,7 +63,7 @@ export function useActions(initialSearch?: string): UseActionsReturn {
           data?: Array<{
             id: string;
             title: string;
-            priority: string;
+            priority: number;
             status: string;
             account?: string;
             dueDate?: string;
@@ -153,7 +153,7 @@ export function useActions(initialSearch?: string): UseActionsReturn {
           setAllActions((prev) =>
             prev.map((a) =>
               a.id === id
-                ? { ...a, status: "pending", completedAt: undefined }
+                ? { ...a, status: "unstarted", completedAt: undefined }
                 : a
             )
           );
