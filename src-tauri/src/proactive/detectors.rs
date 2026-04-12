@@ -639,7 +639,9 @@ pub fn detect_prep_coverage_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<Raw
 /// Entities with no meeting/email signal in 30+ days (not archived).
 pub fn detect_no_contact_accounts(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsight> {
     let conn = db.conn_ref();
-    let _ = ctx;
+    let cutoff = (ctx.today - chrono::Duration::days(30))
+        .format("%Y-%m-%d")
+        .to_string();
 
     let accounts: Vec<(String, String)> = conn
         .prepare(
@@ -649,17 +651,17 @@ pub fn detect_no_contact_accounts(db: &ActionDb, ctx: &DetectorContext) -> Vec<R
                  SELECT 1 FROM meetings mh
                  JOIN meeting_entities me ON me.meeting_id = mh.id
                  WHERE me.entity_id = a.id AND me.entity_type = 'account'
-                   AND mh.start_time >= datetime('now', '-30 days')
+                   AND mh.start_time >= ?1
              )
              AND NOT EXISTS (
                  SELECT 1 FROM email_signals es
                  WHERE es.entity_id = a.id AND es.entity_type = 'account'
-                   AND es.detected_at >= datetime('now', '-30 days')
+                   AND es.detected_at >= ?1
                    AND es.deactivated_at IS NULL
              )",
         )
         .and_then(|mut stmt| {
-            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            stmt.query_map([&cutoff], |row| Ok((row.get(0)?, row.get(1)?)))
                 .map(|rows| rows.filter_map(|r| r.ok()).collect())
         })
         .unwrap_or_default();
