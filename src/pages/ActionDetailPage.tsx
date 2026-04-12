@@ -20,18 +20,17 @@ import s from "./ActionDetailPage.module.css";
 // =============================================================================
 
 const PRIORITY_CLASS: Record<string, string> = {
-  P1: s.priorityP1,
-  P2: s.priorityP2,
-  P3: s.priorityP3,
+  1: s.priorityP1,
+  2: s.priorityP2,
+  3: s.priorityP2,
+  4: s.priorityP3,
 };
 
-function priorityAccent(priority: string): string {
-  const map: Record<string, string> = {
-    P1: "var(--color-spice-terracotta)",
-    P2: "var(--color-spice-turmeric)",
-    P3: "var(--color-garden-larkspur)",
-  };
-  return map[priority] ?? "var(--color-text-tertiary)";
+function priorityAccent(priority: number | string): string {
+  const v = typeof priority === "string" ? parseInt(priority, 10) : priority;
+  if (v <= 1) return "var(--color-spice-terracotta)";
+  if (v <= 2) return "var(--color-spice-turmeric)";
+  return "var(--color-garden-larkspur)";
 }
 
 // =============================================================================
@@ -207,7 +206,7 @@ export default function ActionDetailPage() {
           {/* Priority pill */}
           {priorityCls && (
             <span className={`${s.priorityPill} ${priorityCls}`}>
-              {detail.priority}
+              {detail.priority <= 1 ? "Urgent" : detail.priority <= 2 ? "High" : detail.priority === 4 ? "Low" : "Medium"}
             </span>
           )}
 

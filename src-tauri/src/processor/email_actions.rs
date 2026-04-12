@@ -97,8 +97,8 @@ pub fn extract_email_commitments(
         let action = crate::db::DbAction {
             id: format!("email-{}-{}", email_id, i),
             title: commitment.title.clone(),
-            priority: "P2".to_string(),
-            status: "suggested".to_string(),
+            priority: crate::action_status::PRIORITY_MEDIUM,
+            status: crate::action_status::BACKLOG.to_string(),
             created_at: now.clone(),
             due_date: commitment.due_date.clone(),
             completed_at: None,

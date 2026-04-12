@@ -5,7 +5,7 @@ use crate::linear::client::{LinearIssue, LinearProject};
 use crate::state::AppState;
 
 /// Upsert Linear issues into the database and emit signals for state changes.
-pub fn upsert_issues(_state: &AppState, issues: &[LinearIssue]) -> Result<(), String> {
+pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), String> {
     let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
     let conn = db.conn_ref();
 
@@ -59,8 +59,9 @@ pub fn upsert_issues(_state: &AppState, issues: &[LinearIssue]) -> Result<(), St
 
             // Signal: issue completed
             if new_state == Some("completed") && old_state_type.as_deref() != Some("completed") {
-                let _ = crate::signals::bus::emit_signal(
+                let _ = crate::signals::bus::emit_signal_and_propagate(
                     &db,
+                    &state.signals.engine,
                     entity_type,
                     entity_id,
                     "linear_issue_completed",
@@ -75,8 +76,9 @@ pub fn upsert_issues(_state: &AppState, issues: &[LinearIssue]) -> Result<(), St
                 if state_name.to_lowercase().contains("blocked")
                     && old_state_type.as_deref() != new_state
                 {
-                    let _ = crate::signals::bus::emit_signal(
+                    let _ = crate::signals::bus::emit_signal_and_propagate(
                         &db,
+                        &state.signals.engine,
                         entity_type,
                         entity_id,
                         "linear_issue_blocked",
@@ -92,8 +94,9 @@ pub fn upsert_issues(_state: &AppState, issues: &[LinearIssue]) -> Result<(), St
                 let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
                 if due < &today && new_state != Some("completed") && new_state != Some("cancelled")
                 {
-                    let _ = crate::signals::bus::emit_signal(
+                    let _ = crate::signals::bus::emit_signal_and_propagate(
                         &db,
+                        &state.signals.engine,
                         entity_type,
                         entity_id,
                         "linear_issue_overdue",

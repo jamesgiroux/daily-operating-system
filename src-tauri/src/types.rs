@@ -914,21 +914,42 @@ pub struct LinkedEntity {
     pub entity_type: String,
 }
 
-/// Action priority level
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Action priority level (Linear-compatible integer 0-4).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Priority {
-    P1,
-    P2,
-    P3,
+    #[serde(rename = "0")]
+    None = 0,
+    #[serde(rename = "1")]
+    Urgent = 1,
+    #[serde(rename = "2")]
+    High = 2,
+    #[serde(rename = "3")]
+    Medium = 3,
+    #[serde(rename = "4")]
+    Low = 4,
 }
 
-/// Action completion status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Priority {
+    pub fn from_i32(v: i32) -> Self {
+        match v {
+            0 => Priority::None,
+            1 => Priority::Urgent,
+            2 => Priority::High,
+            4 => Priority::Low,
+            _ => Priority::Medium,
+        }
+    }
+}
+
+/// Action completion status (Linear-compatible 6-status vocabulary, DOS-55).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ActionStatus {
-    Pending,
+    Backlog,
+    Unstarted,
+    Started,
     Completed,
-    Proposed,
+    Cancelled,
     Archived,
 }
 

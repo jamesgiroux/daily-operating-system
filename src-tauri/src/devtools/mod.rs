@@ -1417,13 +1417,13 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     }
 
     // Project-linked actions
-    let project_action_rows: Vec<(&str, &str, &str, &str, Option<&str>, Option<String>, &str)> = vec![
+    let project_action_rows: Vec<(&str, &str, i32, &str, Option<&str>, Option<String>, &str)> = vec![
         // (id, title, priority, status, account_id, due_date, project_id)
         (
             "mock-act-phase2-scope",
             "Finalize Phase 2 scope document",
-            "P1",
-            "pending",
+            crate::action_status::PRIORITY_URGENT,
+            crate::action_status::UNSTARTED,
             Some("mock-acme-corp"),
             Some(date_only(5)),
             "mock-acme-phase-2",
@@ -1431,8 +1431,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-phase2-stakeholders",
             "Identify Phase 2 stakeholder group",
-            "P2",
-            "pending",
+            crate::action_status::PRIORITY_MEDIUM,
+            crate::action_status::UNSTARTED,
             Some("mock-acme-corp"),
             Some(date_only(10)),
             "mock-acme-phase-2",
@@ -1440,8 +1440,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-teamb-usage-audit",
             "Run Team B usage audit",
-            "P1",
-            "pending",
+            crate::action_status::PRIORITY_URGENT,
+            crate::action_status::UNSTARTED,
             Some("mock-globex-industries"),
             Some(date_only(3)),
             "mock-globex-team-b-recovery",
@@ -1449,8 +1449,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-teamb-interview",
             "Schedule interviews with Team B leads",
-            "P2",
-            "pending",
+            crate::action_status::PRIORITY_MEDIUM,
+            crate::action_status::UNSTARTED,
             Some("mock-globex-industries"),
             Some(date_only(7)),
             "mock-globex-team-b-recovery",
@@ -1458,8 +1458,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-migration-arch",
             "Draft v3 architecture proposal",
-            "P2",
-            "pending",
+            crate::action_status::PRIORITY_MEDIUM,
+            crate::action_status::UNSTARTED,
             None,
             Some(date_only(14)),
             "mock-platform-migration",
@@ -1607,33 +1607,33 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     // --- Actions (matching actions.json IDs) ---
     // Each action includes context (why it matters) and source tracing (where it came from).
-    let action_rows: Vec<(&str, &str, &str, &str, Option<&str>, Option<String>, Option<&str>, Option<&str>, Option<&str>)> = vec![
+    let action_rows: Vec<(&str, &str, i32, &str, Option<&str>, Option<String>, Option<&str>, Option<&str>, Option<&str>)> = vec![
         (
-            "mock-act-sow-acme", "Send updated SOW to Acme legal team", "P1", "pending",
+            "mock-act-sow-acme", "Send updated SOW to Acme legal team", crate::action_status::PRIORITY_URGENT, crate::action_status::UNSTARTED,
             Some("mock-acme-corp"), Some(date_only(-1)),
             Some("briefing"), Some("mock-mh-acme-7d"),
             Some("Sarah Chen confirmed Phase 2 executive sponsorship during last week's sync. Legal needs the updated SOW before scoping can proceed. Alex Torres flagged that the current contract terms don't cover APAC — legal review needed.")
         ),
         (
-            "mock-act-qbr-deck-globex", "Review Globex QBR deck with AE", "P1", "pending",
+            "mock-act-qbr-deck-globex", "Review Globex QBR deck with AE", crate::action_status::PRIORITY_URGENT, crate::action_status::UNSTARTED,
             Some("mock-globex-industries"), Some(date_only(0)),
             Some("briefing"), Some("mock-mh-globex-3d"),
             Some("QBR is the highest-stakes meeting this quarter. Renewal decision expected. Need to address Team B usage decline and Pat Reynolds' departure. AE wants to align on competitive positioning before the meeting — Contoso is actively pitching.")
         ),
         (
-            "mock-act-kickoff-initech", "Schedule Phase 2 kickoff with Initech", "P2", "pending",
+            "mock-act-kickoff-initech", "Schedule Phase 2 kickoff with Initech", crate::action_status::PRIORITY_MEDIUM, crate::action_status::UNSTARTED,
             Some("mock-initech"), Some(date_only(1)),
             Some("briefing"), Some("mock-mh-initech-10d"),
             Some("Phase 1 wrapped successfully. Dana Patel expressed interest in Phase 2 but budget approval is still pending from finance. Priya Sharma confirmed team bandwidth concerns for Q2 — schedule early to give them time to plan.")
         ),
         (
-            "mock-act-nps-acme", "Follow up on NPS survey responses", "P2", "pending",
+            "mock-act-nps-acme", "Follow up on NPS survey responses", crate::action_status::PRIORITY_MEDIUM, crate::action_status::UNSTARTED,
             Some("mock-acme-corp"), Some(date_only(-7)),
             Some("briefing"), None,
             Some("3 detractors identified in the latest NPS survey. Scores trending down across the engineering team. Need to schedule individual calls to understand concerns before the quarterly review.")
         ),
         (
-            "mock-act-quarterly-summary", "Draft quarterly impact summary", "P3", "pending",
+            "mock-act-quarterly-summary", "Draft quarterly impact summary", crate::action_status::PRIORITY_LOW, crate::action_status::UNSTARTED,
             None, Some(date_only(7)),
             Some("briefing"), None,
             Some("End-of-quarter impact summary for leadership. Should cover Acme Phase 1 completion, Globex expansion to 3 teams, Initech onboarding success, and Team B recovery progress.")
@@ -1847,24 +1847,24 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     }
 
     // --- Transcript-sourced actions for today's Acme meeting ---
-    let transcript_actions: Vec<(&str, &str, &str, &str)> = vec![
+    let transcript_actions: Vec<(&str, &str, i32, &str)> = vec![
         (
             "mock-act-transcript-kt-plan",
             "Create knowledge transfer plan for Alex Torres departure",
-            "P1",
+            1,
             "mock-acme-corp",
         ),
         (
             "mock-act-transcript-phase2-scope",
             "Draft Phase 2 scope document for April kickoff",
-            "P2",
+            3,
             "mock-acme-corp",
         ),
     ];
 
     for (id, title, priority, account_id) in &transcript_actions {
         conn.execute(
-            "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, source_type, source_id, updated_at) VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?6, 'transcript', ?7, ?8)",
+            "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, source_type, source_id, updated_at) VALUES (?1, ?2, ?3, 'unstarted', ?4, ?5, ?6, 'transcript', ?7, ?8)",
             rusqlite::params![id, title, priority, &today, date_only(3), account_id, &today_acme_id, &today],
         ).map_err(|e| e.to_string())?;
     }
@@ -2688,12 +2688,12 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     let globex_mtg_id = format!("mock-mtg-globex-qbr-{}", today_str);
     let initech_mtg_id = format!("mock-mtg-initech-kickoff-{}", today_str);
 
-    let proposed_actions: Vec<(&str, &str, &str, &str, &str, &str, &str)> = vec![
+    let proposed_actions: Vec<(&str, &str, i32, &str, &str, &str, &str)> = vec![
         // (id, title, priority, account_id, source_type, source_id, context)
         (
             "mock-act-proposed-tech-dive",
             "Schedule technical deep-dive with Acme engineering",
-            "P2",
+            3,
             "mock-acme-corp",
             "meeting_prep",
             &acme_mtg_id,
@@ -2702,7 +2702,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-proposed-successor",
             "Identify Pat Reynolds' successor at Globex",
-            "P1",
+            1,
             "mock-globex-industries",
             "meeting_prep",
             &globex_mtg_id,
@@ -2711,7 +2711,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-proposed-teamb-plan",
             "Draft Team B engagement recovery plan",
-            "P1",
+            1,
             "mock-globex-industries",
             "meeting_prep",
             &globex_mtg_id,
@@ -2720,7 +2720,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-proposed-phase1-roi",
             "Compile Phase 1 ROI report for Initech finance",
-            "P2",
+            3,
             "mock-initech",
             "meeting_prep",
             &initech_mtg_id,
@@ -2731,7 +2731,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     for (id, title, priority, account_id, source_type, source_id, context) in &proposed_actions {
         conn.execute(
             "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, account_id, source_type, source_id, context, updated_at) \
-             VALUES (?1, ?2, ?3, 'suggested', ?4, ?5, ?6, ?7, ?8, ?9)",
+             VALUES (?1, ?2, ?3, 'backlog', ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![id, title, priority, &today, account_id, source_type, source_id, context, &today],
         ).map_err(|e| format!("Suggested action insert: {}", e))?;
     }
@@ -2743,7 +2743,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params![
             "mock-act-done-phase1-report",
             "Send Phase 1 completion report to Acme",
-            "P1",
+            1,
             days_ago(5),
             days_ago(2),
             "mock-acme-corp",
@@ -2759,7 +2759,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params![
             "mock-act-done-globex-expansion",
             "Coordinate Team A expansion onboarding",
-            "P2",
+            3,
             days_ago(14),
             days_ago(7),
             "mock-globex-industries",

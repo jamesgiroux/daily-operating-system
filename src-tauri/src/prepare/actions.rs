@@ -268,7 +268,7 @@ fn fetch_categorized_actions(db: &crate::db::ActionDb) -> ActionResult {
         Ok((
             row.get::<_, Option<String>>(0)?,
             row.get::<_, Option<String>>(1)?,
-            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<i32>>(2)?,
             row.get::<_, Option<String>>(3)?,
             row.get::<_, Option<String>>(4)?,
             row.get::<_, Option<String>>(5)?,
@@ -278,7 +278,7 @@ fn fetch_categorized_actions(db: &crate::db::ActionDb) -> ActionResult {
 
     if let Ok(rows) = rows {
         for row in rows.flatten() {
-            let (id, title, priority, status, due_str, account_id, source_context) = row;
+            let (id, title, priority_int, status, due_str, account_id, source_context) = row;
             let title = title.unwrap_or_default();
             if title.is_empty() {
                 continue;
@@ -288,8 +288,8 @@ fn fetch_categorized_actions(db: &crate::db::ActionDb) -> ActionResult {
                 .as_ref()
                 .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
 
-            let priority = priority.unwrap_or_else(|| "P3".to_string());
-            let status = status.unwrap_or_else(|| "open".to_string());
+            let priority = crate::action_status::priority_label(priority_int.unwrap_or(crate::action_status::PRIORITY_LOW)).to_string();
+            let status = status.unwrap_or_else(|| "unstarted".to_string());
 
             // Check for waiting status
             if status == "blocked" {
@@ -519,8 +519,8 @@ mod tests {
                 rusqlite::params![
                     "action-1",
                     "Follow up on renewal",
-                    "P1",
-                    "pending",
+                    crate::action_status::PRIORITY_URGENT,
+                    crate::action_status::UNSTARTED,
                     today,
                     "CFO mentioned budget pressure",
                 ],
