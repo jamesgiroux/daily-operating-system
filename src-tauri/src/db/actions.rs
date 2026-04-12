@@ -585,6 +585,9 @@ impl ActionDb {
 
     /// Auto-archive stale pending actions older than N days.
     /// Returns the number of actions archived.
+    ///
+    /// DOS-12 zero-guilt exemptions: P1/Urgent (priority=1), waiting_on set,
+    /// or objective-linked actions are never auto-archived.
     pub fn archive_stale_actions(&self, days: i64) -> Result<usize, DbError> {
         let now = Utc::now().to_rfc3339();
         let cutoff_param = format!("-{} days", days);
@@ -592,6 +595,9 @@ impl ActionDb {
             "UPDATE actions SET status = 'archived', updated_at = ?1
              WHERE status = 'unstarted'
                AND completed_at IS NULL
+               AND priority > 1
+               AND waiting_on IS NULL
+               AND id NOT IN (SELECT action_id FROM action_objective_links)
                AND (
                    (due_date IS NOT NULL AND due_date <= date('now', ?2))
                    OR
