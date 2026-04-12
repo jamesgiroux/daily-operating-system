@@ -748,12 +748,12 @@ pub async fn update_action_priority(
     priority: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    // Validate priority
-    if !matches!(priority.as_str(), "P1" | "P2" | "P3") {
-        return Err(format!(
-            "Invalid priority: {}. Must be P1, P2, or P3.",
-            priority
-        ));
+    // Validate priority (0-4 integer)
+    let pv: i32 = priority
+        .parse()
+        .map_err(|_| format!("Invalid priority: {priority}. Must be 0-4."))?;
+    if !(0..=4).contains(&pv) {
+        return Err(format!("Invalid priority: {pv}. Must be 0-4."));
     }
     let engine = state.signals.engine.clone();
     state

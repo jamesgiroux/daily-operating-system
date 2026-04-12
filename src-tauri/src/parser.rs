@@ -503,7 +503,7 @@ impl ActionBuilder {
             status: if self.is_completed {
                 ActionStatus::Completed
             } else {
-                ActionStatus::Pending
+                ActionStatus::Unstarted
             },
             is_overdue: if self.is_overdue { Some(true) } else { None },
             days_overdue: self.days_overdue,
@@ -518,7 +518,7 @@ fn parse_action_line(line: &str, is_completed: bool) -> ActionBuilder {
     let mut title = line.to_string();
     let mut account: Option<String> = None;
     let mut due_date: Option<String> = None;
-    let mut priority = Priority::P2;
+    let mut priority = Priority::Medium;
     let mut is_overdue = false;
     let mut days_overdue: Option<i32> = None;
 
@@ -542,13 +542,13 @@ fn parse_action_line(line: &str, is_completed: bool) -> ActionBuilder {
         // Legacy format: P1: Title @Account due:2024-02-05
         // Check for priority prefix
         if let Some(r) = title.strip_prefix("P1:") {
-            priority = Priority::P1;
+            priority = Priority::Urgent;
             title = r.trim().to_string();
         } else if let Some(r) = title.strip_prefix("P2:") {
-            priority = Priority::P2;
+            priority = Priority::Medium;
             title = r.trim().to_string();
         } else if let Some(r) = title.strip_prefix("P3:") {
-            priority = Priority::P3;
+            priority = Priority::Low;
             title = r.trim().to_string();
         }
 
@@ -884,7 +884,7 @@ pub fn calculate_stats(meetings: &[Meeting], actions: &[Action], inbox_count: us
     let actions_due = actions
         .iter()
         .filter(|a| {
-            matches!(a.status, ActionStatus::Pending)
+            matches!(a.status, ActionStatus::Unstarted)
                 && a.due_date
                     .as_ref()
                     .map(|d| d == "Today" || d.contains("Yesterday"))

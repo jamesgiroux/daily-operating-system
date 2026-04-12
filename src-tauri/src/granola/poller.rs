@@ -328,8 +328,8 @@ fn process_granola_document(
                 let db_action = crate::db::DbAction {
                     id: format!("granola-{}-{}", meeting_id, i),
                     title: action.title.clone(),
-                    priority: action.priority.clone().unwrap_or_else(|| "P2".to_string()),
-                    status: "suggested".to_string(),
+                    priority: action.priority.as_deref().map(crate::action_status::migrate_priority).unwrap_or(crate::action_status::PRIORITY_MEDIUM),
+                    status: crate::action_status::BACKLOG.to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,

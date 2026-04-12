@@ -1595,7 +1595,7 @@ fn get_person_actions(db: &crate::db::ActionDb, person_id: &str) -> Value {
             .prepare(
                 "SELECT DISTINCT a.id, a.title, a.priority, a.status, a.due_date
                  FROM actions a
-                 WHERE a.status = 'pending'
+                 WHERE a.status IN ('backlog', 'unstarted', 'started')
                    AND (
                      a.person_id = ?1
                      OR a.account_id IN (
@@ -1631,7 +1631,7 @@ fn get_account_actions(db: &crate::db::ActionDb, account_id: &str) -> Value {
                 "SELECT id, title, priority, status, due_date
              FROM actions
              WHERE account_id = ?1
-               AND status = 'pending'
+               AND status IN ('backlog', 'unstarted', 'started')
              ORDER BY priority, due_date",
             )
             .ok()?;
@@ -1770,7 +1770,7 @@ fn get_all_pending_actions(db: &crate::db::ActionDb, limit: usize) -> Value {
             .prepare(
                 "SELECT id, title, priority, status, due_date
              FROM actions
-             WHERE status = 'pending'
+             WHERE status IN ('backlog', 'unstarted', 'started')
              ORDER BY priority, due_date
              LIMIT ?1",
             )

@@ -871,7 +871,7 @@ mod tests {
         db.conn_ref()
             .execute(
                 "INSERT INTO actions (id, title, status, created_at, updated_at)
-                 VALUES ('act-1', 'Do the thing', 'pending', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                 VALUES ('act-1', 'Do the thing', 'unstarted', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
                 [],
             )
             .expect("seed action");
