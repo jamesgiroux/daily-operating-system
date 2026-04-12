@@ -1,9 +1,9 @@
 # Module Map
 
 > Rust backend module inventory (`src-tauri/src/`).
-> **Auto-generated:** 2026-04-08 by `.docs/generators/gen-module-map.sh`
+> **Auto-generated:** 2026-04-12 by `.docs/generators/gen-module-map.sh`
 
-**236** Rust files across **30** module directories and **43** standalone modules.
+**237** Rust files across **30** module directories and **44** standalone modules.
 
 ---
 
@@ -13,7 +13,7 @@
 |--------|-------|-----------|---------|
 | `bin/` | 0 | 0 | Binary entry points |
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment (I228). |
-| `commands/` | 10 | 361 | Tauri IPC command handlers |
+| `commands/` | 10 | 362 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
 | `db/` | 22 | 25 | SQLite database modules |
 | `devtools/` | 1 | 11 | Dev tools for scenario switching and mock data. |
@@ -44,7 +44,8 @@
 
 | Module | Lines | Public Fns | Purpose |
 |--------|-------|-----------|---------|
-| `accounts.rs` | 1852 | 11 | Account workspace file I/O (I72 / ADR-0047). |
+| `accounts.rs` | 1879 | 11 | Account workspace file I/O (I72 / ADR-0047). |
+| `action_status.rs` | 85 | 2 | — |
 | `activity.rs` | 187 | 3 | User activity monitoring for background task throttling. |
 | `audit_log.rs` | 453 | 4 | Tamper-evident audit log for enterprise observability (I471, ADR-0094). |
 | `audit.rs` | 150 | 2 | Audit trail for AI-generated data (I297). |
@@ -74,9 +75,9 @@
 | `intel_queue.rs` | 2804 | 4 | Background intelligence enrichment queue (I132). |
 | `json_loader.rs` | 615 | 3 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
-| `lib.rs` | 857 | 1 | App setup, command registration, plugin init |
+| `lib.rs` | 859 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 982 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 1570 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 1574 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (I51 / ADR-0047). |
@@ -87,9 +88,9 @@
 | `scheduler.rs` | 748 | 2 | Scheduler for cron-based workflow execution |
 | `state.rs` | 1587 | 12 | AppState — DB, PTY, config |
 | `task_supervisor.rs` | 34 | 1 | — |
-| `types.rs` | 3193 | 7 | Shared type definitions |
-| `util.rs` | 1184 | 26 | — |
-| `watcher.rs` | 879 | 1 | File watcher for _inbox/ directory |
+| `types.rs` | 3214 | 7 | Shared type definitions |
+| `util.rs` | 1257 | 27 | — |
+| `watcher.rs` | 882 | 1 | File watcher for _inbox/ directory |
 
 ## Cross-Module Dependencies
 
