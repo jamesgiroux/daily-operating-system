@@ -1004,8 +1004,8 @@ pub async fn capture_meeting_outcome(
                 let db_action = crate::db::DbAction {
                     id: uuid::Uuid::new_v4().to_string(),
                     title: action.title.clone(),
-                    priority: "P2".to_string(),
-                    status: "suggested".to_string(),
+                    priority: crate::action_status::PRIORITY_MEDIUM,
+                    status: crate::action_status::BACKLOG.to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,

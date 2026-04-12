@@ -329,18 +329,14 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         .actions
         .into_iter()
         .map(|dba| {
-            let priority = match dba.priority.as_str() {
-                "P1" => Priority::P1,
-                "P3" => Priority::P3,
-                _ => Priority::P2,
-            };
+            let priority = Priority::from_i32(dba.priority);
             Action {
                 id: dba.id,
                 title: dba.title,
                 account: dba.account_id,
                 due_date: dba.due_date,
                 priority,
-                status: crate::types::ActionStatus::Pending,
+                status: crate::types::ActionStatus::Unstarted,
                 is_overdue: None,
                 context: dba.context,
                 source: dba.source_label,
@@ -834,18 +830,14 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             db_actions
                 .iter()
                 .map(|dba| {
-                    let priority = match dba.priority.as_str() {
-                        "P1" => Priority::P1,
-                        "P3" => Priority::P3,
-                        _ => Priority::P2,
-                    };
+                    let priority = Priority::from_i32(dba.priority);
                     Action {
                         id: dba.id.clone(),
                         title: dba.title.clone(),
                         account: dba.account_id.clone(),
                         due_date: dba.due_date.clone(),
                         priority,
-                        status: crate::types::ActionStatus::Pending,
+                        status: crate::types::ActionStatus::Unstarted,
                         is_overdue: None,
                         context: dba.context.clone(),
                         source: dba.source_label.clone(),

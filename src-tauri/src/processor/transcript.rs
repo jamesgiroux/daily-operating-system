@@ -1819,9 +1819,9 @@ fn extract_transcript_actions(
         let meta = super::metadata::parse_action_metadata(raw_title);
 
         let status = if meta.is_waiting {
-            "pending".to_string()
+            crate::action_status::UNSTARTED.to_string()
         } else {
-            "suggested".to_string()
+            crate::action_status::BACKLOG.to_string()
         };
 
         // Resolve @Tag to a real account ID; fall back to meeting-level account.
@@ -1837,7 +1837,7 @@ fn extract_transcript_actions(
         let action = crate::db::DbAction {
             id: format!("transcript-{}-{}", meeting_id, attempted - 1),
             title: meta.clean_title,
-            priority: meta.priority.unwrap_or_else(|| "P2".to_string()),
+            priority: meta.priority.as_deref().map(crate::action_status::migrate_priority).unwrap_or(crate::action_status::PRIORITY_MEDIUM),
             status,
             created_at: now.clone(),
             due_date: meta.due_date,

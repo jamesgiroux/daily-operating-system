@@ -38,7 +38,7 @@ function makeAction(
   return {
     id,
     title: `Action ${id}`,
-    priority: "P2",
+    priority: 3,
     status,
     createdAt: "2026-03-22T10:00:00Z",
     updatedAt: "2026-03-22T10:00:00Z",

@@ -6,6 +6,7 @@
 #![allow(clippy::type_complexity)]
 
 pub mod accounts;
+pub mod action_status;
 pub mod activity;
 mod audit;
 pub mod audit_log;

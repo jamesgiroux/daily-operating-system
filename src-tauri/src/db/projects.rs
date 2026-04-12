@@ -408,7 +408,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE project_id = ?1
-               AND status IN ('suggested', 'pending')
+               AND status IN ('backlog', 'unstarted', 'started')
              ORDER BY priority, due_date",
         )?;
         let rows = stmt.query_map(params![project_id], Self::map_action_row)?;

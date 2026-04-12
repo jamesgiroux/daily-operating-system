@@ -1246,8 +1246,8 @@ pub fn promote_commitment_to_action(
     let action = crate::db::DbAction {
         id: action_id.clone(),
         title: trimmed_title.to_string(),
-        priority: "P2".to_string(),
-        status: "pending".to_string(),
+        priority: crate::action_status::PRIORITY_MEDIUM,
+        status: crate::action_status::UNSTARTED.to_string(),
         created_at: now.clone(),
         due_date: params.due_date
             .map(str::trim)
