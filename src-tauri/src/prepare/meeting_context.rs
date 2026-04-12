@@ -839,6 +839,22 @@ fn inject_entity_intelligence(
             ctx["products"] = json!(classification.products);
         }
     }
+
+    // DOS-12: Include persisted value delivered in meeting prep context
+    if !intel.value_delivered.is_empty() {
+        ctx["value_delivered"] = json!(intel
+            .value_delivered
+            .iter()
+            .map(|v| {
+                json!({
+                    "statement": v.statement,
+                    "date": v.date,
+                    "impact": v.impact,
+                    "confirmed": v.item_source.as_ref().is_some_and(|s| s.source == "user_correction"),
+                })
+            })
+            .collect::<Vec<_>>());
+    }
 }
 
 /// I425: Inject active Linear issues linked to this entity via linear_entity_links.
