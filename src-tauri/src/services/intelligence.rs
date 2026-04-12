@@ -9,6 +9,48 @@ use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 use tauri::Emitter;
 
+/// DOS-12: Preserve user-confirmed value_delivered items during re-enrichment.
+///
+/// Items with `item_source.source == "user_correction"` are user-confirmed and must
+/// survive re-enrichment. New AI items are merged in, deduplicating by fuzzy statement match.
+fn merge_user_confirmed_values(
+    new_intel: &mut crate::intelligence::IntelligenceJson,
+    existing: &crate::intelligence::IntelligenceJson,
+) {
+    // Collect user-confirmed items from existing data
+    let user_confirmed: Vec<_> = existing
+        .value_delivered
+        .iter()
+        .filter(|v| {
+            v.item_source
+                .as_ref()
+                .is_some_and(|s| s.source == "user_correction")
+        })
+        .cloned()
+        .collect();
+
+    if user_confirmed.is_empty() {
+        return;
+    }
+
+    // Build set of existing user-confirmed statements (lowercased, trimmed) for dedup
+    let confirmed_statements: std::collections::HashSet<String> = user_confirmed
+        .iter()
+        .map(|v| v.statement.trim().to_lowercase())
+        .collect();
+
+    // Remove AI items that duplicate user-confirmed items
+    new_intel.value_delivered.retain(|v| {
+        !confirmed_statements.contains(&v.statement.trim().to_lowercase())
+    });
+
+    // Prepend user-confirmed items (they take priority)
+    let mut merged = user_confirmed;
+    merged.append(&mut new_intel.value_delivered);
+    merged.truncate(10); // Cap at 10
+    new_intel.value_delivered = merged;
+}
+
 fn stage_failure_message(stage: &str) -> &str {
     match stage {
         "context_gather" => "context gather",
@@ -412,8 +454,13 @@ pub fn upsert_assessment_from_enrichment(
     entity_id: &str,
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), String> {
+    // DOS-12: Merge value_delivered — preserve user-confirmed items during re-enrichment.
+    let mut intel = intel.clone();
+    if let Ok(Some(existing)) = db.get_entity_intelligence(entity_id) {
+        merge_user_confirmed_values(&mut intel, &existing);
+    }
     db.with_transaction(|tx| {
-        tx.upsert_entity_intelligence(intel)
+        tx.upsert_entity_intelligence(&intel)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             tx,
