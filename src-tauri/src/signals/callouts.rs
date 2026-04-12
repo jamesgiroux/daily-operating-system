@@ -58,6 +58,10 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "support_health_updated",
     "glean_org_change",
     "glean_champion_departed",
+    // DOS-49: Linear signal types
+    "linear_issue_completed",
+    "linear_issue_blocked",
+    "linear_issue_overdue",
 ];
 
 // ---------------------------------------------------------------------------
@@ -520,6 +524,49 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 .and_then(|v| v.as_str())
                 .unwrap_or("No longer at the company per org directory");
             (format!("Champion departure: {}", name), detail.to_string())
+        }
+        // DOS-49: Linear issue signal callout text
+        "linear_issue_completed" => {
+            let identifier = parsed
+                .get("identifier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Issue");
+            let title = parsed
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("completed");
+            (
+                format!("Linear issue completed: {}", identifier),
+                title.to_string(),
+            )
+        }
+        "linear_issue_blocked" => {
+            let identifier = parsed
+                .get("identifier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Issue");
+            let title = parsed
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("blocked");
+            (
+                format!("Linear issue blocked: {}", identifier),
+                title.to_string(),
+            )
+        }
+        "linear_issue_overdue" => {
+            let identifier = parsed
+                .get("identifier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Issue");
+            let title = parsed
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("overdue");
+            (
+                format!("Linear issue overdue: {}", identifier),
+                title.to_string(),
+            )
         }
         _ => (
             format!("Signal: {}", signal.signal_type),
