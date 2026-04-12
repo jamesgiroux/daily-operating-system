@@ -664,7 +664,7 @@ impl ActionDb {
 
         let sql = format!(
             "SELECT COUNT(*) FROM actions
-             WHERE {} = ?1 AND status = 'pending' AND due_date IS NOT NULL AND due_date < ?2",
+             WHERE {} = ?1 AND status IN ('backlog', 'unstarted', 'started') AND due_date IS NOT NULL AND due_date < ?2",
             id_column
         );
         let count: i32 =
@@ -1038,7 +1038,7 @@ mod tests {
             conn.execute(
                 &format!(
                     "INSERT INTO actions (id, title, status, due_date, account_id, created_at, updated_at)
-                     VALUES ('act-{}', 'Task {}', 'pending', '2025-01-01', 'a1', '2025-01-01', '2025-01-01')",
+                     VALUES ('act-{}', 'Task {}', 'unstarted', '2025-01-01', 'a1', '2025-01-01', '2025-01-01')",
                     i, i
                 ),
                 [],

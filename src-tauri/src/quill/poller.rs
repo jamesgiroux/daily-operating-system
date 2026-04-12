@@ -370,8 +370,8 @@ async fn process_sync_row(
                         let db_action = crate::db::DbAction {
                             id: format!("quill-{}-{}", row.meeting_id, i),
                             title: action.title.clone(),
-                            priority: "P2".to_string(),
-                            status: "suggested".to_string(),
+                            priority: crate::action_status::PRIORITY_MEDIUM,
+                            status: crate::action_status::BACKLOG.to_string(),
                             created_at: now.clone(),
                             due_date: action.due_date.clone(),
                             completed_at: None,

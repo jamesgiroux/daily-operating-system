@@ -23,10 +23,11 @@ fn meeting_type_label(meeting_type: &MeetingType) -> &'static str {
 }
 
 fn estimate_effort_minutes(action: &DbAction) -> u32 {
-    let mut effort: u32 = match action.priority.as_str() {
-        "P1" => 60,
-        "P2" => 45,
-        _ => 30,
+    let mut effort: u32 = match action.priority {
+        1 => 60,       // Urgent
+        2 => 50,       // High
+        3 => 45,       // Medium
+        _ => 30,       // Low/None
     };
     if action
         .waiting_on
@@ -57,10 +58,11 @@ fn urgency_impact(action: &DbAction, today: NaiveDate) -> f32 {
         None => 0.45,
     };
 
-    let priority_lift: f32 = match action.priority.as_str() {
-        "P1" => 0.18,
-        "P2" => 0.1,
-        _ => 0.03,
+    let priority_lift: f32 = match action.priority {
+        1 => 0.18,     // Urgent
+        2 => 0.14,     // High
+        3 => 0.1,      // Medium
+        _ => 0.03,     // Low/None
     };
 
     (baseline + priority_lift).clamp(0.0, 1.0)
@@ -347,8 +349,8 @@ mod tests {
         DbAction {
             id: id.to_string(),
             title: title.to_string(),
-            priority: priority.to_string(),
-            status: "pending".to_string(),
+            priority: crate::action_status::migrate_priority(priority),
+            status: crate::action_status::UNSTARTED.to_string(),
             created_at: "2026-02-10T08:00:00Z".to_string(),
             due_date: due_date.map(|d| d.to_string()),
             completed_at: None,
