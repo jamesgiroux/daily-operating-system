@@ -219,7 +219,7 @@ pub async fn get_all_actions(state: &AppState) -> ActionsResult {
     }
 }
 
-/// Create a new action with validation.
+/// Create a new action with validation and signal emission.
 pub async fn create_action(
     request: CreateActionRequest,
     state: &AppState,
@@ -275,7 +275,7 @@ pub async fn create_action(
         completed_at: None,
         account_id,
         project_id,
-        source_type: Some("manual".to_string()),
+        source_type: Some("user_manual".to_string()),
         source_id: None,
         source_label,
         context,
@@ -287,9 +287,28 @@ pub async fn create_action(
         next_meeting_start: None,
     };
 
+    let engine = state.signals.engine.clone();
     state
         .db_write(move |db| {
             db.upsert_action(&action).map_err(|e| e.to_string())?;
+
+            // Emit signal for manually created actions
+            let (entity_type, entity_id) = action_entity_info(&action, &action.id);
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                entity_type,
+                &entity_id,
+                "action_created_manually",
+                "user_action",
+                Some(&format!(
+                    "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+                    action.id,
+                    action.title.replace('"', "\\\"")
+                )),
+                1.0,
+            );
+
             Ok(id)
         })
         .await
