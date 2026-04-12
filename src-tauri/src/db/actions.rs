@@ -28,7 +28,7 @@ impl ActionDb {
                      ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_start
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'pending'
+             WHERE status = 'unstarted'
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
                CASE WHEN due_date < date('now') THEN 0 ELSE 1 END,
@@ -62,7 +62,7 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'pending'
+             WHERE status = 'unstarted'
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
                CASE
@@ -94,7 +94,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE account_id = ?1
-               AND status IN ('suggested', 'pending')
+               AND status IN ('backlog', 'unstarted')
              ORDER BY priority, due_date",
         )?;
 
@@ -121,7 +121,7 @@ impl ActionDb {
                     acc.name AS account_name
              FROM actions a
              LEFT JOIN accounts acc ON a.account_id = acc.id
-             WHERE a.status IN ('pending', 'completed')
+             WHERE a.status IN ('unstarted', 'completed')
                AND (
                  -- Direct person assignment
                  a.person_id = ?1
@@ -142,7 +142,7 @@ impl ActionDb {
                  )
                )
              ORDER BY
-               CASE a.status WHEN 'pending' THEN 0 ELSE 1 END,
+               CASE a.status WHEN 'unstarted' THEN 0 ELSE 1 END,
                a.created_at DESC
              LIMIT 20",
         )?;
@@ -226,7 +226,7 @@ impl ActionDb {
     pub fn reopen_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
-            "UPDATE actions SET status = 'pending', completed_at = NULL, updated_at = ?1
+            "UPDATE actions SET status = 'unstarted', completed_at = NULL, updated_at = ?1
              WHERE id = ?2",
             params![now, id],
         )?;
@@ -369,7 +369,11 @@ impl ActionDb {
             )
             .ok();
 
-        if existing_status.as_deref() == Some("completed") {
+        // Don't overwrite completed, cancelled, or archived actions (DOS-55 dedup guard)
+        if matches!(
+            existing_status.as_deref(),
+            Some("completed") | Some("cancelled") | Some("archived")
+        ) {
             return Ok(false);
         }
 
@@ -439,7 +443,7 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'pending'
+             WHERE status = 'unstarted'
                AND source_type IN ('post_meeting', 'inbox', 'ai-inbox', 'transcript', 'import', 'manual')
              ORDER BY priority, created_at DESC",
         )?;
@@ -460,7 +464,7 @@ impl ActionDb {
         let total: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM actions WHERE status = 'pending'",
+                "SELECT COUNT(*) FROM actions WHERE status = 'unstarted'",
                 [],
                 |row| row.get(0),
             )
@@ -468,7 +472,7 @@ impl ActionDb {
         let p1: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND priority = 'P1'",
+                "SELECT COUNT(*) FROM actions WHERE status = 'unstarted' AND priority = 1",
                 [],
                 |row| row.get(0),
             )
@@ -476,7 +480,7 @@ impl ActionDb {
         let p2: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND priority = 'P2'",
+                "SELECT COUNT(*) FROM actions WHERE status = 'unstarted' AND priority <= 2",
                 [],
                 |row| row.get(0),
             )
@@ -484,7 +488,7 @@ impl ActionDb {
         let overdue: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND due_date < date('now')",
+                "SELECT COUNT(*) FROM actions WHERE status = 'unstarted' AND due_date < date('now')",
                 [],
                 |row| row.get(0),
             )
@@ -517,7 +521,7 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'suggested'
+             WHERE status = 'backlog'
              ORDER BY priority, created_at DESC",
         )?;
 
@@ -534,8 +538,8 @@ impl ActionDb {
     pub fn accept_suggested_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let changed = self.conn.execute(
-            "UPDATE actions SET status = 'pending', updated_at = ?1
-             WHERE id = ?2 AND status = 'suggested'",
+            "UPDATE actions SET status = 'unstarted', updated_at = ?1
+             WHERE id = ?2 AND status = 'backlog'",
             params![now, id],
         )?;
         if changed == 0 {
@@ -559,7 +563,7 @@ impl ActionDb {
         let changed = self.conn.execute(
             "UPDATE actions SET status = 'archived', updated_at = ?1,
              rejected_at = ?1, rejection_source = ?3
-             WHERE id = ?2 AND status = 'suggested'",
+             WHERE id = ?2 AND status = 'backlog'",
             params![now, id, source],
         )?;
         if changed == 0 {
@@ -586,7 +590,7 @@ impl ActionDb {
         let cutoff_param = format!("-{} days", days);
         let changed = self.conn.execute(
             "UPDATE actions SET status = 'archived', updated_at = ?1
-             WHERE status = 'pending'
+             WHERE status = 'unstarted'
                AND completed_at IS NULL
                AND (
                    (due_date IS NOT NULL AND due_date <= date('now', ?2))
@@ -605,7 +609,7 @@ impl ActionDb {
         let cutoff_param = format!("-{} days", days);
         let changed = self.conn.execute(
             "UPDATE actions SET status = 'archived', updated_at = ?1
-             WHERE status = 'suggested'
+             WHERE status = 'backlog'
                AND created_at < datetime('now', ?2)",
             params![now, cutoff_param],
         )?;
@@ -700,7 +704,7 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'pending'
+             WHERE status = 'unstarted'
                AND waiting_on IS NOT NULL
                AND created_at <= datetime('now', ?1 || ' days')
              ORDER BY created_at ASC",
@@ -728,7 +732,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE needs_decision = 1
-               AND status = 'pending'
+               AND status = 'unstarted'
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
                CASE WHEN due_date IS NULL THEN 1 ELSE 0 END,
@@ -848,7 +852,7 @@ mod tests {
                 "INSERT INTO actions (
                     id, title, priority, status, created_at, due_date, updated_at
                  ) VALUES (
-                    ?1, ?2, 'P2', 'pending', datetime('now'), date('now', '-40 days'), datetime('now')
+                    ?1, ?2, 3, 'unstarted', datetime('now'), date('now', '-40 days'), datetime('now')
                  )",
                 params!["action-past-due", "Old follow-up"],
             )
@@ -876,7 +880,7 @@ mod tests {
                 "INSERT INTO actions (
                     id, title, priority, status, created_at, updated_at
                  ) VALUES (
-                    ?1, ?2, 'P2', 'pending', datetime('now', '-40 days'), datetime('now', '-40 days')
+                    ?1, ?2, 3, 'unstarted', datetime('now', '-40 days'), datetime('now', '-40 days')
                  )",
                 params!["action-undated", "Eventually follow up"],
             )
@@ -904,7 +908,7 @@ mod tests {
                 "INSERT INTO actions (
                     id, title, priority, status, created_at, due_date, updated_at
                  ) VALUES (
-                    ?1, ?2, 'P2', 'pending', datetime('now', '-5 days'), date('now', '+2 days'), datetime('now', '-5 days')
+                    ?1, ?2, 3, 'unstarted', datetime('now', '-5 days'), date('now', '+2 days'), datetime('now', '-5 days')
                  )",
                 params!["action-fresh", "Upcoming follow-up"],
             )
@@ -921,7 +925,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("read action");
-        assert_eq!(status, "pending");
+        assert_eq!(status, "unstarted");
     }
 
     #[test]
@@ -931,7 +935,7 @@ mod tests {
             .execute(
                 "INSERT INTO actions (
                     id, title, priority, status, created_at, updated_at
-                 ) VALUES (?1, ?2, 'P2', 'suggested', datetime('now'), datetime('now'))",
+                 ) VALUES (?1, ?2, 3, 'backlog', datetime('now'), datetime('now'))",
                 params!["action-1", "Follow up"],
             )
             .expect("insert action");

@@ -92,9 +92,9 @@ export interface DatabaseInfo {
   lastBackup: string | null;
 }
 
-export type Priority = "P1" | "P2" | "P3";
+export type Priority = 0 | 1 | 2 | 3 | 4;
 
-export type ActionStatus = "pending" | "completed" | "suggested" | "archived";
+export type ActionStatus = "backlog" | "unstarted" | "started" | "completed" | "cancelled" | "archived";
 
 export type PrepStatus =
   | "prep_needed"
@@ -206,7 +206,7 @@ export interface Action {
 export interface DbAction {
   id: string;
   title: string;
-  priority: string;
+  priority: number;
   status: string;
   createdAt: string;
   dueDate?: string;
