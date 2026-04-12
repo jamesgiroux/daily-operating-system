@@ -212,10 +212,16 @@ pub fn detect_relationship_drift(db: &ActionDb, ctx: &DetectorContext) -> Vec<Ra
 // ---------------------------------------------------------------------------
 
 /// Entity with 3+ email_signals in 7d when trailing 30d avg is <1/week.
-pub fn detect_email_volume_spike(db: &ActionDb, _ctx: &DetectorContext) -> Vec<RawInsight> {
+pub fn detect_email_volume_spike(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsight> {
+    let cutoff_7d = (ctx.today - chrono::Duration::days(7))
+        .format("%Y-%m-%d")
+        .to_string();
+    let cutoff_30d = (ctx.today - chrono::Duration::days(30))
+        .format("%Y-%m-%d")
+        .to_string();
     let sql = "SELECT entity_id, entity_type,
-        SUM(CASE WHEN detected_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) as recent_7d,
-        SUM(CASE WHEN detected_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END) as total_30d
+        SUM(CASE WHEN detected_at >= ?1 THEN 1 ELSE 0 END) as recent_7d,
+        SUM(CASE WHEN detected_at >= ?2 THEN 1 ELSE 0 END) as total_30d
     FROM email_signals
     GROUP BY entity_id, entity_type
     HAVING recent_7d >= 3 AND (total_30d - recent_7d) < 4";
@@ -226,7 +232,7 @@ pub fn detect_email_volume_spike(db: &ActionDb, _ctx: &DetectorContext) -> Vec<R
         Err(_) => return Vec::new(),
     };
 
-    let rows = match stmt.query_map([], |row| {
+    let rows = match stmt.query_map(params![cutoff_7d, cutoff_30d], |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
@@ -353,20 +359,24 @@ pub fn detect_meeting_load_forecast(db: &ActionDb, ctx: &DetectorContext) -> Vec
 pub fn detect_stale_champion(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsight> {
     let conn = db.conn_ref();
     let mut results = Vec::new();
+    let today_str = ctx.today.format("%Y-%m-%d").to_string();
+    let end_90d = (ctx.today + chrono::Duration::days(90))
+        .format("%Y-%m-%d")
+        .to_string();
 
     // Find accounts with renewal within 90 days
     let mut acct_stmt = conn
         .prepare(
             "SELECT id, name, contract_end FROM accounts
              WHERE contract_end IS NOT NULL
-               AND contract_end >= date('now')
-               AND contract_end <= date('now', '+90 days')
+               AND contract_end >= ?1
+               AND contract_end <= ?2
                AND archived = 0",
         )
         .unwrap_or_else(|_| conn.prepare("SELECT 1 WHERE 0").unwrap());
 
     let accounts: Vec<(String, String, String)> = acct_stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .query_map(params![today_str, end_90d], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
         .ok()
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
         .unwrap_or_default();
@@ -460,21 +470,21 @@ pub fn detect_stale_champion(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
 pub fn detect_action_cluster(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsight> {
     let conn = db.conn_ref();
     let mut results = Vec::new();
-    let _ = ctx;
+    let today_str = ctx.today.format("%Y-%m-%d").to_string();
 
     // Check accounts with action clusters
     let account_clusters: Vec<(String, i64, i64)> = conn
         .prepare(
             "SELECT account_id,
                     COUNT(*) as pending_count,
-                    SUM(CASE WHEN due_date IS NOT NULL AND due_date < date('now') THEN 1 ELSE 0 END) as overdue_count
+                    SUM(CASE WHEN due_date IS NOT NULL AND due_date < ?1 THEN 1 ELSE 0 END) as overdue_count
              FROM actions
              WHERE status = 'pending' AND account_id IS NOT NULL
              GROUP BY account_id
              HAVING pending_count >= 5 AND overdue_count >= 3",
         )
         .and_then(|mut stmt| {
-            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            stmt.query_map([&today_str], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
                 .map(|rows| rows.filter_map(|r| r.ok()).collect())
         })
         .unwrap_or_default();
@@ -515,14 +525,14 @@ pub fn detect_action_cluster(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
         .prepare(
             "SELECT project_id,
                     COUNT(*) as pending_count,
-                    SUM(CASE WHEN due_date IS NOT NULL AND due_date < date('now') THEN 1 ELSE 0 END) as overdue_count
+                    SUM(CASE WHEN due_date IS NOT NULL AND due_date < ?1 THEN 1 ELSE 0 END) as overdue_count
              FROM actions
              WHERE status = 'pending' AND project_id IS NOT NULL
              GROUP BY project_id
              HAVING pending_count >= 5 AND overdue_count >= 3",
         )
         .and_then(|mut stmt| {
-            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            stmt.query_map([&today_str], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
                 .map(|rows| rows.filter_map(|r| r.ok()).collect())
         })
         .unwrap_or_default();
