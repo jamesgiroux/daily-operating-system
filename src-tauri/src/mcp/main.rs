@@ -594,7 +594,7 @@ fn build_entity_result(
         intelligence_summary: intelligence_summary.map(str::to_string),
         open_actions: actions
             .iter()
-            .filter(|a| a.status == "pending")
+            .filter(|a| matches!(a.status.as_str(), "backlog" | "unstarted" | "started"))
             .take(10)
             .map(|a| ActionSummary {
                 id: a.id.clone(),

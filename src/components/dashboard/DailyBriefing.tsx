@@ -260,8 +260,7 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
     .sort((a, b) => {
       if (a.isOverdue && !b.isOverdue) return -1;
       if (!a.isOverdue && b.isOverdue) return 1;
-      const priorityOrder = { P1: 0, P2: 1, P3: 2 };
-      return (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
+      return (a.priority ?? 3) - (b.priority ?? 3);
     });
 
   // Action completion

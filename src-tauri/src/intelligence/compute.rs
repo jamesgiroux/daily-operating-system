@@ -30,7 +30,7 @@ pub struct DecisionSignal {
     pub title: String,
     pub due_date: Option<String>,
     pub account: Option<String>,
-    pub priority: String,
+    pub priority: i32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -501,8 +501,8 @@ mod tests {
         let stale_action = crate::db::DbAction {
             id: "wait-old".to_string(),
             title: "Stale delegation".to_string(),
-            priority: "P2".to_string(),
-            status: "pending".to_string(),
+            priority: crate::action_status::PRIORITY_MEDIUM,
+            status: crate::action_status::UNSTARTED.to_string(),
             created_at: "2020-01-01T00:00:00Z".to_string(),
             due_date: None,
             completed_at: None,
