@@ -194,18 +194,14 @@ pub async fn get_all_actions(state: &AppState) -> ActionsResult {
         .unwrap_or_default()
         .into_iter()
         .map(|dba| {
-            let priority = match dba.priority.as_str() {
-                "P1" => Priority::P1,
-                "P3" => Priority::P3,
-                _ => Priority::P2,
-            };
+            let priority = Priority::from_i32(dba.priority);
             Action {
                 id: dba.id,
                 title: dba.title,
                 account: dba.account_id,
                 due_date: dba.due_date,
                 priority,
-                status: crate::types::ActionStatus::Pending,
+                status: crate::types::ActionStatus::Unstarted,
                 is_overdue: None,
                 context: dba.context,
                 source: dba.source_label,
@@ -240,8 +236,13 @@ pub async fn create_action(
     } = request;
 
     let title = crate::util::validate_bounded_string(&title, "title", 1, 280)?;
-    let priority = priority.unwrap_or_else(|| "P2".to_string());
-    crate::util::validate_enum_string(priority.as_str(), "priority", &["P1", "P2", "P3"])?;
+    let priority_str = priority.unwrap_or_else(|| "3".to_string());
+    let priority: i32 = priority_str
+        .parse()
+        .map_err(|_| format!("Invalid priority: {priority_str}"))?;
+    if !(0..=4).contains(&priority) {
+        return Err(format!("Priority must be 0-4, got: {priority}"));
+    }
     if let Some(ref date) = due_date {
         crate::util::validate_yyyy_mm_dd(date, "due_date")?;
     }
@@ -268,7 +269,7 @@ pub async fn create_action(
         id: id.clone(),
         title,
         priority,
-        status: "pending".to_string(),
+        status: crate::action_status::UNSTARTED.to_string(),
         created_at: now.clone(),
         due_date,
         completed_at: None,
@@ -316,7 +317,12 @@ pub async fn update_action(request: UpdateActionRequest, state: &AppState) -> Re
 
     crate::util::validate_id_slug(&id, "id")?;
     if let Some(ref p) = priority {
-        crate::util::validate_enum_string(p.as_str(), "priority", &["P1", "P2", "P3"])?;
+        let pv: i32 = p
+            .parse()
+            .map_err(|_| format!("Invalid priority: {p}"))?;
+        if !(0..=4).contains(&pv) {
+            return Err(format!("Priority must be 0-4, got: {pv}"));
+        }
     }
     if let Some(ref t) = title {
         crate::util::validate_bounded_string(t, "title", 1, 280)?;
@@ -351,7 +357,7 @@ pub async fn update_action(request: UpdateActionRequest, state: &AppState) -> Re
                 action.title = t;
             }
             if let Some(p) = priority {
-                action.priority = p;
+                action.priority = p.parse::<i32>().unwrap_or(3);
             }
             if clear_due_date == Some(true) {
                 action.due_date = None;

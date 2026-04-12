@@ -1,9 +1,9 @@
 # Data Model Reference
 
-**Auto-generated:** 2026-03-31 by `.docs/generators/gen-data-model.sh`
+**Auto-generated:** 2026-04-12 by `.docs/generators/gen-data-model.sh`
 
 **Database:** SQLite (SQLCipher-encrypted, WAL mode)
-**Migrations:** 86 files (`001_baseline.sql` through `085_drop_relationship_type.sql`)
+**Migrations:** 86 files (`001_baseline.sql` through `085_action_status_priority_v2.sql`)
 **DB modules:** `src-tauri/src/db/`
 
 ---
@@ -382,12 +382,6 @@
 | `data_source` |            TEXT NOT NULL DEFAULT 'user',       -- row-level provenance (preserved) |
 | `last_seen_in_glean` |     TEXT,                                -- staleness tracking (preserved) |
 | `created_at` |             TEXT NOT NULL DEFAULT (datetime('now')) |
-| `account_id` | TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE |
-| `person_id` | TEXT NOT NULL |
-| `role` | TEXT NOT NULL DEFAULT 'associated' |
-| `data_source` | TEXT NOT NULL DEFAULT 'user' |
-| `last_seen_in_glean` | TEXT |
-| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
 - `last_seen_in_glean` *(added in 061_stakeholder_glean_staleness)*
 
 **Indexes:** idx_account_stakeholders_person
@@ -405,12 +399,6 @@
 | `role` | TEXT NOT NULL DEFAULT 'associated' |
 | `relationship_type` | TEXT DEFAULT 'associated' |
 | `data_source` | TEXT NOT NULL DEFAULT 'user' |
-| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
-| `account_id` | TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE |
-| `person_id` | TEXT NOT NULL |
-| `role` | TEXT NOT NULL DEFAULT 'associated' |
-| `data_source` | TEXT NOT NULL DEFAULT 'user' |
-| `last_seen_in_glean` | TEXT |
 | `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
 
 ---
@@ -698,6 +686,9 @@
 | `rejected_at` | TEXT |
 | `rejection_source` | TEXT |
 | `is_demo` | INTEGER NOT NULL DEFAULT 0 |
+| `id` | TEXT PRIMARY KEY |
+| `title` | TEXT NOT NULL |
+| `priority` | INTEGER CHECK(priority BETWEEN 0 AND 4) DEFAULT 3 |
 
 ---
 
@@ -2065,48 +2056,3 @@
 
 **Created in:** `001_baseline`
 
-| Column | Definition |
-|--------|-----------|
-| `id` | TEXT PRIMARY KEY |
-| `email` | TEXT NOT NULL UNIQUE |
-| `name` | TEXT NOT NULL |
-| `organization` | TEXT |
-| `role` | TEXT |
-| `relationship` | TEXT CHECK(relationship IN ('internal', 'external', 'unknown')) |
-| `notes` | TEXT |
-| `tracker_path` | TEXT |
-| `last_seen` | TEXT |
-| `first_seen` | TEXT |
-| `meeting_count` | INTEGER DEFAULT 0 |
-| `updated_at` | TEXT NOT NULL |
-| `archived` | INTEGER DEFAULT 0 |
-| `entity_id` | TEXT NOT NULL |
-| `person_id` | TEXT NOT NULL |
-| `relationship_type` | TEXT DEFAULT 'associated' |
-- `linkedin_url` *(added in 016_clay_enrichment)*
-- `twitter_handle` *(added in 016_clay_enrichment)*
-- `phone` *(added in 016_clay_enrichment)*
-- `photo_url` *(added in 016_clay_enrichment)*
-- `bio` *(added in 016_clay_enrichment)*
-- `title_history` *(added in 016_clay_enrichment)*
-- `company_industry` *(added in 016_clay_enrichment)*
-- `company_size` *(added in 016_clay_enrichment)*
-- `company_hq` *(added in 016_clay_enrichment)*
-- `last_enriched_at` *(added in 016_clay_enrichment)*
-- `enrichment_sources` *(added in 016_clay_enrichment)*
-- `is_demo` *(added in 053_app_state_demo)*
-
-**Indexes:** idx_entity_people_person, idx_people_archived, idx_people_email, idx_people_last_seen, idx_people_relationship
-
----
-
-### `person_emails`
-
-**Created in:** `012_person_emails`
-
-| Column | Definition |
-|--------|-----------|
-| `person_id` | TEXT NOT NULL |
-| `email` | TEXT NOT NULL COLLATE NOCASE |
-| `is_primary` | INTEGER NOT NULL DEFAULT 0 |
-| `added_at` | TEXT NOT NULL |
