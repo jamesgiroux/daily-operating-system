@@ -36,7 +36,7 @@ pub enum DbError {
 pub struct DbAction {
     pub id: String,
     pub title: String,
-    pub priority: String,
+    pub priority: i32,
     pub status: String,
     pub created_at: String,
     pub due_date: Option<String>,
