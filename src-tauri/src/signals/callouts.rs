@@ -53,6 +53,8 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "cadence_anomaly",
     "email_cadence_drop",
     "risk_detected",
+    // DOS-54: Manual action creation
+    "action_created_manually",
     // I535/ADR-0100: Glean-sourced signal types
     "renewal_data_updated",
     "support_health_updated",
@@ -463,6 +465,17 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                     format!("Unusual email pattern for {}", signal.entity_id),
                 ),
             }
+        }
+        // DOS-54: Manual action creation callout
+        "action_created_manually" => {
+            let title = parsed
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("New action");
+            (
+                "New action item added".to_string(),
+                format!("You created: {}", title),
+            )
         }
         // I535/ADR-0100: Glean-sourced callout text handlers
         "renewal_data_updated" => {

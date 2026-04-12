@@ -4404,8 +4404,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             StakeholderInsight { name: "Pat Kim".into(), role: Some("CTO".into()), assessment: Some("Strategic decision maker. Focused on APAC and cost consolidation.".into()), engagement: Some("periodic".into()), source: None, person_id: Some("mock-pat-kim".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(5), reference: Some("Glean AI synthesis".into()) }), discrepancy: None },
         ],
         value_delivered: vec![
-            ValueItem { date: Some(days_ago_rfc(90)), statement: "Phase 1 deployment drove $200K ARR expansion".into(), source: Some("contract".into()), impact: Some("High".into()), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(90), reference: Some("Salesforce".into()) }), discrepancy: None },
-            ValueItem { date: Some(days_ago_rfc(60)), statement: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("Strong ROI narrative".into()), item_source: None, discrepancy: None },
+            // DOS-12: One user-confirmed item (survives re-enrichment), one AI-inferred
+            ValueItem { date: Some(days_ago_rfc(90)), statement: "Phase 1 deployment drove $200K ARR expansion".into(), source: Some("contract".into()), impact: Some("revenue".into()), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(30), reference: Some("user edit".into()) }), discrepancy: None },
+            ValueItem { date: Some(days_ago_rfc(60)), statement: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("cost".into()), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.85, sourced_at: days_ago_rfc(60), reference: Some("Salesforce".into()) }), discrepancy: None },
         ],
         company_context: Some(CompanyContext {
             description: Some("Enterprise SaaS company serving mid-market and enterprise customers".into()),
