@@ -1818,7 +1818,7 @@ impl ActionDb {
             .conn
             .query_row(
                 "SELECT COUNT(*) FROM actions
-                 WHERE project_id = ?1 AND status = 'pending'",
+                 WHERE project_id = ?1 AND status IN ('backlog', 'unstarted', 'started')",
                 params![project_id],
                 |row| row.get(0),
             )

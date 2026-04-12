@@ -128,12 +128,13 @@ function groupByMeeting(actions: DbAction[]): ActionGroup[] {
   return groups;
 }
 
-type StatusTab = "suggested" | "pending" | "completed";
-type PriorityTab = "all" | "P1" | "P2" | "P3";
+type StatusTab = "backlog" | "unstarted" | "completed";
+type PriorityTab = "all" | 1 | 2 | 3 | 4;
 
-const statusTabs: StatusTab[] = ["suggested", "pending", "completed"];
-const statusTabLabels: Record<StatusTab, string> = { suggested: "Suggested", pending: "Pending", completed: "Completed" };
-const priorityTabs: PriorityTab[] = ["all", "P1", "P2", "P3"];
+const statusTabs: StatusTab[] = ["backlog", "unstarted", "completed"];
+const statusTabLabels: Record<StatusTab, string> = { backlog: "Suggested", unstarted: "Active", completed: "Completed" };
+const priorityTabs: PriorityTab[] = ["all", 1, 2, 3, 4];
+const priorityTabLabels: Record<string, string> = { all: "All", 1: "Urgent", 2: "High", 3: "Medium", 4: "Low" };
 
 
 export default function ActionsPage() {
@@ -160,10 +161,10 @@ export default function ActionsPage() {
 
   // Computed stats
   const suggestedCount = suggestedActions.length;
-  const pendingCount = allActions.filter((a) => a.status === "pending" || a.status === "waiting").length;
+  const activeCount = allActions.filter((a) => a.status === "unstarted" || a.status === "started").length;
   const completedCount = allActions.filter((a) => a.status === "completed").length;
   const overdueCount = allActions.filter(
-    (a) => a.status === "pending" && a.dueDate && new Date(a.dueDate) < new Date()
+    (a) => (a.status === "unstarted" || a.status === "started") && a.dueDate && new Date(a.dueDate) < new Date()
   ).length;
 
   const handleAccept = useCallback(async (id: string) => {
@@ -180,17 +181,17 @@ export default function ActionsPage() {
   const prevSuggestedCountRef = useRef(0);
   const userManuallySelectedTab = useRef(false);
 
-  if (!hasSetDefault && !loading && suggestedCount > 0 && statusFilter !== "suggested") {
-    setStatusFilter("suggested");
+  if (!hasSetDefault && !loading && suggestedCount > 0 && statusFilter !== "backlog") {
+    setStatusFilter("backlog");
     setHasSetDefault(true);
-  } else if (!hasSetDefault && !loading && suggestedCount === 0 && statusFilter !== "pending") {
-    setStatusFilter("pending");
+  } else if (!hasSetDefault && !loading && suggestedCount === 0 && statusFilter !== "unstarted") {
+    setStatusFilter("unstarted");
     setHasSetDefault(true);
   } else if (!hasSetDefault && !loading) {
     setHasSetDefault(true);
   }
 
-  // Auto-switch to suggested tab when new suggestions arrive (0 -> >0 transition)
+  // Auto-switch to backlog tab when new suggestions arrive (0 -> >0 transition)
   useEffect(() => {
     if (
       hasSetDefault &&
@@ -198,7 +199,7 @@ export default function ActionsPage() {
       suggestedCount > 0 &&
       !userManuallySelectedTab.current
     ) {
-      setStatusFilter("suggested");
+      setStatusFilter("backlog");
       toast.info(`${suggestedCount} new suggested action${suggestedCount !== 1 ? "s" : ""} to review`);
     }
     prevSuggestedCountRef.current = suggestedCount;
@@ -208,10 +209,10 @@ export default function ActionsPage() {
   const folioStats = useMemo((): ReadinessStat[] => {
     const stats: ReadinessStat[] = [];
     if (suggestedCount > 0) stats.push({ label: `${suggestedCount} to review`, color: "terracotta" });
-    if (pendingCount > 0) stats.push({ label: `${pendingCount} pending`, color: "sage" });
+    if (activeCount > 0) stats.push({ label: `${activeCount} active`, color: "sage" });
     if (overdueCount > 0) stats.push({ label: `${overdueCount} overdue`, color: "terracotta" });
     return stats;
-  }, [suggestedCount, pendingCount, overdueCount]);
+  }, [suggestedCount, activeCount, overdueCount]);
 
   // Register magazine shell
   const shellConfig = useMemo(
@@ -264,11 +265,11 @@ export default function ActionsPage() {
             >
               <span className={s.statusTabInner}>
                 {statusTabLabels[tab]}
-                {tab === "suggested" && suggestedCount > 0 && (
+                {tab === "backlog" && suggestedCount > 0 && (
                   <span className={s.suggestedBadge}>{suggestedCount}</span>
                 )}
-                {tab === "pending" && pendingCount > 0 && (
-                  <span className={s.countBadge}>{pendingCount}</span>
+                {tab === "unstarted" && activeCount > 0 && (
+                  <span className={s.countBadge}>{activeCount}</span>
                 )}
                 {tab === "completed" && completedCount > 0 && (
                   <span className={s.countBadge}>{completedCount}</span>
@@ -285,7 +286,7 @@ export default function ActionsPage() {
               onClick={() => setPriorityFilter(tab)}
               className={`${s.tabButton} ${priorityFilter === tab ? s.tabButtonActive : ""}`}
             >
-              {tab}
+              {priorityTabLabels[String(tab)]}
             </button>
           ))}
         </div>
@@ -312,7 +313,7 @@ export default function ActionsPage() {
 
       {/* ═══ ACTION ROWS ═══ */}
       <section>
-        {statusFilter === "suggested" ? (
+        {statusFilter === "backlog" ? (
           suggestedActions.length === 0 ? (
             <EmptyState
               headline="All clear"
@@ -348,8 +349,8 @@ export default function ActionsPage() {
               />
             );
           })()
-        ) : statusFilter === "pending" ? (
-          // Grouped view for pending tab
+        ) : statusFilter === "unstarted" ? (
+          // Grouped view for active tab
           <PendingGroupedView actions={actions} onToggle={toggleAction} />
         ) : (
           <div className={s.actionColumn}>
@@ -424,7 +425,7 @@ function ActionCreateForm({
 }) {
   const [title, setTitle] = useState("");
   const [showDetails, setShowDetails] = useState(false);
-  const [priority, setPriority] = useState("P2");
+  const [priority, setPriority] = useState<number>(3);
   const [dueDate, setDueDate] = useState("");
   const [accountId, setAccountId] = useState<string | null>(defaultAccountId ?? null);
   const [sourceLabel, setSourceLabel] = useState("");

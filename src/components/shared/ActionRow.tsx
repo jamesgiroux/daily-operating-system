@@ -9,6 +9,18 @@
  */
 import { Link } from "@tanstack/react-router";
 
+function priorityLabel(p: number | string): string {
+  const v = typeof p === "string" ? parseInt(p, 10) : p;
+  switch (v) {
+    case 0: return "—";
+    case 1: return "Urgent";
+    case 2: return "High";
+    case 3: return "Medium";
+    case 4: return "Low";
+    default: return "Medium";
+  }
+}
+
 interface ActionRowCompactProps {
   variant: "compact";
   action: { id: string; title: string; dueDate?: string; source?: string };
@@ -24,7 +36,7 @@ interface ActionRowFullProps {
     id: string;
     title: string;
     status: string;
-    priority: string;
+    priority: number;
     dueDate?: string | null;
     context?: string | null;
     accountName?: string | null;
@@ -43,7 +55,7 @@ interface ActionRowOutcomeProps {
     id: string;
     title: string;
     status: string;
-    priority: string;
+    priority: number;
     dueDate?: string | null;
   };
   onComplete: () => void;
@@ -149,7 +161,7 @@ function FullActionRow({
   const isCompleted = action.status === "completed";
   const isOverdue =
     action.dueDate &&
-    action.status === "pending" &&
+    (action.status === "unstarted" || action.status === "started") &&
     new Date(action.dueDate) < new Date();
 
   const contextParts: string[] = [];
@@ -251,16 +263,16 @@ function FullActionRow({
           fontWeight: 600,
           letterSpacing: "0.04em",
           color:
-            action.priority === "P1"
+            action.priority <= 1
               ? "var(--color-spice-terracotta)"
-              : action.priority === "P2"
+              : action.priority <= 2
                 ? "var(--color-spice-turmeric)"
                 : "var(--color-text-tertiary)",
           flexShrink: 0,
           marginTop: 4,
         }}
       >
-        {action.priority}
+        {priorityLabel(action.priority)}
       </span>
     </div>
   );
@@ -275,11 +287,11 @@ function OutcomeActionRow({
   onCyclePriority,
 }: ActionRowOutcomeProps) {
   const isCompleted = action.status === "completed";
-  const isSuggested = action.status === "suggested";
+  const isSuggested = action.status === "backlog";
 
   const priorityColor: Record<string, string> = {
-    P1: "var(--color-spice-terracotta)",
-    P3: "var(--color-text-tertiary)",
+    1: "var(--color-spice-terracotta)",
+    4: "var(--color-text-tertiary)",
   };
 
   return (
@@ -363,7 +375,7 @@ function OutcomeActionRow({
             cursor: "pointer",
           }}
         >
-          {action.priority}
+          {priorityLabel(action.priority)}
         </button>
       )}
 
