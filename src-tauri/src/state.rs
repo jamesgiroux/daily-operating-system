@@ -1396,7 +1396,7 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
         // Read indented sub-lines for metadata
         let mut account_raw: Option<String> = None;
         let mut due_date: Option<String> = None;
-        let mut priority = "P2".to_string();
+        let mut priority = crate::action_status::PRIORITY_MEDIUM;
         let mut context: Option<String> = None;
         let mut source: Option<String> = None;
         let mut owner: Option<String> = None;
@@ -1422,7 +1422,7 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
                     }
                 }
             } else if let Some(v) = sub_content.strip_prefix("Priority:") {
-                priority = v.trim().to_string();
+                priority = crate::action_status::migrate_priority(v.trim());
             } else if let Some(v) = sub_content.strip_prefix("Context:") {
                 context = Some(v.trim().to_string());
             } else if let Some(v) = sub_content.strip_prefix("Source:") {
@@ -1495,7 +1495,7 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
             id: action_id,
             title: clean_title,
             priority,
-            status: "pending".to_string(),
+            status: crate::action_status::UNSTARTED.to_string(),
             created_at: now.clone(),
             due_date,
             completed_at: None,
