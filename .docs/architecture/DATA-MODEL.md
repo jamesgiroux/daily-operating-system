@@ -1,9 +1,9 @@
 # Data Model Reference
 
-**Auto-generated:** 2026-04-12 by `.docs/generators/gen-data-model.sh`
+**Auto-generated:** 2026-04-13 by `.docs/generators/gen-data-model.sh`
 
 **Database:** SQLite (SQLCipher-encrypted, WAL mode)
-**Migrations:** 86 files (`001_baseline.sql` through `085_action_status_priority_v2.sql`)
+**Migrations:** 87 files (`001_baseline.sql` through `086_objective_evidence.sql`)
 **DB modules:** `src-tauri/src/db/`
 
 ---
@@ -18,7 +18,7 @@
 | `account_events_new` | `069_account_events_expand` | — |
 | `account_milestones` | `068_success_plans` | 075_v110_lifecycle_products_provenance |
 | `account_milestones_new` | `069_account_events_expand` | — |
-| `account_objectives` | `068_success_plans` | — |
+| `account_objectives` | `068_success_plans` | 086_objective_evidence |
 | `account_objectives_new` | `069_account_events_expand` | — |
 | `account_products` | `075_v110_lifecycle_products_provenance` | 079_product_classification |
 | `account_source_refs` | `076_source_aware_account_truth` | — |
@@ -273,6 +273,8 @@
 | `sort_order` | INTEGER NOT NULL DEFAULT 0 |
 | `created_at` | TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP |
 | `updated_at` | TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP |
+- `evidence_json` *(added in 086_objective_evidence)*
+- `ai_origin_id` *(added in 086_objective_evidence)*
 
 ---
 
@@ -2056,3 +2058,395 @@
 
 **Created in:** `001_baseline`
 
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `email` | TEXT NOT NULL UNIQUE |
+| `name` | TEXT NOT NULL |
+| `organization` | TEXT |
+| `role` | TEXT |
+| `relationship` | TEXT CHECK(relationship IN ('internal', 'external', 'unknown')) |
+| `notes` | TEXT |
+| `tracker_path` | TEXT |
+| `last_seen` | TEXT |
+| `first_seen` | TEXT |
+| `meeting_count` | INTEGER DEFAULT 0 |
+| `updated_at` | TEXT NOT NULL |
+| `archived` | INTEGER DEFAULT 0 |
+| `entity_id` | TEXT NOT NULL |
+| `person_id` | TEXT NOT NULL |
+| `relationship_type` | TEXT DEFAULT 'associated' |
+- `linkedin_url` *(added in 016_clay_enrichment)*
+- `twitter_handle` *(added in 016_clay_enrichment)*
+- `phone` *(added in 016_clay_enrichment)*
+- `photo_url` *(added in 016_clay_enrichment)*
+- `bio` *(added in 016_clay_enrichment)*
+- `title_history` *(added in 016_clay_enrichment)*
+- `company_industry` *(added in 016_clay_enrichment)*
+- `company_size` *(added in 016_clay_enrichment)*
+- `company_hq` *(added in 016_clay_enrichment)*
+- `last_enriched_at` *(added in 016_clay_enrichment)*
+- `enrichment_sources` *(added in 016_clay_enrichment)*
+- `is_demo` *(added in 053_app_state_demo)*
+
+**Indexes:** idx_entity_people_person, idx_people_archived, idx_people_email, idx_people_last_seen, idx_people_relationship
+
+---
+
+### `person_emails`
+
+**Created in:** `012_person_emails`
+
+| Column | Definition |
+|--------|-----------|
+| `person_id` | TEXT NOT NULL |
+| `email` | TEXT NOT NULL COLLATE NOCASE |
+| `is_primary` | INTEGER NOT NULL DEFAULT 0 |
+| `added_at` | TEXT NOT NULL |
+
+---
+
+### `person_relationships`
+
+**Created in:** `038_person_relationships`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `from_person_id` | TEXT NOT NULL |
+| `to_person_id` | TEXT NOT NULL |
+| `relationship_type` | TEXT NOT NULL CHECK(relationship_type IN ( |
+| `direction` | TEXT NOT NULL DEFAULT 'directed' CHECK(direction IN ('directed','symmetric')) |
+| `confidence` | REAL NOT NULL DEFAULT 0.5 |
+| `context_entity_id` | TEXT |
+| `context_entity_type` | TEXT |
+| `source` | TEXT NOT NULL |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `last_reinforced_at` | TEXT |
+| `id` | TEXT PRIMARY KEY |
+| `from_person_id` | TEXT NOT NULL |
+| `to_person_id` | TEXT NOT NULL |
+| `relationship_type` | TEXT NOT NULL CHECK(relationship_type IN ( |
+| `direction` | TEXT NOT NULL DEFAULT 'directed' CHECK(direction IN ('directed','symmetric')) |
+| `confidence` | REAL NOT NULL DEFAULT 0.5 |
+| `context_entity_id` | TEXT |
+| `context_entity_type` | TEXT |
+| `source` | TEXT NOT NULL |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `last_reinforced_at` | TEXT |
+- `rationale` *(added in 059_person_relationships_rationale)*
+
+**Indexes:** idx_person_relationships_context, idx_person_relationships_from, idx_person_relationships_to
+
+---
+
+### `person_relationships_new`
+
+**Created in:** `039_person_relationships_types`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `from_person_id` | TEXT NOT NULL |
+| `to_person_id` | TEXT NOT NULL |
+| `relationship_type` | TEXT NOT NULL CHECK(relationship_type IN ( |
+| `direction` | TEXT NOT NULL DEFAULT 'directed' CHECK(direction IN ('directed','symmetric')) |
+| `confidence` | REAL NOT NULL DEFAULT 0.5 |
+| `context_entity_id` | TEXT |
+| `context_entity_type` | TEXT |
+| `source` | TEXT NOT NULL |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `last_reinforced_at` | TEXT |
+
+---
+
+### `pipeline_failures`
+
+**Created in:** `064_pipeline_failures`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `pipeline` | TEXT NOT NULL |
+| `entity_id` | TEXT |
+| `entity_type` | TEXT |
+| `error_type` | TEXT NOT NULL |
+| `error_message` | TEXT |
+| `attempt` | INTEGER NOT NULL DEFAULT 1 |
+| `resolved` | INTEGER NOT NULL DEFAULT 0 |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `resolved_at` | TEXT |
+
+---
+
+### `post_meeting_emails`
+
+**Created in:** `020_signal_propagation`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `meeting_id` | TEXT NOT NULL |
+| `email_signal_id` | TEXT NOT NULL |
+| `thread_id` | TEXT |
+| `correlated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `actions_extracted` | TEXT |
+
+**Indexes:** idx_post_meeting_emails_meeting
+
+---
+
+### `proactive_insights`
+
+**Created in:** `021_proactive_surfacing`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `detector_name` | TEXT NOT NULL |
+| `fingerprint` | TEXT NOT NULL |
+| `signal_id` | TEXT |
+| `entity_type` | TEXT NOT NULL |
+| `entity_id` | TEXT NOT NULL |
+| `headline` | TEXT NOT NULL |
+| `detail` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `expires_at` | TEXT |
+
+---
+
+### `proactive_scan_state`
+
+**Created in:** `021_proactive_surfacing`
+
+| Column | Definition |
+|--------|-----------|
+| `detector_name` | TEXT PRIMARY KEY |
+| `last_run_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `last_insight_count` | INTEGER DEFAULT 0 |
+
+---
+
+### `processing_log`
+
+**Created in:** `001_baseline`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `filename` | TEXT NOT NULL |
+| `source_path` | TEXT NOT NULL |
+| `destination_path` | TEXT |
+| `classification` | TEXT NOT NULL |
+| `status` | TEXT NOT NULL DEFAULT 'pending' |
+| `processed_at` | TEXT |
+| `error_message` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+**Indexes:** idx_processing_created, idx_processing_status
+
+---
+
+### `projects`
+
+**Created in:** `001_baseline`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `name` | TEXT NOT NULL |
+| `status` | TEXT DEFAULT 'active' |
+| `milestone` | TEXT |
+| `owner` | TEXT |
+| `target_date` | TEXT |
+| `tracker_path` | TEXT |
+| `updated_at` | TEXT NOT NULL |
+| `archived` | INTEGER DEFAULT 0 |
+| `id` | TEXT PRIMARY KEY |
+| `name` | TEXT NOT NULL |
+| `state` | TEXT |
+| `url` | TEXT |
+| `synced_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+- `keywords` *(added in 017_entity_keywords)*
+- `keywords_extracted_at` *(added in 017_entity_keywords)*
+- `metadata` *(added in 025_entity_metadata)*
+- `parent_id` *(added in 037_project_hierarchy)*
+- `description` *(added in 083_dashboard_fields_to_db)*
+- `milestones` *(added in 083_dashboard_fields_to_db)*
+- `notes` *(added in 083_dashboard_fields_to_db)*
+
+**Indexes:** idx_projects_archived, idx_projects_parent_id, idx_projects_status
+
+---
+
+### `quill_sync_state`
+
+**Created in:** `013_quill_sync`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `meeting_id` | TEXT NOT NULL UNIQUE |
+| `quill_meeting_id` | TEXT |
+| `state` | TEXT NOT NULL DEFAULT 'pending' |
+| `attempts` | INTEGER NOT NULL DEFAULT 0 |
+| `max_attempts` | INTEGER NOT NULL DEFAULT 6 |
+| `next_attempt_at` | TEXT |
+| `last_attempt_at` | TEXT |
+| `completed_at` | TEXT |
+| `error_message` | TEXT |
+| `match_confidence` | REAL |
+| `transcript_path` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `id` | TEXT PRIMARY KEY |
+| `meeting_id` | TEXT NOT NULL |
+| `quill_meeting_id` | TEXT |
+| `state` | TEXT NOT NULL DEFAULT 'pending' |
+| `attempts` | INTEGER NOT NULL DEFAULT 0 |
+| `max_attempts` | INTEGER NOT NULL DEFAULT 6 |
+| `next_attempt_at` | TEXT |
+| `last_attempt_at` | TEXT |
+| `completed_at` | TEXT |
+| `error_message` | TEXT |
+| `match_confidence` | REAL |
+| `transcript_path` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `source` | TEXT NOT NULL DEFAULT 'quill' |
+| `id` | TEXT PRIMARY KEY |
+| `meeting_id` | TEXT NOT NULL |
+| `quill_meeting_id` | TEXT |
+| `state` | TEXT NOT NULL DEFAULT 'pending' |
+| `attempts` | INTEGER NOT NULL DEFAULT 0 |
+| `max_attempts` | INTEGER NOT NULL DEFAULT 6 |
+| `next_attempt_at` | TEXT |
+| `last_attempt_at` | TEXT |
+| `completed_at` | TEXT |
+| `error_message` | TEXT |
+| `match_confidence` | REAL |
+
+**Indexes:** idx_quill_sync_meeting_source, idx_quill_sync_state
+
+---
+
+### `quill_sync_state_new`
+
+**Created in:** `055_schema_decomposition`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `meeting_id` | TEXT NOT NULL |
+| `quill_meeting_id` | TEXT |
+| `state` | TEXT NOT NULL DEFAULT 'pending' |
+| `attempts` | INTEGER NOT NULL DEFAULT 0 |
+| `max_attempts` | INTEGER NOT NULL DEFAULT 6 |
+| `next_attempt_at` | TEXT |
+| `last_attempt_at` | TEXT |
+| `completed_at` | TEXT |
+| `error_message` | TEXT |
+| `match_confidence` | REAL |
+| `transcript_path` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `source` | TEXT NOT NULL DEFAULT 'quill' |
+
+---
+
+### `reports`
+
+**Created in:** `050_reports`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `report_type` | TEXT NOT NULL |
+| `content_json` | TEXT NOT NULL |
+| `generated_at` | DATETIME NOT NULL |
+| `intel_hash` | TEXT NOT NULL |
+| `is_stale` | INTEGER DEFAULT 0 |
+| `created_at` | DATETIME DEFAULT CURRENT_TIMESTAMP |
+| `updated_at` | DATETIME DEFAULT CURRENT_TIMESTAMP |
+
+**Indexes:** idx_reports_entity_type, idx_reports_stale
+
+---
+
+### `signal_derivations`
+
+**Created in:** `020_signal_propagation`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `source_signal_id` | TEXT NOT NULL |
+| `derived_signal_id` | TEXT NOT NULL |
+| `rule_name` | TEXT NOT NULL |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+**Indexes:** idx_signal_derivations_derived, idx_signal_derivations_source
+
+---
+
+### `signal_events`
+
+**Created in:** `018_signal_bus`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL |
+| `entity_id` | TEXT NOT NULL |
+| `signal_type` | TEXT NOT NULL |
+| `source` | TEXT NOT NULL |
+| `value` | TEXT |
+| `confidence` | REAL DEFAULT 1.0 |
+| `decay_half_life_days` | INTEGER DEFAULT 90 |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `superseded_by` | TEXT |
+- `source_context` *(added in 019_correction_learning)*
+
+**Indexes:** idx_signal_events_entity, idx_signal_events_source, idx_signal_events_type
+
+---
+
+### `signal_weights`
+
+**Created in:** `018_signal_bus`
+
+| Column | Definition |
+|--------|-----------|
+| `source` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL |
+| `signal_type` | TEXT NOT NULL |
+| `alpha` | REAL DEFAULT 1.0 |
+| `beta` | REAL DEFAULT 1.0 |
+| `update_count` | INTEGER DEFAULT 0 |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `stakeholder_suggestions`
+
+**Created in:** `080_stakeholder_source_of_truth`
+
+| Column | Definition |
+|--------|-----------|
+| `id` |                   INTEGER PRIMARY KEY |
+| `account_id` |           TEXT NOT NULL |
+| `person_id` |            TEXT,              -- NULL if person not yet created |
+| `suggested_name` |       TEXT |
+| `suggested_email` |      TEXT |
+| `suggested_role` |       TEXT |
+| `suggested_engagement` | TEXT |
+| `source` |               TEXT NOT NULL,     -- 'glean' | 'pty' | 'google' |
+| `status` |               TEXT NOT NULL DEFAULT 'pending',  -- pending | accepted | dismissed |
+| `raw_suggestion` |       TEXT,              -- original JSON from AI (debugging) |
+| `created_at` |           TEXT NOT NULL DEFAULT (datetime('now')) |
+| `resolved_at` |          TEXT |
