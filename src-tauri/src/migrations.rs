@@ -363,6 +363,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 86,
         sql: include_str!("migrations/085_action_status_priority_v2.sql"),
     },
+    Migration {
+        version: 87,
+        sql: include_str!("migrations/086_objective_evidence.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

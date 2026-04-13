@@ -33,6 +33,8 @@ impl ActionDb {
             total_milestone_count: row
                 .get::<_, Option<i32>>("total_milestone_count")?
                 .unwrap_or(0),
+            evidence_json: row.get("evidence_json").unwrap_or(None),
+            ai_origin_id: row.get("ai_origin_id").unwrap_or(None),
         })
     }
 

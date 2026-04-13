@@ -1019,3 +1019,92 @@ mod tests {
         assert!(signal_count > 0, "Expected objective_completed signal");
     }
 }
+
+// ─── DOS-14: Objective Reconciliation ────────────────────────────────
+
+/// Reconcile AI-extracted statedObjectives against user-created objectives.
+///
+/// For each statedObjective from enrichment:
+/// - If it fuzzy-matches an existing objective: append evidence
+/// - If no match: leave it as a suggestion candidate (surfaced by get_objective_suggestions)
+pub fn reconcile_objectives(db: &ActionDb, account_id: &str) -> Result<u32, String> {
+    let signals_json = db
+        .get_success_plan_signals_json(account_id)
+        .map_err(|e| e.to_string())?;
+
+    let signals: Option<SuccessPlanSignals> =
+        signals_json.and_then(|j| serde_json::from_str(&j).ok());
+
+    let stated = match signals {
+        Some(s) if !s.stated_objectives.is_empty() => s.stated_objectives,
+        _ => return Ok(0),
+    };
+
+    let objectives = db
+        .get_account_objectives(account_id)
+        .map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut matches_found = 0u32;
+
+    for ai_obj in &stated {
+        let ai_title_lower = ai_obj.objective.trim().to_lowercase();
+        let ai_tokens: std::collections::HashSet<&str> =
+            ai_title_lower.split_whitespace().collect();
+
+        // Find best matching user objective (Jaccard similarity on word tokens)
+        let mut best_match: Option<(&AccountObjective, f64)> = None;
+        for obj in &objectives {
+            let obj_lower = obj.title.trim().to_lowercase();
+            let obj_tokens: std::collections::HashSet<&str> =
+                obj_lower.split_whitespace().collect();
+
+            let intersection = ai_tokens.intersection(&obj_tokens).count();
+            let union = ai_tokens.union(&obj_tokens).count();
+            let jaccard = if union > 0 {
+                intersection as f64 / union as f64
+            } else {
+                0.0
+            };
+
+            if jaccard > 0.5 && best_match.as_ref().is_none_or(|(_, s)| jaccard > *s) {
+                best_match = Some((obj, jaccard));
+            }
+        }
+
+        if let Some((matched_obj, _score)) = best_match {
+            // Append evidence to the matched objective
+            let evidence_entry = serde_json::json!({
+                "source": ai_obj.source,
+                "date": now,
+                "quote": ai_obj.objective,
+                "confidence": ai_obj.confidence,
+            });
+
+            let mut evidence: Vec<serde_json::Value> = matched_obj
+                .evidence_json
+                .as_ref()
+                .and_then(|j| serde_json::from_str(j).ok())
+                .unwrap_or_default();
+
+            evidence.push(evidence_entry);
+            // Cap at 20 evidence items
+            if evidence.len() > 20 {
+                evidence.drain(0..evidence.len() - 20);
+            }
+
+            let evidence_str = serde_json::to_string(&evidence).unwrap_or_default();
+            db.conn_ref()
+                .execute(
+                    "UPDATE account_objectives SET evidence_json = ?1, updated_at = ?2 WHERE id = ?3",
+                    rusqlite::params![evidence_str, now, matched_obj.id],
+                )
+                .map_err(|e| e.to_string())?;
+
+            matches_found += 1;
+        }
+        // If no match: leave as suggestion candidate (get_objective_suggestions already surfaces it)
+    }
+
+    Ok(matches_found)
+}
