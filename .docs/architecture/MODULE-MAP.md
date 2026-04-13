@@ -1,7 +1,7 @@
 # Module Map
 
 > Rust backend module inventory (`src-tauri/src/`).
-> **Auto-generated:** 2026-04-12 by `.docs/generators/gen-module-map.sh`
+> **Auto-generated:** 2026-04-13 by `.docs/generators/gen-module-map.sh`
 
 **237** Rust files across **30** module directories and **44** standalone modules.
 
@@ -36,7 +36,7 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0 (I397). |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (I406–I410). |
-| `services/` | 20 | 237 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 20 | 238 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 20 | 53 | Universal signal bus for intelligence fusion (I306 / ADR-0080 Phase 2). |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
@@ -69,7 +69,7 @@
 | `executor.rs` | 1439 | 1 | Workflow execution engine |
 | `export.rs` | 300 | 1 | I429: User data export — ZIP file with human-readable JSON per domain. |
 | `focus_capacity.rs` | 423 | 1 | — |
-| `focus_prioritization.rs` | 399 | 1 | — |
+| `focus_prioritization.rs` | 402 | 1 | — |
 | `google.rs` | 1714 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 434 | 11 | — |
 | `intel_queue.rs` | 2804 | 4 | Background intelligence enrichment queue (I132). |
@@ -77,7 +77,7 @@
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
 | `lib.rs` | 859 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 982 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 1574 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 1578 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (I51 / ADR-0047). |
@@ -88,7 +88,7 @@
 | `scheduler.rs` | 748 | 2 | Scheduler for cron-based workflow execution |
 | `state.rs` | 1587 | 12 | AppState — DB, PTY, config |
 | `task_supervisor.rs` | 34 | 1 | — |
-| `types.rs` | 3214 | 7 | Shared type definitions |
+| `types.rs` | 3220 | 7 | Shared type definitions |
 | `util.rs` | 1257 | 27 | — |
 | `watcher.rs` | 882 | 1 | File watcher for _inbox/ directory |
 
