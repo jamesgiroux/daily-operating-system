@@ -136,6 +136,11 @@ pub fn reject_suggested_action(
             )),
             0.3,
         );
+
+        // Record rejection patterns for future suppression (DOS-18)
+        if let Err(e) = db.record_rejection_pattern(action) {
+            log::warn!("Failed to record rejection pattern: {}", e);
+        }
     }
 
     Ok(())
