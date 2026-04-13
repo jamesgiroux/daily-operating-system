@@ -474,7 +474,16 @@ pub fn upsert_assessment_from_enrichment(
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
         Ok(())
-    })
+    })?;
+
+    // DOS-14: After enrichment, reconcile AI objectives with user objectives
+    if entity_type == "account" {
+        if let Err(e) = crate::services::success_plans::reconcile_objectives(db, entity_id) {
+            log::warn!("Objective reconciliation failed for {entity_id}: {e}");
+        }
+    }
+
+    Ok(())
 }
 
 /// Persist an assessment snapshot without emitting enrichment lifecycle signals.
