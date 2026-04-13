@@ -202,6 +202,30 @@ pub async fn dismiss_intelligence_item(
     .await
 }
 
+/// DOS-13: Track (accept) a recommended action — creates a real action.
+#[tauri::command]
+pub async fn track_recommendation(
+    entity_id: String,
+    entity_type: String,
+    index: usize,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    crate::services::intelligence::track_recommendation(&entity_id, &entity_type, index, &state)
+        .await
+}
+
+/// DOS-13: Dismiss a recommended action — removes it from intelligence.
+#[tauri::command]
+pub async fn dismiss_recommendation(
+    entity_id: String,
+    entity_type: String,
+    index: usize,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::intelligence::dismiss_recommendation(&entity_id, &entity_type, index, &state)
+        .await
+}
+
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.
 #[tauri::command]
 pub async fn update_stakeholders(

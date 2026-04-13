@@ -17,9 +17,9 @@ use crate::intelligence::io::{
     ContractContext, CoverageAssessment, CurrentState, DimensionScore, DismissedItem,
     ExpansionSignal, GongCallSummary, HealthSource, HealthTrend, IntelRisk, IntelWin,
     IntelligenceJson, InternalTeamMember, ItemSource, NetworkIntelligence, NetworkKeyRelationship,
-    OpenCommitment, OrgChange, RelationshipDepth, RelationshipDimensions, RenewalOutlook,
-    ResponsivenessAssessment, SatisfactionData, StakeholderInsight, StrategicPriority,
-    SuccessMetric, SupportHealth, ValueItem,
+    OpenCommitment, OrgChange, RecommendedAction, RelationshipDepth, RelationshipDimensions,
+    RenewalOutlook, ResponsivenessAssessment, SatisfactionData, StakeholderInsight,
+    StrategicPriority, SuccessMetric, SupportHealth, ValueItem,
 };
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType, TranscriptRecord};
@@ -4594,6 +4594,10 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             GongCallSummary { title: "Acme Phase 2 Planning".into(), date: days_ago_rfc(14), participants: vec!["Sarah Chen".into(), "Pat Kim".into(), "Mike Chen".into()], key_topics: "Budget approval, APAC expansion, resource allocation".into(), sentiment: "positive".into() },
             GongCallSummary { title: "Acme NPS Debrief".into(), date: days_ago_rfc(21), participants: vec!["Alex Torres".into(), "Engineering Team".into()], key_topics: "NPS detractor root cause, onboarding friction, module complexity".into(), sentiment: "neutral".into() },
         ],
+        recommended_actions: vec![
+            RecommendedAction { title: "Schedule executive review with Sarah Chen before QBR".into(), rationale: "Phase 2 SOW is in legal review and NPS detractors need addressing — an exec review ensures alignment before the QBR presentation.".into(), priority: 2, suggested_due: Some(date_only(10)) },
+            RecommendedAction { title: "Build adoption metrics dashboard for Acme stakeholders".into(), rationale: "Platform adoption is at 85% but NPS is 42 — the gap suggests perception issues. A visible metrics dashboard for Sarah Chen's team would bridge the data-to-narrative gap.".into(), priority: 3, suggested_due: None },
+        ],
         ..Default::default()
     };
 
@@ -4797,6 +4801,10 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             verbatim: Some("Team A loves it but Team B feels unsupported".into()),
             source: Some("survey_tool".into()),
         }),
+        recommended_actions: vec![
+            RecommendedAction { title: "Schedule 1:1 with Jamie to discuss Team B recovery plan".into(), rationale: "Jamie is the remaining champion but Casey Lee is actively evaluating Contoso. A direct conversation can surface what Team B actually needs before the QBR.".into(), priority: 1, suggested_due: Some(date_only(3)) },
+            RecommendedAction { title: "Prepare renewal brief with competitive positioning data".into(), rationale: "Renewal is 45 days out with no commitment signal. Pat Reynolds' departure removes the executive sponsor — the renewal brief needs to address the Contoso evaluation directly.".into(), priority: 2, suggested_due: Some(date_only(14)) },
+        ],
         ..Default::default()
     };
 
