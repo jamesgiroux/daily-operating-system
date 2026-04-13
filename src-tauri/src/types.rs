@@ -2440,6 +2440,12 @@ pub struct AccountObjective {
     pub linked_action_count: i32,
     pub completed_milestone_count: i32,
     pub total_milestone_count: i32,
+    /// DOS-14: Evidence from AI enrichment matching this objective.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_json: Option<String>,
+    /// DOS-14: ID linking to original AI statedObjective (dedup key).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_origin_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
