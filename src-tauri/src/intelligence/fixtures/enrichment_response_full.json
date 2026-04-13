@@ -125,5 +125,9 @@
     "openTickets": 3,
     "trend": "improving"
   },
-  "keywords": ["Acme", "Acme Corp", "EMEA expansion", "Sarah Chen", "David Park"]
+  "keywords": ["Acme", "Acme Corp", "EMEA expansion", "Sarah Chen", "David Park"],
+  "recommendedActions": [
+    {"title": "Schedule 1:1 with CTO David Park", "rationale": "New CTO has prior relationship with Competitor X and is driving vendor consolidation review. Direct engagement needed to understand technology vision.", "priority": 2, "suggestedDue": "2026-04-20"},
+    {"title": "Prepare EMEA expansion proposal with ROI data", "rationale": "Sarah Chen secured budget for EMEA pilot but timeline is slipping. Concrete ROI from NA deployment would accelerate approval.", "priority": 3, "suggestedDue": null}
+  ]
 }
