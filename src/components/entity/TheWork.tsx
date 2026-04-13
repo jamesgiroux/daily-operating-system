@@ -490,6 +490,10 @@ export function TheWork({
               )}
               <div className={s.objectiveMeta}>
                 {labelObjectiveStatus(objective.status)} · {objective.completedMilestoneCount} of {objective.totalMilestoneCount} milestones · {objective.linkedActionCount} linked actions
+                {(() => {
+                  const evidence: unknown[] = objective.evidenceJson ? (JSON.parse(objective.evidenceJson) as unknown[]) : [];
+                  return evidence.length > 0 ? ` · ${evidence.length} mention${evidence.length !== 1 ? "s" : ""} in calls` : null;
+                })()}
               </div>
               {objective.targetDate && (
                 <div className={s.objectiveTargetDate}>
