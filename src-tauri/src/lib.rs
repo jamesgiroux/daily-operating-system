@@ -712,6 +712,9 @@ pub fn run() {
             commands::update_intelligence_field,
             commands::dismiss_intelligence_item,
             commands::update_stakeholders,
+            // DOS-13: Recommended Actions from Intelligence
+            commands::track_recommendation,
+            commands::dismiss_recommendation,
             commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
