@@ -28,6 +28,9 @@ fn sample_action(id: &str, title: &str) -> DbAction {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
     }
 }
 
@@ -2483,6 +2486,9 @@ fn test_get_project_actions() {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
     };
     db.upsert_action(&pending_action)
         .expect("upsert pending action");
@@ -3028,6 +3034,9 @@ fn test_create_action_all_fields() {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
     };
     db.upsert_action(&action).unwrap();
 
@@ -3073,6 +3082,9 @@ fn test_create_action_defaults() {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
     };
     db.upsert_action(&action).unwrap();
 
@@ -3142,6 +3154,9 @@ fn test_update_action_clear_fields() {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
     };
     db.upsert_action(&action).unwrap();
 
@@ -3226,6 +3241,9 @@ fn test_manual_actions_in_non_briefing_query() {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
     };
     db.upsert_action(&action).unwrap();
 

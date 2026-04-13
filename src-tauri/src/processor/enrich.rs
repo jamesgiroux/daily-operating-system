@@ -862,6 +862,9 @@ pub fn extract_actions_from_ai(
             account_name: None,
             next_meeting_title: None,
             next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
         };
 
         if let Err(e) = db.upsert_action_if_not_completed(&action) {
