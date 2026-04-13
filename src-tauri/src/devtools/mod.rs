@@ -4327,6 +4327,23 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params![signals_json],
     ).ok();
 
+    // --- Rejected action patterns (DOS-18) ---
+    conn.execute(
+        "INSERT OR IGNORE INTO rejected_action_patterns
+            (account_id, pattern_type, pattern_value, rejection_count,
+             first_rejected_at, last_rejected_at, suppressed)
+         VALUES (?1, ?2, ?3, ?4, datetime('now', '-14 days'), datetime('now', '-1 day'), 1)",
+        rusqlite::params!["mock-acme-corp", "exact_title", "schedule weekly check-in", 3],
+    ).map_err(|e| format!("Rejected pattern seed (exact_title): {}", e))?;
+
+    conn.execute(
+        "INSERT OR IGNORE INTO rejected_action_patterns
+            (account_id, pattern_type, pattern_value, rejection_count,
+             first_rejected_at, last_rejected_at, suppressed)
+         VALUES (?1, ?2, ?3, ?4, datetime('now', '-21 days'), datetime('now', '-2 days'), 1)",
+        rusqlite::params!["mock-globex-industries", "keyword", "follow up", 4],
+    ).map_err(|e| format!("Rejected pattern seed (keyword): {}", e))?;
+
     Ok(())
 }
 
