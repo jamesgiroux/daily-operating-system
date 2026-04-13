@@ -50,6 +50,7 @@ import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
+import { RecommendedActions } from "@/components/entity/RecommendedActions";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { AddToRecord } from "@/components/entity/AddToRecord";
@@ -534,6 +535,10 @@ export default function ProjectDetailEditorial() {
 
       {/* Chapter 7: The Work (I351) */}
       <div id="the-work" className={`editorial-reveal ${shared.chapterSection}`}>
+        {intelligence?.recommendedActions && intelligence.recommendedActions.length > 0 && (
+          <RecommendedActions entityId={detail.id} entityType="project"
+            actions={intelligence.recommendedActions} onRefresh={proj.silentRefresh} />
+        )}
         <TheWork
           data={detail}
           addingAction={proj.addingAction}
