@@ -42,6 +42,7 @@ interface ActionRowFullProps {
     accountName?: string | null;
     accountId?: string | null;
     sourceLabel?: string | null;
+    needsDecision?: boolean;
   };
   onToggle: () => void;
   showBorder?: boolean;
@@ -228,6 +229,26 @@ function FullActionRow({
         >
           {stripMarkdown(action.title)}
         </Link>
+        {action.needsDecision && (
+          <span
+            style={{
+              display: "inline-block",
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "var(--color-spice-turmeric)",
+              background: "var(--color-spice-saffron-12)",
+              borderRadius: 3,
+              padding: "1px 6px",
+              marginLeft: 8,
+              verticalAlign: "middle",
+            }}
+          >
+            Decision needed
+          </span>
+        )}
         {action.context && (
           <div
             style={{
