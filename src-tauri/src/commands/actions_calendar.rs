@@ -242,6 +242,18 @@ pub async fn reset_email_preferences(
         .await
 }
 
+/// Resolve a decision: clear the needs_decision flag and emit signal (DOS-17).
+#[tauri::command]
+pub async fn resolve_decision(
+    id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    state
+        .db_write(move |db| crate::services::actions::resolve_decision(db, &engine, &id))
+        .await
+}
+
 /// Get all suggested (AI-suggested) actions (I256).
 #[tauri::command]
 pub async fn get_suggested_actions(

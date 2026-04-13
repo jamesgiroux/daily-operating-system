@@ -1858,6 +1858,9 @@ fn extract_transcript_actions(
             account_name: None,
             next_meeting_title: None,
             next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
         };
 
         match crate::services::mutations::upsert_action_if_not_completed(db, &action) {
@@ -1870,6 +1873,14 @@ fn extract_transcript_actions(
             Ok(false) => {
                 skipped += 1;
             }
+        }
+    }
+
+    // DOS-17: Scan newly inserted actions for decision-indicating keywords
+    if written > 0 {
+        let flagged = db.scan_and_flag_decisions().unwrap_or(0);
+        if flagged > 0 {
+            log::info!("DOS-17: flagged {} action(s) as decision-requiring", flagged);
         }
     }
 

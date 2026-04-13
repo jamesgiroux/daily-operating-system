@@ -290,6 +290,9 @@ pub async fn create_action(
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
     };
 
     let engine = state.signals.engine.clone();
@@ -313,6 +316,9 @@ pub async fn create_action(
                 )),
                 1.0,
             );
+
+            // DOS-17: Scan for decision-indicating keywords after creation
+            let _ = db.scan_and_flag_decisions();
 
             Ok(id)
         })
@@ -489,4 +495,40 @@ pub fn get_actions_from_db(db: &ActionDb, days_ahead: i32) -> Result<Vec<ActionL
 /// Get all suggested (AI-suggested) actions (I256).
 pub fn get_suggested_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, String> {
     db.get_suggested_actions().map_err(|e| e.to_string())
+}
+
+/// Resolve a decision: clear needs_decision flag and emit signal (DOS-17).
+pub fn resolve_decision(
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<(), String> {
+    let action = db.get_action_by_id(id).ok().flatten();
+    let updated = db.resolve_decision(id).map_err(|e| e.to_string())?;
+    if !updated {
+        return Err(format!("Action not found or not flagged as decision: {id}"));
+    }
+
+    if let Some(ref action) = action {
+        let (entity_type, entity_id) = action_entity_info(action, id);
+        let _ = crate::services::signals::emit_and_propagate(
+            db,
+            engine,
+            entity_type,
+            &entity_id,
+            "decision_resolved",
+            "user_action",
+            Some(&format!("{{\"action_id\":\"{}\"}}", id)),
+            0.8,
+        );
+    }
+
+    Ok(())
+}
+
+/// Scan unstarted/backlog actions for decision-indicating keywords and flag them (DOS-17).
+///
+/// Called after action creation and from the scheduler.
+pub fn scan_and_flag_decisions(db: &ActionDb) -> Result<usize, String> {
+    db.scan_and_flag_decisions().map_err(|e| e.to_string())
 }

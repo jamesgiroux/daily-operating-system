@@ -225,6 +225,12 @@ export interface DbAction {
   nextMeetingTitle?: string;
   /** Next upcoming meeting start time for the action's account (I342) */
   nextMeetingStart?: string;
+  /** Whether this action requires a decision (DOS-17) */
+  needsDecision?: boolean;
+  /** Who owns the decision (DOS-17) */
+  decisionOwner?: string;
+  /** What's at stake if the decision is delayed (DOS-17) */
+  decisionStakes?: string;
 }
 
 export interface DayStats {
