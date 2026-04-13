@@ -2335,6 +2335,10 @@ export interface AccountObjective {
   linkedActionCount: number;
   completedMilestoneCount: number;
   totalMilestoneCount: number;
+  /** DOS-14: Evidence from AI enrichment matching this objective */
+  evidenceJson?: string | null;
+  /** DOS-14: ID linking to original AI statedObjective */
+  aiOriginId?: string | null;
 }
 
 export interface SuggestedMilestone {
