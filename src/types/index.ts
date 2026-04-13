@@ -2021,6 +2021,17 @@ export interface EntityIntelligence {
 
   /** Cross-cutting: source attribution (I507). */
   sourceAttribution?: Record<string, string[]> | null;
+
+  /** DOS-13: AI-recommended actions from intelligence enrichment. */
+  recommendedActions?: RecommendedAction[];
+}
+
+/** DOS-13: A recommended action produced by intelligence enrichment. */
+export interface RecommendedAction {
+  title: string;
+  rationale: string;
+  priority: number;
+  suggestedDue?: string | null;
 }
 
 export interface SourceManifestEntry {
