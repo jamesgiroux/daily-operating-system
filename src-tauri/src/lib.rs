@@ -475,6 +475,7 @@ pub fn run() {
             commands::dismiss_email_item,
             commands::list_dismissed_email_items,
             commands::reset_email_preferences,
+            commands::resolve_decision,
             commands::get_suggested_actions,
             commands::get_meeting_history,
             commands::get_meeting_history_detail,

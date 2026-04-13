@@ -57,6 +57,15 @@ pub struct DbAction {
     /// Next upcoming meeting start time for the action's account (I342).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_meeting_start: Option<String>,
+    /// Whether this action requires a decision (DOS-17).
+    #[serde(default)]
+    pub needs_decision: bool,
+    /// Who owns the decision (DOS-17).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_owner: Option<String>,
+    /// What's at stake if the decision is delayed (DOS-17).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_stakes: Option<String>,
 }
 
 /// Account classification: customer, internal org, or partner (I382).

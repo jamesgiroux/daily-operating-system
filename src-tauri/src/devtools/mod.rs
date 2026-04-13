@@ -1649,6 +1649,40 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| e.to_string())?;
     }
 
+    // --- DOS-17: Decision-requiring actions ---
+    let decision_action_rows: Vec<(&str, &str, i32, &str, &str, Option<String>, &str, &str)> = vec![
+        (
+            "mock-act-budget-approval",
+            "Get budget approval for Phase 2 expansion",
+            crate::action_status::PRIORITY_URGENT,
+            crate::action_status::UNSTARTED,
+            "mock-acme-corp",
+            Some(date_only(3)),
+            "VP Engineering",
+            "Blocks Phase 2 kickoff",
+        ),
+        (
+            "mock-act-renewal-legal",
+            "Finalize renewal terms with legal",
+            crate::action_status::PRIORITY_URGENT,
+            crate::action_status::UNSTARTED,
+            "mock-globex-industries",
+            Some(date_only(5)),
+            "Legal",
+            "Renewal at risk if delayed past Q2",
+        ),
+    ];
+
+    for (id, title, priority, status, account_id, due_date, decision_owner, decision_stakes) in
+        &decision_action_rows
+    {
+        conn.execute(
+            "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, needs_decision, decision_owner, decision_stakes, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?9, ?10)",
+            rusqlite::params![id, title, priority, status, &today, due_date, account_id, decision_owner, decision_stakes, &today],
+        ).map_err(|e| format!("Decision action insert: {}", e))?;
+    }
+
     // --- Meetings history ---
     // Expanded to support diverse people signals (temperature + trend).
     // Need meetings at: 2d, 5d, 7d, 10d, 14d, 18d, 21d, 25d, 35d, 45d, 60d, 75d, 100d ago.

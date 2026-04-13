@@ -13,7 +13,7 @@
 |--------|-------|-----------|---------|
 | `bin/` | 0 | 0 | Binary entry points |
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment (I228). |
-| `commands/` | 10 | 362 | Tauri IPC command handlers |
+| `commands/` | 10 | 363 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
 | `db/` | 22 | 25 | SQLite database modules |
 | `devtools/` | 1 | 11 | Dev tools for scenario switching and mock data. |
@@ -36,7 +36,7 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0 (I397). |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (I406–I410). |
-| `services/` | 20 | 238 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 20 | 240 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 20 | 53 | Universal signal bus for intelligence fusion (I306 / ADR-0080 Phase 2). |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
@@ -69,15 +69,15 @@
 | `executor.rs` | 1439 | 1 | Workflow execution engine |
 | `export.rs` | 300 | 1 | I429: User data export — ZIP file with human-readable JSON per domain. |
 | `focus_capacity.rs` | 423 | 1 | — |
-| `focus_prioritization.rs` | 402 | 1 | — |
+| `focus_prioritization.rs` | 405 | 1 | — |
 | `google.rs` | 1714 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 434 | 11 | — |
 | `intel_queue.rs` | 2804 | 4 | Background intelligence enrichment queue (I132). |
 | `json_loader.rs` | 615 | 3 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
-| `lib.rs` | 859 | 1 | App setup, command registration, plugin init |
+| `lib.rs` | 860 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 982 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 1578 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 1586 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (I51 / ADR-0047). |
@@ -86,7 +86,7 @@
 | `pty.rs` | 991 | 2 | PTY Manager for Claude Code subprocess management |
 | `risk_briefing.rs` | 596 | 5 | Risk Briefing generation for at-risk accounts. |
 | `scheduler.rs` | 748 | 2 | Scheduler for cron-based workflow execution |
-| `state.rs` | 1587 | 12 | AppState — DB, PTY, config |
+| `state.rs` | 1590 | 12 | AppState — DB, PTY, config |
 | `task_supervisor.rs` | 34 | 1 | — |
 | `types.rs` | 3220 | 7 | Shared type definitions |
 | `util.rs` | 1257 | 27 | — |

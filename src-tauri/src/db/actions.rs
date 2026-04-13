@@ -25,7 +25,10 @@ impl ActionDb {
                      WHERE me.entity_id = actions.account_id
                        AND m.start_time >= date('now')
                        AND m.start_time < date('now', '+3 days')
-                     ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_start
+                     ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_start,
+                    actions.needs_decision,
+                    actions.decision_owner,
+                    actions.decision_stakes
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'unstarted'
@@ -41,6 +44,10 @@ impl ActionDb {
             let mut action = Self::map_action_row(row)?;
             action.next_meeting_title = row.get(17)?;
             action.next_meeting_start = row.get(18)?;
+            let nd: i32 = row.get(19)?;
+            action.needs_decision = nd != 0;
+            action.decision_owner = row.get(20)?;
+            action.decision_stakes = row.get(21)?;
             Ok(action)
         })?;
 
@@ -238,13 +245,21 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.needs_decision, actions.decision_owner, actions.decision_stakes
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE actions.id = ?1",
         )?;
 
-        let mut rows = stmt.query_map(params![id], Self::map_action_row)?;
+        let mut rows = stmt.query_map(params![id], |row| {
+            let mut action = Self::map_action_row(row)?;
+            let nd: i32 = row.get(17)?;
+            action.needs_decision = nd != 0;
+            action.decision_owner = row.get(18)?;
+            action.decision_stakes = row.get(19)?;
+            Ok(action)
+        })?;
 
         match rows.next() {
             Some(row) => Ok(Some(row?)),
@@ -825,6 +840,48 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Resolve a decision: clear needs_decision flag (DOS-17).
+    pub fn resolve_decision(&self, id: &str) -> Result<bool, DbError> {
+        let rows = self.conn.execute(
+            "UPDATE actions SET needs_decision = 0 WHERE id = ?1 AND needs_decision = 1",
+            params![id],
+        )?;
+        Ok(rows > 0)
+    }
+
+    /// Scan unstarted actions for decision-indicating keywords and flag matches (DOS-17).
+    ///
+    /// Returns the number of actions newly flagged.
+    pub fn scan_and_flag_decisions(&self) -> Result<usize, DbError> {
+        let keywords = [
+            "approval", "decision", "sign-off", "pending review",
+            "blocked on", "needs alignment", "budget", "legal", "escalat",
+        ];
+
+        // Build a WHERE clause that checks title and context for each keyword
+        let like_clauses: Vec<String> = keywords
+            .iter()
+            .flat_map(|kw| {
+                vec![
+                    format!("LOWER(title) LIKE '%{}%'", kw),
+                    format!("LOWER(context) LIKE '%{}%'", kw),
+                ]
+            })
+            .collect();
+        let where_clause = like_clauses.join(" OR ");
+
+        let sql = format!(
+            "UPDATE actions SET needs_decision = 1
+             WHERE status IN ('backlog', 'unstarted')
+               AND needs_decision = 0
+               AND ({})",
+            where_clause
+        );
+
+        let rows = self.conn.execute(&sql, [])?;
+        Ok(rows)
+    }
+
     /// Helper: map a row to `DbAction`. Reduces repetition across queries.
     ///
     /// Maps the standard 17-column action SELECT. The `next_meeting_title` and
@@ -851,6 +908,9 @@ impl ActionDb {
             account_name: row.get(16)?,
             next_meeting_title: None,
             next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
         })
     }
 
