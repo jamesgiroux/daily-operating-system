@@ -314,6 +314,16 @@ impl ActionDb {
         &self,
         action: &DbAction,
     ) -> Result<bool, DbError> {
+        // Guard 0: Rejection pattern suppression (DOS-18).
+        // Check before dedup so previously rejected patterns are caught early.
+        if self.is_action_suppressed(
+            &action.title,
+            action.account_id.as_deref(),
+            action.source_type.as_deref(),
+        ) {
+            return Ok(false);
+        }
+
         let is_meeting_scoped_source = matches!(
             action.source_type.as_deref(),
             Some("transcript") | Some("post_meeting")
@@ -843,11 +853,259 @@ impl ActionDb {
             next_meeting_start: None,
         })
     }
+
+    // =========================================================================
+    // Rejection Pattern Learning (DOS-18)
+    // =========================================================================
+
+    /// Check whether a proposed action should be suppressed based on rejection patterns.
+    ///
+    /// Checks three pattern types in order:
+    /// 1. `exact_title` — normalized title matches a previously rejected title for this account
+    /// 2. `source_fatigue` — the source type has a high rejection rate for this account
+    /// 3. `keyword` — significant keywords from the title have been repeatedly rejected
+    pub fn is_action_suppressed(
+        &self,
+        title: &str,
+        account_id: Option<&str>,
+        source_type: Option<&str>,
+    ) -> bool {
+        let normalized = title.to_lowercase().trim().to_string();
+
+        // Check exact_title suppression
+        let exact_match = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM rejected_action_patterns
+                 WHERE pattern_type = 'exact_title'
+                   AND suppressed = 1
+                   AND pattern_value = ?1
+                   AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                 LIMIT 1",
+                params![normalized, account_id],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+
+        if exact_match {
+            log::debug!(
+                "Action suppressed by rejection pattern: exact_title match '{}'",
+                normalized
+            );
+            return true;
+        }
+
+        // Check source_fatigue suppression
+        if let Some(src) = source_type {
+            let fatigue = self
+                .conn
+                .query_row(
+                    "SELECT 1 FROM rejected_action_patterns
+                     WHERE pattern_type = 'source_fatigue'
+                       AND suppressed = 1
+                       AND pattern_value = ?1
+                       AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                     LIMIT 1",
+                    params![src, account_id],
+                    |_| Ok(true),
+                )
+                .unwrap_or(false);
+
+            if fatigue {
+                log::debug!(
+                    "Action suppressed by rejection pattern: source_fatigue for '{}'",
+                    src
+                );
+                return true;
+            }
+        }
+
+        // Check keyword suppression
+        let keywords = extract_significant_keywords(&normalized);
+        for kw in &keywords {
+            let kw_match = self
+                .conn
+                .query_row(
+                    "SELECT 1 FROM rejected_action_patterns
+                     WHERE pattern_type = 'keyword'
+                       AND suppressed = 1
+                       AND pattern_value = ?1
+                       AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                     LIMIT 1",
+                    params![kw, account_id],
+                    |_| Ok(true),
+                )
+                .unwrap_or(false);
+
+            if kw_match {
+                log::debug!(
+                    "Action suppressed by rejection pattern: keyword '{}'",
+                    kw
+                );
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Record rejection patterns from a rejected action (DOS-18).
+    ///
+    /// Called by the service layer after a successful rejection. Records:
+    /// - `exact_title`: always suppressed after first rejection
+    /// - `source_fatigue`: suppressed when >70% of source's actions for this account are rejected
+    /// - `keyword`: suppressed when 3+ actions with the keyword have been rejected
+    pub fn record_rejection_pattern(
+        &self,
+        action: &DbAction,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        let normalized_title = action.title.to_lowercase().trim().to_string();
+
+        // (a) Exact title suppression — always suppressed on first rejection
+        self.upsert_rejection_pattern(
+            action.account_id.as_deref(),
+            "exact_title",
+            &normalized_title,
+            1,
+            &now,
+        )?;
+
+        // (b) Source fatigue — check rejection rate for this source+account over 30 days
+        if let Some(ref source) = action.source_type {
+            let stats: Option<(i64, i64)> = self
+                .conn
+                .query_row(
+                    "SELECT
+                        COUNT(*) as total,
+                        SUM(CASE WHEN status = 'archived' AND rejected_at IS NOT NULL THEN 1 ELSE 0 END) as rejected
+                     FROM actions
+                     WHERE source_type = ?1
+                       AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                       AND created_at >= datetime('now', '-30 days')",
+                    params![source, action.account_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .ok();
+
+            if let Some((total, rejected)) = stats {
+                if total > 0 && (rejected as f64 / total as f64) > 0.7 {
+                    self.upsert_rejection_pattern(
+                        action.account_id.as_deref(),
+                        "source_fatigue",
+                        source,
+                        1,
+                        &now,
+                    )?;
+                }
+            }
+        }
+
+        // (c) Keyword suppression — check each keyword for 3+ rejections
+        let keywords = extract_significant_keywords(&normalized_title);
+        for kw in &keywords {
+            let rejected_count: i64 = self
+                .conn
+                .query_row(
+                    "SELECT COUNT(DISTINCT a.id) FROM actions a
+                     WHERE LOWER(a.title) LIKE '%' || ?1 || '%'
+                       AND a.status = 'archived'
+                       AND a.rejected_at IS NOT NULL
+                       AND (a.account_id = ?2 OR (?2 IS NULL AND a.account_id IS NULL))",
+                    params![kw, action.account_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+
+            if rejected_count >= 3 {
+                self.upsert_rejection_pattern(
+                    action.account_id.as_deref(),
+                    "keyword",
+                    kw,
+                    rejected_count,
+                    &now,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Upsert a rejection pattern, handling NULL account_id correctly.
+    ///
+    /// SQLite treats NULL as distinct in unique indexes, so we use an explicit
+    /// check-then-insert/update approach instead of ON CONFLICT.
+    fn upsert_rejection_pattern(
+        &self,
+        account_id: Option<&str>,
+        pattern_type: &str,
+        pattern_value: &str,
+        count: i64,
+        now: &str,
+    ) -> Result<(), DbError> {
+        let existing_id: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT id FROM rejected_action_patterns
+                 WHERE pattern_type = ?1
+                   AND pattern_value = ?2
+                   AND (account_id = ?3 OR (?3 IS NULL AND account_id IS NULL))
+                 LIMIT 1",
+                params![pattern_type, pattern_value, account_id],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(id) = existing_id {
+            self.conn.execute(
+                "UPDATE rejected_action_patterns
+                 SET rejection_count = rejection_count + 1,
+                     last_rejected_at = ?1,
+                     suppressed = 1
+                 WHERE id = ?2",
+                params![now, id],
+            )?;
+        } else {
+            self.conn.execute(
+                "INSERT INTO rejected_action_patterns
+                    (account_id, pattern_type, pattern_value, rejection_count,
+                     first_rejected_at, last_rejected_at, suppressed)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)",
+                params![account_id, pattern_type, pattern_value, count, now],
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Stop words filtered out during keyword extraction for rejection pattern matching.
+const STOP_WORDS: &[&str] = &[
+    "the", "a", "an", "to", "for", "with", "and", "or", "is", "in", "on", "at",
+    "of", "by", "be", "do", "it", "if", "no", "so", "up", "as", "my", "we",
+    "he", "she", "me", "am", "are", "was", "has", "had", "not", "but", "can",
+    "all", "its", "our", "this", "that", "will", "from", "they", "been", "have",
+    "their", "what", "when", "make", "like", "just", "get", "into", "also",
+    "than", "them", "then", "some", "her", "him", "his", "how", "out", "who",
+];
+
+/// Extract significant keywords from an action title for rejection pattern matching.
+///
+/// Normalizes to lowercase, splits on whitespace, and filters out stop words
+/// and very short tokens (<=2 chars).
+fn extract_significant_keywords(normalized_title: &str) -> Vec<String> {
+    normalized_title
+        .split_whitespace()
+        .filter(|w| w.len() > 2 && !STOP_WORDS.contains(w))
+        .map(|w| w.to_string())
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use crate::db::test_utils::test_db;
+    use crate::db::types::DbAction;
+    use chrono::Utc;
     use rusqlite::params;
 
     #[test]
@@ -960,5 +1218,163 @@ mod tests {
 
         assert_eq!(row.0, "archived");
         assert_eq!(row.1.as_deref(), Some("daily_briefing"));
+    }
+
+    #[test]
+    fn record_rejection_pattern_creates_exact_title_entry() {
+        let db = test_db();
+        let action = DbAction {
+            id: "a1".into(),
+            title: "  Schedule Weekly Check-In  ".into(),
+            priority: 3,
+            status: "archived".into(),
+            created_at: Utc::now().to_rfc3339(),
+            due_date: None,
+            completed_at: None,
+            account_id: Some("acct-1".into()),
+            project_id: None,
+            source_type: Some("briefing".into()),
+            source_id: None,
+            source_label: None,
+            context: None,
+            waiting_on: None,
+            updated_at: Utc::now().to_rfc3339(),
+            person_id: None,
+            account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
+        };
+
+        db.record_rejection_pattern(&action)
+            .expect("record rejection");
+
+        let count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM rejected_action_patterns
+                 WHERE pattern_type = 'exact_title'
+                   AND pattern_value = 'schedule weekly check-in'
+                   AND account_id = 'acct-1'
+                   AND suppressed = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "exact_title pattern should be created");
+    }
+
+    #[test]
+    fn is_action_suppressed_blocks_exact_title_match() {
+        let db = test_db();
+
+        // Seed a suppressed pattern
+        db.conn
+            .execute(
+                "INSERT INTO rejected_action_patterns
+                    (account_id, pattern_type, pattern_value, rejection_count,
+                     first_rejected_at, last_rejected_at, suppressed)
+                 VALUES ('acct-1', 'exact_title', 'check in with team', 1,
+                         datetime('now'), datetime('now'), 1)",
+                [],
+            )
+            .expect("seed pattern");
+
+        assert!(
+            db.is_action_suppressed("Check In With Team", Some("acct-1"), None),
+            "should suppress exact title match"
+        );
+        assert!(
+            !db.is_action_suppressed("Check In With Team", Some("acct-other"), None),
+            "should not suppress for different account"
+        );
+        assert!(
+            !db.is_action_suppressed("Something Else", Some("acct-1"), None),
+            "should not suppress unrelated title"
+        );
+    }
+
+    #[test]
+    fn is_action_suppressed_blocks_source_fatigue() {
+        let db = test_db();
+
+        db.conn
+            .execute(
+                "INSERT INTO rejected_action_patterns
+                    (account_id, pattern_type, pattern_value, rejection_count,
+                     first_rejected_at, last_rejected_at, suppressed)
+                 VALUES ('acct-1', 'source_fatigue', 'briefing', 5,
+                         datetime('now'), datetime('now'), 1)",
+                [],
+            )
+            .expect("seed pattern");
+
+        assert!(
+            db.is_action_suppressed("Any new action", Some("acct-1"), Some("briefing")),
+            "should suppress fatigued source"
+        );
+        assert!(
+            !db.is_action_suppressed("Any new action", Some("acct-1"), Some("transcript")),
+            "should not suppress different source"
+        );
+    }
+
+    #[test]
+    fn is_action_suppressed_blocks_keyword_match() {
+        let db = test_db();
+
+        db.conn
+            .execute(
+                "INSERT INTO rejected_action_patterns
+                    (account_id, pattern_type, pattern_value, rejection_count,
+                     first_rejected_at, last_rejected_at, suppressed)
+                 VALUES ('acct-1', 'keyword', 'quarterly', 4,
+                         datetime('now'), datetime('now'), 1)",
+                [],
+            )
+            .expect("seed pattern");
+
+        assert!(
+            db.is_action_suppressed("Prepare quarterly review", Some("acct-1"), None),
+            "should suppress keyword match"
+        );
+        assert!(
+            !db.is_action_suppressed("Prepare weekly review", Some("acct-1"), None),
+            "should not suppress without matching keyword"
+        );
+    }
+
+    #[test]
+    fn extract_significant_keywords_filters_stop_words() {
+        let keywords = super::extract_significant_keywords("follow up with the team for a review");
+        assert!(keywords.contains(&"follow".to_string()));
+        assert!(keywords.contains(&"team".to_string()));
+        assert!(keywords.contains(&"review".to_string()));
+        assert!(!keywords.contains(&"the".to_string()));
+        assert!(!keywords.contains(&"for".to_string()));
+        // "up" is 2 chars, filtered by length
+        assert!(!keywords.contains(&"up".to_string()));
+    }
+
+    #[test]
+    fn upsert_rejection_pattern_increments_on_duplicate() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        db.upsert_rejection_pattern(Some("acct-1"), "exact_title", "test action", 1, &now)
+            .expect("first upsert");
+        db.upsert_rejection_pattern(Some("acct-1"), "exact_title", "test action", 1, &now)
+            .expect("second upsert");
+
+        let count: i64 = db
+            .conn
+            .query_row(
+                "SELECT rejection_count FROM rejected_action_patterns
+                 WHERE account_id = 'acct-1' AND pattern_type = 'exact_title'
+                   AND pattern_value = 'test action'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2, "rejection_count should be incremented");
     }
 }
