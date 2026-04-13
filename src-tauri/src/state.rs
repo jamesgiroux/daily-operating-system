@@ -1515,6 +1515,9 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
             account_name: None,
             next_meeting_title: None,
             next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
         };
 
         if db.upsert_action_if_not_completed(&action).is_ok() {
