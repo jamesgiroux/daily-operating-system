@@ -72,6 +72,12 @@ export interface FolioBarProps {
    * pulses to indicate background intelligence processing.
    */
   backgroundWork?: BackgroundWorkState;
+
+  /**
+   * Mode badge — rendered between brand mark and publication label.
+   * Used for LIVE/DEV mode indicator in debug builds.
+   */
+  modeBadge?: React.ReactNode;
 }
 
 export const FolioBar: React.FC<FolioBarProps> = ({
@@ -83,6 +89,7 @@ export const FolioBar: React.FC<FolioBarProps> = ({
   backLink,
   actions,
   backgroundWork,
+  modeBadge,
 }) => {
   const markClass = backgroundWork?.phase === 'started'
     ? `${styles.folioMark} ${styles.folioMarkPulsing}`
@@ -116,6 +123,7 @@ export const FolioBar: React.FC<FolioBarProps> = ({
                 <BrandMark className={markClass} size={18} />
               </Link>
             )}
+            {modeBadge}
             <span className={styles.folioPub}>{publicationLabel}</span>
           </>
         )}

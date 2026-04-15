@@ -68,8 +68,18 @@ export function DevToolsPanel() {
   return <DevToolsPanelInner />;
 }
 
-function DevToolsPanelInner() {
-  const [open, setOpen] = useState(false);
+function DevToolsPanelInner({
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  hideWrench,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideWrench?: boolean;
+} = {}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = controlledOnOpenChange ?? setInternalOpen;
   const [devState, setDevState] = useState<DevState | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
 
@@ -132,14 +142,16 @@ function DevToolsPanelInner() {
 
   return (
     <>
-      {/* Floating wrench button */}
-      <button
-        onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-muted/80 text-muted-foreground shadow-md backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
-        title="Dev Tools"
-      >
-        <Wrench className="h-4 w-4" />
-      </button>
+      {/* Floating wrench button — hidden when opened via external trigger (badge/standalone) */}
+      {!hideWrench && (
+        <button
+          onClick={() => setOpen(true)}
+          className="fixed bottom-4 right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-muted/80 text-muted-foreground shadow-md backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
+          title="Dev Tools"
+        >
+          <Wrench className="h-4 w-4" />
+        </button>
+      )}
 
       <Sheet open={open} onOpenChange={setOpen} modal={false}>
         <SheetContent side="right" className="w-[380px] overflow-y-auto" showOverlay={false}>
@@ -475,5 +487,58 @@ function ScenarioButton({
         <div className="text-xs font-normal opacity-70">{description}</div>
       </div>
     </Button>
+  );
+}
+
+/**
+ * DevToolsPanelSheet — controlled sheet variant for use by FolioBar badge.
+ * Opens the dev tools panel without the floating wrench button.
+ */
+export function DevToolsPanelSheet({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return <DevToolsPanelInner open={open} onOpenChange={onOpenChange} hideWrench />;
+}
+
+/**
+ * DevToolsPanelStandalone — floating wrench button for non-magazine shells.
+ * Gated: only renders when dev mode is actually enabled (config OR DB flag).
+ */
+export function DevToolsPanelStandalone() {
+  const [enabled, setEnabled] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    Promise.all([
+      invoke<{ developerMode?: boolean }>("get_config")
+        .then((cfg) => cfg.developerMode === true)
+        .catch(() => false),
+      invoke<{ isDevDbMode?: boolean }>("dev_get_state")
+        .then((s) => s.isDevDbMode === true)
+        .catch(() => false),
+    ]).then(([configEnabled, sandboxActive]) => {
+      setEnabled(configEnabled || sandboxActive);
+    });
+  }, []);
+
+  if (!import.meta.env.DEV || !enabled) return null;
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="fixed bottom-4 right-4 z-50 flex h-8 w-8 items-center justify-center rounded-full bg-muted/80 text-muted-foreground shadow-md backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
+        title="Dev Tools"
+        style={{ fontSize: 14 }}
+      >
+        &#9881;
+      </button>
+      <DevToolsPanelInner open={open} onOpenChange={setOpen} />
+    </>
   );
 }
