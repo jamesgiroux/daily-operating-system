@@ -44,7 +44,7 @@ hex = "0.4"
 walkdir = "2"
 
 # Sprint 8: Native Google API (ADR-0049)
-reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream", "blocking"], default-features = false }
 url = "2"
 open = "5"
 base64 = "0.22"
@@ -73,6 +73,7 @@ dashmap = "6"
 
 # Non-poisoning Mutex/RwLock — prevents cascade crashes when a task panics while holding a lock
 parking_lot = "0.12"
+tempfile = "3"
 
 # MCP Server (ADR-0075) + Quill MCP client
 rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-child-process", "macros"] }
@@ -81,7 +82,6 @@ anyhow = { version = "1", optional = true }
 
 [dev-dependencies]
 filetime = "0.2.27"
-tempfile = "3"
 
 [features]
 mcp = ["dep:schemars", "dep:anyhow"]
