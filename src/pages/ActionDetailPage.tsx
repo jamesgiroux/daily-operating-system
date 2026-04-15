@@ -95,7 +95,7 @@ export default function ActionDetailPage() {
         setLinearEnabled(enabled);
         if (enabled) {
           invoke<Array<{ id: string; name: string }>>("get_linear_teams")
-            .then((t) => { setTeams(t); if (t.length) setSelectedTeamId(t[0].id); })
+            .then((t) => { setTeams(t); })
             .catch(() => {});
         }
       })
@@ -427,34 +427,24 @@ export default function ActionDetailPage() {
                 </div>
               </div>
             ) : (detail.status === "backlog" || detail.status === "unstarted") ? (
-              <div className={s.refSection}>
-                <div className={s.refRow}>
-                  <span className={s.refKey}>Team</span>
-                  <div className={s.refValue}>
-                    <select
-                      value={selectedTeamId ?? ""}
-                      onChange={(e) => setSelectedTeamId(e.target.value)}
-                      className={s.linearSelect}
-                    >
-                      {teams.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className={s.refRow}>
-                  <span className={s.refKey} />
-                  <div className={s.refValue}>
-                    <button
-                      onClick={handlePushToLinear}
-                      disabled={pushing || !selectedTeamId}
-                      className={s.actionButton}
-                      style={{ opacity: pushing ? 0.5 : 1 }}
-                    >
-                      {pushing ? "Creating..." : "Create Linear Issue"}
-                    </button>
-                  </div>
-                </div>
+              <div className={s.linearPushRow}>
+                <select
+                  value={selectedTeamId ?? ""}
+                  onChange={(e) => setSelectedTeamId(e.target.value || null)}
+                  className={s.linearSelect}
+                >
+                  <option value="">Select a project</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handlePushToLinear}
+                  disabled={pushing || !selectedTeamId}
+                  className={selectedTeamId ? s.linearPushReady : s.linearPushDisabled}
+                >
+                  {pushing ? "Creating..." : "Create Linear Issue"}
+                </button>
               </div>
             ) : (
               <p className={s.autoNote}>
