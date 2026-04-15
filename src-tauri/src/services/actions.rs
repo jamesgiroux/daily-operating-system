@@ -587,6 +587,26 @@ pub fn resolve_decision(
     Ok(())
 }
 
+/// DOS-53: Count actions approaching the 30-day auto-archive threshold.
+///
+/// Returns the number of actions that are older than 14 days but not yet 30 days,
+/// in backlog/unstarted status, with priority > 1 and not waiting on anyone.
+/// These are at risk of aging out without being acted on.
+pub fn get_aging_action_count(db: &ActionDb) -> Result<i64, String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT COUNT(*) FROM actions
+             WHERE status IN ('backlog', 'unstarted')
+               AND created_at < datetime('now', '-14 days')
+               AND created_at >= datetime('now', '-30 days')
+               AND priority > 1
+               AND waiting_on IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())
+}
+
 /// Scan unstarted/backlog actions for decision-indicating keywords and flag them (DOS-17).
 ///
 /// Called after action creation and from the scheduler.
