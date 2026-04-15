@@ -771,6 +771,9 @@ pub fn run() {
             commands::create_linear_entity_link,
             commands::run_linear_auto_link,
             commands::delete_linear_entity_link,
+            // DOS-50/51: Push Action to Linear
+            commands::get_linear_teams,
+            commands::push_action_to_linear,
             // I309: Role Presets
             commands::set_role,
             commands::get_active_preset,
