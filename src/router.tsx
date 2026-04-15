@@ -58,7 +58,7 @@ import { MagazineShellContext, useMagazineShellProvider } from "@/hooks/useMagaz
 // Global overlays
 import { PostMeetingPrompt } from "@/components/PostMeetingPrompt";
 import { Toaster } from "@/components/ui/sonner";
-import { DevToolsPanel } from "@/components/devtools/DevToolsPanel";
+import { DevToolsPanelStandalone } from "@/components/devtools/DevToolsPanel";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useBackgroundStatus } from "@/hooks/useBackgroundStatus";
 import type { CalendarEvent, GoogleAuthStatus } from "@/types";
@@ -379,7 +379,7 @@ function RootLayout() {
     return (
       <ThemeProvider>
         <StartupWelcomeOverlay fading={false} />
-        <DevToolsPanel />
+        <DevToolsPanelStandalone />
       </ThemeProvider>
     );
   }
@@ -413,7 +413,7 @@ function RootLayout() {
       <ThemeProvider>
         <OnboardingFlow onComplete={handleOnboardingComplete} />
         <Toaster position="bottom-right" />
-        <DevToolsPanel />
+        <DevToolsPanelStandalone />
       </ThemeProvider>
     );
   }
@@ -447,7 +447,6 @@ function RootLayout() {
             <ICloudWarningModal />
             <TourTips />
             <Toaster position="bottom-right" />
-            <DevToolsPanel />
             {showWelcomeOverlay && <StartupWelcomeOverlay fading={welcomeFading} />}
           </ClaudeStatusCtx.Provider>
           </AppStateCtx.Provider>
@@ -475,7 +474,7 @@ function RootLayout() {
           <ICloudWarningModal />
           <TourTips />
           <Toaster position="bottom-right" />
-          <DevToolsPanel />
+          <DevToolsPanelStandalone />
           {showWelcomeOverlay && <StartupWelcomeOverlay fading={welcomeFading} />}
         </ClaudeStatusCtx.Provider>
         </AppStateCtx.Provider>
