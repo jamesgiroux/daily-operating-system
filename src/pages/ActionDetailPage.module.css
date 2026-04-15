@@ -367,6 +367,12 @@
 
 /* ── Linear section ── */
 
+.linearPushRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .linearSelect {
   font-family: var(--font-sans);
   font-size: 14px;
@@ -377,4 +383,41 @@
   padding: 2px 0;
   outline: none;
   cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.linearPushReady {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 20px;
+  border: 1px solid var(--color-text-primary);
+  border-radius: 4px;
+  background: var(--color-text-primary);
+  color: var(--color-cream);
+  cursor: pointer;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.linearPushReady:hover {
+  opacity: 0.85;
+}
+
+.linearPushDisabled {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 20px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+  flex-shrink: 0;
 }
