@@ -470,6 +470,7 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
         allEmails={emails}
         todayMeetingIds={new Set(meetings.map((m) => m.id))}
         emailSyncTimestamp={data.emailSync?.lastSuccessAt}
+        agingActionCount={data.agingActionCount}
       />
 
       <Dialog open={!!correctionTarget} onOpenChange={closeCorrection}>
@@ -572,6 +573,7 @@ function AttentionSection({
   allEmails,
   todayMeetingIds,
   emailSyncTimestamp,
+  agingActionCount,
 }: {
   lifecycleUpdates: DashboardLifecycleUpdate[];
   briefingCallouts: BriefingCallout[];
@@ -593,6 +595,7 @@ function AttentionSection({
   allEmails: Email[];
   todayMeetingIds: Set<string>;
   emailSyncTimestamp?: string;
+  agingActionCount?: number;
 }) {
   // Filter attention-worthy actions: meeting-relevant for today OR overdue (max 3)
   const attentionActions = useMemo(() => {
@@ -631,7 +634,8 @@ function AttentionSection({
   const hasLifecycle = todayLifecycle.length > 0;
   // Callouts disabled: raw signal data violates ADR-0083 vocabulary rules.
   const hasCallouts = false;
-  const hasAnything = hasLifecycle || hasActions || hasEmails;
+  const hasAging = (agingActionCount ?? 0) > 0;
+  const hasAnything = hasLifecycle || hasActions || hasEmails || hasAging;
 
   if (!hasAnything) return null;
 
@@ -764,6 +768,13 @@ function AttentionSection({
                   })
                 )}
               </div>
+            </div>
+          )}
+
+          {/* DOS-53: Aging awareness — subtle line when actions approach auto-archive */}
+          {hasAging && (
+            <div className={briefingStyles.agingNotice}>
+              {agingActionCount} {agingActionCount === 1 ? "item" : "items"} aging toward auto-archive
             </div>
           )}
 
