@@ -343,15 +343,7 @@ export default function LinearConnection() {
                 color: "var(--color-text-tertiary)",
                 margin: "2px 0 0",
               }}>
-                <a
-                  href="https://linear.app/settings/api"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: "var(--color-spice-turmeric)", textDecoration: "underline" }}
-                >
-                  linear.app/settings/api
-                </a>
-                {" "}→ Personal API Keys → Create key
+                In Linear: Settings → Security &amp; access → Personal API Keys
               </p>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                 <input
