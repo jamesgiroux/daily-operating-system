@@ -1235,7 +1235,7 @@ pub async fn track_recommendation(
                 id: id.clone(),
                 title: rec.title.clone(),
                 priority: rec.priority,
-                status: crate::action_status::BACKLOG.to_string(),
+                status: crate::action_status::UNSTARTED.to_string(),
                 created_at: now.clone(),
                 due_date: rec.suggested_due.clone(),
                 completed_at: None,
