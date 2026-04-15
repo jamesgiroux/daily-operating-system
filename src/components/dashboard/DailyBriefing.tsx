@@ -157,7 +157,11 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
   // reconciliation will remove archived ones within seconds.
   const briefingEmails = (() => {
     if (emails.length === 0) return [];
-    const ranked = [...emails].sort(compareEmailRank);
+    // Only consider emails linked to a known entity (account/person/project).
+    // Unlinked emails (newsletters, marketing, stock alerts) should never
+    // appear on the daily briefing — the briefing is about your portfolio.
+    const entityLinked = emails.filter((e) => e.entityId);
+    const ranked = [...entityLinked].sort(compareEmailRank);
     const scored = ranked
       .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
       .slice(0, 5);
@@ -167,8 +171,9 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
       .filter((e) => !scoredIds.has(e.id) && e.summary && e.summary.trim().length > 0)
       .slice(0, Math.max(0, 5 - scored.length));
     const selected = [...scored, ...enrichedFill].slice(0, 5);
-    // Fallback: if no emails passed score/enrichment filters, show top by rank
-    return selected.length > 0 ? selected : ranked.slice(0, 5);
+    // No fallback — if no entity-linked emails pass filters, show nothing.
+    // Showing unfiltered emails by recency defeats the purpose of the briefing.
+    return selected;
   })();
   const emailSectionLabel = briefingEmails.length > 0 ? "WORTH YOUR ATTENTION" : "";
 
