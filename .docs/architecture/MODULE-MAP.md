@@ -86,7 +86,7 @@
 | `pty.rs` | 991 | 2 | PTY Manager for Claude Code subprocess management |
 | `risk_briefing.rs` | 596 | 5 | Risk Briefing generation for at-risk accounts. |
 | `scheduler.rs` | 748 | 2 | Scheduler for cron-based workflow execution |
-| `state.rs` | 1595 | 12 | AppState — DB, PTY, config |
+| `state.rs` | 1615 | 12 | AppState — DB, PTY, config |
 | `task_supervisor.rs` | 34 | 1 | — |
 | `types.rs` | 3223 | 7 | Shared type definitions |
 | `util.rs` | 1267 | 28 | — |
