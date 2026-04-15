@@ -1753,6 +1753,43 @@ pub async fn create_linear_entity_link(
 }
 
 // =============================================================================
+// DOS-50/51: Push Action to Linear
+// =============================================================================
+
+/// Fetch teams from Linear for the push dialog.
+#[tauri::command]
+pub async fn get_linear_teams(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::linear::client::LinearTeam>, String> {
+    let api_key = state
+        .config
+        .read()
+        .as_ref()
+        .and_then(|c| c.linear.api_key.clone())
+        .ok_or("No Linear API key configured")?;
+
+    let client = crate::linear::client::LinearClient::new(&api_key);
+    client.fetch_teams().await
+}
+
+/// Push a DailyOS action to Linear as a new issue (DOS-51).
+#[tauri::command]
+pub async fn push_action_to_linear(
+    action_id: String,
+    team_id: String,
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::services::linear::LinearPushResult, String> {
+    crate::services::linear::push_action_to_linear(
+        &state,
+        &action_id,
+        &team_id,
+        project_id.as_deref(),
+    )
+    .await
+}
+
+// =============================================================================
 // I309: Role Presets
 // =============================================================================
 

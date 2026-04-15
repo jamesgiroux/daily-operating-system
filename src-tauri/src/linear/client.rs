@@ -41,6 +41,24 @@ pub struct LinearProject {
     pub url: String,
 }
 
+/// A Linear team.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearTeam {
+    pub id: String,
+    pub name: String,
+}
+
+/// Result of creating an issue via the Linear API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearCreatedIssue {
+    pub id: String,
+    pub identifier: String,
+    pub title: String,
+    pub url: String,
+}
+
 pub struct LinearClient {
     client: reqwest::Client,
     api_key: String,
@@ -56,6 +74,22 @@ impl LinearClient {
 
     async fn graphql<T: serde::de::DeserializeOwned>(&self, query: &str) -> Result<T, String> {
         let body = serde_json::json!({ "query": query });
+        self.execute_graphql(body).await
+    }
+
+    async fn graphql_with_vars<T: serde::de::DeserializeOwned>(
+        &self,
+        query: &str,
+        variables: serde_json::Value,
+    ) -> Result<T, String> {
+        let body = serde_json::json!({ "query": query, "variables": variables });
+        self.execute_graphql(body).await
+    }
+
+    async fn execute_graphql<T: serde::de::DeserializeOwned>(
+        &self,
+        body: serde_json::Value,
+    ) -> Result<T, String> {
         let resp = self
             .client
             .post(LINEAR_API_URL)
@@ -238,5 +272,108 @@ impl LinearClient {
         }
 
         Ok(projects)
+    }
+
+    /// Fetch all teams the authenticated user belongs to.
+    pub async fn fetch_teams(&self) -> Result<Vec<LinearTeam>, String> {
+        #[derive(Deserialize)]
+        struct TeamsResponse {
+            teams: TeamConnection,
+        }
+        #[derive(Deserialize)]
+        struct TeamConnection {
+            nodes: Vec<LinearTeam>,
+        }
+
+        let query = r#"{
+            teams {
+                nodes {
+                    id name
+                }
+            }
+        }"#;
+
+        let resp: TeamsResponse = self.graphql(query).await?;
+        Ok(resp.teams.nodes)
+    }
+
+    /// Create a new issue in Linear.
+    pub async fn create_issue(
+        &self,
+        title: &str,
+        team_id: &str,
+        description: Option<&str>,
+        project_id: Option<&str>,
+        priority: Option<i32>,
+        due_date: Option<&str>,
+    ) -> Result<LinearCreatedIssue, String> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct IssueCreateResponse {
+            issue_create: IssueCreatePayload,
+        }
+        #[derive(Deserialize)]
+        struct IssueCreatePayload {
+            success: bool,
+            issue: Option<IssueNode>,
+        }
+        #[derive(Deserialize)]
+        struct IssueNode {
+            id: String,
+            identifier: String,
+            title: String,
+            url: String,
+        }
+
+        let mutation = r#"
+            mutation IssueCreate($input: IssueCreateInput!) {
+                issueCreate(input: $input) {
+                    success
+                    issue {
+                        id
+                        identifier
+                        title
+                        url
+                    }
+                }
+            }
+        "#;
+
+        let mut input = serde_json::json!({
+            "title": title,
+            "teamId": team_id,
+        });
+
+        if let Some(desc) = description {
+            input["description"] = serde_json::Value::String(desc.to_string());
+        }
+        if let Some(pid) = project_id {
+            input["projectId"] = serde_json::Value::String(pid.to_string());
+        }
+        if let Some(p) = priority {
+            input["priority"] = serde_json::Value::Number(serde_json::Number::from(p));
+        }
+        if let Some(dd) = due_date {
+            input["dueDate"] = serde_json::Value::String(dd.to_string());
+        }
+
+        let variables = serde_json::json!({ "input": input });
+        let resp: IssueCreateResponse = self.graphql_with_vars(mutation, variables).await?;
+
+        if !resp.issue_create.success {
+            return Err("Linear issueCreate returned success=false".to_string());
+        }
+
+        let issue = resp
+            .issue_create
+            .issue
+            .ok_or("Linear issueCreate succeeded but returned no issue")?;
+
+        Ok(LinearCreatedIssue {
+            id: issue.id,
+            identifier: issue.identifier,
+            title: issue.title,
+            url: issue.url,
+        })
     }
 }
