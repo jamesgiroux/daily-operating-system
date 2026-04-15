@@ -32,11 +32,7 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
             continue;
         }
 
-        let granola_config = state
-            .config
-            .read()
-            .as_ref()
-            .map(|c| c.granola.clone());
+        let granola_config = state.config.read().as_ref().map(|c| c.granola.clone());
 
         let config = match granola_config {
             Some(cfg) if cfg.enabled => cfg,
@@ -179,7 +175,8 @@ fn poll_once(
         emit_transcript_processed(state, app_handle, &matched.meeting_id);
 
         if result.is_ok() {
-            let _ = crate::notification::notify_transcript_ready(app_handle, &doc.title, None, state);
+            let _ =
+                crate::notification::notify_transcript_ready(app_handle, &doc.title, None, state);
         }
     }
 
@@ -328,7 +325,11 @@ fn process_granola_document(
                 let db_action = crate::db::DbAction {
                     id: format!("granola-{}-{}", meeting_id, i),
                     title: action.title.clone(),
-                    priority: action.priority.as_deref().map(crate::action_status::migrate_priority).unwrap_or(crate::action_status::PRIORITY_MEDIUM),
+                    priority: action
+                        .priority
+                        .as_deref()
+                        .map(crate::action_status::migrate_priority)
+                        .unwrap_or(crate::action_status::PRIORITY_MEDIUM),
                     status: crate::action_status::BACKLOG.to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
@@ -348,6 +349,8 @@ fn process_granola_document(
                     needs_decision: false,
                     decision_owner: None,
                     decision_stakes: None,
+                    linear_identifier: None,
+                    linear_url: None,
                 };
                 match db.upsert_action_if_not_completed(&db_action) {
                     Ok(()) => written += 1,
