@@ -521,6 +521,8 @@ mod tests {
             needs_decision: false,
             decision_owner: None,
             decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         };
         db.upsert_action(&stale_action).expect("insert");
 

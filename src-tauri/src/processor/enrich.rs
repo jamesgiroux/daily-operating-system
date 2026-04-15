@@ -841,7 +841,11 @@ pub fn extract_actions_from_ai(
         let action = crate::db::DbAction {
             id: format!("ai-{}-{}", source_filename.trim_end_matches(".md"), count),
             title: meta.clean_title,
-            priority: meta.priority.as_deref().map(crate::action_status::migrate_priority).unwrap_or(crate::action_status::PRIORITY_MEDIUM),
+            priority: meta
+                .priority
+                .as_deref()
+                .map(crate::action_status::migrate_priority)
+                .unwrap_or(crate::action_status::PRIORITY_MEDIUM),
             status,
             created_at: now.clone(),
             due_date: meta.due_date,
@@ -865,6 +869,8 @@ pub fn extract_actions_from_ai(
             needs_decision: false,
             decision_owner: None,
             decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         };
 
         if let Err(e) = db.upsert_action_if_not_completed(&action) {
