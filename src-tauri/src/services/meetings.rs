@@ -1024,6 +1024,8 @@ pub async fn capture_meeting_outcome(
                     needs_decision: false,
                     decision_owner: None,
                     decision_stakes: None,
+                    linear_identifier: None,
+                    linear_url: None,
                 };
                 if let Err(e) = db.upsert_action(&db_action) {
                     log::warn!("Failed to save captured action: {}", e);
@@ -2925,10 +2927,7 @@ pub async fn attach_meeting_transcript(
     app_handle: tauri::AppHandle,
 ) -> Result<crate::types::TranscriptResult, String> {
     {
-        let mut guard = state
-            .capture
-            .transcript_processed
-            .lock();
+        let mut guard = state.capture.transcript_processed.lock();
         if guard.contains_key(&meeting.id) {
             return Err(format!(
                 "Meeting '{}' already has a processed transcript",
