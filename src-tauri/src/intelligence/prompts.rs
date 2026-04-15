@@ -330,6 +330,35 @@ pub fn build_intelligence_context(
         ctx.open_actions = lines.join("\n");
     }
 
+    // --- DOS-53: Actions tracked in Linear ---
+    if let Ok(mut stmt) = db.conn.prepare(
+        "SELECT a.title, all2.linear_identifier, a.status
+         FROM actions a
+         JOIN action_linear_links all2 ON a.id = all2.action_id
+         WHERE a.account_id = ?1 OR a.project_id = ?1
+         ORDER BY all2.pushed_at DESC
+         LIMIT 5",
+    ) {
+        let rows: Vec<(String, String, String)> = stmt
+            .query_map(rusqlite::params![entity_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map(|r| r.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default();
+        if !rows.is_empty() {
+            let lines: Vec<String> = rows
+                .iter()
+                .map(|(title, identifier, status)| {
+                    format!("- [{}] {} ({})", identifier, title, status)
+                })
+                .collect();
+            ctx.extra_blocks.push(format!(
+                "## Actions Tracked in Linear\n{}",
+                lines.join("\n")
+            ));
+        }
+    }
+
     // --- Recent captures ---
     let captures = match entity_type {
         "account" => db
