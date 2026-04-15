@@ -231,6 +231,16 @@ export interface DbAction {
   decisionOwner?: string;
   /** What's at stake if the decision is delayed (DOS-17) */
   decisionStakes?: string;
+  /** Linear issue identifier when pushed to Linear (DOS-52) */
+  linearIdentifier?: string;
+  /** Linear issue URL when pushed to Linear (DOS-52) */
+  linearUrl?: string;
+}
+
+/** Result of pushing an action to Linear (DOS-52). */
+export interface LinearPushResult {
+  identifier: string;
+  url: string;
 }
 
 export interface DayStats {
