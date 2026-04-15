@@ -276,7 +276,7 @@ export default function LinearConnection() {
     <div>
       <p style={styles.subsectionLabel}>Linear Issue Tracking</p>
       <p style={{ ...styles.description, marginBottom: 16 }}>
-        Sync your assigned issues and projects from Linear
+        Sync issues, push action items to Linear, and link projects to accounts. Uses the Linear API directly (not MCP).
       </p>
 
       <div style={styles.settingRow}>
@@ -333,9 +333,9 @@ export default function LinearConnection() {
 
           <div style={{ ...styles.settingRow, borderBottom: "none" }}>
             <div style={{ flex: 1 }}>
-              <span style={styles.monoLabel}>API Key</span>
+              <span style={styles.monoLabel}>Personal API Key</span>
               <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                Personal API key from Linear settings
+                A personal API key from your Linear account. This is not the same as Linear MCP.
               </p>
               <p style={{
                 fontFamily: "var(--font-sans)",
@@ -343,7 +343,15 @@ export default function LinearConnection() {
                 color: "var(--color-text-tertiary)",
                 margin: "2px 0 0",
               }}>
-                Create one in Linear → Settings → API → Personal API Keys
+                <a
+                  href="https://linear.app/settings/api"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "var(--color-spice-turmeric)", textDecoration: "underline" }}
+                >
+                  linear.app/settings/api
+                </a>
+                {" "}→ Personal API Keys → Create key
               </p>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                 <input
