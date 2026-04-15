@@ -1272,6 +1272,13 @@ pub async fn track_recommendation(
 
             db.upsert_action(&action).map_err(|e| e.to_string())?;
 
+            // Remove the tracked recommendation from intel to prevent duplicates
+            let mut updated_intel = intel.clone();
+            if index < updated_intel.recommended_actions.len() {
+                updated_intel.recommended_actions.remove(index);
+                let _ = db.upsert_entity_intelligence(&updated_intel);
+            }
+
             // Emit recommendation_accepted signal
             let _ = crate::services::signals::emit_and_propagate(
                 db,
