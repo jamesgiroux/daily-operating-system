@@ -104,7 +104,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       await invoke("create_action", {
         request: {
           title: trimmed,
-          priority: "P2",
+          priority: "3",
           accountId: entityContext.accountId,
           projectId: entityContext.projectId,
           personId: entityContext.personId,

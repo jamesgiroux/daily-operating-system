@@ -108,7 +108,7 @@ export function useActions(initialSearch?: string): UseActionsReturn {
       const id = await invoke<string>("create_action", {
         request: {
           title: params.title,
-          priority: params.priority,
+          priority: params.priority != null ? String(params.priority) : undefined,
           dueDate: params.dueDate,
           accountId: params.accountId,
           projectId: params.projectId,

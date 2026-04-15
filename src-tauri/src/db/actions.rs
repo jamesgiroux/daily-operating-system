@@ -34,7 +34,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
-             WHERE status = 'unstarted'
+             WHERE status IN ('unstarted', 'started')
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
                CASE WHEN due_date < date('now') THEN 0 ELSE 1 END,
@@ -74,7 +74,7 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'unstarted'
+             WHERE status IN ('unstarted', 'started')
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
                CASE
@@ -485,7 +485,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'unstarted'
-               AND source_type IN ('post_meeting', 'inbox', 'ai-inbox', 'transcript', 'import', 'manual')
+               AND source_type IN ('post_meeting', 'inbox', 'ai-inbox', 'transcript', 'import', 'manual', 'user_manual', 'intelligence')
              ORDER BY priority, created_at DESC",
         )?;
 
