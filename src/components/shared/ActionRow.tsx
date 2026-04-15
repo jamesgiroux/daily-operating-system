@@ -230,6 +230,7 @@ function FullActionRow({
       const result = await invoke<LinearPushResult>("push_action_to_linear", {
         actionId: action.id,
         teamId: selectedTeamId,
+        title: pushTitle.trim() !== action.title ? pushTitle.trim() : null,
       });
       setPushOpen(false);
       toast.success(
