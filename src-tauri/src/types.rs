@@ -1161,6 +1161,9 @@ pub struct DashboardData {
     /// Briefing callouts from signal propagation (I623 AC4).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub briefing_callouts: Vec<DashboardBriefingCallout>,
+    /// DOS-53: Count of actions approaching the 30-day auto-archive threshold.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aging_action_count: Option<i64>,
 }
 
 /// A briefing callout surfaced to the daily briefing (I623).

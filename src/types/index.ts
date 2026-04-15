@@ -400,6 +400,8 @@ export interface DashboardData {
   entityHealthMap?: Record<string, IntelligenceAccountHealth>;
   /** Briefing callouts from signal propagation (I623 AC4). */
   briefingCallouts?: BriefingCallout[];
+  /** DOS-53: Count of actions approaching the 30-day auto-archive threshold. */
+  agingActionCount?: number;
 }
 
 /** A briefing callout surfaced to the daily briefing (I623). */
