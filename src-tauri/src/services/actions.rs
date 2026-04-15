@@ -293,6 +293,8 @@ pub async fn create_action(
         needs_decision: false,
         decision_owner: None,
         decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
 
     let engine = state.signals.engine.clone();
@@ -322,7 +324,8 @@ pub async fn create_action(
 
             // DOS-15: Best-effort auto-link to matching objectives
             if let Some(ref acct_id) = action.account_id {
-                if let Err(e) = auto_link_action_to_objectives(db, &action.id, &action.title, acct_id)
+                if let Err(e) =
+                    auto_link_action_to_objectives(db, &action.id, &action.title, acct_id)
                 {
                     log::warn!("Auto-link action to objectives failed (non-fatal): {}", e);
                 }
@@ -408,9 +411,7 @@ pub async fn update_action(request: UpdateActionRequest, state: &AppState) -> Re
 
     crate::util::validate_id_slug(&id, "id")?;
     if let Some(ref p) = priority {
-        let pv: i32 = p
-            .parse()
-            .map_err(|_| format!("Invalid priority: {p}"))?;
+        let pv: i32 = p.parse().map_err(|_| format!("Invalid priority: {p}"))?;
         if !(0..=4).contains(&pv) {
             return Err(format!("Priority must be 0-4, got: {pv}"));
         }

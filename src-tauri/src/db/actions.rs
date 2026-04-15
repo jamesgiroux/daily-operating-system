@@ -28,9 +28,12 @@ impl ActionDb {
                      ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_start,
                     actions.needs_decision,
                     actions.decision_owner,
-                    actions.decision_stakes
+                    actions.decision_stakes,
+                    all_links.linear_identifier,
+                    all_links.linear_url
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
              WHERE status = 'unstarted'
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
@@ -48,6 +51,8 @@ impl ActionDb {
             action.needs_decision = nd != 0;
             action.decision_owner = row.get(20)?;
             action.decision_stakes = row.get(21)?;
+            action.linear_identifier = row.get(22)?;
+            action.linear_url = row.get(23)?;
             Ok(action)
         })?;
 
@@ -246,9 +251,11 @@ impl ActionDb {
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
-                    actions.needs_decision, actions.decision_owner, actions.decision_stakes
+                    actions.needs_decision, actions.decision_owner, actions.decision_stakes,
+                    all_links.linear_identifier, all_links.linear_url
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
              WHERE actions.id = ?1",
         )?;
 
@@ -258,6 +265,8 @@ impl ActionDb {
             action.needs_decision = nd != 0;
             action.decision_owner = row.get(18)?;
             action.decision_stakes = row.get(19)?;
+            action.linear_identifier = row.get(20)?;
+            action.linear_url = row.get(21)?;
             Ok(action)
         })?;
 
@@ -272,16 +281,23 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    all_links.linear_identifier, all_links.linear_url
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
              WHERE status = 'completed'
                AND completed_at >= datetime('now', ?1)
              ORDER BY completed_at DESC",
         )?;
 
         let hours_param = format!("-{} hours", since_hours);
-        let rows = stmt.query_map(params![hours_param], Self::map_action_row)?;
+        let rows = stmt.query_map(params![hours_param], |row| {
+            let mut action = Self::map_action_row(row)?;
+            action.linear_identifier = row.get(17)?;
+            action.linear_url = row.get(18)?;
+            Ok(action)
+        })?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -854,8 +870,15 @@ impl ActionDb {
     /// Returns the number of actions newly flagged.
     pub fn scan_and_flag_decisions(&self) -> Result<usize, DbError> {
         let keywords = [
-            "approval", "decision", "sign-off", "pending review",
-            "blocked on", "needs alignment", "budget", "legal", "escalat",
+            "approval",
+            "decision",
+            "sign-off",
+            "pending review",
+            "blocked on",
+            "needs alignment",
+            "budget",
+            "legal",
+            "escalat",
         ];
 
         // Build a WHERE clause that checks title and context for each keyword
@@ -911,6 +934,8 @@ impl ActionDb {
             needs_decision: false,
             decision_owner: None,
             decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         })
     }
 
@@ -998,10 +1023,7 @@ impl ActionDb {
                 .unwrap_or(false);
 
             if kw_match {
-                log::debug!(
-                    "Action suppressed by rejection pattern: keyword '{}'",
-                    kw
-                );
+                log::debug!("Action suppressed by rejection pattern: keyword '{}'", kw);
                 return true;
             }
         }
@@ -1015,10 +1037,7 @@ impl ActionDb {
     /// - `exact_title`: always suppressed after first rejection
     /// - `source_fatigue`: suppressed when >70% of source's actions for this account are rejected
     /// - `keyword`: suppressed when 3+ actions with the keyword have been rejected
-    pub fn record_rejection_pattern(
-        &self,
-        action: &DbAction,
-    ) -> Result<(), DbError> {
+    pub fn record_rejection_pattern(&self, action: &DbAction) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let normalized_title = action.title.to_lowercase().trim().to_string();
 
@@ -1141,12 +1160,11 @@ impl ActionDb {
 
 /// Stop words filtered out during keyword extraction for rejection pattern matching.
 const STOP_WORDS: &[&str] = &[
-    "the", "a", "an", "to", "for", "with", "and", "or", "is", "in", "on", "at",
-    "of", "by", "be", "do", "it", "if", "no", "so", "up", "as", "my", "we",
-    "he", "she", "me", "am", "are", "was", "has", "had", "not", "but", "can",
-    "all", "its", "our", "this", "that", "will", "from", "they", "been", "have",
-    "their", "what", "when", "make", "like", "just", "get", "into", "also",
-    "than", "them", "then", "some", "her", "him", "his", "how", "out", "who",
+    "the", "a", "an", "to", "for", "with", "and", "or", "is", "in", "on", "at", "of", "by", "be",
+    "do", "it", "if", "no", "so", "up", "as", "my", "we", "he", "she", "me", "am", "are", "was",
+    "has", "had", "not", "but", "can", "all", "its", "our", "this", "that", "will", "from", "they",
+    "been", "have", "their", "what", "when", "make", "like", "just", "get", "into", "also", "than",
+    "them", "then", "some", "her", "him", "his", "how", "out", "who",
 ];
 
 /// Extract significant keywords from an action title for rejection pattern matching.
@@ -1306,6 +1324,8 @@ mod tests {
             needs_decision: false,
             decision_owner: None,
             decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         };
 
         db.record_rejection_pattern(&action)

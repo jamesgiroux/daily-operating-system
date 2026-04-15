@@ -394,6 +394,8 @@ async fn process_sync_row(
                             needs_decision: false,
                             decision_owner: None,
                             decision_stakes: None,
+                            linear_identifier: None,
+                            linear_url: None,
                         };
                         match db.upsert_action_if_not_completed(&db_action) {
                             Ok(()) => written += 1,
@@ -473,7 +475,8 @@ async fn process_sync_row(
 
     // Send native notification on success
     if result.is_ok() {
-        let _ = crate::notification::notify_transcript_ready(app_handle, &meeting.title, None, state);
+        let _ =
+            crate::notification::notify_transcript_ready(app_handle, &meeting.title, None, state);
     }
 }
 
@@ -551,7 +554,12 @@ pub fn check_ended_meetings_for_sync(state: &AppState) {
         }
 
         // Check transcript immutability — skip if already processed
-        if state.capture.transcript_processed.lock().contains_key(&event.id) {
+        if state
+            .capture
+            .transcript_processed
+            .lock()
+            .contains_key(&event.id)
+        {
             continue;
         }
 

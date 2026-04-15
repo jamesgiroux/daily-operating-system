@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useSearch } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import { useActions } from "@/hooks/useActions";
 import { useSuggestedActions } from "@/hooks/useSuggestedActions";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -10,7 +11,7 @@ import { EntityPicker } from "@/components/ui/entity-picker";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import type { CreateActionParams } from "@/hooks/useActions";
-import type { DbAction } from "@/types";
+import type { DbAction, LinearStatusData } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { stripMarkdown } from "@/lib/utils";
 import { toast } from "sonner";
@@ -158,6 +159,14 @@ export default function ActionsPage() {
   const { suggestedActions, acceptAction, rejectAction } = useSuggestedActions();
 
   const [showCreate, setShowCreate] = useState(false);
+  const [linearEnabled, setLinearEnabled] = useState(false);
+
+  // Check if Linear integration is enabled (DOS-52)
+  useEffect(() => {
+    invoke<LinearStatusData>("get_linear_status")
+      .then((s) => setLinearEnabled(s.enabled && s.apiKeySet))
+      .catch(() => {}); // Silently fail — Linear features just won't show
+  }, []);
 
   // Computed stats
   const suggestedCount = suggestedActions.length;
@@ -351,7 +360,7 @@ export default function ActionsPage() {
           })()
         ) : statusFilter === "unstarted" ? (
           // Grouped view for active tab
-          <PendingGroupedView actions={actions} onToggle={toggleAction} />
+          <PendingGroupedView actions={actions} onToggle={toggleAction} linearEnabled={linearEnabled} onLinearPush={refresh} />
         ) : (
           <div className={s.actionColumn}>
             {actions.map((action, i) => (
@@ -360,6 +369,8 @@ export default function ActionsPage() {
                 variant="full"
                 action={action}
                 onToggle={() => toggleAction(action.id)}
+                onLinearPush={refresh}
+                linearEnabled={linearEnabled}
                 showBorder={i < actions.length - 1}
                 stripMarkdown={stripMarkdown}
                 formatDate={formatDueDate}
@@ -380,9 +391,13 @@ export default function ActionsPage() {
 function PendingGroupedView({
   actions,
   onToggle,
+  linearEnabled,
+  onLinearPush,
 }: {
   actions: DbAction[];
   onToggle: (id: string) => void;
+  linearEnabled?: boolean;
+  onLinearPush?: () => void;
 }) {
   const groups = useMemo(() => groupByMeeting(actions), [actions]);
 
@@ -399,6 +414,8 @@ function PendingGroupedView({
                   variant="full"
                   action={action}
                   onToggle={() => onToggle(action.id)}
+                  onLinearPush={onLinearPush}
+                  linearEnabled={linearEnabled}
                   showBorder={i < group.actions.length - 1}
                   stripMarkdown={stripMarkdown}
                   formatDate={formatDueDate}

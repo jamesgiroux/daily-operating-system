@@ -68,11 +68,11 @@ pub fn prioritize_actions(
 
 fn score_action(action: DbAction, today: NaiveDate) -> ScoredAction {
     let base = match action.priority {
-        1 => P1_BASE_SCORE,  // Urgent
-        2 => 50,             // High
-        3 => P2_BASE_SCORE,  // Medium
-        4 => P3_BASE_SCORE,  // Low
-        _ => 30,             // None/unknown
+        1 => P1_BASE_SCORE, // Urgent
+        2 => 50,            // High
+        3 => P2_BASE_SCORE, // Medium
+        4 => P3_BASE_SCORE, // Low
+        _ => 30,            // None/unknown
     };
 
     let due = action
@@ -123,7 +123,13 @@ fn score_action(action: DbAction, today: NaiveDate) -> ScoredAction {
     let score = base + urgency_points + customer_points + blocked_penalty;
     let effort_minutes = estimate_effort_minutes(&action.title, action.priority);
 
-    let mut reason_parts = vec![due_label, format!("{} priority", crate::action_status::priority_label(action.priority))];
+    let mut reason_parts = vec![
+        due_label,
+        format!(
+            "{} priority",
+            crate::action_status::priority_label(action.priority)
+        ),
+    ];
     if customer_points > 0 {
         reason_parts.push("customer-facing".to_string());
     }
@@ -171,10 +177,10 @@ fn estimate_effort_minutes(title: &str, priority: i32) -> u32 {
     }
 
     match priority {
-        1 => 45,       // Urgent
-        2 => 35,       // High
-        3 => 30,       // Medium
-        _ => 20,       // Low/None
+        1 => 45, // Urgent
+        2 => 35, // High
+        3 => 30, // Medium
+        _ => 20, // Low/None
     }
 }
 
@@ -264,6 +270,8 @@ mod tests {
             needs_decision: false,
             decision_owner: None,
             decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         }
     }
 
@@ -339,15 +347,7 @@ mod tests {
                 None,
                 None,
             ), // 90
-            action(
-                "a2",
-                "Quick reply",
-                1,
-                Some(&today),
-                "pending",
-                None,
-                None,
-            ), // 20
+            action("a2", "Quick reply", 1, Some(&today), "pending", None, None), // 20
         ];
 
         let (ranked, _, implications) = prioritize_actions(actions, 60);
@@ -369,15 +369,7 @@ mod tests {
                 None,
                 None,
             ),
-            action(
-                "a2",
-                "Deep design",
-                1,
-                Some(&today),
-                "pending",
-                None,
-                None,
-            ),
+            action("a2", "Deep design", 1, Some(&today), "pending", None, None),
             action("a3", "Deep plan", 1, Some(&today), "pending", None, None),
         ];
 

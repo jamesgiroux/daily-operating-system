@@ -40,9 +40,9 @@ fn merge_user_confirmed_values(
         .collect();
 
     // Remove AI items that duplicate user-confirmed items
-    new_intel.value_delivered.retain(|v| {
-        !confirmed_statements.contains(&v.statement.trim().to_lowercase())
-    });
+    new_intel
+        .value_delivered
+        .retain(|v| !confirmed_statements.contains(&v.statement.trim().to_lowercase()));
 
     // Prepend user-confirmed items (they take priority)
     let mut merged = user_confirmed;
@@ -1141,9 +1141,7 @@ pub async fn generate_risk_briefing(
             let db =
                 crate::db::ActionDb::open().map_err(|e| format!("Database unavailable: {e}"))?;
 
-            let config_guard = app_state
-                .config
-                .read();
+            let config_guard = app_state.config.read();
             let config = config_guard
                 .as_ref()
                 .ok_or_else(|| "Config not initialized".to_string())?;
@@ -1268,6 +1266,8 @@ pub async fn track_recommendation(
                 needs_decision: false,
                 decision_owner: None,
                 decision_stakes: None,
+                linear_identifier: None,
+                linear_url: None,
             };
 
             db.upsert_action(&action).map_err(|e| e.to_string())?;
@@ -1340,8 +1340,7 @@ pub async fn dismiss_recommendation(
                 account.as_ref(),
             )?;
 
-            let mut intel =
-                crate::intelligence::read_intelligence_json(&dir).unwrap_or_default();
+            let mut intel = crate::intelligence::read_intelligence_json(&dir).unwrap_or_default();
 
             if index >= intel.recommended_actions.len() {
                 return Err(format!("Recommendation index {} out of bounds", index));
@@ -1384,9 +1383,7 @@ pub fn get_all_recommended_actions(
     // Query all entity_assessment rows that have dimensions_json containing recommendedActions
     let conn = db.conn_ref();
     let mut stmt = conn
-        .prepare(
-            "SELECT dimensions_json FROM entity_assessment WHERE dimensions_json IS NOT NULL",
-        )
+        .prepare("SELECT dimensions_json FROM entity_assessment WHERE dimensions_json IS NOT NULL")
         .map_err(|e| e.to_string())?;
 
     let mut all_actions = Vec::new();
@@ -1399,8 +1396,7 @@ pub fn get_all_recommended_actions(
 
     for row in rows {
         if let Ok(Some(json)) = row {
-            if let Ok(blob) =
-                serde_json::from_str::<crate::intelligence::io::DimensionsBlob>(&json)
+            if let Ok(blob) = serde_json::from_str::<crate::intelligence::io::DimensionsBlob>(&json)
             {
                 all_actions.extend(blob.recommended_actions);
             }

@@ -24,10 +24,10 @@ fn meeting_type_label(meeting_type: &MeetingType) -> &'static str {
 
 fn estimate_effort_minutes(action: &DbAction) -> u32 {
     let mut effort: u32 = match action.priority {
-        1 => 60,       // Urgent
-        2 => 50,       // High
-        3 => 45,       // Medium
-        _ => 30,       // Low/None
+        1 => 60, // Urgent
+        2 => 50, // High
+        3 => 45, // Medium
+        _ => 30, // Low/None
     };
     if action
         .waiting_on
@@ -59,10 +59,10 @@ fn urgency_impact(action: &DbAction, today: NaiveDate) -> f32 {
     };
 
     let priority_lift: f32 = match action.priority {
-        1 => 0.18,     // Urgent
-        2 => 0.14,     // High
-        3 => 0.1,      // Medium
-        _ => 0.03,     // Low/None
+        1 => 0.18, // Urgent
+        2 => 0.14, // High
+        3 => 0.1,  // Medium
+        _ => 0.03, // Low/None
     };
 
     (baseline + priority_lift).clamp(0.0, 1.0)
@@ -369,6 +369,8 @@ mod tests {
             needs_decision: false,
             decision_owner: None,
             decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         }
     }
 
