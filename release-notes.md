@@ -10,6 +10,28 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.2.0 — Actions that close the loop
+
+DailyOS used to be one-directional: AI produces, you consume. Now actions are a two-way street. Capture your own tasks, push them to Linear, and let the system learn what matters to you.
+
+**Add a task from anywhere.** Press Cmd+K, type "add action," and capture what's on your mind. If you're looking at an account page, the task auto-links to that account. It shows up in your briefing, meeting prep, and entity pages alongside AI-extracted items. No separate task manager needed.
+
+**Push actions to Linear with one click.** Hover over any action and click the Linear icon to create an issue. The app picks the right project automatically based on your linked accounts. Pushed actions show a persistent badge with a clickable link back to Linear.
+
+**AI now recommends what to do next.** Each account page shows 2-3 specific, concrete recommended actions based on health signals, recent meetings, and open commitments. Track them to add to your list, or dismiss to teach the system what you don't need.
+
+**Actions that need decisions stand out.** Tasks blocked on approvals, budget sign-offs, or legal review get a "Decision needed" badge so you can see at a glance what's waiting on someone else.
+
+**The system learns from your rejections.** When you dismiss a suggested action, DailyOS remembers. It won't suggest the same thing again for that account. Sources that consistently miss the mark get quieter over time.
+
+**Objectives connect to real conversations.** When your customer mentions a goal in a call and you already have that objective tracked, the system links the evidence automatically. You'll see "3 mentions in calls" on objectives that keep coming up.
+
+**Zero-guilt aging.** Stale actions fade and auto-archive after 30 days. Urgent items and anything linked to an objective are exempt. The briefing lets you know when items are aging out, without pressure.
+
+**One-click Node.js setup.** New users without Node.js installed no longer need to download it manually. The setup wizard handles the entire installation automatically.
+
+---
+
 ## v1.1.3 — Smarter meetings, easier setup
 
 Setting up DailyOS just got simpler, and your meeting briefings just got smarter.
