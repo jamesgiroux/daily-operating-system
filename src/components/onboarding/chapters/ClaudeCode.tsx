@@ -7,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import styles from "../onboarding.module.css";
 
 interface ClaudeCodeProps {
@@ -25,7 +26,32 @@ export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [installMessage, setInstallMessage] = useState<string | null>(null);
+  const [installError, setInstallError] = useState<string | null>(null);
   const [isDevMode, setIsDevMode] = useState(false);
+
+  // Listen for install progress events from the backend (DOS-65)
+  useEffect(() => {
+    const unlisten = listen<{ step: string; status: string; message: string }>(
+      "install-claude-progress",
+      (event) => {
+        const { step, status: evtStatus, message } = event.payload;
+        if (evtStatus === "error") {
+          setInstallError(message);
+          setInstallMessage(null);
+        } else if (step === "complete") {
+          setInstallMessage(null);
+          setInstallError(null);
+        } else {
+          setInstallMessage(message);
+          setInstallError(null);
+        }
+      },
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   // Check if dev sandbox is active — enables skip button
   useEffect(() => {
@@ -149,10 +175,19 @@ export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
               Click below to install Claude Code automatically.
             </p>
           </div>
+          {installError && (
+            <div className={styles.ruleSection}>
+              <p className={`${styles.actionText} ${styles.dangerColor}`}>
+                {installError}
+              </p>
+            </div>
+          )}
           <Button
             className="w-full"
             onClick={async () => {
               setInstalling(true);
+              setInstallError(null);
+              setInstallMessage(null);
               try {
                 await invoke("install_claude_cli");
                 checkStatus(true);
@@ -165,7 +200,11 @@ export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
             disabled={checking || installing}
           >
             {installing && <Loader2 className="mr-2 size-4 animate-spin" />}
-            {installing ? "Installing..." : "Install Claude Code"}
+            {installing
+              ? installMessage ?? "Installing..."
+              : installError
+                ? "Try Again"
+                : "Install Claude Code"}
           </Button>
           <Button
             variant="outline"
@@ -178,53 +217,54 @@ export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
         </div>
       )}
 
-      {/* Node not available — show install instructions */}
+      {/* Node not available — auto-install Node.js + Claude Code (DOS-65) */}
       {status && !status.installed && !status.nodeInstalled && (
         <div className={`${styles.flexCol} ${styles.gap12}`}>
           <div className={styles.ruleSection}>
             <div className={styles.sectionLabel}>
-              <span className={styles.dangerColor}>Node.js required</span>
+              <span className={styles.dangerColor}>Not found</span>
             </div>
             <p className={`${styles.actionText} ${styles.mb4}`}>
-              Claude Code requires Node.js. Install it first:
+              Click below to install Node.js and Claude Code automatically.
+              You will be prompted for your admin password.
             </p>
-            <p className={`${styles.actionText} ${styles.mt8}`}>
-              Download from{" "}
-              <a
-                href="https://nodejs.org"
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.installLink}
-              >
-                nodejs.org
-              </a>{" "}
-              (recommended: LTS version)
-            </p>
-            <p className={styles.installHint}>
-              Or via Homebrew:
-            </p>
-            <code className={styles.codeBlock}>brew install node</code>
           </div>
-          <div className={styles.ruleSection}>
-            <div className={styles.sectionLabel}>
-              <span className={styles.dangerColor}>Then install Claude Code</span>
+          {installError && (
+            <div className={styles.ruleSection}>
+              <p className={`${styles.actionText} ${styles.dangerColor}`}>
+                {installError}
+              </p>
             </div>
-            <p className={`${styles.actionText} ${styles.mb4}`}>
-              Install Claude Code from your terminal:
-            </p>
-            <code className={styles.codeBlock}>npm install -g @anthropic-ai/claude-code</code>
-            <p className={`${styles.installHint} ${styles.mt12}`}>
-              Then navigate to your workspace and sign in:
-            </p>
-            <code className={styles.codeBlock}>
-              cd {workspacePath}{"\n"}claude login
-            </code>
-          </div>
+          )}
+          <Button
+            className="w-full"
+            onClick={async () => {
+              setInstalling(true);
+              setInstallError(null);
+              setInstallMessage(null);
+              try {
+                await invoke("install_claude_cli");
+                checkStatus(true);
+              } catch {
+                checkStatus(true);
+              } finally {
+                setInstalling(false);
+              }
+            }}
+            disabled={checking || installing}
+          >
+            {installing && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {installing
+              ? installMessage ?? "Installing..."
+              : installError
+                ? "Try Again"
+                : "Install Claude Code"}
+          </Button>
           <Button
             variant="outline"
             className="w-full"
             onClick={() => checkStatus(true)}
-            disabled={checking}
+            disabled={checking || installing}
           >
             {checking && <Loader2 className="mr-2 size-4 animate-spin" />}
             Re-check
