@@ -3,7 +3,7 @@
 > Rust backend module inventory (`src-tauri/src/`).
 > **Auto-generated:** 2026-04-15 by `.docs/generators/gen-module-map.sh`
 
-**237** Rust files across **30** module directories and **44** standalone modules.
+**238** Rust files across **30** module directories and **44** standalone modules.
 
 ---
 
@@ -13,7 +13,7 @@
 |--------|-------|-----------|---------|
 | `bin/` | 0 | 0 | Binary entry points |
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment (I228). |
-| `commands/` | 10 | 365 | Tauri IPC command handlers |
+| `commands/` | 10 | 367 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
 | `db/` | 22 | 25 | SQLite database modules |
 | `devtools/` | 1 | 11 | Dev tools for scenario switching and mock data. |
@@ -36,7 +36,7 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0 (I397). |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (I406–I410). |
-| `services/` | 20 | 244 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 21 | 246 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 20 | 53 | Universal signal bus for intelligence fusion (I306 / ADR-0080 Phase 2). |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
@@ -69,15 +69,15 @@
 | `executor.rs` | 1439 | 1 | Workflow execution engine |
 | `export.rs` | 300 | 1 | I429: User data export — ZIP file with human-readable JSON per domain. |
 | `focus_capacity.rs` | 423 | 1 | — |
-| `focus_prioritization.rs` | 405 | 1 | — |
+| `focus_prioritization.rs` | 397 | 1 | — |
 | `google.rs` | 1714 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 492 | 12 | — |
 | `intel_queue.rs` | 2804 | 4 | Background intelligence enrichment queue (I132). |
 | `json_loader.rs` | 615 | 3 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
-| `lib.rs` | 863 | 1 | App setup, command registration, plugin init |
+| `lib.rs` | 866 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 982 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 1590 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 1594 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (I51 / ADR-0047). |
@@ -86,10 +86,10 @@
 | `pty.rs` | 991 | 2 | PTY Manager for Claude Code subprocess management |
 | `risk_briefing.rs` | 596 | 5 | Risk Briefing generation for at-risk accounts. |
 | `scheduler.rs` | 748 | 2 | Scheduler for cron-based workflow execution |
-| `state.rs` | 1590 | 12 | AppState — DB, PTY, config |
+| `state.rs` | 1595 | 12 | AppState — DB, PTY, config |
 | `task_supervisor.rs` | 34 | 1 | — |
-| `types.rs` | 3220 | 7 | Shared type definitions |
-| `util.rs` | 1257 | 27 | — |
+| `types.rs` | 3223 | 7 | Shared type definitions |
+| `util.rs` | 1267 | 28 | — |
 | `watcher.rs` | 882 | 1 | File watcher for _inbox/ directory |
 
 ## Cross-Module Dependencies
@@ -97,7 +97,7 @@
 | Module | Depends On |
 |--------|-----------|
 | `commands/` |                     intel_queue,         intel_queue,     context_provider,     db,     glean,     intelligence,     processor, services, types |
-| `services/` |     db,     intel_queue,     intelligence,     reports,     signals,     state, commands, db, embeddings, json_loader, parser, pty, reports, signals, state, types |
+| `services/` |     db,     intel_queue,     intelligence,     reports,     signals,     state, commands, db, embeddings, json_loader, linear, parser, pty, reports, signals, state, types |
 | `signals/` |             db,     db,     entity,     google_api,     prepare, db, embeddings, entity, helpers, prepare, state, types |
 | `intelligence/` |         intel_queue,     db,     signals,     types, accounts, context_provider, db, embeddings, error, helpers, signals, state, types, util |
 | `prepare/` |     db,     entity, db, embeddings, entity, error, google_api, helpers, pty, signals, state, types |

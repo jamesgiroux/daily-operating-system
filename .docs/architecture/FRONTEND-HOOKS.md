@@ -1,7 +1,7 @@
 # Frontend Hooks Reference
 
 > Registry of all React hooks in `src/hooks/`.
-> **Auto-generated:** 2026-04-12 by `.docs/generators/gen-frontend-hooks.sh`
+> **Auto-generated:** 2026-04-15 by `.docs/generators/gen-frontend-hooks.sh`
 
 **40** hook files | **4616** total lines
 
