@@ -4378,6 +4378,63 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params!["mock-globex-industries", "keyword", "follow up", 4],
     ).map_err(|e| format!("Rejected pattern seed (keyword): {}", e))?;
 
+    // ─── DOS-14: Objective evidence_json ─────────────────────────────────────
+    conn.execute(
+        "UPDATE account_objectives SET evidence_json = ?1 WHERE id = 'mock-objective-acme-ttv'",
+        rusqlite::params![r#"[
+  {"source": "meeting", "date": "2026-03-10T00:00:00Z", "quote": "Customer confirmed 30% reduction target", "confidence": "high"},
+  {"source": "email", "date": "2026-03-15T00:00:00Z", "quote": "Alex mentioned Phase 2 scope aligns with expansion goals", "confidence": "medium"}
+]"#],
+    ).map_err(|e| format!("Objective evidence (acme-ttv): {}", e))?;
+
+    conn.execute(
+        "UPDATE account_objectives SET evidence_json = ?1 WHERE id = 'mock-objective-globex-pipeline'",
+        rusqlite::params![r#"[
+  {"source": "meeting", "date": "2026-01-20T00:00:00Z", "quote": "Root cause traced to batch processing timeouts under load", "confidence": "high"},
+  {"source": "support_ticket", "date": "2026-02-05T00:00:00Z", "quote": "Pipeline failures dropped from 12/day to 3/day after hotfix", "confidence": "high"},
+  {"source": "email", "date": "2026-02-12T00:00:00Z", "quote": "Team still seeing intermittent failures on large payloads", "confidence": "medium"}
+]"#],
+    ).map_err(|e| format!("Objective evidence (globex-pipeline): {}", e))?;
+
+    // ─── DOS-16: Link commitment to milestone ────────────────────────────────
+    conn.execute(
+        "UPDATE captured_commitments SET milestone_id = 'mock-milestone-acme-ttv-3' \
+         WHERE id = 'mock-commitment-1'",
+        [],
+    ).map_err(|e| format!("Commitment milestone link: {}", e))?;
+
+    // ─── DOS-50-53: action_linear_links ──────────────────────────────────────
+    conn.execute(
+        "INSERT OR REPLACE INTO action_linear_links (id, action_id, linear_issue_id, linear_identifier, linear_url, pushed_at) \
+         VALUES ('mock-link-1', 'mock-act-sow-acme', 'lin-issue-abc', 'DOS-42', 'https://linear.app/dailyos/issue/DOS-42', datetime('now', '-2 days'))",
+        [],
+    ).map_err(|e| format!("action_linear_links mock-link-1: {}", e))?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO action_linear_links (id, action_id, linear_issue_id, linear_identifier, linear_url, pushed_at) \
+         VALUES ('mock-link-2', 'mock-act-qbr-deck-globex', 'lin-issue-def', 'DOS-43', 'https://linear.app/dailyos/issue/DOS-43', datetime('now', '-1 day'))",
+        [],
+    ).map_err(|e| format!("action_linear_links mock-link-2: {}", e))?;
+
+    // Mark pushed-to-Linear actions as started
+    conn.execute(
+        "UPDATE actions SET status = 'started' WHERE id IN ('mock-act-sow-acme', 'mock-act-qbr-deck-globex')",
+        [],
+    ).map_err(|e| format!("Update Linear-pushed actions to started: {}", e))?;
+
+    // ─── DOS-56: linear_entity_links ─────────────────────────────────────────
+    conn.execute(
+        "INSERT OR REPLACE INTO linear_entity_links (id, linear_project_id, entity_id, entity_type, confirmed) \
+         VALUES ('mock-lel-acme', 'lin-proj-acme', 'mock-acme-corp', 'account', 1)",
+        [],
+    ).map_err(|e| format!("linear_entity_links acme: {}", e))?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO linear_entity_links (id, linear_project_id, entity_id, entity_type, confirmed) \
+         VALUES ('mock-lel-globex', 'lin-proj-globex', 'mock-globex-industries', 'account', 1)",
+        [],
+    ).map_err(|e| format!("linear_entity_links globex: {}", e))?;
+
     Ok(())
 }
 
