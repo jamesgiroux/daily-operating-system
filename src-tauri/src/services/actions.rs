@@ -320,9 +320,70 @@ pub async fn create_action(
             // DOS-17: Scan for decision-indicating keywords after creation
             let _ = db.scan_and_flag_decisions();
 
+            // DOS-15: Best-effort auto-link to matching objectives
+            if let Some(ref acct_id) = action.account_id {
+                if let Err(e) = auto_link_action_to_objectives(db, &action.id, &action.title, acct_id)
+                {
+                    log::warn!("Auto-link action to objectives failed (non-fatal): {}", e);
+                }
+            }
+
             Ok(id)
         })
         .await
+}
+
+/// DOS-15: Auto-link a newly created action to objectives with similar titles.
+///
+/// Uses Jaccard word similarity (threshold 0.6) to find matching objectives
+/// for the action's account. Emits an `action_auto_linked` signal per match.
+fn auto_link_action_to_objectives(
+    db: &crate::db::ActionDb,
+    action_id: &str,
+    action_title: &str,
+    account_id: &str,
+) -> Result<(), String> {
+    let objectives = db
+        .get_account_objectives(account_id)
+        .map_err(|e| e.to_string())?;
+
+    for objective in &objectives {
+        if objective.status != "active" {
+            continue;
+        }
+        let score = crate::helpers::jaccard_word_similarity(action_title, &objective.title);
+        if score > 0.6 {
+            if let Err(e) = db.link_action_to_objective(action_id, &objective.id) {
+                log::warn!(
+                    "Failed to auto-link action {} to objective {}: {}",
+                    action_id,
+                    objective.id,
+                    e
+                );
+                continue;
+            }
+            // Emit signal (best-effort, no propagation engine needed here)
+            let _ = crate::signals::bus::emit_signal(
+                db,
+                "account",
+                account_id,
+                "action_auto_linked",
+                "system",
+                Some(&format!(
+                    "{{\"action_id\":\"{}\",\"objective_id\":\"{}\",\"score\":{:.2}}}",
+                    action_id, objective.id, score
+                )),
+                score,
+            );
+            log::info!(
+                "Auto-linked action {} to objective {} (score: {:.2})",
+                action_id,
+                objective.id,
+                score
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Update arbitrary fields on an existing action (I128).
