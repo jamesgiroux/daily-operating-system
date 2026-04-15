@@ -420,8 +420,11 @@ function FullActionRow({
         <button
           onClick={handlePush}
           disabled={pushing}
-          title="Push to Linear"
+          title="Create a Linear issue from this action"
           style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
             fontFamily: "var(--font-mono)",
             fontSize: 10,
             fontWeight: 500,
@@ -438,7 +441,8 @@ function FullActionRow({
             opacity: pushing ? 0.6 : 1,
           }}
         >
-          {pushing ? "..." : "Linear"}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          {pushing ? "Pushing..." : "Push to Linear"}
         </button>
       )}
       <span
