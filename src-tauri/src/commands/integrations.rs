@@ -1622,13 +1622,32 @@ pub async fn get_linear_entity_links(
         .await
 }
 
-/// I425: Auto-detect entity links by fuzzy-matching Linear project names to entity names.
+/// DOS-56: Jaccard word-token similarity for fuzzy name matching.
+fn fuzzy_name_similarity(a: &str, b: &str) -> f64 {
+    let a_lower = a.to_lowercase();
+    let b_lower = b.to_lowercase();
+    let a_tokens: HashSet<&str> = a_lower.split_whitespace().collect();
+    let b_tokens: HashSet<&str> = b_lower.split_whitespace().collect();
+    let intersection = a_tokens.intersection(&b_tokens).count();
+    let union = a_tokens.union(&b_tokens).count();
+    if union == 0 {
+        0.0
+    } else {
+        intersection as f64 / union as f64
+    }
+}
+
+/// DOS-56: Auto-detect entity links by fuzzy-matching Linear project names to entity names,
+/// plus domain-based suggestions from account_domains.
 #[tauri::command]
-pub async fn run_linear_auto_link(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
+pub async fn run_linear_auto_link(
+    state: State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
     state
         .db_write(|db| {
             let conn = db.conn_ref();
-            let mut linked = 0usize;
+            let mut auto_linked: Vec<serde_json::Value> = Vec::new();
+            let mut suggested: Vec<serde_json::Value> = Vec::new();
 
             // Get all Linear projects
             let projects: Vec<(String, String)> = {
@@ -1645,48 +1664,166 @@ pub async fn run_linear_auto_link(state: State<'_, Arc<AppState>>) -> Result<usi
                 rows
             };
 
-            for (project_id, project_name) in &projects {
-                let lower_name = project_name.to_lowercase();
+            // Get already-linked project IDs to skip
+            let already_linked: HashSet<String> = {
+                let mut stmt = conn
+                    .prepare("SELECT linear_project_id FROM linear_entity_links")
+                    .map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .map_err(|e| e.to_string())?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                rows
+            };
 
-                // Try matching against accounts (exact case-insensitive)
-                let account_match: Option<String> = conn
-                    .query_row(
-                        "SELECT id FROM accounts WHERE LOWER(name) = ?1 AND archived = 0",
-                        [&lower_name],
-                        |row| row.get(0),
+            // Get all accounts (id, name)
+            let accounts: Vec<(String, String)> = {
+                let mut stmt = conn
+                    .prepare("SELECT id, name FROM accounts WHERE archived = 0")
+                    .map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|e| e.to_string())?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                rows
+            };
+
+            // Get all projects (id, name)
+            let dos_projects: Vec<(String, String)> = {
+                let mut stmt = conn
+                    .prepare("SELECT id, name FROM projects WHERE archived = 0")
+                    .map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|e| e.to_string())?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                rows
+            };
+
+            // Get account domains for domain-based matching
+            let account_domains: Vec<(String, String)> = {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT ad.account_id, ad.domain FROM account_domains ad \
+                         JOIN accounts a ON a.id = ad.account_id WHERE a.archived = 0",
                     )
-                    .ok();
+                    .map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|e| e.to_string())?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                rows
+            };
 
-                if let Some(account_id) = account_match {
-                    crate::services::mutations::create_linear_entity_link_with_confirmed(
-                        db,
-                        project_id,
-                        &account_id,
-                        "account",
-                        false,
-                    )?;
-                    linked += 1;
+            for (project_id, project_name) in &projects {
+                if already_linked.contains(project_id) {
                     continue;
                 }
 
-                // Try matching against projects (exact case-insensitive)
-                let project_match: Option<String> = conn
-                    .query_row(
-                        "SELECT id FROM projects WHERE LOWER(name) = ?1 AND archived = 0",
-                        [&lower_name],
-                        |row| row.get(0),
-                    )
-                    .ok();
+                let mut best_score: f64 = 0.0;
+                let mut best_entity_id: Option<String> = None;
+                let mut best_entity_type: Option<&str> = None;
+                let mut best_entity_name: Option<String> = None;
 
-                if let Some(proj_id) = project_match {
-                    crate::services::mutations::create_linear_entity_link_with_confirmed(
-                        db, project_id, &proj_id, "project", false,
-                    )?;
-                    linked += 1;
+                // Score against accounts
+                for (account_id, account_name) in &accounts {
+                    let score = fuzzy_name_similarity(project_name, account_name);
+                    if score > best_score {
+                        best_score = score;
+                        best_entity_id = Some(account_id.clone());
+                        best_entity_type = Some("account");
+                        best_entity_name = Some(account_name.clone());
+                    }
+                }
+
+                // Score against DailyOS projects
+                for (proj_id, proj_name) in &dos_projects {
+                    let score = fuzzy_name_similarity(project_name, proj_name);
+                    if score > best_score {
+                        best_score = score;
+                        best_entity_id = Some(proj_id.clone());
+                        best_entity_type = Some("project");
+                        best_entity_name = Some(proj_name.clone());
+                    }
+                }
+
+                // Domain-based suggestion: check if project name words match any domain
+                if best_score < 0.7 {
+                    let proj_lower = project_name.to_lowercase();
+                    for (account_id, domain) in &account_domains {
+                        // Extract the domain base (e.g., "acme" from "acme.com")
+                        let domain_base = domain
+                            .split('.')
+                            .next()
+                            .unwrap_or("")
+                            .to_lowercase();
+                        if domain_base.len() >= 3 && proj_lower.contains(&domain_base) {
+                            // Find the account name for the suggestion
+                            if let Some((_, acct_name)) =
+                                accounts.iter().find(|(id, _)| id == account_id)
+                            {
+                                best_score = 0.75; // Domain match scores as a suggestion
+                                best_entity_id = Some(account_id.clone());
+                                best_entity_type = Some("account");
+                                best_entity_name = Some(acct_name.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if best_score >= 0.9 {
+                    // High confidence — auto-link
+                    if let (Some(entity_id), Some(entity_type)) =
+                        (&best_entity_id, best_entity_type)
+                    {
+                        crate::services::mutations::create_linear_entity_link_with_confirmed(
+                            db,
+                            project_id,
+                            entity_id,
+                            entity_type,
+                            false,
+                        )?;
+                        auto_linked.push(serde_json::json!({
+                            "linearProjectId": project_id,
+                            "linearProjectName": project_name,
+                            "entityId": entity_id,
+                            "entityType": entity_type,
+                            "entityName": best_entity_name,
+                            "score": best_score,
+                        }));
+                    }
+                } else if best_score >= 0.7 {
+                    // Suggestion — needs user confirmation
+                    if let (Some(entity_id), Some(entity_type)) =
+                        (&best_entity_id, best_entity_type)
+                    {
+                        suggested.push(serde_json::json!({
+                            "linearProjectId": project_id,
+                            "linearProjectName": project_name,
+                            "entityId": entity_id,
+                            "entityType": entity_type,
+                            "entityName": best_entity_name,
+                            "score": best_score,
+                        }));
+                    }
                 }
             }
 
-            Ok(linked)
+            Ok(serde_json::json!({
+                "autoLinked": auto_linked,
+                "suggested": suggested,
+            }))
         })
         .await
 }
