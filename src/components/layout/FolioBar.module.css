@@ -210,3 +210,39 @@
   outline: none;
   border-color: var(--color-spice-turmeric);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MODE BADGE — Dev/Live/Split indicator
+   ───────────────────────────────────────────────────────────────────────── */
+.folioModeBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 1px 6px;
+  border-radius: var(--radius-editorial-sm);
+  border: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: opacity var(--transition-normal);
+}
+
+.folioModeBadgeDev {
+  color: var(--color-spice-saffron, #d97706);
+  background: color-mix(in srgb, var(--color-spice-saffron, #d97706) 12%, transparent);
+  opacity: 1;
+}
+
+.folioModeBadgeWarning {
+  color: var(--color-alert-red, #dc2626);
+  background: color-mix(in srgb, var(--color-alert-red, #dc2626) 12%, transparent);
+  opacity: 1;
+  animation: pulse-mark 1.5s ease-in-out infinite;
+}
+
+.folioModeBadgeLive {
+  color: var(--color-garden-sage, #16a34a);
+  background: color-mix(in srgb, var(--color-garden-sage, #16a34a) 12%, transparent);
+  opacity: 0.6;
+}
