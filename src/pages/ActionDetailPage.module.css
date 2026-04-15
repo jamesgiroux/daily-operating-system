@@ -364,3 +364,17 @@
   color: var(--color-text-primary);
   transition: opacity 0.15s;
 }
+
+/* ── Linear section ── */
+
+.linearSelect {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  padding: 2px 0;
+  outline: none;
+  cursor: pointer;
+}
