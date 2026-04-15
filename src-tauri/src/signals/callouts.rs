@@ -55,6 +55,8 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "risk_detected",
     // DOS-54: Manual action creation
     "action_created_manually",
+    // DOS-51: Push-to-Linear
+    "action_pushed_to_linear",
     // I535/ADR-0100: Glean-sourced signal types
     "renewal_data_updated",
     "support_health_updated",
@@ -475,6 +477,21 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
             (
                 "New action item added".to_string(),
                 format!("You created: {}", title),
+            )
+        }
+        // DOS-51: Push-to-Linear callout
+        "action_pushed_to_linear" => {
+            let identifier = parsed
+                .get("linear_identifier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("issue");
+            let url = parsed
+                .get("linear_url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            (
+                format!("Action pushed to Linear: {}", identifier),
+                format!("Created {} in Linear", url),
             )
         }
         // I535/ADR-0100: Glean-sourced callout text handlers
