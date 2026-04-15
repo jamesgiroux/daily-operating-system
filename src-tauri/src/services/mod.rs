@@ -12,6 +12,7 @@ pub mod feedback;
 pub mod hygiene;
 pub mod integrations;
 pub mod intelligence;
+pub mod linear;
 pub mod meetings;
 pub mod mutations;
 pub mod people;
