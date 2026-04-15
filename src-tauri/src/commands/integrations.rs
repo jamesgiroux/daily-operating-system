@@ -1915,6 +1915,7 @@ pub async fn push_action_to_linear(
     action_id: String,
     team_id: String,
     project_id: Option<String>,
+    title: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::services::linear::LinearPushResult, String> {
     crate::services::linear::push_action_to_linear(
@@ -1922,6 +1923,7 @@ pub async fn push_action_to_linear(
         &action_id,
         &team_id,
         project_id.as_deref(),
+        title.as_deref(),
     )
     .await
 }

@@ -31,6 +31,7 @@ pub async fn push_action_to_linear(
     action_id: &str,
     team_id: &str,
     project_id: Option<&str>,
+    title_override: Option<&str>,
 ) -> Result<LinearPushResult, String> {
     // 1. Read action from DB
     let action = state.with_db_read(|db| {
@@ -110,7 +111,7 @@ pub async fn push_action_to_linear(
     // 6. Create issue in Linear
     let created = client
         .create_issue(
-            &action.title,
+            title_override.unwrap_or(&action.title),
             team_id,
             Some(&description),
             resolved_project_id.as_deref(),

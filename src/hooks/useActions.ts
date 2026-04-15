@@ -176,9 +176,13 @@ export function useActions(initialSearch?: string): UseActionsReturn {
 
   // Apply filters
   const actions = allActions.filter((action) => {
-    // Status filter
-    if (statusFilter !== "all" && action.status !== statusFilter) {
-      return false;
+    // Status filter — "unstarted" tab also shows "started" (pushed to Linear)
+    if (statusFilter !== "all") {
+      if (statusFilter === "unstarted") {
+        if (action.status !== "unstarted" && action.status !== "started") return false;
+      } else if (action.status !== statusFilter) {
+        return false;
+      }
     }
 
     // Priority filter
