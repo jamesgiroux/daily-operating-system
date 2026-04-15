@@ -11,8 +11,8 @@ import { EditableDate } from "@/components/ui/editable-date";
 import { EditableText } from "@/components/ui/EditableText";
 import { formatFullDate } from "@/lib/utils";
 import { classifyAction } from "@/lib/entity-utils";
-import { Check, Circle } from "lucide-react";
-import type { ActionDetail } from "@/types";
+import { Check, Circle, ExternalLink } from "lucide-react";
+import type { ActionDetail, LinearPushResult } from "@/types";
 import s from "./ActionDetailPage.module.css";
 
 // =============================================================================
@@ -49,6 +49,12 @@ export default function ActionDetailPage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
+  // Linear push state
+  const [linearEnabled, setLinearEnabled] = useState(false);
+  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [pushing, setPushing] = useState(false);
+
   // Register magazine shell
   const shellConfig = useMemo(
     () => ({
@@ -82,6 +88,20 @@ export default function ActionDetailPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    invoke<{ enabled: boolean; apiKeySet: boolean }>("get_linear_status")
+      .then((s) => {
+        const enabled = s.enabled && s.apiKeySet;
+        setLinearEnabled(enabled);
+        if (enabled) {
+          invoke<Array<{ id: string; name: string }>>("get_linear_teams")
+            .then((t) => { setTeams(t); if (t.length) setSelectedTeamId(t[0].id); })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   async function toggleStatus() {
     if (!detail) return;
     setToggling(true);
@@ -112,6 +132,24 @@ export default function ActionDetailPage() {
       console.error("Failed to save action:", e);
       toast.error("Failed to save");
       setSaveStatus("idle");
+    }
+  }
+
+  async function handlePushToLinear() {
+    if (!detail || !selectedTeamId || pushing) return;
+    setPushing(true);
+    try {
+      const result = await invoke<LinearPushResult>("push_action_to_linear", {
+        actionId: detail.id,
+        teamId: selectedTeamId,
+        title: detail.title,
+      });
+      toast.success(`Created ${result.identifier}`);
+      await load();
+    } catch (e) {
+      toast.error(`Push failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPushing(false);
     }
   }
 
@@ -367,7 +405,66 @@ export default function ActionDetailPage() {
           </div>
         </div>
 
-        {/* ── 5. Action bar ── */}
+        {/* ── 5. Linear section ── */}
+        {linearEnabled && (
+          <div className={s.section}>
+            <div className={s.sectionLabel}>Linear</div>
+            {detail.linearIdentifier ? (
+              <div className={s.refSection}>
+                <div className={s.refRow}>
+                  <span className={s.refKey}>Issue</span>
+                  <div className={s.refValue}>
+                    <a
+                      href={detail.linearUrl ?? "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={s.accountLink}
+                    >
+                      {detail.linearIdentifier}
+                      <ExternalLink size={12} style={{ marginLeft: 4, verticalAlign: "middle" }} />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ) : (detail.status === "backlog" || detail.status === "unstarted") ? (
+              <div className={s.refSection}>
+                <div className={s.refRow}>
+                  <span className={s.refKey}>Team</span>
+                  <div className={s.refValue}>
+                    <select
+                      value={selectedTeamId ?? ""}
+                      onChange={(e) => setSelectedTeamId(e.target.value)}
+                      className={s.linearSelect}
+                    >
+                      {teams.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className={s.refRow}>
+                  <span className={s.refKey} />
+                  <div className={s.refValue}>
+                    <button
+                      onClick={handlePushToLinear}
+                      disabled={pushing || !selectedTeamId}
+                      className={s.actionButton}
+                      style={{ opacity: pushing ? 0.5 : 1 }}
+                    >
+                      {pushing ? "Creating..." : "Create Linear Issue"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className={s.autoNote}>
+                Push to Linear is available for suggested and active actions.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ── 6. Action bar ── */}
         <div className={s.actionBar}>
           {saveStatus !== "idle" && (
             <span
