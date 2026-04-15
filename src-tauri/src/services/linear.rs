@@ -162,6 +162,12 @@ pub async fn push_action_to_linear(
     })
     .to_string();
 
+    // DOS-53: Check if this was an AI-suggested action for Bayesian feedback
+    let is_ai_suggested = action
+        .source_type
+        .as_deref()
+        .is_some_and(|s| s.starts_with("ai") || s == "intelligence");
+
     state.with_db_write(|db| {
         let _ = crate::services::signals::emit_and_propagate(
             db,
@@ -173,6 +179,22 @@ pub async fn push_action_to_linear(
             Some(&signal_value),
             0.9,
         );
+
+        // DOS-53: Positive Bayesian feedback when an AI-suggested action is
+        // pushed to Linear — validates the suggestion quality.
+        if is_ai_suggested {
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &state.signals.engine,
+                entity_type,
+                entity_id,
+                "ai_suggestion_validated",
+                "user_action",
+                Some(&format!("{{\"action_id\":\"{}\"}}", action_id)),
+                0.9,
+            );
+        }
+
         Ok(())
     })?;
 
