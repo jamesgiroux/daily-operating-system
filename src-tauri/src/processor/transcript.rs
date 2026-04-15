@@ -2019,6 +2019,23 @@ fn persist_enriched_transcript_data(
                 log::warn!("Failed to insert commitment capture: {}", e);
             }
         }
+
+        // DOS-16: After persisting commitments, match them to milestones
+        if let Some(acct_id) = account_id {
+            match crate::services::success_plans::match_commitments_to_milestones(db, acct_id) {
+                Ok(count) if count > 0 => {
+                    log::info!(
+                        "Matched {} commitments to milestones for account {}",
+                        count,
+                        acct_id
+                    );
+                }
+                Err(e) => {
+                    log::warn!("Failed to match commitments to milestones: {}", e);
+                }
+                _ => {}
+            }
+        }
     }
 }
 
