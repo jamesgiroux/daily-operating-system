@@ -1000,11 +1000,28 @@ fn recover_from_unclean_dev_exit() {
 
     let needs_recovery = backup.exists() || sentinel.exists();
 
-    if needs_recovery {
+    // Also check: does the live config itself point at the dev workspace?
+    let config_contaminated = std::fs::read_to_string(&config)
+        .map(|s| s.contains("DailyOS-dev") || s.contains("\"developerMode\":true") || s.contains("\"developerMode\": true"))
+        .unwrap_or(false);
+
+    if needs_recovery || config_contaminated {
         log::warn!("Detected unclean dev-mode exit — restoring live state");
 
-        // Restore config from backup if available
-        if backup.exists() {
+        // Prefer production snapshot (guaranteed clean) over dev-backup (might be corrupted)
+        let snapshot = dailyos_dir.join("config.json.production-snapshot");
+        if snapshot.exists() {
+            match fs::copy(&snapshot, &config) {
+                Ok(_) => {
+                    let _ = fs::remove_file(&snapshot);
+                    let _ = fs::remove_file(&backup);
+                    log::info!("Live config restored from production snapshot");
+                }
+                Err(e) => {
+                    log::error!("Failed to restore from production snapshot: {}", e);
+                }
+            }
+        } else if backup.exists() {
             match fs::copy(&backup, &config) {
                 Ok(_) => {
                     let _ = fs::remove_file(&backup);
@@ -1024,6 +1041,9 @@ fn recover_from_unclean_dev_exit() {
 
         // Clean up dev config
         let _ = fs::remove_file(&dev_config);
+
+        // Clean up snapshot if still present
+        let _ = fs::remove_file(dailyos_dir.join("config.json.production-snapshot"));
 
         log::info!("Dev mode recovery complete");
     }
