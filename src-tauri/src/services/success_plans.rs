@@ -776,6 +776,98 @@ pub fn apply_success_plan_template(
     })
 }
 
+/// DOS-16: Match unconsumed commitments to milestone titles via Jaccard similarity.
+///
+/// For each unconsumed commitment on an account, compares its title against all
+/// pending milestones across active objectives. If similarity > 0.7, links the
+/// commitment to the milestone (and optionally backfills the milestone's target_date).
+/// Emits a `commitment_milestone_linked` signal per match.
+pub fn match_commitments_to_milestones(db: &ActionDb, account_id: &str) -> Result<usize, String> {
+    let commitments = db
+        .get_unconsumed_commitments(account_id)
+        .map_err(|e| e.to_string())?;
+    if commitments.is_empty() {
+        return Ok(0);
+    }
+
+    let objectives = db
+        .get_account_objectives(account_id)
+        .map_err(|e| e.to_string())?;
+
+    let mut matched = 0usize;
+
+    // Collect all pending milestones across active objectives
+    let milestones: Vec<&crate::types::AccountMilestone> = objectives
+        .iter()
+        .filter(|o| o.status == "active")
+        .flat_map(|o| o.milestones.iter())
+        .filter(|m| m.status == "pending")
+        .collect();
+
+    // commitments tuple: (id, title, owner, target_date, confidence, source)
+    for (commit_id, commit_title, _owner, commit_target_date, _confidence, _source) in &commitments
+    {
+        for milestone in &milestones {
+            let score =
+                crate::helpers::jaccard_word_similarity(commit_title, &milestone.title);
+            if score > 0.7 {
+                // Link commitment to milestone
+                if let Err(e) = db.conn_ref().execute(
+                    "UPDATE captured_commitments SET milestone_id = ?1, suggested_objective_id = ?2 WHERE id = ?3",
+                    rusqlite::params![milestone.id, milestone.objective_id, commit_id],
+                ) {
+                    log::warn!(
+                        "Failed to link commitment {} to milestone {}: {}",
+                        commit_id,
+                        milestone.id,
+                        e
+                    );
+                    continue;
+                }
+
+                // Backfill milestone target_date if commitment has one and milestone doesn't
+                if milestone.target_date.is_none() {
+                    if let Some(ref td) = commit_target_date {
+                        let _ = db.update_milestone(
+                            &milestone.id,
+                            None,
+                            Some(td),
+                            None,
+                            None,
+                            None,
+                        );
+                    }
+                }
+
+                // Emit signal
+                let _ = crate::signals::bus::emit_signal(
+                    db,
+                    "account",
+                    account_id,
+                    "commitment_milestone_linked",
+                    "system",
+                    Some(&format!(
+                        "{{\"commitment_id\":\"{}\",\"milestone_id\":\"{}\",\"score\":{:.2}}}",
+                        commit_id, milestone.id, score
+                    )),
+                    score,
+                );
+
+                log::info!(
+                    "Linked commitment {} to milestone {} (score: {:.2})",
+                    commit_id,
+                    milestone.id,
+                    score
+                );
+                matched += 1;
+                break; // One milestone match per commitment
+            }
+        }
+    }
+
+    Ok(matched)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
