@@ -120,6 +120,8 @@ pub fn extract_email_commitments(
             needs_decision: false,
             decision_owner: None,
             decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         };
 
         if let Err(e) = db.upsert_action_if_not_completed(&action) {

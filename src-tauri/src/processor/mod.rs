@@ -492,7 +492,10 @@ fn extract_and_sync_actions(
                 count
             ),
             title: meta.clean_title,
-            priority: meta.priority.map(|p| crate::action_status::migrate_priority(&p)).unwrap_or(crate::action_status::PRIORITY_MEDIUM),
+            priority: meta
+                .priority
+                .map(|p| crate::action_status::migrate_priority(&p))
+                .unwrap_or(crate::action_status::PRIORITY_MEDIUM),
             status,
             created_at: now.clone(),
             due_date: meta.due_date,
@@ -520,6 +523,8 @@ fn extract_and_sync_actions(
             needs_decision: false,
             decision_owner: None,
             decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         };
 
         if let Err(e) = db.upsert_action_if_not_completed(&action) {

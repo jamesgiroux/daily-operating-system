@@ -31,6 +31,8 @@ fn sample_action(id: &str, title: &str) -> DbAction {
         needs_decision: false,
         decision_owner: None,
         decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     }
 }
 
@@ -2489,6 +2491,8 @@ fn test_get_project_actions() {
         needs_decision: false,
         decision_owner: None,
         decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
     db.upsert_action(&pending_action)
         .expect("upsert pending action");
@@ -3037,6 +3041,8 @@ fn test_create_action_all_fields() {
         needs_decision: false,
         decision_owner: None,
         decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
     db.upsert_action(&action).unwrap();
 
@@ -3085,6 +3091,8 @@ fn test_create_action_defaults() {
         needs_decision: false,
         decision_owner: None,
         decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
     db.upsert_action(&action).unwrap();
 
@@ -3157,6 +3165,8 @@ fn test_update_action_clear_fields() {
         needs_decision: false,
         decision_owner: None,
         decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
     db.upsert_action(&action).unwrap();
 
@@ -3244,6 +3254,8 @@ fn test_manual_actions_in_non_briefing_query() {
         needs_decision: false,
         decision_owner: None,
         decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
     db.upsert_action(&action).unwrap();
 
@@ -3683,7 +3695,11 @@ fn test_merge_account_domains_additive() {
     db.merge_account_domains("acme", &["acme.com".to_string(), "acme.co.uk".to_string()])
         .unwrap();
     let domains = db.get_account_domains("acme").unwrap();
-    assert_eq!(domains.len(), 3, "should add new without clobbering existing");
+    assert_eq!(
+        domains.len(),
+        3,
+        "should add new without clobbering existing"
+    );
     assert!(domains.contains(&"acme.com".to_string()));
     assert!(domains.contains(&"acme.io".to_string()));
     assert!(domains.contains(&"acme.co.uk".to_string()));
@@ -3850,7 +3866,6 @@ fn test_email_signal_pipeline_person_direct_match() {
 
     let inserted = db
         .upsert_email_signal(&crate::db::signals::EmailSignalInput {
-
             email_id: "email-1",
 
             sender_email: Some(sender),
@@ -3874,7 +3889,6 @@ fn test_email_signal_pipeline_person_direct_match() {
             detected_at: Some("2026-02-13T10:00:00Z"),
 
             source: None,
-
         })
         .expect("insert signal");
     assert!(inserted);
@@ -3955,7 +3969,6 @@ fn test_email_signal_pipeline_deduplication() {
     // Insert same signal twice (same email_id + entity)
     let first = db
         .upsert_email_signal(&crate::db::signals::EmailSignalInput {
-
             email_id: "email-dup",
 
             sender_email: Some("alice@acme.com"),
@@ -3979,14 +3992,12 @@ fn test_email_signal_pipeline_deduplication() {
             detected_at: Some("2026-02-13T10:00:00Z"),
 
             source: None,
-
         })
         .expect("first insert");
     assert!(first);
 
     let second = db
         .upsert_email_signal(&crate::db::signals::EmailSignalInput {
-
             email_id: "email-dup",
 
             sender_email: Some("alice@acme.com"),
@@ -4010,7 +4021,6 @@ fn test_email_signal_pipeline_deduplication() {
             detected_at: Some("2026-02-13T10:00:00Z"),
 
             source: None,
-
         })
         .expect("second insert");
     assert!(!second, "duplicate should return false");

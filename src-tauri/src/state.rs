@@ -1,9 +1,9 @@
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::Arc;
-use parking_lot::{Mutex, RwLock};
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
@@ -681,7 +681,10 @@ impl AppState {
 
     /// Record when a scheduled run last occurred
     pub fn set_last_scheduled_run(&self, workflow: WorkflowId, time: DateTime<Utc>) {
-        self.workflow.last_scheduled_run.write().insert(workflow, time);
+        self.workflow
+            .last_scheduled_run
+            .write()
+            .insert(workflow, time);
     }
 
     /// Get when a workflow last ran on schedule
@@ -1518,6 +1521,8 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
             needs_decision: false,
             decision_owner: None,
             decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         };
 
         if db.upsert_action_if_not_completed(&action).is_ok() {
