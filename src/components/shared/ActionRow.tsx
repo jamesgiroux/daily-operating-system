@@ -310,7 +310,9 @@ function FullActionRow({
         {action.needsDecision && (
           <span
             style={{
-              display: "inline-block",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
               fontFamily: "var(--font-mono)",
               fontSize: 10,
               fontWeight: 600,
@@ -325,6 +327,36 @@ function FullActionRow({
             }}
           >
             Decision needed
+            <button
+              onClick={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                  await invoke("resolve_decision", { id: action.id });
+                  onToggle(); // refresh the row
+                } catch {
+                  toast.error("Failed to resolve decision");
+                }
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+                marginLeft: 2,
+                color: "var(--color-spice-turmeric)",
+                opacity: 0.6,
+                lineHeight: 1,
+              }}
+              onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = "1"; }}
+              onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = "0.6"; }}
+              title="Resolve decision"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </span>
         )}
         {action.linearIdentifier && (
