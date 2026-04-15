@@ -7,7 +7,7 @@
  *
  * ADR-0084 C1.
  */
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
@@ -185,7 +185,11 @@ function FullActionRow({
 }: ActionRowFullProps) {
   const [hovered, setHovered] = useState(false);
   const [pushing, setPushing] = useState(false);
-  const teamIdRef = useRef<string | null>(null);
+  const [pushOpen, setPushOpen] = useState(false);
+  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [pushTitle, setPushTitle] = useState(action.title);
+  const [pushError, setPushError] = useState<string | null>(null);
 
   const isCompleted = action.status === "completed";
   const isOverdue =
@@ -199,28 +203,38 @@ function FullActionRow({
     !action.linearIdentifier &&
     (action.status === "backlog" || action.status === "unstarted");
 
-  const handlePush = useCallback(async (e: React.MouseEvent) => {
+  const handleOpenPush = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (pushing) return;
-    setPushing(true);
+    setPushError(null);
+    setPushTitle(action.title);
     try {
-      // Cache team ID on first use
-      if (!teamIdRef.current) {
-        const teams = await invoke<Array<{ id: string; name: string }>>("get_linear_teams");
-        if (!teams.length) {
-          toast.error("No Linear teams found");
-          return;
-        }
-        teamIdRef.current = teams[0].id;
+      const t = await invoke<Array<{ id: string; name: string }>>("get_linear_teams");
+      if (!t.length) {
+        toast.error("No Linear teams found");
+        return;
       }
+      setTeams(t);
+      setSelectedTeamId(t[0].id);
+      setPushOpen(true);
+    } catch (err) {
+      toast.error("Failed to load Linear teams");
+    }
+  }, [action.title]);
+
+  const handleConfirmPush = useCallback(async () => {
+    if (!selectedTeamId || pushing) return;
+    setPushing(true);
+    setPushError(null);
+    try {
       const result = await invoke<LinearPushResult>("push_action_to_linear", {
         actionId: action.id,
-        teamId: teamIdRef.current,
+        teamId: selectedTeamId,
       });
+      setPushOpen(false);
       toast.success(
         <span>
-          Pushed as{" "}
+          Created{" "}
           <span
             style={{
               fontFamily: "var(--font-mono)",
@@ -235,11 +249,11 @@ function FullActionRow({
       );
       onLinearPush?.();
     } catch (err) {
-      toast.error(`Push failed: ${err instanceof Error ? err.message : String(err)}`);
+      setPushError(err instanceof Error ? err.message : String(err));
     } finally {
       setPushing(false);
     }
-  }, [action.id, pushing, onLinearPush]);
+  }, [action.id, selectedTeamId, pushing, onLinearPush]);
 
   const contextParts: string[] = [];
   if (isOverdue && action.dueDate) {
@@ -258,8 +272,9 @@ function FullActionRow({
   return (
     <div
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => { if (!pushOpen) setHovered(false); }}
       style={{
+        position: "relative",
         display: "flex",
         alignItems: "flex-start",
         gap: 12,
@@ -415,11 +430,10 @@ function FullActionRow({
           </div>
         )}
       </div>
-      {/* Push-to-Linear button: hover-reveal when eligible */}
-      {canPush && hovered && (
+      {/* Push-to-Linear: hover-reveal trigger + confirmation popover */}
+      {canPush && hovered && !pushOpen && (
         <button
-          onClick={handlePush}
-          disabled={pushing}
+          onClick={handleOpenPush}
           title="Create a Linear issue from this action"
           style={{
             display: "inline-flex",
@@ -429,21 +443,125 @@ function FullActionRow({
             fontSize: 10,
             fontWeight: 500,
             letterSpacing: "0.04em",
-            color: pushing ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
+            color: "var(--color-text-secondary)",
             background: "transparent",
             border: "1px solid var(--color-rule-light)",
             borderRadius: 3,
             padding: "2px 8px",
-            cursor: pushing ? "wait" : "pointer",
+            cursor: "pointer",
             flexShrink: 0,
             marginTop: 4,
             transition: "all 0.1s ease",
-            opacity: pushing ? 0.6 : 1,
           }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-          {pushing ? "Pushing..." : "Push to Linear"}
+          Push to Linear
         </button>
+      )}
+      {pushOpen && (
+        <div
+          style={{
+            position: "absolute",
+            right: 0,
+            top: "100%",
+            zIndex: 50,
+            width: 320,
+            padding: 12,
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-border)",
+            borderRadius: 8,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+            marginTop: 4,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)", margin: "0 0 8px" }}>
+            Push to Linear
+          </p>
+          <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase" as const, color: "var(--color-text-tertiary)", display: "block", marginBottom: 4 }}>
+            Title
+          </label>
+          <input
+            type="text"
+            value={pushTitle}
+            onChange={(e) => setPushTitle(e.target.value)}
+            style={{
+              width: "100%",
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              padding: "6px 8px",
+              border: "1px solid var(--color-border)",
+              borderRadius: 4,
+              background: "var(--color-surface)",
+              color: "var(--color-text-primary)",
+              marginBottom: 8,
+              boxSizing: "border-box",
+            }}
+          />
+          <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase" as const, color: "var(--color-text-tertiary)", display: "block", marginBottom: 4 }}>
+            Team
+          </label>
+          <select
+            value={selectedTeamId ?? ""}
+            onChange={(e) => setSelectedTeamId(e.target.value)}
+            style={{
+              width: "100%",
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              padding: "6px 8px",
+              border: "1px solid var(--color-border)",
+              borderRadius: 4,
+              background: "var(--color-surface)",
+              color: "var(--color-text-primary)",
+              marginBottom: 8,
+              boxSizing: "border-box",
+            }}
+          >
+            {teams.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+          {pushError && (
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--color-earth-terracotta)", margin: "0 0 8px" }}>
+              {pushError}
+            </p>
+          )}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button
+              onClick={() => setPushOpen(false)}
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 12,
+                padding: "4px 12px",
+                background: "transparent",
+                border: "1px solid var(--color-border)",
+                borderRadius: 4,
+                color: "var(--color-text-secondary)",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmPush}
+              disabled={pushing || !pushTitle.trim()}
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 12,
+                fontWeight: 600,
+                padding: "4px 12px",
+                background: "var(--color-spice-turmeric)",
+                border: "none",
+                borderRadius: 4,
+                color: "var(--color-cream)",
+                cursor: pushing ? "wait" : "pointer",
+                opacity: pushing || !pushTitle.trim() ? 0.5 : 1,
+              }}
+            >
+              {pushing ? "Creating..." : "Create Issue"}
+            </button>
+          </div>
+        </div>
       )}
       <span
         style={{
