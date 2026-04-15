@@ -7,7 +7,12 @@
  *
  * ADR-0084 C1.
  */
+import { useState, useRef, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-shell";
+import { toast } from "sonner";
+import type { LinearPushResult } from "@/types";
 
 function priorityLabel(p: number | string): string {
   const v = typeof p === "string" ? parseInt(p, 10) : p;
@@ -18,6 +23,19 @@ function priorityLabel(p: number | string): string {
     case 3: return "Medium";
     case 4: return "Low";
     default: return "Medium";
+  }
+}
+
+/** Map internal status codes to user-facing labels (DOS-52). */
+export function statusLabel(status: string): string {
+  switch (status) {
+    case "backlog": return "Suggested";
+    case "unstarted": return "Active";
+    case "started": return "In Progress";
+    case "completed": return "Completed";
+    case "cancelled": return "Cancelled";
+    case "archived": return "Archived";
+    default: return status;
   }
 }
 
@@ -43,8 +61,12 @@ interface ActionRowFullProps {
     accountId?: string | null;
     sourceLabel?: string | null;
     needsDecision?: boolean;
+    linearIdentifier?: string | null;
+    linearUrl?: string | null;
   };
   onToggle: () => void;
+  onLinearPush?: () => void;
+  linearEnabled?: boolean;
   showBorder?: boolean;
   formatDate?: (d: string) => string;
   stripMarkdown?: (s: string) => string;
@@ -155,15 +177,69 @@ function CompactActionRow({
 function FullActionRow({
   action,
   onToggle,
+  onLinearPush,
+  linearEnabled,
   showBorder = true,
   formatDate = defaultFormatDate,
   stripMarkdown = defaultStripMarkdown,
 }: ActionRowFullProps) {
+  const [hovered, setHovered] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const teamIdRef = useRef<string | null>(null);
+
   const isCompleted = action.status === "completed";
   const isOverdue =
     action.dueDate &&
     (action.status === "unstarted" || action.status === "started") &&
     new Date(action.dueDate) < new Date();
+
+  // Eligible for push: not yet linked, active status, Linear enabled
+  const canPush =
+    linearEnabled &&
+    !action.linearIdentifier &&
+    (action.status === "backlog" || action.status === "unstarted");
+
+  const handlePush = useCallback(async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (pushing) return;
+    setPushing(true);
+    try {
+      // Cache team ID on first use
+      if (!teamIdRef.current) {
+        const teams = await invoke<Array<{ id: string; name: string }>>("get_linear_teams");
+        if (!teams.length) {
+          toast.error("No Linear teams found");
+          return;
+        }
+        teamIdRef.current = teams[0].id;
+      }
+      const result = await invoke<LinearPushResult>("push_action_to_linear", {
+        actionId: action.id,
+        teamId: teamIdRef.current,
+      });
+      toast.success(
+        <span>
+          Pushed as{" "}
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+            onClick={() => open(result.url)}
+          >
+            {result.identifier}
+          </span>
+        </span>
+      );
+      onLinearPush?.();
+    } catch (err) {
+      toast.error(`Push failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setPushing(false);
+    }
+  }, [action.id, pushing, onLinearPush]);
 
   const contextParts: string[] = [];
   if (isOverdue && action.dueDate) {
@@ -181,6 +257,8 @@ function FullActionRow({
 
   return (
     <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         display: "flex",
         alignItems: "flex-start",
@@ -249,6 +327,34 @@ function FullActionRow({
             Decision needed
           </span>
         )}
+        {action.linearIdentifier && (
+          <span
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (action.linearUrl) open(action.linearUrl);
+            }}
+            style={{
+              display: "inline-block",
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: 500,
+              letterSpacing: "0.04em",
+              color: "var(--color-text-tertiary)",
+              borderRadius: 3,
+              padding: "1px 6px",
+              marginLeft: 8,
+              verticalAlign: "middle",
+              cursor: "pointer",
+              transition: "color 0.1s ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-secondary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
+            title={`Open ${action.linearIdentifier} in Linear`}
+          >
+            {action.linearIdentifier}
+          </span>
+        )}
         {action.context && (
           <div
             style={{
@@ -277,6 +383,32 @@ function FullActionRow({
           </div>
         )}
       </div>
+      {/* Push-to-Linear button: hover-reveal when eligible */}
+      {canPush && hovered && (
+        <button
+          onClick={handlePush}
+          disabled={pushing}
+          title="Push to Linear"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 500,
+            letterSpacing: "0.04em",
+            color: pushing ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
+            background: "transparent",
+            border: "1px solid var(--color-rule-light)",
+            borderRadius: 3,
+            padding: "2px 8px",
+            cursor: pushing ? "wait" : "pointer",
+            flexShrink: 0,
+            marginTop: 4,
+            transition: "all 0.1s ease",
+            opacity: pushing ? 0.6 : 1,
+          }}
+        >
+          {pushing ? "..." : "Linear"}
+        </button>
+      )}
       <span
         style={{
           fontFamily: "var(--font-mono)",
