@@ -7,12 +7,10 @@
  *
  * ADR-0084 C1.
  */
-import { useState, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import { toast } from "sonner";
-import type { LinearPushResult } from "@/types";
 
 function priorityLabel(p: number | string): string {
   const v = typeof p === "string" ? parseInt(p, 10) : p;
@@ -65,8 +63,6 @@ interface ActionRowFullProps {
     linearUrl?: string | null;
   };
   onToggle: () => void;
-  onLinearPush?: () => void;
-  linearEnabled?: boolean;
   showBorder?: boolean;
   formatDate?: (d: string) => string;
   stripMarkdown?: (s: string) => string;
@@ -177,84 +173,15 @@ function CompactActionRow({
 function FullActionRow({
   action,
   onToggle,
-  onLinearPush,
-  linearEnabled,
   showBorder = true,
   formatDate = defaultFormatDate,
   stripMarkdown = defaultStripMarkdown,
 }: ActionRowFullProps) {
-  const [hovered, setHovered] = useState(false);
-  const [pushing, setPushing] = useState(false);
-  const [pushOpen, setPushOpen] = useState(false);
-  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  const [pushTitle, setPushTitle] = useState(action.title);
-  const [pushError, setPushError] = useState<string | null>(null);
-
   const isCompleted = action.status === "completed";
   const isOverdue =
     action.dueDate &&
     (action.status === "unstarted" || action.status === "started") &&
     new Date(action.dueDate) < new Date();
-
-  // Eligible for push: not yet linked, active status, Linear enabled
-  const canPush =
-    linearEnabled &&
-    !action.linearIdentifier &&
-    (action.status === "backlog" || action.status === "unstarted");
-
-  const handleOpenPush = useCallback(async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setPushError(null);
-    setPushTitle(action.title);
-    try {
-      const t = await invoke<Array<{ id: string; name: string }>>("get_linear_teams");
-      if (!t.length) {
-        toast.error("No Linear teams found");
-        return;
-      }
-      setTeams(t);
-      setSelectedTeamId(t[0].id);
-      setPushOpen(true);
-    } catch (err) {
-      toast.error("Failed to load Linear teams");
-    }
-  }, [action.title]);
-
-  const handleConfirmPush = useCallback(async () => {
-    if (!selectedTeamId || pushing) return;
-    setPushing(true);
-    setPushError(null);
-    try {
-      const result = await invoke<LinearPushResult>("push_action_to_linear", {
-        actionId: action.id,
-        teamId: selectedTeamId,
-        title: pushTitle.trim() !== action.title ? pushTitle.trim() : null,
-      });
-      setPushOpen(false);
-      toast.success(
-        <span>
-          Created{" "}
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              cursor: "pointer",
-              textDecoration: "underline",
-            }}
-            onClick={() => open(result.url)}
-          >
-            {result.identifier}
-          </span>
-        </span>
-      );
-      onLinearPush?.();
-    } catch (err) {
-      setPushError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setPushing(false);
-    }
-  }, [action.id, selectedTeamId, pushing, onLinearPush]);
 
   const contextParts: string[] = [];
   if (isOverdue && action.dueDate) {
@@ -272,10 +199,7 @@ function FullActionRow({
 
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { if (!pushOpen) setHovered(false); }}
       style={{
-        position: "relative",
         display: "flex",
         alignItems: "flex-start",
         gap: 12,
@@ -431,139 +355,7 @@ function FullActionRow({
           </div>
         )}
       </div>
-      {/* Push-to-Linear: hover-reveal trigger + confirmation popover */}
-      {canPush && hovered && !pushOpen && (
-        <button
-          onClick={handleOpenPush}
-          title="Create a Linear issue from this action"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 500,
-            letterSpacing: "0.04em",
-            color: "var(--color-text-secondary)",
-            background: "transparent",
-            border: "1px solid var(--color-rule-light)",
-            borderRadius: 3,
-            padding: "2px 8px",
-            cursor: "pointer",
-            flexShrink: 0,
-            marginTop: 4,
-            transition: "all 0.1s ease",
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-          Push to Linear
-        </button>
-      )}
-      {pushOpen && (
-        <div
-          style={{
-            position: "absolute",
-            right: 0,
-            top: "100%",
-            zIndex: 50,
-            width: 320,
-            padding: 12,
-            background: "var(--color-surface)",
-            border: "1px solid var(--color-border)",
-            borderRadius: 8,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-            marginTop: 4,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <p style={{ fontFamily: "var(--font-sans)", fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)", margin: "0 0 8px" }}>
-            Push to Linear
-          </p>
-          <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase" as const, color: "var(--color-text-tertiary)", display: "block", marginBottom: 4 }}>
-            Title
-          </label>
-          <input
-            type="text"
-            value={pushTitle}
-            onChange={(e) => setPushTitle(e.target.value)}
-            style={{
-              width: "100%",
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              padding: "6px 8px",
-              border: "1px solid var(--color-border)",
-              borderRadius: 4,
-              background: "var(--color-surface)",
-              color: "var(--color-text-primary)",
-              marginBottom: 8,
-              boxSizing: "border-box",
-            }}
-          />
-          <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase" as const, color: "var(--color-text-tertiary)", display: "block", marginBottom: 4 }}>
-            Team
-          </label>
-          <select
-            value={selectedTeamId ?? ""}
-            onChange={(e) => setSelectedTeamId(e.target.value)}
-            style={{
-              width: "100%",
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              padding: "6px 8px",
-              border: "1px solid var(--color-border)",
-              borderRadius: 4,
-              background: "var(--color-surface)",
-              color: "var(--color-text-primary)",
-              marginBottom: 8,
-              boxSizing: "border-box",
-            }}
-          >
-            {teams.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-          {pushError && (
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--color-earth-terracotta)", margin: "0 0 8px" }}>
-              {pushError}
-            </p>
-          )}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button
-              onClick={() => setPushOpen(false)}
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 12,
-                padding: "4px 12px",
-                background: "transparent",
-                border: "1px solid var(--color-border)",
-                borderRadius: 4,
-                color: "var(--color-text-secondary)",
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleConfirmPush}
-              disabled={pushing || !pushTitle.trim()}
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 12,
-                fontWeight: 600,
-                padding: "4px 12px",
-                background: "var(--color-spice-turmeric)",
-                border: "none",
-                borderRadius: 4,
-                color: "var(--color-cream)",
-                cursor: pushing ? "wait" : "pointer",
-                opacity: pushing || !pushTitle.trim() ? 0.5 : 1,
-              }}
-            >
-              {pushing ? "Creating..." : "Create Issue"}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Push-to-Linear flow lives on ActionDetailPage */}
       <span
         style={{
           fontFamily: "var(--font-mono)",
