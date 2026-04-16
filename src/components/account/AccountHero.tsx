@@ -7,7 +7,9 @@ import React, { useState, useRef, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import { hasBleedFlag } from "@/lib/contamination-guard";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { ContaminationWarning } from "@/components/ui/ContaminationWarning";
 import { EditableText } from "@/components/ui/EditableText";
 import { ChevronDown } from "lucide-react";
 import styles from "./AccountHero.module.css";
@@ -50,6 +52,9 @@ export function AccountHero({
   const fullNarrative = paragraphs.join("\n\n");
   const narrativeTruncated = fullNarrative.length > LEDE_LIMIT && !showFullLede;
   const narrative = narrativeTruncated ? fullNarrative.slice(0, LEDE_LIMIT) + "…" : fullNarrative;
+
+  // DOS-83: Check if executive assessment is flagged as cross-entity contamination.
+  const assessmentBleed = hasBleedFlag(intelligence?.consistencyFindings, "executiveAssessment");
 
   return (
     <div className={styles.hero}>
@@ -115,10 +120,11 @@ export function AccountHero({
       {/* Executive assessment narrative — italic serif, all paragraphs */}
       {narrative && (
         <div className={styles.lede}>
-          {narrative.split("\n\n").map((p, i) => (
+          {assessmentBleed && <ContaminationWarning />}
+          {!assessmentBleed && narrative.split("\n\n").map((p, i) => (
             <p key={i} className={i === 0 ? styles.ledeParagraph : styles.ledeParagraphSpaced}>{p}</p>
           ))}
-          {narrativeTruncated && (
+          {!assessmentBleed && narrativeTruncated && (
             <button
               onClick={() => setShowFullLede(true)}
               className={styles.readMore}
