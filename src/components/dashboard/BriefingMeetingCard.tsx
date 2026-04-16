@@ -386,8 +386,14 @@ export function BriefingMeetingCard({
 
   const duration = formatDuration(meeting);
   const cleanDescription = stripHtml(meeting.calendarDescription);
-  const hasPrepContent = !!(meeting.prep && Object.keys(meeting.prep).length > 0);
-  const canExpand = (state === "upcoming" || state === "in-progress") && (hasPrepContent || isUpNext);
+  const hasVisualContent = !!(
+    cleanDescription || meeting.prep?.context ||
+    (meeting.calendarAttendees?.length ?? 0) > 0 || (meeting.prep?.stakeholders?.length ?? 0) > 0 ||
+    (meeting.prep?.actions?.length ?? 0) > 0 || (meeting.prep?.questions?.length ?? 0) > 0 ||
+    (meeting.prep?.risks?.length ?? 0) > 0 || (meeting.prep?.wins?.length ?? 0) > 0 ||
+    meetingActions.length > 0
+  );
+  const canExpand = (state === "upcoming" || state === "in-progress") && hasVisualContent;
 
   // Measure expansion panel content
   useLayoutEffect(() => {
@@ -403,8 +409,10 @@ export function BriefingMeetingCard({
       navigate({ to: "/meeting/$meetingId", params: { meetingId: meeting.id } });
     } else if (canExpand) {
       setIsExpanded((prev) => !prev);
+    } else if (isUpNext) {
+      navigate({ to: "/meeting/$meetingId", params: { meetingId: meeting.id } });
     }
-  }, [state, canExpand, navigate, meeting.id]);
+  }, [state, canExpand, isUpNext, navigate, meeting.id]);
 
   const accentClass = getAccentCssClass(meeting);
   const tintClass = getExpansionTintClass(meeting);
