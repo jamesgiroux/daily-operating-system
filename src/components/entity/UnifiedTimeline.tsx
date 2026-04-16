@@ -90,7 +90,7 @@ export function UnifiedTimeline({
         date: formatShortDate(ev.eventDate),
         sortDate: ev.eventDate,
         type: "event" as TimelineEntryType,
-        title: `${label}${ev.arrImpact != null ? ` ($${(ev.arrImpact / 1000).toFixed(0)}k)` : ""}`,
+        title: `${label}${ev.arrImpact != null && ev.arrImpact !== 0 ? ` ($${(ev.arrImpact / 1000).toFixed(0)}k)` : ""}`,
         subtitle: ev.notes || undefined,
       });
     }
