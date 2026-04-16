@@ -659,6 +659,45 @@ export default function InboxPage() {
           onClose={() => setDriveModalOpen(false)}
           onImported={refresh}
         />
+
+        {showHelp && (
+          <div className={styles.helpOverlay} onClick={() => setShowHelp(false)}>
+            <div className={styles.helpCard} onClick={(e) => e.stopPropagation()}>
+              <h3 className={styles.helpTitle}>How your inbox works</h3>
+              <div className={styles.helpSteps}>
+                <div className={styles.helpStep}>
+                  <span className={styles.helpStepNumber}>1</span>
+                  <div>
+                    <strong>Drop</strong>
+                    <p>Drag meeting notes, transcripts, or documents into the inbox.</p>
+                  </div>
+                </div>
+                <div className={styles.helpStep}>
+                  <span className={styles.helpStepNumber}>2</span>
+                  <div>
+                    <strong>Classify</strong>
+                    <p>DailyOS detects the file type and content.</p>
+                  </div>
+                </div>
+                <div className={styles.helpStep}>
+                  <span className={styles.helpStepNumber}>3</span>
+                  <div>
+                    <strong>Match</strong>
+                    <p>AI identifies which account or project the file relates to.</p>
+                  </div>
+                </div>
+                <div className={styles.helpStep}>
+                  <span className={styles.helpStepNumber}>4</span>
+                  <div>
+                    <strong>File</strong>
+                    <p>Content is routed to the right place automatically.</p>
+                  </div>
+                </div>
+              </div>
+              <button className={styles.helpCloseButton} onClick={() => setShowHelp(false)}>Got it</button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
