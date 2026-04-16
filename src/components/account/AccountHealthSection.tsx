@@ -12,7 +12,8 @@ interface AccountHealthSectionProps {
 
 export function AccountHealthSection({ health }: AccountHealthSectionProps) {
   // DOS-84: When fewer than 3 dimensions have data, show "Insufficient Data"
-  const isInsufficient = health.sufficientData === false;
+  // Use !== true so undefined (old cached data) also triggers insufficient display
+  const isInsufficient = health.sufficientData !== true;
 
   return (
     <div id="relationship-health" className={`editorial-reveal ${shared.marginLabelSection}`}>
