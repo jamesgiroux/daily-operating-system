@@ -466,7 +466,8 @@ impl ActionDb {
         Ok(context)
     }
 
-    /// List recent email signals for an entity.
+    /// List recent email signals for an entity (includes propagated signals).
+    /// Used by health scoring which tolerates recall over precision.
     pub fn list_recent_email_signals_for_entity(
         &self,
         entity_id: &str,
@@ -504,6 +505,66 @@ impl ActionDb {
             signals.push(row?);
         }
         Ok(signals)
+    }
+
+    /// List recent email signals directly associated with an entity (no propagated signals).
+    /// DOS-156: Used by The Record display — requires precision over recall.
+    /// Excludes signals that were propagated from person→account (person_id IS NOT NULL
+    /// means the signal was created for a person and propagated to this account).
+    pub fn list_direct_email_signals_for_entity(
+        &self,
+        entity_id: &str,
+        limit: usize,
+    ) -> Result<Vec<DbEmailSignal>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
+                    signal_type, signal_text, confidence, sentiment, urgency, detected_at, source
+             FROM email_signals
+             WHERE entity_id = ?1
+               AND deactivated_at IS NULL
+               AND person_id IS NULL
+             ORDER BY detected_at DESC, id DESC
+             LIMIT ?2",
+        )?;
+
+        let rows = stmt.query_map(params![entity_id, limit as i64], |row| {
+            Ok(DbEmailSignal {
+                id: row.get(0)?,
+                email_id: row.get(1)?,
+                sender_email: row.get(2)?,
+                person_id: row.get(3)?,
+                entity_id: row.get(4)?,
+                entity_type: row.get(5)?,
+                signal_type: row.get(6)?,
+                signal_text: row.get(7)?,
+                confidence: row.get(8)?,
+                sentiment: row.get(9)?,
+                urgency: row.get(10)?,
+                detected_at: row.get(11)?,
+                source: row.get(12)?,
+            })
+        })?;
+
+        let mut signals = Vec::new();
+        for row in rows {
+            signals.push(row?);
+        }
+        Ok(signals)
+    }
+
+    /// DOS-156: Deactivate propagated email signals (person_id IS NOT NULL) for all accounts.
+    /// One-time cleanup to remove the 14.6x fan-out noise.
+    pub fn deactivate_propagated_email_signals(&self) -> Result<usize, DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE email_signals
+             SET deactivated_at = ?1
+             WHERE person_id IS NOT NULL
+               AND entity_type = 'account'
+               AND deactivated_at IS NULL",
+            params![now],
+        )?;
+        Ok(self.conn.changes() as usize)
     }
 
     /// Batch-query email signals for multiple email IDs.
