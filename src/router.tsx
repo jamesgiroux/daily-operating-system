@@ -6,6 +6,7 @@ import {
   Outlet,
   useRouterState,
   useNavigate,
+  useParams,
 } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -27,7 +28,9 @@ import { useWorkflow } from "@/hooks/useWorkflow";
 // Page components
 import AccountsPage from "@/pages/AccountsPage";
 import AccountDetailShell from "@/pages/AccountDetailShell";
-import AccountDetailLegacy from "@/pages/AccountDetailLegacy";
+import AccountHealthView from "@/pages/account-views/AccountHealthView";
+import AccountContextView from "@/pages/account-views/AccountContextView";
+import AccountWorkView from "@/pages/account-views/AccountWorkView";
 import ActionDetailPage from "@/pages/ActionDetailPage";
 import ActionsPage from "@/pages/ActionsPage";
 import InboxPage from "@/pages/InboxPage";
@@ -95,7 +98,7 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
 // Route IDs that use the magazine shell instead of the sidebar shell.
 // Add new editorial routes here as they're built.
-const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/", "/accounts/$accountId/reports/risk_briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/book_of_business", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
+const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/", "/accounts/$accountId/health", "/accounts/$accountId/context", "/accounts/$accountId/work", "/accounts/$accountId/reports/risk_briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/book_of_business", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
 
 const WELCOME_MIN_MS = 1500;
 const WELCOME_MAX_MS = 5000;
@@ -540,10 +543,42 @@ const accountDetailRoute = createRoute({
   component: AccountDetailShell,
 });
 
+// DOS-112: Index route redirects to /health view
+function AccountDetailIndex() {
+  const navigate = useNavigate();
+  const { accountId } = useParams({ strict: false });
+  useEffect(() => {
+    navigate({
+      to: "/accounts/$accountId/health",
+      params: { accountId: accountId! },
+      replace: true,
+    });
+  }, []);
+  return null;
+}
+
 const accountDetailIndexRoute = createRoute({
   getParentRoute: () => accountDetailRoute,
   path: "/",
-  component: AccountDetailLegacy,
+  component: AccountDetailIndex,
+});
+
+const accountHealthViewRoute = createRoute({
+  getParentRoute: () => accountDetailRoute,
+  path: "/health",
+  component: AccountHealthView,
+});
+
+const accountContextViewRoute = createRoute({
+  getParentRoute: () => accountDetailRoute,
+  path: "/context",
+  component: AccountContextView,
+});
+
+const accountWorkViewRoute = createRoute({
+  getParentRoute: () => accountDetailRoute,
+  path: "/work",
+  component: AccountWorkView,
 });
 
 const riskBriefingRoute = createRoute({
@@ -702,7 +737,7 @@ const personDetailRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   accountsRoute,
-  accountDetailRoute.addChildren([accountDetailIndexRoute]),
+  accountDetailRoute.addChildren([accountDetailIndexRoute, accountHealthViewRoute, accountContextViewRoute, accountWorkViewRoute]),
   riskBriefingRoute,
   accountHealthRoute,
   ebrQbrRoute,

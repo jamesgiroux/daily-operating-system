@@ -1,3 +1,10 @@
+/**
+ * @deprecated DOS-112: This flat page component is no longer a route target.
+ * AccountDetailShell + view routes (AccountHealthView, AccountContextView,
+ * AccountWorkView) replace it. Kept because AccountDetailEditorial.module.css
+ * is still imported by many child components. Safe to delete once the CSS
+ * module is renamed or consolidated.
+ */
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
