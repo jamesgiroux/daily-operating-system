@@ -247,6 +247,20 @@ pub fn emit_enriched_email_signals(
     let mut emitted = 0usize;
 
     for (email_id, entity_id, entity_type, sentiment, urgency, subject, sender) in &rows {
+        // DOS-156 Layer 2: Skip internal senders — they are linked to many accounts
+        // as team members, causing massive fan-out. Mirror the is_external check from
+        // executor.rs:240.
+        let is_internal_sender = sender
+            .as_deref()
+            .and_then(|email| db.get_person_by_email_or_alias(email).ok().flatten())
+            .map(|p| p.relationship != "external")
+            .unwrap_or(false);
+
+        if is_internal_sender {
+            // Still create direct entity signals for health scoring, but skip
+            // person→account propagation below (the main source of fan-out).
+        }
+
         // Skip direct-entity emission if this entity_type+email combination already has signals.
         // Account propagation below runs regardless — a person signal doesn't block account signals.
         let dedup_key = format!("{}:{}", entity_type, email_id);
@@ -456,7 +470,11 @@ pub fn emit_enriched_email_signals(
         // account-level signals so that `signal_events` contains account-type
         // rows with source 'email_enrichment'. This is direct emission (not
         // the propagation engine) so the source remains '%email%'-queryable.
-        if entity_type == "person" {
+        //
+        // DOS-156 Layer 2: Skip propagation entirely for internal senders.
+        // Internal CS team members are linked to 20+ accounts — propagating
+        // every email to all of them caused 14.6x fan-out.
+        if entity_type == "person" && !is_internal_sender {
             let linked_accounts: Vec<String> = db
                 .conn_ref()
                 .prepare(
@@ -469,6 +487,23 @@ pub fn emit_enriched_email_signals(
                     Ok(rows.filter_map(|r| r.ok()).collect())
                 })
                 .unwrap_or_default();
+
+            // DOS-156 Layer 3: Fanout limit — if a person is linked to more than
+            // MAX_ACCOUNT_FANOUT accounts, the email is likely from a broadly-linked
+            // contact (e.g. sales rep covering many accounts). Skip propagation to
+            // avoid noise.
+            const MAX_ACCOUNT_FANOUT: usize = 5;
+            let linked_accounts = if linked_accounts.len() > MAX_ACCOUNT_FANOUT {
+                log::info!(
+                    "DOS-156: Skipping email {} propagation — {} linked accounts exceeds fanout limit of {}",
+                    email_id,
+                    linked_accounts.len(),
+                    MAX_ACCOUNT_FANOUT
+                );
+                Vec::new()
+            } else {
+                linked_accounts
+            };
 
             for account_id in &linked_accounts {
                 // Skip if we already emitted account signals for this email
