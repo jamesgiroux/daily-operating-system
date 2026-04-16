@@ -83,7 +83,7 @@ export function buildAccountVitals(detail: {
       highlight: diffDays <= 60 ? "saffron" : undefined,
     });
   }
-  if (detail.nps != null && detail.nps !== 0) vitals.push({ text: `NPS ${detail.nps}` });
+  if (detail.nps != null) vitals.push({ text: `NPS ${detail.nps}` });
   if (detail.signals?.meetingFrequency30d != null) {
     vitals.push({ text: `${detail.signals.meetingFrequency30d} meetings / 30d` });
   }
