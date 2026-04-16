@@ -12,12 +12,14 @@
  * the dependency so the router doesn't need to import page internals.
  */
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import styles from './MagazinePageLayout.module.css';
+import folioStyles from './FolioBar.module.css';
 import AtmosphereLayer from './AtmosphereLayer';
 import FolioBar from './FolioBar';
 import FloatingNavIsland from './FloatingNavIsland';
+import { DevToolsPanelSheet } from '@/components/devtools/DevToolsPanel';
 import { UpdateBanner } from '@/components/notifications/UpdateBanner';
 import { useMagazineShellConfig, useFolioVolatile } from '@/hooks/useMagazineShell';
 import { useChapterObserver } from '@/hooks/useChapterObserver';
@@ -101,6 +103,50 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
   const folioActions = volatile.folioActions ?? pageConfig?.folioActions;
   const { appState, clearDemo } = useAppState();
 
+  // Dev mode badge — checks both config and DB flag, warns on mismatch
+  const [isDevMode, setIsDevMode] = useState(false);
+  const [modeWarning, setModeWarning] = useState(false);
+  const [devPanelOpen, setDevPanelOpen] = useState(false);
+
+  const checkDevMode = useCallback(() => {
+    if (!import.meta.env.DEV) return;
+    Promise.all([
+      invoke<{ workspacePath?: string; developerMode?: boolean }>('get_config')
+        .then((cfg) => ({
+          isDev: cfg.workspacePath?.includes('DailyOS-dev') === true || cfg.developerMode === true
+        }))
+        .catch(() => ({ isDev: false })),
+      invoke<{ isDevDbMode: boolean }>('dev_get_state')
+        .then((s) => ({ isDev: s.isDevDbMode === true }))
+        .catch(() => ({ isDev: false })),
+    ]).then(([config, db]) => {
+      if (config.isDev !== db.isDev) {
+        console.error('[FolioBar] config/DB mode mismatch:', { config: config.isDev, db: db.isDev });
+        setModeWarning(true);
+      } else {
+        setModeWarning(false);
+      }
+      setIsDevMode(config.isDev || db.isDev);
+    });
+  }, []);
+
+  useEffect(() => {
+    checkDevMode();
+  }, [checkDevMode]);
+
+  const modeBadge = import.meta.env.DEV ? (
+    <button
+      className={`${folioStyles.folioModeBadge} ${
+        modeWarning ? folioStyles.folioModeBadgeWarning
+          : isDevMode ? folioStyles.folioModeBadgeDev
+          : folioStyles.folioModeBadgeLive
+      }`}
+      onClick={() => setDevPanelOpen(true)}
+    >
+      {modeWarning ? 'SPLIT' : isDevMode ? 'DEV' : 'LIVE'}
+    </button>
+  ) : undefined;
+
   // Demo mode badge — renders in folio bar actions slot
   const demoBadge = appState.demoModeActive ? (
     <button
@@ -123,8 +169,9 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
     </button>
   ) : null;
 
-  const combinedActions = demoBadge || folioActions ? (
+  const combinedActions = demoBadge || folioActions || modeBadge ? (
     <>
+      {modeBadge}
       {demoBadge}
       {folioActions}
     </>
@@ -171,6 +218,11 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
         {onWhatsNew && <UpdateBanner onWhatsNew={onWhatsNew} />}
         {children}
       </main>
+
+      {/* Dev tools panel — opened via mode badge */}
+      {import.meta.env.DEV && (
+        <DevToolsPanelSheet open={devPanelOpen} onOpenChange={setDevPanelOpen} />
+      )}
     </div>
   );
 };

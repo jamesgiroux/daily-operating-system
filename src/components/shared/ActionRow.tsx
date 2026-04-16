@@ -7,7 +7,36 @@
  *
  * ADR-0084 C1.
  */
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-shell";
+import { toast } from "sonner";
+
+function priorityLabel(p: number | string): string {
+  const v = typeof p === "string" ? parseInt(p, 10) : p;
+  switch (v) {
+    case 0: return "—";
+    case 1: return "Urgent";
+    case 2: return "High";
+    case 3: return "Medium";
+    case 4: return "Low";
+    default: return "Medium";
+  }
+}
+
+/** Map internal status codes to user-facing labels (DOS-52). */
+export function statusLabel(status: string): string {
+  switch (status) {
+    case "backlog": return "Suggested";
+    case "unstarted": return "Active";
+    case "started": return "In Progress";
+    case "completed": return "Completed";
+    case "cancelled": return "Cancelled";
+    case "archived": return "Archived";
+    default: return status;
+  }
+}
 
 interface ActionRowCompactProps {
   variant: "compact";
@@ -24,12 +53,15 @@ interface ActionRowFullProps {
     id: string;
     title: string;
     status: string;
-    priority: string;
+    priority: number;
     dueDate?: string | null;
     context?: string | null;
     accountName?: string | null;
     accountId?: string | null;
     sourceLabel?: string | null;
+    needsDecision?: boolean;
+    linearIdentifier?: string | null;
+    linearUrl?: string | null;
   };
   onToggle: () => void;
   showBorder?: boolean;
@@ -43,7 +75,7 @@ interface ActionRowOutcomeProps {
     id: string;
     title: string;
     status: string;
-    priority: string;
+    priority: number;
     dueDate?: string | null;
   };
   onComplete: () => void;
@@ -146,10 +178,11 @@ function FullActionRow({
   formatDate = defaultFormatDate,
   stripMarkdown = defaultStripMarkdown,
 }: ActionRowFullProps) {
+  const [decisionResolved, setDecisionResolved] = useState(false);
   const isCompleted = action.status === "completed";
   const isOverdue =
     action.dueDate &&
-    action.status === "pending" &&
+    (action.status === "unstarted" || action.status === "started") &&
     new Date(action.dueDate) < new Date();
 
   const contextParts: string[] = [];
@@ -216,6 +249,86 @@ function FullActionRow({
         >
           {stripMarkdown(action.title)}
         </Link>
+        {action.needsDecision && !decisionResolved && (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "var(--color-spice-turmeric)",
+              background: "var(--color-spice-saffron-12)",
+              borderRadius: 3,
+              padding: "1px 6px",
+              marginLeft: 8,
+              verticalAlign: "middle",
+            }}
+          >
+            Decision needed
+            <button
+              onClick={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                  await invoke("resolve_decision", { id: action.id });
+                  setDecisionResolved(true);
+                } catch {
+                  toast.error("Failed to resolve decision");
+                }
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+                marginLeft: 2,
+                color: "var(--color-spice-turmeric)",
+                opacity: 0.6,
+                lineHeight: 1,
+              }}
+              onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = "1"; }}
+              onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = "0.6"; }}
+              title="Resolve decision"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </span>
+        )}
+        {action.linearIdentifier && (
+          <span
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (action.linearUrl) open(action.linearUrl);
+            }}
+            style={{
+              display: "inline-block",
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: 500,
+              letterSpacing: "0.04em",
+              color: "var(--color-text-tertiary)",
+              borderRadius: 3,
+              padding: "1px 6px",
+              marginLeft: 8,
+              verticalAlign: "middle",
+              cursor: "pointer",
+              transition: "color 0.1s ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-secondary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
+            title={`Open ${action.linearIdentifier} in Linear`}
+          >
+            {action.linearIdentifier}
+          </span>
+        )}
         {action.context && (
           <div
             style={{
@@ -244,6 +357,7 @@ function FullActionRow({
           </div>
         )}
       </div>
+      {/* Push-to-Linear flow lives on ActionDetailPage */}
       <span
         style={{
           fontFamily: "var(--font-mono)",
@@ -251,16 +365,16 @@ function FullActionRow({
           fontWeight: 600,
           letterSpacing: "0.04em",
           color:
-            action.priority === "P1"
+            action.priority <= 1
               ? "var(--color-spice-terracotta)"
-              : action.priority === "P2"
+              : action.priority <= 2
                 ? "var(--color-spice-turmeric)"
                 : "var(--color-text-tertiary)",
           flexShrink: 0,
           marginTop: 4,
         }}
       >
-        {action.priority}
+        {priorityLabel(action.priority)}
       </span>
     </div>
   );
@@ -275,11 +389,11 @@ function OutcomeActionRow({
   onCyclePriority,
 }: ActionRowOutcomeProps) {
   const isCompleted = action.status === "completed";
-  const isSuggested = action.status === "suggested";
+  const isSuggested = action.status === "backlog";
 
   const priorityColor: Record<string, string> = {
-    P1: "var(--color-spice-terracotta)",
-    P3: "var(--color-text-tertiary)",
+    1: "var(--color-spice-terracotta)",
+    4: "var(--color-text-tertiary)",
   };
 
   return (
@@ -363,7 +477,7 @@ function OutcomeActionRow({
             cursor: "pointer",
           }}
         >
-          {action.priority}
+          {priorityLabel(action.priority)}
         </button>
       )}
 

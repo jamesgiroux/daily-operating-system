@@ -731,7 +731,7 @@ pub fn clear_claude_status_cache() {
 }
 
 // =============================================================================
-// Onboarding: Claude CLI Installer (DOS-57)
+// Onboarding: Claude CLI Installer (DOS-57) + Node.js Auto-Installer (DOS-65)
 // =============================================================================
 
 #[derive(Clone, serde::Serialize)]
@@ -745,8 +745,175 @@ struct InstallProgress {
 static INSTALL_IN_PROGRESS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// Install Claude Code CLI via npm. Requires Node.js to be already installed.
-/// Emits `install-claude-progress` events for frontend progress UI.
+// Pinned Node.js LTS version + checksum for integrity verification (DOS-65)
+const NODE_VERSION: &str = "22.15.0";
+const NODE_PKG_SHA256: &str =
+    "0bc096a279cd7cbc57bf3a6c6570f3ca03b3ab684d1878a1425919e9b6b76317";
+
+/// Download and install Node.js via the official macOS .pkg installer.
+///
+/// Uses `osascript` to invoke the macOS installer with admin privileges,
+/// which shows the standard system auth dialog. Emits progress events on
+/// `install-claude-progress`.
+fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+
+    let pkg_name = format!("node-v{}.pkg", NODE_VERSION);
+    let download_url = format!("https://nodejs.org/dist/v{}/{}", NODE_VERSION, pkg_name);
+
+    log::info!("DOS-65: downloading Node.js {} from {}", NODE_VERSION, download_url);
+
+    // --- Download .pkg to temp file ---
+    let _ = app.emit(
+        "install-claude-progress",
+        InstallProgress {
+            step: "downloading_node".to_string(),
+            status: "running".to_string(),
+            message: "Downloading Node.js...".to_string(),
+        },
+    );
+
+    let response = reqwest::blocking::get(&download_url).map_err(|e| {
+        let msg = format!("Failed to download Node.js — check your internet connection: {}", e);
+        let _ = app.emit(
+            "install-claude-progress",
+            InstallProgress {
+                step: "error".to_string(),
+                status: "error".to_string(),
+                message: msg.clone(),
+            },
+        );
+        msg
+    })?;
+
+    if !response.status().is_success() {
+        let msg = format!(
+            "Failed to download Node.js — server returned {}",
+            response.status()
+        );
+        let _ = app.emit(
+            "install-claude-progress",
+            InstallProgress {
+                step: "error".to_string(),
+                status: "error".to_string(),
+                message: msg.clone(),
+            },
+        );
+        return Err(msg);
+    }
+
+    let bytes = response.bytes().map_err(|e| {
+        let msg = format!("Failed to download Node.js — connection interrupted: {}", e);
+        let _ = app.emit(
+            "install-claude-progress",
+            InstallProgress {
+                step: "error".to_string(),
+                status: "error".to_string(),
+                message: msg.clone(),
+            },
+        );
+        msg
+    })?;
+
+    // --- Verify SHA-256 checksum ---
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let digest = format!("{:x}", hasher.finalize());
+    log::info!("DOS-65: download SHA-256 = {}", digest);
+
+    if digest != NODE_PKG_SHA256 {
+        let msg = "Node.js download integrity check failed — please try again".to_string();
+        log::error!(
+            "DOS-65: checksum mismatch: expected {} got {}",
+            NODE_PKG_SHA256,
+            digest
+        );
+        let _ = app.emit(
+            "install-claude-progress",
+            InstallProgress {
+                step: "error".to_string(),
+                status: "error".to_string(),
+                message: msg.clone(),
+            },
+        );
+        return Err(msg);
+    }
+
+    // --- Write to temp file ---
+    let tmp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    let pkg_path = tmp_dir.path().join(&pkg_name);
+    std::fs::write(&pkg_path, &bytes)
+        .map_err(|e| format!("Failed to write Node.js installer: {}", e))?;
+
+    // --- Run macOS installer with admin privileges via osascript ---
+    let _ = app.emit(
+        "install-claude-progress",
+        InstallProgress {
+            step: "installing_node".to_string(),
+            status: "running".to_string(),
+            message: "Installing Node.js (admin password required)...".to_string(),
+        },
+    );
+
+    let script = format!(
+        r#"do shell script "installer -pkg '{}' -target /" with administrator privileges"#,
+        pkg_path.display()
+    );
+    log::info!("DOS-65: running macOS installer via osascript");
+
+    let output = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .output()
+        .map_err(|e| format!("Failed to launch installer: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let msg = if stderr.contains("User canceled")
+            || stderr.contains("user canceled")
+            || stderr.contains("-128")
+        {
+            "Installation cancelled — admin privileges required to install Node.js".to_string()
+        } else {
+            format!("Node.js installation failed: {}", stderr.trim())
+        };
+        let _ = app.emit(
+            "install-claude-progress",
+            InstallProgress {
+                step: "error".to_string(),
+                status: "error".to_string(),
+                message: msg.clone(),
+            },
+        );
+        return Err(msg);
+    }
+
+    // --- Clear cached binary lookups so resolve_node_binary() re-probes ---
+    crate::util::clear_node_binary_cache();
+
+    // --- Verify Node is now available ---
+    if crate::util::resolve_node_binary().is_none() {
+        let msg = "Node.js installer completed but node binary not found on PATH".to_string();
+        let _ = app.emit(
+            "install-claude-progress",
+            InstallProgress {
+                step: "error".to_string(),
+                status: "error".to_string(),
+                message: msg.clone(),
+            },
+        );
+        return Err(msg);
+    }
+
+    log::info!("DOS-65: Node.js {} installed successfully", NODE_VERSION);
+    Ok(())
+}
+
+/// Install Claude Code CLI, auto-installing Node.js first if needed.
+///
+/// When Node.js is missing, downloads and installs the official macOS .pkg
+/// (with SHA-256 verification and admin auth dialog), then proceeds to
+/// install Claude Code via npm. Emits `install-claude-progress` events
+/// for frontend progress UI.
 #[tauri::command]
 pub async fn install_claude_cli(app: tauri::AppHandle) -> Result<(), String> {
     use std::sync::atomic::Ordering;
@@ -762,22 +929,31 @@ pub async fn install_claude_cli(app: tauri::AppHandle) -> Result<(), String> {
     // NOTE: If `spawn_blocking` panics, the guard won't reset. Acceptable for
     // a user-initiated one-shot action — restart clears it.
     let result = tokio::task::spawn_blocking(move || {
-        // Step 1: Resolve npm binary
+        // Step 1: Resolve npm binary — install Node.js if missing
         let npm_path = match crate::util::resolve_npm_binary() {
             Some(path) => path,
             None => {
-                let _ = app.emit(
-                    "install-claude-progress",
-                    InstallProgress {
-                        step: "error".to_string(),
-                        status: "error".to_string(),
-                        message: "Node.js is not installed. Please install Node.js from nodejs.org first.".to_string(),
-                    },
-                );
-                return Err(
-                    "Node.js is not installed. Please install Node.js from nodejs.org first."
-                        .to_string(),
-                );
+                // Node.js not found — auto-install it (DOS-65)
+                install_nodejs_blocking(&app)?;
+
+                // Re-resolve npm after Node install
+                match crate::util::resolve_npm_binary() {
+                    Some(path) => path,
+                    None => {
+                        let msg =
+                            "Node.js installed but npm not found — please restart and try again"
+                                .to_string();
+                        let _ = app.emit(
+                            "install-claude-progress",
+                            InstallProgress {
+                                step: "error".to_string(),
+                                status: "error".to_string(),
+                                message: msg.clone(),
+                            },
+                        );
+                        return Err(msg);
+                    }
+                }
             }
         };
 
@@ -785,7 +961,7 @@ pub async fn install_claude_cli(app: tauri::AppHandle) -> Result<(), String> {
         let _ = app.emit(
             "install-claude-progress",
             InstallProgress {
-                step: "installing".to_string(),
+                step: "installing_claude".to_string(),
                 status: "running".to_string(),
                 message: "Installing Claude Code CLI...".to_string(),
             },

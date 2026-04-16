@@ -41,6 +41,7 @@ import { AccountPullQuote } from "@/components/account/AccountPullQuote";
 import { AccountTechnicalFootprint } from "@/components/account/AccountTechnicalFootprint";
 import { AccountReportsSection } from "@/components/account/AccountReportsSection";
 import { AccountDialogs } from "@/components/account/AccountDialogs";
+import { RecommendedActions } from "@/components/entity/RecommendedActions";
 import { buildAccountVitals, buildChapters } from "@/components/account/account-detail-utils";
 
 import shared from "@/styles/entity-detail.module.css";
@@ -216,6 +217,10 @@ export default function AccountDetailEditorial() {
       </MarginSection>
 
       <MarginSection id="the-work" label={<>The<br/>Work</>}>
+        {intelligence?.recommendedActions && intelligence.recommendedActions.length > 0 && (
+          <RecommendedActions entityId={detail.id} entityType="account"
+            actions={intelligence.recommendedActions} onRefresh={acct.silentRefresh} />
+        )}
         <TheWork data={{ ...detail, accountId: detail.id }} sectionId="" addingAction={acct.addingAction}
           setAddingAction={acct.setAddingAction} newActionTitle={acct.newActionTitle}
           setNewActionTitle={acct.setNewActionTitle} creatingAction={acct.creatingAction}

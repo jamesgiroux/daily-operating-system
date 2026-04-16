@@ -9,6 +9,48 @@ use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 use tauri::Emitter;
 
+/// DOS-12: Preserve user-confirmed value_delivered items during re-enrichment.
+///
+/// Items with `item_source.source == "user_correction"` are user-confirmed and must
+/// survive re-enrichment. New AI items are merged in, deduplicating by fuzzy statement match.
+fn merge_user_confirmed_values(
+    new_intel: &mut crate::intelligence::IntelligenceJson,
+    existing: &crate::intelligence::IntelligenceJson,
+) {
+    // Collect user-confirmed items from existing data
+    let user_confirmed: Vec<_> = existing
+        .value_delivered
+        .iter()
+        .filter(|v| {
+            v.item_source
+                .as_ref()
+                .is_some_and(|s| s.source == "user_correction")
+        })
+        .cloned()
+        .collect();
+
+    if user_confirmed.is_empty() {
+        return;
+    }
+
+    // Build set of existing user-confirmed statements (lowercased, trimmed) for dedup
+    let confirmed_statements: std::collections::HashSet<String> = user_confirmed
+        .iter()
+        .map(|v| v.statement.trim().to_lowercase())
+        .collect();
+
+    // Remove AI items that duplicate user-confirmed items
+    new_intel
+        .value_delivered
+        .retain(|v| !confirmed_statements.contains(&v.statement.trim().to_lowercase()));
+
+    // Prepend user-confirmed items (they take priority)
+    let mut merged = user_confirmed;
+    merged.append(&mut new_intel.value_delivered);
+    merged.truncate(10); // Cap at 10
+    new_intel.value_delivered = merged;
+}
+
 fn stage_failure_message(stage: &str) -> &str {
     match stage {
         "context_gather" => "context gather",
@@ -412,8 +454,13 @@ pub fn upsert_assessment_from_enrichment(
     entity_id: &str,
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), String> {
+    // DOS-12: Merge value_delivered — preserve user-confirmed items during re-enrichment.
+    let mut intel = intel.clone();
+    if let Ok(Some(existing)) = db.get_entity_intelligence(entity_id) {
+        merge_user_confirmed_values(&mut intel, &existing);
+    }
     db.with_transaction(|tx| {
-        tx.upsert_entity_intelligence(intel)
+        tx.upsert_entity_intelligence(&intel)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             tx,
@@ -427,7 +474,16 @@ pub fn upsert_assessment_from_enrichment(
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
         Ok(())
-    })
+    })?;
+
+    // DOS-14: After enrichment, reconcile AI objectives with user objectives
+    if entity_type == "account" {
+        if let Err(e) = crate::services::success_plans::reconcile_objectives(db, entity_id) {
+            log::warn!("Objective reconciliation failed for {entity_id}: {e}");
+        }
+    }
+
+    Ok(())
 }
 
 /// Persist an assessment snapshot without emitting enrichment lifecycle signals.
@@ -1085,9 +1141,7 @@ pub async fn generate_risk_briefing(
             let db =
                 crate::db::ActionDb::open().map_err(|e| format!("Database unavailable: {e}"))?;
 
-            let config_guard = app_state
-                .config
-                .read();
+            let config_guard = app_state.config.read();
             let config = config_guard
                 .as_ref()
                 .ok_or_else(|| "Config not initialized".to_string())?;
@@ -1143,6 +1197,220 @@ pub fn get_risk_briefing(
     let workspace = std::path::Path::new(&config.workspace_path);
     let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
     crate::risk_briefing::read_risk_briefing(&account_dir)
+}
+
+// =============================================================================
+// DOS-13: Recommended Action Track / Dismiss
+// =============================================================================
+
+/// DOS-13: Track (accept) a recommended action — creates a real action with
+/// source_type "intelligence" and emits a recommendation_accepted signal.
+pub async fn track_recommendation(
+    entity_id: &str,
+    entity_type: &str,
+    index: usize,
+    state: &AppState,
+) -> Result<String, String> {
+    let engine = state.signals.engine.clone();
+    let entity_id = entity_id.to_string();
+    let entity_type = entity_type.to_string();
+
+    state
+        .db_write(move |db| {
+            // Read current intelligence to find the recommendation
+            let intel = db
+                .get_entity_intelligence(&entity_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("No intelligence found for {}", entity_id))?;
+
+            let rec = intel
+                .recommended_actions
+                .get(index)
+                .ok_or_else(|| format!("Recommendation index {} out of bounds", index))?;
+
+            // Create the action
+            let now = chrono::Utc::now().to_rfc3339();
+            let id = uuid::Uuid::new_v4().to_string();
+            let action = crate::db::DbAction {
+                id: id.clone(),
+                title: rec.title.clone(),
+                priority: rec.priority,
+                status: crate::action_status::UNSTARTED.to_string(),
+                created_at: now.clone(),
+                due_date: rec.suggested_due.clone(),
+                completed_at: None,
+                account_id: if entity_type == "account" {
+                    Some(entity_id.clone())
+                } else {
+                    None
+                },
+                project_id: if entity_type == "project" {
+                    Some(entity_id.clone())
+                } else {
+                    None
+                },
+                source_type: Some("intelligence".to_string()),
+                source_id: Some(entity_id.clone()),
+                source_label: Some("Based on account intelligence".to_string()),
+                context: Some(rec.rationale.clone()),
+                waiting_on: None,
+                updated_at: now,
+                person_id: if entity_type == "person" {
+                    Some(entity_id.clone())
+                } else {
+                    None
+                },
+                account_name: None,
+                next_meeting_title: None,
+                next_meeting_start: None,
+                needs_decision: false,
+                decision_owner: None,
+                decision_stakes: None,
+                linear_identifier: None,
+                linear_url: None,
+            };
+
+            db.upsert_action(&action).map_err(|e| e.to_string())?;
+
+            // Remove the tracked recommendation from intel to prevent duplicates
+            let mut updated_intel = intel.clone();
+            if index < updated_intel.recommended_actions.len() {
+                updated_intel.recommended_actions.remove(index);
+                let _ = db.upsert_entity_intelligence(&updated_intel);
+            }
+
+            // Emit recommendation_accepted signal
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                &entity_type,
+                &entity_id,
+                "recommendation_accepted",
+                "intelligence",
+                Some(&format!(
+                    "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+                    id,
+                    rec.title.replace('"', "\\\"")
+                )),
+                0.8,
+            );
+
+            Ok(id)
+        })
+        .await
+}
+
+/// DOS-13: Dismiss a recommended action — removes it from intelligence and
+/// emits a recommendation_rejected signal (low confidence correction).
+pub async fn dismiss_recommendation(
+    entity_id: &str,
+    entity_type: &str,
+    index: usize,
+    state: &AppState,
+) -> Result<(), String> {
+    let config = state.config.read().clone();
+    let config = config.ok_or("No configuration loaded")?;
+    let workspace_path = config.workspace_path.clone();
+
+    let engine = state.signals.engine.clone();
+    let entity_id = entity_id.to_string();
+    let entity_type = entity_type.to_string();
+
+    state
+        .db_write(move |db| {
+            let workspace = Path::new(&workspace_path);
+
+            let account = if entity_type == "account" {
+                db.get_account(&entity_id).map_err(|e| e.to_string())?
+            } else {
+                None
+            };
+
+            let entity_name = match entity_type.as_str() {
+                "account" => account.as_ref().map(|a| a.name.clone()),
+                "project" => db
+                    .get_project(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                "person" => db
+                    .get_person(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                _ => return Err(format!("Unsupported entity type: {}", entity_type)),
+            }
+            .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
+
+            let dir = crate::intelligence::resolve_entity_dir(
+                workspace,
+                &entity_type,
+                &entity_name,
+                account.as_ref(),
+            )?;
+
+            let mut intel = crate::intelligence::read_intelligence_json(&dir).unwrap_or_default();
+
+            if index >= intel.recommended_actions.len() {
+                return Err(format!("Recommendation index {} out of bounds", index));
+            }
+
+            let removed = intel.recommended_actions.remove(index);
+
+            // Write back to filesystem
+            crate::intelligence::write_intelligence_json(&dir, &intel)
+                .map_err(|e| format!("Failed to write intelligence: {}", e))?;
+
+            // Update DB cache
+            db.upsert_entity_intelligence(&intel)
+                .map_err(|e| e.to_string())?;
+
+            // Emit recommendation_rejected signal
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                &entity_type,
+                &entity_id,
+                "recommendation_rejected",
+                "user_correction",
+                Some(&format!(
+                    "{{\"title\":\"{}\"}}",
+                    removed.title.replace('"', "\\\"")
+                )),
+                0.3,
+            );
+
+            Ok(())
+        })
+        .await
+}
+
+/// DOS-13: Get recommended actions for all entities (for use in the actions page).
+pub fn get_all_recommended_actions(
+    db: &ActionDb,
+) -> Result<Vec<crate::intelligence::io::RecommendedAction>, String> {
+    // Query all entity_assessment rows that have dimensions_json containing recommendedActions
+    let conn = db.conn_ref();
+    let mut stmt = conn
+        .prepare("SELECT dimensions_json FROM entity_assessment WHERE dimensions_json IS NOT NULL")
+        .map_err(|e| e.to_string())?;
+
+    let mut all_actions = Vec::new();
+    let rows = stmt
+        .query_map([], |row| {
+            let json: Option<String> = row.get(0)?;
+            Ok(json)
+        })
+        .map_err(|e| e.to_string())?;
+
+    for row in rows {
+        if let Ok(Some(json)) = row {
+            if let Ok(blob) = serde_json::from_str::<crate::intelligence::io::DimensionsBlob>(&json)
+            {
+                all_actions.extend(blob.recommended_actions);
+            }
+        }
+    }
+
+    Ok(all_actions)
 }
 
 #[cfg(test)]

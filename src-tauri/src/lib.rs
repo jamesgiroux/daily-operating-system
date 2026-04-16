@@ -6,6 +6,7 @@
 #![allow(clippy::type_complexity)]
 
 pub mod accounts;
+pub mod action_status;
 pub mod activity;
 mod audit;
 pub mod audit_log;
@@ -474,6 +475,7 @@ pub fn run() {
             commands::dismiss_email_item,
             commands::list_dismissed_email_items,
             commands::reset_email_preferences,
+            commands::resolve_decision,
             commands::get_suggested_actions,
             commands::get_meeting_history,
             commands::get_meeting_history_detail,
@@ -710,6 +712,9 @@ pub fn run() {
             commands::update_intelligence_field,
             commands::dismiss_intelligence_item,
             commands::update_stakeholders,
+            // DOS-13: Recommended Actions from Intelligence
+            commands::track_recommendation,
+            commands::dismiss_recommendation,
             commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
@@ -766,6 +771,9 @@ pub fn run() {
             commands::create_linear_entity_link,
             commands::run_linear_auto_link,
             commands::delete_linear_entity_link,
+            // DOS-50/51: Push Action to Linear
+            commands::get_linear_teams,
+            commands::push_action_to_linear,
             // I309: Role Presets
             commands::set_role,
             commands::get_active_preset,
