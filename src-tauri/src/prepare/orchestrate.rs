@@ -1481,12 +1481,10 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
         reconcile_inbox_emails(&email_result.raw_emails, &db);
 
-        // Auto-reset failed enrichments on refresh so they get another chance
-        if let Ok(reset_count) = db.reset_failed_enrichments() {
-            if reset_count > 0 {
-                log::info!("refresh_emails: auto-reset {reset_count} previously failed emails");
-            }
-        }
+        // NOTE: We intentionally do NOT auto-reset failed enrichments here.
+        // Emails that fail 3 times likely have deterministic issues (bad content,
+        // unsupported format). Auto-resetting would create infinite retry loops.
+        // Users can explicitly retry via the "Retry" button (DOS-197).
     }
 
     // I370: Refresh thread positions from sent messages

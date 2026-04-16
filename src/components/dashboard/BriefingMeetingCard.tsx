@@ -386,11 +386,14 @@ export function BriefingMeetingCard({
 
   const duration = formatDuration(meeting);
   const cleanDescription = stripHtml(meeting.calendarDescription);
+  // Mirror PrepGrid's actual logic: discuss = actions ?? questions (not both independently)
+  const prepDiscuss = meeting.prep?.actions ?? meeting.prep?.questions ?? [];
+  const prepWatch = meeting.prep?.risks ?? [];
+  const prepWins = meeting.prep?.wins ?? [];
   const hasVisualContent = !!(
     cleanDescription || meeting.prep?.context ||
     (meeting.calendarAttendees?.length ?? 0) > 0 || (meeting.prep?.stakeholders?.length ?? 0) > 0 ||
-    (meeting.prep?.actions?.length ?? 0) > 0 || (meeting.prep?.questions?.length ?? 0) > 0 ||
-    (meeting.prep?.risks?.length ?? 0) > 0 || (meeting.prep?.wins?.length ?? 0) > 0 ||
+    prepDiscuss.length > 0 || prepWatch.length > 0 || prepWins.length > 0 ||
     meetingActions.length > 0
   );
   const canExpand = (state === "upcoming" || state === "in-progress") && hasVisualContent;
