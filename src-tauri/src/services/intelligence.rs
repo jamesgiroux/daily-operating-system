@@ -2183,6 +2183,7 @@ mod live_acceptance_tests {
                 band: "green".to_string(),
                 source: HealthSource::Computed,
                 confidence: 0.78,
+                sufficient_data: false, // Only 1 dimension populated in test
                 trend: HealthTrend {
                     direction: "improving".to_string(),
                     rationale: Some("Usage and expansion improved".to_string()),
