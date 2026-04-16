@@ -11,11 +11,11 @@ export function AccountTechnicalFootprint({ footprint }: AccountTechnicalFootpri
   const tf = footprint;
   const items: { label: string; value: string }[] = [];
   if (tf.supportTier) items.push({ label: "Support", value: tf.supportTier });
-  if (tf.csatScore != null) items.push({ label: "CSAT", value: `${tf.csatScore.toFixed(1)}/5` });
+  if (tf.csatScore != null && tf.csatScore > 0) items.push({ label: "CSAT", value: `${tf.csatScore.toFixed(1)}/5` });
   if (tf.openTickets != null && tf.openTickets > 0) items.push({ label: "Open Tickets", value: String(tf.openTickets) });
   if (tf.usageTier) items.push({ label: "Usage Tier", value: tf.usageTier });
-  if (tf.activeUsers != null) items.push({ label: "Active Users", value: tf.activeUsers.toLocaleString() });
-  if (tf.adoptionScore != null) items.push({ label: "Adoption", value: `${Math.round(tf.adoptionScore * 100)}%` });
+  if (tf.activeUsers != null && tf.activeUsers > 0) items.push({ label: "Active Users", value: tf.activeUsers.toLocaleString() });
+  if (tf.adoptionScore != null && tf.adoptionScore > 0) items.push({ label: "Adoption", value: `${Math.round(tf.adoptionScore * 100)}%` });
   if (tf.servicesStage) items.push({ label: "Services", value: tf.servicesStage });
 
   if (items.length === 0) return null;
