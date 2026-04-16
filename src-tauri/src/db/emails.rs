@@ -597,6 +597,18 @@ impl ActionDb {
         Ok(results)
     }
 
+    /// Reset all failed enrichments to pending so they can be retried.
+    pub fn reset_failed_enrichments(&self) -> Result<usize, String> {
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE emails SET enrichment_state = 'pending', enrichment_attempts = 0, updated_at = ?1
+                 WHERE enrichment_state = 'failed' AND resolved_at IS NULL",
+                params![now],
+            )
+            .map_err(|e| e.to_string())
+    }
+
     /// Mark an email as enriched, setting `enriched_at` to now (I652 Phase 5).
     /// Used after successful enrichment to support Gate 0 deduplication.
     pub fn mark_email_enriched(&self, email_id: &str) -> Result<(), String> {
