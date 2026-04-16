@@ -608,6 +608,7 @@ pub fn run() {
             commands::get_account_detail,
             commands::get_account_team,
             commands::update_account_field,
+            commands::set_user_health_sentiment,
             commands::confirm_lifecycle_change,
             commands::correct_lifecycle_change,
             commands::correct_account_product,
