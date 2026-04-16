@@ -58,6 +58,10 @@ export function buildVitalsFromPreset(
   for (const field of fields) {
     const raw = resolveValue(field, data);
     if (raw == null || raw === "") continue;
+    // DOS-85: Skip zero-valued metrics that mean "no data" (NPS, CSAT, adoption).
+    // A true score of exactly 0 is practically impossible for these metrics;
+    // 0 almost always means the AI inferred no data.
+    if (raw === 0 && (field.key === "nps")) continue;
 
     const display = formatVital(field, raw);
     if (!display) continue;
