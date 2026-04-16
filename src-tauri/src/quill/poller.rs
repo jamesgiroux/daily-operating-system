@@ -370,8 +370,8 @@ async fn process_sync_row(
                         let db_action = crate::db::DbAction {
                             id: format!("quill-{}-{}", row.meeting_id, i),
                             title: action.title.clone(),
-                            priority: "P2".to_string(),
-                            status: "suggested".to_string(),
+                            priority: crate::action_status::PRIORITY_MEDIUM,
+                            status: crate::action_status::BACKLOG.to_string(),
                             created_at: now.clone(),
                             due_date: action.due_date.clone(),
                             completed_at: None,
@@ -391,6 +391,11 @@ async fn process_sync_row(
                             account_name: None,
                             next_meeting_title: None,
                             next_meeting_start: None,
+                            needs_decision: false,
+                            decision_owner: None,
+                            decision_stakes: None,
+                            linear_identifier: None,
+                            linear_url: None,
                         };
                         match db.upsert_action_if_not_completed(&db_action) {
                             Ok(()) => written += 1,
@@ -470,7 +475,8 @@ async fn process_sync_row(
 
     // Send native notification on success
     if result.is_ok() {
-        let _ = crate::notification::notify_transcript_ready(app_handle, &meeting.title, None, state);
+        let _ =
+            crate::notification::notify_transcript_ready(app_handle, &meeting.title, None, state);
     }
 }
 
@@ -548,7 +554,12 @@ pub fn check_ended_meetings_for_sync(state: &AppState) {
         }
 
         // Check transcript immutability — skip if already processed
-        if state.capture.transcript_processed.lock().contains_key(&event.id) {
+        if state
+            .capture
+            .transcript_processed
+            .lock()
+            .contains_key(&event.id)
+        {
             continue;
         }
 
