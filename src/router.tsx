@@ -26,7 +26,8 @@ import { useWorkflow } from "@/hooks/useWorkflow";
 
 // Page components
 import AccountsPage from "@/pages/AccountsPage";
-import AccountDetailEditorial from "@/pages/AccountDetailEditorial";
+import AccountDetailShell from "@/pages/AccountDetailShell";
+import AccountDetailLegacy from "@/pages/AccountDetailLegacy";
 import ActionDetailPage from "@/pages/ActionDetailPage";
 import ActionsPage from "@/pages/ActionsPage";
 import InboxPage from "@/pages/InboxPage";
@@ -94,7 +95,7 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
 // Route IDs that use the magazine shell instead of the sidebar shell.
 // Add new editorial routes here as they're built.
-const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/reports/risk_briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/book_of_business", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
+const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/", "/accounts/$accountId/reports/risk_briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/book_of_business", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
 
 const WELCOME_MIN_MS = 1500;
 const WELCOME_MAX_MS = 5000;
@@ -536,7 +537,13 @@ const accountsRoute = createRoute({
 const accountDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/accounts/$accountId",
-  component: AccountDetailEditorial,
+  component: AccountDetailShell,
+});
+
+const accountDetailIndexRoute = createRoute({
+  getParentRoute: () => accountDetailRoute,
+  path: "/",
+  component: AccountDetailLegacy,
 });
 
 const riskBriefingRoute = createRoute({
@@ -695,7 +702,7 @@ const personDetailRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   accountsRoute,
-  accountDetailRoute,
+  accountDetailRoute.addChildren([accountDetailIndexRoute]),
   riskBriefingRoute,
   accountHealthRoute,
   ebrQbrRoute,
