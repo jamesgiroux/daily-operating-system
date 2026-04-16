@@ -261,7 +261,6 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       {/* FloatingNavIsland — show step dots (skip welcome) */}
       {chapter !== "welcome" && (
         <FloatingNavIsland
-          mode="chapters"
           chapters={navChapters}
           activeChapterId={chapter}
           activeColor="turmeric"
