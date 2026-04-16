@@ -1,15 +1,20 @@
 /**
  * FloatingNavIsland.tsx
  *
- * Right-margin floating navigation toolbar. Two modes:
- * - 'app' (default): Icon-based page navigation with tooltips
- * - 'chapters': Icon-based chapter navigation with scroll-to, tooltips, and active state
+ * Right-margin floating navigation toolbar — dual-pill "Dynamic Island" design.
  *
- * Both modes use the same visual style: 36px icon buttons, data-label tooltips on hover,
- * brand mark at top. Chapter mode smooth-scrolls instead of navigating routes.
+ * Two merged pills displayed simultaneously:
+ * - Global pill (right): Always-visible icon-based page navigation
+ * - Local pill (left): Chapter/section scroll navigation, appears when chapters exist
+ *
+ * The pills merge visually where they overlap — shared edge loses border-radius.
+ * Local pill aligns vertically so its top matches the active icon in the global pill.
+ *
+ * When no `onNavigate` is provided (e.g. OnboardingFlow), only chapters render
+ * in a single pill — backwards-compatible with chapter-only usage.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { BrandMark } from '../ui/BrandMark';
 import {
@@ -36,14 +41,7 @@ export interface ChapterItem {
 
 export interface FloatingNavIslandProps {
   /**
-   * Navigation mode.
-   * 'app' = icon-based page navigation (default)
-   * 'chapters' = icon-based chapter navigation with smooth scroll
-   */
-  mode?: 'app' | 'chapters';
-
-  /**
-   * Currently active page for visual highlighting (app mode)
+   * Currently active page for visual highlighting (global pill)
    * Default: 'today'
    */
   activePage?: 'today' | 'week' | 'emails' | 'dropbox' | 'actions' | 'me' | 'people' | 'accounts' | 'projects' | 'settings';
@@ -62,7 +60,8 @@ export interface FloatingNavIslandProps {
   entityMode?: 'account' | 'project' | 'both';
 
   /**
-   * Callback when nav item is clicked (app mode)
+   * Callback when nav item is clicked (global pill).
+   * When absent, the global pill is hidden (chapter-only mode for onboarding).
    */
   onNavigate?: (page: string) => void;
 
@@ -72,12 +71,12 @@ export interface FloatingNavIslandProps {
   onHome?: () => void;
 
   /**
-   * Chapter definitions for chapter mode
+   * Chapter definitions for local pill
    */
   chapters?: ChapterItem[];
 
   /**
-   * Currently active chapter ID (chapter mode)
+   * Currently active chapter ID
    */
   activeChapterId?: string;
 
@@ -85,6 +84,12 @@ export interface FloatingNavIslandProps {
    * Callback when a chapter is clicked — sets active state immediately
    */
   onChapterClick?: (id: string) => void;
+
+  /**
+   * @deprecated Use presence/absence of `onNavigate` to control global pill visibility.
+   * Kept temporarily for backwards compatibility — ignored internally.
+   */
+  mode?: 'app' | 'chapters';
 }
 
 interface NavItem {
@@ -95,7 +100,6 @@ interface NavItem {
 }
 
 export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
-  mode = 'app',
   activePage = 'today',
   activeColor = 'turmeric',
   entityMode,
@@ -106,11 +110,13 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   onChapterClick,
 }) => {
   const activeClass = styles[`active${capitalize(activeColor)}`] || '';
+  const hasGlobalPill = !!onNavigate;
+  const hasChapters = !!(chapters && chapters.length > 0);
 
-  // Check if user entity is empty — drives dot indicator on Me nav item (prompt to fill in)
+  // ─── Me content dot ───────────────────────────────────────────────────
   const [meNeedsContent, setMeNeedsContent] = useState(true);
   useEffect(() => {
-    if (mode !== 'app') return;
+    if (!hasGlobalPill) return;
     invoke<UserEntity>('get_user_entity')
       .then((entity) => {
         const hasContent = !!(
@@ -125,12 +131,35 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
         setMeNeedsContent(!hasContent);
       })
       .catch(() => { /* user entity not available */ });
-  }, [mode]);
+  }, [hasGlobalPill]);
 
-  // Chapter mode — icon-based scroll navigation (same visual style as app mode)
-  if (mode === 'chapters' && chapters && chapters.length > 0) {
+  // ─── Active item ref for chapter pill Y alignment ─────────────────────
+  const globalPillRef = useRef<HTMLElement>(null);
+  const activeItemRef = useRef<HTMLButtonElement | null>(null);
+  const [localPillTop, setLocalPillTop] = useState(0);
+
+  // Callback ref: assigned to whichever global nav button is active
+  const setActiveRef = useCallback((node: HTMLButtonElement | null) => {
+    activeItemRef.current = node;
+  }, []);
+
+  // Compute the local pill's top position relative to the global pill
+  useLayoutEffect(() => {
+    if (!hasChapters || !hasGlobalPill || !activeItemRef.current || !globalPillRef.current) {
+      setLocalPillTop(0);
+      return;
+    }
+    const containerRect = globalPillRef.current.getBoundingClientRect();
+    const activeRect = activeItemRef.current.getBoundingClientRect();
+    // Align top of local pill with the active icon's top, with pill padding offset
+    const offset = activeRect.top - containerRect.top - 8; // subtract local pill's own padding
+    setLocalPillTop(Math.max(0, offset));
+  }, [hasChapters, hasGlobalPill, activePage, activeChapterId]);
+
+  // ─── Chapter-only mode (OnboardingFlow) ───────────────────────────────
+  if (!hasGlobalPill && hasChapters) {
     return (
-      <nav className={`${styles.navIsland} ${styles[`color${capitalize(activeColor)}`] || ''}`}>
+      <nav className={`${styles.navIslandGlobal} ${styles[`color${capitalize(activeColor)}`] || ''}`}>
         {/* Home button — Brand mark */}
         <button
           className={styles.navIslandMark}
@@ -144,7 +173,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
 
         <div className={styles.navIslandDivider} aria-hidden="true" />
 
-        {chapters.map((chapter) => {
+        {chapters!.map((chapter) => {
           const isActive = chapter.id === activeChapterId;
           return (
             <button
@@ -166,8 +195,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
     );
   }
 
-  // App mode — icon-based page navigation
-  // Entity group ordering depends on entityMode: 'project' puts projects before accounts
+  // ─── Nav items ────────────────────────────────────────────────────────
   const accountsItem: NavItem = { id: 'accounts', label: 'Accounts', icon: <Building2 size={18} strokeWidth={1.8} />, group: 'entity' };
   const projectsItem: NavItem = { id: 'projects', label: 'Projects', icon: <FolderKanban size={18} strokeWidth={1.8} />, group: 'entity' };
   const entityPair = entityMode === 'project' ? [projectsItem, accountsItem] : [accountsItem, projectsItem];
@@ -189,91 +217,99 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
 
   const isItemActive = (itemId: string) => itemId === activePage;
 
-  return (
-    <nav className={`${styles.navIsland} ${styles[`color${capitalize(activeColor)}`] || ''}`}>
-      {/* Home / Today button — Brand mark */}
+  const renderNavButton = (item: NavItem) => {
+    const active = isItemActive(item.id);
+    return (
       <button
-        className={`${styles.navIslandMark} ${activePage === 'today' ? styles.navIslandMarkActive : ''}`}
-        data-label="Today"
-        onClick={onHome}
-        aria-label="Today"
+        key={item.id}
+        ref={active ? setActiveRef : undefined}
+        className={`${styles.navIslandItem} ${active ? activeClass : ''}`}
+        data-label={item.label}
+        onClick={() => onNavigate?.(item.id)}
+        aria-label={item.label}
+        title={item.label}
       >
-        <BrandMark size={16} />
+        {item.icon}
+        {item.id === 'me' && meNeedsContent && (
+          <span className={styles.meContentDot} aria-hidden="true" />
+        )}
       </button>
+    );
+  };
 
-      {/* Time — This Week */}
-      {items
-        .filter((item) => item.group === 'main')
-        .map((item) => (
-          <button
-            key={item.id}
-            className={`${styles.navIslandItem} ${isItemActive(item.id) ? activeClass : ''}`}
-            data-label={item.label}
-            onClick={() => onNavigate?.(item.id)}
-            aria-label={item.label}
-            title={item.label}
-          >
-            {item.icon}
-          </button>
-        ))}
+  // ─── Dual-pill render ─────────────────────────────────────────────────
+  return (
+    <div className={styles.navIslandContainer}>
+      {/* LOCAL PILL — chapter/section navigation (left side) */}
+      <nav
+        className={`${styles.navIslandLocal} ${hasChapters ? '' : styles.navIslandLocalHidden}`}
+        style={{ '--local-pill-top': `${localPillTop}px` } as React.CSSProperties}
+        aria-label="Section navigation"
+      >
+        {hasChapters && chapters!.map((chapter) => {
+          const isActive = chapter.id === activeChapterId;
+          return (
+            <button
+              key={chapter.id}
+              className={`${styles.navIslandLocalItem} ${isActive ? activeClass : ''}`}
+              data-label={chapter.label}
+              onClick={() => {
+                onChapterClick?.(chapter.id);
+                smoothScrollTo(chapter.id);
+              }}
+              aria-label={chapter.label}
+              title={chapter.label}
+            >
+              {chapter.icon}
+            </button>
+          );
+        })}
+      </nav>
 
-      <div className={styles.navIslandDivider} aria-hidden="true" />
+      {/* GLOBAL PILL — app page navigation (right side) */}
+      <nav
+        ref={globalPillRef}
+        className={`${styles.navIslandGlobal} ${styles[`color${capitalize(activeColor)}`] || ''} ${hasChapters ? styles.navIslandGlobalMerged : ''}`}
+        aria-label="App navigation"
+      >
+        {/* Home / Today button — Brand mark */}
+        <button
+          ref={activePage === 'today' ? setActiveRef : undefined}
+          className={`${styles.navIslandMark} ${activePage === 'today' ? styles.navIslandMarkActive : ''}`}
+          data-label="Today"
+          onClick={onHome}
+          aria-label="Today"
+        >
+          <BrandMark size={16} />
+        </button>
 
-      {/* Work — Mail, Actions */}
-      {items
-        .filter((item) => item.group === 'work')
-        .map((item) => (
-          <button
-            key={item.id}
-            className={`${styles.navIslandItem} ${isItemActive(item.id) ? activeClass : ''}`}
-            data-label={item.label}
-            onClick={() => onNavigate?.(item.id)}
-            aria-label={item.label}
-            title={item.label}
-          >
-            {item.icon}
-          </button>
-        ))}
+        {/* Time — This Week */}
+        {items
+          .filter((item) => item.group === 'main')
+          .map(renderNavButton)}
 
-      <div className={styles.navIslandDivider} aria-hidden="true" />
+        <div className={styles.navIslandDivider} aria-hidden="true" />
 
-      {/* Entities — Me, People, Accounts/Projects */}
-      {items
-        .filter((item) => item.group === 'entity')
-        .map((item) => (
-          <button
-            key={item.id}
-            className={`${styles.navIslandItem} ${isItemActive(item.id) ? activeClass : ''}`}
-            data-label={item.label}
-            onClick={() => onNavigate?.(item.id)}
-            aria-label={item.label}
-            title={item.label}
-          >
-            {item.icon}
-            {item.id === 'me' && meNeedsContent && (
-              <span className={styles.meContentDot} aria-hidden="true" />
-            )}
-          </button>
-        ))}
+        {/* Work — Mail, Actions */}
+        {items
+          .filter((item) => item.group === 'work')
+          .map(renderNavButton)}
 
-      <div className={styles.navIslandDivider} aria-hidden="true" />
+        <div className={styles.navIslandDivider} aria-hidden="true" />
 
-      {/* Tools — Inbox, Settings */}
-      {items
-        .filter((item) => item.group === 'admin')
-        .map((item) => (
-          <button
-            key={item.id}
-            className={`${styles.navIslandItem} ${isItemActive(item.id) ? activeClass : ''}`}
-            data-label={item.label}
-            onClick={() => onNavigate?.(item.id)}
-            aria-label={item.label}
-            title={item.label}
-          >
-            {item.icon}
-          </button>
-        ))}
-    </nav>
+        {/* Entities — Me, People, Accounts/Projects */}
+        {items
+          .filter((item) => item.group === 'entity')
+          .map(renderNavButton)}
+
+        <div className={styles.navIslandDivider} aria-hidden="true" />
+
+        {/* Tools — Inbox, Settings */}
+        {items
+          .filter((item) => item.group === 'admin')
+          .map(renderNavButton)}
+      </nav>
+    </div>
   );
 };
 
