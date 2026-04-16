@@ -168,7 +168,7 @@ function DevToolsPanelInner({
       )}
 
       <Sheet open={open} onOpenChange={setOpen} modal={false}>
-        <SheetContent side="right" className="w-[380px] overflow-y-auto" showOverlay={false}>
+        <SheetContent side="right" className="w-[380px] overflow-y-auto pt-[var(--folio-height)]" showOverlay={false}>
           <SheetHeader>
             <div className="flex items-center gap-2">
               <SheetTitle>Dev Tools</SheetTitle>
