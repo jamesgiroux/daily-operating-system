@@ -1332,8 +1332,10 @@ pub async fn get_account_detail(
             let recent_captures = db
                 .get_captures_for_account(&account_id, 90)
                 .unwrap_or_default();
+            // DOS-156: Use direct-only query for The Record display (precision over recall).
+            // Propagated person→account signals caused 14.6x fan-out noise.
             let recent_email_signals = db
-                .list_recent_email_signals_for_entity(&account_id, 12)
+                .list_direct_email_signals_for_entity(&account_id, 12)
                 .unwrap_or_default();
 
             // I114: Resolve parent name for child accounts, children for parent accounts
