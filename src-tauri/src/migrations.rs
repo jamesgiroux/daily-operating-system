@@ -359,6 +359,30 @@ const MIGRATIONS: &[Migration] = &[
         version: 85,
         sql: include_str!("migrations/084_feedback_events.sql"),
     },
+    Migration {
+        version: 86,
+        sql: include_str!("migrations/085_action_status_priority_v2.sql"),
+    },
+    Migration {
+        version: 87,
+        sql: include_str!("migrations/086_objective_evidence.sql"),
+    },
+    Migration {
+        version: 88,
+        sql: include_str!("migrations/086_rejected_action_patterns.sql"),
+    },
+    Migration {
+        version: 89,
+        sql: include_str!("migrations/086_decision_columns.sql"),
+    },
+    Migration {
+        version: 90,
+        sql: include_str!("migrations/090_commitment_milestone_link.sql"),
+    },
+    Migration {
+        version: 91,
+        sql: include_str!("migrations/085_action_linear_links.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -949,13 +973,13 @@ mod tests {
         )
         .expect("chat_turns table should exist");
 
-        // Verify suggested/archived action statuses work (migration 074)
+        // Verify backlog/archived action statuses work (migration 074 + DOS-55)
         conn.execute(
             "INSERT INTO actions (id, title, status, created_at, updated_at)
-             VALUES ('suggested-1', 'Suggested action', 'suggested', '2025-01-01', '2025-01-01')",
+             VALUES ('backlog-1', 'Backlog action', 'backlog', '2025-01-01', '2025-01-01')",
             [],
         )
-        .expect("suggested status should be accepted");
+        .expect("backlog status should be accepted");
 
         conn.execute(
             "INSERT INTO actions (id, title, status, created_at, updated_at)

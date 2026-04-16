@@ -58,10 +58,26 @@ A Tuesday train is a patch release. A train that includes a significant new feat
 ## Branch Model
 
 - **`dev`** — active development. Merge continuously. All work lands here first.
-- **`main`** — stable releases only. Merged from `dev` at train time or for hotfixes.
+- **`main`** — stable releases only. Merged from `dev` via PR at train time.
 - **Tags** — every release gets a semver tag (`v1.0.5`). Tags trigger the CI release workflow.
 
-No feature branches required for solo work. Feature branches recommended when parallel sessions modify the same files.
+Feature branches recommended when parallel sessions modify the same files.
+
+## Release PR Flow
+
+Every release ships via a PR from `dev` → `main`. The PR is the audit trail.
+
+1. **Create PR** with `Closes DOS-XX, DOS-YY, ...` in the body
+2. **Linear auto-links** every `DOS-XX` reference to the PR as activity
+3. **On merge**, Linear auto-moves all `Closes` issues to Done
+4. **Tag** the merge commit on `main`, push tag to trigger CI
+5. **Reconcile** `dev` with `main` after merge (`git checkout dev && git merge main`)
+
+This replaces the previous flow of direct merge + tag. Benefits:
+- Single reviewable diff for each release
+- Issue ↔ PR linkage visible in both Linear and GitHub
+- Reversible (revert the merge commit if release is bad)
+- GitHub Release page links to the PR for context
 
 ---
 

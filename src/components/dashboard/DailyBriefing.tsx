@@ -157,7 +157,11 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
   // reconciliation will remove archived ones within seconds.
   const briefingEmails = (() => {
     if (emails.length === 0) return [];
-    const ranked = [...emails].sort(compareEmailRank);
+    // Only consider emails linked to a known entity (account/person/project).
+    // Unlinked emails (newsletters, marketing, stock alerts) should never
+    // appear on the daily briefing — the briefing is about your portfolio.
+    const entityLinked = emails.filter((e) => e.entityId);
+    const ranked = [...entityLinked].sort(compareEmailRank);
     const scored = ranked
       .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
       .slice(0, 5);
@@ -167,8 +171,9 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
       .filter((e) => !scoredIds.has(e.id) && e.summary && e.summary.trim().length > 0)
       .slice(0, Math.max(0, 5 - scored.length));
     const selected = [...scored, ...enrichedFill].slice(0, 5);
-    // Fallback: if no emails passed score/enrichment filters, show top by rank
-    return selected.length > 0 ? selected : ranked.slice(0, 5);
+    // No fallback — if no entity-linked emails pass filters, show nothing.
+    // Showing unfiltered emails by recency defeats the purpose of the briefing.
+    return selected;
   })();
   const emailSectionLabel = briefingEmails.length > 0 ? "WORTH YOUR ATTENTION" : "";
 
@@ -260,8 +265,7 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
     .sort((a, b) => {
       if (a.isOverdue && !b.isOverdue) return -1;
       if (!a.isOverdue && b.isOverdue) return 1;
-      const priorityOrder = { P1: 0, P2: 1, P3: 2 };
-      return (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
+      return (a.priority ?? 3) - (b.priority ?? 3);
     });
 
   // Action completion
@@ -471,6 +475,7 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
         allEmails={emails}
         todayMeetingIds={new Set(meetings.map((m) => m.id))}
         emailSyncTimestamp={data.emailSync?.lastSuccessAt}
+        agingActionCount={data.agingActionCount}
       />
 
       <Dialog open={!!correctionTarget} onOpenChange={closeCorrection}>
@@ -573,6 +578,7 @@ function AttentionSection({
   allEmails,
   todayMeetingIds,
   emailSyncTimestamp,
+  agingActionCount,
 }: {
   lifecycleUpdates: DashboardLifecycleUpdate[];
   briefingCallouts: BriefingCallout[];
@@ -594,6 +600,7 @@ function AttentionSection({
   allEmails: Email[];
   todayMeetingIds: Set<string>;
   emailSyncTimestamp?: string;
+  agingActionCount?: number;
 }) {
   // Filter attention-worthy actions: meeting-relevant for today OR overdue (max 3)
   const attentionActions = useMemo(() => {
@@ -632,7 +639,8 @@ function AttentionSection({
   const hasLifecycle = todayLifecycle.length > 0;
   // Callouts disabled: raw signal data violates ADR-0083 vocabulary rules.
   const hasCallouts = false;
-  const hasAnything = hasLifecycle || hasActions || hasEmails;
+  const hasAging = (agingActionCount ?? 0) > 0;
+  const hasAnything = hasLifecycle || hasActions || hasEmails || hasAging;
 
   if (!hasAnything) return null;
 
@@ -765,6 +773,13 @@ function AttentionSection({
                   })
                 )}
               </div>
+            </div>
+          )}
+
+          {/* DOS-53: Aging awareness — subtle line when actions approach auto-archive */}
+          {hasAging && (
+            <div className={briefingStyles.agingNotice}>
+              {agingActionCount} {agingActionCount === 1 ? "item" : "items"} aging toward auto-archive
             </div>
           )}
 

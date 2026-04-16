@@ -11,8 +11,8 @@ fn sample_action(id: &str, title: &str) -> DbAction {
     DbAction {
         id: id.to_string(),
         title: title.to_string(),
-        priority: "P2".to_string(),
-        status: "pending".to_string(),
+        priority: crate::action_status::PRIORITY_MEDIUM,
+        status: crate::action_status::UNSTARTED.to_string(),
         created_at: now.clone(),
         due_date: None,
         completed_at: None,
@@ -28,6 +28,11 @@ fn sample_action(id: &str, title: &str) -> DbAction {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     }
 }
 
@@ -111,13 +116,13 @@ fn test_upsert_updates_existing() {
     db.upsert_action(&action).expect("first upsert");
 
     action.title = "Updated title".to_string();
-    action.priority = "P1".to_string();
+    action.priority = crate::action_status::PRIORITY_URGENT;
     db.upsert_action(&action).expect("second upsert");
 
     let results = db.get_due_actions(7).expect("query");
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].title, "Updated title");
-    assert_eq!(results[0].priority, "P1");
+    assert_eq!(results[0].priority, crate::action_status::PRIORITY_URGENT);
 }
 
 #[test]
@@ -200,15 +205,15 @@ fn test_get_account_actions() {
 
     let mut action4 = sample_action("act-013", "Acme suggested");
     action4.account_id = Some("acme-corp".to_string());
-    action4.status = "suggested".to_string();
+    action4.status = crate::action_status::BACKLOG.to_string();
     db.upsert_action(&action4).expect("upsert 4");
 
     let results = db.get_account_actions("acme-corp").expect("account query");
     assert_eq!(results.len(), 3);
-    // Suggested and pending should appear
+    // Backlog and unstarted should appear
     let statuses: Vec<&str> = results.iter().map(|a| a.status.as_str()).collect();
-    assert!(statuses.contains(&"suggested"));
-    assert!(statuses.contains(&"pending"));
+    assert!(statuses.contains(&crate::action_status::BACKLOG));
+    assert!(statuses.contains(&crate::action_status::UNSTARTED));
 }
 
 #[test]
@@ -407,13 +412,13 @@ fn test_due_actions_ordering() {
 
     // P1 with future due date
     let mut action_p1 = sample_action("act-b", "P1 future task");
-    action_p1.priority = "P1".to_string();
+    action_p1.priority = crate::action_status::PRIORITY_URGENT;
     action_p1.due_date = Some("2099-12-31".to_string());
     db.upsert_action(&action_p1).expect("upsert");
 
     // P1 overdue
     let mut action_overdue = sample_action("act-c", "Overdue task");
-    action_overdue.priority = "P1".to_string();
+    action_overdue.priority = crate::action_status::PRIORITY_URGENT;
     action_overdue.due_date = Some("2020-01-01".to_string());
     db.upsert_action(&action_overdue).expect("upsert");
 
@@ -566,7 +571,7 @@ fn test_upsert_action_transcript_dedup_is_meeting_scoped() {
     let mut first = sample_action("transcript-m1-0", "Send recap");
     first.source_type = Some("transcript".to_string());
     first.source_id = Some("meeting-1".to_string());
-    first.status = "suggested".to_string();
+    first.status = crate::action_status::BACKLOG.to_string();
     first.account_id = None;
     db.upsert_action_if_not_completed(&first)
         .expect("insert first transcript action");
@@ -575,7 +580,7 @@ fn test_upsert_action_transcript_dedup_is_meeting_scoped() {
     let mut second = sample_action("transcript-m2-0", "Send recap");
     second.source_type = Some("transcript".to_string());
     second.source_id = Some("meeting-2".to_string());
-    second.status = "suggested".to_string();
+    second.status = crate::action_status::BACKLOG.to_string();
     second.account_id = None;
     db.upsert_action_if_not_completed(&second)
         .expect("insert second transcript action");
@@ -592,7 +597,7 @@ fn test_upsert_action_transcript_dedup_is_meeting_scoped() {
     let mut duplicate_same_meeting = sample_action("transcript-m1-1", "Send recap");
     duplicate_same_meeting.source_type = Some("transcript".to_string());
     duplicate_same_meeting.source_id = Some("meeting-1".to_string());
-    duplicate_same_meeting.status = "suggested".to_string();
+    duplicate_same_meeting.status = crate::action_status::BACKLOG.to_string();
     duplicate_same_meeting.account_id = None;
     db.upsert_action_if_not_completed(&duplicate_same_meeting)
         .expect("attempt duplicate transcript action");
@@ -2466,8 +2471,8 @@ fn test_get_project_actions() {
     let pending_action = DbAction {
         id: "act-proj-1".to_string(),
         title: "Fix the widget".to_string(),
-        priority: "P1".to_string(),
-        status: "pending".to_string(),
+        priority: crate::action_status::PRIORITY_URGENT,
+        status: crate::action_status::UNSTARTED.to_string(),
         created_at: now.clone(),
         due_date: None,
         completed_at: None,
@@ -2483,6 +2488,11 @@ fn test_get_project_actions() {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
     db.upsert_action(&pending_action)
         .expect("upsert pending action");
@@ -2491,7 +2501,7 @@ fn test_get_project_actions() {
     let suggested_action = DbAction {
         id: "act-proj-2".to_string(),
         title: "Draft rollout plan".to_string(),
-        status: "suggested".to_string(),
+        status: crate::action_status::BACKLOG.to_string(),
         ..pending_action.clone()
     };
     db.upsert_action(&suggested_action)
@@ -3011,8 +3021,8 @@ fn test_create_action_all_fields() {
     let action = DbAction {
         id: "manual-001".to_string(),
         title: "Call Jane about renewal".to_string(),
-        priority: "P1".to_string(),
-        status: "pending".to_string(),
+        priority: crate::action_status::PRIORITY_URGENT,
+        status: crate::action_status::UNSTARTED.to_string(),
         created_at: now.clone(),
         due_date: Some("2026-02-15".to_string()),
         completed_at: None,
@@ -3028,13 +3038,18 @@ fn test_create_action_all_fields() {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
     db.upsert_action(&action).unwrap();
 
     let fetched = db.get_action_by_id("manual-001").unwrap().unwrap();
     assert_eq!(fetched.title, "Call Jane about renewal");
-    assert_eq!(fetched.priority, "P1");
-    assert_eq!(fetched.status, "pending");
+    assert_eq!(fetched.priority, crate::action_status::PRIORITY_URGENT);
+    assert_eq!(fetched.status, crate::action_status::UNSTARTED);
     assert_eq!(fetched.due_date.as_deref(), Some("2026-02-15"));
     assert_eq!(fetched.account_id.as_deref(), Some("acme-corp"));
     assert_eq!(fetched.project_id.as_deref(), Some("proj-q1"));
@@ -3056,8 +3071,8 @@ fn test_create_action_defaults() {
     let action = DbAction {
         id: "manual-002".to_string(),
         title: "Quick follow-up".to_string(),
-        priority: "P2".to_string(),
-        status: "pending".to_string(),
+        priority: crate::action_status::PRIORITY_MEDIUM,
+        status: crate::action_status::UNSTARTED.to_string(),
         created_at: now.clone(),
         due_date: None,
         completed_at: None,
@@ -3073,12 +3088,17 @@ fn test_create_action_defaults() {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
     db.upsert_action(&action).unwrap();
 
     let fetched = db.get_action_by_id("manual-002").unwrap().unwrap();
-    assert_eq!(fetched.priority, "P2");
-    assert_eq!(fetched.status, "pending");
+    assert_eq!(fetched.priority, crate::action_status::PRIORITY_MEDIUM);
+    assert_eq!(fetched.status, crate::action_status::UNSTARTED);
     assert_eq!(fetched.source_type.as_deref(), Some("manual"));
     assert!(fetched.due_date.is_none());
     assert!(fetched.account_id.is_none());
@@ -3112,8 +3132,8 @@ fn test_update_action_fields() {
     assert_eq!(fetched.account_id.as_deref(), Some("acme"));
     assert_eq!(fetched.person_id.as_deref(), Some("person-bob"));
     // Unchanged fields preserved
-    assert_eq!(fetched.priority, "P2");
-    assert_eq!(fetched.status, "pending");
+    assert_eq!(fetched.priority, crate::action_status::PRIORITY_MEDIUM);
+    assert_eq!(fetched.status, crate::action_status::UNSTARTED);
 }
 
 #[test]
@@ -3125,8 +3145,8 @@ fn test_update_action_clear_fields() {
     let action = DbAction {
         id: "clear-001".to_string(),
         title: "Action with fields".to_string(),
-        priority: "P1".to_string(),
-        status: "pending".to_string(),
+        priority: crate::action_status::PRIORITY_URGENT,
+        status: crate::action_status::UNSTARTED.to_string(),
         created_at: now.clone(),
         due_date: Some("2026-02-20".to_string()),
         completed_at: None,
@@ -3142,6 +3162,11 @@ fn test_update_action_clear_fields() {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
     db.upsert_action(&action).unwrap();
 
@@ -3159,7 +3184,7 @@ fn test_update_action_clear_fields() {
     assert!(fetched.person_id.is_none(), "person_id should be cleared");
     // Non-cleared fields preserved
     assert_eq!(fetched.title, "Action with fields");
-    assert_eq!(fetched.priority, "P1");
+    assert_eq!(fetched.priority, crate::action_status::PRIORITY_URGENT);
     assert_eq!(fetched.context.as_deref(), Some("Some context"));
     assert_eq!(fetched.source_label.as_deref(), Some("Call"));
     assert_eq!(fetched.project_id.as_deref(), Some("proj-1"));
@@ -3209,8 +3234,8 @@ fn test_manual_actions_in_non_briefing_query() {
     let action = DbAction {
         id: "manual-nbp".to_string(),
         title: "Manual task".to_string(),
-        priority: "P2".to_string(),
-        status: "pending".to_string(),
+        priority: crate::action_status::PRIORITY_MEDIUM,
+        status: crate::action_status::UNSTARTED.to_string(),
         created_at: now.clone(),
         due_date: None,
         completed_at: None,
@@ -3226,6 +3251,11 @@ fn test_manual_actions_in_non_briefing_query() {
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
     db.upsert_action(&action).unwrap();
 
@@ -3665,7 +3695,11 @@ fn test_merge_account_domains_additive() {
     db.merge_account_domains("acme", &["acme.com".to_string(), "acme.co.uk".to_string()])
         .unwrap();
     let domains = db.get_account_domains("acme").unwrap();
-    assert_eq!(domains.len(), 3, "should add new without clobbering existing");
+    assert_eq!(
+        domains.len(),
+        3,
+        "should add new without clobbering existing"
+    );
     assert!(domains.contains(&"acme.com".to_string()));
     assert!(domains.contains(&"acme.io".to_string()));
     assert!(domains.contains(&"acme.co.uk".to_string()));
@@ -3832,7 +3866,6 @@ fn test_email_signal_pipeline_person_direct_match() {
 
     let inserted = db
         .upsert_email_signal(&crate::db::signals::EmailSignalInput {
-
             email_id: "email-1",
 
             sender_email: Some(sender),
@@ -3856,7 +3889,6 @@ fn test_email_signal_pipeline_person_direct_match() {
             detected_at: Some("2026-02-13T10:00:00Z"),
 
             source: None,
-
         })
         .expect("insert signal");
     assert!(inserted);
@@ -3937,7 +3969,6 @@ fn test_email_signal_pipeline_deduplication() {
     // Insert same signal twice (same email_id + entity)
     let first = db
         .upsert_email_signal(&crate::db::signals::EmailSignalInput {
-
             email_id: "email-dup",
 
             sender_email: Some("alice@acme.com"),
@@ -3961,14 +3992,12 @@ fn test_email_signal_pipeline_deduplication() {
             detected_at: Some("2026-02-13T10:00:00Z"),
 
             source: None,
-
         })
         .expect("first insert");
     assert!(first);
 
     let second = db
         .upsert_email_signal(&crate::db::signals::EmailSignalInput {
-
             email_id: "email-dup",
 
             sender_email: Some("alice@acme.com"),
@@ -3992,7 +4021,6 @@ fn test_email_signal_pipeline_deduplication() {
             detected_at: Some("2026-02-13T10:00:00Z"),
 
             source: None,
-
         })
         .expect("second insert");
     assert!(!second, "duplicate should return false");
