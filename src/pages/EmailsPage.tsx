@@ -77,7 +77,7 @@ export default function EmailsPage() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [dismissedSignals, setDismissedSignals] = useState<Set<number>>(new Set());
   const [dismissedQuiet, setDismissedQuiet] = useState<Set<string>>(new Set());
-  const [failedDismissed, setFailedDismissed] = useState(false);
+  const [dismissedFailedCount, setDismissedFailedCount] = useState<number | null>(null);
   const [, startTransition] = useTransition();
   const inboxSyncInFlight = useRef(false);
 
@@ -442,7 +442,7 @@ export default function EmailsPage() {
                 {syncStats.enriched}/{syncStats.total} ready
               </span>
             )}
-            {syncStats.failed > 0 && !failedDismissed && (
+            {syncStats.failed > 0 && dismissedFailedCount !== syncStats.failed && (
               <span className={e.syncStatusNotice}>
                 Some emails couldn&apos;t be processed
                 <button
@@ -462,7 +462,7 @@ export default function EmailsPage() {
                 </button>
                 <button
                   className={e.syncDismissButton}
-                  onClick={() => setFailedDismissed(true)}
+                  onClick={() => setDismissedFailedCount(syncStats.failed)}
                   aria-label="Dismiss"
                 >
                   &times;
