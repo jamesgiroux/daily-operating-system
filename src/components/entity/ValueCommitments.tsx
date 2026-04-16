@@ -7,6 +7,8 @@
  */
 import { X, Check } from "lucide-react";
 import type { EntityIntelligence } from "@/types";
+import { hasBleedFlag } from "@/lib/contamination-guard";
+import { ContaminationWarning } from "@/components/ui/ContaminationWarning";
 import { EditableText } from "@/components/ui/EditableText";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
@@ -244,47 +246,51 @@ export function ValueCommitments({
       {hasMetrics && (
         <div className={css.subsection}>
           <h3 className={css.subsectionLabel}>Success Metrics</h3>
-          <div className={css.metricsStrip}>
-            {successMetrics.map((metric, i) => {
-              const pct = estimateProgress(metric.current, metric.target);
-              const fillClass = getMetricStatusColor(metric.status);
-              return (
-                <div key={i} className={css.metricCell}>
-                  <div className={css.metricName}>{metric.name}</div>
-                  <div className={isShortValue(metric.current) ? css.metricValue : css.metricValueLong}>
-                    {metric.current ?? "\u2014"}
-                  </div>
-                  {metric.target && (
-                    <div className={css.metricTarget}>
-                      Target: {metric.target}
+          {hasBleedFlag(intelligence.consistencyFindings, "successMetrics") ? (
+            <ContaminationWarning />
+          ) : (
+            <div className={css.metricsStrip}>
+              {successMetrics.map((metric, i) => {
+                const pct = estimateProgress(metric.current, metric.target);
+                const fillClass = getMetricStatusColor(metric.status);
+                return (
+                  <div key={i} className={css.metricCell}>
+                    <div className={css.metricName}>{metric.name}</div>
+                    <div className={isShortValue(metric.current) ? css.metricValue : css.metricValueLong}>
+                      {metric.current ?? "\u2014"}
                     </div>
-                  )}
-                  <div className={css.metricBar}>
-                    <div
-                      className={`${css.metricFill} ${fillClass}`}
-                      style={{
-                        '--progress-width': pct != null ? `${pct}%` : "0%",
-                      } as React.CSSProperties}
-                    />
-                  </div>
-                  {onItemFeedback && (
-                    <span className={css.metricFeedback}>
-                      <IntelligenceFeedback
-                        value={
-                          getItemFeedback?.(
-                            `successMetrics[${i}].name`
-                          ) ?? null
-                        }
-                        onFeedback={(type) =>
-                          onItemFeedback(`successMetrics[${i}].name`, type)
-                        }
+                    {metric.target && (
+                      <div className={css.metricTarget}>
+                        Target: {metric.target}
+                      </div>
+                    )}
+                    <div className={css.metricBar}>
+                      <div
+                        className={`${css.metricFill} ${fillClass}`}
+                        style={{
+                          '--progress-width': pct != null ? `${pct}%` : "0%",
+                        } as React.CSSProperties}
                       />
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    </div>
+                    {onItemFeedback && (
+                      <span className={css.metricFeedback}>
+                        <IntelligenceFeedback
+                          value={
+                            getItemFeedback?.(
+                              `successMetrics[${i}].name`
+                            ) ?? null
+                          }
+                          onFeedback={(type) =>
+                            onItemFeedback(`successMetrics[${i}].name`, type)
+                          }
+                        />
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
