@@ -199,7 +199,17 @@ function DevToolsPanelInner({
                     size="sm"
                     className="border-amber-500/50 text-amber-700 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/30"
                     disabled={loading !== null}
-                    onClick={() => runCommand("restore_live", "dev_restore_live", true)}
+                    onClick={async () => {
+                      setLoading("restore_live");
+                      try {
+                        const result = await invoke<string>("dev_restore_live");
+                        devToast("success", result);
+                        setTimeout(() => { window.location.href = "/"; }, 500);
+                      } catch (err) {
+                        devToast("error", typeof err === "string" ? err : "Restore failed");
+                        setLoading(null);
+                      }
+                    }}
                   >
                     <Undo2 className="mr-1.5 h-3 w-3" />
                     {loading === "restore_live" ? "Restoring..." : "Return to Live"}
