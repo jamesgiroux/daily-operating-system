@@ -19,7 +19,7 @@ use crate::intelligence::io::{
     IntelligenceJson, InternalTeamMember, ItemSource, NetworkIntelligence, NetworkKeyRelationship,
     OpenCommitment, OrgChange, RelationshipDepth, RelationshipDimensions, RenewalOutlook,
     ResponsivenessAssessment, SatisfactionData, StakeholderInsight, StrategicPriority,
-    SuccessMetric, SupportHealth, ValueItem,
+    RecommendedAction, SuccessMetric, SupportHealth, ValueItem,
 };
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType, TranscriptRecord};
@@ -4836,6 +4836,10 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             GongCallSummary { title: "Acme Phase 2 Planning".into(), date: days_ago_rfc(14), participants: vec!["Sarah Chen".into(), "Pat Kim".into(), "Mike Chen".into()], key_topics: "Budget approval, APAC expansion, resource allocation".into(), sentiment: "positive".into() },
             GongCallSummary { title: "Acme NPS Debrief".into(), date: days_ago_rfc(21), participants: vec!["Alex Torres".into(), "Engineering Team".into()], key_topics: "NPS detractor root cause, onboarding friction, module complexity".into(), sentiment: "neutral".into() },
         ],
+        recommended_actions: vec![
+            RecommendedAction { title: "Schedule executive review with Sarah Chen".into(), rationale: "Phase 2 budget is approved but scoping hasn't started. Sarah is the sponsor — get alignment before Alex departs.".into(), priority: 2, suggested_due: Some(days_ago_rfc(-3)) },
+            RecommendedAction { title: "Build adoption metrics dashboard for QBR".into(), rationale: "NPS is trending down with 3 detractors. A concrete adoption dashboard gives Sarah data to address concerns internally.".into(), priority: 3, suggested_due: Some(days_ago_rfc(-7)) },
+        ],
         ..Default::default()
     };
 
@@ -5039,6 +5043,10 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             verbatim: Some("Team A loves it but Team B feels unsupported".into()),
             source: Some("survey_tool".into()),
         }),
+        recommended_actions: vec![
+            RecommendedAction { title: "Schedule 1:1 with Jamie Morrison".into(), rationale: "Jamie is the strongest remaining relationship at Globex. With Pat Reynolds departing, Jamie's buy-in is critical for renewal.".into(), priority: 1, suggested_due: Some(days_ago_rfc(-2)) },
+            RecommendedAction { title: "Prepare renewal brief with Team A success data".into(), rationale: "Team B usage decline is dominating the narrative. A brief showing Team A's strong adoption counters the Contoso comparison.".into(), priority: 2, suggested_due: Some(days_ago_rfc(-5)) },
+        ],
         ..Default::default()
     };
 
