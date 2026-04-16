@@ -7,6 +7,7 @@
  *
  * ADR-0084 C1.
  */
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
@@ -177,6 +178,7 @@ function FullActionRow({
   formatDate = defaultFormatDate,
   stripMarkdown = defaultStripMarkdown,
 }: ActionRowFullProps) {
+  const [decisionResolved, setDecisionResolved] = useState(false);
   const isCompleted = action.status === "completed";
   const isOverdue =
     action.dueDate &&
@@ -247,7 +249,7 @@ function FullActionRow({
         >
           {stripMarkdown(action.title)}
         </Link>
-        {action.needsDecision && (
+        {action.needsDecision && !decisionResolved && (
           <span
             style={{
               display: "inline-flex",
@@ -273,7 +275,7 @@ function FullActionRow({
                 e.stopPropagation();
                 try {
                   await invoke("resolve_decision", { id: action.id });
-                  onToggle(); // refresh the row
+                  setDecisionResolved(true);
                 } catch {
                   toast.error("Failed to resolve decision");
                 }
