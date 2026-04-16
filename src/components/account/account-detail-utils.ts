@@ -132,6 +132,44 @@ export function buildChapters(isParent: boolean, hasHealth: boolean) {
   return chapters;
 }
 
+/* ── Per-view chapter builders (DOS-112) ── */
+
+export function buildHealthChapters(isParent: boolean, hasHealth: boolean) {
+  const chapters: { id: string; label: string; icon: React.ReactNode }[] = [];
+  if (hasHealth) {
+    chapters.push(HEALTH_CHAPTER);
+  }
+  chapters.push(
+    { id: "outlook", label: "Outlook", icon: React.createElement(Telescope, { size: 18, strokeWidth: 1.5 }) },
+  );
+  if (isParent) {
+    chapters.push(PORTFOLIO_CHAPTER);
+  }
+  chapters.push(
+    { id: "products", label: "Products", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) },
+  );
+  return chapters;
+}
+
+export function buildContextChapters() {
+  return [
+    { id: "state-of-play", label: "State of Play", icon: React.createElement(Clock, { size: 18, strokeWidth: 1.5 }) },
+    { id: "the-room", label: "The Room", icon: React.createElement(Users, { size: 18, strokeWidth: 1.5 }) },
+    { id: "strategic-landscape", label: "Competitive & Strategic", icon: React.createElement(Compass, { size: 18, strokeWidth: 1.5 }) },
+    { id: "value-commitments", label: "Value & Commitments", icon: React.createElement(Award, { size: 18, strokeWidth: 1.5 }) },
+    { id: "the-record", label: "The Record", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) },
+    { id: "files", label: "Files", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) },
+  ];
+}
+
+export function buildWorkChapters() {
+  return [
+    { id: "the-work", label: "The Work", icon: React.createElement(CheckSquare2, { size: 18, strokeWidth: 1.5 }) },
+    { id: "watch-list", label: "Watch List", icon: React.createElement(Eye, { size: 18, strokeWidth: 1.5 }) },
+    { id: "reports", label: "Reports", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) },
+  ];
+}
+
 /* ── Field formatting helpers ── */
 
 export function formatTrackedFieldLabel(field: string): string {
