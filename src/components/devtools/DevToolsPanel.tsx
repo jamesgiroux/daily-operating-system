@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Wrench, RotateCcw, Database, Shield, Zap, Sun, Calendar, Sparkles, Undo2, Trash2, UserX, KeyRound, AlertTriangle } from "lucide-react";
+import { Wrench, RotateCcw, Database, Shield, Zap, Sun, Sparkles, Undo2, Trash2, UserX, AlertTriangle, Star, Link2, Brain, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -68,8 +68,18 @@ export function DevToolsPanel() {
   return <DevToolsPanelInner />;
 }
 
-function DevToolsPanelInner() {
-  const [open, setOpen] = useState(false);
+function DevToolsPanelInner({
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  hideWrench,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideWrench?: boolean;
+} = {}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = controlledOnOpenChange ?? setInternalOpen;
   const [devState, setDevState] = useState<DevState | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
 
@@ -95,6 +105,20 @@ function DevToolsPanelInner() {
       devToast("success", result);
       // Brief delay to let the toast show before reload
       setTimeout(() => window.location.reload(), 500);
+    } catch (err) {
+      devToast("error", typeof err === "string" ? err : "Scenario failed");
+      setLoading(null);
+    }
+  }
+
+  async function applyScenarioAndNavigate(key: string, scenario: string, path: string) {
+    setLoading(key);
+    try {
+      const result = await invoke<string>("dev_apply_scenario", { scenario });
+      devToast("success", result);
+      setTimeout(() => {
+        window.location.href = path;
+      }, 500);
     } catch (err) {
       devToast("error", typeof err === "string" ? err : "Scenario failed");
       setLoading(null);
@@ -132,17 +156,19 @@ function DevToolsPanelInner() {
 
   return (
     <>
-      {/* Floating wrench button */}
-      <button
-        onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-muted/80 text-muted-foreground shadow-md backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
-        title="Dev Tools"
-      >
-        <Wrench className="h-4 w-4" />
-      </button>
+      {/* Floating wrench button — hidden when opened via external trigger (badge/standalone) */}
+      {!hideWrench && (
+        <button
+          onClick={() => setOpen(true)}
+          className="fixed bottom-4 right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-muted/80 text-muted-foreground shadow-md backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
+          title="Dev Tools"
+        >
+          <Wrench className="h-4 w-4" />
+        </button>
+      )}
 
       <Sheet open={open} onOpenChange={setOpen} modal={false}>
-        <SheetContent side="right" className="w-[380px] overflow-y-auto" showOverlay={false}>
+        <SheetContent side="right" className="w-[380px] overflow-y-auto pt-[var(--folio-height)]" showOverlay={false}>
           <SheetHeader>
             <div className="flex items-center gap-2">
               <SheetTitle>Dev Tools</SheetTitle>
@@ -156,7 +182,7 @@ function DevToolsPanelInner() {
           </SheetHeader>
 
           <div className="space-y-6 px-4 pb-6">
-            {/* Dev DB Mode Indicator + Return to Live */}
+            {/* Sandbox indicator + Return to Live */}
             {devState?.isDevDbMode && (
               <section className="rounded-md border border-amber-500/30 bg-amber-50 p-3 dark:bg-amber-950/20">
                 <div className="flex items-center justify-between">
@@ -165,7 +191,7 @@ function DevToolsPanelInner() {
                       Sandbox Active
                     </p>
                     <p className="text-xs text-amber-600/80 dark:text-amber-500/80">
-                      Fully isolated — changes won't affect your real data
+                      Isolated — changes won't affect your real data
                     </p>
                   </div>
                   <Button
@@ -173,100 +199,51 @@ function DevToolsPanelInner() {
                     size="sm"
                     className="border-amber-500/50 text-amber-700 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/30"
                     disabled={loading !== null}
-                    onClick={() => runCommand("restore_live", "dev_restore_live", true)}
+                    onClick={async () => {
+                      setLoading("restore_live");
+                      try {
+                        const result = await invoke<string>("dev_restore_live");
+                        devToast("success", result);
+                        setTimeout(() => { window.location.href = "/"; }, 500);
+                      } catch (err) {
+                        devToast("error", typeof err === "string" ? err : "Restore failed");
+                        setLoading(null);
+                      }
+                    }}
                   >
                     <Undo2 className="mr-1.5 h-3 w-3" />
                     {loading === "restore_live" ? "Restoring..." : "Return to Live"}
                   </Button>
                 </div>
-                <div className="mt-2 space-y-1 border-t border-amber-500/20 pt-2">
-                  <p className="text-[11px] text-amber-600/70 dark:text-amber-500/60">
-                    Database: <code>dailyos-dev.db</code>
-                  </p>
-                  <p className="text-[11px] text-amber-600/70 dark:text-amber-500/60">
-                    Workspace: <code>~/Documents/DailyOS-dev/</code>
-                  </p>
-                  <p className="text-[11px] text-amber-600/70 dark:text-amber-500/60">
-                    Google Auth: <code>in-memory only</code>
-                  </p>
-                </div>
               </section>
             )}
 
-            {/* Current State */}
-            <section>
-              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                Current State
-              </h3>
-              <div className="space-y-2 text-sm">
-                <StateRow
-                  label="Config"
-                  ok={devState?.hasConfig ?? false}
-                  detail={devState?.workspacePath ?? "none"}
-                />
-                <StateRow
-                  label="Database"
-                  ok={devState?.hasDatabase ?? false}
-                  detail={
-                    devState
-                      ? `${devState.accountCount} accounts, ${devState.peopleCount} people, ${devState.meetingCount} meetings, ${devState.actionCount} actions`
-                      : "—"
-                  }
-                />
-                <StateRow
-                  label="Google"
-                  ok={devState?.googleAuthStatus?.startsWith("authenticated") ?? false}
-                  detail={devState?.googleAuthStatus ?? "unknown"}
-                />
-              </div>
-            </section>
+            {/* State summary */}
+            {devState && (
+              <p className="text-xs text-muted-foreground">
+                {devState.accountCount} accounts · {devState.peopleCount} people · {devState.meetingCount} meetings · {devState.actionCount} actions
+              </p>
+            )}
 
-            {/* Scenarios */}
+            {/* ═══════════ QUICK START ═══════════ */}
             <section>
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                Scenarios
+                Quick Start
               </h3>
               <div className="space-y-2">
                 <ScenarioButton
-                  icon={RotateCcw}
-                  label="Reset to First Run"
-                  description="Clears everything, shows onboarding"
-                  variant="destructive"
-                  loading={loading === "reset"}
-                  disabled={loading !== null}
-                  onClick={() => applyScenario("reset")}
-                />
-                <ScenarioButton
-                  icon={Database}
-                  label="Full Mock Data"
-                  description="DB + intelligence + signals + health scores (all 6 dimensions)"
+                  icon={Star}
+                  label="Golden Path"
+                  description="Full data + Linear + Glean sources + all 6 health dimensions"
                   variant="default"
-                  loading={loading === "full"}
+                  loading={loading === "golden"}
                   disabled={loading !== null}
-                  onClick={() => applyScenario("full")}
-                />
-                <ScenarioButton
-                  icon={Shield}
-                  label="No Connectors"
-                  description="Full DB data, no Google auth"
-                  variant="outline"
-                  loading={loading === "no_connectors"}
-                  disabled={loading !== null}
-                  onClick={() => applyScenario("no_connectors")}
-                />
-                <ScenarioButton
-                  icon={Zap}
-                  label="Pipeline Test"
-                  description="Full data + directive fixtures for delivery testing"
-                  variant="default"
-                  loading={loading === "pipeline"}
-                  disabled={loading !== null}
-                  onClick={() => applyScenario("pipeline")}
+                  onClick={() => applyScenario("golden")}
                 />
               </div>
             </section>
 
-            {/* Onboarding Scenarios */}
+            {/* ═══════════ ONBOARDING ═══════════ */}
             <section>
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
                 Onboarding
@@ -282,31 +259,13 @@ function DevToolsPanelInner() {
                   onClick={() => runOnboarding("onb_auth_ready", "auth_ready")}
                 />
                 <ScenarioButton
-                  icon={RotateCcw}
-                  label="Fresh (Real Auth)"
-                  description="Real first-run with real auth checks"
-                  variant="outline"
-                  loading={loading === "onb_fresh"}
-                  disabled={loading !== null}
-                  onClick={() => runOnboarding("onb_fresh", "fresh")}
-                />
-                <ScenarioButton
                   icon={UserX}
-                  label="Claude Not Installed"
-                  description="Shows install instructions"
+                  label="No Claude"
+                  description="Claude not installed, Google ready"
                   variant="outline"
                   loading={loading === "onb_no_claude"}
                   disabled={loading !== null}
                   onClick={() => runOnboarding("onb_no_claude", "no_claude")}
-                />
-                <ScenarioButton
-                  icon={KeyRound}
-                  label="Claude Not Authenticated"
-                  description="Claude found but not logged in"
-                  variant="outline"
-                  loading={loading === "onb_claude_unauthed"}
-                  disabled={loading !== null}
-                  onClick={() => runOnboarding("onb_claude_unauthed", "claude_unauthed")}
                 />
                 <ScenarioButton
                   icon={Shield}
@@ -318,15 +277,6 @@ function DevToolsPanelInner() {
                   onClick={() => runOnboarding("onb_no_google", "no_google")}
                 />
                 <ScenarioButton
-                  icon={Calendar}
-                  label="Google Token Expired"
-                  description="Claude ready, Google token expired"
-                  variant="outline"
-                  loading={loading === "onb_google_expired"}
-                  disabled={loading !== null}
-                  onClick={() => runOnboarding("onb_google_expired", "google_expired")}
-                />
-                <ScenarioButton
                   icon={AlertTriangle}
                   label="Nothing Works"
                   description="Both auth unavailable"
@@ -335,73 +285,189 @@ function DevToolsPanelInner() {
                   disabled={loading !== null}
                   onClick={() => runOnboarding("onb_nothing_works", "nothing_works")}
                 />
+                <ScenarioButton
+                  icon={RotateCcw}
+                  label="Fresh (Real Auth)"
+                  description="Real first-run with real auth checks"
+                  variant="outline"
+                  loading={loading === "onb_fresh"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_fresh", "fresh")}
+                />
               </div>
             </section>
 
-            {/* Pipeline Testing */}
+            {/* ═══════════ DAILY BRIEFING ═══════════ */}
             <section>
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
                 Daily Briefing
               </h3>
               <div className="space-y-2">
                 <ScenarioButton
+                  icon={Zap}
+                  label="Full Day + AI"
+                  description="Full data + directive fixtures + AI enrichment"
+                  variant="outline"
+                  loading={loading === "pipeline"}
+                  disabled={loading !== null}
+                  onClick={() => applyScenario("pipeline")}
+                />
+                <ScenarioButton
                   icon={Sun}
-                  label="Today — Mechanical"
-                  description="Deliver schedule, actions, preps, emails (no AI)"
+                  label="Mechanical Only"
+                  description="Schedule, actions, preps, emails (no AI)"
                   variant="outline"
                   loading={loading === "today_mechanical"}
                   disabled={loading !== null}
                   onClick={() => runCommand("today_mechanical", "dev_run_today_mechanical")}
                 />
+              </div>
+            </section>
+
+            {/* ═══════════ ACCOUNT STATES ═══════════ */}
+            <section>
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Account States
+              </h3>
+              <div className="space-y-2">
                 <ScenarioButton
-                  icon={Sparkles}
-                  label="Today — Full + AI"
-                  description="Mechanical + email/prep/briefing enrichment via Claude"
+                  icon={Database}
+                  label="Healthy Account"
+                  description="Green health, active engagement → Acme Corp"
                   variant="outline"
-                  loading={loading === "today_full"}
+                  loading={loading === "acct_healthy"}
                   disabled={loading !== null}
-                  onClick={() => runCommand("today_full", "dev_run_today_full")}
+                  onClick={async () => {
+                    await applyScenarioAndNavigate("acct_healthy", "full", "/accounts/mock-acme-corp");
+                  }}
+                />
+                <ScenarioButton
+                  icon={AlertTriangle}
+                  label="At-Risk Account"
+                  description="Yellow health, renewal in 45 days → Globex Industries"
+                  variant="outline"
+                  loading={loading === "acct_atrisk"}
+                  disabled={loading !== null}
+                  onClick={async () => {
+                    await applyScenarioAndNavigate("acct_atrisk", "full", "/accounts/mock-globex-industries");
+                  }}
+                />
+                <ScenarioButton
+                  icon={Package}
+                  label="New Account"
+                  description="Onboarding lifecycle, sparse data → Initech"
+                  variant="outline"
+                  loading={loading === "acct_new"}
+                  disabled={loading !== null}
+                  onClick={async () => {
+                    await applyScenarioAndNavigate("acct_new", "full", "/accounts/mock-initech");
+                  }}
+                />
+                <ScenarioButton
+                  icon={Link2}
+                  label="Parent/Child"
+                  description="Contoso hierarchy (parent + 2 children)"
+                  variant="outline"
+                  loading={loading === "acct_hierarchy"}
+                  disabled={loading !== null}
+                  onClick={async () => {
+                    await applyScenarioAndNavigate("acct_hierarchy", "full", "/accounts/mock-contoso");
+                  }}
                 />
               </div>
             </section>
 
+            {/* ═══════════ INTEGRATIONS ═══════════ */}
+            <section>
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Integrations
+              </h3>
+              <div className="space-y-2">
+                <ScenarioButton
+                  icon={Link2}
+                  label="Linear Connected"
+                  description="Mock issues, projects, entity links, push indicators"
+                  variant="outline"
+                  loading={loading === "linear_connected"}
+                  disabled={loading !== null}
+                  onClick={() => applyScenario("linear_connected")}
+                />
+                <ScenarioButton
+                  icon={Brain}
+                  label="Glean-Enriched"
+                  description="Gong summaries, Salesforce context, source attribution"
+                  variant="outline"
+                  loading={loading === "glean_enriched"}
+                  disabled={loading !== null}
+                  onClick={() => applyScenario("glean_enriched")}
+                />
+                <ScenarioButton
+                  icon={Shield}
+                  label="Disconnected"
+                  description="Full data, no external integrations"
+                  variant="outline"
+                  loading={loading === "no_connectors"}
+                  disabled={loading !== null}
+                  onClick={() => applyScenario("no_connectors")}
+                />
+              </div>
+            </section>
 
-            {/* Cleanup — visible when dev artifacts exist */}
-            {(devState?.hasDevDbFile || devState?.hasDevWorkspace) && (
-              <section>
-                <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                  Cleanup
-                </h3>
-                <div className="space-y-2">
-                  {/* Clean dev artifact files from disk */}
-                  {(devState?.hasDevDbFile || devState?.hasDevWorkspace) && (
-                    <ScenarioButton
-                      icon={Trash2}
-                      label="Reset Dev Environment"
-                      description={[
-                        devState?.hasDevDbFile && "dailyos-dev.db",
-                        devState?.hasDevWorkspace && "DailyOS-dev/",
-                      ].filter(Boolean).join(" + ")}
-                      variant="outline"
-                      loading={loading === "clean_artifacts"}
-                      disabled={loading !== null}
-                      onClick={async () => {
-                        setLoading("clean_artifacts");
-                        try {
-                          const result = await invoke<string>("dev_clean_artifacts", {
-                            includeWorkspace: true,
-                          });
-                          devToast("success", result);
-                          await refreshState();
-                        } catch (err) {
-                          devToast("error", typeof err === "string" ? err : "Cleanup failed");
-                        } finally {
-                          setLoading(null);
-                        }
-                      }}
-                    />
-                  )}
-                </div>
+            {/* ═══════════ EDGE CASES ═══════════ */}
+            <section>
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Edge Cases
+              </h3>
+              <div className="space-y-2">
+                <ScenarioButton
+                  icon={Database}
+                  label="Empty Portfolio"
+                  description="Post-onboarding, 0 accounts"
+                  variant="outline"
+                  loading={loading === "empty_portfolio"}
+                  disabled={loading !== null}
+                  onClick={() => applyScenario("empty_portfolio")}
+                />
+                <ScenarioButton
+                  icon={RotateCcw}
+                  label="Reset to First Run"
+                  description="Clears everything, shows onboarding wizard"
+                  variant="destructive"
+                  loading={loading === "reset"}
+                  disabled={loading !== null}
+                  onClick={() => applyScenario("reset")}
+                />
+              </div>
+            </section>
+
+            {/* Cleanup — visible when stale dev artifacts exist */}
+            {(devState?.hasDevDbFile || devState?.hasDevWorkspace) && !devState?.isDevDbMode && (
+              <section className="border-t pt-4">
+                <ScenarioButton
+                  icon={Trash2}
+                  label="Clean Dev Artifacts"
+                  description={[
+                    devState?.hasDevDbFile && "dailyos-dev.db",
+                    devState?.hasDevWorkspace && "DailyOS-dev/",
+                  ].filter(Boolean).join(" + ")}
+                  variant="outline"
+                  loading={loading === "clean_artifacts"}
+                  disabled={loading !== null}
+                  onClick={async () => {
+                    setLoading("clean_artifacts");
+                    try {
+                      const result = await invoke<string>("dev_clean_artifacts", {
+                        includeWorkspace: true,
+                      });
+                      devToast("success", result);
+                      await refreshState();
+                    } catch (err) {
+                      devToast("error", typeof err === "string" ? err : "Cleanup failed");
+                    } finally {
+                      setLoading(null);
+                    }
+                  }}
+                />
               </section>
             )}
 
@@ -418,28 +484,6 @@ function DevToolsPanelInner() {
         </SheetContent>
       </Sheet>
     </>
-  );
-}
-
-function StateRow({
-  label,
-  ok,
-  detail,
-}: {
-  label: string;
-  ok: boolean;
-  detail?: string;
-}) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className="mt-0.5 text-xs">{ok ? "✓" : "✗"}</span>
-      <div className="min-w-0 flex-1">
-        <span className="font-medium">{label}</span>
-        {detail && (
-          <p className="truncate text-xs text-muted-foreground">{detail}</p>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -475,5 +519,58 @@ function ScenarioButton({
         <div className="text-xs font-normal opacity-70">{description}</div>
       </div>
     </Button>
+  );
+}
+
+/**
+ * DevToolsPanelSheet — controlled sheet variant for use by FolioBar badge.
+ * Opens the dev tools panel without the floating wrench button.
+ */
+export function DevToolsPanelSheet({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return <DevToolsPanelInner open={open} onOpenChange={onOpenChange} hideWrench />;
+}
+
+/**
+ * DevToolsPanelStandalone — floating wrench button for non-magazine shells.
+ * Gated: only renders when dev mode is actually enabled (config OR DB flag).
+ */
+export function DevToolsPanelStandalone() {
+  const [enabled, setEnabled] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    Promise.all([
+      invoke<{ developerMode?: boolean }>("get_config")
+        .then((cfg) => cfg.developerMode === true)
+        .catch(() => false),
+      invoke<{ isDevDbMode?: boolean }>("dev_get_state")
+        .then((s) => s.isDevDbMode === true)
+        .catch(() => false),
+    ]).then(([configEnabled, sandboxActive]) => {
+      setEnabled(configEnabled || sandboxActive);
+    });
+  }, []);
+
+  if (!import.meta.env.DEV || !enabled) return null;
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="fixed bottom-4 right-4 z-50 flex h-8 w-8 items-center justify-center rounded-full bg-muted/80 text-muted-foreground shadow-md backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
+        title="Dev Tools"
+        style={{ fontSize: 14 }}
+      >
+        &#9881;
+      </button>
+      <DevToolsPanelInner open={open} onOpenChange={setOpen} />
+    </>
   );
 }

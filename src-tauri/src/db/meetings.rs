@@ -1233,7 +1233,7 @@ impl ActionDb {
         // Open actions for this entity
         let mut open_stmt = self.conn.prepare(
             "SELECT title, due_date FROM actions
-             WHERE account_id = ?1 AND status = 'pending'
+             WHERE account_id = ?1 AND status IN ('backlog', 'unstarted', 'started')
              ORDER BY due_date ASC NULLS LAST",
         )?;
         let open_rows = open_stmt.query_map(params![entity_id], |row| {

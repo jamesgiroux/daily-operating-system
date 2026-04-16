@@ -12,7 +12,7 @@ interface SuggestedActionRowProps {
   action: {
     id: string;
     title: string;
-    priority?: string;
+    priority?: number;
     context?: string | null;
     sourceLabel?: string | null;
     accountName?: string | null;
@@ -83,14 +83,14 @@ export function SuggestedActionRow({
                   fontWeight: 600,
                   letterSpacing: "0.04em",
                   color:
-                    action.priority === "P1"
+                    action.priority <= 1
                       ? "var(--color-spice-terracotta)"
-                      : action.priority === "P2"
+                      : action.priority <= 2
                         ? "var(--color-spice-turmeric)"
                         : "var(--color-text-tertiary)",
                 }}
               >
-                {action.priority}
+                {action.priority === 1 ? "Urgent" : action.priority === 2 ? "High" : action.priority === 4 ? "Low" : "Medium"}
               </span>
             )}
           </div>

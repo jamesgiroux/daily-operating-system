@@ -136,6 +136,11 @@ pub fn reject_suggested_action(
             )),
             0.3,
         );
+
+        // Record rejection patterns for future suppression (DOS-18)
+        if let Err(e) = db.record_rejection_pattern(action) {
+            log::warn!("Failed to record rejection pattern: {}", e);
+        }
     }
 
     Ok(())
@@ -194,18 +199,14 @@ pub async fn get_all_actions(state: &AppState) -> ActionsResult {
         .unwrap_or_default()
         .into_iter()
         .map(|dba| {
-            let priority = match dba.priority.as_str() {
-                "P1" => Priority::P1,
-                "P3" => Priority::P3,
-                _ => Priority::P2,
-            };
+            let priority = Priority::from_i32(dba.priority);
             Action {
                 id: dba.id,
                 title: dba.title,
                 account: dba.account_id,
                 due_date: dba.due_date,
                 priority,
-                status: crate::types::ActionStatus::Pending,
+                status: crate::types::ActionStatus::Unstarted,
                 is_overdue: None,
                 context: dba.context,
                 source: dba.source_label,
@@ -223,7 +224,7 @@ pub async fn get_all_actions(state: &AppState) -> ActionsResult {
     }
 }
 
-/// Create a new action with validation.
+/// Create a new action with validation and signal emission.
 pub async fn create_action(
     request: CreateActionRequest,
     state: &AppState,
@@ -240,8 +241,13 @@ pub async fn create_action(
     } = request;
 
     let title = crate::util::validate_bounded_string(&title, "title", 1, 280)?;
-    let priority = priority.unwrap_or_else(|| "P2".to_string());
-    crate::util::validate_enum_string(priority.as_str(), "priority", &["P1", "P2", "P3"])?;
+    let priority_str = priority.unwrap_or_else(|| "3".to_string());
+    let priority: i32 = priority_str
+        .parse()
+        .map_err(|_| format!("Invalid priority: {priority_str}"))?;
+    if !(0..=4).contains(&priority) {
+        return Err(format!("Priority must be 0-4, got: {priority}"));
+    }
     if let Some(ref date) = due_date {
         crate::util::validate_yyyy_mm_dd(date, "due_date")?;
     }
@@ -268,13 +274,13 @@ pub async fn create_action(
         id: id.clone(),
         title,
         priority,
-        status: "pending".to_string(),
+        status: crate::action_status::UNSTARTED.to_string(),
         created_at: now.clone(),
         due_date,
         completed_at: None,
         account_id,
         project_id,
-        source_type: Some("manual".to_string()),
+        source_type: Some("user_manual".to_string()),
         source_id: None,
         source_label,
         context,
@@ -284,14 +290,103 @@ pub async fn create_action(
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
 
+    let engine = state.signals.engine.clone();
     state
         .db_write(move |db| {
             db.upsert_action(&action).map_err(|e| e.to_string())?;
+
+            // Emit signal for manually created actions
+            let (entity_type, entity_id) = action_entity_info(&action, &action.id);
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                entity_type,
+                &entity_id,
+                "action_created_manually",
+                "user_action",
+                Some(&format!(
+                    "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+                    action.id,
+                    action.title.replace('"', "\\\"")
+                )),
+                1.0,
+            );
+
+            // DOS-17: Scan for decision-indicating keywords after creation
+            let _ = db.scan_and_flag_decisions();
+
+            // DOS-15: Best-effort auto-link to matching objectives
+            if let Some(ref acct_id) = action.account_id {
+                if let Err(e) =
+                    auto_link_action_to_objectives(db, &action.id, &action.title, acct_id)
+                {
+                    log::warn!("Auto-link action to objectives failed (non-fatal): {}", e);
+                }
+            }
+
             Ok(id)
         })
         .await
+}
+
+/// DOS-15: Auto-link a newly created action to objectives with similar titles.
+///
+/// Uses Jaccard word similarity (threshold 0.6) to find matching objectives
+/// for the action's account. Emits an `action_auto_linked` signal per match.
+fn auto_link_action_to_objectives(
+    db: &crate::db::ActionDb,
+    action_id: &str,
+    action_title: &str,
+    account_id: &str,
+) -> Result<(), String> {
+    let objectives = db
+        .get_account_objectives(account_id)
+        .map_err(|e| e.to_string())?;
+
+    for objective in &objectives {
+        if objective.status != "active" {
+            continue;
+        }
+        let score = crate::helpers::jaccard_word_similarity(action_title, &objective.title);
+        if score > 0.6 {
+            if let Err(e) = db.link_action_to_objective(action_id, &objective.id) {
+                log::warn!(
+                    "Failed to auto-link action {} to objective {}: {}",
+                    action_id,
+                    objective.id,
+                    e
+                );
+                continue;
+            }
+            // Emit signal (best-effort, no propagation engine needed here)
+            let _ = crate::signals::bus::emit_signal(
+                db,
+                "account",
+                account_id,
+                "action_auto_linked",
+                "system",
+                Some(&format!(
+                    "{{\"action_id\":\"{}\",\"objective_id\":\"{}\",\"score\":{:.2}}}",
+                    action_id, objective.id, score
+                )),
+                score,
+            );
+            log::info!(
+                "Auto-linked action {} to objective {} (score: {:.2})",
+                action_id,
+                objective.id,
+                score
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Update arbitrary fields on an existing action (I128).
@@ -316,7 +411,10 @@ pub async fn update_action(request: UpdateActionRequest, state: &AppState) -> Re
 
     crate::util::validate_id_slug(&id, "id")?;
     if let Some(ref p) = priority {
-        crate::util::validate_enum_string(p.as_str(), "priority", &["P1", "P2", "P3"])?;
+        let pv: i32 = p.parse().map_err(|_| format!("Invalid priority: {p}"))?;
+        if !(0..=4).contains(&pv) {
+            return Err(format!("Priority must be 0-4, got: {pv}"));
+        }
     }
     if let Some(ref t) = title {
         crate::util::validate_bounded_string(t, "title", 1, 280)?;
@@ -351,7 +449,7 @@ pub async fn update_action(request: UpdateActionRequest, state: &AppState) -> Re
                 action.title = t;
             }
             if let Some(p) = priority {
-                action.priority = p;
+                action.priority = p.parse::<i32>().unwrap_or(3);
             }
             if clear_due_date == Some(true) {
                 action.due_date = None;
@@ -459,4 +557,60 @@ pub fn get_actions_from_db(db: &ActionDb, days_ahead: i32) -> Result<Vec<ActionL
 /// Get all suggested (AI-suggested) actions (I256).
 pub fn get_suggested_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, String> {
     db.get_suggested_actions().map_err(|e| e.to_string())
+}
+
+/// Resolve a decision: clear needs_decision flag and emit signal (DOS-17).
+pub fn resolve_decision(
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<(), String> {
+    let action = db.get_action_by_id(id).ok().flatten();
+    let updated = db.resolve_decision(id).map_err(|e| e.to_string())?;
+    if !updated {
+        return Err(format!("Action not found or not flagged as decision: {id}"));
+    }
+
+    if let Some(ref action) = action {
+        let (entity_type, entity_id) = action_entity_info(action, id);
+        let _ = crate::services::signals::emit_and_propagate(
+            db,
+            engine,
+            entity_type,
+            &entity_id,
+            "decision_resolved",
+            "user_action",
+            Some(&format!("{{\"action_id\":\"{}\"}}", id)),
+            0.8,
+        );
+    }
+
+    Ok(())
+}
+
+/// DOS-53: Count actions approaching the 30-day auto-archive threshold.
+///
+/// Returns the number of actions that are older than 14 days but not yet 30 days,
+/// in backlog/unstarted status, with priority > 1 and not waiting on anyone.
+/// These are at risk of aging out without being acted on.
+pub fn get_aging_action_count(db: &ActionDb) -> Result<i64, String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT COUNT(*) FROM actions
+             WHERE status IN ('backlog', 'unstarted')
+               AND created_at < datetime('now', '-14 days')
+               AND created_at >= datetime('now', '-30 days')
+               AND priority > 1
+               AND waiting_on IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())
+}
+
+/// Scan unstarted/backlog actions for decision-indicating keywords and flag them (DOS-17).
+///
+/// Called after action creation and from the scheduler.
+pub fn scan_and_flag_decisions(db: &ActionDb) -> Result<usize, String> {
+    db.scan_and_flag_decisions().map_err(|e| e.to_string())
 }

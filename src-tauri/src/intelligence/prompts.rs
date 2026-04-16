@@ -330,6 +330,35 @@ pub fn build_intelligence_context(
         ctx.open_actions = lines.join("\n");
     }
 
+    // --- DOS-53: Actions tracked in Linear ---
+    if let Ok(mut stmt) = db.conn.prepare(
+        "SELECT a.title, all2.linear_identifier, a.status
+         FROM actions a
+         JOIN action_linear_links all2 ON a.id = all2.action_id
+         WHERE a.account_id = ?1 OR a.project_id = ?1
+         ORDER BY all2.pushed_at DESC
+         LIMIT 5",
+    ) {
+        let rows: Vec<(String, String, String)> = stmt
+            .query_map(rusqlite::params![entity_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map(|r| r.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default();
+        if !rows.is_empty() {
+            let lines: Vec<String> = rows
+                .iter()
+                .map(|(title, identifier, status)| {
+                    format!("- [{}] {} ({})", identifier, title, status)
+                })
+                .collect();
+            ctx.extra_blocks.push(format!(
+                "## Actions Tracked in Linear\n{}",
+                lines.join("\n")
+            ));
+        }
+    }
+
     // --- Recent captures ---
     let captures = match entity_type {
         "account" => db
@@ -2125,6 +2154,14 @@ fn build_intelligence_prompt_inner(
         );
     }
 
+    // DOS-13: Recommended actions from intelligence
+    prompt.push_str(
+        ",\n\
+           \"recommendedActions\": [\n\
+             {\"title\": \"verb-phrase action (max 15 words)\", \"rationale\": \"why this matters — reference specific people, meetings, or signals\", \"priority\": 2, \"suggestedDue\": \"YYYY-MM-DD or null\"}\n\
+           ]",
+    );
+
     // I305: Keyword extraction for entity resolution
     prompt.push_str(
         ",\n\
@@ -2243,7 +2280,13 @@ fn build_intelligence_prompt_inner(
          for sparse accounts. valueDelivered should include completed commitments and wins. \
          When the user's professional context includes a value proposition, frame valueDelivered \
          entries through that lens — describe value in terms the user would use to communicate \
-         it to their stakeholders.\n",
+         it to their stakeholders.\n\n\
+         recommendedActions — 2-3 specific, concrete actions (not generic \"follow up\" or \"check in\"). \
+         Reference specific people, meetings, or signals when possible. \
+         Prioritize: risk mitigation > relationship deepening > expansion opportunities. \
+         Priority values: 1=urgent, 2=high, 3=medium, 4=low. \
+         suggestedDue: YYYY-MM-DD when a natural deadline exists, null otherwise. \
+         Leave empty for sparse accounts with insufficient context.\n",
     );
 
     if entity_type == "account" {
@@ -2379,6 +2422,9 @@ struct AiIntelResponse {
     /// I554: Success plan signals synthesized from aggregate context.
     #[serde(default)]
     success_plan_signals: Option<crate::types::SuccessPlanSignals>,
+    /// DOS-13: AI-recommended actions from intelligence enrichment.
+    #[serde(default)]
+    recommended_actions: Vec<super::io::RecommendedAction>,
 }
 
 /// I396: Health trend direction with rationale.
@@ -3034,6 +3080,7 @@ fn try_parse_json_response(
         success_plan_signals: ai_resp.success_plan_signals,
         domains: Vec::new(),
         dismissed_items: Vec::new(),
+        recommended_actions: ai_resp.recommended_actions,
     })
 }
 
