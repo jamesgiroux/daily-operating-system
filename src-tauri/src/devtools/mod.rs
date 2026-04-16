@@ -73,21 +73,22 @@ fn assert_dev_mode_invariant() -> Result<(), String> {
     let sentinel = crate::state::dev_mode_sentinel_path()
         .map(|p| p.exists())
         .unwrap_or(false);
-    let config_is_dev = std::fs::read_to_string(
-        crate::state::live_config_path().unwrap_or_default(),
-    )
-    .map(|s| s.contains("DailyOS-dev"))
-    .unwrap_or(false);
+    // Check if the dev config file exists — during dev mode, config-dev.json is
+    // the active config (written by create_or_update_config when DB flag is true).
+    // The LIVE config.json stays clean intentionally, so we check dev config existence.
+    let dev_config_exists = crate::state::dev_config_path()
+        .map(|p| p.exists())
+        .unwrap_or(false);
 
-    let dev_signals = [db_flag, sentinel, config_is_dev];
+    let dev_signals = [db_flag, sentinel, dev_config_exists];
     let dev_count = dev_signals.iter().filter(|&&x| x).count();
 
     if dev_count != 0 && dev_count != dev_signals.len() {
         log::error!(
-            "DEV MODE INVARIANT VIOLATED: db_flag={}, sentinel={}, config_dev={}",
+            "DEV MODE INVARIANT VIOLATED: db_flag={}, sentinel={}, dev_config_exists={}",
             db_flag,
             sentinel,
-            config_is_dev
+            dev_config_exists
         );
         // Force to live on invariant violation — safe default
         crate::db::set_dev_db_mode(false);
