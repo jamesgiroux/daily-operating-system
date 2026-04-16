@@ -599,7 +599,7 @@ fn build_entity_result(
             .map(|a| ActionSummary {
                 id: a.id.clone(),
                 title: a.title.clone(),
-                priority: a.priority.clone(),
+                priority: a.priority.to_string(),
                 due_date: a.due_date.clone(),
             })
             .collect(),
