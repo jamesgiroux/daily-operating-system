@@ -67,10 +67,12 @@ pub fn prioritize_actions(
 }
 
 fn score_action(action: DbAction, today: NaiveDate) -> ScoredAction {
-    let base = match action.priority.as_str() {
-        "P1" => P1_BASE_SCORE,
-        "P2" => P2_BASE_SCORE,
-        _ => P3_BASE_SCORE,
+    let base = match action.priority {
+        1 => P1_BASE_SCORE, // Urgent
+        2 => 50,            // High
+        3 => P2_BASE_SCORE, // Medium
+        4 => P3_BASE_SCORE, // Low
+        _ => 30,            // None/unknown
     };
 
     let due = action
@@ -119,9 +121,15 @@ fn score_action(action: DbAction, today: NaiveDate) -> ScoredAction {
     let blocked_penalty = if blocked { -25 } else { 0 };
 
     let score = base + urgency_points + customer_points + blocked_penalty;
-    let effort_minutes = estimate_effort_minutes(&action.title, &action.priority);
+    let effort_minutes = estimate_effort_minutes(&action.title, action.priority);
 
-    let mut reason_parts = vec![due_label, format!("{} priority", action.priority)];
+    let mut reason_parts = vec![
+        due_label,
+        format!(
+            "{} priority",
+            crate::action_status::priority_label(action.priority)
+        ),
+    ];
     if customer_points > 0 {
         reason_parts.push("customer-facing".to_string());
     }
@@ -156,7 +164,7 @@ fn compare_due_date(a: Option<&str>, b: Option<&str>) -> std::cmp::Ordering {
     }
 }
 
-fn estimate_effort_minutes(title: &str, priority: &str) -> u32 {
+fn estimate_effort_minutes(title: &str, priority: i32) -> u32 {
     let t = title.to_lowercase();
     let quick_markers = ["quick", "reply", "email", "review"];
     let deep_markers = ["deep", "proposal", "design", "plan", "deck", "analysis"];
@@ -169,9 +177,10 @@ fn estimate_effort_minutes(title: &str, priority: &str) -> u32 {
     }
 
     match priority {
-        "P1" => 45,
-        "P2" => 30,
-        _ => 20,
+        1 => 45, // Urgent
+        2 => 35, // High
+        3 => 30, // Medium
+        _ => 20, // Low/None
     }
 }
 
@@ -232,7 +241,7 @@ mod tests {
     fn action(
         id: &str,
         title: &str,
-        priority: &str,
+        priority: i32,
         due_date: Option<&str>,
         status: &str,
         account: Option<&str>,
@@ -241,7 +250,7 @@ mod tests {
         DbAction {
             id: id.to_string(),
             title: title.to_string(),
-            priority: priority.to_string(),
+            priority,
             status: status.to_string(),
             created_at: "2026-02-01T00:00:00Z".to_string(),
             due_date: due_date.map(ToString::to_string),
@@ -258,6 +267,11 @@ mod tests {
             account_name: None,
             next_meeting_title: None,
             next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         }
     }
 
@@ -271,7 +285,7 @@ mod tests {
             action(
                 "a1",
                 "Write proposal",
-                "P1",
+                1,
                 Some(&next_week),
                 "pending",
                 None,
@@ -280,7 +294,7 @@ mod tests {
             action(
                 "a2",
                 "Reply to customer",
-                "P2",
+                3,
                 Some(&overdue),
                 "pending",
                 Some("acme"),
@@ -299,7 +313,7 @@ mod tests {
             action(
                 "a1",
                 "Deep analysis",
-                "P1",
+                1,
                 Some(&today),
                 "pending",
                 Some("acme"),
@@ -308,7 +322,7 @@ mod tests {
             action(
                 "a2",
                 "Deep analysis",
-                "P1",
+                1,
                 Some(&today),
                 "waiting",
                 Some("acme"),
@@ -327,21 +341,13 @@ mod tests {
             action(
                 "a1",
                 "Deep proposal",
-                "P1",
+                1,
                 Some(&today),
                 "pending",
                 None,
                 None,
             ), // 90
-            action(
-                "a2",
-                "Quick reply",
-                "P1",
-                Some(&today),
-                "pending",
-                None,
-                None,
-            ), // 20
+            action("a2", "Quick reply", 1, Some(&today), "pending", None, None), // 20
         ];
 
         let (ranked, _, implications) = prioritize_actions(actions, 60);
@@ -357,22 +363,14 @@ mod tests {
             action(
                 "a1",
                 "Deep proposal",
-                "P1",
+                1,
                 Some(&today),
                 "pending",
                 None,
                 None,
             ),
-            action(
-                "a2",
-                "Deep design",
-                "P1",
-                Some(&today),
-                "pending",
-                None,
-                None,
-            ),
-            action("a3", "Deep plan", "P1", Some(&today), "pending", None, None),
+            action("a2", "Deep design", 1, Some(&today), "pending", None, None),
+            action("a3", "Deep plan", 1, Some(&today), "pending", None, None),
         ];
 
         let (_, top_three, _) = prioritize_actions(actions, 30);
@@ -385,7 +383,7 @@ mod tests {
         let actions = vec![action(
             "a1",
             "Deep analysis",
-            "P1",
+            1,
             Some(&overdue),
             "pending",
             Some("acme"),

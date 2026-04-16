@@ -19,7 +19,7 @@ use crate::intelligence::io::{
     IntelligenceJson, InternalTeamMember, ItemSource, NetworkIntelligence, NetworkKeyRelationship,
     OpenCommitment, OrgChange, RelationshipDepth, RelationshipDimensions, RenewalOutlook,
     ResponsivenessAssessment, SatisfactionData, StakeholderInsight, StrategicPriority,
-    SuccessMetric, SupportHealth, ValueItem,
+    RecommendedAction, SuccessMetric, SupportHealth, ValueItem,
 };
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType, TranscriptRecord};
@@ -35,6 +35,71 @@ const PREP_INITECH_TMPL: &str = include_str!("fixtures/prep-initech.json.tmpl");
 const WEEK_OVERVIEW_TMPL: &str = include_str!("fixtures/week-overview.json.tmpl");
 const TODAY_DIRECTIVE_TMPL: &str = include_str!("fixtures/today-directive.json.tmpl");
 const WEEK_DIRECTIVE_TMPL: &str = include_str!("fixtures/week-directive.json.tmpl");
+
+/// Guard: check the global DEV_DB_MODE flag is active.
+/// Used by `install_mock_data()` which opens its own DB connection.
+fn assert_dev_db() -> Result<(), String> {
+    if !crate::db::is_dev_db_mode() {
+        let msg = "MOCK DATA GUARD: DEV_DB_MODE is false — refusing mock writes.";
+        log::error!("{}", msg);
+        return Err(msg.into());
+    }
+    Ok(())
+}
+
+/// Guard: check the ACTUAL file path of an open DB connection.
+/// More reliable than `assert_dev_db()` because the connection may have been
+/// opened before the global flag was flipped.
+fn assert_dev_db_connection(db: &ActionDb) -> Result<(), String> {
+    let path: String = db
+        .conn_ref()
+        .query_row("PRAGMA database_list", [], |row| row.get::<_, String>(2))
+        .unwrap_or_default();
+    if !path.ends_with("dailyos-dev.db") {
+        let msg = format!(
+            "MOCK DATA GUARD: DB connection points to '{}' — refusing mock writes.",
+            path
+        );
+        log::error!("{}", msg);
+        return Err(msg);
+    }
+    Ok(())
+}
+
+/// Check that all dev mode signals agree: either ALL dev or ALL live.
+/// On invariant violation, force to live mode (safe default).
+fn assert_dev_mode_invariant() -> Result<(), String> {
+    let db_flag = crate::db::is_dev_db_mode();
+    let sentinel = crate::state::dev_mode_sentinel_path()
+        .map(|p| p.exists())
+        .unwrap_or(false);
+    // Check if the dev config file exists — during dev mode, config-dev.json is
+    // the active config (written by create_or_update_config when DB flag is true).
+    // The LIVE config.json stays clean intentionally, so we check dev config existence.
+    let dev_config_exists = crate::state::dev_config_path()
+        .map(|p| p.exists())
+        .unwrap_or(false);
+
+    let dev_signals = [db_flag, sentinel, dev_config_exists];
+    let dev_count = dev_signals.iter().filter(|&&x| x).count();
+
+    if dev_count != 0 && dev_count != dev_signals.len() {
+        log::error!(
+            "DEV MODE INVARIANT VIOLATED: db_flag={}, sentinel={}, dev_config_exists={}",
+            db_flag,
+            sentinel,
+            dev_config_exists
+        );
+        // Force to live on invariant violation — safe default
+        crate::db::set_dev_db_mode(false);
+        let _ = restore_config_backup();
+        if let Ok(s) = crate::state::dev_mode_sentinel_path() {
+            let _ = std::fs::remove_file(&s);
+        }
+        return Err("Dev mode invariant violated — forced to live mode".into());
+    }
+    Ok(())
+}
 
 /// Dev workspace path — never touches the real workspace.
 fn dev_workspace() -> std::path::PathBuf {
@@ -84,6 +149,18 @@ pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
     }
 
     log::info!("Entering dev mode — activating full isolation");
+
+    // 0. Production snapshot — authoritative backup, never overwritten during dev mode
+    let snapshot_path = crate::state::live_config_path()?
+        .with_extension("json.production-snapshot");
+    if !snapshot_path.exists() {
+        let live_path = crate::state::live_config_path()?;
+        if live_path.exists() {
+            std::fs::copy(&live_path, &snapshot_path)
+                .map_err(|e| format!("Failed to create production snapshot: {e}"))?;
+            log::info!("Production config snapshot created at {}", snapshot_path.display());
+        }
+    }
 
     // 1. Backup live config for crash recovery
     backup_config()?;
@@ -153,6 +230,9 @@ pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
         "Dev mode active — DB: dailyos-dev.db, workspace: {}",
         dev_ws.display()
     );
+
+    assert_dev_mode_invariant()?;
+
     Ok(())
 }
 
@@ -176,25 +256,47 @@ pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
 
     log::info!("Exiting dev mode — returning to live");
 
-    // 1. Deactivate dev DB mode
-    crate::db::set_dev_db_mode(false);
-
-    // 2. (I609) No sync DB handle to reopen — ActionDb::open() respects DEV_DB_MODE.
-
-    // 3. Reload live config from config.json (it was never modified)
-    match crate::state::load_config() {
-        Ok(config) => {
-            *state.config.write() = Some(config);
-        }
-        Err(e) => {
-            log::warn!("Failed to reload live config: {}; trying backup restore", e);
-            // Fallback: restore from backup
-            restore_config_backup()?;
-            if let Ok(config) = crate::state::load_config() {
-                *state.config.write() = Some(config);
+    // 1. Load live config from the explicit live path BEFORE flipping the DB flag.
+    //    `load_config()` uses `config_path()` which respects DEV_DB_MODE — if the
+    //    flag is still true it would read config-dev.json instead of config.json.
+    //    We must read from the hardcoded live path to avoid this.
+    let live_path = crate::state::live_config_path()?;
+    let live_config = match std::fs::read_to_string(&live_path) {
+        Ok(content) => {
+            let mut config: crate::types::Config = serde_json::from_str(&content)
+                .map_err(|e| format!("Failed to parse live config: {e}"))?;
+            config.normalize();
+            // Verify the loaded config doesn't point at the dev workspace
+            if config.workspace_path.contains("DailyOS-dev") {
+                log::warn!("Live config.json workspace points to DailyOS-dev — restoring from backup");
+                restore_config_backup()?;
+                let content2 = std::fs::read_to_string(&live_path)
+                    .map_err(|e| format!("Failed to read restored config: {e}"))?;
+                let mut c: crate::types::Config = serde_json::from_str(&content2)
+                    .map_err(|e| format!("Failed to parse restored config: {e}"))?;
+                c.normalize();
+                c
+            } else {
+                config
             }
         }
-    }
+        Err(e) => {
+            log::warn!("Failed to read live config: {}; trying backup restore", e);
+            restore_config_backup()?;
+            let content = std::fs::read_to_string(&live_path)
+                .map_err(|e| format!("Failed to read restored config: {e}"))?;
+            let mut config: crate::types::Config = serde_json::from_str(&content)
+                .map_err(|e| format!("Failed to parse restored config: {e}"))?;
+            config.normalize();
+            config
+        }
+    };
+
+    // 2. Update in-memory config with the verified live config
+    *state.config.write() = Some(live_config);
+
+    // 3. NOW deactivate dev DB mode — config is confirmed live
+    crate::db::set_dev_db_mode(false);
 
     // 4. Clear dev auth tokens from memory
     crate::google_api::token_store::clear_dev_token();
@@ -221,10 +323,12 @@ pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
     }
 
     // 8. Clean up backup (no longer needed after successful exit)
-    if let Ok(live_path) = crate::state::live_config_path() {
-        let backup = live_path.with_extension("json.dev-backup");
-        let _ = std::fs::remove_file(&backup);
-    }
+    let backup = live_path.with_extension("json.dev-backup");
+    let _ = std::fs::remove_file(&backup);
+
+    // 8b. Clean up production snapshot (only after successful restore)
+    let snapshot = live_path.with_extension("json.production-snapshot");
+    let _ = std::fs::remove_file(&snapshot);
 
     // 9. Clear all in-memory volatile state so mock data doesn't bleed
     //    back into live mode. The calendar poller will refill real events
@@ -241,6 +345,9 @@ pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
     *state.pre_dev_workspace.lock() = None;
 
     log::info!("Dev mode exited — back to live");
+
+    assert_dev_mode_invariant()?;
+
     Ok(())
 }
 
@@ -296,7 +403,11 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
         other => other,
     };
 
-    let destructive = matches!(scenario, "reset" | "full" | "no_connectors" | "pipeline");
+    let destructive = matches!(
+        scenario,
+        "reset" | "full" | "no_connectors" | "pipeline" | "golden"
+            | "linear_connected" | "glean_enriched" | "empty_portfolio"
+    );
 
     // On destructive scenario entry, ensure dev mode isolation is active.
     if destructive {
@@ -330,6 +441,40 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
             seed_intelligence_data(&db)?;
             install_simulate_briefing(state)?;
             Ok("Pipeline test: full data + directive fixtures seeded".into())
+        }
+        "golden" => {
+            install_mock_data(state, true)?;
+            let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            seed_intelligence_data(&db)?;
+            seed_linear_mock_data(&db)?;
+            seed_glean_enriched_data(&db)?;
+            Ok("Golden path: full data + Linear + Glean sources".into())
+        }
+        "linear_connected" => {
+            install_mock_data(state, true)?;
+            let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            seed_intelligence_data(&db)?;
+            seed_linear_mock_data(&db)?;
+            Ok("Linear connected: mock issues + projects + entity links".into())
+        }
+        "glean_enriched" => {
+            install_mock_data(state, true)?;
+            let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            seed_intelligence_data(&db)?;
+            seed_glean_enriched_data(&db)?;
+            Ok("Glean enriched: Gong summaries + Salesforce context + source attribution".into())
+        }
+        "empty_portfolio" => {
+            reset_all(state)?;
+            crate::commands::DEV_CLAUDE_OVERRIDE.store(1, std::sync::atomic::Ordering::Relaxed);
+            crate::commands::DEV_GOOGLE_OVERRIDE.store(1, std::sync::atomic::Ordering::Relaxed);
+            let ws = dev_workspace();
+            crate::state::initialize_workspace(&ws, "both")?;
+            crate::state::create_or_update_config(state, |config| {
+                config.developer_mode = true;
+                config.workspace_path = ws.to_string_lossy().to_string();
+            })?;
+            Ok("Empty portfolio: post-onboarding with 0 accounts".into())
         }
         _ => Err(format!("Unknown scenario: {}", scenario)),
     }
@@ -432,6 +577,7 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
+    assert_dev_db()?;
 
     let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
     let conn = db.conn_ref();
@@ -488,6 +634,19 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
 
     let n = delete_mock("account_objectives", "id");
     summary.push(format!("account_objectives: {}", n));
+
+    // --- Linear tables ---
+    let n = delete_mock("linear_issues", "id");
+    summary.push(format!("linear_issues: {}", n));
+
+    let n = delete_mock("linear_projects", "id");
+    summary.push(format!("linear_projects: {}", n));
+
+    let n = delete_mock("linear_entity_links", "linear_project_id");
+    summary.push(format!("linear_entity_links: {}", n));
+
+    let n = delete_mock("action_linear_links", "action_id");
+    summary.push(format!("action_linear_links: {}", n));
 
     // --- Account-specific tables ---
     let n = delete_mock("account_domains", "account_id");
@@ -783,6 +942,8 @@ fn reset_all(state: &AppState) -> Result<(), String> {
 
 /// Install full mock data with optional Google auth.
 fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
+    assert_dev_db()?;
+
     // Start from clean slate
     reset_all(state)?;
 
@@ -834,6 +995,133 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Seed Linear mock data: projects, issues, entity links, action links.
+fn seed_linear_mock_data(db: &ActionDb) -> Result<(), String> {
+    assert_dev_db_connection(db)?;
+    let conn = db.conn_ref();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute_batch(&format!(
+        "INSERT OR IGNORE INTO linear_projects (id, name, state, url, synced_at) VALUES
+         ('mock-lp-acme', 'Acme Phase 2 Migration', 'started', 'https://linear.app/dailyos/project/acme-migration', '{now}'),
+         ('mock-lp-globex', 'Globex Renewal', 'planned', 'https://linear.app/dailyos/project/globex-renewal', '{now}'),
+         ('mock-lp-platform', 'Platform Hardening', 'started', 'https://linear.app/dailyos/project/platform-hardening', '{now}');"
+    )).map_err(|e| format!("Linear projects: {e}"))?;
+
+    conn.execute_batch(&format!(
+        "INSERT OR IGNORE INTO linear_issues (id, identifier, title, state_name, state_type, priority, priority_label, project_id, project_name, due_date, url, synced_at) VALUES
+         ('mock-li-1', 'DOS-101', 'Migrate CMS data to v2 schema', 'In Progress', 'started', 2, 'High', 'mock-lp-acme', 'Acme Phase 2 Migration', NULL, 'https://linear.app/dailyos/issue/DOS-101', '{now}'),
+         ('mock-li-2', 'DOS-102', 'Analytics dashboard integration', 'Todo', 'unstarted', 3, 'Normal', 'mock-lp-acme', 'Acme Phase 2 Migration', NULL, 'https://linear.app/dailyos/issue/DOS-102', '{now}'),
+         ('mock-li-3', 'DOS-103', 'SSO configuration for enterprise tier', 'Done', 'completed', 2, 'High', 'mock-lp-acme', 'Acme Phase 2 Migration', NULL, 'https://linear.app/dailyos/issue/DOS-103', '{now}'),
+         ('mock-li-4', 'DOS-104', 'Renewal pricing proposal review', 'In Progress', 'started', 1, 'Urgent', 'mock-lp-globex', 'Globex Renewal', NULL, 'https://linear.app/dailyos/issue/DOS-104', '{now}'),
+         ('mock-li-5', 'DOS-105', 'Executive stakeholder mapping', 'Todo', 'unstarted', 3, 'Normal', 'mock-lp-globex', 'Globex Renewal', NULL, 'https://linear.app/dailyos/issue/DOS-105', '{now}'),
+         ('mock-li-6', 'DOS-106', 'Contract terms negotiation', 'In Progress', 'started', 2, 'High', 'mock-lp-globex', 'Globex Renewal', NULL, 'https://linear.app/dailyos/issue/DOS-106', '{now}'),
+         ('mock-li-7', 'DOS-107', 'Performance audit: page load times', 'Backlog', 'backlog', 3, 'Normal', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-107', '{now}'),
+         ('mock-li-8', 'DOS-108', 'CDN migration for static assets', 'In Progress', 'started', 2, 'High', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-108', '{now}'),
+         ('mock-li-9', 'DOS-109', 'Security headers compliance', 'Done', 'completed', 1, 'Urgent', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-109', '{now}'),
+         ('mock-li-10', 'DOS-110', 'Database connection pooling', 'Todo', 'unstarted', 3, 'Normal', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-110', '{now}');"
+    )).map_err(|e| format!("Linear issues: {e}"))?;
+
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO linear_entity_links (linear_project_id, entity_id, entity_type, confirmed) VALUES
+         ('mock-lp-acme', 'mock-acme-corp', 'account', 1),
+         ('mock-lp-globex', 'mock-globex-industries', 'account', 1);"
+    ).map_err(|e| format!("Linear entity links: {e}"))?;
+
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO action_linear_links (action_id, linear_issue_id, linear_identifier, linear_url, pushed_at) VALUES
+         ('mock-act-sow-acme', 'mock-li-1', 'DOS-101', 'https://linear.app/dailyos/issue/DOS-101', datetime('now')),
+         ('mock-act-qbr-deck-globex', 'mock-li-4', 'DOS-104', 'https://linear.app/dailyos/issue/DOS-104', datetime('now'));"
+    ).map_err(|e| format!("Action-Linear links: {e}"))?;
+
+    log::info!("seed_linear_mock_data: 3 projects, 10 issues, 2 entity links, 2 action links");
+    Ok(())
+}
+
+/// Seed Glean-enriched intelligence data: Gong summaries, Salesforce context, support health.
+fn seed_glean_enriched_data(db: &ActionDb) -> Result<(), String> {
+    assert_dev_db_connection(db)?;
+    let conn = db.conn_ref();
+
+    // Patch Acme intelligence with Gong + adoption data
+    let acme_patch = serde_json::json!({
+        "gongCallSummaries": [{
+            "title": "Q3 Business Review", "date": "2026-04-10",
+            "participants": ["Sarah Chen", "James Giroux", "Alex Torres"],
+            "keyTopics": ["expansion timeline", "executive sponsor change", "Phase 2 requirements"],
+            "sentiment": "positive",
+            "source": { "source": "glean_gong", "confidence": 0.8, "reference": "Gong recording" }
+        }],
+        "productAdoption": {
+            "adoptionRate": 0.82, "trend": "growing",
+            "featureAdoption": { "cms": 0.95, "analytics": 0.65, "search": 0.35 },
+            "lastActive": "2026-04-14",
+            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "Salesforce" }
+        },
+        "supportHealth": {
+            "openTickets": 2, "recentTrend": "stable", "criticalIssues": 0,
+            "summary": "2 open P3 tickets. Avg response time under SLA.",
+            "source": { "source": "glean_zendesk", "confidence": 0.85, "reference": "Zendesk" }
+        }
+    });
+    patch_entity_intelligence(conn, "mock-acme-corp", &acme_patch);
+
+    // Patch Globex with Salesforce context + at-risk signals
+    let globex_patch = serde_json::json!({
+        "salesforceContext": {
+            "renewalProbability": 0.65, "dealStage": "Negotiation",
+            "forecastCloseDate": "2026-06-15", "pipelineValue": 840000,
+            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "Salesforce" }
+        },
+        "gongCallSummaries": [{
+            "title": "Renewal Discussion", "date": "2026-04-08",
+            "participants": ["Pat Reynolds", "James Giroux", "Jamie Morrison"],
+            "keyTopics": ["pricing concerns", "competitive evaluation", "feature gaps"],
+            "sentiment": "mixed",
+            "source": { "source": "glean_gong", "confidence": 0.8, "reference": "Gong recording" }
+        }],
+        "supportHealth": {
+            "openTickets": 5, "recentTrend": "worsening", "criticalIssues": 1,
+            "summary": "5 open tickets including 1 P1 (SSO login failures). Response time exceeding SLA.",
+            "source": { "source": "glean_zendesk", "confidence": 0.85, "reference": "Zendesk" }
+        },
+        "productAdoption": {
+            "adoptionRate": 0.45, "trend": "declining",
+            "featureAdoption": { "cms": 0.7, "analytics": 0.3, "search": 0.1 },
+            "lastActive": "2026-04-11",
+            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "Salesforce" }
+        }
+    });
+    patch_entity_intelligence(conn, "mock-globex-industries", &globex_patch);
+
+    log::info!("seed_glean_enriched_data: Gong + Salesforce + Zendesk data patched");
+    Ok(())
+}
+
+/// Merge a JSON patch into an entity's intelligence_json in entity_assessment.
+fn patch_entity_intelligence(conn: &rusqlite::Connection, entity_id: &str, patch: &serde_json::Value) {
+    let existing: Option<String> = conn
+        .prepare("SELECT intelligence_json FROM entity_assessment WHERE entity_id = ?1")
+        .and_then(|mut stmt| stmt.query_row([entity_id], |row| row.get(0)))
+        .ok()
+        .flatten();
+    if let Some(json_str) = existing {
+        if let Ok(mut intel) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            if let Some(obj) = intel.as_object_mut() {
+                for (k, v) in patch.as_object().unwrap() {
+                    obj.insert(k.clone(), v.clone());
+                }
+            }
+            if let Ok(updated) = serde_json::to_string(&intel) {
+                let _ = conn.execute(
+                    "UPDATE entity_assessment SET intelligence_json = ?1 WHERE entity_id = ?2",
+                    rusqlite::params![updated, entity_id],
+                );
+            }
+        }
+    }
+}
+
 /// Install directive JSONs for pipeline testing.
 ///
 /// Writes today-directive.json and week-directive.json so delivery can run
@@ -868,6 +1156,7 @@ pub fn run_today_mechanical(state: &AppState) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
+    assert_dev_db()?;
 
     ensure_briefing_seeded(state)?;
 
@@ -914,6 +1203,7 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
+    assert_dev_db()?;
 
     ensure_briefing_seeded(state)?;
 
@@ -1125,6 +1415,8 @@ pub(crate) fn write_fixtures(workspace: &Path) -> Result<(), String> {
 
 /// Seed SQLite with realistic mock data.
 pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
+    assert_dev_db_connection(db)?;
+
     let now = chrono::Utc::now();
     let today = now.to_rfc3339();
 
@@ -1417,13 +1709,13 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     }
 
     // Project-linked actions
-    let project_action_rows: Vec<(&str, &str, &str, &str, Option<&str>, Option<String>, &str)> = vec![
+    let project_action_rows: Vec<(&str, &str, i32, &str, Option<&str>, Option<String>, &str)> = vec![
         // (id, title, priority, status, account_id, due_date, project_id)
         (
             "mock-act-phase2-scope",
             "Finalize Phase 2 scope document",
-            "P1",
-            "pending",
+            crate::action_status::PRIORITY_URGENT,
+            crate::action_status::UNSTARTED,
             Some("mock-acme-corp"),
             Some(date_only(5)),
             "mock-acme-phase-2",
@@ -1431,8 +1723,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-phase2-stakeholders",
             "Identify Phase 2 stakeholder group",
-            "P2",
-            "pending",
+            crate::action_status::PRIORITY_HIGH,
+            crate::action_status::UNSTARTED,
             Some("mock-acme-corp"),
             Some(date_only(10)),
             "mock-acme-phase-2",
@@ -1440,8 +1732,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-teamb-usage-audit",
             "Run Team B usage audit",
-            "P1",
-            "pending",
+            crate::action_status::PRIORITY_URGENT,
+            crate::action_status::UNSTARTED,
             Some("mock-globex-industries"),
             Some(date_only(3)),
             "mock-globex-team-b-recovery",
@@ -1449,8 +1741,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-teamb-interview",
             "Schedule interviews with Team B leads",
-            "P2",
-            "pending",
+            crate::action_status::PRIORITY_HIGH,
+            crate::action_status::UNSTARTED,
             Some("mock-globex-industries"),
             Some(date_only(7)),
             "mock-globex-team-b-recovery",
@@ -1458,8 +1750,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-migration-arch",
             "Draft v3 architecture proposal",
-            "P2",
-            "pending",
+            crate::action_status::PRIORITY_HIGH,
+            crate::action_status::UNSTARTED,
             None,
             Some(date_only(14)),
             "mock-platform-migration",
@@ -1607,33 +1899,33 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     // --- Actions (matching actions.json IDs) ---
     // Each action includes context (why it matters) and source tracing (where it came from).
-    let action_rows: Vec<(&str, &str, &str, &str, Option<&str>, Option<String>, Option<&str>, Option<&str>, Option<&str>)> = vec![
+    let action_rows: Vec<(&str, &str, i32, &str, Option<&str>, Option<String>, Option<&str>, Option<&str>, Option<&str>)> = vec![
         (
-            "mock-act-sow-acme", "Send updated SOW to Acme legal team", "P1", "pending",
+            "mock-act-sow-acme", "Send updated SOW to Acme legal team", crate::action_status::PRIORITY_URGENT, crate::action_status::UNSTARTED,
             Some("mock-acme-corp"), Some(date_only(-1)),
             Some("briefing"), Some("mock-mh-acme-7d"),
             Some("Sarah Chen confirmed Phase 2 executive sponsorship during last week's sync. Legal needs the updated SOW before scoping can proceed. Alex Torres flagged that the current contract terms don't cover APAC — legal review needed.")
         ),
         (
-            "mock-act-qbr-deck-globex", "Review Globex QBR deck with AE", "P1", "pending",
+            "mock-act-qbr-deck-globex", "Review Globex QBR deck with AE", crate::action_status::PRIORITY_URGENT, crate::action_status::UNSTARTED,
             Some("mock-globex-industries"), Some(date_only(0)),
             Some("briefing"), Some("mock-mh-globex-3d"),
             Some("QBR is the highest-stakes meeting this quarter. Renewal decision expected. Need to address Team B usage decline and Pat Reynolds' departure. AE wants to align on competitive positioning before the meeting — Contoso is actively pitching.")
         ),
         (
-            "mock-act-kickoff-initech", "Schedule Phase 2 kickoff with Initech", "P2", "pending",
+            "mock-act-kickoff-initech", "Schedule Phase 2 kickoff with Initech", crate::action_status::PRIORITY_HIGH, crate::action_status::UNSTARTED,
             Some("mock-initech"), Some(date_only(1)),
             Some("briefing"), Some("mock-mh-initech-10d"),
             Some("Phase 1 wrapped successfully. Dana Patel expressed interest in Phase 2 but budget approval is still pending from finance. Priya Sharma confirmed team bandwidth concerns for Q2 — schedule early to give them time to plan.")
         ),
         (
-            "mock-act-nps-acme", "Follow up on NPS survey responses", "P2", "pending",
+            "mock-act-nps-acme", "Follow up on NPS survey responses", crate::action_status::PRIORITY_HIGH, crate::action_status::UNSTARTED,
             Some("mock-acme-corp"), Some(date_only(-7)),
             Some("briefing"), None,
             Some("3 detractors identified in the latest NPS survey. Scores trending down across the engineering team. Need to schedule individual calls to understand concerns before the quarterly review.")
         ),
         (
-            "mock-act-quarterly-summary", "Draft quarterly impact summary", "P3", "pending",
+            "mock-act-quarterly-summary", "Draft quarterly impact summary", crate::action_status::PRIORITY_MEDIUM, crate::action_status::UNSTARTED,
             None, Some(date_only(7)),
             Some("briefing"), None,
             Some("End-of-quarter impact summary for leadership. Should cover Acme Phase 1 completion, Globex expansion to 3 teams, Initech onboarding success, and Team B recovery progress.")
@@ -1847,24 +2139,24 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     }
 
     // --- Transcript-sourced actions for today's Acme meeting ---
-    let transcript_actions: Vec<(&str, &str, &str, &str)> = vec![
+    let transcript_actions: Vec<(&str, &str, i32, &str)> = vec![
         (
             "mock-act-transcript-kt-plan",
             "Create knowledge transfer plan for Alex Torres departure",
-            "P1",
+            crate::action_status::PRIORITY_URGENT,
             "mock-acme-corp",
         ),
         (
             "mock-act-transcript-phase2-scope",
             "Draft Phase 2 scope document for April kickoff",
-            "P2",
+            crate::action_status::PRIORITY_HIGH,
             "mock-acme-corp",
         ),
     ];
 
     for (id, title, priority, account_id) in &transcript_actions {
         conn.execute(
-            "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, source_type, source_id, updated_at) VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?6, 'transcript', ?7, ?8)",
+            "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, source_type, source_id, updated_at) VALUES (?1, ?2, ?3, 'unstarted', ?4, ?5, ?6, 'transcript', ?7, ?8)",
             rusqlite::params![id, title, priority, &today, date_only(3), account_id, &today_acme_id, &today],
         ).map_err(|e| e.to_string())?;
     }
@@ -2688,12 +2980,12 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     let globex_mtg_id = format!("mock-mtg-globex-qbr-{}", today_str);
     let initech_mtg_id = format!("mock-mtg-initech-kickoff-{}", today_str);
 
-    let proposed_actions: Vec<(&str, &str, &str, &str, &str, &str, &str)> = vec![
+    let proposed_actions: Vec<(&str, &str, i32, &str, &str, &str, &str)> = vec![
         // (id, title, priority, account_id, source_type, source_id, context)
         (
             "mock-act-proposed-tech-dive",
             "Schedule technical deep-dive with Acme engineering",
-            "P2",
+            crate::action_status::PRIORITY_HIGH,
             "mock-acme-corp",
             "meeting_prep",
             &acme_mtg_id,
@@ -2702,7 +2994,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-proposed-successor",
             "Identify Pat Reynolds' successor at Globex",
-            "P1",
+            crate::action_status::PRIORITY_URGENT,
             "mock-globex-industries",
             "meeting_prep",
             &globex_mtg_id,
@@ -2711,7 +3003,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-proposed-teamb-plan",
             "Draft Team B engagement recovery plan",
-            "P1",
+            crate::action_status::PRIORITY_URGENT,
             "mock-globex-industries",
             "meeting_prep",
             &globex_mtg_id,
@@ -2720,7 +3012,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-act-proposed-phase1-roi",
             "Compile Phase 1 ROI report for Initech finance",
-            "P2",
+            crate::action_status::PRIORITY_HIGH,
             "mock-initech",
             "meeting_prep",
             &initech_mtg_id,
@@ -2731,7 +3023,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     for (id, title, priority, account_id, source_type, source_id, context) in &proposed_actions {
         conn.execute(
             "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, account_id, source_type, source_id, context, updated_at) \
-             VALUES (?1, ?2, ?3, 'suggested', ?4, ?5, ?6, ?7, ?8, ?9)",
+             VALUES (?1, ?2, ?3, 'backlog', ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![id, title, priority, &today, account_id, source_type, source_id, context, &today],
         ).map_err(|e| format!("Suggested action insert: {}", e))?;
     }
@@ -2743,7 +3035,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params![
             "mock-act-done-phase1-report",
             "Send Phase 1 completion report to Acme",
-            "P1",
+            crate::action_status::PRIORITY_URGENT,
             days_ago(5),
             days_ago(2),
             "mock-acme-corp",
@@ -2759,7 +3051,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params![
             "mock-act-done-globex-expansion",
             "Coordinate Team A expansion onboarding",
-            "P2",
+            crate::action_status::PRIORITY_HIGH,
             days_ago(14),
             days_ago(7),
             "mock-globex-industries",
@@ -3424,8 +3716,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params![
             "mock-act-legal-review-acme",
             "Waiting on legal review of Acme MSA amendment",
-            "P1",
-            "waiting",
+            crate::action_status::PRIORITY_URGENT,
+            crate::action_status::STARTED,
             days_ago(10),
             date_only(3),
             "mock-acme-corp",
@@ -3441,8 +3733,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params![
             "mock-act-finance-approval-initech",
             "Waiting on finance approval for Initech Phase 2 budget",
-            "P2",
-            "waiting",
+            crate::action_status::PRIORITY_HIGH,
+            crate::action_status::STARTED,
             days_ago(7),
             date_only(7),
             "mock-initech",
@@ -4335,6 +4627,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 /// Seeds rich intelligence via `IntelligenceJson` structs (all 6 dimensions),
 /// signal events, intelligence feedback, and signal weights.
 fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
+    assert_dev_db_connection(db)?;
+
     let now = chrono::Utc::now();
     let today = now.to_rfc3339();
     let days_ago_rfc = |n: i64| -> String { (now - chrono::Duration::days(n)).to_rfc3339() };
@@ -4542,6 +4836,10 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             GongCallSummary { title: "Acme Phase 2 Planning".into(), date: days_ago_rfc(14), participants: vec!["Sarah Chen".into(), "Pat Kim".into(), "Mike Chen".into()], key_topics: "Budget approval, APAC expansion, resource allocation".into(), sentiment: "positive".into() },
             GongCallSummary { title: "Acme NPS Debrief".into(), date: days_ago_rfc(21), participants: vec!["Alex Torres".into(), "Engineering Team".into()], key_topics: "NPS detractor root cause, onboarding friction, module complexity".into(), sentiment: "neutral".into() },
         ],
+        recommended_actions: vec![
+            RecommendedAction { title: "Schedule executive review with Sarah Chen".into(), rationale: "Phase 2 budget is approved but scoping hasn't started. Sarah is the sponsor — get alignment before Alex departs.".into(), priority: 2, suggested_due: Some(days_ago_rfc(-3)) },
+            RecommendedAction { title: "Build adoption metrics dashboard for QBR".into(), rationale: "NPS is trending down with 3 detractors. A concrete adoption dashboard gives Sarah data to address concerns internally.".into(), priority: 3, suggested_due: Some(days_ago_rfc(-7)) },
+        ],
         ..Default::default()
     };
 
@@ -4745,6 +5043,10 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             verbatim: Some("Team A loves it but Team B feels unsupported".into()),
             source: Some("survey_tool".into()),
         }),
+        recommended_actions: vec![
+            RecommendedAction { title: "Schedule 1:1 with Jamie Morrison".into(), rationale: "Jamie is the strongest remaining relationship at Globex. With Pat Reynolds departing, Jamie's buy-in is critical for renewal.".into(), priority: 1, suggested_due: Some(days_ago_rfc(-2)) },
+            RecommendedAction { title: "Prepare renewal brief with Team A success data".into(), rationale: "Team B usage decline is dominating the narrative. A brief showing Team A's strong adoption counters the Contoso comparison.".into(), priority: 2, suggested_due: Some(days_ago_rfc(-5)) },
+        ],
         ..Default::default()
     };
 
