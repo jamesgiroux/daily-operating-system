@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { Globe, HardDrive, RefreshCw, Check, AlertCircle, Loader2 } from "lucide-react";
 import { styles } from "@/components/settings/styles";
@@ -77,6 +78,15 @@ export default function ContextSourceSection() {
       void refreshTokenHealth();
     }
   }, [glean.phase, refreshTokenHealth]);
+
+  // Refresh tokenHealth when Glean auth changes (e.g., after slow OAuth completion)
+  useEffect(() => {
+    const unlisten = listen("glean-auth-changed", () => {
+      // Small delay to ensure Keychain write has committed
+      setTimeout(() => void refreshTokenHealth(), 500);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [refreshTokenHealth]);
 
   const handleConnectGlean = async () => {
     if (!endpoint.trim()) {

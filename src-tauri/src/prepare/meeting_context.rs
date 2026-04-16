@@ -273,6 +273,40 @@ fn gather_account_context(
     ctx["entity_id"] = json!(&entity_match.entity_id);
     ctx["recent_captures"] = get_captures_for_account(db, &entity_match.entity_id, 14);
     ctx["open_actions"] = get_account_actions(db, &entity_match.entity_id);
+
+    // DOS-53: Include actions pushed to Linear in meeting prep context
+    {
+        let linear_actions: Vec<Value> = (|| {
+            let conn = db.conn_ref();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT a.title, all2.linear_identifier, a.status, all2.linear_url
+                     FROM actions a
+                     JOIN action_linear_links all2 ON a.id = all2.action_id
+                     WHERE a.account_id = ?1
+                     ORDER BY all2.pushed_at DESC
+                     LIMIT 5",
+                )
+                .ok()?;
+            let rows = stmt
+                .query_map([&entity_match.entity_id], |row| {
+                    Ok(json!({
+                        "title": row.get::<_, Option<String>>(0)?,
+                        "identifier": row.get::<_, Option<String>>(1)?,
+                        "status": row.get::<_, Option<String>>(2)?,
+                        "url": row.get::<_, Option<String>>(3)?,
+                    }))
+                })
+                .ok()?;
+            Some(rows.flatten().collect())
+        })()
+        .unwrap_or_default();
+
+        if !linear_actions.is_empty() {
+            ctx["linear_tracked_actions"] = json!(linear_actions);
+        }
+    }
+
     ctx["meeting_history"] = get_meeting_history(db, &entity_match.entity_id, 30, 3);
     if let Ok(products) = db.get_account_products(&entity_match.entity_id) {
         if !products.is_empty() {
@@ -838,6 +872,22 @@ fn inject_entity_intelligence(
         if !classification.products.is_empty() {
             ctx["products"] = json!(classification.products);
         }
+    }
+
+    // DOS-12: Include persisted value delivered in meeting prep context
+    if !intel.value_delivered.is_empty() {
+        ctx["value_delivered"] = json!(intel
+            .value_delivered
+            .iter()
+            .map(|v| {
+                json!({
+                    "statement": v.statement,
+                    "date": v.date,
+                    "impact": v.impact,
+                    "confirmed": v.item_source.as_ref().is_some_and(|s| s.source == "user_correction"),
+                })
+            })
+            .collect::<Vec<_>>());
     }
 }
 
@@ -1595,7 +1645,7 @@ fn get_person_actions(db: &crate::db::ActionDb, person_id: &str) -> Value {
             .prepare(
                 "SELECT DISTINCT a.id, a.title, a.priority, a.status, a.due_date
                  FROM actions a
-                 WHERE a.status = 'pending'
+                 WHERE a.status IN ('backlog', 'unstarted', 'started')
                    AND (
                      a.person_id = ?1
                      OR a.account_id IN (
@@ -1631,7 +1681,7 @@ fn get_account_actions(db: &crate::db::ActionDb, account_id: &str) -> Value {
                 "SELECT id, title, priority, status, due_date
              FROM actions
              WHERE account_id = ?1
-               AND status = 'pending'
+               AND status IN ('backlog', 'unstarted', 'started')
              ORDER BY priority, due_date",
             )
             .ok()?;
@@ -1770,7 +1820,7 @@ fn get_all_pending_actions(db: &crate::db::ActionDb, limit: usize) -> Value {
             .prepare(
                 "SELECT id, title, priority, status, due_date
              FROM actions
-             WHERE status = 'pending'
+             WHERE status IN ('backlog', 'unstarted', 'started')
              ORDER BY priority, due_date
              LIMIT ?1",
             )

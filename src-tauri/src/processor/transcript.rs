@@ -140,10 +140,7 @@ struct TranscriptRoleReviewPayload {
     champion_health: Option<ChampionHealth>,
 }
 
-fn emit_transcript_progress(
-    app_handle: Option<&AppHandle>,
-    payload: TranscriptProgressPayload,
-) {
+fn emit_transcript_progress(app_handle: Option<&AppHandle>, payload: TranscriptProgressPayload) {
     if let Some(app_handle) = app_handle {
         let _ = app_handle.emit("transcript-progress", payload);
     }
@@ -1372,10 +1369,7 @@ fn compute_meeting_record_path(
 }
 
 /// I636: Generate, write, persist, and index the meeting record.
-fn generate_and_persist_meeting_record(
-    workspace: &Path,
-    data: &MeetingRecordData<'_>,
-) {
+fn generate_and_persist_meeting_record(workspace: &Path, data: &MeetingRecordData<'_>) {
     let record_path = compute_meeting_record_path(workspace, data.meeting, data.db);
 
     let meeting = data.meeting;
@@ -1819,9 +1813,9 @@ fn extract_transcript_actions(
         let meta = super::metadata::parse_action_metadata(raw_title);
 
         let status = if meta.is_waiting {
-            "pending".to_string()
+            crate::action_status::UNSTARTED.to_string()
         } else {
-            "suggested".to_string()
+            crate::action_status::BACKLOG.to_string()
         };
 
         // Resolve @Tag to a real account ID; fall back to meeting-level account.
@@ -1837,7 +1831,11 @@ fn extract_transcript_actions(
         let action = crate::db::DbAction {
             id: format!("transcript-{}-{}", meeting_id, attempted - 1),
             title: meta.clean_title,
-            priority: meta.priority.unwrap_or_else(|| "P2".to_string()),
+            priority: meta
+                .priority
+                .as_deref()
+                .map(crate::action_status::migrate_priority)
+                .unwrap_or(crate::action_status::PRIORITY_MEDIUM),
             status,
             created_at: now.clone(),
             due_date: meta.due_date,
@@ -1858,6 +1856,11 @@ fn extract_transcript_actions(
             account_name: None,
             next_meeting_title: None,
             next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         };
 
         match crate::services::mutations::upsert_action_if_not_completed(db, &action) {
@@ -1870,6 +1873,17 @@ fn extract_transcript_actions(
             Ok(false) => {
                 skipped += 1;
             }
+        }
+    }
+
+    // DOS-17: Scan newly inserted actions for decision-indicating keywords
+    if written > 0 {
+        let flagged = db.scan_and_flag_decisions().unwrap_or(0);
+        if flagged > 0 {
+            log::info!(
+                "DOS-17: flagged {} action(s) as decision-requiring",
+                flagged
+            );
         }
     }
 
@@ -1897,10 +1911,7 @@ struct EnrichedTranscriptData<'a> {
 }
 
 /// Backwards-compatible: silently skips any block that wasn't parsed (None/empty).
-fn persist_enriched_transcript_data(
-    db: &crate::db::ActionDb,
-    data: &EnrichedTranscriptData<'_>,
-) {
+fn persist_enriched_transcript_data(db: &crate::db::ActionDb, data: &EnrichedTranscriptData<'_>) {
     let meeting_id = data.meeting_id;
     let meeting_title = data.meeting_title;
     let account_id = data.account_id;
@@ -2006,6 +2017,23 @@ fn persist_enriched_transcript_data(
                 evidence_quote: commitment.success_criteria.as_deref(),
             }) {
                 log::warn!("Failed to insert commitment capture: {}", e);
+            }
+        }
+
+        // DOS-16: After persisting commitments, match them to milestones
+        if let Some(acct_id) = account_id {
+            match crate::services::success_plans::match_commitments_to_milestones(db, acct_id) {
+                Ok(count) if count > 0 => {
+                    log::info!(
+                        "Matched {} commitments to milestones for account {}",
+                        count,
+                        acct_id
+                    );
+                }
+                Err(e) => {
+                    log::warn!("Failed to match commitments to milestones: {}", e);
+                }
+                _ => {}
             }
         }
     }
@@ -2267,7 +2295,8 @@ fn build_phase2_prompt(
     };
 
     let wins_framing = match proc_profile {
-        ProcessingProfile::CustomerFacing => r#"WINS:
+        ProcessingProfile::CustomerFacing => {
+            r#"WINS:
 Extract only verifiable positive outcomes — not vague sentiment. Each win MUST include
 a specific, observable event. "Customer seems happy" is NOT a win.
 
@@ -2280,20 +2309,26 @@ Sub-types (tag each):
 - ADVOCACY: public endorsement, referral, conference speaking, internal win-sharing to leadership
 
 Format: - [SUB_TYPE] <specific win with evidence> #"verbatim quote if available"
-END_WINS"#,
-        ProcessingProfile::InternalTeam => r#"WINS:
+END_WINS"#
+        }
+        ProcessingProfile::InternalTeam => {
+            r#"WINS:
 List team achievements, milestones reached, blockers cleared, or progress made.
 One win per line. Be specific — include what was accomplished and who drove it.
-END_WINS"#,
-        ProcessingProfile::OneOnOne => r#"WINS:
+END_WINS"#
+        }
+        ProcessingProfile::OneOnOne => {
+            r#"WINS:
 List personal achievements, growth milestones, positive feedback shared, or skills demonstrated.
 One win per line.
-END_WINS"#,
+END_WINS"#
+        }
         ProcessingProfile::Lightweight => "", // Lightweight doesn't run Phase 2
     };
 
     let risks_framing = match proc_profile {
-        ProcessingProfile::CustomerFacing => r#"RISKS:
+        ProcessingProfile::CustomerFacing => {
+            r#"RISKS:
 Categorize each risk by urgency. Be specific — name the person, the competitor, the timeline.
 
 RED (critical — requires immediate action):
@@ -2319,15 +2354,20 @@ GREEN_WATCH (early warning — monitor):
 - Reduced energy or engagement without stated reason
 
 Format: - [RED|YELLOW|GREEN_WATCH] <specific risk with named people/timelines> #"verbatim quote"
-END_RISKS"#,
-        ProcessingProfile::InternalTeam => r#"RISKS:
+END_RISKS"#
+        }
+        ProcessingProfile::InternalTeam => {
+            r#"RISKS:
 List team blockers, resource constraints, process failures, or missed commitments.
 Tag urgency: [RED] immediate, [YELLOW] upcoming, [GREEN_WATCH] monitor.
-END_RISKS"#,
-        ProcessingProfile::OneOnOne => r#"RISKS:
+END_RISKS"#
+        }
+        ProcessingProfile::OneOnOne => {
+            r#"RISKS:
 List concerns raised, misalignments, dissatisfaction signals, or relationship strain.
 Tag urgency: [RED] immediate, [YELLOW] upcoming, [GREEN_WATCH] monitor.
-END_RISKS"#,
+END_RISKS"#
+        }
         ProcessingProfile::Lightweight => "",
     };
 
@@ -2361,40 +2401,51 @@ Rules for champion health:
     };
 
     let wins_rules = match proc_profile {
-        ProcessingProfile::CustomerFacing => r#"
+        ProcessingProfile::CustomerFacing => {
+            r#"
 Rules for wins:
 - Evidence threshold: only extract if specific evidence exists
 - Tag each win with its sub-type ([ADOPTION], [EXPANSION], [VALUE_REALIZED], [RELATIONSHIP], [COMMERCIAL], [ADVOCACY])
 - Include verbatim quotes via #"..." suffix when available
-- If none are apparent, leave the section empty (just the markers)"#,
-        _ => r#"
+- If none are apparent, leave the section empty (just the markers)"#
+        }
+        _ => {
+            r#"
 Rules for wins:
 - Be specific about what was accomplished
-- If none are apparent, leave the section empty (just the markers)"#,
+- If none are apparent, leave the section empty (just the markers)"#
+        }
     };
 
     let risks_rules = match proc_profile {
-        ProcessingProfile::CustomerFacing => r#"
+        ProcessingProfile::CustomerFacing => {
+            r#"
 Rules for risks:
 - Tag each risk with urgency: [RED], [YELLOW], or [GREEN_WATCH]
 - Name the specific person, competitor, or timeline
 - Include verbatim quotes via #"..." suffix when available
-- If none are apparent, leave the section empty (just the markers)"#,
-        _ => r#"
+- If none are apparent, leave the section empty (just the markers)"#
+        }
+        _ => {
+            r#"
 Rules for risks:
 - Tag each risk with urgency: [RED], [YELLOW], or [GREEN_WATCH]
 - Be specific about the blocker or concern
-- If none are apparent, leave the section empty (just the markers)"#,
+- If none are apparent, leave the section empty (just the markers)"#
+        }
     };
 
     let extra_sections = match proc_profile {
-        ProcessingProfile::InternalTeam => r#"
+        ProcessingProfile::InternalTeam => {
+            r#"
 
 COMMITMENTS:
 List commitments made with owner and target date. Format:
 - COMMITMENT | Owner: @name | Target: YYYY-MM-DD | Type: team
-END_COMMITMENTS"#,
-        ProcessingProfile::OneOnOne => r#"
+END_COMMITMENTS"#
+        }
+        ProcessingProfile::OneOnOne => {
+            r#"
 
 COACHING_MOMENTS:
 List coaching or mentoring moments where advice, feedback, or guidance was exchanged. One per line.
@@ -2402,7 +2453,8 @@ END_COACHING_MOMENTS
 
 RELATIONSHIP_HEALTH:
 One line: aligned | strained | growing | neutral — with brief evidence.
-END_RELATIONSHIP_HEALTH"#,
+END_RELATIONSHIP_HEALTH"#
+        }
         _ => "",
     };
 
@@ -2883,8 +2935,7 @@ pub fn resolve_transcript_destination(
             .map(|d| d.to_lowercase())
             .filter(|d| {
                 !d.is_empty()
-                    && !crate::google_api::classify::PERSONAL_EMAIL_DOMAINS
-                        .contains(&d.as_str())
+                    && !crate::google_api::classify::PERSONAL_EMAIL_DOMAINS.contains(&d.as_str())
             })
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
@@ -2937,7 +2988,12 @@ pub fn resolve_transcript_destination(
         if let Some(account_name) = crate::workflow::recover::frontmatter_value(content, "account")
         {
             if let Some(db) = db {
-                if db.get_account_by_name(&account_name).ok().flatten().is_some() {
+                if db
+                    .get_account_by_name(&account_name)
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
                     let account_dir = sanitize_account_dir(&account_name);
                     log::info!(
                         "I661: Routed '{}' via source frontmatter account '{}'",
@@ -4214,7 +4270,7 @@ mod tests {
                 name: "Platform Migration".to_string(),
                 entity_type: "project".to_string(),
             }]),
-        classified_entities: None,
+            classified_entities: None,
         };
         let project_meeting = CalendarEvent {
             id: "mtg-project-route".to_string(),
@@ -4230,7 +4286,7 @@ mod tests {
                 name: "Platform Migration".to_string(),
                 entity_type: "project".to_string(),
             }]),
-        classified_entities: None,
+            classified_entities: None,
         };
         let person_meeting = CalendarEvent {
             id: "mtg-person-route".to_string(),
@@ -4246,7 +4302,7 @@ mod tests {
                 name: "Pat Kim".to_string(),
                 entity_type: "person".to_string(),
             }]),
-        classified_entities: None,
+            classified_entities: None,
         };
         let archive_meeting = CalendarEvent {
             id: "mtg-archive-route".to_string(),
@@ -4848,8 +4904,12 @@ END_DECISIONS";
     fn test_phase1_prompt_lightweight_omits_actions() {
         let mut meeting = test_meeting();
         meeting.meeting_type = MeetingType::Training;
-        let prompt =
-            build_phase1_prompt(&meeting, "test content", TranscriptContentKind::Transcript, ProcessingProfile::Lightweight);
+        let prompt = build_phase1_prompt(
+            &meeting,
+            "test content",
+            TranscriptContentKind::Transcript,
+            ProcessingProfile::Lightweight,
+        );
         assert!(
             prompt.contains("SUMMARY and DISCUSSION sections only"),
             "Lightweight phase1 prompt must instruct summary-only output"

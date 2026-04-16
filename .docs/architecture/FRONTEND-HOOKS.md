@@ -1,9 +1,9 @@
 # Frontend Hooks Reference
 
 > Registry of all React hooks in `src/hooks/`.
-> **Auto-generated:** 2026-04-02 by `.docs/generators/gen-frontend-hooks.sh`
+> **Auto-generated:** 2026-04-15 by `.docs/generators/gen-frontend-hooks.sh`
 
-**40** hook files | **4585** total lines
+**40** hook files | **4620** total lines
 
 ---
 
@@ -15,7 +15,7 @@
 | `useAccountDetail` | `useAccountDetail.ts` | 454 | archive_account, create_action, create_child_account, enrich_account, get_account_detail, get_account_events, get_entity_files, index_entity_files, record_account_event, update_account_programs | — |
 | `useAccountFields` | `useAccountFields.ts` | 109 | update_account_field | — |
 | `useAccountFieldSave` | `useAccountFieldSave.ts` | 127 | accept_account_field_conflict, dismiss_account_field_conflict, update_account_field, update_entity_metadata | — |
-| `useActions` | `useActions.ts` | 219 | complete_action, create_action, get_actions_from_db, reopen_action | — |
+| `useActions` | `useActions.ts` | 223 | complete_action, create_action, get_actions_from_db, reopen_action | — |
 | `useActivePreset` | `useActivePreset.ts` | 23 | get_active_preset | — |
 | `useActivePreset` | `useActivePreset.tsx` | 53 | get_active_preset | preset-changed |
 | `useActivitySignal` | `useActivitySignal.ts` | 48 | signal_user_activity, signal_window_focus | — |
@@ -24,7 +24,7 @@
 | `useBackgroundStatus` | `useBackgroundStatus.ts` | 99 | — | — |
 | `useCalendar` | `useCalendar.ts` | 54 | get_calendar_events | calendar-updated |
 | `useChapterObserver` | `useChapterObserver.ts` | 42 | — | — |
-| `useClaudeStatus` | `useClaudeStatus.ts` | 73 | check_claude_status | — |
+| `useClaudeStatus` | `useClaudeStatus.ts` | 104 | check_claude_status, clear_claude_status_cache | — |
 | `useConnectivity` | `useConnectivity.ts` | 53 | get_sync_freshness | — |
 | `useCopyToClipboard` | `useCopyToClipboard.ts` | 21 | — | — |
 | `useDashboardData` | `useDashboardData.ts` | 144 | get_dashboard_data | calendar-updated, emails-updated, entity-updated, prep-ready, workflow-completed |
@@ -139,6 +139,7 @@ All Tauri commands invoked from hooks:
 - `create_entity_context_entry` (1 hooks)
 - `create_child_account` (1 hooks)
 - `clear_demo_data` (1 hooks)
+- `clear_claude_status_cache` (1 hooks)
 - `check_claude_status` (1 hooks)
 - `capture_meeting_outcome` (1 hooks)
 - `add_stakeholder_role` (1 hooks)
