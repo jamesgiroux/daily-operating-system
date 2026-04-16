@@ -77,6 +77,7 @@ export default function EmailsPage() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [dismissedSignals, setDismissedSignals] = useState<Set<number>>(new Set());
   const [dismissedQuiet, setDismissedQuiet] = useState<Set<string>>(new Set());
+  const [failedDismissed, setFailedDismissed] = useState(false);
   const [, startTransition] = useTransition();
   const inboxSyncInFlight = useRef(false);
 
@@ -441,9 +442,31 @@ export default function EmailsPage() {
                 {syncStats.enriched}/{syncStats.total} ready
               </span>
             )}
-            {syncStats.failed > 0 && (
-              <span className={e.syncStatusAlert}>
-                {syncStats.failed} failed
+            {syncStats.failed > 0 && !failedDismissed && (
+              <span className={e.syncStatusNotice}>
+                Some emails couldn&apos;t be processed
+                <button
+                  className={e.syncRetryButton}
+                  onClick={async () => {
+                    try {
+                      const count = await invoke<number>("retry_failed_emails");
+                      if (count > 0) {
+                        setTimeout(() => loadEmails(true), 3000);
+                      }
+                    } catch (err) {
+                      console.error("retry_failed_emails:", err);
+                    }
+                  }}
+                >
+                  Retry
+                </button>
+                <button
+                  className={e.syncDismissButton}
+                  onClick={() => setFailedDismissed(true)}
+                  aria-label="Dismiss"
+                >
+                  &times;
+                </button>
               </span>
             )}
             {syncStats.total === 0 && syncStats.lastFetchAt === null && (
