@@ -49,18 +49,7 @@ pub fn compute_account_health(
 
     // DOS-84: Count dimensions with actual data (weight > 0), excluding
     // the signal_momentum neutral placeholder which always has weight > 0.
-    let populated_count = [
-        &dims.meeting_cadence,
-        &dims.email_engagement,
-        &dims.stakeholder_coverage,
-        &dims.champion_health,
-        &dims.financial_proximity,
-        &dims.signal_momentum,
-    ]
-    .iter()
-    .filter(|d| d.weight > 0.0 && !is_neutral_momentum_placeholder(d))
-    .count();
-    let sufficient_data = populated_count >= 3;
+    let sufficient_data = has_sufficient_data(&dims);
 
     // Compute weighted average of non-null dimensions
     let dim_arr = [
@@ -1246,6 +1235,23 @@ fn redistribute_weights(dims: &RelationshipDimensions, raw: [f64; 6]) -> [f64; 6
     result
 }
 
+/// DOS-84: Determine if enough dimensions have real data for a reliable health score.
+/// Returns true when >= 3 non-placeholder dimensions are populated.
+fn has_sufficient_data(dims: &RelationshipDimensions) -> bool {
+    let populated_count = [
+        &dims.meeting_cadence,
+        &dims.email_engagement,
+        &dims.stakeholder_coverage,
+        &dims.champion_health,
+        &dims.financial_proximity,
+        &dims.signal_momentum,
+    ]
+    .iter()
+    .filter(|d| d.weight > 0.0 && !is_neutral_momentum_placeholder(d))
+    .count();
+    populated_count >= 3
+}
+
 /// Confidence = fraction of non-null dimensions.
 fn is_neutral_momentum_placeholder(dim: &DimensionScore) -> bool {
     dim.weight > 0.0
@@ -1863,7 +1869,8 @@ mod tests {
 
     #[test]
     fn test_sufficient_data_with_sparse_dimensions() {
-        // Only 2 real dimensions — below the 3-dimension threshold
+        // Only 2 real dimensions — below the 3-dimension threshold.
+        // Calls the production has_sufficient_data() function directly.
         let dims = RelationshipDimensions {
             meeting_cadence: active_dim(70.0),
             email_engagement: active_dim(60.0),
@@ -1877,24 +1884,16 @@ mod tests {
                 trend: "stable".to_string(),
             },
         };
-        let populated = [
-            &dims.meeting_cadence,
-            &dims.email_engagement,
-            &dims.stakeholder_coverage,
-            &dims.champion_health,
-            &dims.financial_proximity,
-            &dims.signal_momentum,
-        ]
-        .iter()
-        .filter(|d| d.weight > 0.0 && !is_neutral_momentum_placeholder(d))
-        .count();
-        assert_eq!(populated, 2, "should count 2 real dimensions");
-        assert!(populated < 3, "2 dims should be insufficient");
+        assert!(
+            !has_sufficient_data(&dims),
+            "2 real dimensions should be insufficient"
+        );
     }
 
     #[test]
     fn test_sufficient_data_with_three_dimensions() {
-        // Exactly 3 real dimensions — at the threshold
+        // Exactly 3 real dimensions — at the threshold.
+        // Calls the production has_sufficient_data() function directly.
         let dims = RelationshipDimensions {
             meeting_cadence: active_dim(70.0),
             email_engagement: active_dim(60.0),
@@ -1908,18 +1907,9 @@ mod tests {
                 trend: "stable".to_string(),
             },
         };
-        let populated = [
-            &dims.meeting_cadence,
-            &dims.email_engagement,
-            &dims.stakeholder_coverage,
-            &dims.champion_health,
-            &dims.financial_proximity,
-            &dims.signal_momentum,
-        ]
-        .iter()
-        .filter(|d| d.weight > 0.0 && !is_neutral_momentum_placeholder(d))
-        .count();
-        assert_eq!(populated, 3, "should count 3 real dimensions");
-        assert!(populated >= 3, "3 dims should be sufficient");
+        assert!(
+            has_sufficient_data(&dims),
+            "3 real dimensions should be sufficient"
+        );
     }
 }
