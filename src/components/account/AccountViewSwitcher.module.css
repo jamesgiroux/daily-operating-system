@@ -1,0 +1,43 @@
+@import '../../styles/design-tokens.css';
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Account View Switcher — fixed bottom pill bar
+   Matches .mockup-switcher from account-detail-three-views.html
+   ───────────────────────────────────────────────────────────────────────── */
+
+.switcher {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-app-shell);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-desk-charcoal);
+  border-radius: 100px;
+  box-shadow: var(--shadow-lg);
+}
+
+.tab {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 100px;
+  cursor: pointer;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  transition: all var(--transition-normal);
+  white-space: nowrap;
+}
+
+.tab:hover:not(.tabActive) {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.tabActive {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
