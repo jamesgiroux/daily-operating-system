@@ -1438,6 +1438,8 @@ pub async fn get_account_detail(
                 technical_footprint,
                 stakeholders_full,
                 source_refs,
+                user_health_sentiment: account.user_health_sentiment,
+                sentiment_set_at: account.sentiment_set_at,
             })
         })
         .await
@@ -1585,6 +1587,50 @@ pub fn update_account_field(
                 crate::accounts::write_account_markdown(workspace, &account, existing.as_ref(), db);
         }
     }
+
+    Ok(())
+}
+
+/// DOS-110: Set the user's manual health sentiment assessment on an account.
+/// Validates sentiment value, writes to DB, and emits a field_updated signal.
+pub fn set_user_health_sentiment(
+    db: &ActionDb,
+    state: &AppState,
+    account_id: &str,
+    sentiment: &str,
+) -> Result<(), String> {
+    const VALID_SENTIMENTS: &[&str] =
+        &["strong", "on_track", "concerning", "at_risk", "critical"];
+    if !VALID_SENTIMENTS.contains(&sentiment) {
+        return Err(format!(
+            "Invalid sentiment '{}'. Must be one of: {}",
+            sentiment,
+            VALID_SENTIMENTS.join(", ")
+        ));
+    }
+
+    let now = Utc::now().to_rfc3339();
+    db.update_account_field(account_id, "user_health_sentiment", sentiment)
+        .map_err(|e| e.to_string())?;
+    db.update_account_field(account_id, "sentiment_set_at", &now)
+        .map_err(|e| e.to_string())?;
+
+    // Emit field_updated signal with high confidence (user-initiated)
+    crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"field\":\"user_health_sentiment\",\"value\":\"{}\"}}",
+            sentiment
+        )),
+        0.95,
+        &state.intel_queue,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
 
     Ok(())
 }
@@ -2081,6 +2127,8 @@ pub fn account_to_list_item(
         is_parent: child_count > 0,
         account_type: a.account_type.clone(),
         archived: a.archived,
+        user_health_sentiment: a.user_health_sentiment.clone(),
+        sentiment_set_at: a.sentiment_set_at.clone(),
     }
 }
 

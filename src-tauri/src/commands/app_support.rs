@@ -305,6 +305,8 @@ pub async fn populate_workspace(
                         .as_ref()
                         .and_then(|e| e.strategic_programs.clone()),
                     notes: existing.as_ref().and_then(|e| e.notes.clone()),
+                    user_health_sentiment: existing.as_ref().and_then(|e| e.user_health_sentiment.clone()),
+                    sentiment_set_at: existing.as_ref().and_then(|e| e.sentiment_set_at.clone()),
                 };
                 if let Err(e) = crate::services::mutations::upsert_account(db, &engine, &db_account)
                 {
