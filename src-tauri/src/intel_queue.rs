@@ -2346,7 +2346,7 @@ fn dual_write_enrichment_products(
 
     for feature in &adoption.feature_adoption {
         // Parse "Core platform: 95%" → name = "Core platform", adoption_pct ~0.95
-        let (name, _adoption_pct) = if let Some(colon_pos) = feature.find(':') {
+        let (name, adoption_pct) = if let Some(colon_pos) = feature.find(':') {
             let raw_name = feature[..colon_pos].trim();
             let pct_str = feature[colon_pos + 1..].trim().trim_end_matches('%');
             let pct = pct_str.parse::<f64>().ok().map(|v| v / 100.0);
@@ -2359,7 +2359,7 @@ fn dual_write_enrichment_products(
             continue;
         }
 
-        match db.upsert_account_product(entity_id, &name, None, "active", None, source, 0.55, None)
+        match db.upsert_account_product(entity_id, &name, None, "active", adoption_pct, source, 0.55, None)
         {
             Ok(_) => upserted += 1,
             Err(e) => {
