@@ -1347,7 +1347,16 @@ pub async fn dismiss_recommendation(
                 account.as_ref(),
             )?;
 
-            let mut intel = crate::intelligence::read_intelligence_json(&dir).unwrap_or_default();
+            // DOS-92: DB is sole source of truth — no filesystem fallback.
+            let mut intel = db
+                .get_entity_intelligence(&entity_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "DOS-92: no DB intelligence row for {} — cannot dismiss recommendation",
+                        entity_id
+                    )
+                })?;
 
             if index >= intel.recommended_actions.len() {
                 return Err(format!("Recommendation index {} out of bounds", index));
