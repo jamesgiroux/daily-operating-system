@@ -548,6 +548,20 @@ pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Res
     crate::services::emails::archive_low_priority_emails(&state).await
 }
 
+/// Reset failed email enrichments and trigger re-enrichment (DOS-195).
+#[tauri::command]
+pub async fn retry_failed_emails(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<usize, String> {
+    let count = state.db_read(|db| db.reset_failed_enrichments()).await?;
+    if count > 0 {
+        log::info!("retry_failed_emails: reset {count} failed emails, triggering re-enrichment");
+        crate::services::emails::refresh_emails(state.inner(), app_handle).await?;
+    }
+    Ok(count)
+}
+
 /// Set user profile (customer-success or general)
 #[tauri::command]
 pub fn set_profile(profile: String, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
