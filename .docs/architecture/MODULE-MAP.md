@@ -1,9 +1,9 @@
 # Module Map
 
 > Rust backend module inventory (`src-tauri/src/`).
-> **Auto-generated:** 2026-04-15 by `.docs/generators/gen-module-map.sh`
+> **Auto-generated:** 2026-04-16 by `.docs/generators/gen-module-map.sh`
 
-**238** Rust files across **30** module directories and **44** standalone modules.
+**238** Rust files across **29** module directories and **44** standalone modules.
 
 ---
 
@@ -11,7 +11,6 @@
 
 | Module | Files | Public Fns | Purpose |
 |--------|-------|-----------|---------|
-| `bin/` | 0 | 0 | Binary entry points |
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment (I228). |
 | `commands/` | 10 | 367 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
@@ -47,8 +46,8 @@
 | `accounts.rs` | 1879 | 11 | Account workspace file I/O (I72 / ADR-0047). |
 | `action_status.rs` | 85 | 2 | — |
 | `activity.rs` | 187 | 3 | User activity monitoring for background task throttling. |
-| `audit_log.rs` | 453 | 4 | Tamper-evident audit log for enterprise observability (I471, ADR-0094). |
 | `audit.rs` | 150 | 2 | Audit trail for AI-generated data (I297). |
+| `audit_log.rs` | 453 | 4 | Tamper-evident audit log for enterprise observability (I471, ADR-0094). |
 | `backfill_meetings.rs` | 456 | 1 | — |
 | `calendar_merge.rs` | 289 | 1 | Calendar hybrid overlay merge (ADR-0032) |
 | `capture.rs` | 386 | 1 | Post-meeting capture state machine |
@@ -61,9 +60,9 @@
 | `demo.rs` | 994 | 6 | Production demo data for first-run experience (I56). |
 | `embeddings.rs` | 315 | 3 | Local semantic search (nomic-embed-text) |
 | `enrichment.rs` | 475 | 1 | Unified enrichment processor. |
-| `entity_io.rs` | 166 | 5 | Shared entity I/O helpers (I290). |
 | `entity.rs` | 61 | 0
 0 | Profile-agnostic tracked entity abstraction (ADR-0045). |
+| `entity_io.rs` | 166 | 5 | Shared entity I/O helpers (I290). |
 | `error.rs` | 139 | 0
 0 | Error types for workflow execution |
 | `executor.rs` | 1439 | 1 | Workflow execution engine |
