@@ -1188,7 +1188,7 @@ Thanks!`;
                           <span className={styles.healthStripLabel}>
                             {e.name}
                           </span>
-                          <HealthBadge score={h.score} band={h.band} trend={h.trend} size="compact" />
+                          <HealthBadge score={h.score} band={h.band} trend={h.trend} sufficientData={h.sufficientData} size="compact" />
                         </span>
                       );
                     })}

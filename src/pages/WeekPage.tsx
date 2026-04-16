@@ -544,6 +544,7 @@ function TimelineDayGroup({
                         score={accountHealth.score}
                         band={accountHealth.band}
                         trend={accountHealth.trend}
+                        sufficientData={accountHealth.sufficientData}
                         size="compact"
                       />
                     )}

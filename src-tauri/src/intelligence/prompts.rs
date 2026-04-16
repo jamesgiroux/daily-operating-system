@@ -2453,6 +2453,7 @@ fn legacy_health_to_account_health(
         band: band.to_string(),
         source: super::io::HealthSource::Computed,
         confidence: 0.3,
+        sufficient_data: false, // DOS-84: LLM-derived scores lack dimension data
         trend: super::io::HealthTrend {
             direction: health_trend
                 .as_ref()

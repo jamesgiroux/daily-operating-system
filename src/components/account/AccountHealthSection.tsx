@@ -11,35 +11,48 @@ interface AccountHealthSectionProps {
 }
 
 export function AccountHealthSection({ health }: AccountHealthSectionProps) {
+  // DOS-84: When fewer than 3 dimensions have data, show "Insufficient Data"
+  const isInsufficient = health.sufficientData === false;
+
   return (
     <div id="relationship-health" className={`editorial-reveal ${shared.marginLabelSection}`}>
       <div className={shared.marginLabel}>Relationship<br/>Health</div>
       <div className={shared.marginContent}>
         <ChapterHeading title="Relationship Health" />
         <div className={styles.healthHero}>
-          <div className={styles.healthScoreNumber}>
-            {Math.round(health.score)}
+          <div className={styles.healthScoreNumber} style={isInsufficient ? { opacity: 0.4 } : undefined}>
+            {isInsufficient ? "--" : Math.round(health.score)}
           </div>
           <div className={styles.healthMeta}>
-            <div className={
-              health.band === "green" ? styles.healthBandGreen
-                : health.band === "red" ? styles.healthBandRed
-                : styles.healthBandYellow
-            }>
-              {health.band === "green" ? "Healthy"
-                : health.band === "red" ? "At Risk"
-                : "Monitor"}
-            </div>
-            {health.narrative && (
-              <p className={styles.healthNarrative}>{health.narrative}</p>
+            {isInsufficient ? (
+              <div className={styles.healthBandYellow}>Insufficient Data</div>
+            ) : (
+              <div className={
+                health.band === "green" ? styles.healthBandGreen
+                  : health.band === "red" ? styles.healthBandRed
+                  : styles.healthBandYellow
+              }>
+                {health.band === "green" ? "Healthy"
+                  : health.band === "red" ? "At Risk"
+                  : "Monitor"}
+              </div>
             )}
-            <div className={styles.healthTrendLabel}>
-              {health.trend.direction === "improving" && <TrendingUp size={12} strokeWidth={2} />}
-              {health.trend.direction === "declining" && <TrendingDown size={12} strokeWidth={2} />}
-              {(health.trend.direction === "stable" || health.trend.direction === "volatile") && <Minus size={12} strokeWidth={2} />}
-              {health.trend.direction}
-              {health.trend.timeframe && ` \u00b7 ${health.trend.timeframe}`}
-            </div>
+            {isInsufficient ? (
+              <p className={styles.healthNarrative}>
+                Fewer than 3 of 6 health dimensions have data. As more meetings, emails, and stakeholder data accumulate, a reliable score will appear.
+              </p>
+            ) : health.narrative ? (
+              <p className={styles.healthNarrative}>{health.narrative}</p>
+            ) : null}
+            {!isInsufficient && (
+              <div className={styles.healthTrendLabel}>
+                {health.trend.direction === "improving" && <TrendingUp size={12} strokeWidth={2} />}
+                {health.trend.direction === "declining" && <TrendingDown size={12} strokeWidth={2} />}
+                {(health.trend.direction === "stable" || health.trend.direction === "volatile") && <Minus size={12} strokeWidth={2} />}
+                {health.trend.direction}
+                {health.trend.timeframe && ` \u00b7 ${health.trend.timeframe}`}
+              </div>
+            )}
           </div>
         </div>
         <div className="editorial-reveal-stagger">

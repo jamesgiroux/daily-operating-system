@@ -1752,6 +1752,9 @@ export interface IntelligenceAccountHealth {
   band: "green" | "yellow" | "red";
   source: "org" | "computed" | "userSet";
   confidence: number;
+  /** DOS-84: true when >= 3 of 6 health dimensions have data.
+   *  When false, UI should show "Insufficient Data" instead of the score. */
+  sufficientData?: boolean;
   trend: IntelligenceHealthTrend;
   dimensions: RelationshipDimensions;
   divergence?: HealthDivergence | null;
