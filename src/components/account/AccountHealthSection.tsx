@@ -1,5 +1,7 @@
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
-import type { EntityIntelligence } from "@/types";
+import type { EntityIntelligence, ConsistencyFinding } from "@/types";
+import { hasBleedFlag } from "@/lib/contamination-guard";
+import { ContaminationWarning } from "@/components/ui/ContaminationWarning";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { DimensionBar } from "@/components/shared/DimensionBar";
 
@@ -8,9 +10,12 @@ import styles from "@/pages/AccountDetailEditorial.module.css";
 
 interface AccountHealthSectionProps {
   health: NonNullable<EntityIntelligence["health"]>;
+  /** DOS-83: Consistency findings for bleed detection. */
+  consistencyFindings?: ConsistencyFinding[];
 }
 
-export function AccountHealthSection({ health }: AccountHealthSectionProps) {
+export function AccountHealthSection({ health, consistencyFindings }: AccountHealthSectionProps) {
+  const narrativeBleed = hasBleedFlag(consistencyFindings, "health.narrative");
   return (
     <div id="relationship-health" className={`editorial-reveal ${shared.marginLabelSection}`}>
       <div className={shared.marginLabel}>Relationship<br/>Health</div>
@@ -30,8 +35,11 @@ export function AccountHealthSection({ health }: AccountHealthSectionProps) {
                 : health.band === "red" ? "At Risk"
                 : "Monitor"}
             </div>
-            {health.narrative && (
+            {health.narrative && !narrativeBleed && (
               <p className={styles.healthNarrative}>{health.narrative}</p>
+            )}
+            {health.narrative && narrativeBleed && (
+              <ContaminationWarning variant="badge" />
             )}
             <div className={styles.healthTrendLabel}>
               {health.trend.direction === "improving" && <TrendingUp size={12} strokeWidth={2} />}
