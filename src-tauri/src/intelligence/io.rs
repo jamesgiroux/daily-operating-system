@@ -40,6 +40,28 @@ pub struct ItemSource {
     pub reference: Option<String>,
 }
 
+/// DOS-13: A recommended action produced by intelligence enrichment.
+/// Richer than the `Vec<String>` health recommended_actions — includes rationale,
+/// priority (0-4 integer), and optional suggested due date.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendedAction {
+    /// Concise action title (verb phrase).
+    pub title: String,
+    /// Why this action matters — references specific signals, people, or meetings.
+    pub rationale: String,
+    /// Priority 0 (none) to 4 (low). 1 = urgent, 2 = high, 3 = medium.
+    #[serde(default = "default_recommended_priority")]
+    pub priority: i32,
+    /// Optional suggested due date (YYYY-MM-DD).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_due: Option<String>,
+}
+
+fn default_recommended_priority() -> i32 {
+    3
+}
+
 /// I576: Tombstone for user-dismissed intelligence items.
 /// Prevents enrichment from re-creating items the user explicitly removed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -893,6 +915,11 @@ pub struct IntelligenceJson {
     /// I576: Tombstones for dismissed items — prevents re-creation on enrichment.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dismissed_items: Vec<DismissedItem>,
+
+    /// DOS-13: AI-recommended actions from intelligence enrichment.
+    /// Rich structured recommendations with title, rationale, priority, and optional due date.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recommended_actions: Vec<RecommendedAction>,
 }
 
 /// I508a: Serialization wrapper for all dimension fields stored in `dimensions_json`.
@@ -937,6 +964,9 @@ pub(crate) struct DimensionsBlob {
     pub nps_csat: Option<SatisfactionData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
+    /// DOS-13: AI-recommended actions from intelligence enrichment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recommended_actions: Vec<RecommendedAction>,
 }
 
 impl IntelligenceJson {
@@ -960,6 +990,7 @@ impl IntelligenceJson {
             product_adoption: self.product_adoption.clone(),
             nps_csat: self.nps_csat.clone(),
             source_attribution: self.source_attribution.clone(),
+            recommended_actions: self.recommended_actions.clone(),
         }
     }
 
@@ -982,6 +1013,7 @@ impl IntelligenceJson {
         self.product_adoption = blob.product_adoption.clone();
         self.nps_csat = blob.nps_csat.clone();
         self.source_attribution = blob.source_attribution.clone();
+        self.recommended_actions = blob.recommended_actions.clone();
     }
 }
 

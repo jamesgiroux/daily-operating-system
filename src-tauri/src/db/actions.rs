@@ -25,10 +25,16 @@ impl ActionDb {
                      WHERE me.entity_id = actions.account_id
                        AND m.start_time >= date('now')
                        AND m.start_time < date('now', '+3 days')
-                     ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_start
+                     ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_start,
+                    actions.needs_decision,
+                    actions.decision_owner,
+                    actions.decision_stakes,
+                    all_links.linear_identifier,
+                    all_links.linear_url
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'pending'
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
+             WHERE status IN ('unstarted', 'started')
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
                CASE WHEN due_date < date('now') THEN 0 ELSE 1 END,
@@ -41,6 +47,12 @@ impl ActionDb {
             let mut action = Self::map_action_row(row)?;
             action.next_meeting_title = row.get(17)?;
             action.next_meeting_start = row.get(18)?;
+            let nd: i32 = row.get(19)?;
+            action.needs_decision = nd != 0;
+            action.decision_owner = row.get(20)?;
+            action.decision_stakes = row.get(21)?;
+            action.linear_identifier = row.get(22)?;
+            action.linear_url = row.get(23)?;
             Ok(action)
         })?;
 
@@ -62,7 +74,7 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'pending'
+             WHERE status IN ('unstarted', 'started')
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
                CASE
@@ -94,7 +106,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE account_id = ?1
-               AND status IN ('suggested', 'pending')
+               AND status IN ('backlog', 'unstarted')
              ORDER BY priority, due_date",
         )?;
 
@@ -121,7 +133,7 @@ impl ActionDb {
                     acc.name AS account_name
              FROM actions a
              LEFT JOIN accounts acc ON a.account_id = acc.id
-             WHERE a.status IN ('pending', 'completed')
+             WHERE a.status IN ('unstarted', 'completed')
                AND (
                  -- Direct person assignment
                  a.person_id = ?1
@@ -142,7 +154,7 @@ impl ActionDb {
                  )
                )
              ORDER BY
-               CASE a.status WHEN 'pending' THEN 0 ELSE 1 END,
+               CASE a.status WHEN 'unstarted' THEN 0 ELSE 1 END,
                a.created_at DESC
              LIMIT 20",
         )?;
@@ -226,7 +238,7 @@ impl ActionDb {
     pub fn reopen_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
-            "UPDATE actions SET status = 'pending', completed_at = NULL, updated_at = ?1
+            "UPDATE actions SET status = 'unstarted', completed_at = NULL, updated_at = ?1
              WHERE id = ?2",
             params![now, id],
         )?;
@@ -238,13 +250,25 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.needs_decision, actions.decision_owner, actions.decision_stakes,
+                    all_links.linear_identifier, all_links.linear_url
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
              WHERE actions.id = ?1",
         )?;
 
-        let mut rows = stmt.query_map(params![id], Self::map_action_row)?;
+        let mut rows = stmt.query_map(params![id], |row| {
+            let mut action = Self::map_action_row(row)?;
+            let nd: i32 = row.get(17)?;
+            action.needs_decision = nd != 0;
+            action.decision_owner = row.get(18)?;
+            action.decision_stakes = row.get(19)?;
+            action.linear_identifier = row.get(20)?;
+            action.linear_url = row.get(21)?;
+            Ok(action)
+        })?;
 
         match rows.next() {
             Some(row) => Ok(Some(row?)),
@@ -257,16 +281,23 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    all_links.linear_identifier, all_links.linear_url
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
              WHERE status = 'completed'
                AND completed_at >= datetime('now', ?1)
              ORDER BY completed_at DESC",
         )?;
 
         let hours_param = format!("-{} hours", since_hours);
-        let rows = stmt.query_map(params![hours_param], Self::map_action_row)?;
+        let rows = stmt.query_map(params![hours_param], |row| {
+            let mut action = Self::map_action_row(row)?;
+            action.linear_identifier = row.get(17)?;
+            action.linear_url = row.get(18)?;
+            Ok(action)
+        })?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -314,6 +345,16 @@ impl ActionDb {
         &self,
         action: &DbAction,
     ) -> Result<bool, DbError> {
+        // Guard 0: Rejection pattern suppression (DOS-18).
+        // Check before dedup so previously rejected patterns are caught early.
+        if self.is_action_suppressed(
+            &action.title,
+            action.account_id.as_deref(),
+            action.source_type.as_deref(),
+        ) {
+            return Ok(false);
+        }
+
         let is_meeting_scoped_source = matches!(
             action.source_type.as_deref(),
             Some("transcript") | Some("post_meeting")
@@ -369,7 +410,11 @@ impl ActionDb {
             )
             .ok();
 
-        if existing_status.as_deref() == Some("completed") {
+        // Don't overwrite completed, cancelled, or archived actions (DOS-55 dedup guard)
+        if matches!(
+            existing_status.as_deref(),
+            Some("completed") | Some("cancelled") | Some("archived")
+        ) {
             return Ok(false);
         }
 
@@ -439,8 +484,8 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'pending'
-               AND source_type IN ('post_meeting', 'inbox', 'ai-inbox', 'transcript', 'import', 'manual')
+             WHERE status = 'unstarted'
+               AND source_type IN ('post_meeting', 'inbox', 'ai-inbox', 'transcript', 'import', 'manual', 'user_manual', 'intelligence')
              ORDER BY priority, created_at DESC",
         )?;
 
@@ -460,7 +505,7 @@ impl ActionDb {
         let total: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM actions WHERE status = 'pending'",
+                "SELECT COUNT(*) FROM actions WHERE status = 'unstarted'",
                 [],
                 |row| row.get(0),
             )
@@ -468,7 +513,7 @@ impl ActionDb {
         let p1: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND priority = 'P1'",
+                "SELECT COUNT(*) FROM actions WHERE status = 'unstarted' AND priority = 1",
                 [],
                 |row| row.get(0),
             )
@@ -476,7 +521,7 @@ impl ActionDb {
         let p2: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND priority = 'P2'",
+                "SELECT COUNT(*) FROM actions WHERE status = 'unstarted' AND priority <= 2",
                 [],
                 |row| row.get(0),
             )
@@ -484,7 +529,7 @@ impl ActionDb {
         let overdue: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND due_date < date('now')",
+                "SELECT COUNT(*) FROM actions WHERE status = 'unstarted' AND due_date < date('now')",
                 [],
                 |row| row.get(0),
             )
@@ -517,7 +562,7 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'suggested'
+             WHERE status = 'backlog'
              ORDER BY priority, created_at DESC",
         )?;
 
@@ -534,8 +579,8 @@ impl ActionDb {
     pub fn accept_suggested_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let changed = self.conn.execute(
-            "UPDATE actions SET status = 'pending', updated_at = ?1
-             WHERE id = ?2 AND status = 'suggested'",
+            "UPDATE actions SET status = 'unstarted', updated_at = ?1
+             WHERE id = ?2 AND status = 'backlog'",
             params![now, id],
         )?;
         if changed == 0 {
@@ -559,7 +604,7 @@ impl ActionDb {
         let changed = self.conn.execute(
             "UPDATE actions SET status = 'archived', updated_at = ?1,
              rejected_at = ?1, rejection_source = ?3
-             WHERE id = ?2 AND status = 'suggested'",
+             WHERE id = ?2 AND status = 'backlog'",
             params![now, id, source],
         )?;
         if changed == 0 {
@@ -581,13 +626,19 @@ impl ActionDb {
 
     /// Auto-archive stale pending actions older than N days.
     /// Returns the number of actions archived.
+    ///
+    /// DOS-12 zero-guilt exemptions: P1/Urgent (priority=1), waiting_on set,
+    /// or objective-linked actions are never auto-archived.
     pub fn archive_stale_actions(&self, days: i64) -> Result<usize, DbError> {
         let now = Utc::now().to_rfc3339();
         let cutoff_param = format!("-{} days", days);
         let changed = self.conn.execute(
             "UPDATE actions SET status = 'archived', updated_at = ?1
-             WHERE status = 'pending'
+             WHERE status = 'unstarted'
                AND completed_at IS NULL
+               AND priority > 1
+               AND waiting_on IS NULL
+               AND id NOT IN (SELECT action_id FROM action_objective_links)
                AND (
                    (due_date IS NOT NULL AND due_date <= date('now', ?2))
                    OR
@@ -605,7 +656,7 @@ impl ActionDb {
         let cutoff_param = format!("-{} days", days);
         let changed = self.conn.execute(
             "UPDATE actions SET status = 'archived', updated_at = ?1
-             WHERE status = 'suggested'
+             WHERE status = 'backlog'
                AND created_at < datetime('now', ?2)",
             params![now, cutoff_param],
         )?;
@@ -700,7 +751,7 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE status = 'pending'
+             WHERE status = 'unstarted'
                AND waiting_on IS NOT NULL
                AND created_at <= datetime('now', ?1 || ' days')
              ORDER BY created_at ASC",
@@ -728,7 +779,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE needs_decision = 1
-               AND status = 'pending'
+               AND status = 'unstarted'
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
                CASE WHEN due_date IS NULL THEN 1 ELSE 0 END,
@@ -805,6 +856,55 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Resolve a decision: clear needs_decision flag (DOS-17).
+    pub fn resolve_decision(&self, id: &str) -> Result<bool, DbError> {
+        let rows = self.conn.execute(
+            "UPDATE actions SET needs_decision = 0 WHERE id = ?1 AND needs_decision = 1",
+            params![id],
+        )?;
+        Ok(rows > 0)
+    }
+
+    /// Scan unstarted actions for decision-indicating keywords and flag matches (DOS-17).
+    ///
+    /// Returns the number of actions newly flagged.
+    pub fn scan_and_flag_decisions(&self) -> Result<usize, DbError> {
+        let keywords = [
+            "approval",
+            "decision",
+            "sign-off",
+            "pending review",
+            "blocked on",
+            "needs alignment",
+            "budget",
+            "legal",
+            "escalat",
+        ];
+
+        // Build a WHERE clause that checks title and context for each keyword
+        let like_clauses: Vec<String> = keywords
+            .iter()
+            .flat_map(|kw| {
+                vec![
+                    format!("LOWER(title) LIKE '%{}%'", kw),
+                    format!("LOWER(context) LIKE '%{}%'", kw),
+                ]
+            })
+            .collect();
+        let where_clause = like_clauses.join(" OR ");
+
+        let sql = format!(
+            "UPDATE actions SET needs_decision = 1
+             WHERE status IN ('backlog', 'unstarted')
+               AND needs_decision = 0
+               AND ({})",
+            where_clause
+        );
+
+        let rows = self.conn.execute(&sql, [])?;
+        Ok(rows)
+    }
+
     /// Helper: map a row to `DbAction`. Reduces repetition across queries.
     ///
     /// Maps the standard 17-column action SELECT. The `next_meeting_title` and
@@ -831,13 +931,259 @@ impl ActionDb {
             account_name: row.get(16)?,
             next_meeting_title: None,
             next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         })
     }
+
+    // =========================================================================
+    // Rejection Pattern Learning (DOS-18)
+    // =========================================================================
+
+    /// Check whether a proposed action should be suppressed based on rejection patterns.
+    ///
+    /// Checks three pattern types in order:
+    /// 1. `exact_title` — normalized title matches a previously rejected title for this account
+    /// 2. `source_fatigue` — the source type has a high rejection rate for this account
+    /// 3. `keyword` — significant keywords from the title have been repeatedly rejected
+    pub fn is_action_suppressed(
+        &self,
+        title: &str,
+        account_id: Option<&str>,
+        source_type: Option<&str>,
+    ) -> bool {
+        let normalized = title.to_lowercase().trim().to_string();
+
+        // Check exact_title suppression
+        let exact_match = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM rejected_action_patterns
+                 WHERE pattern_type = 'exact_title'
+                   AND suppressed = 1
+                   AND pattern_value = ?1
+                   AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                 LIMIT 1",
+                params![normalized, account_id],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+
+        if exact_match {
+            log::debug!(
+                "Action suppressed by rejection pattern: exact_title match '{}'",
+                normalized
+            );
+            return true;
+        }
+
+        // Check source_fatigue suppression
+        if let Some(src) = source_type {
+            let fatigue = self
+                .conn
+                .query_row(
+                    "SELECT 1 FROM rejected_action_patterns
+                     WHERE pattern_type = 'source_fatigue'
+                       AND suppressed = 1
+                       AND pattern_value = ?1
+                       AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                     LIMIT 1",
+                    params![src, account_id],
+                    |_| Ok(true),
+                )
+                .unwrap_or(false);
+
+            if fatigue {
+                log::debug!(
+                    "Action suppressed by rejection pattern: source_fatigue for '{}'",
+                    src
+                );
+                return true;
+            }
+        }
+
+        // Check keyword suppression
+        let keywords = extract_significant_keywords(&normalized);
+        for kw in &keywords {
+            let kw_match = self
+                .conn
+                .query_row(
+                    "SELECT 1 FROM rejected_action_patterns
+                     WHERE pattern_type = 'keyword'
+                       AND suppressed = 1
+                       AND pattern_value = ?1
+                       AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                     LIMIT 1",
+                    params![kw, account_id],
+                    |_| Ok(true),
+                )
+                .unwrap_or(false);
+
+            if kw_match {
+                log::debug!("Action suppressed by rejection pattern: keyword '{}'", kw);
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Record rejection patterns from a rejected action (DOS-18).
+    ///
+    /// Called by the service layer after a successful rejection. Records:
+    /// - `exact_title`: always suppressed after first rejection
+    /// - `source_fatigue`: suppressed when >70% of source's actions for this account are rejected
+    /// - `keyword`: suppressed when 3+ actions with the keyword have been rejected
+    pub fn record_rejection_pattern(&self, action: &DbAction) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        let normalized_title = action.title.to_lowercase().trim().to_string();
+
+        // (a) Exact title suppression — always suppressed on first rejection
+        self.upsert_rejection_pattern(
+            action.account_id.as_deref(),
+            "exact_title",
+            &normalized_title,
+            1,
+            &now,
+        )?;
+
+        // (b) Source fatigue — check rejection rate for this source+account over 30 days
+        if let Some(ref source) = action.source_type {
+            let stats: Option<(i64, i64)> = self
+                .conn
+                .query_row(
+                    "SELECT
+                        COUNT(*) as total,
+                        SUM(CASE WHEN status = 'archived' AND rejected_at IS NOT NULL THEN 1 ELSE 0 END) as rejected
+                     FROM actions
+                     WHERE source_type = ?1
+                       AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                       AND created_at >= datetime('now', '-30 days')",
+                    params![source, action.account_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .ok();
+
+            if let Some((total, rejected)) = stats {
+                if total > 0 && (rejected as f64 / total as f64) > 0.7 {
+                    self.upsert_rejection_pattern(
+                        action.account_id.as_deref(),
+                        "source_fatigue",
+                        source,
+                        1,
+                        &now,
+                    )?;
+                }
+            }
+        }
+
+        // (c) Keyword suppression — check each keyword for 3+ rejections
+        let keywords = extract_significant_keywords(&normalized_title);
+        for kw in &keywords {
+            let rejected_count: i64 = self
+                .conn
+                .query_row(
+                    "SELECT COUNT(DISTINCT a.id) FROM actions a
+                     WHERE LOWER(a.title) LIKE '%' || ?1 || '%'
+                       AND a.status = 'archived'
+                       AND a.rejected_at IS NOT NULL
+                       AND (a.account_id = ?2 OR (?2 IS NULL AND a.account_id IS NULL))",
+                    params![kw, action.account_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+
+            if rejected_count >= 3 {
+                self.upsert_rejection_pattern(
+                    action.account_id.as_deref(),
+                    "keyword",
+                    kw,
+                    rejected_count,
+                    &now,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Upsert a rejection pattern, handling NULL account_id correctly.
+    ///
+    /// SQLite treats NULL as distinct in unique indexes, so we use an explicit
+    /// check-then-insert/update approach instead of ON CONFLICT.
+    fn upsert_rejection_pattern(
+        &self,
+        account_id: Option<&str>,
+        pattern_type: &str,
+        pattern_value: &str,
+        count: i64,
+        now: &str,
+    ) -> Result<(), DbError> {
+        let existing_id: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT id FROM rejected_action_patterns
+                 WHERE pattern_type = ?1
+                   AND pattern_value = ?2
+                   AND (account_id = ?3 OR (?3 IS NULL AND account_id IS NULL))
+                 LIMIT 1",
+                params![pattern_type, pattern_value, account_id],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(id) = existing_id {
+            self.conn.execute(
+                "UPDATE rejected_action_patterns
+                 SET rejection_count = rejection_count + 1,
+                     last_rejected_at = ?1,
+                     suppressed = 1
+                 WHERE id = ?2",
+                params![now, id],
+            )?;
+        } else {
+            self.conn.execute(
+                "INSERT INTO rejected_action_patterns
+                    (account_id, pattern_type, pattern_value, rejection_count,
+                     first_rejected_at, last_rejected_at, suppressed)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)",
+                params![account_id, pattern_type, pattern_value, count, now],
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Stop words filtered out during keyword extraction for rejection pattern matching.
+const STOP_WORDS: &[&str] = &[
+    "the", "a", "an", "to", "for", "with", "and", "or", "is", "in", "on", "at", "of", "by", "be",
+    "do", "it", "if", "no", "so", "up", "as", "my", "we", "he", "she", "me", "am", "are", "was",
+    "has", "had", "not", "but", "can", "all", "its", "our", "this", "that", "will", "from", "they",
+    "been", "have", "their", "what", "when", "make", "like", "just", "get", "into", "also", "than",
+    "them", "then", "some", "her", "him", "his", "how", "out", "who",
+];
+
+/// Extract significant keywords from an action title for rejection pattern matching.
+///
+/// Normalizes to lowercase, splits on whitespace, and filters out stop words
+/// and very short tokens (<=2 chars).
+fn extract_significant_keywords(normalized_title: &str) -> Vec<String> {
+    normalized_title
+        .split_whitespace()
+        .filter(|w| w.len() > 2 && !STOP_WORDS.contains(w))
+        .map(|w| w.to_string())
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use crate::db::test_utils::test_db;
+    use crate::db::types::DbAction;
+    use chrono::Utc;
     use rusqlite::params;
 
     #[test]
@@ -848,7 +1194,7 @@ mod tests {
                 "INSERT INTO actions (
                     id, title, priority, status, created_at, due_date, updated_at
                  ) VALUES (
-                    ?1, ?2, 'P2', 'pending', datetime('now'), date('now', '-40 days'), datetime('now')
+                    ?1, ?2, 3, 'unstarted', datetime('now'), date('now', '-40 days'), datetime('now')
                  )",
                 params!["action-past-due", "Old follow-up"],
             )
@@ -876,7 +1222,7 @@ mod tests {
                 "INSERT INTO actions (
                     id, title, priority, status, created_at, updated_at
                  ) VALUES (
-                    ?1, ?2, 'P2', 'pending', datetime('now', '-40 days'), datetime('now', '-40 days')
+                    ?1, ?2, 3, 'unstarted', datetime('now', '-40 days'), datetime('now', '-40 days')
                  )",
                 params!["action-undated", "Eventually follow up"],
             )
@@ -904,7 +1250,7 @@ mod tests {
                 "INSERT INTO actions (
                     id, title, priority, status, created_at, due_date, updated_at
                  ) VALUES (
-                    ?1, ?2, 'P2', 'pending', datetime('now', '-5 days'), date('now', '+2 days'), datetime('now', '-5 days')
+                    ?1, ?2, 3, 'unstarted', datetime('now', '-5 days'), date('now', '+2 days'), datetime('now', '-5 days')
                  )",
                 params!["action-fresh", "Upcoming follow-up"],
             )
@@ -921,7 +1267,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("read action");
-        assert_eq!(status, "pending");
+        assert_eq!(status, "unstarted");
     }
 
     #[test]
@@ -931,7 +1277,7 @@ mod tests {
             .execute(
                 "INSERT INTO actions (
                     id, title, priority, status, created_at, updated_at
-                 ) VALUES (?1, ?2, 'P2', 'suggested', datetime('now'), datetime('now'))",
+                 ) VALUES (?1, ?2, 3, 'backlog', datetime('now'), datetime('now'))",
                 params!["action-1", "Follow up"],
             )
             .expect("insert action");
@@ -950,5 +1296,168 @@ mod tests {
 
         assert_eq!(row.0, "archived");
         assert_eq!(row.1.as_deref(), Some("daily_briefing"));
+    }
+
+    #[test]
+    fn record_rejection_pattern_creates_exact_title_entry() {
+        let db = test_db();
+        let action = DbAction {
+            id: "a1".into(),
+            title: "  Schedule Weekly Check-In  ".into(),
+            priority: 3,
+            status: "archived".into(),
+            created_at: Utc::now().to_rfc3339(),
+            due_date: None,
+            completed_at: None,
+            account_id: Some("acct-1".into()),
+            project_id: None,
+            source_type: Some("briefing".into()),
+            source_id: None,
+            source_label: None,
+            context: None,
+            waiting_on: None,
+            updated_at: Utc::now().to_rfc3339(),
+            person_id: None,
+            account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
+        };
+
+        db.record_rejection_pattern(&action)
+            .expect("record rejection");
+
+        let count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM rejected_action_patterns
+                 WHERE pattern_type = 'exact_title'
+                   AND pattern_value = 'schedule weekly check-in'
+                   AND account_id = 'acct-1'
+                   AND suppressed = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "exact_title pattern should be created");
+    }
+
+    #[test]
+    fn is_action_suppressed_blocks_exact_title_match() {
+        let db = test_db();
+
+        // Seed a suppressed pattern
+        db.conn
+            .execute(
+                "INSERT INTO rejected_action_patterns
+                    (account_id, pattern_type, pattern_value, rejection_count,
+                     first_rejected_at, last_rejected_at, suppressed)
+                 VALUES ('acct-1', 'exact_title', 'check in with team', 1,
+                         datetime('now'), datetime('now'), 1)",
+                [],
+            )
+            .expect("seed pattern");
+
+        assert!(
+            db.is_action_suppressed("Check In With Team", Some("acct-1"), None),
+            "should suppress exact title match"
+        );
+        assert!(
+            !db.is_action_suppressed("Check In With Team", Some("acct-other"), None),
+            "should not suppress for different account"
+        );
+        assert!(
+            !db.is_action_suppressed("Something Else", Some("acct-1"), None),
+            "should not suppress unrelated title"
+        );
+    }
+
+    #[test]
+    fn is_action_suppressed_blocks_source_fatigue() {
+        let db = test_db();
+
+        db.conn
+            .execute(
+                "INSERT INTO rejected_action_patterns
+                    (account_id, pattern_type, pattern_value, rejection_count,
+                     first_rejected_at, last_rejected_at, suppressed)
+                 VALUES ('acct-1', 'source_fatigue', 'briefing', 5,
+                         datetime('now'), datetime('now'), 1)",
+                [],
+            )
+            .expect("seed pattern");
+
+        assert!(
+            db.is_action_suppressed("Any new action", Some("acct-1"), Some("briefing")),
+            "should suppress fatigued source"
+        );
+        assert!(
+            !db.is_action_suppressed("Any new action", Some("acct-1"), Some("transcript")),
+            "should not suppress different source"
+        );
+    }
+
+    #[test]
+    fn is_action_suppressed_blocks_keyword_match() {
+        let db = test_db();
+
+        db.conn
+            .execute(
+                "INSERT INTO rejected_action_patterns
+                    (account_id, pattern_type, pattern_value, rejection_count,
+                     first_rejected_at, last_rejected_at, suppressed)
+                 VALUES ('acct-1', 'keyword', 'quarterly', 4,
+                         datetime('now'), datetime('now'), 1)",
+                [],
+            )
+            .expect("seed pattern");
+
+        assert!(
+            db.is_action_suppressed("Prepare quarterly review", Some("acct-1"), None),
+            "should suppress keyword match"
+        );
+        assert!(
+            !db.is_action_suppressed("Prepare weekly review", Some("acct-1"), None),
+            "should not suppress without matching keyword"
+        );
+    }
+
+    #[test]
+    fn extract_significant_keywords_filters_stop_words() {
+        let keywords = super::extract_significant_keywords("follow up with the team for a review");
+        assert!(keywords.contains(&"follow".to_string()));
+        assert!(keywords.contains(&"team".to_string()));
+        assert!(keywords.contains(&"review".to_string()));
+        assert!(!keywords.contains(&"the".to_string()));
+        assert!(!keywords.contains(&"for".to_string()));
+        // "up" is 2 chars, filtered by length
+        assert!(!keywords.contains(&"up".to_string()));
+    }
+
+    #[test]
+    fn upsert_rejection_pattern_increments_on_duplicate() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        db.upsert_rejection_pattern(Some("acct-1"), "exact_title", "test action", 1, &now)
+            .expect("first upsert");
+        db.upsert_rejection_pattern(Some("acct-1"), "exact_title", "test action", 1, &now)
+            .expect("second upsert");
+
+        let count: i64 = db
+            .conn
+            .query_row(
+                "SELECT rejection_count FROM rejected_action_patterns
+                 WHERE account_id = 'acct-1' AND pattern_type = 'exact_title'
+                   AND pattern_value = 'test action'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2, "rejection_count should be incremented");
     }
 }

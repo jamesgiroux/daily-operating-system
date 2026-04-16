@@ -45,6 +45,20 @@ interface LinearProject {
   name: string;
 }
 
+interface AutoLinkSuggestion {
+  linearProjectId: string;
+  linearProjectName: string;
+  entityId: string;
+  entityType: string;
+  entityName: string | null;
+  score: number;
+}
+
+interface AutoLinkResult {
+  autoLinked: AutoLinkSuggestion[];
+  suggested: AutoLinkSuggestion[];
+}
+
 export default function LinearConnection() {
   const [status, setStatus] = useState<LinearStatusData | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -55,6 +69,7 @@ export default function LinearConnection() {
   const [recentIssues, setRecentIssues] = useState<LinearIssue[]>([]);
   const [entityLinks, setEntityLinks] = useState<LinearEntityLink[]>([]);
   const [autoLinking, setAutoLinking] = useState(false);
+  const [suggestions, setSuggestions] = useState<AutoLinkSuggestion[]>([]);
 
   // Manual link picker state
   const [linearProjects, setLinearProjects] = useState<LinearProject[]>([]);
@@ -158,11 +173,18 @@ export default function LinearConnection() {
   async function handleAutoLink() {
     setAutoLinking(true);
     try {
-      const count = await invoke<number>("run_linear_auto_link");
-      if (count > 0) {
-        toast(`Linked ${count} project${count > 1 ? "s" : ""}`);
+      const result = await invoke<AutoLinkResult>("run_linear_auto_link");
+      const linked = result.autoLinked.length;
+      const suggestedCount = result.suggested.length;
+      if (linked > 0) {
+        toast(`Linked ${linked} project${linked > 1 ? "s" : ""}`);
         loadEntityLinks();
-      } else {
+      }
+      if (suggestedCount > 0) {
+        setSuggestions(result.suggested);
+        toast(`${suggestedCount} suggested match${suggestedCount > 1 ? "es" : ""} need review`);
+      }
+      if (linked === 0 && suggestedCount === 0) {
         toast("No new matches found");
       }
     } catch (err) {
@@ -170,6 +192,25 @@ export default function LinearConnection() {
     } finally {
       setAutoLinking(false);
     }
+  }
+
+  async function handleAcceptSuggestion(suggestion: AutoLinkSuggestion) {
+    try {
+      await invoke("create_linear_entity_link", {
+        linearProjectId: suggestion.linearProjectId,
+        entityId: suggestion.entityId,
+        entityType: suggestion.entityType,
+      });
+      setSuggestions((prev) => prev.filter((s) => s.linearProjectId !== suggestion.linearProjectId));
+      loadEntityLinks();
+      toast("Link created");
+    } catch (err) {
+      toast.error("Failed to create link");
+    }
+  }
+
+  function handleDismissSuggestion(linearProjectId: string) {
+    setSuggestions((prev) => prev.filter((s) => s.linearProjectId !== linearProjectId));
   }
 
   async function handleDeleteLink(linkId: string) {
@@ -235,7 +276,7 @@ export default function LinearConnection() {
     <div>
       <p style={styles.subsectionLabel}>Linear Issue Tracking</p>
       <p style={{ ...styles.description, marginBottom: 16 }}>
-        Sync your assigned issues and projects from Linear
+        Sync issues, push action items to Linear, and link projects to accounts. Uses the Linear API directly (not MCP).
       </p>
 
       <div style={styles.settingRow}>
@@ -292,9 +333,9 @@ export default function LinearConnection() {
 
           <div style={{ ...styles.settingRow, borderBottom: "none" }}>
             <div style={{ flex: 1 }}>
-              <span style={styles.monoLabel}>API Key</span>
+              <span style={styles.monoLabel}>Personal API Key</span>
               <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                Personal API key from Linear settings
+                A personal API key from your Linear account. This is not the same as Linear MCP.
               </p>
               <p style={{
                 fontFamily: "var(--font-sans)",
@@ -302,7 +343,7 @@ export default function LinearConnection() {
                 color: "var(--color-text-tertiary)",
                 margin: "2px 0 0",
               }}>
-                Create one in Linear → Settings → API → Personal API Keys
+                In Linear: Settings → Security &amp; access → Personal API Keys
               </p>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                 <input
@@ -420,6 +461,100 @@ export default function LinearConnection() {
               <p style={{ ...styles.description, fontSize: 12, marginBottom: 8 }}>
                 Link Linear projects to DailyOS accounts and projects for updates and meeting context
               </p>
+
+              {/* Fuzzy match suggestions */}
+              {suggestions.length > 0 && (
+                <div style={{
+                  marginBottom: 12,
+                  border: "1px solid var(--color-warm-turmeric)",
+                  borderRadius: 4,
+                  padding: 12,
+                  backgroundColor: "var(--color-bg-secondary, #f5f5f0)",
+                }}>
+                  <p style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--color-warm-turmeric)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                    marginBottom: 8,
+                  }}>
+                    Suggested matches
+                  </p>
+                  {suggestions.map((s) => (
+                    <div
+                      key={s.linearProjectId}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "6px 0",
+                        borderBottom: "1px solid var(--color-rule-light)",
+                      }}
+                    >
+                      <span style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 13,
+                        color: "var(--color-text-primary)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        flex: 1,
+                      }}>
+                        {s.linearProjectName}
+                      </span>
+                      <span style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        color: "var(--color-text-tertiary)",
+                        flexShrink: 0,
+                      }}>
+                        &rarr;
+                      </span>
+                      <span style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 13,
+                        color: "var(--color-text-secondary)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        flex: 1,
+                      }}>
+                        {s.entityName ?? s.entityId}
+                      </span>
+                      <span style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        color: "var(--color-text-tertiary)",
+                        flexShrink: 0,
+                        textTransform: "uppercase",
+                      }}>
+                        {s.entityType}
+                      </span>
+                      <span style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        color: "var(--color-text-tertiary)",
+                        flexShrink: 0,
+                      }}>
+                        {Math.round(s.score * 100)}%
+                      </span>
+                      <button
+                        style={{ ...styles.btn, ...styles.btnPrimary, fontSize: 10, padding: "2px 10px", flexShrink: 0 }}
+                        onClick={() => handleAcceptSuggestion(s)}
+                      >
+                        Link
+                      </button>
+                      <button
+                        style={{ ...styles.btn, ...styles.btnGhost, fontSize: 10, padding: "2px 8px", flexShrink: 0 }}
+                        onClick={() => handleDismissSuggestion(s.linearProjectId)}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Manual link form */}
               {showLinkForm && (

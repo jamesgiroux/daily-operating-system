@@ -5,7 +5,7 @@
  *
  * I550: Per-item inline editing, dismiss, and feedback controls.
  */
-import { X } from "lucide-react";
+import { X, Check } from "lucide-react";
 import type { EntityIntelligence } from "@/types";
 import { EditableText } from "@/components/ui/EditableText";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
@@ -192,7 +192,15 @@ export function ValueCommitments({
                         )}
                       </div>
                     )}
-                    <ProvenanceTag itemSource={item.itemSource} discrepancy={item.discrepancy} />
+                    <span className={css.provenanceRow}>
+                      {item.itemSource?.source === "user_correction" && (
+                        <span className={css.confirmedBadge}>
+                          <Check size={10} />
+                          Confirmed
+                        </span>
+                      )}
+                      <ProvenanceTag itemSource={item.itemSource} discrepancy={item.discrepancy} />
+                    </span>
                   </div>
                   {(onUpdateField || onItemFeedback) && (
                     <span className={css.itemActions}>

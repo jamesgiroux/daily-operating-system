@@ -97,8 +97,8 @@ pub fn extract_email_commitments(
         let action = crate::db::DbAction {
             id: format!("email-{}-{}", email_id, i),
             title: commitment.title.clone(),
-            priority: "P2".to_string(),
-            status: "suggested".to_string(),
+            priority: crate::action_status::PRIORITY_MEDIUM,
+            status: crate::action_status::BACKLOG.to_string(),
             created_at: now.clone(),
             due_date: commitment.due_date.clone(),
             completed_at: None,
@@ -117,6 +117,11 @@ pub fn extract_email_commitments(
             account_name: None,
             next_meeting_title: None,
             next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         };
 
         if let Err(e) = db.upsert_action_if_not_completed(&action) {

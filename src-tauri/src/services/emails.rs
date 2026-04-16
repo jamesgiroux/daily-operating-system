@@ -1220,7 +1220,8 @@ pub fn promote_commitment_to_action(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or(commitment_text);
-    let owner = params.owner
+    let owner = params
+        .owner
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| value.to_string())
@@ -1246,10 +1247,11 @@ pub fn promote_commitment_to_action(
     let action = crate::db::DbAction {
         id: action_id.clone(),
         title: trimmed_title.to_string(),
-        priority: "P2".to_string(),
-        status: "pending".to_string(),
+        priority: crate::action_status::PRIORITY_MEDIUM,
+        status: crate::action_status::UNSTARTED.to_string(),
         created_at: now.clone(),
-        due_date: params.due_date
+        due_date: params
+            .due_date
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(|s| s.to_string()),
@@ -1269,6 +1271,11 @@ pub fn promote_commitment_to_action(
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
+        needs_decision: false,
+        decision_owner: None,
+        decision_stakes: None,
+        linear_identifier: None,
+        linear_url: None,
     };
 
     db.upsert_action(&action).map_err(|e| e.to_string())?;

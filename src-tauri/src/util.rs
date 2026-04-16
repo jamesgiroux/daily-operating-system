@@ -59,6 +59,16 @@ pub fn resolve_npm_binary() -> Option<PathBuf> {
     found
 }
 
+/// Clear cached binary paths so the next resolve call re-probes the filesystem.
+///
+/// Called after installing Node.js so that `resolve_node_binary()` and
+/// `resolve_npm_binary()` pick up the freshly-installed binaries.
+pub fn clear_node_binary_cache() {
+    *NODE_BINARY.lock() = None;
+    *NPX_BINARY.lock() = None;
+    *NPM_BINARY.lock() = None;
+}
+
 /// Shared resolution logic for node ecosystem binaries (`node`, `npx`, `npm`).
 fn resolve_node_tool(name: &str) -> Option<PathBuf> {
     // 1. Try bare command (works in dev mode or if PATH is already correct)

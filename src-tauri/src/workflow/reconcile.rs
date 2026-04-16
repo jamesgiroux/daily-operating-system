@@ -709,7 +709,7 @@ fn get_action_stats(db: &ActionDb, today: &str) -> ActionStats {
     let pending: usize = db
         .conn_ref()
         .query_row(
-            "SELECT COUNT(*) FROM actions WHERE status = 'pending'",
+            "SELECT COUNT(*) FROM actions WHERE status IN ('backlog', 'unstarted', 'started')",
             [],
             |row| row.get(0),
         )

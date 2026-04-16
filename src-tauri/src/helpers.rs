@@ -214,6 +214,26 @@ pub fn build_external_account_hints(db: &ActionDb) -> HashSet<String> {
 }
 
 // ---------------------------------------------------------------------------
+// Text similarity (DOS-15: auto-link actions to objectives)
+// ---------------------------------------------------------------------------
+
+/// Jaccard word similarity: proportion of shared words between two strings.
+/// Returns 0.0 for empty inputs, 1.0 for identical word sets.
+pub fn jaccard_word_similarity(a: &str, b: &str) -> f64 {
+    let a_lower = a.to_lowercase();
+    let b_lower = b.to_lowercase();
+    let a_tokens: HashSet<&str> = a_lower.split_whitespace().collect();
+    let b_tokens: HashSet<&str> = b_lower.split_whitespace().collect();
+    let intersection = a_tokens.intersection(&b_tokens).count();
+    let union = a_tokens.union(&b_tokens).count();
+    if union == 0 {
+        0.0
+    } else {
+        intersection as f64 / union as f64
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Entity name resolution (unified from signals/callouts + proactive/detectors)
 // ---------------------------------------------------------------------------
 
@@ -430,5 +450,43 @@ mod conferencing_noise_tests {
         assert!(cleaned.contains("Discuss roadmap"));
         assert!(!cleaned.contains("+1 555"));
         assert!(!cleaned.contains("Dial-in"));
+    }
+}
+
+#[cfg(test)]
+mod jaccard_tests {
+    use super::*;
+
+    #[test]
+    fn test_identical_strings() {
+        let score = jaccard_word_similarity("onboard customer", "onboard customer");
+        assert!((score - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_no_overlap() {
+        let score = jaccard_word_similarity("alpha beta", "gamma delta");
+        assert!(score.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_partial_overlap() {
+        // "complete" and "onboarding" shared; "customer" only in a, "setup" only in b
+        // a = {complete, customer, onboarding}, b = {complete, onboarding, setup}
+        // intersection = 2, union = 4 => 0.5
+        let score = jaccard_word_similarity("Complete customer onboarding", "Complete onboarding setup");
+        assert!((score - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_empty_strings() {
+        assert!(jaccard_word_similarity("", "").abs() < f64::EPSILON);
+        assert!(jaccard_word_similarity("hello", "").abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_case_insensitive() {
+        let score = jaccard_word_similarity("Hello World", "hello world");
+        assert!((score - 1.0).abs() < f64::EPSILON);
     }
 }

@@ -7,7 +7,7 @@ import type { GleanAuthStatus } from "@/types";
 type GleanAuthPhase = "idle" | "authorizing" | "disconnecting";
 
 // Glean SSO (Okta, Google Workspace) can be slower than direct Google OAuth
-const AUTH_TIMEOUT_MS = 60_000;
+const AUTH_TIMEOUT_MS = 150_000; // Backend listener has 120s timeout; give extra margin
 
 interface GleanAuthFailedPayload {
   message: string;

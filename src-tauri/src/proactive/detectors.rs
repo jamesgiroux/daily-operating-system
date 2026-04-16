@@ -479,7 +479,7 @@ pub fn detect_action_cluster(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
                     COUNT(*) as pending_count,
                     SUM(CASE WHEN due_date IS NOT NULL AND due_date < ?1 THEN 1 ELSE 0 END) as overdue_count
              FROM actions
-             WHERE status = 'pending' AND account_id IS NOT NULL
+             WHERE status IN ('backlog', 'unstarted', 'started') AND account_id IS NOT NULL
              GROUP BY account_id
              HAVING pending_count >= 5 AND overdue_count >= 3",
         )
@@ -527,7 +527,7 @@ pub fn detect_action_cluster(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
                     COUNT(*) as pending_count,
                     SUM(CASE WHEN due_date IS NOT NULL AND due_date < ?1 THEN 1 ELSE 0 END) as overdue_count
              FROM actions
-             WHERE status = 'pending' AND project_id IS NOT NULL
+             WHERE status IN ('backlog', 'unstarted', 'started') AND project_id IS NOT NULL
              GROUP BY project_id
              HAVING pending_count >= 5 AND overdue_count >= 3",
         )
@@ -1288,7 +1288,7 @@ mod tests {
             let due = if i < 4 { "2026-02-01" } else { "2026-04-01" };
             conn.execute(
                 "INSERT INTO actions (id, title, status, account_id, due_date, created_at, updated_at)
-                 VALUES (?1, ?2, 'pending', 'a1', ?3, '2026-01-01', '2026-01-01')",
+                 VALUES (?1, ?2, 'unstarted', 'a1', ?3, '2026-01-01', '2026-01-01')",
                 params![format!("act-{}", i), format!("Action {}", i), due],
             ).unwrap();
         }
@@ -1317,7 +1317,7 @@ mod tests {
         for i in 0..3 {
             conn.execute(
                 "INSERT INTO actions (id, title, status, account_id, due_date, created_at, updated_at)
-                 VALUES (?1, ?2, 'pending', 'a1', '2026-02-01', '2026-01-01', '2026-01-01')",
+                 VALUES (?1, ?2, 'unstarted', 'a1', '2026-02-01', '2026-01-01', '2026-01-01')",
                 params![format!("act-{}", i), format!("Action {}", i)],
             ).unwrap();
         }

@@ -277,3 +277,17 @@
   color: var(--color-text-secondary);
   line-height: 1.4;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DOS-53: AGING ACTION NOTICE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.agingNotice {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  padding: 10px 0;
+  border-top: 1px solid var(--color-rule-light);
+  margin-top: 12px;
+}
