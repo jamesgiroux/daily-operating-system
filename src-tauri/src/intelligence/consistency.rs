@@ -52,6 +52,12 @@ pub struct StakeholderFact {
 pub struct FactContext {
     pub entity_id: String,
     pub entity_type: String,
+    pub entity_name: String,
+    /// Names of parent/child entities — mentions of these are NOT cross-entity bleed.
+    pub related_entity_names: Vec<String>,
+    /// Names of ALL other entities in the portfolio (excluding self and related).
+    /// Used for positive identification of cross-entity contamination.
+    pub all_other_entity_names: Vec<String>,
     pub stakeholders: Vec<StakeholderFact>,
     pub recent_signal_count_14d: u32,
 }
@@ -155,9 +161,18 @@ pub fn build_fact_context(
             .then_with(|| a.name.cmp(&b.name))
     });
 
+    // Resolve entity name and related names (parent/children) for bleed detection.
+    let (entity_name, related_entity_names) = resolve_entity_names(db, entity_id, entity_type);
+
+    // Query all other entity names for positive bleed identification.
+    let all_other_entity_names = get_all_other_entity_names(db, entity_id, &entity_name, &related_entity_names);
+
     Ok(FactContext {
         entity_id: entity_id.to_string(),
         entity_type: entity_type.to_string(),
+        entity_name,
+        related_entity_names,
+        all_other_entity_names,
         stakeholders,
         recent_signal_count_14d,
     })
@@ -187,6 +202,177 @@ pub fn format_verified_presence_lines(facts: &FactContext, limit: usize) -> Vec<
             )
         })
         .collect()
+}
+
+/// Resolve entity name and parent/child names for bleed detection.
+fn resolve_entity_names(db: &ActionDb, entity_id: &str, entity_type: &str) -> (String, Vec<String>) {
+    let mut entity_name = String::new();
+    let mut related = Vec::new();
+
+    match entity_type {
+        "account" => {
+            if let Ok(Some(acct)) = db.get_account(entity_id) {
+                entity_name = acct.name;
+                // Add parent name if present
+                if let Some(pid) = acct.parent_id.as_deref() {
+                    if let Ok(Some(parent)) = db.get_account(pid) {
+                        related.push(parent.name);
+                    }
+                }
+                // Add child names
+                if let Ok(children) = db.get_child_accounts(entity_id) {
+                    for child in children {
+                        related.push(child.name);
+                    }
+                }
+            }
+        }
+        "project" => {
+            if let Ok(Some(proj)) = db.get_project(entity_id) {
+                entity_name = proj.name;
+                // Add parent name if present
+                if let Some(pid) = proj.parent_id.as_deref() {
+                    if let Ok(Some(parent)) = db.get_project(pid) {
+                        related.push(parent.name);
+                    }
+                }
+                // Add child names
+                if let Ok(children) = db.get_child_projects(entity_id) {
+                    for child in children {
+                        related.push(child.name);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    (entity_name, related)
+}
+
+/// Query all account and project names from the DB, excluding the current entity,
+/// its related (parent/child) entities, and names <= 3 chars.
+fn get_all_other_entity_names(
+    db: &ActionDb,
+    entity_id: &str,
+    entity_name: &str,
+    related_names: &[String],
+) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+
+    // Build set of names to exclude (case-insensitive)
+    let mut excluded: HashSet<String> = HashSet::new();
+    excluded.insert(entity_name.to_lowercase());
+    for r in related_names {
+        excluded.insert(r.to_lowercase());
+    }
+
+    let query = "SELECT DISTINCT name FROM accounts WHERE id != ?1 AND name IS NOT NULL AND archived = 0 \
+                 UNION \
+                 SELECT DISTINCT name FROM projects WHERE id != ?1 AND name IS NOT NULL AND archived = 0";
+    if let Ok(mut stmt) = db.conn_ref().prepare(query) {
+        if let Ok(rows) = stmt.query_map([entity_id], |row| row.get::<_, String>(0)) {
+            for row in rows.filter_map(Result::ok) {
+                let trimmed = row.trim().to_string();
+                // Skip short names (<=3 chars) to avoid false positives on abbreviations
+                if trimmed.len() <= 3 {
+                    continue;
+                }
+                // Skip self and related
+                if excluded.contains(&trimmed.to_lowercase()) {
+                    continue;
+                }
+                names.push(trimmed);
+            }
+        }
+    }
+
+    names
+}
+
+/// Check if a text field mentions a known OTHER entity name from the portfolio.
+/// Uses positive identification: only flags when a specific known account/project
+/// name appears in text belonging to a different entity.
+fn check_text_entity_bleed(
+    intel: &IntelligenceJson,
+    facts: &FactContext,
+    findings: &mut Vec<ConsistencyFinding>,
+    seen: &mut HashSet<String>,
+) {
+    if facts.entity_name.is_empty() || facts.all_other_entity_names.is_empty() {
+        return;
+    }
+
+    // Collect all text fields worth checking
+    let mut fields: Vec<(String, String)> = Vec::new();
+
+    if let Some(text) = intel.executive_assessment.as_ref() {
+        fields.push(("executiveAssessment".to_string(), text.clone()));
+    }
+    if let Some(ref ctx) = intel.company_context {
+        if let Some(desc) = ctx.description.as_ref() {
+            fields.push(("companyContext.description".to_string(), desc.clone()));
+        }
+        if let Some(extra) = ctx.additional_context.as_ref() {
+            fields.push((
+                "companyContext.additionalContext".to_string(),
+                extra.clone(),
+            ));
+        }
+    }
+    if let Some(ref health) = intel.health {
+        if let Some(ref narrative) = health.narrative {
+            fields.push(("health.narrative".to_string(), narrative.clone()));
+        }
+    }
+    if let Some(ref metrics) = intel.success_metrics {
+        for (idx, metric) in metrics.iter().enumerate() {
+            fields.push((format!("successMetrics[{idx}].name"), metric.name.clone()));
+        }
+    }
+
+    // Build word-boundary regex patterns for each known other entity name.
+    // We pre-compile them once and reuse across all fields.
+    let entity_patterns: Vec<(String, Regex)> = facts
+        .all_other_entity_names
+        .iter()
+        .filter_map(|name| {
+            let escaped = regex::escape(name);
+            // Word-boundary-aware: entity name must appear as a whole word/phrase
+            Regex::new(&format!(r"(?i)\b{}\b", escaped))
+                .ok()
+                .map(|re| (name.clone(), re))
+        })
+        .collect();
+
+    for (field_path, text) in &fields {
+        // Check if any known other entity name appears in the text
+        for (foreign_name, pattern) in &entity_patterns {
+            if pattern.is_match(text) {
+                push_unique(
+                    findings,
+                    seen,
+                    ConsistencyFinding {
+                        code: "CROSS_ENTITY_CONTENT_BLEED".to_string(),
+                        severity: ConsistencySeverity::High,
+                        field_path: field_path.clone(),
+                        claim_text: if text.len() > 200 {
+                            format!("{}...", &text[..200])
+                        } else {
+                            text.clone()
+                        },
+                        evidence_text: format!(
+                            "Text for entity '{}' mentions another entity '{}' from the portfolio.",
+                            facts.entity_name, foreign_name
+                        ),
+                        auto_fixed: false,
+                    },
+                );
+                // One finding per field is enough — break after first match
+                break;
+            }
+        }
+    }
 }
 
 pub fn check_consistency(intel: &IntelligenceJson, facts: &FactContext) -> ConsistencyReport {
@@ -315,6 +501,9 @@ pub fn check_consistency(intel: &IntelligenceJson, facts: &FactContext) -> Consi
             );
         }
     }
+
+    // DOS-83: Check text fields for cross-entity content contamination.
+    check_text_entity_bleed(intel, facts, &mut findings, &mut seen);
 
     ConsistencyReport { findings }
 }
@@ -598,6 +787,9 @@ mod tests {
         FactContext {
             entity_id: "assetco".to_string(),
             entity_type: "account".to_string(),
+            entity_name: "Meridian Asset".to_string(),
+            related_entity_names: vec![],
+            all_other_entity_names: vec![],
             stakeholders: vec![StakeholderFact {
                 person_id: "p1".to_string(),
                 name: "Matt Wickham".to_string(),
@@ -687,6 +879,9 @@ mod tests {
         let facts = FactContext {
             entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
+            entity_name: "Acme Corp".to_string(),
+            related_entity_names: vec![],
+            all_other_entity_names: vec![],
             stakeholders: vec![StakeholderFact {
                 person_id: "p1".to_string(),
                 name: "Alice".to_string(),
@@ -716,5 +911,204 @@ mod tests {
             .findings
             .iter()
             .any(|f| f.code == "CROSS_ENTITY_BLEED_SUSPECT"));
+    }
+
+    #[test]
+    fn detects_content_bleed_when_known_other_entity_appears() {
+        let facts = FactContext {
+            entity_id: "globex".to_string(),
+            entity_type: "account".to_string(),
+            entity_name: "Globex Holdings".to_string(),
+            related_entity_names: vec![],
+            all_other_entity_names: vec!["Clevertap".to_string(), "Acme Industries".to_string()],
+            stakeholders: vec![],
+            recent_signal_count_14d: 0,
+        };
+        // Assessment mentions Clevertap — a known other entity
+        let intel = IntelligenceJson {
+            executive_assessment: Some(
+                "Clevertap is showing strong growth in their mobile analytics platform. \
+                 The team has expanded significantly this quarter."
+                    .to_string(),
+            ),
+            ..Default::default()
+        };
+        let report = check_consistency(&intel, &facts);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "CROSS_ENTITY_CONTENT_BLEED"),
+            "Should detect content bleed when text mentions a known other entity"
+        );
+    }
+
+    #[test]
+    fn no_false_positive_for_correct_entity() {
+        let facts = FactContext {
+            entity_id: "globex".to_string(),
+            entity_type: "account".to_string(),
+            entity_name: "Globex Holdings".to_string(),
+            related_entity_names: vec![],
+            all_other_entity_names: vec!["Clevertap".to_string()],
+            stakeholders: vec![],
+            recent_signal_count_14d: 0,
+        };
+        let intel = IntelligenceJson {
+            executive_assessment: Some(
+                "Globex Holdings continues to demonstrate strong engagement with the platform."
+                    .to_string(),
+            ),
+            ..Default::default()
+        };
+        let report = check_consistency(&intel, &facts);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "CROSS_ENTITY_CONTENT_BLEED"),
+            "Should not flag content that correctly references the entity"
+        );
+    }
+
+    #[test]
+    fn no_false_positive_for_parent_child_reference() {
+        // "Salesforce" is in related_entity_names, NOT in all_other_entity_names
+        let facts = FactContext {
+            entity_id: "salesforce-bu".to_string(),
+            entity_type: "account".to_string(),
+            entity_name: "Salesforce BU".to_string(),
+            related_entity_names: vec!["Salesforce".to_string()],
+            all_other_entity_names: vec!["Clevertap".to_string()],
+            stakeholders: vec![],
+            recent_signal_count_14d: 0,
+        };
+        let intel = IntelligenceJson {
+            executive_assessment: Some(
+                "Salesforce continues to invest in this business unit's growth."
+                    .to_string(),
+            ),
+            ..Default::default()
+        };
+        let report = check_consistency(&intel, &facts);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "CROSS_ENTITY_CONTENT_BLEED"),
+            "Should not flag parent entity references as bleed"
+        );
+    }
+
+    #[test]
+    fn no_false_positive_for_common_business_phrases() {
+        let facts = FactContext {
+            entity_id: "acme".to_string(),
+            entity_type: "account".to_string(),
+            entity_name: "Acme Corp".to_string(),
+            related_entity_names: vec![],
+            all_other_entity_names: vec!["Clevertap".to_string(), "Globex Industries".to_string()],
+            stakeholders: vec![],
+            recent_signal_count_14d: 0,
+        };
+        let intel = IntelligenceJson {
+            executive_assessment: Some(
+                "Customer Success team shows Executive alignment on the Enterprise platform. \
+                 Revenue growth is strong with quarterly milestones on track."
+                    .to_string(),
+            ),
+            ..Default::default()
+        };
+        let report = check_consistency(&intel, &facts);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "CROSS_ENTITY_CONTENT_BLEED"),
+            "Should not flag common business phrases as bleed"
+        );
+    }
+
+    #[test]
+    fn short_entity_names_are_skipped() {
+        // "IBM" is only 3 chars and should be filtered out by get_all_other_entity_names.
+        // Simulate that by NOT including it in all_other_entity_names.
+        let facts = FactContext {
+            entity_id: "acme".to_string(),
+            entity_type: "account".to_string(),
+            entity_name: "Acme Corp".to_string(),
+            related_entity_names: vec![],
+            all_other_entity_names: vec![], // Short names excluded during population
+            stakeholders: vec![],
+            recent_signal_count_14d: 0,
+        };
+        let intel = IntelligenceJson {
+            executive_assessment: Some(
+                "IBM has been a strong partner in the enterprise space.".to_string(),
+            ),
+            ..Default::default()
+        };
+        let report = check_consistency(&intel, &facts);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "CROSS_ENTITY_CONTENT_BLEED"),
+            "Short entity names should not trigger bleed detection"
+        );
+    }
+
+    #[test]
+    fn bleed_detection_is_case_insensitive() {
+        let facts = FactContext {
+            entity_id: "globex".to_string(),
+            entity_type: "account".to_string(),
+            entity_name: "Globex Holdings".to_string(),
+            related_entity_names: vec![],
+            all_other_entity_names: vec!["Acme Industries".to_string()],
+            stakeholders: vec![],
+            recent_signal_count_14d: 0,
+        };
+        let intel = IntelligenceJson {
+            executive_assessment: Some(
+                "acme industries has been growing steadily this quarter.".to_string(),
+            ),
+            ..Default::default()
+        };
+        let report = check_consistency(&intel, &facts);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "CROSS_ENTITY_CONTENT_BLEED"),
+            "Bleed detection should be case-insensitive"
+        );
+    }
+
+    #[test]
+    fn no_bleed_when_no_other_entities_exist() {
+        let facts = FactContext {
+            entity_id: "only-one".to_string(),
+            entity_type: "account".to_string(),
+            entity_name: "Only One Corp".to_string(),
+            related_entity_names: vec![],
+            all_other_entity_names: vec![], // No other entities in portfolio
+            stakeholders: vec![],
+            recent_signal_count_14d: 0,
+        };
+        let intel = IntelligenceJson {
+            executive_assessment: Some(
+                "Random Company is doing great things with their platform.".to_string(),
+            ),
+            ..Default::default()
+        };
+        let report = check_consistency(&intel, &facts);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "CROSS_ENTITY_CONTENT_BLEED"),
+            "No bleed when there are no other entities to match against"
+        );
     }
 }
