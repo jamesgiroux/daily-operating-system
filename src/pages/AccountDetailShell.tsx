@@ -11,7 +11,7 @@
  * from the outlook section through the finis marker.
  */
 import { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate, Outlet } from "@tanstack/react-router";
+import { useParams, useNavigate, useRouterState, Outlet } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
@@ -35,7 +35,7 @@ import { AccountRolloverPrompt } from "@/components/account/AccountRolloverPromp
 import { AccountDialogs } from "@/components/account/AccountDialogs";
 import { AccountDetailProvider } from "@/contexts/AccountDetailContext";
 import type { AccountDetailContextValue } from "@/contexts/AccountDetailContext";
-import { buildAccountVitals, buildChapters } from "@/components/account/account-detail-utils";
+import { buildAccountVitals, buildHealthChapters, buildContextChapters, buildWorkChapters } from "@/components/account/account-detail-utils";
 
 import shared from "@/styles/entity-detail.module.css";
 
@@ -53,10 +53,19 @@ export default function AccountDetailShell() {
     accountId, detail: acct.detail, load: acct.load, silentRefresh: acct.silentRefresh, setFolioSaveStatus,
   });
 
-  const chapters = useMemo(
-    () => buildChapters(acct.detail?.isParent ?? false, !!acct.intelligence?.health),
-    [acct.detail?.isParent, acct.intelligence?.health],
-  );
+  // DOS-112: Per-view chapter navigation
+  const routerState = useRouterState();
+  const deepestPath = routerState.matches[routerState.matches.length - 1]?.routeId ?? "";
+  const activeView = deepestPath.includes("/health") ? "health"
+    : deepestPath.includes("/context") ? "context"
+    : deepestPath.includes("/work") ? "work"
+    : "health";
+
+  const chapters = useMemo(() => {
+    if (activeView === "health") return buildHealthChapters(acct.detail?.isParent ?? false, !!acct.intelligence?.health);
+    if (activeView === "context") return buildContextChapters();
+    return buildWorkChapters();
+  }, [activeView, acct.detail?.isParent, acct.intelligence?.health]);
 
   const shellConfig = useMemo(() => ({
     folioLabel: acct.detail?.accountType === "internal" ? "Internal" : acct.detail?.accountType === "partner" ? "Partner" : "Account",
