@@ -177,6 +177,18 @@ function statusDotColor(value: string): string {
   return "var(--color-text-tertiary)";
 }
 
+function getStatusTooltip(status: string): string {
+  switch (status) {
+    case "needs_enrichment": return "This file needs AI analysis to determine where it belongs";
+    case "needs_entity": return "AI has analyzed this file — confirm which account or project it belongs to";
+    case "processing": return "AI is currently analyzing this file";
+    case "routed": return "This file has been classified and filed";
+    case "completed": return "This file has been classified and filed";
+    case "error": return "Something went wrong processing this file";
+    default: return "";
+  }
+}
+
 // =============================================================================
 // Inbox Page
 // =============================================================================
@@ -198,6 +210,7 @@ export default function InboxPage() {
   const [dropResult, setDropResult] = useState<{ count: number } | null>(null);
   const lastDropRef = useRef<{ signature: string; at: number } | null>(null);
   const [driveModalOpen, setDriveModalOpen] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Tauri drag-drop listener
@@ -557,7 +570,7 @@ export default function InboxPage() {
   // ---------------------------------------------------------------------------
   const shellConfig = useMemo(
     () => ({
-      folioLabel: "Dropbox",
+      folioLabel: "Inbox",
       atmosphereColor: "olive" as const,
       activePage: "dropbox" as const,
       folioActions: (
@@ -591,6 +604,7 @@ export default function InboxPage() {
           >
             {refreshing ? "..." : "Refresh"}
           </button>
+          <button className={styles.helpButton} onClick={() => setShowHelp(true)} title="How inbox works">?</button>
         </div>
       ),
     }),
@@ -756,6 +770,45 @@ export default function InboxPage() {
         onClose={() => setDriveModalOpen(false)}
         onImported={refresh}
       />
+
+      {showHelp && (
+        <div className={styles.helpOverlay} onClick={() => setShowHelp(false)}>
+          <div className={styles.helpCard} onClick={(e) => e.stopPropagation()}>
+            <h3 className={styles.helpTitle}>How your inbox works</h3>
+            <div className={styles.helpSteps}>
+              <div className={styles.helpStep}>
+                <span className={styles.helpStepNumber}>1</span>
+                <div>
+                  <strong>Drop</strong>
+                  <p>Drag meeting notes, transcripts, or documents into the inbox.</p>
+                </div>
+              </div>
+              <div className={styles.helpStep}>
+                <span className={styles.helpStepNumber}>2</span>
+                <div>
+                  <strong>Classify</strong>
+                  <p>DailyOS detects the file type and content.</p>
+                </div>
+              </div>
+              <div className={styles.helpStep}>
+                <span className={styles.helpStepNumber}>3</span>
+                <div>
+                  <strong>Match</strong>
+                  <p>AI identifies which account or project the file relates to.</p>
+                </div>
+              </div>
+              <div className={styles.helpStep}>
+                <span className={styles.helpStepNumber}>4</span>
+                <div>
+                  <strong>File</strong>
+                  <p>Content is routed to the right place automatically.</p>
+                </div>
+              </div>
+            </div>
+            <button className={styles.helpCloseButton} onClick={() => setShowHelp(false)}>Got it</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -848,7 +901,7 @@ function InboxRow({
               Processing...
             </span>
           ) : (
-            <span className={styles.statusGroup}>
+            <span className={styles.statusGroup} title={getStatusTooltip(displayStatus)}>
               <span
                 className={styles.statusDot}
                 style={{ background: statusDotColor(displayStatus) }}
