@@ -174,7 +174,7 @@ export default function AccountDetailEditorial() {
       </MarginSection>
 
       {intelligence && <AccountPullQuote intelligence={intelligence} />}
-      {intelligence?.health && <AccountHealthSection health={intelligence.health} />}
+      {intelligence?.health && <AccountHealthSection health={intelligence.health} consistencyFindings={intelligence.consistencyFindings} />}
 
       <MarginSection id="the-room" label={<>The<br/>Room</>}>
         <StakeholderGallery intelligence={intelligence} linkedPeople={detail.linkedPeople}
