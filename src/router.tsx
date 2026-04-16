@@ -543,13 +543,17 @@ const accountDetailRoute = createRoute({
   component: AccountDetailShell,
 });
 
-// DOS-112: Index route redirects to /health view
+// DOS-112: Index route redirects to /health view (or ?view= param for smart selection)
 function AccountDetailIndex() {
   const navigate = useNavigate();
   const { accountId } = useParams({ strict: false });
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = params.get("view");
+    const validViews = ["health", "context", "work"];
+    const targetView = viewParam && validViews.includes(viewParam) ? viewParam : "health";
     navigate({
-      to: "/accounts/$accountId/health",
+      to: `/accounts/$accountId/${targetView}` as "/accounts/$accountId/health",
       params: { accountId: accountId! },
       replace: true,
     });
