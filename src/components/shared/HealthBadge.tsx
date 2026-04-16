@@ -77,9 +77,9 @@ export function HealthBadge({
   showScore = true,
   divergence,
 }: HealthBadgeProps) {
-  // DOS-84: When sufficientData is explicitly false, show "Insufficient Data"
-  // instead of the computed score (which is unreliable with < 3 dimensions).
-  const isInsufficient = sufficientData === false;
+  // DOS-84: When sufficientData is not true (false OR undefined from old cached data),
+  // show "Insufficient Data" instead of the computed score (which is unreliable with < 3 dimensions).
+  const isInsufficient = sufficientData !== true;
 
   if (size === "hero" && isInsufficient) {
     return (
@@ -135,13 +135,15 @@ export function HealthBadge({
   const dotSizeClass = size === "compact" ? styles.dotCompact : styles.dotStandard;
   const scoreSizeClass = size === "compact" ? styles.scoreCompact : styles.scoreStandard;
 
-  // DOS-84: Insufficient data in compact/standard — muted dot + "—" instead of score
+  // DOS-84: Insufficient data in compact/standard — muted dot + visible label
   if (isInsufficient) {
     return (
       <span className={styles.badge} title="Insufficient data for health score">
         <span className={`${styles.dot} ${dotSizeClass} ${styles.dotMuted}`} />
         {showScore && (
-          <span className={`${styles.score} ${scoreSizeClass} ${styles.scoreMuted}`}>--</span>
+          <span className={`${styles.score} ${scoreSizeClass} ${styles.scoreMuted}`}>
+            {size === "compact" ? "N/A" : "Insufficient Data"}
+          </span>
         )}
       </span>
     );
