@@ -66,8 +66,9 @@ const healthColorMap: Record<string, string> = {
   yellow: "saffron",
 };
 
-/** DOS-85: Metrics where 0 means "no data" rather than a real measurement. */
-const ZERO_IS_NO_DATA = new Set(["nps"]);
+/** DOS-85: Metrics where 0 means "no data" rather than a real measurement.
+ *  NPS is intentionally excluded — its range is -100 to +100, so 0 is valid. */
+const ZERO_IS_NO_DATA = new Set<string>([]);
 
 /** Resolve a field value from entity data or metadata. */
 function resolveValue(field: PresetVitalField, entityData: EntityData, metadata?: Record<string, string>): string {
