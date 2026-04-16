@@ -1355,6 +1355,10 @@ export interface AccountListItem {
   archived: boolean;
   /** I502: Intelligence health data when available (populated from entity_intelligence). */
   intelligenceHealth?: IntelligenceAccountHealth | null;
+  /** DOS-110: User's manual health sentiment assessment. */
+  userHealthSentiment?: string;
+  /** DOS-110: When the sentiment was last set. */
+  sentimentSetAt?: string;
 }
 
 export interface CompanyOverview {
