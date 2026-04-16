@@ -521,6 +521,7 @@ pub fn run() {
             commands::sync_email_inbox_presence,
             // I144: Archive low-priority emails
             commands::archive_low_priority_emails,
+            commands::retry_failed_emails,
             // Onboarding / Demo / App State (I56/I57)
             commands::install_demo_data,
             commands::clear_demo_data,
