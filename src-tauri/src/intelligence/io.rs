@@ -223,6 +223,10 @@ pub struct AccountHealth {
     /// 0.0-1.0
     #[serde(default)]
     pub confidence: f64,
+    /// DOS-84: true when >= 3 of 6 health dimensions have data (weight > 0).
+    /// When false, frontend should show "Insufficient Data" instead of the score.
+    #[serde(default)]
+    pub sufficient_data: bool,
     #[serde(default)]
     pub trend: HealthTrend,
     #[serde(default)]
@@ -1810,6 +1814,7 @@ fn synthesize_health_from_legacy(
         band: band.to_string(),
         source: HealthSource::Computed,
         confidence: 0.3,
+        sufficient_data: false, // DOS-84: DB-restored scores lack dimension context
         trend,
         dimensions: RelationshipDimensions::default(),
         divergence: None,
