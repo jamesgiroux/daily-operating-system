@@ -43,6 +43,7 @@ pub fn check_and_invalidate_preps(
         "relationship_graph_changed",
         "relationship_reclassified",
         "transcript_outcomes", // manually attached transcript — invalidate linked future meeting preps
+        "field_updated",      // DOS-110: account field changes (including sentiment) invalidate prep
     ];
 
     if !invalidating_types.contains(&signal.signal_type.as_str()) {

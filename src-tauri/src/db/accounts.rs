@@ -246,8 +246,8 @@ impl ActionDb {
 
         let mut result: Vec<(DbAccount, Vec<String>)> = Vec::new();
         let mut current_id: Option<String> = None;
-        // Domain column follows all ACCOUNT_COLUMNS (39 columns, 0-indexed → index 39).
-        let domain_idx = 39;
+        // Domain column follows all ACCOUNT_COLUMNS (41 columns, 0-indexed → index 41).
+        let domain_idx = 41;
 
         while let Some(row) = rows.next()? {
             let account_id: String = row.get(0)?;
@@ -1062,6 +1062,12 @@ impl ActionDb {
             "account_type" => {
                 "UPDATE accounts SET account_type = ?1, is_internal = CASE WHEN ?1 = 'internal' THEN 1 ELSE 0 END, updated_at = ?3 WHERE id = ?2"
             }
+            "user_health_sentiment" => {
+                "UPDATE accounts SET user_health_sentiment = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "sentiment_set_at" => {
+                "UPDATE accounts SET sentiment_set_at = ?1, updated_at = ?3 WHERE id = ?2"
+            }
             _ => {
                 return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
                     format!("Field '{}' is not updatable", field),
@@ -1855,7 +1861,8 @@ impl ActionDb {
          icp_fit_score, icp_fit_score_source, \
          primary_product, \
          customer_status, customer_status_source, customer_status_updated_at, \
-         company_overview, strategic_programs, notes";
+         company_overview, strategic_programs, notes, \
+         user_health_sentiment, sentiment_set_at";
 
     /// Helper: prefix every column in ACCOUNT_COLUMNS with a table alias.
     fn account_columns_aliased(alias: &str) -> String {
@@ -1913,6 +1920,9 @@ impl ActionDb {
             company_overview: row.get(36).unwrap_or(None),
             strategic_programs: row.get(37).unwrap_or(None),
             notes: row.get(38).unwrap_or(None),
+            // DOS-110: User health sentiment
+            user_health_sentiment: row.get(39).unwrap_or(None),
+            sentiment_set_at: row.get(40).unwrap_or(None),
         })
     }
 
