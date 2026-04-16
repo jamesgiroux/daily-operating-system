@@ -202,7 +202,6 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
 
       {/* Fixed floating nav island — right margin */}
       <FloatingNavIsland
-        mode={chapters && chapters.length > 0 ? 'chapters' : 'app'}
         activePage={activePage}
         activeColor={atmosphereColor}
         entityMode={entityMode}
