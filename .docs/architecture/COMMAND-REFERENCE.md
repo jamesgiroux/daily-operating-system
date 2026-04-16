@@ -2,8 +2,8 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-04-06 by `.docs/generators/gen-command-reference.sh`
-**Registered in lib.rs:** ~360 commands
+**Auto-generated:** 2026-04-15 by `.docs/generators/gen-command-reference.sh`
+**Registered in lib.rs:** ~366 commands
 **Source files:** 11
 
 ---
@@ -88,6 +88,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `reopen_action` | yes | id |
 | `reprocess_meeting_transcript` | yes | meeting_id |
 | `reset_email_preferences` | yes | crate |
+| `resolve_decision` | yes | id |
 | `search_meetings` | yes | query |
 | `set_capture_delay` | — | delay_minutes |
 | `set_capture_enabled` | — | enabled |
@@ -129,6 +130,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `get_onboarding_priming_context` | yes | — |
 | `get_processing_history` | yes | limit |
 | `get_sync_freshness` | yes | — |
+| `install_claude_cli` | yes | — |
 | `install_demo_data` | yes | — |
 | `install_inbox_sample` | — | — |
 | `launch_claude_login` | — | — |
@@ -178,6 +180,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `disconnect_smithery` | — | — |
 | `discover_accounts_from_glean` | yes | — |
 | `dismiss_intelligence_item` | yes | entity_id, entity_type, field, item_text |
+| `dismiss_recommendation` | yes | entity_id, entity_type, index |
 | `enrich_account_from_clay` | yes | account_id |
 | `enrich_person_from_clay` | yes | person_id |
 | `export_audit_log` | — | dest_path |
@@ -204,6 +207,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `get_linear_projects` | yes | — |
 | `get_linear_recent_issues` | yes | — |
 | `get_linear_status` | — | — |
+| `get_linear_teams` | yes | — |
 | `get_meeting_timeline` | yes | days_before, days_after |
 | `get_person_avatar` | yes | person_id |
 | `get_person_relationships` | yes | person_id |
@@ -215,6 +219,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `onboarding_enrichment_status` | yes | account_names |
 | `onboarding_import_accounts` | yes | #[allow)] account_names, accounts |
 | `onboarding_prefill_profile` | yes | — |
+| `push_action_to_linear` | yes | action_id, team_id, project_id, title |
 | `query_ephemeral_account` | yes | name |
 | `remove_google_drive_watch` | yes | watch_id |
 | `run_linear_auto_link` | yes | — |
@@ -243,6 +248,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `test_granola_cache` | — | — |
 | `test_linear_connection` | yes | — |
 | `test_quill_connection` | yes | — |
+| `track_recommendation` | yes | entity_id, entity_type, index |
 | `trigger_drive_sync_now` | — | — |
 | `trigger_granola_sync_for_meeting` | yes | meeting_id, force |
 | `trigger_quill_sync_for_meeting` | yes | meeting_id, force |

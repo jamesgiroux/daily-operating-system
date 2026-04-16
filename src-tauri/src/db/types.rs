@@ -36,7 +36,7 @@ pub enum DbError {
 pub struct DbAction {
     pub id: String,
     pub title: String,
-    pub priority: String,
+    pub priority: i32,
     pub status: String,
     pub created_at: String,
     pub due_date: Option<String>,
@@ -57,6 +57,21 @@ pub struct DbAction {
     /// Next upcoming meeting start time for the action's account (I342).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_meeting_start: Option<String>,
+    /// Whether this action requires a decision (DOS-17).
+    #[serde(default)]
+    pub needs_decision: bool,
+    /// Who owns the decision (DOS-17).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_owner: Option<String>,
+    /// What's at stake if the decision is delayed (DOS-17).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_stakes: Option<String>,
+    /// Linear issue identifier (e.g. "DOS-42") when pushed to Linear (DOS-52).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linear_identifier: Option<String>,
+    /// Linear issue URL when pushed to Linear (DOS-52).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linear_url: Option<String>,
 }
 
 /// Account classification: customer, internal org, or partner (I382).

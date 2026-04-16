@@ -33,6 +33,8 @@ impl ActionDb {
             total_milestone_count: row
                 .get::<_, Option<i32>>("total_milestone_count")?
                 .unwrap_or(0),
+            evidence_json: row.get("evidence_json").unwrap_or(None),
+            ai_origin_id: row.get("ai_origin_id").unwrap_or(None),
         })
     }
 
@@ -438,7 +440,7 @@ impl ActionDb {
              JOIN actions a ON a.id = aol.action_id
              LEFT JOIN accounts acc ON a.account_id = acc.id
              WHERE aol.objective_id = ?1
-               AND a.status IN ('suggested', 'pending')
+               AND a.status IN ('backlog', 'unstarted', 'started')
              ORDER BY a.priority, a.due_date",
         )?;
         let rows = stmt.query_map(params![objective_id], Self::map_action_row)?;

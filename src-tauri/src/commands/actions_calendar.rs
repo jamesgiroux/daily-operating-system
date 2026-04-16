@@ -242,6 +242,18 @@ pub async fn reset_email_preferences(
         .await
 }
 
+/// Resolve a decision: clear the needs_decision flag and emit signal (DOS-17).
+#[tauri::command]
+pub async fn resolve_decision(
+    id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    state
+        .db_write(move |db| crate::services::actions::resolve_decision(db, &engine, &id))
+        .await
+}
+
 /// Get all suggested (AI-suggested) actions (I256).
 #[tauri::command]
 pub async fn get_suggested_actions(
@@ -748,12 +760,12 @@ pub async fn update_action_priority(
     priority: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    // Validate priority
-    if !matches!(priority.as_str(), "P1" | "P2" | "P3") {
-        return Err(format!(
-            "Invalid priority: {}. Must be P1, P2, or P3.",
-            priority
-        ));
+    // Validate priority (0-4 integer)
+    let pv: i32 = priority
+        .parse()
+        .map_err(|_| format!("Invalid priority: {priority}. Must be 0-4."))?;
+    if !(0..=4).contains(&pv) {
+        return Err(format!("Invalid priority: {pv}. Must be 0-4."));
     }
     let engine = state.signals.engine.clone();
     state

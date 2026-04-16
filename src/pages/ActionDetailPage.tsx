@@ -11,8 +11,8 @@ import { EditableDate } from "@/components/ui/editable-date";
 import { EditableText } from "@/components/ui/EditableText";
 import { formatFullDate } from "@/lib/utils";
 import { classifyAction } from "@/lib/entity-utils";
-import { Check, Circle } from "lucide-react";
-import type { ActionDetail } from "@/types";
+import { Check, Circle, ExternalLink } from "lucide-react";
+import type { ActionDetail, LinearPushResult } from "@/types";
 import s from "./ActionDetailPage.module.css";
 
 // =============================================================================
@@ -20,18 +20,17 @@ import s from "./ActionDetailPage.module.css";
 // =============================================================================
 
 const PRIORITY_CLASS: Record<string, string> = {
-  P1: s.priorityP1,
-  P2: s.priorityP2,
-  P3: s.priorityP3,
+  1: s.priorityP1,
+  2: s.priorityP2,
+  3: s.priorityP2,
+  4: s.priorityP3,
 };
 
-function priorityAccent(priority: string): string {
-  const map: Record<string, string> = {
-    P1: "var(--color-spice-terracotta)",
-    P2: "var(--color-spice-turmeric)",
-    P3: "var(--color-garden-larkspur)",
-  };
-  return map[priority] ?? "var(--color-text-tertiary)";
+function priorityAccent(priority: number | string): string {
+  const v = typeof priority === "string" ? parseInt(priority, 10) : priority;
+  if (v <= 1) return "var(--color-spice-terracotta)";
+  if (v <= 2) return "var(--color-spice-turmeric)";
+  return "var(--color-garden-larkspur)";
 }
 
 // =============================================================================
@@ -49,6 +48,12 @@ export default function ActionDetailPage() {
   const [toggling, setToggling] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Linear push state
+  const [linearEnabled, setLinearEnabled] = useState(false);
+  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [pushing, setPushing] = useState(false);
 
   // Register magazine shell
   const shellConfig = useMemo(
@@ -83,6 +88,20 @@ export default function ActionDetailPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    invoke<{ enabled: boolean; apiKeySet: boolean }>("get_linear_status")
+      .then((s) => {
+        const enabled = s.enabled && s.apiKeySet;
+        setLinearEnabled(enabled);
+        if (enabled) {
+          invoke<Array<{ id: string; name: string }>>("get_linear_teams")
+            .then((t) => { setTeams(t); })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   async function toggleStatus() {
     if (!detail) return;
     setToggling(true);
@@ -113,6 +132,24 @@ export default function ActionDetailPage() {
       console.error("Failed to save action:", e);
       toast.error("Failed to save");
       setSaveStatus("idle");
+    }
+  }
+
+  async function handlePushToLinear() {
+    if (!detail || !selectedTeamId || pushing) return;
+    setPushing(true);
+    try {
+      const result = await invoke<LinearPushResult>("push_action_to_linear", {
+        actionId: detail.id,
+        teamId: selectedTeamId,
+        title: detail.title,
+      });
+      toast.success(`Created ${result.identifier}`);
+      await load();
+    } catch (e) {
+      toast.error(`Push failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPushing(false);
     }
   }
 
@@ -207,7 +244,7 @@ export default function ActionDetailPage() {
           {/* Priority pill */}
           {priorityCls && (
             <span className={`${s.priorityPill} ${priorityCls}`}>
-              {detail.priority}
+              {detail.priority <= 1 ? "Urgent" : detail.priority <= 2 ? "High" : detail.priority === 4 ? "Low" : "Medium"}
             </span>
           )}
 
@@ -368,7 +405,56 @@ export default function ActionDetailPage() {
           </div>
         </div>
 
-        {/* ── 5. Action bar ── */}
+        {/* ── 5. Linear section ── */}
+        {linearEnabled && (
+          <div className={s.section}>
+            <div className={s.sectionLabel}>Linear</div>
+            {detail.linearIdentifier ? (
+              <div className={s.refSection}>
+                <div className={s.refRow}>
+                  <span className={s.refKey}>Issue</span>
+                  <div className={s.refValue}>
+                    <a
+                      href={detail.linearUrl ?? "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={s.accountLink}
+                    >
+                      {detail.linearIdentifier}
+                      <ExternalLink size={12} style={{ marginLeft: 4, verticalAlign: "middle" }} />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ) : (detail.status === "backlog" || detail.status === "unstarted") ? (
+              <div className={s.linearPushRow}>
+                <select
+                  value={selectedTeamId ?? ""}
+                  onChange={(e) => setSelectedTeamId(e.target.value || null)}
+                  className={s.linearSelect}
+                >
+                  <option value="">Select a project</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handlePushToLinear}
+                  disabled={pushing || !selectedTeamId}
+                  className={selectedTeamId ? s.linearPushReady : s.linearPushDisabled}
+                >
+                  {pushing ? "Creating..." : "Create Linear Issue"}
+                </button>
+              </div>
+            ) : (
+              <p className={s.autoNote}>
+                Push to Linear is available for suggested and active actions.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ── 6. Action bar ── */}
         <div className={s.actionBar}>
           {saveStatus !== "idle" && (
             <span

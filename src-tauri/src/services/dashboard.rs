@@ -152,6 +152,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         intelligence_qualities: HashMap<String, crate::types::IntelligenceQuality>,
         lifecycle_updates: Vec<DashboardLifecycleUpdate>,
         briefing_callouts: Vec<DashboardBriefingCallout>,
+        aging_action_count: Option<i64>,
     }
 
     let engine = std::sync::Arc::clone(&state.signals.engine);
@@ -244,6 +245,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
             }
             let lifecycle_updates = load_dashboard_lifecycle_updates(db, 3);
             let briefing_callouts = load_briefing_callouts(db, 10);
+            let aging_count = crate::services::actions::get_aging_action_count(db).ok();
 
             Ok(Some(LiveSnapshot {
                 meetings,
@@ -253,6 +255,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
                 intelligence_qualities: iq_map,
                 lifecycle_updates,
                 briefing_callouts,
+                aging_action_count: aging_count.filter(|&c| c > 0),
             }))
         })
         .await
@@ -329,18 +332,14 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         .actions
         .into_iter()
         .map(|dba| {
-            let priority = match dba.priority.as_str() {
-                "P1" => Priority::P1,
-                "P3" => Priority::P3,
-                _ => Priority::P2,
-            };
+            let priority = Priority::from_i32(dba.priority);
             Action {
                 id: dba.id,
                 title: dba.title,
                 account: dba.account_id,
                 due_date: dba.due_date,
                 priority,
-                status: crate::types::ActionStatus::Pending,
+                status: crate::types::ActionStatus::Unstarted,
                 is_overdue: None,
                 context: dba.context,
                 source: dba.source_label,
@@ -453,6 +452,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
             .map(|c| c.resolved_user_domains())
             .filter(|d| !d.is_empty()),
         briefing_callouts: snap.briefing_callouts,
+        aging_action_count: snap.aging_action_count,
     })
 }
 
@@ -834,18 +834,14 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             db_actions
                 .iter()
                 .map(|dba| {
-                    let priority = match dba.priority.as_str() {
-                        "P1" => Priority::P1,
-                        "P3" => Priority::P3,
-                        _ => Priority::P2,
-                    };
+                    let priority = Priority::from_i32(dba.priority);
                     Action {
                         id: dba.id.clone(),
                         title: dba.title.clone(),
                         account: dba.account_id.clone(),
                         due_date: dba.due_date.clone(),
                         priority,
-                        status: crate::types::ActionStatus::Pending,
+                        status: crate::types::ActionStatus::Unstarted,
                         is_overdue: None,
                         context: dba.context.clone(),
                         source: dba.source_label.clone(),
@@ -1197,11 +1193,12 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         None
     };
 
-    let (lifecycle_updates, briefing_callouts) = state
+    let (lifecycle_updates, briefing_callouts, aging_action_count) = state
         .db_read(|db| {
             let lu = load_dashboard_lifecycle_updates(db, 3);
             let bc = load_briefing_callouts(db, 10);
-            Ok::<(Vec<DashboardLifecycleUpdate>, Vec<DashboardBriefingCallout>), String>((lu, bc))
+            let ac = crate::services::actions::get_aging_action_count(db).ok();
+            Ok::<(Vec<DashboardLifecycleUpdate>, Vec<DashboardBriefingCallout>, Option<i64>), String>((lu, bc, ac))
         })
         .await
         .unwrap_or_default();
@@ -1231,6 +1228,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                 }
             },
             briefing_callouts,
+            aging_action_count: aging_action_count.filter(|&c| c > 0),
         },
         freshness,
         google_auth,

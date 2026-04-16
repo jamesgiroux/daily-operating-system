@@ -5,6 +5,35 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.2.0] — 2026-04-15
+
+### Added
+
+- **Linear-compatible action vocabulary (DOS-55)** — 6-status model (backlog, unstarted, started, completed, cancelled, archived) and integer priorities 0-4 matching Linear's API. Migration 085 remaps all existing data. Frontend tabs show Suggested/Active/Completed with Urgent/High/Medium/Low priority labels. Dedup guard prevents AI from resurrecting archived/cancelled items.
+- **Manual action capture via Cmd+K (DOS-54)** — "Add action" command in the command palette with auto-entity-linking from current page context. Source type `user_manual` at Tier 1 reliability weight. Signal emission via `emit_signal_and_propagate()`. Actions surface in briefing, meeting prep, entity pages, and actions list.
+- **Recommended actions from intelligence (DOS-13)** — LLM enrichment now generates 2-3 concrete recommended actions per entity. Track/Dismiss UI on account, project, and person detail pages. Tracked recommendations create backlog actions with `source_type: intelligence`. Dismissed recommendations emit correction signal for Bayesian learning.
+- **Decision-requiring actions (DOS-17)** — Keyword pattern matching flags actions blocked on decisions. `needs_decision`, `decision_owner`, `decision_stakes` columns. "Decision needed" badge on action rows. `resolve_decision` command clears flag with signal emission.
+- **Rejection learning (DOS-18)** — `rejected_action_patterns` table tracks exact title suppression, source fatigue (>70% rejection rate), and keyword suppression (3+ rejections). Checked before creating proposed actions. Account-scoped.
+- **Auto-link actions to objectives (DOS-15)** — Jaccard word similarity matches new actions against account objectives (threshold >0.6). Best-effort, non-blocking. `action_auto_linked` signal emitted.
+- **Commitment-milestone matching (DOS-16)** — Captured commitments matched against pending milestones (threshold >0.7). Backfills milestone target dates from commitment dates. Migration 090 adds `milestone_id` and `suggested_objective_id` to `captured_commitments`.
+- **Objective evidence accumulation (DOS-14)** — AI statedObjectives fuzzy-matched against user objectives during enrichment. Evidence appended without modifying user titles. Migration 086 adds `evidence_json` and `ai_origin_id` to `account_objectives`. Evidence count displayed on objectives.
+- **Linear GraphQL write client (DOS-50)** — `create_issue()` mutation and `fetch_teams()` query. `action_linear_links` table tracks push mappings.
+- **Push-to-Linear service (DOS-51)** — `push_action_to_linear()` validates pushable status, creates Linear issue, stores mapping, auto-sets status to `started`, emits `action_pushed_to_linear` signal.
+- **Push-to-Linear frontend (DOS-52)** — Hover-reveal push button on eligible action rows. Persistent Linear badge (identifier + clickable URL) on pushed actions. `statusLabel()` helper for display vocabulary.
+- **Linear entity mapping improvements (DOS-56)** — Fuzzy name matching (auto-link >= 0.9, suggest >= 0.7). Domain-based entity suggestions from `account_domains`. Suggestion cards with Link/Dismiss in Linear settings.
+- **Linear write-back Intelligence Loop (DOS-53)** — Pushed items in `build_intelligence_context()` and meeting prep. Aging awareness in briefing ("N items aging toward auto-archive"). Bayesian feedback: AI-suggested actions pushed to Linear emit `ai_suggestion_validated` signal.
+- **Node.js auto-installer (DOS-65)** — Downloads pinned Node.js v22.15.0 LTS with SHA-256 verification. macOS admin prompt via osascript. Progress events for frontend. Single "Install" button for both Node-missing and Node-present cases.
+- **Value delivered persistence (DOS-12)** — User-confirmed value items survive re-enrichment via merge logic. Value delivered included in meeting prep context. Zero-guilt aging exempts P1/Urgent, waiting_on, and objective-linked actions from auto-archive.
+
+### Fixed
+
+- **Linear signal propagation gaps (DOS-49)** — All three Linear signal types (`linear_issue_completed`, `linear_issue_blocked`, `linear_issue_overdue`) now use `emit_signal_and_propagate()`. Added to `CALLOUT_SIGNAL_TYPES` with callout text handlers.
+- **Glean reconnect warning persists after reauth** — ContextSourceSection now listens for `glean-auth-changed` event and refreshes token health. Frontend auth timeout increased from 60s to 150s to match backend's 120s listener.
+- **Priority cycling sends old P1/P2/P3 strings** — MeetingDetailPage updated to cycle integer priorities (1→3→4→1).
+- **Started actions disappear from list** — `get_due_actions` now includes `started` status alongside `unstarted`.
+- **Recommendation duplicates on re-track** — `track_recommendation` removes the recommendation from intelligence data after creating the action.
+- **Manual action source_type inconsistency** — `get_non_briefing_pending_actions` filter includes `user_manual` and `intelligence` source types.
+
 ## [1.1.3] — 2026-04-10
 
 ### Added

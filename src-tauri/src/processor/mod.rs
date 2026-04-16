@@ -472,11 +472,11 @@ fn extract_and_sync_actions(
 
         let meta = metadata::parse_action_metadata(raw_title);
 
-        // Determine status: explicit completion > pending
+        // Determine status: explicit completion > unstarted
         let status = if is_completed {
-            "completed".to_string()
+            crate::action_status::COMPLETED.to_string()
         } else {
-            "pending".to_string()
+            crate::action_status::UNSTARTED.to_string()
         };
 
         // Account resolution: @Account in text > classifier fallback > None
@@ -492,7 +492,10 @@ fn extract_and_sync_actions(
                 count
             ),
             title: meta.clean_title,
-            priority: meta.priority.unwrap_or_else(|| "P2".to_string()),
+            priority: meta
+                .priority
+                .map(|p| crate::action_status::migrate_priority(&p))
+                .unwrap_or(crate::action_status::PRIORITY_MEDIUM),
             status,
             created_at: now.clone(),
             due_date: meta.due_date,
@@ -517,6 +520,11 @@ fn extract_and_sync_actions(
             account_name: None,
             next_meeting_title: None,
             next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         };
 
         if let Err(e) = db.upsert_action_if_not_completed(&action) {

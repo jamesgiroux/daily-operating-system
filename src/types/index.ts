@@ -92,9 +92,9 @@ export interface DatabaseInfo {
   lastBackup: string | null;
 }
 
-export type Priority = "P1" | "P2" | "P3";
+export type Priority = 0 | 1 | 2 | 3 | 4;
 
-export type ActionStatus = "pending" | "completed" | "suggested" | "archived";
+export type ActionStatus = "backlog" | "unstarted" | "started" | "completed" | "cancelled" | "archived";
 
 export type PrepStatus =
   | "prep_needed"
@@ -206,7 +206,7 @@ export interface Action {
 export interface DbAction {
   id: string;
   title: string;
-  priority: string;
+  priority: number;
   status: string;
   createdAt: string;
   dueDate?: string;
@@ -225,6 +225,22 @@ export interface DbAction {
   nextMeetingTitle?: string;
   /** Next upcoming meeting start time for the action's account (I342) */
   nextMeetingStart?: string;
+  /** Whether this action requires a decision (DOS-17) */
+  needsDecision?: boolean;
+  /** Who owns the decision (DOS-17) */
+  decisionOwner?: string;
+  /** What's at stake if the decision is delayed (DOS-17) */
+  decisionStakes?: string;
+  /** Linear issue identifier when pushed to Linear (DOS-52) */
+  linearIdentifier?: string;
+  /** Linear issue URL when pushed to Linear (DOS-52) */
+  linearUrl?: string;
+}
+
+/** Result of pushing an action to Linear (DOS-52). */
+export interface LinearPushResult {
+  identifier: string;
+  url: string;
 }
 
 export interface DayStats {
@@ -394,6 +410,8 @@ export interface DashboardData {
   entityHealthMap?: Record<string, IntelligenceAccountHealth>;
   /** Briefing callouts from signal propagation (I623 AC4). */
   briefingCallouts?: BriefingCallout[];
+  /** DOS-53: Count of actions approaching the 30-day auto-archive threshold. */
+  agingActionCount?: number;
 }
 
 /** A briefing callout surfaced to the daily briefing (I623). */
@@ -2015,6 +2033,17 @@ export interface EntityIntelligence {
 
   /** Cross-cutting: source attribution (I507). */
   sourceAttribution?: Record<string, string[]> | null;
+
+  /** DOS-13: AI-recommended actions from intelligence enrichment. */
+  recommendedActions?: RecommendedAction[];
+}
+
+/** DOS-13: A recommended action produced by intelligence enrichment. */
+export interface RecommendedAction {
+  title: string;
+  rationale: string;
+  priority: number;
+  suggestedDue?: string | null;
 }
 
 export interface SourceManifestEntry {
@@ -2335,6 +2364,10 @@ export interface AccountObjective {
   linkedActionCount: number;
   completedMilestoneCount: number;
   totalMilestoneCount: number;
+  /** DOS-14: Evidence from AI enrichment matching this objective */
+  evidenceJson?: string | null;
+  /** DOS-14: ID linking to original AI statedObjective */
+  aiOriginId?: string | null;
 }
 
 export interface SuggestedMilestone {
