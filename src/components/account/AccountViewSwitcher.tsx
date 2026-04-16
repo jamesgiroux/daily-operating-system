@@ -35,10 +35,9 @@ export function AccountViewSwitcher() {
           className={`${styles.tab} ${activeView === view.id ? styles.tabActive : ""}`}
           onClick={() => {
             if (activeView !== view.id) {
-              navigate({
-                to: `/accounts/$accountId${view.path}` as "/accounts/$accountId/health",
+              void navigate({
+                to: `/accounts/$accountId${view.path}`,
                 params: { accountId: accountId! },
-                replace: true,
               });
             }
           }}
