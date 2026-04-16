@@ -209,6 +209,12 @@ pub struct DbAccount {
     /// I644: Free-text notes (promoted from dashboard.json).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    /// DOS-110: User's manual health sentiment assessment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_health_sentiment: Option<String>,
+    /// DOS-110: When the user last set their health sentiment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment_set_at: Option<String>,
 }
 
 /// Parameters for writing a source reference row (I644).

@@ -19,6 +19,12 @@ pub struct AccountListItem {
     pub is_parent: bool,
     pub account_type: crate::db::AccountType,
     pub archived: bool,
+    /// DOS-110: User health sentiment assessment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_health_sentiment: Option<String>,
+    /// DOS-110: When the sentiment was last set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment_set_at: Option<String>,
 }
 
 /// Full account detail for the detail page.
@@ -80,6 +86,12 @@ pub struct AccountDetailResult {
     /// I644: Source references for promoted account facts.
     #[serde(default)]
     pub source_refs: Vec<crate::db::DbAccountSourceRef>,
+    /// DOS-110: User health sentiment assessment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_health_sentiment: Option<String>,
+    /// DOS-110: When the sentiment was last set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment_set_at: Option<String>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
@@ -274,6 +286,26 @@ pub async fn update_account_field(
                 &account_id,
                 &field,
                 &value,
+            )
+        })
+        .await
+}
+
+/// DOS-110: Set the user's manual health sentiment on an account.
+#[tauri::command]
+pub async fn set_user_health_sentiment(
+    account_id: String,
+    sentiment: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::set_user_health_sentiment(
+                db,
+                &app_state,
+                &account_id,
+                &sentiment,
             )
         })
         .await
