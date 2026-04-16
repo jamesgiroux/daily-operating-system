@@ -416,8 +416,8 @@ export function PostMeetingIntelligence({
                     <span className={action.status === "completed" ? styles.actionTitleCompleted : undefined}>
                       {cleanTranscriptDisplayText(action.title)}
                     </span>
-                    <span className={`${styles.actionMeta} ${action.priority === "P1" ? styles.priorityP1 : styles.priorityP2}`}>
-                      {action.priority}
+                    <span className={`${styles.actionMeta} ${action.priority <= 1 ? styles.priorityP1 : styles.priorityP2}`}>
+                      {action.priority <= 1 ? "Urgent" : action.priority <= 2 ? "High" : action.priority === 4 ? "Low" : "Medium"}
                       {action.dueDate && <> &middot; due {action.dueDate}</>}
                     </span>
                     {action.context && (

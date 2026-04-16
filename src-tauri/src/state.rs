@@ -1,9 +1,9 @@
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::Arc;
-use parking_lot::{Mutex, RwLock};
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
@@ -681,7 +681,10 @@ impl AppState {
 
     /// Record when a scheduled run last occurred
     pub fn set_last_scheduled_run(&self, workflow: WorkflowId, time: DateTime<Utc>) {
-        self.workflow.last_scheduled_run.write().insert(workflow, time);
+        self.workflow
+            .last_scheduled_run
+            .write()
+            .insert(workflow, time);
     }
 
     /// Get when a workflow last ran on schedule
@@ -997,11 +1000,28 @@ fn recover_from_unclean_dev_exit() {
 
     let needs_recovery = backup.exists() || sentinel.exists();
 
-    if needs_recovery {
+    // Also check: does the live config itself point at the dev workspace?
+    let config_contaminated = std::fs::read_to_string(&config)
+        .map(|s| s.contains("DailyOS-dev") || s.contains("\"developerMode\":true") || s.contains("\"developerMode\": true"))
+        .unwrap_or(false);
+
+    if needs_recovery || config_contaminated {
         log::warn!("Detected unclean dev-mode exit — restoring live state");
 
-        // Restore config from backup if available
-        if backup.exists() {
+        // Prefer production snapshot (guaranteed clean) over dev-backup (might be corrupted)
+        let snapshot = dailyos_dir.join("config.json.production-snapshot");
+        if snapshot.exists() {
+            match fs::copy(&snapshot, &config) {
+                Ok(_) => {
+                    let _ = fs::remove_file(&snapshot);
+                    let _ = fs::remove_file(&backup);
+                    log::info!("Live config restored from production snapshot");
+                }
+                Err(e) => {
+                    log::error!("Failed to restore from production snapshot: {}", e);
+                }
+            }
+        } else if backup.exists() {
             match fs::copy(&backup, &config) {
                 Ok(_) => {
                     let _ = fs::remove_file(&backup);
@@ -1021,6 +1041,9 @@ fn recover_from_unclean_dev_exit() {
 
         // Clean up dev config
         let _ = fs::remove_file(&dev_config);
+
+        // Clean up snapshot if still present
+        let _ = fs::remove_file(dailyos_dir.join("config.json.production-snapshot"));
 
         log::info!("Dev mode recovery complete");
     }
@@ -1396,7 +1419,7 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
         // Read indented sub-lines for metadata
         let mut account_raw: Option<String> = None;
         let mut due_date: Option<String> = None;
-        let mut priority = "P2".to_string();
+        let mut priority = crate::action_status::PRIORITY_MEDIUM;
         let mut context: Option<String> = None;
         let mut source: Option<String> = None;
         let mut owner: Option<String> = None;
@@ -1422,7 +1445,7 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
                     }
                 }
             } else if let Some(v) = sub_content.strip_prefix("Priority:") {
-                priority = v.trim().to_string();
+                priority = crate::action_status::migrate_priority(v.trim());
             } else if let Some(v) = sub_content.strip_prefix("Context:") {
                 context = Some(v.trim().to_string());
             } else if let Some(v) = sub_content.strip_prefix("Source:") {
@@ -1495,7 +1518,7 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
             id: action_id,
             title: clean_title,
             priority,
-            status: "pending".to_string(),
+            status: crate::action_status::UNSTARTED.to_string(),
             created_at: now.clone(),
             due_date,
             completed_at: None,
@@ -1515,6 +1538,11 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
             account_name: None,
             next_meeting_title: None,
             next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
         };
 
         if db.upsert_action_if_not_completed(&action).is_ok() {

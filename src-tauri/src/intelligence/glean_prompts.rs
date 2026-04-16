@@ -203,7 +203,8 @@ fn build_json_schema(entity_type: &str) -> String {
         schema.push_str(r#"  "productAdoption": { "adoptionRate": 0.0, "trend": "growing|stable|declining", "featureAdoption": ["product or feature name: usage%"], "lastActive": "YYYY-MM-DD or null", "source": "glean" },
   "successMetrics": [{ "name": "short KPI label (max 5 words)", "target": "short target (e.g. 95%, $500K)", "current": "short value — max 15 chars, number/grade only, NEVER a sentence", "status": "on-track|at-risk|behind|achieved" }],
   "openCommitments": [{ "description": "what was promised", "owner": "us|them|joint", "dueDate": "YYYY-MM-DD or null", "status": "open|delivered|at-risk" }],
-  "relationshipDepth": { "championStrength": "strong|adequate|weak|none", "executiveAccess": "yes|limited|none", "stakeholderCoverage": "narrative", "coverageGaps": ["gaps"] }
+  "relationshipDepth": { "championStrength": "strong|adequate|weak|none", "executiveAccess": "yes|limited|none", "stakeholderCoverage": "narrative", "coverageGaps": ["gaps"] },
+  "recommendedActions": [{ "title": "verb-phrase action", "rationale": "why — reference specific people/signals", "priority": 2, "suggestedDue": "YYYY-MM-DD or null" }]
 "#);
     } else if entity_type == "person" {
         schema.push_str(r#"  "network": { "health": "narrative", "keyRelationships": [{ "name": "person", "type": "peer|manager|collaborator" }], "influenceRadius": "narrative" }
@@ -219,6 +220,7 @@ fn build_json_schema(entity_type: &str) -> String {
     schema.push_str("- For wins: only extract verifiable outcomes, not vague sentiment. \"Customer seems happy\" is NOT a win.\n");
     schema.push_str("- For valueDelivered: must include a number (dollars, percentages, time saved). Reject vague usage statements.\n");
     schema.push_str("- For championHealth: strong = power + vested interest + actively advocates internally. weak = helpful but lacks influence. lost = departed or disengaged.\n");
+    schema.push_str("- recommendedActions: 2-3 specific, concrete actions. Reference specific people, meetings, or signals. Priority: 1=urgent, 2=high, 3=medium, 4=low. Leave empty for sparse accounts.\n");
     schema.push_str("- Omit any field you don't have data for — do not fabricate.\n");
     schema.push_str("- Use the local context above as ground truth. Supplement with org knowledge, don't contradict.\n");
     schema.push_str("- Prefer evidence from the last 12 months. Do not treat older snippets as the current state when newer local meeting evidence exists.\n");

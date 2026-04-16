@@ -914,21 +914,42 @@ pub struct LinkedEntity {
     pub entity_type: String,
 }
 
-/// Action priority level
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Action priority level (Linear-compatible integer 0-4).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Priority {
-    P1,
-    P2,
-    P3,
+    #[serde(rename = "0")]
+    None = 0,
+    #[serde(rename = "1")]
+    Urgent = 1,
+    #[serde(rename = "2")]
+    High = 2,
+    #[serde(rename = "3")]
+    Medium = 3,
+    #[serde(rename = "4")]
+    Low = 4,
 }
 
-/// Action completion status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Priority {
+    pub fn from_i32(v: i32) -> Self {
+        match v {
+            0 => Priority::None,
+            1 => Priority::Urgent,
+            2 => Priority::High,
+            4 => Priority::Low,
+            _ => Priority::Medium,
+        }
+    }
+}
+
+/// Action completion status (Linear-compatible 6-status vocabulary, DOS-55).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ActionStatus {
-    Pending,
+    Backlog,
+    Unstarted,
+    Started,
     Completed,
-    Proposed,
+    Cancelled,
     Archived,
 }
 
@@ -1140,6 +1161,9 @@ pub struct DashboardData {
     /// Briefing callouts from signal propagation (I623 AC4).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub briefing_callouts: Vec<DashboardBriefingCallout>,
+    /// DOS-53: Count of actions approaching the 30-day auto-archive threshold.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aging_action_count: Option<i64>,
 }
 
 /// A briefing callout surfaced to the daily briefing (I623).
@@ -2419,6 +2443,12 @@ pub struct AccountObjective {
     pub linked_action_count: i32,
     pub completed_milestone_count: i32,
     pub total_milestone_count: i32,
+    /// DOS-14: Evidence from AI enrichment matching this objective.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_json: Option<String>,
+    /// DOS-14: ID linking to original AI statedObjective (dedup key).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_origin_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

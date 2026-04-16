@@ -49,6 +49,7 @@ import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
+import { RecommendedActions } from "@/components/entity/RecommendedActions";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { AddToRecord } from "@/components/entity/AddToRecord";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
@@ -342,8 +343,12 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 6: The Work (suppressed when empty per I351) */}
-      {(detail.openActions.length > 0 || (detail.upcomingMeetings ?? []).length > 0) && (
+      {(detail.openActions.length > 0 || (detail.upcomingMeetings ?? []).length > 0 || (intelligence?.recommendedActions?.length ?? 0) > 0) && (
         <div id="the-work" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
+          {intelligence?.recommendedActions && intelligence.recommendedActions.length > 0 && (
+            <RecommendedActions entityId={detail.id} entityType="person"
+              actions={intelligence.recommendedActions} onRefresh={person.silentRefresh} />
+          )}
           <TheWork
             data={detail}
             addingAction={person.addingAction}

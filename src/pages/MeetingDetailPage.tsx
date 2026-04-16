@@ -1032,8 +1032,9 @@ Thanks!`;
                 onCyclePriority={async (id) => {
                   const y = window.scrollY;
                   const action = outcomes?.actions.find(a => a.id === id);
-                  const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
-                  try { await invoke("update_action_priority", { id, priority: cycle[action?.priority ?? "P2"] || "P2" }); await loadMeetingIntelligence(); }
+                  const p = action?.priority ?? 3;
+                  const next = p <= 1 ? "3" : p <= 3 ? "4" : "1";
+                  try { await invoke("update_action_priority", { id, priority: next }); await loadMeetingIntelligence(); }
                   catch { toast.error("Failed to update priority"); }
                   requestAnimationFrame(() => window.scrollTo(0, y));
                 }}
@@ -2218,8 +2219,9 @@ function OutcomesSection({
                     catch (err) { console.error("Failed to reject action:", err); toast.error("Failed to dismiss action"); }
                   }}
                   onCyclePriority={async () => {
-                    const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
-                    try { await invoke("update_action_priority", { id: action.id, priority: cycle[action.priority] || "P2" }); onRefresh(); }
+                    const p = action.priority ?? 3;
+                    const next = p <= 1 ? "3" : p <= 3 ? "4" : "1";
+                    try { await invoke("update_action_priority", { id: action.id, priority: next }); onRefresh(); }
                     catch (err) { console.error("Failed to update priority:", err); toast.error("Failed to update priority"); }
                   }}
                 />

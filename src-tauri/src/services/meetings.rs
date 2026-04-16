@@ -1004,8 +1004,8 @@ pub async fn capture_meeting_outcome(
                 let db_action = crate::db::DbAction {
                     id: uuid::Uuid::new_v4().to_string(),
                     title: action.title.clone(),
-                    priority: "P2".to_string(),
-                    status: "suggested".to_string(),
+                    priority: crate::action_status::PRIORITY_MEDIUM,
+                    status: crate::action_status::BACKLOG.to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,
@@ -1021,6 +1021,11 @@ pub async fn capture_meeting_outcome(
                     account_name: None,
                     next_meeting_title: None,
                     next_meeting_start: None,
+                    needs_decision: false,
+                    decision_owner: None,
+                    decision_stakes: None,
+                    linear_identifier: None,
+                    linear_url: None,
                 };
                 if let Err(e) = db.upsert_action(&db_action) {
                     log::warn!("Failed to save captured action: {}", e);
@@ -2922,10 +2927,7 @@ pub async fn attach_meeting_transcript(
     app_handle: tauri::AppHandle,
 ) -> Result<crate::types::TranscriptResult, String> {
     {
-        let mut guard = state
-            .capture
-            .transcript_processed
-            .lock();
+        let mut guard = state.capture.transcript_processed.lock();
         if guard.contains_key(&meeting.id) {
             return Err(format!(
                 "Meeting '{}' already has a processed transcript",

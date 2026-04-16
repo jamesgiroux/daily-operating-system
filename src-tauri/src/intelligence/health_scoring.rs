@@ -12,6 +12,11 @@ use super::io::{
     RelationshipDimensions,
 };
 
+// DOS-53: Pushing actions to Linear could feed the engagement health dimension
+// as evidence of active account work. Deferred to post-v1.2.0 — the current
+// 6 dimensions are algorithmically computed from meeting/email/stakeholder data,
+// and action push frequency is too new a signal to tune weights on.
+
 /// Compute algorithmic health for an account using 6 dimensions.
 ///
 /// The returned `AccountHealth` has score, band, dimensions, and confidence
