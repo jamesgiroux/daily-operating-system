@@ -518,3 +518,116 @@
   border-radius: 1px;
   animation: heartbeat 1.5s ease-in-out infinite;
 }
+
+/* ── Help Button & Modal ───────────────────────────────────────────────── */
+
+.helpButton {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-heavy);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.helpButton:hover {
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-secondary);
+}
+
+.helpOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.helpCard {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-md);
+  padding: 32px;
+  max-width: 420px;
+  width: 90%;
+}
+
+.helpTitle {
+  font-family: var(--font-editorial);
+  font-size: 18px;
+  font-weight: 500;
+  margin: 0 0 24px;
+  color: var(--color-text-primary);
+}
+
+.helpSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.helpStep {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.helpStep strong {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-primary);
+}
+
+.helpStep p {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 2px 0 0;
+  line-height: 1.4;
+}
+
+.helpStepNumber {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.helpCloseButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 16px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.helpCloseButton:hover {
+  background: var(--color-text-primary);
+  color: var(--color-bg-primary);
+  border-color: var(--color-text-primary);
+}

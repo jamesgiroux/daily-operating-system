@@ -129,9 +129,9 @@ const COPY: Record<CopyKey, Record<Personality, Copy>> = {
     playful: { title: "Inbox zero hero", message: "Everything's handled. You may now take a bow." },
   },
   "inbox-empty": {
-    professional: { title: "Inbox is clear", message: "Drag files here or drop them into _inbox/" },
-    friendly: { title: "Nothing waiting", message: "Drop files here and DailyOS will sort them for you." },
-    playful: { title: "Blissfully empty", message: "Drag something in. We'll figure out where it goes." },
+    professional: { title: "Inbox is clear", message: "Drop meeting notes, transcripts, or documents here — DailyOS classifies, extracts actions, and routes them automatically." },
+    friendly: { title: "Nothing waiting", message: "Drop files here and DailyOS will analyze them, match them to your accounts, and file them for you." },
+    playful: { title: "Blissfully empty", message: "Drag something in — we'll figure out what it is, who it's about, and where it goes." },
   },
   "people-empty": {
     professional: {
