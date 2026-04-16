@@ -4713,6 +4713,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             band: "green".into(),
             source: HealthSource::Computed,
             confidence: 0.85,
+            sufficient_data: true,
             trend: HealthTrend {
                 direction: "stable".into(),
                 rationale: Some("Strong Phase 1 execution offset by NPS concerns and Alex Torres departure".into()),
@@ -4930,6 +4931,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             band: "red".into(),
             source: HealthSource::Computed,
             confidence: 0.78,
+            sufficient_data: true,
             trend: HealthTrend {
                 direction: "declining".into(),
                 rationale: Some("Team B decline and executive sponsor departure offsetting expansion wins".into()),
@@ -5132,6 +5134,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             band: "yellow".into(),
             source: HealthSource::Computed,
             confidence: 0.65,
+            sufficient_data: true,
             trend: HealthTrend {
                 direction: "stable".into(),
                 rationale: Some("Phase 1 success builds credibility but limited engagement history".into()),

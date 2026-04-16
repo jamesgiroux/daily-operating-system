@@ -28,6 +28,12 @@
   height: 10px;
 }
 
+/* DOS-84: Muted dot for insufficient data */
+.dotMuted {
+  background: var(--color-text-quaternary, #ccc);
+  opacity: 0.5;
+}
+
 .dotGreen {
   background: var(--color-garden-sage);
 }
@@ -47,6 +53,12 @@
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--color-text-primary);
+}
+
+/* DOS-84: Muted score for insufficient data */
+.scoreMuted {
+  color: var(--color-text-tertiary);
+  opacity: 0.6;
 }
 
 .scoreCompact {
