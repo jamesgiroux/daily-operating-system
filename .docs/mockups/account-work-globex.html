@@ -84,8 +84,8 @@ body {
 .badge-customer {
   background: var(--color-spice-turmeric-12);
   color: var(--color-spice-turmeric);
-  font-family: var(--font-mono); font-size: 10px;
-  padding: 3px 10px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 12px;
+  padding: 5px 14px; border-radius: 100px;
   font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
 }
 .name {
@@ -148,8 +148,9 @@ body {
   margin-bottom: var(--space-lg);
 }
 .chapter-title {
-  font-family: var(--font-serif); font-size: 32px; font-weight: 400;
+  font-family: var(--font-serif); font-size: 28px; font-weight: 400;
   color: var(--color-text-primary); letter-spacing: -0.01em;
+  line-height: 1.15;
 }
 .chapter-sublabel {
   font-family: var(--font-mono); font-size: 11px; font-weight: 600;
@@ -204,7 +205,7 @@ body {
   letter-spacing: -0.01em;
 }
 .focus-para {
-  font-family: var(--font-sans); font-size: 15px; line-height: 1.7;
+  font-family: var(--font-sans); font-size: 16px; line-height: 1.7;
   color: var(--color-text-secondary); max-width: 680px;
 }
 .focus-provenance {
@@ -297,18 +298,18 @@ body {
 
 /* Audience pill */
 .audience-pill {
-  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.1em;
-  padding: 4px 9px; border-radius: 3px;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+  line-height: 1;
+  padding: 5px 14px; border-radius: 100px;
 }
 .audience-pill.customer { background: var(--color-garden-sage-15); color: var(--color-garden-rosemary); }
 .audience-pill.internal { background: var(--color-desk-charcoal-8); color: var(--color-text-secondary); }
 
 /* Visibility pill — private vs shared */
 .visibility-pill {
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.1em;
-  padding: 4px 10px; border-radius: 3px;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+  line-height: 1;
+  padding: 5px 14px; border-radius: 100px;
   display: inline-flex; align-items: center; gap: 6px;
   text-decoration: none;
 }
@@ -384,10 +385,9 @@ body {
   gap: var(--space-xl);
 }
 .recommendation-card {
-  padding: var(--space-xl);
-  background: var(--color-paper-warm-white);
-  border: 1px solid var(--color-rule-light);
-  border-left: 2px solid var(--color-spice-saffron);
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--color-spice-saffron-10);
+  border-left: 3px solid var(--color-spice-saffron);
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   display: flex; flex-direction: column; gap: var(--space-md);
 }
@@ -395,6 +395,11 @@ body {
   font-family: var(--font-mono); font-size: 10px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.12em;
   color: #a6862c;
+  display: flex; align-items: center; gap: var(--space-sm);
+}
+.rec-label::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-spice-saffron);
 }
 .rec-headline {
   font-family: var(--font-serif); font-size: 20px; font-weight: 400;
@@ -412,8 +417,7 @@ body {
 }
 .rec-actions {
   display: flex; flex-wrap: wrap; gap: var(--space-sm);
-  padding-top: var(--space-md);
-  border-top: 1px dashed var(--color-rule-light);
+  padding-top: var(--space-sm);
   align-items: center;
 }
 .rec-dismiss-hint {
@@ -425,17 +429,17 @@ body {
 /* ═════════ CHAPTER 5 — SHARED WITH THE TEAM ═════════ */
 .shared-subsection-label {
   font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
-  letter-spacing: 0.14em; color: var(--color-text-tertiary);
-  margin-top: var(--space-3xl); margin-bottom: var(--space-md);
+  letter-spacing: 0.14em; color: var(--color-text-secondary); font-weight: 600;
+  margin-top: var(--space-xl); margin-bottom: var(--space-sm);
   padding-bottom: var(--space-sm);
-  border-bottom: 1px dashed var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
 }
-.shared-subsection-label:first-of-type { margin-top: var(--space-lg); }
+.shared-subsection-label:first-of-type { margin-top: var(--space-md); }
 
 .ref-row {
   display: grid; grid-template-columns: 120px 1fr auto;
   gap: var(--space-lg);
-  padding: var(--space-md) 0;
+  padding: var(--space-sm) 0;
   border-bottom: 1px solid var(--color-rule-light);
   align-items: baseline;
 }
@@ -540,25 +544,24 @@ body {
   border-bottom: 1px dotted var(--color-spice-turmeric); font-style: normal;
 }
 
-/* ═════════ CHAPTER 8 — NUDGES ═════════ */
+/* ═════════ CHAPTER 8 — NUDGES (rows, not cards) ═════════ */
 .nudge-list {
   display: flex; flex-direction: column;
-  gap: var(--space-md);
   padding-top: var(--space-sm);
 }
 .nudge-card {
-  background: var(--color-desk-charcoal-4);
-  border-left: 2px solid var(--color-spice-saffron);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  padding: var(--space-lg) var(--space-xl);
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-rule-light);
   display: flex; flex-direction: column; gap: var(--space-sm);
 }
+.nudge-card:last-child { border-bottom: none; }
 .nudge-headline {
-  font-family: var(--font-serif); font-size: 16px; font-weight: 400;
+  font-family: var(--font-serif); font-size: 17px; font-weight: 400;
   line-height: 1.45; color: var(--color-text-primary);
+  letter-spacing: -0.005em;
 }
 .nudge-body {
-  font-family: var(--font-sans); font-size: 13px; line-height: 1.65;
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.65;
   color: var(--color-text-secondary); max-width: 680px;
 }
 .nudge-actions {
@@ -576,9 +579,73 @@ body {
   font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
   letter-spacing: 0.08em; margin-top: var(--space-sm);
 }
+
+/* ═════════ CHROME: ATMOSPHERE + FOLIO + WATERMARK — §5 ═════════ */
+.atmosphere {
+  position: fixed; inset: 0;
+  z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 900px 700px at 20% 15%, rgba(201, 162, 39, 0.09), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 85% 70%, rgba(201, 162, 39, 0.06), transparent 55%);
+  animation: atmosphere-breathe 14s ease-in-out infinite;
+}
+@keyframes atmosphere-breathe {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+.folio {
+  position: fixed; top: 0; left: 0; right: 0; height: 40px;
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-rule-light);
+  z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.folio-left { display: flex; align-items: center; gap: var(--space-md); }
+.folio-mark {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 18px;
+  color: var(--color-spice-turmeric);
+  line-height: 1; letter-spacing: 0;
+}
+.folio-center { letter-spacing: 0.1em; }
+.folio-right { display: flex; align-items: center; gap: var(--space-sm); }
+.folio-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+.page { position: relative; z-index: 1; }
+.hero-watermark-wrap { position: relative; }
+.hero-watermark {
+  position: absolute; top: -120px; right: -40px;
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 420px;
+  color: var(--color-spice-turmeric);
+  opacity: 0.07; line-height: 1;
+  transform: rotate(12deg);
+  z-index: -1; pointer-events: none; user-select: none;
+}
 </style>
 </head>
 <body>
+
+<!-- Atmosphere Layer -->
+<div class="atmosphere" aria-hidden="true"></div>
+
+<!-- Folio Bar -->
+<header class="folio" role="banner">
+  <div class="folio-left">
+    <span class="folio-mark">*</span>
+    <span>Accounts / Globex Holdings / The Work</span>
+  </div>
+  <div class="folio-center">Apr 17, 2026 · 10:42</div>
+  <div class="folio-right">
+    <span class="folio-status-dot"></span>
+    <span>&gt;_ ready</span>
+  </div>
+</header>
 
 <div class="mockup-note">
   <strong>Mockup v1 · The Work</strong>
@@ -596,7 +663,10 @@ body {
       · Sources: 5 transcripts · 24 emails · Zendesk · Gong · SF · <span style="color: var(--color-spice-turmeric);">Glean ●</span>
     </span>
   </div>
-  <h1 class="name">Globex Holdings</h1>
+  <div class="hero-watermark-wrap">
+    <div class="hero-watermark" aria-hidden="true">*</div>
+    <h1 class="name">Globex Holdings</h1>
+  </div>
   <div class="vitals">
     <span class="vital-arr">$185K ARR</span>
     <span>•</span>
@@ -615,11 +685,11 @@ body {
     <h2 class="chapter-title">90-day focus</h2>
     <div class="chapter-sublabel">Our active plan · editable</div>
     <div class="freshness-strip">
-      Drafted from 3 commitments + 2 recommendations + 1 program
+      Drafted from 3 commitments + 2 suggestions + 1 program
       <span>·</span>
       Last refreshed 2 days ago
       <span>·</span>
-      <a href="#">Regenerate</a>
+      <a href="#">Refresh</a>
     </div>
 
     <div class="focus-list">
@@ -843,10 +913,10 @@ body {
   <!-- ═════════ CHAPTER 4 — RECOMMENDATIONS ═════════ -->
   <section class="chapter">
     <hr class="chapter-rule">
-    <h2 class="chapter-title">Recommendations</h2>
-    <div class="chapter-sublabel">AI proposed · accept or dismiss</div>
+    <h2 class="chapter-title">Suggestions</h2>
+    <div class="chapter-sublabel">AI suggested · accept or dismiss</div>
     <div class="freshness-strip">
-      2 proposals
+      2 suggestions
       <span>·</span>
       Drafted from Health triage + signal trends
       <span>·</span>
@@ -856,7 +926,7 @@ body {
     <div class="rec-list">
 
       <article class="recommendation-card">
-        <div class="rec-label">Proposal · one-click accept</div>
+        <div class="rec-label">Suggestion · one-click accept</div>
         <h3 class="rec-headline">
           Confirm resolved — Defensive Mode engagement threshold raise
         </h3>
@@ -877,7 +947,7 @@ body {
       </article>
 
       <article class="recommendation-card">
-        <div class="rec-label">Proposal · stakeholder</div>
+        <div class="rec-label">Suggestion · stakeholder</div>
         <h3 class="rec-headline">
           Reach out to Priya Shah and Miguel Torres for introductory call
         </h3>
@@ -1027,7 +1097,7 @@ body {
         </div>
         <div class="report-actions">
           <button class="work-btn work-btn-primary">Open</button>
-          <button class="work-btn">Regenerate</button>
+          <button class="work-btn">Refresh</button>
           <button class="work-btn">Export to Google Doc</button>
         </div>
       </article>
@@ -1041,7 +1111,7 @@ body {
         </div>
         <div class="report-actions">
           <button class="work-btn work-btn-primary">Open</button>
-          <button class="work-btn">Regenerate</button>
+          <button class="work-btn">Refresh</button>
           <button class="work-btn">Export to Google Doc</button>
         </div>
       </article>
@@ -1055,7 +1125,7 @@ body {
         </div>
         <div class="report-actions">
           <button class="work-btn work-btn-primary">Open</button>
-          <button class="work-btn">Regenerate</button>
+          <button class="work-btn">Refresh</button>
           <button class="work-btn">Export to Google Doc</button>
         </div>
       </article>
@@ -1093,7 +1163,7 @@ body {
       </article>
 
       <article class="nudge-card">
-        <h3 class="nudge-headline">Two accepted recommendations never became commitments</h3>
+        <h3 class="nudge-headline">Two accepted suggestions never became commitments</h3>
         <p class="nudge-body">
           You accepted "Capture Jorge verbatim quote set" (Mar 20) and "Log workload concern" (Apr 9) but neither became a tracked commitment. Revisit when convenient — no rush.
         </p>
@@ -1121,7 +1191,7 @@ body {
   <!-- ═════════ FINIS ═════════ -->
   <div class="finis">
     <div class="finis-mark">* * *</div>
-    <div class="finis-date">Work surface · Apr 17, 2026 · 4 focus areas · 3 programs · 3 commitments · 2 recommendations · Zero guilt</div>
+    <div class="finis-date">Work surface · Apr 17, 2026 · 4 focus areas · 3 programs · 3 commitments · 2 suggestions · Zero guilt</div>
   </div>
 
 </div>
