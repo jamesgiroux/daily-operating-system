@@ -1,0 +1,15 @@
+@import '../styles/design-tokens.css';
+
+/* Each view wrapper. Reduces padding-top on the first margin section
+ * to avoid a huge gap between the vitals strip and the first section.
+ * The shared .marginLabelSection has padding-top: 140px which was sized
+ * for the old hero's 70vh min-height. Now that the hero is compact
+ * (identity only, narrative moved to Context), the gap is excessive.
+ *
+ * Using :first-child so only the top section is tightened; subsequent
+ * sections keep their full 140px breathing room.
+ */
+.view > :first-child,
+.view > .editorial-reveal:first-child {
+  padding-top: var(--space-xl);
+}
