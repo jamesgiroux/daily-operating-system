@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Health &amp; Outlook (fine) — Globex Holdings (v2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,200..800;1,200..800&family=DM+Sans:ital,wght@0,100..1000;1,100..1000&family=JetBrains+Mono:wght@100..800&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+/* ═════════ DESIGN TOKENS — traced to DESIGN-SYSTEM.md §2, §3 ═════════ */
+:root {
+  --color-paper-cream: #f5f2ef;
+  --color-paper-warm-white: #faf8f6;
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+  --color-spice-turmeric: #c9a227;
+  --color-spice-saffron: #deb841;
+  --color-spice-terracotta: #c4654a;
+  --color-garden-sage: #7eaa7b;
+  --color-garden-rosemary: #4a6741;
+  --color-garden-larkspur: #8fa3c4;
+  --color-text-primary: var(--color-desk-charcoal);
+  --color-text-secondary: #5a6370;
+  --color-text-tertiary: #6b7280;
+  --color-rule-heavy: rgba(30, 37, 48, 0.12);
+  --color-rule-light: rgba(30, 37, 48, 0.06);
+  --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-desk-charcoal-4: rgba(30, 37, 48, 0.04);
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-mark: 'Montserrat', sans-serif;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --space-5xl: 80px;
+  --radius-editorial-sm: 4px;
+  --radius-editorial-md: 10px;
+  --radius-editorial-xl: 16px;
+  --shadow-md: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+  --z-atmosphere: 0;
+  --z-page-content: 1;
+  --z-app-shell: 100;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100%; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-paper-cream);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.55;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Atmosphere */
+.atmosphere {
+  position: fixed; inset: 0; z-index: var(--z-atmosphere); pointer-events: none;
+  background:
+    radial-gradient(ellipse 900px 700px at 20% 15%, rgba(201, 162, 39, 0.08), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 85% 70%, rgba(126, 170, 123, 0.05), transparent 55%);
+  animation: atmosphere-breathe 16s ease-in-out infinite;
+}
+@keyframes atmosphere-breathe { 0%,100%{opacity:0.9} 50%{opacity:1} }
+
+/* Folio */
+.folio {
+  position: fixed; top: 0; left: 0; right: 0; height: 40px;
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-rule-light);
+  z-index: var(--z-app-shell);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.folio-left { display: flex; align-items: center; gap: var(--space-md); }
+.folio-mark { font-family: var(--font-mark); font-weight: 800; font-size: 18px; color: var(--color-spice-turmeric); line-height: 1; }
+.folio-right { display: flex; align-items: center; gap: var(--space-sm); }
+.folio-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 120px 160px;
+  position: relative;
+  z-index: var(--z-page-content);
+}
+
+/* Hero + watermark */
+.hero { position: relative; padding-top: var(--space-xl); }
+.watermark {
+  position: absolute; top: 20px; right: -40px;
+  font-family: var(--font-mark); font-weight: 800; font-size: 420px;
+  color: var(--color-spice-turmeric);
+  opacity: 0.07; line-height: 1; transform: rotate(12deg);
+  z-index: -1; pointer-events: none; user-select: none;
+}
+.hero-meta {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: var(--space-md) 0 var(--space-lg);
+  display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;
+}
+.hero-meta-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+.hero-name {
+  font-family: var(--font-serif); font-size: 76px; font-weight: 400;
+  letter-spacing: -0.025em; line-height: 1.06; padding-bottom: var(--space-md);
+}
+.hero-vitals {
+  display: flex; gap: var(--space-2xl); flex-wrap: wrap;
+  padding: var(--space-md) 0 var(--space-xl);
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xl);
+}
+.vital-accent { color: var(--color-spice-turmeric); }
+
+/* Pills — §8 canonical */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+  padding: 5px 14px; border-radius: 100px; line-height: 1;
+}
+.pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+.pill-sage { background: var(--color-garden-sage-12); color: var(--color-garden-rosemary); }
+.pill-sage::before { background: var(--color-garden-sage); }
+.pill-turmeric { background: var(--color-spice-turmeric-12); color: #8e7018; }
+.pill-turmeric::before { background: var(--color-spice-turmeric); }
+
+/* Chapter Heading — §6 */
+.chapter { padding-top: var(--space-4xl); }
+.chapter-rule { border: none; border-top: 1px solid var(--color-rule-heavy); margin-bottom: var(--space-lg); }
+.chapter-title-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+.chapter-title {
+  font-family: var(--font-serif); font-size: 28px; font-weight: 400;
+  color: var(--color-text-primary); letter-spacing: -0.01em; line-height: 1.15;
+}
+.chapter-count {
+  font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+.chapter-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xl);
+}
+
+/* Sentiment */
+.sentiment-hero { padding-top: var(--space-2xl); }
+.sentiment-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--color-text-tertiary); margin-bottom: var(--space-md);
+}
+.sentiment-value-row {
+  display: flex; align-items: baseline; gap: var(--space-lg);
+  margin-bottom: var(--space-sm); flex-wrap: wrap;
+}
+.sentiment-value {
+  font-family: var(--font-serif); font-size: 44px; font-weight: 400;
+  line-height: 1; letter-spacing: -0.015em; color: var(--color-garden-sage);
+}
+.sparkline { display: inline-flex; align-items: flex-end; gap: 3px; height: 20px; padding-left: var(--space-sm); }
+.spark-bar { width: 4px; border-radius: 2px; }
+.spark-good { background: var(--color-garden-sage); }
+.spark-mid { background: var(--color-spice-saffron); }
+.spark-h8 { height: 9px; }
+.spark-h12 { height: 13px; }
+.spark-h16 { height: 17px; }
+.spark-h20 { height: 20px; }
+.sentiment-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary); margin-top: var(--space-md);
+}
+.sentiment-meta a { color: var(--color-spice-turmeric); text-decoration: none; border-bottom: 1px dotted var(--color-spice-turmeric); }
+.btn {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+  background: none; border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary); padding: 6px 12px;
+  border-radius: 100px; cursor: pointer; white-space: nowrap;
+}
+.btn:hover { border-color: var(--color-text-tertiary); color: var(--color-text-primary); }
+
+/* ═════════ EDITORIAL EMPTY STATE (STATE-PATTERNS.md + §6) ═════════
+   Fine-state hero. "Empty states are features." Featured content = allowed to be a card. */
+.editorial-empty {
+  margin-top: var(--space-2xl);
+  padding: var(--space-2xl) var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border-radius: var(--radius-editorial-xl);
+  box-shadow: var(--shadow-md);
+  max-width: 780px;
+}
+.editorial-empty-title {
+  font-family: var(--font-serif); font-size: 28px; font-style: italic;
+  font-weight: 400; line-height: 1.25; color: var(--color-text-primary);
+  letter-spacing: -0.005em;
+  margin-bottom: var(--space-md);
+}
+.editorial-empty-body {
+  font-family: var(--font-sans); font-size: 16px; line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 640px;
+}
+
+/* Peer benchmark row — no card, rule-based */
+.peer-row {
+  display: grid; grid-template-columns: auto auto 1fr;
+  gap: var(--space-2xl); align-items: center;
+  padding: var(--space-2xl) 0;
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+  margin-top: var(--space-2xl);
+}
+.peer-number {
+  font-family: var(--font-serif); font-size: 76px; font-weight: 400;
+  color: var(--color-garden-sage); letter-spacing: -0.025em; line-height: 1;
+}
+.peer-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary);
+  max-width: 160px; line-height: 1.5;
+}
+.peer-context {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 560px;
+}
+.peer-context strong { color: var(--color-text-primary); font-weight: 500; }
+
+/* Outlook featured block */
+.outlook-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2xl);
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border-radius: var(--radius-editorial-xl);
+  box-shadow: var(--shadow-md);
+  margin-top: var(--space-lg);
+}
+.outlook-block-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--color-text-tertiary); margin-bottom: var(--space-xs);
+}
+.outlook-block-value {
+  font-family: var(--font-serif); font-size: 32px; font-weight: 400;
+  line-height: 1.1; color: var(--color-text-primary);
+  margin-bottom: var(--space-sm); letter-spacing: -0.015em;
+}
+.outlook-value-sage { color: var(--color-garden-sage); }
+.outlook-value-turmeric { color: var(--color-spice-turmeric); }
+.outlook-block-detail {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+/* Supporting tension row */
+.tension-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2xl);
+  padding: var(--space-xl) 0;
+}
+.tension-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary); margin-bottom: var(--space-xs);
+}
+.tension-value {
+  font-family: var(--font-serif); font-size: 40px; font-weight: 400; line-height: 1;
+  margin-bottom: var(--space-xs); color: var(--color-garden-sage); letter-spacing: -0.02em;
+}
+.tension-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+/* About — row style */
+.about-block {
+  padding: var(--space-lg) 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+.about-text {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 640px;
+}
+
+/* Finis */
+.finis { text-align: center; padding: var(--space-4xl) 0 var(--space-2xl); color: var(--color-text-tertiary); }
+.finis-mark {
+  font-family: var(--font-mark); font-weight: 800; font-size: 14px;
+  color: var(--color-spice-turmeric); opacity: 0.5; letter-spacing: 0.5em;
+}
+.finis-date {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em; margin-top: var(--space-sm);
+}
+
+/* Nav Island */
+.nav-island {
+  position: fixed; right: 28px; top: 50%; transform: translateY(-50%);
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-xl);
+  box-shadow: 0 4px 20px rgba(30, 37, 48, 0.06);
+  padding: var(--space-sm);
+  z-index: 90;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 168px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 7px 10px;
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  cursor: pointer; border-radius: var(--radius-editorial-md);
+  border: none; background: none; text-align: left;
+}
+.nav-item::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-rule-heavy); flex-shrink: 0;
+}
+.nav-item:hover { color: var(--color-text-secondary); background: var(--color-desk-charcoal-4); }
+.nav-item.active { color: var(--color-text-primary); font-weight: 600; }
+.nav-item.active::before { background: var(--color-spice-turmeric); }
+@media (max-width: 1400px) { .nav-island { display: none; } }
+
+/* Switcher + mockup note */
+.switcher {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--color-desk-charcoal); border-radius: 100px;
+  box-shadow: 0 2px 8px rgba(30, 37, 48, 0.15); z-index: var(--z-app-shell);
+}
+.switcher button {
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  padding: 8px 20px; border: none; border-radius: 100px;
+  cursor: pointer; background: transparent; color: rgba(255, 255, 255, 0.5);
+}
+.switcher button.active { background: rgba(255, 255, 255, 0.15); color: white; }
+
+.mockup-note {
+  position: fixed; top: 48px; left: 10px;
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  padding: 4px 8px; border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-mono); font-size: 9px; z-index: var(--z-app-shell);
+  line-height: 1.3; opacity: 0.55;
+  max-width: 180px;
+  white-space: nowrap; overflow: hidden; cursor: default;
+  transition: opacity 0.15s, max-width 0.2s, white-space 0s linear 0.2s;
+}
+.mockup-note:hover {
+  opacity: 1; max-width: 320px; white-space: normal;
+  transition: opacity 0.15s, max-width 0.2s, white-space 0s;
+}
+.mockup-note strong { color: var(--color-spice-turmeric); display: inline; text-transform: uppercase; letter-spacing: 0.08em; font-size: 9px; }
+.mockup-note .body { display: none; }
+.mockup-note:hover .body { display: block; margin-top: 3px; }
+</style>
+</head>
+<body>
+
+<div class="atmosphere" aria-hidden="true"></div>
+
+<header class="folio" role="banner">
+  <div class="folio-left">
+    <span class="folio-mark">*</span>
+    <span>Accounts / Globex Holdings / Health</span>
+  </div>
+  <div class="folio-center">Apr 17, 2026 · 10:42</div>
+  <div class="folio-right">
+    <span class="folio-status-dot"></span>
+    <span>&gt;_ ready</span>
+  </div>
+</header>
+
+<div class="mockup-note">
+  <strong>Mockup v2 · Health (fine)</strong>
+  <div class="body">Design-system constrained · Health (fine-state). Rebuilt from v1 with canonical DESIGN-SYSTEM.md patterns. Rows over cards, editorial components, existing paint reused.</div>
+</div>
+
+<div class="page">
+
+  <div class="hero">
+    <div class="watermark" aria-hidden="true">*</div>
+    <div class="hero-meta">
+      <span class="hero-meta-dot"></span>
+      <span>Last checked 2h ago</span>
+      <span class="pill pill-turmeric">Customer</span>
+      <span>5 transcripts · 24 emails · Zendesk · Gong · SF · Glean</span>
+    </div>
+    <h1 class="hero-name">Globex Holdings</h1>
+    <div class="hero-vitals">
+      <span class="vital-accent">$185K ARR</span>
+      <span>Green Health</span>
+      <span>Steady-State</span>
+      <span>NPS 67 · CSAT 4.5</span>
+      <span>Renewal in 221d</span>
+    </div>
+  </div>
+
+  <!-- Sentiment -->
+  <section class="sentiment-hero chapter" id="ch-sentiment">
+    <div class="sentiment-label">Your Assessment</div>
+    <div class="sentiment-value-row">
+      <span class="sentiment-value">On Track</span>
+      <span class="sparkline" aria-label="Sentiment · last 90 days">
+        <span class="spark-bar spark-good spark-h16"></span>
+        <span class="spark-bar spark-good spark-h16"></span>
+        <span class="spark-bar spark-good spark-h20"></span>
+        <span class="spark-bar spark-good spark-h16"></span>
+        <span class="spark-bar spark-mid spark-h8"></span>
+        <span class="spark-bar spark-good spark-h16"></span>
+        <span class="spark-bar spark-good spark-h20"></span>
+      </span>
+      <button class="btn">Update</button>
+    </div>
+    <div class="sentiment-meta">
+      Set 4 days ago · 0 notes · <a href="#">Still accurate?</a>
+    </div>
+  </section>
+
+  <!-- On track chapter -->
+  <section class="chapter" id="ch-ontrack">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">On track</h2>
+      <span class="chapter-count">0 items</span>
+    </div>
+    <div class="chapter-meta">
+      Nothing needs your attention this week · Last checked 2 hours ago
+    </div>
+
+    <!-- EditorialEmpty — confident confirmation -->
+    <div class="editorial-empty">
+      <div class="editorial-empty-title">No active friction. No divergences surfacing. No stakeholder changes.</div>
+      <p class="editorial-empty-body">
+        Champion Health steady, engagement stable, support quiet. You're in a maintenance window — this is a good time to invest in the relationship.
+      </p>
+    </div>
+
+    <!-- Peer benchmark — no card, rule-based row -->
+    <div class="peer-row">
+      <div class="peer-number">87%</div>
+      <div class="peer-label">Renewal rate · peer accounts</div>
+      <p class="peer-context">
+        Accounts like Globex Holdings — <strong>Enterprise Financial Services</strong>, <strong>$100–300K ARR</strong>, Green→Yellow→Green pattern — renewed at 87% over the last 12mo (n=14). You're steady.
+      </p>
+    </div>
+  </section>
+
+  <!-- Outlook -->
+  <section class="chapter" id="ch-outlook">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Outlook: renewal</h2>
+    </div>
+
+    <div class="outlook-grid">
+      <div>
+        <div class="outlook-block-label">Confidence</div>
+        <div class="outlook-block-value outlook-value-sage">82%</div>
+        <p class="outlook-block-detail">High. No open risk factors. Health signals steady. Compliance documentation on file, stakeholder coverage intact.</p>
+      </div>
+      <div>
+        <div class="outlook-block-label">Benchmark</div>
+        <div class="outlook-block-value outlook-value-sage">87%</div>
+        <p class="outlook-block-detail">Accounts like Globex Holdings — Enterprise Financial Services, $100–300K ARR, Green→Yellow→Green pattern — renewed at 87% over the last 12mo (n=14).</p>
+      </div>
+      <div>
+        <div class="outlook-block-label">Recommended start</div>
+        <div class="outlook-block-value outlook-value-turmeric">May 20</div>
+        <p class="outlook-block-detail">221 days to renewal. No compensating work to do — standard 90-day runway is enough. Nothing to accelerate for.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Supporting -->
+  <section class="chapter" id="ch-supporting">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Supporting</h2>
+    </div>
+
+    <div class="tension-grid">
+      <div>
+        <div class="tension-label">Computed score</div>
+        <div class="tension-value">82</div>
+        <div class="tension-meta">Green · ▲ +4 in 30d</div>
+      </div>
+      <div>
+        <div class="tension-label">Signal trend (from Glean)</div>
+        <div class="tension-value">Steady</div>
+        <div class="tension-meta">No adverse updates · 10/10 stable</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- About -->
+  <section class="chapter" id="ch-about">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">About this context</h2>
+    </div>
+    <div class="about-block">
+      <p class="about-text">
+        Last check ran 2 hours ago. No new updates triggered triage. The system is watching — it'll surface changes as they emerge.
+      </p>
+    </div>
+  </section>
+
+  <div class="finis">
+    <div class="finis-mark">* * *</div>
+    <div class="finis-date">Fine state · Apr 17, 2026 · 0 triage items · 0 divergences · You're steady</div>
+  </div>
+
+</div>
+
+<div class="switcher">
+  <button class="active">Health &amp; Outlook</button>
+  <button>Context</button>
+  <button>The Work</button>
+</div>
+
+<nav class="nav-island" aria-label="Chapter navigation">
+  <button class="nav-item" data-target="ch-sentiment">Your sentiment</button>
+  <button class="nav-item" data-target="ch-ontrack">On track</button>
+  <button class="nav-item" data-target="ch-outlook">Outlook</button>
+  <button class="nav-item" data-target="ch-about">About</button>
+</nav>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const navItems = document.querySelectorAll('.nav-item');
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const target = document.getElementById(item.dataset.target);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  const sections = document.querySelectorAll('.chapter[id]');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navItems.forEach(item => item.classList.toggle('active', item.dataset.target === entry.target.id));
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  sections.forEach(s => observer.observe(s));
+});
+</script>
+
+</body>
+</html>

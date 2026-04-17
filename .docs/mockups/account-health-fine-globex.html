@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Health & Outlook (fine state) — Globex Holdings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,200..800;1,200..800&family=DM+Sans:ital,wght@0,100..1000;1,100..1000&family=JetBrains+Mono:wght@100..800&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --color-paper-cream: #f5f2ef;
+  --color-paper-linen: #e8e2d9;
+  --color-paper-warm-white: #faf8f6;
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+  --color-spice-turmeric: #c9a227;
+  --color-spice-saffron: #deb841;
+  --color-spice-terracotta: #c4654a;
+  --color-spice-chili: #9b3a2a;
+  --color-garden-sage: #7eaa7b;
+  --color-garden-olive: #6b7c52;
+  --color-garden-rosemary: #4a6741;
+  --color-garden-larkspur: #8fa3c4;
+  --color-garden-eucalyptus: #6ba8a4;
+  --color-text-primary: var(--color-desk-charcoal);
+  --color-text-secondary: #5a6370;
+  --color-text-tertiary: #6b7280;
+  --color-rule-heavy: rgba(30, 37, 48, 0.12);
+  --color-rule-light: rgba(30, 37, 48, 0.06);
+  --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-spice-turmeric-15: rgba(201, 162, 39, 0.15);
+  --color-spice-saffron-10: rgba(222, 184, 65, 0.10);
+  --color-spice-saffron-15: rgba(222, 184, 65, 0.15);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-garden-sage-15: rgba(126, 170, 123, 0.15);
+  --color-garden-larkspur-15: rgba(143, 163, 196, 0.15);
+  --color-desk-charcoal-4: rgba(30, 37, 48, 0.04);
+  --color-desk-charcoal-8: rgba(30, 37, 48, 0.08);
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --radius-sm: 4px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --shadow-sm: 0 2px 8px rgba(30, 37, 48, 0.1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-paper-cream);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 120px 200px;
+}
+
+/* Header */
+.hero-date {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: var(--space-xl) 0 var(--space-lg);
+  display: flex; align-items: center; gap: var(--space-md);
+}
+.hero-date-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+.badge-customer {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+  font-family: var(--font-mono); font-size: 12px;
+  padding: 5px 14px; border-radius: 100px;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.name {
+  font-family: var(--font-serif); font-size: 76px; font-weight: 400;
+  letter-spacing: -0.025em; line-height: 1.06;
+  padding-bottom: var(--space-md);
+}
+.vitals {
+  display: flex; gap: var(--space-2xl);
+  padding: var(--space-md) 0 var(--space-xl);
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xl);
+}
+.vital-arr { color: var(--color-spice-turmeric); }
+
+/* Sentiment */
+.sentiment-hero { padding-top: var(--space-2xl); padding-bottom: var(--space-2xl); }
+.sentiment-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary); margin-bottom: var(--space-md);
+}
+.sentiment-set-row {
+  display: flex; align-items: baseline; gap: var(--space-lg);
+  margin-bottom: var(--space-sm);
+}
+.sentiment-set-value {
+  font-family: var(--font-serif); font-size: 44px; font-weight: 400; line-height: 1;
+  letter-spacing: -0.015em;
+  color: var(--color-garden-sage);
+}
+.sentiment-sparkline {
+  display: inline-flex; align-items: flex-end; gap: 3px; height: 20px;
+  padding-left: var(--space-sm);
+}
+.spark-bar { width: 4px; border-radius: 2px; }
+.spark-good { background: var(--color-garden-sage); }
+.spark-mid { background: var(--color-spice-saffron); }
+.spark-bar-h4 { height: 5px; }
+.spark-bar-h8 { height: 9px; }
+.spark-bar-h12 { height: 13px; }
+.spark-bar-h16 { height: 17px; }
+.spark-bar-h20 { height: 20px; }
+.sentiment-sparkline-label {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+  padding-left: var(--space-sm);
+}
+.sentiment-update-btn {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; font-weight: 600;
+  background: none; border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary); padding: 6px 12px;
+  border-radius: 100px; cursor: pointer; white-space: nowrap;
+  margin-left: auto;
+}
+.sentiment-meta {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-top: var(--space-md);
+}
+.sentiment-meta a { color: var(--color-spice-turmeric); text-decoration: none; border-bottom: 1px solid var(--color-spice-turmeric); }
+
+/* Chapter (generic) */
+.chapter { padding-top: var(--space-4xl); }
+.chapter-rule {
+  border: none; border-top: 1px solid var(--color-rule-heavy); margin-bottom: var(--space-lg);
+}
+.chapter-title-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md);
+}
+.chapter-title-serif {
+  font-family: var(--font-serif); font-size: 28px; font-weight: 400;
+  color: var(--color-text-primary); letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.chapter-title-mono {
+  font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+}
+
+.freshness-strip {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-top: var(--space-md); margin-bottom: var(--space-xl);
+}
+
+/* On-track body */
+.ontrack-body {
+  font-family: var(--font-serif); font-size: 21px; font-style: italic;
+  font-weight: 400; line-height: 1.55;
+  color: var(--color-text-primary);
+  max-width: 720px;
+  margin-top: var(--space-lg);
+  margin-bottom: var(--space-3xl);
+}
+
+/* Peer benchmark reassurance strip */
+.peer-strip {
+  display: grid; grid-template-columns: auto auto 1fr; gap: var(--space-xl);
+  align-items: center;
+  padding: var(--space-xl) 0;
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+  margin-top: var(--space-2xl);
+}
+.peer-number {
+  font-family: var(--font-serif); font-size: 72px; font-weight: 400;
+  color: var(--color-garden-sage); letter-spacing: -0.025em;
+  line-height: 1;
+}
+.peer-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary);
+  max-width: 160px; line-height: 1.5;
+}
+.peer-context {
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 560px;
+}
+.peer-context strong { color: var(--color-text-primary); font-weight: 500; }
+
+/* Outlook */
+.outlook-section { padding-top: 96px; }
+.supporting-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary); margin-bottom: var(--space-lg);
+}
+.outlook-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2xl);
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+  margin-top: var(--space-lg);
+}
+.outlook-block-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs);
+}
+.outlook-block-value {
+  font-family: var(--font-serif); font-size: 32px; font-weight: 400;
+  line-height: 1.1; color: var(--color-text-primary); margin-bottom: var(--space-sm);
+  letter-spacing: -0.015em;
+}
+.outlook-value-confidence { color: var(--color-garden-sage); }
+.outlook-value-benchmark { color: var(--color-garden-sage); }
+.outlook-value-prep { color: var(--color-spice-turmeric); }
+.outlook-block-detail {
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+/* Supporting quiet row */
+.supporting { padding-top: 96px; }
+.supporting-tension {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2xl);
+  padding-top: var(--space-lg);
+}
+.tension-block-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs);
+}
+.tension-block-value {
+  font-family: var(--font-serif); font-size: 36px; font-weight: 400; line-height: 1;
+  margin-bottom: var(--space-xs);
+  color: var(--color-garden-sage);
+}
+.tension-block-meta {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+}
+
+/* Meta */
+.meta-section { padding-top: 96px; padding-bottom: var(--space-lg); }
+.meta-card {
+  background: var(--color-desk-charcoal-4);
+  border-left: 2px solid var(--color-text-tertiary);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: var(--space-lg) var(--space-xl);
+  margin-top: var(--space-md);
+  font-family: var(--font-serif); font-size: 15px; font-style: italic;
+  line-height: 1.65; color: var(--color-text-secondary);
+  max-width: 680px;
+}
+
+/* Finis */
+.finis { text-align: center; padding: var(--space-4xl) 0 var(--space-2xl); color: var(--color-text-tertiary); }
+.finis-mark {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 14px;
+  color: var(--color-spice-turmeric); opacity: 0.4; letter-spacing: 0.5em;
+}
+.finis-date {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; margin-top: var(--space-sm);
+}
+
+/* Switcher */
+.switcher {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--color-desk-charcoal); border-radius: 100px;
+  box-shadow: var(--shadow-sm); z-index: 100;
+}
+.switcher button {
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  padding: 8px 20px; border: none; border-radius: 100px;
+  cursor: pointer; background: transparent; color: rgba(255,255,255,0.5);
+}
+.switcher button.active { background: rgba(255,255,255,0.15); color: white; }
+
+/* Mockup note */
+.mockup-note {
+  position: fixed; top: 10px; left: 10px;
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  padding: 4px 8px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 9px; z-index: 100;
+  line-height: 1.3; opacity: 0.55;
+  max-width: 140px;
+  white-space: nowrap; overflow: hidden;
+  cursor: default;
+  transition: opacity 0.15s ease, max-width 0.2s ease, white-space 0s linear 0.2s;
+}
+.mockup-note:hover {
+  opacity: 1; max-width: 280px; white-space: normal;
+  transition: opacity 0.15s ease, max-width 0.2s ease, white-space 0s;
+}
+.mockup-note strong {
+  color: var(--color-spice-turmeric); display: inline;
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 9px;
+}
+.mockup-note .mockup-note-body { display: none; }
+.mockup-note:hover .mockup-note-body { display: block; margin-top: 3px; }
+
+/* Nav Island */
+.nav-island-item {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 6px 10px;
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  cursor: pointer; border-radius: var(--radius-sm);
+  border: none; background: none; text-align: left;
+  text-decoration: none;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.nav-island-item::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-rule-heavy); flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+.nav-island-item:hover { color: var(--color-text-secondary); background: var(--color-desk-charcoal-4); }
+.nav-island-item.active { color: var(--color-text-primary); font-weight: 600; }
+.nav-island-item.active::before { background: var(--color-spice-turmeric); }
+@media (max-width: 1400px) { }
+
+/* ═════════ CHROME: ATMOSPHERE + FOLIO + WATERMARK — §5 ═════════ */
+.atmosphere {
+  position: fixed; inset: 0;
+  z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 900px 700px at 20% 15%, rgba(201, 162, 39, 0.09), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 85% 70%, rgba(201, 162, 39, 0.06), transparent 55%);
+  animation: atmosphere-breathe 14s ease-in-out infinite;
+}
+@keyframes atmosphere-breathe {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+.folio {
+  position: fixed; top: 0; left: 0; right: 0; height: 40px;
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-rule-light);
+  z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.folio-left { display: flex; align-items: center; gap: var(--space-md); }
+.folio-mark {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 18px;
+  color: var(--color-spice-turmeric);
+  line-height: 1; letter-spacing: 0;
+}
+.folio-center { letter-spacing: 0.1em; }
+.folio-right { display: flex; align-items: center; gap: var(--space-sm); }
+.folio-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+.page { position: relative; z-index: 1; }
+.hero-watermark-wrap { position: relative; }
+.hero-watermark {
+  position: absolute; top: -120px; right: -40px;
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 420px;
+  color: var(--color-spice-turmeric);
+  opacity: 0.07; line-height: 1;
+  transform: rotate(12deg);
+  z-index: -1; pointer-events: none; user-select: none;
+}
+</style>
+</head>
+<body>
+
+<!-- Atmosphere Layer -->
+<div class="atmosphere" aria-hidden="true"></div>
+
+<!-- Folio Bar -->
+<header class="folio" role="banner">
+  <div class="folio-left">
+    <span class="folio-mark">*</span>
+    <span>Accounts / Globex Holdings / Health</span>
+  </div>
+  <div class="folio-center">Apr 17, 2026 · 10:42</div>
+  <div class="folio-right">
+    <span class="folio-status-dot"></span>
+    <span>&gt;_ ready</span>
+  </div>
+</header>
+
+<div class="mockup-note">
+  <strong>Mockup v1 · Health (fine)</strong>
+  <div class="mockup-note-body">What Health looks like when there's nothing to triage. The most common state — philosophy: empty states are features, density IS the verdict, "fine" must feel prepared not abandoned.</div>
+</div>
+
+<div class="page">
+
+  <!-- Shared header -->
+  <div class="hero-date">
+    <span class="hero-date-dot"></span>
+    Last checked 2h ago
+    <span class="badge-customer">Customer ▾</span>
+    <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); letter-spacing: 0.04em;">
+      · Sources: 5 transcripts · 24 emails · Zendesk · Gong · SF · <span style="color: var(--color-spice-turmeric);">Glean ●</span>
+    </span>
+  </div>
+  <div class="hero-watermark-wrap">
+    <div class="hero-watermark" aria-hidden="true">*</div>
+    <h1 class="name">Globex Holdings</h1>
+  </div>
+  <div class="vitals">
+    <span class="vital-arr">$185K ARR</span>
+    <span>•</span>
+    <span>Green Health</span>
+    <span>•</span>
+    <span>Steady-State Lifecycle</span>
+    <span>•</span>
+    <span>NPS 67 · CSAT 4.5</span>
+    <span>•</span>
+    <span>Renewal in 221d</span>
+  </div>
+
+  <!-- Sentiment — muted register -->
+  <section class="sentiment-hero chapter" id="ch-sentiment" style="padding-top: var(--space-2xl);">
+    <div class="sentiment-label">Your Assessment</div>
+
+    <div class="sentiment-set-row">
+      <span class="sentiment-set-value">On Track</span>
+
+      <div class="sentiment-sparkline" aria-label="Sentiment over last 90 days">
+        <div class="spark-bar spark-good spark-bar-h16"></div>
+        <div class="spark-bar spark-good spark-bar-h16"></div>
+        <div class="spark-bar spark-good spark-bar-h20"></div>
+        <div class="spark-bar spark-good spark-bar-h16"></div>
+        <div class="spark-bar spark-mid spark-bar-h8"></div>
+        <div class="spark-bar spark-good spark-bar-h16"></div>
+        <div class="spark-bar spark-good spark-bar-h20"></div>
+      </div>
+      <span class="sentiment-sparkline-label">90d</span>
+
+      <button class="sentiment-update-btn">Update</button>
+    </div>
+
+    <div class="sentiment-meta">
+      Set 4 days ago · 0 notes · <a href="#">Still accurate?</a>
+    </div>
+  </section>
+
+  <!-- On track chapter (hero of fine variant) -->
+  <section class="chapter" id="ch-ontrack">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title-serif">On track</h2>
+      <span class="chapter-title-mono">0 items</span>
+    </div>
+    <div class="freshness-strip">
+      Nothing needs your attention this week · Last checked 2 hours ago
+    </div>
+
+    <p class="ontrack-body">
+      No active friction. No divergences surfacing. No stakeholder changes. Champion Health steady, engagement stable, support quiet. You're in a maintenance window — this is a good time to invest in the relationship.
+    </p>
+
+    <!-- Peer benchmark reassurance -->
+    <div class="peer-strip">
+      <div class="peer-number">87%</div>
+      <div class="peer-label">Renewal rate · peer accounts</div>
+      <div class="peer-context">
+        Accounts like Globex Holdings — <strong>Enterprise Financial Services</strong>, <strong>$100–300K ARR</strong>, Green→Yellow→Green pattern — renewed at 87% over the last 12mo (n=14). You're steady.
+      </div>
+    </div>
+  </section>
+
+  <!-- Outlook: renewal -->
+  <section class="outlook-section chapter" id="ch-outlook">
+    <div class="supporting-label">Outlook: renewal</div>
+
+    <div class="outlook-grid">
+      <div>
+        <div class="outlook-block-label">Confidence</div>
+        <div class="outlook-block-value outlook-value-confidence">82%</div>
+        <div class="outlook-block-detail">High. No open risk factors. Health signals steady. Compliance documentation on file, stakeholder coverage intact.</div>
+      </div>
+      <div>
+        <div class="outlook-block-label">Benchmark</div>
+        <div class="outlook-block-value outlook-value-benchmark">87%</div>
+        <div class="outlook-block-detail">Accounts like Globex Holdings — Enterprise Financial Services, $100–300K ARR, Green→Yellow→Green pattern — renewed at 87% over the last 12mo (n=14).</div>
+      </div>
+      <div>
+        <div class="outlook-block-label">Recommended start</div>
+        <div class="outlook-block-value outlook-value-prep">May 20</div>
+        <div class="outlook-block-detail">221 days to renewal. No compensating work to do — standard 90-day runway is enough. Nothing to accelerate for.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Supporting: computed + signal trend, quiet -->
+  <section class="supporting chapter" id="ch-supporting">
+    <div class="supporting-label">Supporting</div>
+
+    <div class="supporting-tension">
+      <div>
+        <div class="tension-block-label">Computed score</div>
+        <div class="tension-block-value">82</div>
+        <div class="tension-block-meta">Green · ▲ +4 in 30d</div>
+      </div>
+      <div>
+        <div class="tension-block-label">Update trend (from Glean)</div>
+        <div class="tension-block-value">Steady</div>
+        <div class="tension-block-meta">No adverse signals · 10/10 stable</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- About this intelligence -->
+  <section class="meta-section chapter" id="ch-about">
+    <div class="supporting-label">About this intelligence</div>
+    <div class="meta-card">
+      Last full enrichment ran 2 hours ago. No new signals triggered triage. The system is watching — it'll surface changes as they emerge.
+    </div>
+  </section>
+
+  <!-- Finis -->
+  <div class="finis">
+    <div class="finis-mark">* * *</div>
+    <div class="finis-date">Fine state · Apr 17, 2026 · 0 triage items · 0 divergences · You're steady</div>
+  </div>
+
+</div>
+
+<!-- Switcher -->
+<div class="switcher">
+  <button class="active">Health & Outlook</button>
+  <button>Context</button>
+  <button>The Work</button>
+</div>
+
+<!-- Nav Island -->
+</body>
+</html>

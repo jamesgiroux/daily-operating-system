@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Work — Globex Holdings (v2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,200..800;1,200..800&family=DM+Sans:ital,wght@0,100..1000;1,100..1000&family=JetBrains+Mono:wght@100..800&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+/* ═════════ TOKENS — traced to DESIGN-SYSTEM.md ═════════ */
+:root {
+  --color-paper-cream: #f5f2ef;
+  --color-paper-warm-white: #faf8f6;
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+  --color-spice-turmeric: #c9a227;
+  --color-spice-saffron: #deb841;
+  --color-spice-terracotta: #c4654a;
+  --color-garden-sage: #7eaa7b;
+  --color-garden-rosemary: #4a6741;
+  --color-garden-larkspur: #8fa3c4;
+  --color-garden-eucalyptus: #6ba8a4;
+  --color-text-primary: var(--color-desk-charcoal);
+  --color-text-secondary: #5a6370;
+  --color-text-tertiary: #6b7280;
+  --color-rule-heavy: rgba(30, 37, 48, 0.12);
+  --color-rule-light: rgba(30, 37, 48, 0.06);
+  --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-spice-saffron-10: rgba(222, 184, 65, 0.10);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-garden-larkspur-12: rgba(143, 163, 196, 0.12);
+  --color-desk-charcoal-4: rgba(30, 37, 48, 0.04);
+  --color-desk-charcoal-8: rgba(30, 37, 48, 0.08);
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-mark: 'Montserrat', sans-serif;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --space-5xl: 80px;
+  --radius-editorial-sm: 4px;
+  --radius-editorial-md: 10px;
+  --radius-editorial-xl: 16px;
+  --shadow-md: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100%; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-paper-cream);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.55;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Atmosphere + Folio */
+.atmosphere {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 900px 700px at 20% 15%, rgba(201, 162, 39, 0.08), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 85% 70%, rgba(201, 162, 39, 0.05), transparent 55%);
+  animation: atmosphere-breathe 15s ease-in-out infinite;
+}
+@keyframes atmosphere-breathe { 0%,100%{opacity:0.9} 50%{opacity:1} }
+
+.folio {
+  position: fixed; top: 0; left: 0; right: 0; height: 40px;
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-rule-light);
+  z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.folio-left { display: flex; align-items: center; gap: var(--space-md); }
+.folio-mark { font-family: var(--font-mark); font-weight: 800; font-size: 18px; color: var(--color-spice-turmeric); line-height: 1; }
+.folio-right { display: flex; align-items: center; gap: var(--space-sm); }
+.folio-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 120px 160px;
+  position: relative;
+  z-index: 1;
+}
+
+.hero { position: relative; padding-top: var(--space-xl); }
+.watermark {
+  position: absolute; top: 20px; right: -40px;
+  font-family: var(--font-mark); font-weight: 800; font-size: 420px;
+  color: var(--color-spice-turmeric);
+  opacity: 0.07; line-height: 1; transform: rotate(12deg);
+  z-index: -1; pointer-events: none; user-select: none;
+}
+.hero-meta {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: var(--space-md) 0 var(--space-lg);
+  display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;
+}
+.hero-meta-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+.hero-name {
+  font-family: var(--font-serif); font-size: 76px; font-weight: 400;
+  letter-spacing: -0.025em; line-height: 1.06; padding-bottom: var(--space-md);
+}
+.hero-vitals {
+  display: flex; gap: var(--space-2xl); flex-wrap: wrap;
+  padding: var(--space-md) 0 var(--space-xl);
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xl);
+}
+.vital-accent { color: var(--color-spice-turmeric); }
+
+/* Pills */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+  padding: 5px 14px; border-radius: 100px; line-height: 1;
+}
+.pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+.pill-sage { background: var(--color-garden-sage-12); color: var(--color-garden-rosemary); }
+.pill-sage::before { background: var(--color-garden-sage); }
+.pill-turmeric { background: var(--color-spice-turmeric-12); color: #8e7018; }
+.pill-turmeric::before { background: var(--color-spice-turmeric); }
+.pill-saffron { background: var(--color-spice-saffron-10); color: #a6862c; }
+.pill-saffron::before { background: var(--color-spice-saffron); }
+.pill-neutral {
+  background: var(--color-desk-charcoal-4); color: var(--color-text-secondary);
+  padding: 5px 14px;
+}
+.pill-neutral::before { display: none; }
+/* Visibility pill — preserve private/shared distinction (session signature) */
+.pill-private {
+  background: var(--color-desk-charcoal-8); color: var(--color-text-secondary);
+  padding: 5px 14px; display: inline-flex; gap: 6px; align-items: center;
+}
+.pill-private::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-text-tertiary);
+}
+.pill-shared {
+  background: var(--color-garden-sage-12); color: var(--color-garden-rosemary);
+  padding: 5px 14px; display: inline-flex; gap: 6px; align-items: center;
+  text-decoration: none;
+}
+.pill-shared::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+
+/* Chapter */
+.chapter { padding-top: var(--space-4xl); }
+.chapter-rule { border: none; border-top: 1px solid var(--color-rule-heavy); margin-bottom: var(--space-lg); }
+.chapter-title-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md);
+  margin-bottom: var(--space-md); flex-wrap: wrap;
+}
+.chapter-title {
+  font-family: var(--font-serif); font-size: 28px; font-weight: 400;
+  color: var(--color-text-primary); letter-spacing: -0.01em; line-height: 1.15;
+}
+.chapter-sublabel {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--color-text-secondary);
+}
+.chapter-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary); margin-bottom: var(--space-xl);
+  display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;
+}
+.chapter-meta a { color: var(--color-spice-turmeric); text-decoration: none; border-bottom: 1px dotted var(--color-spice-turmeric); }
+
+/* Cite chip */
+.cite-chip {
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--color-text-tertiary); letter-spacing: 0.04em;
+  border-bottom: 1px dotted var(--color-text-tertiary);
+  text-decoration: none; white-space: nowrap;
+  padding-bottom: 1px;
+}
+.cite-chip:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
+
+/* ═════════ FOCUS LIST (90-day focus — editorial numbered) ═════════ */
+.focus-list {
+  display: flex; flex-direction: column;
+  gap: var(--space-3xl);
+  padding-top: var(--space-lg);
+}
+.focus-item {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: var(--space-xl);
+  align-items: baseline;
+}
+.focus-numeral {
+  font-family: var(--font-serif); font-size: 72px; font-weight: 300;
+  line-height: 1; color: var(--color-rule-heavy);
+  letter-spacing: -0.03em;
+  text-align: right; padding-top: 4px;
+}
+.focus-body { display: flex; flex-direction: column; gap: var(--space-md); }
+.focus-headline {
+  font-family: var(--font-serif); font-size: 26px; font-weight: 400;
+  line-height: 1.25; color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+.focus-para {
+  font-family: var(--font-sans); font-size: 16px; line-height: 1.7;
+  color: var(--color-text-secondary); max-width: 680px;
+}
+.focus-provenance {
+  font-family: var(--font-sans); font-size: 12px; line-height: 1.7;
+  color: var(--color-text-tertiary);
+  display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-sm);
+  align-items: center;
+  padding-top: var(--space-xs);
+}
+.focus-provenance-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+/* ═════════ PROGRAM ROWS (no card, margin-grid style) ═════════ */
+.program-list { display: flex; flex-direction: column; padding-top: var(--space-sm); }
+.program-row {
+  display: grid;
+  grid-template-columns: 200px 1fr auto;
+  gap: var(--space-xl);
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.program-row:last-child { border-bottom: none; }
+.program-state {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--color-spice-turmeric);
+}
+.program-description {
+  font-family: var(--font-serif); font-size: 16px; line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.program-xref {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-spice-turmeric);
+  text-decoration: none; border-bottom: 1px dotted var(--color-spice-turmeric);
+  white-space: nowrap;
+}
+
+/* ═════════ COMMITMENT ROWS (replaces commitment-card) ═════════ */
+.commitment-list { display: flex; flex-direction: column; }
+.commitment-row {
+  display: grid;
+  grid-template-columns: 3px 1fr auto;
+  gap: var(--space-xl);
+  padding: var(--space-xl) 0 var(--space-xl) var(--space-md);
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: start;
+}
+.commitment-row:last-child { border-bottom: none; }
+.commitment-spine { width: 3px; align-self: stretch; border-radius: 2px; background: var(--color-spice-terracotta); }
+.commitment-body { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
+.commitment-headline {
+  font-family: var(--font-serif); font-size: 20px; font-weight: 500;
+  line-height: 1.4; color: var(--color-text-primary);
+  letter-spacing: -0.005em;
+}
+.commitment-meta-row {
+  display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md);
+  align-items: center;
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+.commitment-meta-row strong { color: var(--color-text-secondary); font-weight: 600; }
+.commitment-owner-row {
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.6;
+  color: var(--color-text-secondary);
+  display: flex; gap: var(--space-md); flex-wrap: wrap; align-items: center;
+}
+.pill-row {
+  display: flex; flex-wrap: wrap; gap: var(--space-sm);
+  align-items: center;
+}
+.linear-status-note {
+  font-family: var(--font-sans); font-size: 12px; font-style: italic;
+  color: var(--color-text-secondary);
+  padding: var(--space-xs) 0;
+}
+.commitment-actions {
+  display: flex; flex-wrap: wrap; gap: var(--space-sm);
+  padding-top: var(--space-sm);
+  align-items: center;
+}
+
+/* Soft nudge — editorial annotation */
+.soft-nudge {
+  padding: var(--space-sm) 0;
+  font-family: var(--font-serif); font-size: 14px; font-style: italic;
+  line-height: 1.5; color: var(--color-text-secondary);
+  display: flex; align-items: baseline; gap: var(--space-sm); flex-wrap: wrap;
+}
+.soft-nudge::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-spice-saffron); flex-shrink: 0;
+  align-self: center;
+}
+.soft-nudge-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;
+  font-style: normal; color: #a6862c;
+}
+
+/* Buttons */
+.btn {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+  background: none; border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary); padding: 7px 13px;
+  border-radius: 100px; cursor: pointer; white-space: nowrap;
+}
+.btn:hover { border-color: var(--color-text-tertiary); color: var(--color-text-primary); }
+.btn-primary {
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  border-color: var(--color-desk-charcoal);
+}
+.btn-primary:hover { background: var(--color-desk-ink); border-color: var(--color-desk-ink); color: var(--color-paper-cream); }
+.btn-accent {
+  background: var(--color-spice-turmeric); color: white;
+  border-color: var(--color-spice-turmeric);
+}
+.btn-accent:hover { background: #b58f1f; border-color: #b58f1f; }
+.btn-muted {
+  color: var(--color-text-tertiary); border-color: transparent; background: none;
+}
+.btn-muted:hover { color: var(--color-text-secondary); }
+
+/* ═════════ RECOMMENDATIONS (kept as PullQuote pattern — featured AI proposals) ═════════ */
+.rec-list { display: flex; flex-direction: column; gap: var(--space-xl); }
+.rec-block {
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--color-spice-saffron-10);
+  border-left: 3px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-editorial-md) var(--radius-editorial-md) 0;
+  display: flex; flex-direction: column; gap: var(--space-md);
+}
+.rec-label {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: #a6862c;
+  display: flex; align-items: center; gap: var(--space-sm);
+}
+.rec-label::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-spice-saffron);
+}
+.rec-headline {
+  font-family: var(--font-serif); font-size: 20px; font-weight: 400;
+  line-height: 1.35; color: var(--color-text-primary);
+  letter-spacing: -0.005em;
+}
+.rec-rationale {
+  font-family: var(--font-sans); font-size: 15px; line-height: 1.7;
+  color: var(--color-text-secondary); max-width: 680px;
+}
+.rec-provenance {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-sm);
+  align-items: center;
+}
+.rec-actions {
+  display: flex; flex-wrap: wrap; gap: var(--space-sm);
+  padding-top: var(--space-sm);
+  align-items: center;
+}
+.rec-dismiss-hint {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary); font-style: italic;
+  margin-left: auto;
+}
+
+/* ═════════ SHARED WITH TEAM — ref rows ═════════ */
+.subsection-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--color-text-secondary); font-weight: 600;
+  margin-top: var(--space-2xl); margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+.subsection-label:first-of-type { margin-top: var(--space-md); }
+
+.ref-row {
+  display: grid; grid-template-columns: 120px 1fr auto;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.ref-row:last-child { border-bottom: none; }
+.ref-row-id {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--color-garden-rosemary); letter-spacing: 0.04em;
+  text-decoration: none; border-bottom: 1px dotted var(--color-garden-rosemary);
+}
+.ref-row-body {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.6;
+  color: var(--color-text-primary);
+}
+.ref-row-body strong { font-weight: 500; }
+.ref-row-sub {
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--color-text-tertiary); text-transform: uppercase;
+  letter-spacing: 0.06em; margin-top: 4px;
+}
+.ref-row-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary); white-space: nowrap;
+}
+.ref-divergence {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: #a6862c;
+  display: inline-flex; align-items: center; gap: 4px;
+  border-bottom: 1px dotted #a6862c;
+  text-decoration: none; padding-bottom: 1px;
+  margin-left: var(--space-sm);
+}
+.ref-divergence::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--color-spice-saffron);
+}
+
+/* ═════════ TIMELINE (recently landed) ═════════ */
+.timeline-list { display: flex; flex-direction: column; padding-top: var(--space-sm); }
+.timeline-row {
+  display: grid; grid-template-columns: 80px 1fr auto;
+  gap: var(--space-xl);
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.timeline-row:last-child { border-bottom: none; }
+.timeline-date {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-garden-rosemary);
+}
+.timeline-event {
+  font-family: var(--font-serif); font-size: 17px; line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.timeline-source {
+  font-family: var(--font-sans); font-size: 12px; font-style: italic;
+  color: var(--color-text-tertiary); margin-top: var(--space-xs);
+}
+.timeline-source a {
+  color: var(--color-spice-turmeric); text-decoration: none;
+  border-bottom: 1px dotted var(--color-spice-turmeric); font-style: normal;
+}
+
+/* ═════════ REPORTS (remain cards — output artifacts, featured) ═════════ */
+.report-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg);
+  padding-top: var(--space-sm);
+}
+.report-card {
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border-radius: var(--radius-editorial-xl);
+  box-shadow: var(--shadow-md);
+  display: flex; flex-direction: column; gap: var(--space-md);
+  min-height: 220px;
+}
+.report-type {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--color-spice-turmeric);
+}
+.report-title {
+  font-family: var(--font-serif); font-size: 18px; font-weight: 400;
+  line-height: 1.4; color: var(--color-text-primary);
+}
+.report-gen {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary); line-height: 1.55;
+  margin-top: auto;
+}
+.report-actions {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding-top: var(--space-md);
+  border-top: 1px dashed var(--color-rule-light);
+}
+.report-footer-note {
+  margin-top: var(--space-xl);
+  font-family: var(--font-sans); font-size: 13px; font-style: italic;
+  color: var(--color-text-tertiary); line-height: 1.6;
+  max-width: 620px;
+}
+.report-footer-note a {
+  color: var(--color-spice-turmeric); text-decoration: none;
+  border-bottom: 1px dotted var(--color-spice-turmeric); font-style: normal;
+}
+
+/* ═════════ NUDGES (rows, not cards) ═════════ */
+.nudge-list { display: flex; flex-direction: column; padding-top: var(--space-sm); }
+.nudge-row {
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  display: flex; flex-direction: column; gap: var(--space-sm);
+}
+.nudge-row:last-child { border-bottom: none; }
+.nudge-headline {
+  font-family: var(--font-serif); font-size: 17px; font-weight: 400;
+  line-height: 1.45; color: var(--color-text-primary);
+  letter-spacing: -0.005em;
+}
+.nudge-body {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 680px;
+}
+.nudge-actions {
+  display: flex; flex-wrap: wrap; gap: var(--space-sm);
+  padding-top: var(--space-xs);
+}
+
+/* Finis */
+.finis { text-align: center; padding: var(--space-4xl) 0 var(--space-2xl); color: var(--color-text-tertiary); }
+.finis-mark {
+  font-family: var(--font-mark); font-weight: 800; font-size: 14px;
+  color: var(--color-spice-turmeric); opacity: 0.5; letter-spacing: 0.5em;
+}
+.finis-date {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em; margin-top: var(--space-sm);
+}
+
+/* Nav Island / switcher / mockup note (shared) */
+.nav-island {
+  position: fixed; right: 28px; top: 50%; transform: translateY(-50%);
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-xl);
+  box-shadow: 0 4px 20px rgba(30, 37, 48, 0.06);
+  padding: var(--space-sm);
+  z-index: 90;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 168px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 7px 10px;
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  cursor: pointer; border-radius: var(--radius-editorial-md);
+  border: none; background: none; text-align: left;
+}
+.nav-item::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-rule-heavy); flex-shrink: 0;
+}
+.nav-item:hover { color: var(--color-text-secondary); background: var(--color-desk-charcoal-4); }
+.nav-item.active { color: var(--color-text-primary); font-weight: 600; }
+.nav-item.active::before { background: var(--color-spice-turmeric); }
+@media (max-width: 1400px) { .nav-island { display: none; } }
+
+.switcher {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--color-desk-charcoal); border-radius: 100px;
+  box-shadow: 0 2px 8px rgba(30, 37, 48, 0.15); z-index: 100;
+}
+.switcher button {
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  padding: 8px 20px; border: none; border-radius: 100px;
+  cursor: pointer; background: transparent; color: rgba(255, 255, 255, 0.5);
+}
+.switcher button.active { background: rgba(255, 255, 255, 0.15); color: white; }
+
+.mockup-note {
+  position: fixed; top: 48px; left: 10px;
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  padding: 4px 8px; border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-mono); font-size: 9px; z-index: 100;
+  line-height: 1.3; opacity: 0.55;
+  max-width: 180px;
+  white-space: nowrap; overflow: hidden; cursor: default;
+  transition: opacity 0.15s, max-width 0.2s, white-space 0s linear 0.2s;
+}
+.mockup-note:hover {
+  opacity: 1; max-width: 320px; white-space: normal;
+  transition: opacity 0.15s, max-width 0.2s, white-space 0s;
+}
+.mockup-note strong { color: var(--color-spice-turmeric); display: inline; text-transform: uppercase; letter-spacing: 0.08em; font-size: 9px; }
+.mockup-note .body { display: none; }
+.mockup-note:hover .body { display: block; margin-top: 3px; }
+</style>
+</head>
+<body>
+
+<div class="atmosphere" aria-hidden="true"></div>
+
+<header class="folio" role="banner">
+  <div class="folio-left">
+    <span class="folio-mark">*</span>
+    <span>Accounts / Globex Holdings / Work</span>
+  </div>
+  <div class="folio-center">Apr 17, 2026 · 10:42</div>
+  <div class="folio-right">
+    <span class="folio-status-dot"></span>
+    <span>&gt;_ ready</span>
+  </div>
+</header>
+
+<div class="mockup-note">
+  <strong>Mockup v2 · Work</strong>
+  <div class="body">Design-system constrained. Rebuilt from v1 with canonical DESIGN-SYSTEM.md patterns. Rows over cards, editorial components, existing paint reused.</div>
+</div>
+
+<div class="page">
+
+  <div class="hero">
+    <div class="watermark" aria-hidden="true">*</div>
+    <div class="hero-meta">
+      <span class="hero-meta-dot"></span>
+      <span>Updated 1w ago</span>
+      <span class="pill pill-turmeric">Customer</span>
+      <span>5 transcripts · 24 emails · Zendesk · Gong · SF · Glean</span>
+    </div>
+    <h1 class="hero-name">Globex Holdings</h1>
+    <div class="hero-vitals">
+      <span class="vital-accent">$185K ARR</span>
+      <span>Green Health</span>
+      <span>Steady-State</span>
+      <span>NPS 67 · CSAT 4.5</span>
+      <span>Renewal in 221d</span>
+    </div>
+  </div>
+
+  <!-- ═════════ 90-DAY FOCUS ═════════ -->
+  <section class="chapter" id="ch-focus">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">90-day focus</h2>
+      <span class="chapter-sublabel">Our active plan · editable</span>
+    </div>
+    <div class="chapter-meta">
+      Drafted from 3 commitments + 2 suggestions + 1 program · Last refreshed 2 days ago · <a href="#">Refresh</a>
+    </div>
+
+    <div class="focus-list">
+
+      <article class="focus-item">
+        <div class="focus-numeral">1</div>
+        <div class="focus-body">
+          <h3 class="focus-headline">Land the compliance story</h3>
+          <p class="focus-para">
+            Close out Globex Holdings's VRM/cybersecurity risk assessment. Align on DORA + SOC 2 Type II positioning before the renewal cycle opens — for a financial-services customer, unresolved compliance is a renewal drag even when day-to-day is healthy.
+          </p>
+          <div class="focus-provenance">
+            <span class="focus-provenance-label">Synthesized from</span>
+            <a href="#" class="cite-chip">Health triage · DORA + SOC 2</a>
+            <a href="#" class="cite-chip">Commitment · compliance plan</a>
+            <button class="btn btn-muted" style="margin-left: auto;">Edit</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="focus-item">
+        <div class="focus-numeral">2</div>
+        <div class="focus-body">
+          <h3 class="focus-headline">Get Jorge on the FDE call</h3>
+          <p class="focus-para">
+            Schedule the head-of-FDE introduction with Jamie Carter. Convert Jorge's headless pricing question — asked Feb 17, still unanswered — into an architecture services conversation instead of letting it drift toward a headless-replatform decision.
+          </p>
+          <div class="focus-provenance">
+            <span class="focus-provenance-label">Synthesized from</span>
+            <a href="#" class="cite-chip">Commitment · FDE call</a>
+            <a href="#" class="cite-chip">Health triage · pricing unanswered</a>
+            <button class="btn btn-muted" style="margin-left: auto;">Edit</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="focus-item">
+        <div class="focus-numeral">3</div>
+        <div class="focus-body">
+          <h3 class="focus-headline">On-site for 2026 success-plan alignment (NYC, late March / early April)</h3>
+          <p class="focus-para">
+            Confirm attendees — including the Marketing / digital content owner we don't yet have a relationship with. Agenda covers personalization tooling, editor improvements, content parity across portfolio properties, and governance expectations.
+          </p>
+          <div class="focus-provenance">
+            <span class="focus-provenance-label">Synthesized from</span>
+            <a href="#" class="cite-chip">Program · renewal prep</a>
+            <a href="#" class="cite-chip">1 email thread</a>
+            <button class="btn btn-muted" style="margin-left: auto;">Edit</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="focus-item">
+        <div class="focus-numeral">4</div>
+        <div class="focus-body">
+          <h3 class="focus-headline">Demo Safe Publisher beta</h3>
+          <p class="focus-para">
+            Globex Holdings is enrolled. Schedule a dedicated walkthrough before they self-onboard — the beta lands better as a guided experience than a self-serve trial, especially given their multisite complexity.
+          </p>
+          <div class="focus-provenance">
+            <span class="focus-provenance-label">Synthesized from</span>
+            <a href="#" class="cite-chip">Program · Safe Publisher beta</a>
+            <a href="#" class="cite-chip">Commitment · beta invite + onboarding</a>
+            <button class="btn btn-muted" style="margin-left: auto;">Edit</button>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═════════ PROGRAMS (rows, not pills) ═════════ -->
+  <section class="chapter" id="ch-programs">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Programs &amp; motions</h2>
+      <span class="chapter-sublabel">Standing states · orientation, not to-dos</span>
+    </div>
+    <div class="chapter-meta">3 motions active · Last refreshed Apr 16</div>
+
+    <div class="program-list">
+      <article class="program-row">
+        <span class="program-state">In renewal prep</span>
+        <p class="program-description">Window opens Apr 15 · 221d to renewal · started Mar 1</p>
+        <a href="#" class="program-xref">See Outlook in Health →</a>
+      </article>
+      <article class="program-row">
+        <span class="program-state">In Safe Publisher beta</span>
+        <p class="program-description">Planned March 2026 · engagement: active</p>
+        <a href="#" class="program-xref">See Context feature adoption →</a>
+      </article>
+      <article class="program-row">
+        <span class="program-state">Under compliance review</span>
+        <p class="program-description">DORA + SOC 2 Type II · Trust package sent · awaiting response</p>
+        <a href="#" class="program-xref">See Health triage →</a>
+      </article>
+    </div>
+  </section>
+
+  <!-- ═════════ COMMITMENTS (rows) ═════════ -->
+  <section class="chapter" id="ch-commitments">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Commitments</h2>
+      <span class="chapter-sublabel">What we've said we'll do</span>
+    </div>
+    <div class="chapter-meta">
+      3 open · 1 shared · 2 private · Natural sort by recency · <a href="#">Filter</a>
+    </div>
+
+    <div class="commitment-list">
+
+      <article class="commitment-row">
+        <div class="commitment-spine"></div>
+        <div class="commitment-body">
+          <h3 class="commitment-headline">Send headless application pricing and architecture service details to Globex Holdings</h3>
+          <div class="commitment-meta-row">
+            <strong>From:</strong>
+            <a href="#" class="cite-chip">meeting · Feb 17</a>
+            <a href="#" class="cite-chip">Globex Holdings/WPVIP Check In</a>
+          </div>
+          <div class="commitment-owner-row">
+            <span><strong style="font-weight: 600;">Owner:</strong> Jamie Carter</span>
+            <span>·</span>
+            <span><strong style="font-weight: 600;">Due:</strong> no date set</span>
+          </div>
+          <div class="pill-row">
+            <span class="pill pill-sage">Customer-facing</span>
+            <span class="pill-private">Private</span>
+          </div>
+          <div class="soft-nudge">
+            <span class="soft-nudge-label">Still active?</span>
+            <span>59 days on the list. Flagged in Health as unaddressed — but no date, no shame.</span>
+          </div>
+          <div class="commitment-actions">
+            <button class="btn btn-primary">Mark done</button>
+            <button class="btn">Push to Linear</button>
+            <button class="btn">Push to Salesforce</button>
+            <button class="btn btn-muted">Dismiss</button>
+          </div>
+        </div>
+        <span></span>
+      </article>
+
+      <article class="commitment-row">
+        <div class="commitment-spine"></div>
+        <div class="commitment-body">
+          <h3 class="commitment-headline">Invite Globex Holdings to Safe Publisher beta and provide onboarding</h3>
+          <div class="commitment-meta-row">
+            <strong>From:</strong>
+            <a href="#" class="cite-chip">meeting · Feb 17</a>
+          </div>
+          <div class="commitment-owner-row">
+            <span><strong style="font-weight: 600;">Owner:</strong> James Giroux</span>
+            <span>·</span>
+            <span><strong style="font-weight: 600;">Due:</strong> Mar 31</span>
+          </div>
+          <div class="pill-row">
+            <span class="pill pill-sage">Customer-facing</span>
+            <a href="#" class="pill-shared">Shared · Linear DOS-103</a>
+          </div>
+          <div class="linear-status-note">In progress in Linear · moved to "In progress" on Apr 2</div>
+          <div class="soft-nudge">
+            <span class="soft-nudge-label">Still active?</span>
+            <span>Due date passed 14 days ago. Worth a glance, not a panic.</span>
+          </div>
+          <div class="commitment-actions">
+            <button class="btn btn-primary">Mark done</button>
+            <button class="btn">View in Linear</button>
+            <button class="btn">Nudge assignee</button>
+            <button class="btn btn-muted">Dismiss</button>
+          </div>
+        </div>
+        <span></span>
+      </article>
+
+      <article class="commitment-row">
+        <div class="commitment-spine"></div>
+        <div class="commitment-body">
+          <h3 class="commitment-headline">Schedule call with head of Forward Deployed Engineering (FDE) program for Globex Holdings</h3>
+          <div class="commitment-meta-row">
+            <strong>From:</strong>
+            <a href="#" class="cite-chip">meeting · Feb 17</a>
+          </div>
+          <div class="commitment-owner-row">
+            <span><strong style="font-weight: 600;">Owner:</strong> Jamie Carter</span>
+            <span>·</span>
+            <span><strong style="font-weight: 600;">Due:</strong> no date set</span>
+          </div>
+          <div class="pill-row">
+            <span class="pill pill-neutral">Internal</span>
+            <span class="pill-private">Private</span>
+          </div>
+          <div class="commitment-actions">
+            <button class="btn btn-primary">Mark done</button>
+            <button class="btn">Push to Linear</button>
+            <button class="btn">Assign to me</button>
+            <button class="btn btn-muted">Dismiss</button>
+          </div>
+        </div>
+        <span></span>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═════════ SUGGESTIONS (PullQuote-style blocks — featured AI proposals) ═════════ -->
+  <section class="chapter" id="ch-recommendations">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Suggestions</h2>
+      <span class="chapter-sublabel">AI suggested · accept or dismiss</span>
+    </div>
+    <div class="chapter-meta">
+      2 suggestions · Drafted from Health triage + signal trends · Last refreshed Apr 16
+    </div>
+
+    <div class="rec-list">
+
+      <article class="rec-block">
+        <div class="rec-label">Suggestion · one-click accept</div>
+        <h3 class="rec-headline">Confirm resolved — Defensive Mode engagement threshold raise</h3>
+        <p class="rec-rationale">
+          Risk assessment flagged that VIP recommended raising the engagement threshold from 50% to 80%. A second 673K-request surge on Apr 5 served without issues. Recommend confirming the Health triage row resolved and closing it out — the behavior is the evidence.
+        </p>
+        <div class="rec-provenance">
+          <span>Drafted from</span>
+          <a href="#" class="cite-chip">Health triage</a>
+          <a href="#" class="cite-chip">ZD #223999</a>
+          <a href="#" class="cite-chip">ZD #223283</a>
+        </div>
+        <div class="rec-actions">
+          <button class="btn btn-accent">Accept → create commitment</button>
+          <button class="btn btn-muted">Dismiss (teaches system)</button>
+          <span class="rec-dismiss-hint">Dismissals feed Bayesian weights</span>
+        </div>
+      </article>
+
+      <article class="rec-block">
+        <div class="rec-label">Suggestion · stakeholder</div>
+        <h3 class="rec-headline">Reach out to Priya Shah and Miguel Torres for introductory call</h3>
+        <p class="rec-rationale">
+          Both Globex Holdings attendees have joined 3+ meetings with zero assessment in our stakeholder notes. Understanding their role and influence strengthens the account plan ahead of renewal — and surfaces whether either is the Marketing / digital content owner we haven't mapped yet.
+        </p>
+        <div class="rec-provenance">
+          <span>Drafted from</span>
+          <a href="#" class="cite-chip">Context dossier gaps</a>
+          <a href="#" class="cite-chip">Stakeholder needs-assessment flags</a>
+        </div>
+        <div class="rec-actions">
+          <button class="btn btn-accent">Accept → create commitment</button>
+          <button class="btn btn-muted">Dismiss (teaches system)</button>
+          <span class="rec-dismiss-hint">Dismissals feed Bayesian weights</span>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═════════ SHARED WITH TEAM ═════════ -->
+  <section class="chapter" id="ch-shared">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Shared with the team</h2>
+      <span class="chapter-sublabel">What the rest of the org sees</span>
+    </div>
+    <div class="chapter-meta">
+      3 Linear issues · 1 Salesforce opportunity · 1 shared Slack canvas · Last synced Apr 16
+    </div>
+
+    <div class="subsection-label">Linear · 3 issues</div>
+    <div>
+      <div class="ref-row">
+        <a href="#" class="ref-row-id">DOS-103</a>
+        <div class="ref-row-body">
+          Safe Publisher beta onboarding for Globex Holdings
+          <div class="ref-row-sub">In Progress · Assignee: James Giroux</div>
+        </div>
+        <span class="ref-row-meta">Updated Apr 2</span>
+      </div>
+      <div class="ref-row">
+        <a href="#" class="ref-row-id">DOS-187</a>
+        <div class="ref-row-body">
+          Defensive Mode threshold tuning — Globex Holdings
+          <div class="ref-row-sub">Triage · Assignee: none</div>
+        </div>
+        <span class="ref-row-meta">Updated Apr 9</span>
+      </div>
+      <div class="ref-row">
+        <a href="#" class="ref-row-id">DOS-201</a>
+        <div class="ref-row-body">
+          DORA compliance documentation package
+          <div class="ref-row-sub">Backlog · Assignee: Jamie Carter</div>
+        </div>
+        <span class="ref-row-meta">Updated Mar 28</span>
+      </div>
+    </div>
+
+    <div class="subsection-label">Salesforce · 1 opportunity</div>
+    <div>
+      <div class="ref-row">
+        <a href="#" class="ref-row-id">006UU…YAT</a>
+        <div class="ref-row-body">
+          $185K renewal · Stage: <strong>Closed Won Pending</strong> · Close date May 1, 2026
+          <div style="margin-top: 6px;">
+            <a href="#" class="ref-divergence">Divergence in Health — SF says "Disqualified" on Account Qualification Status →</a>
+          </div>
+        </div>
+        <span class="ref-row-meta">Modified Mar 15</span>
+      </div>
+    </div>
+
+    <div class="subsection-label">Shared Slack · 1 canvas</div>
+    <div>
+      <div class="ref-row">
+        <a href="#" class="ref-row-id">#wpvip-globex</a>
+        <div class="ref-row-body">
+          Shared canvas · "Block editor performance follow-up"
+          <div class="ref-row-sub">12 messages this week</div>
+        </div>
+        <span class="ref-row-meta">Last activity Apr 15</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ RECENTLY LANDED ═════════ -->
+  <section class="chapter" id="ch-landed">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Recently landed</h2>
+      <span class="chapter-sublabel">30-day tail · what we delivered</span>
+    </div>
+    <div class="chapter-meta">2 items delivered · Promotes to Context "value delivered" in 30 days</div>
+
+    <div class="timeline-list">
+      <div class="timeline-row">
+        <span class="timeline-date">Apr 5</span>
+        <div>
+          <p class="timeline-event">Resolved Defensive Mode 673K-request surge without service impact</p>
+          <p class="timeline-source">Came from Health triage · <a href="#">See Context value →</a></p>
+        </div>
+        <span class="ref-row-meta" style="color: var(--color-garden-rosemary);">Delivered</span>
+      </div>
+      <div class="timeline-row">
+        <span class="timeline-date">Mar 28</span>
+        <div>
+          <p class="timeline-event">Delivered Trust Package for Globex Holdings VRM assessment</p>
+          <p class="timeline-source">Came from Program "compliance review" · <a href="#">See Context value →</a></p>
+        </div>
+        <span class="ref-row-meta" style="color: var(--color-garden-rosemary);">Delivered</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ OUTPUTS (reports remain as cards — output artifacts) ═════════ -->
+  <section class="chapter" id="ch-outputs">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Outputs</h2>
+      <span class="chapter-sublabel">Generated reports</span>
+    </div>
+    <div class="chapter-meta">3 reports available for this account</div>
+
+    <div class="report-grid">
+      <article class="report-card">
+        <div class="report-type">Account Health Review</div>
+        <h3 class="report-title">Globex Holdings — Q2 2026 Health Review</h3>
+        <div class="report-gen">Generated Apr 16<br>Trigger: scheduled weekly</div>
+        <div class="report-actions">
+          <button class="btn btn-primary">Open</button>
+          <button class="btn">Refresh</button>
+          <button class="btn">Export</button>
+        </div>
+      </article>
+      <article class="report-card">
+        <div class="report-type">EBR / QBR</div>
+        <h3 class="report-title">Globex Holdings — Q1 QBR Narrative</h3>
+        <div class="report-gen">Generated Mar 28<br>Trigger: manual</div>
+        <div class="report-actions">
+          <button class="btn btn-primary">Open</button>
+          <button class="btn">Refresh</button>
+          <button class="btn">Export</button>
+        </div>
+      </article>
+      <article class="report-card">
+        <div class="report-type">Stakeholder Map</div>
+        <h3 class="report-title">Globex Holdings — Room + Org Landscape</h3>
+        <div class="report-gen">Generated Apr 14<br>Trigger: new-stakeholder update</div>
+        <div class="report-actions">
+          <button class="btn btn-primary">Open</button>
+          <button class="btn">Refresh</button>
+          <button class="btn">Export</button>
+        </div>
+      </article>
+    </div>
+
+    <p class="report-footer-note">
+      Account plan synthesis in development — see <a href="https://linear.app/dailyos/issue/DOS-40">DOS-40</a>.
+    </p>
+  </section>
+
+  <!-- ═════════ NUDGES (rows, not cards) ═════════ -->
+  <section class="chapter" id="ch-nudges">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Nudges</h2>
+      <span class="chapter-sublabel">Gentle check-ins · hidden when empty</span>
+    </div>
+    <div class="chapter-meta">2 soft surfaces · Zero-guilt · leave anything as-is</div>
+
+    <div class="nudge-list">
+      <article class="nudge-row">
+        <h3 class="nudge-headline">A commitment has been kept private for 59 days</h3>
+        <p class="nudge-body">
+          The headless pricing send (owner: Jamie Carter) has been here since Feb 17 without a due date or being shared to Linear. Keep it private, or push it out so the team can see?
+        </p>
+        <div class="nudge-actions">
+          <button class="btn">Push to Linear</button>
+          <button class="btn">Dismiss</button>
+          <button class="btn btn-muted">Leave as-is</button>
+        </div>
+      </article>
+
+      <article class="nudge-row">
+        <h3 class="nudge-headline">Two accepted suggestions never became commitments</h3>
+        <p class="nudge-body">
+          You accepted "Capture Jorge verbatim quote set" (Mar 20) and "Log workload concern" (Apr 9) but neither became a tracked commitment. Revisit when convenient — no rush.
+        </p>
+        <div class="nudge-actions">
+          <button class="btn">Revisit now</button>
+          <button class="btn btn-muted">Leave as-is</button>
+        </div>
+      </article>
+
+      <article class="nudge-row">
+        <h3 class="nudge-headline">Shared status out of sync with Linear</h3>
+        <p class="nudge-body">
+          The Safe Publisher beta commitment is shared to Linear (DOS-103) but the onboarding status hasn't synced back here in 6 days. The Linear writeback loop may have stalled.
+        </p>
+        <div class="nudge-actions">
+          <button class="btn btn-primary">Check writeback</button>
+          <button class="btn">Dismiss</button>
+          <button class="btn btn-muted">Leave as-is</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <div class="finis">
+    <div class="finis-mark">* * *</div>
+    <div class="finis-date">Work surface · Apr 17, 2026 · 4 focus areas · 3 programs · 3 commitments · 2 suggestions · Zero guilt</div>
+  </div>
+
+</div>
+
+<div class="switcher">
+  <button>Health &amp; Outlook</button>
+  <button>Context</button>
+  <button class="active">The Work</button>
+</div>
+
+<nav class="nav-island" aria-label="Chapter navigation">
+  <button class="nav-item" data-target="ch-focus">90-day focus</button>
+  <button class="nav-item" data-target="ch-programs">Programs</button>
+  <button class="nav-item" data-target="ch-commitments">Commitments</button>
+  <button class="nav-item" data-target="ch-recommendations">Suggestions</button>
+  <button class="nav-item" data-target="ch-shared">Shared with team</button>
+  <button class="nav-item" data-target="ch-landed">Recently landed</button>
+  <button class="nav-item" data-target="ch-outputs">Outputs</button>
+  <button class="nav-item" data-target="ch-nudges">Nudges</button>
+</nav>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const navItems = document.querySelectorAll('.nav-item');
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const target = document.getElementById(item.dataset.target);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  const sections = document.querySelectorAll('.chapter[id]');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navItems.forEach(item => item.classList.toggle('active', item.dataset.target === entry.target.id));
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  sections.forEach(s => observer.observe(s));
+});
+</script>
+
+</body>
+</html>

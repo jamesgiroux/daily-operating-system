@@ -1,0 +1,1425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Context — Globex Holdings (v2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,200..800;1,200..800&family=DM+Sans:ital,wght@0,100..1000;1,100..1000&family=JetBrains+Mono:wght@100..800&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+/* ═════════ TOKENS — traced to DESIGN-SYSTEM.md ═════════ */
+:root {
+  --color-paper-cream: #f5f2ef;
+  --color-paper-warm-white: #faf8f6;
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+  --color-spice-turmeric: #c9a227;
+  --color-spice-saffron: #deb841;
+  --color-spice-terracotta: #c4654a;
+  --color-garden-sage: #7eaa7b;
+  --color-garden-rosemary: #4a6741;
+  --color-garden-larkspur: #8fa3c4;
+  --color-garden-eucalyptus: #6ba8a4;
+  --color-text-primary: var(--color-desk-charcoal);
+  --color-text-secondary: #5a6370;
+  --color-text-tertiary: #6b7280;
+  --color-rule-heavy: rgba(30, 37, 48, 0.12);
+  --color-rule-light: rgba(30, 37, 48, 0.06);
+  --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-spice-saffron-10: rgba(222, 184, 65, 0.10);
+  --color-spice-terracotta-10: rgba(196, 101, 74, 0.10);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-garden-larkspur-12: rgba(143, 163, 196, 0.12);
+  --color-desk-charcoal-4: rgba(30, 37, 48, 0.04);
+  --color-desk-charcoal-8: rgba(30, 37, 48, 0.08);
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-mark: 'Montserrat', sans-serif;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --space-5xl: 80px;
+  --radius-editorial-sm: 4px;
+  --radius-editorial-md: 10px;
+  --radius-editorial-xl: 16px;
+  --shadow-md: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100%; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-paper-cream);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.55;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Atmosphere / Folio */
+.atmosphere {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 900px 700px at 20% 15%, rgba(201, 162, 39, 0.08), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 85% 70%, rgba(201, 162, 39, 0.05), transparent 55%);
+  animation: atmosphere-breathe 14s ease-in-out infinite;
+}
+@keyframes atmosphere-breathe { 0%,100%{opacity:0.9} 50%{opacity:1} }
+
+.folio {
+  position: fixed; top: 0; left: 0; right: 0; height: 40px;
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-rule-light);
+  z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.folio-left { display: flex; align-items: center; gap: var(--space-md); }
+.folio-mark { font-family: var(--font-mark); font-weight: 800; font-size: 18px; color: var(--color-spice-turmeric); line-height: 1; }
+.folio-right { display: flex; align-items: center; gap: var(--space-sm); }
+.folio-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 120px 160px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Hero */
+.hero { position: relative; padding-top: var(--space-xl); }
+.watermark {
+  position: absolute; top: 20px; right: -40px;
+  font-family: var(--font-mark); font-weight: 800; font-size: 420px;
+  color: var(--color-spice-turmeric);
+  opacity: 0.07; line-height: 1; transform: rotate(12deg);
+  z-index: -1; pointer-events: none; user-select: none;
+}
+.hero-meta {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: var(--space-md) 0 var(--space-lg);
+  display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;
+}
+.hero-meta-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+.hero-name {
+  font-family: var(--font-serif); font-size: 76px; font-weight: 400;
+  letter-spacing: -0.025em; line-height: 1.06; padding-bottom: var(--space-md);
+}
+.hero-vitals {
+  display: flex; gap: var(--space-2xl); flex-wrap: wrap;
+  padding: var(--space-md) 0 var(--space-xl);
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xl);
+}
+.vital-accent { color: var(--color-spice-turmeric); }
+
+/* Pills (canonical §8) */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+  padding: 5px 14px; border-radius: 100px; line-height: 1;
+}
+.pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+.pill-sage { background: var(--color-garden-sage-12); color: var(--color-garden-rosemary); }
+.pill-sage::before { background: var(--color-garden-sage); }
+.pill-turmeric { background: var(--color-spice-turmeric-12); color: #8e7018; }
+.pill-turmeric::before { background: var(--color-spice-turmeric); }
+.pill-larkspur { background: var(--color-garden-larkspur-12); color: #4a6186; }
+.pill-larkspur::before { background: var(--color-garden-larkspur); }
+.pill-saffron { background: var(--color-spice-saffron-10); color: #a6862c; }
+.pill-saffron::before { background: var(--color-spice-saffron); }
+.pill-neutral {
+  background: var(--color-desk-charcoal-4); color: var(--color-text-secondary);
+  padding: 5px 14px;
+}
+.pill-neutral::before { display: none; }
+
+/* Chapter Heading */
+.chapter { padding-top: var(--space-4xl); }
+.chapter-rule { border: none; border-top: 1px solid var(--color-rule-heavy); margin-bottom: var(--space-lg); }
+.chapter-title-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md);
+  margin-bottom: var(--space-md); flex-wrap: wrap;
+}
+.chapter-title {
+  font-family: var(--font-serif); font-size: 28px; font-weight: 400;
+  color: var(--color-text-primary); letter-spacing: -0.01em; line-height: 1.15;
+}
+.chapter-title-ref {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--color-text-secondary);
+}
+.chapter-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary); margin-bottom: var(--space-xl);
+}
+.chapter-meta .stale { color: #a6862c; }
+
+/* PullQuote — §6 */
+.pullquote {
+  margin: var(--space-lg) 0;
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--color-spice-turmeric-8);
+  border-left: 3px solid var(--color-spice-turmeric);
+  border-radius: 0 var(--radius-editorial-md) var(--radius-editorial-md) 0;
+  font-family: var(--font-serif); font-size: 20px; font-style: italic;
+  line-height: 1.55; color: var(--color-text-primary);
+  max-width: 820px;
+  letter-spacing: -0.005em;
+}
+.pullquote.thesis {
+  font-size: 28px; padding: var(--space-xl) var(--space-2xl);
+  line-height: 1.35;
+}
+.pullquote-attr {
+  font-family: var(--font-mono); font-size: 10px; font-style: normal;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-md); display: block;
+}
+
+/* Margin-grid sub-labels */
+.subsection-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--color-text-secondary); font-weight: 600;
+  margin-top: var(--space-2xl); margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-rule-light);
+  display: flex; align-items: baseline; gap: var(--space-sm); flex-wrap: wrap;
+}
+.subsection-label:first-of-type { margin-top: var(--space-md); }
+.sublabel-hint {
+  font-family: var(--font-sans); font-size: 12px; font-weight: 400;
+  color: var(--color-text-tertiary); text-transform: none; letter-spacing: 0;
+  font-style: italic;
+}
+
+/* ═════════ PERSON ROW (replaces person-card — §4) ═════════
+   Rows, not cards. Avatar + identity + assessment + quote — dividers only. */
+.person-list { display: flex; flex-direction: column; }
+.person-row {
+  display: grid;
+  grid-template-columns: 3px 56px 1fr auto;
+  gap: var(--space-lg);
+  padding: var(--space-xl) 0 var(--space-xl) var(--space-md);
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: start;
+}
+.person-row:last-child { border-bottom: none; }
+.person-spine { width: 3px; align-self: stretch; border-radius: 2px; background: var(--color-garden-larkspur); }
+.person-spine-gap { background: var(--color-spice-saffron); }
+.person-spine-internal { background: var(--color-garden-eucalyptus); }
+
+.avatar {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--color-paper-warm-white);
+  color: var(--color-desk-charcoal);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-serif); font-size: 20px; font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.person-body { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
+.person-head {
+  display: flex; align-items: baseline; gap: var(--space-md);
+  flex-wrap: wrap;
+}
+.person-name {
+  font-family: var(--font-sans); font-size: 17px; font-weight: 500;
+  color: var(--color-text-primary);
+  display: flex; align-items: center; gap: var(--space-sm);
+}
+.engagement-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.engagement-dot.high { background: var(--color-garden-sage); }
+.engagement-dot.low { background: var(--color-text-tertiary); opacity: 0.5; }
+.person-title {
+  font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary);
+}
+.person-location {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+.pill-row {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: var(--space-xs);
+}
+.person-assessment {
+  font-family: var(--font-serif); font-size: 15px; font-style: italic;
+  line-height: 1.65; color: var(--color-text-primary);
+  max-width: 640px;
+  padding-top: var(--space-xs);
+}
+.person-quote {
+  font-family: var(--font-serif); font-size: 14px; font-style: italic;
+  line-height: 1.55; color: var(--color-text-secondary);
+  padding-left: var(--space-md);
+  border-left: 2px solid var(--color-spice-turmeric);
+  margin-top: var(--space-xs);
+}
+.person-quote-attr {
+  font-family: var(--font-mono); font-size: 10px; font-style: normal;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary); margin-top: var(--space-xs); display: block;
+}
+.person-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  padding-top: var(--space-xs);
+}
+.person-xref {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-spice-turmeric);
+  text-decoration: none; border-bottom: 1px dotted var(--color-spice-turmeric);
+  white-space: nowrap; align-self: start;
+}
+
+.more-associated {
+  margin-top: var(--space-lg);
+  padding: var(--space-md) 0;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-text-secondary);
+  display: flex; align-items: center; gap: var(--space-sm);
+  letter-spacing: 0.04em;
+  border-top: 1px dashed var(--color-rule-light);
+}
+.more-associated .count {
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  padding: 3px 8px; border-radius: 100px; font-weight: 600;
+}
+
+/* ═════════ PRIORITY ROWS (replace priority-card) ═════════ */
+.priority-list { display: flex; flex-direction: column; }
+.priority-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-md);
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.priority-row:last-child { border-bottom: none; }
+.priority-name {
+  font-family: var(--font-serif); font-size: 19px; font-weight: 400;
+  line-height: 1.35; color: var(--color-text-primary);
+  letter-spacing: -0.005em;
+}
+.priority-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-xs);
+}
+.priority-context {
+  font-family: var(--font-sans); font-size: 14px; font-style: italic;
+  line-height: 1.6; color: var(--color-text-secondary);
+  margin-top: var(--space-sm);
+  max-width: 640px;
+}
+
+/* Competitor rows */
+.competitor-list { display: flex; flex-direction: column; }
+.competitor-row {
+  display: grid;
+  grid-template-columns: 160px 1fr auto;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.competitor-row:last-child { border-bottom: none; }
+.competitor-name {
+  font-family: var(--font-serif); font-size: 17px; font-weight: 400;
+  color: var(--color-text-primary);
+}
+.threat-scale {
+  display: inline-flex; gap: 3px; margin-left: var(--space-sm);
+}
+.threat-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-rule-heavy); display: inline-block; }
+.threat-dot.on { background: var(--color-spice-turmeric); }
+.competitor-context {
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+.competitor-source {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary); white-space: nowrap;
+}
+
+/* Regulatory — no card, just section */
+.reg-block {
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+.reg-head {
+  display: flex; align-items: baseline; gap: var(--space-md); flex-wrap: wrap;
+  margin-bottom: var(--space-sm);
+}
+.reg-title {
+  font-family: var(--font-serif); font-size: 20px; font-weight: 400;
+  color: var(--color-text-primary);
+}
+.xref-link {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-spice-turmeric);
+  text-decoration: none; border-bottom: 1px dotted var(--color-spice-turmeric);
+}
+.reg-body {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.7;
+  color: var(--color-text-secondary); max-width: 720px;
+}
+.reg-body strong { color: var(--color-text-primary); font-weight: 500; }
+
+/* ═════════ VALUE ROWS (replace value-card) ═════════ */
+.value-list { display: flex; flex-direction: column; }
+.value-row {
+  display: grid;
+  grid-template-columns: 3px 100px 1fr auto;
+  gap: var(--space-lg);
+  padding: var(--space-lg) 0 var(--space-lg) var(--space-md);
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.value-row:last-child { border-bottom: none; }
+.value-spine { width: 3px; align-self: stretch; border-radius: 2px; }
+.value-spine-cost { background: var(--color-spice-turmeric); }
+.value-spine-speed { background: var(--color-garden-sage); }
+.value-spine-risk { background: var(--color-garden-larkspur); }
+.value-kind {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.value-kind-cost { color: #8e7018; }
+.value-kind-speed { color: var(--color-garden-rosemary); }
+.value-kind-risk { color: #4a6186; }
+.value-headline {
+  font-family: var(--font-serif); font-size: 17px; font-weight: 400;
+  line-height: 1.45; color: var(--color-text-primary);
+}
+.value-source {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary); white-space: nowrap;
+}
+
+/* Metric rows */
+.metric-list { display: flex; flex-direction: column; margin-top: var(--space-md); }
+.metric-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.metric-row:last-child { border-bottom: none; }
+.metric-name {
+  font-family: var(--font-sans); font-size: 14px; font-weight: 500;
+  color: var(--color-text-primary);
+}
+.metric-values {
+  font-family: var(--font-serif); font-size: 18px; font-weight: 400;
+  color: var(--color-text-primary);
+  display: flex; align-items: baseline; gap: var(--space-sm);
+}
+.metric-current { color: var(--color-garden-rosemary); font-weight: 500; }
+.metric-target { font-size: 12px; color: var(--color-text-tertiary); font-family: var(--font-mono); }
+.metric-status {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.metric-status.achieved { color: var(--color-garden-rosemary); font-weight: 600; }
+.metric-status.ontrack { color: var(--color-spice-turmeric); font-weight: 600; }
+
+/* ═════════ QUOTE WALL (rows with pull-quote treatment) ═════════ */
+.filter-bar {
+  padding: var(--space-md) 0;
+  display: flex; flex-wrap: wrap; gap: var(--space-md);
+  align-items: center;
+  border-bottom: 1px dashed var(--color-rule-light);
+  margin-bottom: var(--space-lg);
+}
+.filter-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.filter-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--color-text-tertiary); font-weight: 600;
+}
+.filter-input {
+  font-family: var(--font-sans); font-size: 12px;
+  padding: 5px 12px; border: 1px solid var(--color-rule-heavy);
+  border-radius: 100px; min-width: 140px;
+  background: var(--color-paper-warm-white); color: var(--color-text-secondary);
+}
+.filter-note {
+  margin-left: auto;
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary); font-style: italic;
+}
+
+.quote-list { display: flex; flex-direction: column; }
+.quote-row {
+  padding: var(--space-xl) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  display: flex; flex-direction: column; gap: var(--space-md);
+}
+.quote-row:last-child { border-bottom: none; }
+.quote-body {
+  font-family: var(--font-serif); font-size: 19px; font-style: italic;
+  font-weight: 400; line-height: 1.5;
+  color: var(--color-text-primary);
+  border-left: 2px solid var(--color-spice-turmeric);
+  padding-left: var(--space-md);
+  max-width: 720px;
+}
+.quote-attr {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  padding-left: var(--space-md);
+}
+.quote-footer {
+  display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center;
+  padding-left: var(--space-md);
+}
+.sentiment-dot {
+  width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+}
+.sentiment-dot.positive { background: var(--color-garden-sage); }
+.sentiment-dot.neutral { background: var(--color-text-tertiary); opacity: 0.6; }
+.btn {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+  background: none; border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary); padding: 6px 12px;
+  border-radius: 100px; cursor: pointer; white-space: nowrap;
+}
+.btn:hover { border-color: var(--color-text-tertiary); color: var(--color-text-primary); }
+
+/* ═════════ REFERENCE-WEIGHT (Commercial / Technical shape) — tapering density §8 ═════════ */
+.ref-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  column-gap: var(--space-3xl);
+  padding-top: var(--space-sm);
+}
+.ref-row {
+  display: flex; justify-content: space-between; gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  font-family: var(--font-mono); font-size: 11px;
+  line-height: 1.6;
+}
+.ref-label {
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  font-weight: 400;
+}
+.ref-value {
+  color: var(--color-text-primary); font-weight: 400;
+  text-align: right;
+}
+.ref-value.gap {
+  color: var(--color-spice-saffron); font-style: italic; font-weight: 300;
+}
+.ref-value.turmeric { color: var(--color-spice-turmeric); font-weight: 500; }
+
+.sparkline-inline {
+  display: inline-flex; align-items: flex-end; gap: 2px; height: 14px;
+  vertical-align: middle;
+}
+.sparkline-inline .bar { width: 3px; border-radius: 1px; background: var(--color-garden-sage); }
+
+.gap-annotation {
+  margin-top: var(--space-lg);
+  padding: var(--space-md) 0;
+  border-top: 1px solid rgba(222, 184, 65, 0.25);
+  display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: #a6862c;
+}
+.gap-annotation::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-spice-saffron);
+}
+.gap-annotation a {
+  margin-left: auto; color: #a6862c;
+  border-bottom: 1px dotted #a6862c; text-decoration: none;
+}
+
+/* Feature adoption — tight weight */
+.feature-grid {
+  margin-top: var(--space-lg);
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-xs) var(--space-xl);
+}
+.feature-item {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 300;
+  color: var(--color-text-secondary);
+}
+.feature-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: var(--color-garden-sage);
+}
+.feature-note {
+  margin-top: var(--space-md);
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+/* Relationship fabric rows */
+.fabric-list { display: flex; flex-direction: column; }
+.fabric-row {
+  display: grid; grid-template-columns: 200px 1fr;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.fabric-row:last-child { border-bottom: none; }
+.fabric-content {
+  font-family: var(--font-sans); font-size: 13px;
+  color: var(--color-text-primary); line-height: 1.55;
+}
+.fabric-content.gap { color: var(--color-spice-saffron); font-style: italic; font-weight: 300; }
+.fabric-nps-number {
+  font-family: var(--font-serif); font-size: 24px; font-weight: 500;
+  color: var(--color-garden-rosemary); margin-right: var(--space-sm);
+  vertical-align: middle;
+}
+.fabric-nps-quote {
+  font-family: var(--font-serif); font-style: italic; color: var(--color-text-secondary);
+}
+
+/* About rows */
+.about-block {
+  padding: var(--space-lg) 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+.about-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--color-text-tertiary); margin-bottom: var(--space-sm);
+}
+.about-text {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 640px;
+}
+.about-text strong { color: var(--color-text-primary); font-weight: 500; }
+
+/* Finis */
+.finis { text-align: center; padding: var(--space-4xl) 0 var(--space-2xl); color: var(--color-text-tertiary); }
+.finis-mark {
+  font-family: var(--font-mark); font-weight: 800; font-size: 14px;
+  color: var(--color-spice-turmeric); opacity: 0.5; letter-spacing: 0.5em;
+}
+.finis-date {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em; margin-top: var(--space-sm);
+}
+
+/* Nav / switcher / mockup note (shared) */
+.nav-island {
+  position: fixed; right: 28px; top: 50%; transform: translateY(-50%);
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-xl);
+  box-shadow: 0 4px 20px rgba(30, 37, 48, 0.06);
+  padding: var(--space-sm);
+  z-index: 90;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 168px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 7px 10px;
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  cursor: pointer; border-radius: var(--radius-editorial-md);
+  border: none; background: none; text-align: left;
+}
+.nav-item::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-rule-heavy); flex-shrink: 0;
+}
+.nav-item:hover { color: var(--color-text-secondary); background: var(--color-desk-charcoal-4); }
+.nav-item.active { color: var(--color-text-primary); font-weight: 600; }
+.nav-item.active::before { background: var(--color-spice-turmeric); }
+@media (max-width: 1400px) { .nav-island { display: none; } }
+
+.switcher {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--color-desk-charcoal); border-radius: 100px;
+  box-shadow: 0 2px 8px rgba(30, 37, 48, 0.15); z-index: 100;
+}
+.switcher button {
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  padding: 8px 20px; border: none; border-radius: 100px;
+  cursor: pointer; background: transparent; color: rgba(255, 255, 255, 0.5);
+}
+.switcher button.active { background: rgba(255, 255, 255, 0.15); color: white; }
+
+.mockup-note {
+  position: fixed; top: 48px; left: 10px;
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  padding: 4px 8px; border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-mono); font-size: 9px; z-index: 100;
+  line-height: 1.3; opacity: 0.55;
+  max-width: 180px;
+  white-space: nowrap; overflow: hidden; cursor: default;
+  transition: opacity 0.15s, max-width 0.2s, white-space 0s linear 0.2s;
+}
+.mockup-note:hover {
+  opacity: 1; max-width: 320px; white-space: normal;
+  transition: opacity 0.15s, max-width 0.2s, white-space 0s;
+}
+.mockup-note strong { color: var(--color-spice-turmeric); display: inline; text-transform: uppercase; letter-spacing: 0.08em; font-size: 9px; }
+.mockup-note .body { display: none; }
+.mockup-note:hover .body { display: block; margin-top: 3px; }
+</style>
+</head>
+<body>
+
+<div class="atmosphere" aria-hidden="true"></div>
+
+<header class="folio" role="banner">
+  <div class="folio-left">
+    <span class="folio-mark">*</span>
+    <span>Accounts / Globex Holdings / Context</span>
+  </div>
+  <div class="folio-center">Apr 17, 2026 · 10:42</div>
+  <div class="folio-right">
+    <span class="folio-status-dot"></span>
+    <span>&gt;_ ready</span>
+  </div>
+</header>
+
+<div class="mockup-note">
+  <strong>Mockup v2 · Context</strong>
+  <div class="body">Design-system constrained. Rebuilt from v1 with canonical DESIGN-SYSTEM.md patterns. Rows over cards, editorial components, existing paint reused.</div>
+</div>
+
+<div class="page">
+
+  <div class="hero">
+    <div class="watermark" aria-hidden="true">*</div>
+    <div class="hero-meta">
+      <span class="hero-meta-dot"></span>
+      <span>Updated 1w ago</span>
+      <span class="pill pill-turmeric">Customer</span>
+      <span>5 transcripts · 24 emails · Zendesk · Gong · SF · Glean</span>
+    </div>
+    <h1 class="hero-name">Globex Holdings</h1>
+    <div class="hero-vitals">
+      <span class="vital-accent">$185K ARR</span>
+      <span>Green Health</span>
+      <span>Steady-State</span>
+      <span>NPS 67 · CSAT 4.5</span>
+      <span>Renewal in 221d</span>
+    </div>
+  </div>
+
+  <!-- ═════════ THESIS (PullQuote) ═════════ -->
+  <section class="chapter" id="ch-thesis">
+    <div class="chapter-meta" style="margin-bottom: var(--space-lg);">The thesis</div>
+    <blockquote class="pullquote thesis">
+      Globex Holdings's editor performance bottlenecks and compliance demands are the critical levers for deepening trust and unlocking expansion.
+      <span class="pullquote-attr">Synthesized from 14 meetings · 5 transcripts · Updated 2 days ago · <a href="#" style="color: #8e7018; text-decoration: none; border-bottom: 1px dotted;">Refresh</a></span>
+    </blockquote>
+  </section>
+
+  <!-- ═════════ THE ROOM ═════════ -->
+  <section class="chapter" id="ch-room">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">The Room</h2>
+      <span class="chapter-title-ref">12 people · 4 with assessments</span>
+    </div>
+    <div class="chapter-meta">
+      <span class="stale">8 need verification</span> · Updated Apr 16
+    </div>
+
+    <div class="subsection-label">
+      Their team
+      <span class="sublabel-hint">who we're meeting with — Globex Holdings</span>
+    </div>
+
+    <div class="person-list">
+
+      <!-- Chris Anderson -->
+      <article class="person-row">
+        <div class="person-spine"></div>
+        <div class="avatar">JK</div>
+        <div class="person-body">
+          <div class="person-head">
+            <span class="person-name">Chris Anderson <span class="engagement-dot high" title="High engagement"></span></span>
+            <span class="person-title">Technical/Business Stakeholder · Globex Holdings</span>
+            <span class="person-location">New York · external</span>
+          </div>
+          <div class="pill-row">
+            <span class="pill pill-larkspur">Technical</span>
+            <span class="pill pill-turmeric">Economic</span>
+            <span class="pill pill-sage">Champion-adjacent</span>
+          </div>
+          <p class="person-assessment">
+            James is highly engaged, leading discussions on headless CMS, performance, personalization, and analytics. Primary decision-maker for technical direction and cost considerations.
+          </p>
+          <div class="person-quote">
+            Headless handles personalization better.
+            <span class="person-quote-attr">— Feb 17 Gong call</span>
+          </div>
+          <div class="person-meta">Last in meeting · Apr 23 &middot; 3 meetings · 24 emails</div>
+        </div>
+        <a href="#" class="person-xref">Active in Health →</a>
+      </article>
+
+      <!-- Diego Martinez -->
+      <article class="person-row">
+        <div class="person-spine"></div>
+        <div class="avatar">JL</div>
+        <div class="person-body">
+          <div class="person-head">
+            <span class="person-name">Diego Martinez <span class="engagement-dot low" title="Engagement unknown"></span></span>
+            <span class="person-title">Technical lead · Globex Holdings</span>
+            <span class="person-location">Miami · external</span>
+          </div>
+          <div class="pill-row">
+            <span class="pill pill-larkspur">Technical</span>
+            <span class="pill pill-saffron">Needs verification</span>
+          </div>
+          <p class="person-assessment">
+            Role and influence need direct verification in a customer-facing meeting.
+          </p>
+          <div class="person-quote">
+            How does headless pricing work? What does the architecture service look like for React/Next.js?
+            <span class="person-quote-attr">— Feb 17 Gong call</span>
+          </div>
+          <div class="person-meta">Last in meeting · Apr 23 · 3 meetings</div>
+        </div>
+        <a href="#" class="person-xref">Active in Health →</a>
+      </article>
+
+      <!-- Priya Shah -->
+      <article class="person-row">
+        <div class="person-spine person-spine-gap"></div>
+        <div class="avatar">KV</div>
+        <div class="person-body">
+          <div class="person-head">
+            <span class="person-name">Priya Shah <span class="engagement-dot low"></span></span>
+            <span class="person-title">Globex Holdings · external</span>
+          </div>
+          <div class="pill-row">
+            <span class="pill pill-saffron">Needs assessment</span>
+          </div>
+          <p class="person-assessment" style="color: var(--color-text-tertiary);">
+            Attended 3 meetings but never characterized.
+          </p>
+          <div class="person-meta">3 meetings</div>
+        </div>
+        <span></span>
+      </article>
+
+      <!-- Miguel Torres -->
+      <article class="person-row">
+        <div class="person-spine person-spine-gap"></div>
+        <div class="avatar">LG</div>
+        <div class="person-body">
+          <div class="person-head">
+            <span class="person-name">Miguel Torres <span class="engagement-dot low"></span></span>
+            <span class="person-title">Globex Holdings · external</span>
+          </div>
+          <div class="pill-row">
+            <span class="pill pill-saffron">Needs assessment</span>
+          </div>
+          <p class="person-assessment" style="color: var(--color-text-tertiary);">
+            Attended 3 meetings but never characterized.
+          </p>
+          <div class="person-meta">3 meetings</div>
+        </div>
+        <span></span>
+      </article>
+
+    </div>
+
+    <div class="more-associated">
+      <span class="count">+6</span>
+      more associated · Sam Reyes · Jordan Chen · Avery Patel · and 3 others
+    </div>
+
+    <div class="subsection-label">
+      Our team
+      <span class="sublabel-hint">who we bring into Globex Holdings conversations — Automattic</span>
+    </div>
+
+    <div class="person-list">
+
+      <article class="person-row">
+        <div class="person-spine person-spine-internal"></div>
+        <div class="avatar">AG</div>
+        <div class="person-body">
+          <div class="person-head">
+            <span class="person-name">Jamie Carter <span class="engagement-dot high"></span></span>
+            <span class="person-title">Relationship Manager · Automattic</span>
+          </div>
+          <div class="pill-row">
+            <span class="pill pill-neutral">Relationship Manager</span>
+          </div>
+          <p class="person-assessment">
+            Main relationship contact, facilitating commercial and technical conversations and coordinating follow-ups.
+          </p>
+          <div class="person-meta">30 meetings · Shared owner with CSM</div>
+        </div>
+        <span></span>
+      </article>
+
+      <article class="person-row">
+        <div class="person-spine person-spine-internal"></div>
+        <div class="avatar">CC</div>
+        <div class="person-body">
+          <div class="person-head">
+            <span class="person-name">Riley Park <span class="engagement-dot low"></span></span>
+            <span class="person-title">Account Executive · Automattic</span>
+          </div>
+          <div class="pill-row">
+            <span class="pill pill-neutral">Account Executive</span>
+            <span class="pill pill-saffron">Needs verification</span>
+          </div>
+          <p class="person-assessment">
+            Role and influence need direct verification in a customer-facing meeting.
+          </p>
+          <div class="person-meta">8 meetings</div>
+        </div>
+        <span></span>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═════════ WHAT MATTERS TO THEM ═════════ -->
+  <section class="chapter" id="ch-world">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">What matters to them</h2>
+      <span class="chapter-title-ref">5 priorities · 3 competitors</span>
+    </div>
+    <div class="chapter-meta">
+      3 expansion signals · Updated Mar 15
+    </div>
+
+    <div class="subsection-label">Strategic priorities</div>
+    <div class="priority-list">
+
+      <article class="priority-row">
+        <div>
+          <div class="priority-name">Digital asset consolidation and CMS standardization</div>
+          <div class="priority-meta">Globex Holdings digital/commercial teams · Ongoing</div>
+        </div>
+        <span class="pill pill-sage">Active</span>
+      </article>
+
+      <article class="priority-row">
+        <div>
+          <div class="priority-name">Evaluating headless WordPress architecture</div>
+          <div class="priority-meta">Chris Anderson &amp; Diego Martinez · Proof of concept phase</div>
+          <p class="priority-context">On the renewal opportunity metadata — tagged "headless wordpress." Organizational momentum, not curiosity.</p>
+        </div>
+        <span class="pill pill-sage">Active</span>
+      </article>
+
+      <article class="priority-row">
+        <div>
+          <div class="priority-name">Unified analytics and cross-domain user tracking</div>
+          <div class="priority-meta">Globex Holdings analytics/compliance teams · Ongoing internal initiative</div>
+        </div>
+        <span class="pill pill-sage">Active</span>
+      </article>
+
+      <article class="priority-row">
+        <div>
+          <div class="priority-name">Safe Publisher beta participation</div>
+          <div class="priority-meta">Globex Holdings product/technical teams · Beta planned for March 2026</div>
+        </div>
+        <span class="pill pill-sage">Active</span>
+      </article>
+
+      <article class="priority-row">
+        <div>
+          <div class="priority-name">Cost reduction and tech stack consolidation</div>
+          <div class="priority-meta">Globex Holdings commercial/IT leadership · Ongoing</div>
+        </div>
+        <span class="pill pill-sage">Active</span>
+      </article>
+    </div>
+
+    <div class="subsection-label">Competitive landscape</div>
+    <div class="competitor-list">
+      <article class="competitor-row">
+        <div>
+          <span class="competitor-name">Webflow</span>
+          <span class="threat-scale"><span class="threat-dot on"></span><span class="threat-dot"></span><span class="threat-dot"></span></span>
+        </div>
+        <p class="competitor-context">Competitive platform in digital asset and CMS landscape.</p>
+        <span class="competitor-source">Feb 17 · Gong</span>
+      </article>
+      <article class="competitor-row">
+        <div>
+          <span class="competitor-name">Drupal</span>
+          <span class="threat-scale"><span class="threat-dot on"></span><span class="threat-dot"></span><span class="threat-dot"></span></span>
+        </div>
+        <p class="competitor-context">Competitive CMS option in Globex Holdings's environment.</p>
+        <span class="competitor-source">Feb 17 · Gong</span>
+      </article>
+      <article class="competitor-row">
+        <div>
+          <span class="competitor-name">Google Analytics</span>
+          <span class="threat-scale"><span class="threat-dot on"></span><span class="threat-dot"></span><span class="threat-dot"></span></span>
+        </div>
+        <p class="competitor-context">Referenced re: sampling limitations compared to other solutions.</p>
+        <span class="competitor-source">Mar 15 · SF</span>
+      </article>
+    </div>
+
+    <div class="subsection-label">Regulatory &amp; market context</div>
+    <div class="reg-block">
+      <div class="reg-head">
+        <h3 class="reg-title">DORA compliance + SOC 2 Type II reporting</h3>
+        <a href="#" class="xref-link">Active in Health →</a>
+      </div>
+      <p class="reg-body">
+        On <strong>Mar 10, 2025</strong> Globex Holdings stated <strong>DORA compliance</strong> was a priority and <strong>SOC 2 Type II-style reporting</strong> would be ideal for their security and cyber teams. Trust Center doesn't currently meet this bar. Shapes every compliance conversation.
+      </p>
+    </div>
+  </section>
+
+  <!-- ═════════ WHAT WE'VE BUILT ═════════ -->
+  <section class="chapter" id="ch-built">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">What we've built together</h2>
+      <span class="chapter-title-ref">3 statements · 3 metrics</span>
+    </div>
+    <div class="chapter-meta">Last captured Feb 17</div>
+
+    <div class="subsection-label">Value delivered</div>
+    <div class="value-list">
+      <article class="value-row">
+        <div class="value-spine value-spine-cost"></div>
+        <span class="value-kind value-kind-cost">Cost</span>
+        <p class="value-headline">Launched Defensive Mode — enabled Globex Holdings to avoid up to $60K in third-party security spend.</p>
+        <span class="value-source">Feb 17 · Meeting</span>
+      </article>
+      <article class="value-row">
+        <div class="value-spine value-spine-speed"></div>
+        <span class="value-kind value-kind-speed">Speed</span>
+        <p class="value-headline">Enabled collaborative editing for 2+ users per session — improved editorial speed, reduced content bottlenecks.</p>
+        <span class="value-source">Feb 17 · Meeting</span>
+      </article>
+      <article class="value-row">
+        <div class="value-spine value-spine-risk"></div>
+        <span class="value-kind value-kind-risk">Risk</span>
+        <p class="value-headline">Provided access to self-serve Trust Center — streamlined compliance documentation for annual GRC process.</p>
+        <span class="value-source">Feb 17 · Meeting</span>
+      </article>
+    </div>
+
+    <div class="subsection-label">Success metrics</div>
+    <div class="metric-list">
+      <article class="metric-row">
+        <span class="metric-name">DDoS Incidents Prevented</span>
+        <span class="metric-values"><span class="metric-current">100%</span><span class="metric-target">/ 100% target</span></span>
+        <span class="metric-status achieved">Achieved · James Giroux</span>
+      </article>
+      <article class="metric-row">
+        <span class="metric-name">Editorial Collaboration</span>
+        <span class="metric-values"><span class="metric-current">2</span><span class="metric-target">/ 2+ users/session</span></span>
+        <span class="metric-status ontrack">On track · James Giroux</span>
+      </article>
+      <article class="metric-row">
+        <span class="metric-name">Compliance Docs Access</span>
+        <span class="metric-values"><span class="metric-current">100%</span><span class="metric-target">/ 100% self-serve</span></span>
+        <span class="metric-status achieved">Achieved · Jamie Carter</span>
+      </article>
+    </div>
+  </section>
+
+  <!-- ═════════ THEIR VOICE (quote wall — pull-quote rows) ═════════ -->
+  <section class="chapter" id="ch-voice">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Their voice</h2>
+      <span class="chapter-title-ref">6 quotes</span>
+    </div>
+    <div class="chapter-meta">Filter by speaker, topic, feature · grab one for a report</div>
+
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Speaker</span>
+        <span class="pill pill-neutral">All</span>
+        <span class="pill pill-neutral">Chris Anderson</span>
+        <span class="pill pill-neutral">Jorge L.R.</span>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Topic</span>
+        <span class="pill pill-neutral">headless</span>
+        <span class="pill pill-neutral">compliance</span>
+        <span class="pill pill-neutral">pricing</span>
+      </div>
+      <input type="text" class="filter-input" placeholder="Search quotes...">
+      <span class="filter-note">Filter UI not functional</span>
+    </div>
+
+    <div class="quote-list">
+      <article class="quote-row">
+        <div class="quote-body">How does headless pricing work? What does the architecture service look like for React/Next.js?</div>
+        <div class="quote-attr">— Diego Martinez, Technical lead · Feb 17, Gong call</div>
+        <div class="quote-footer">
+          <span class="sentiment-dot neutral"></span>
+          <span class="pill pill-neutral">headless</span>
+          <span class="pill pill-neutral">pricing</span>
+          <span class="pill pill-neutral">Internal only</span>
+          <span class="pill pill-neutral">Verbatim</span>
+          <button class="btn" style="margin-left: auto;">Copy</button>
+          <button class="btn">Use in report</button>
+        </div>
+      </article>
+
+      <article class="quote-row">
+        <div class="quote-body">PHP and WordPress talent is scarce right now.</div>
+        <div class="quote-attr">— Diego Martinez, Technical lead · Feb 17, Gong call</div>
+        <div class="quote-footer">
+          <span class="sentiment-dot neutral"></span>
+          <span class="pill pill-neutral">hiring</span>
+          <span class="pill pill-neutral">wordpress</span>
+          <span class="pill pill-neutral">Internal only</span>
+          <span class="pill pill-neutral">Near-verbatim</span>
+          <button class="btn" style="margin-left: auto;">Copy</button>
+          <button class="btn">Use in report</button>
+        </div>
+      </article>
+
+      <article class="quote-row">
+        <div class="quote-body">Headless handles personalization better.</div>
+        <div class="quote-attr">— Chris Anderson, Technical/Business stakeholder · Feb 17, Gong call</div>
+        <div class="quote-footer">
+          <span class="sentiment-dot neutral"></span>
+          <span class="pill pill-neutral">headless</span>
+          <span class="pill pill-neutral">personalization</span>
+          <span class="pill pill-neutral">Internal only</span>
+          <span class="pill pill-neutral">Verbatim</span>
+          <button class="btn" style="margin-left: auto;">Copy</button>
+          <button class="btn">Use in report</button>
+        </div>
+      </article>
+
+      <article class="quote-row">
+        <div class="quote-body">That's above my pay grade, or not something I know well yet.</div>
+        <div class="quote-attr">— Chris Anderson · Feb 17, Gong call (re: portfolio company authority)</div>
+        <div class="quote-footer">
+          <span class="sentiment-dot neutral"></span>
+          <span class="pill pill-neutral">authority</span>
+          <span class="pill pill-neutral">scope</span>
+          <span class="pill pill-neutral">Internal only</span>
+          <span class="pill pill-neutral">Verbatim</span>
+          <button class="btn" style="margin-left: auto;">Copy</button>
+          <button class="btn">Use in report</button>
+        </div>
+      </article>
+
+      <article class="quote-row">
+        <div class="quote-body">Customer is happy with VIP. We're building more relationships across the org and on Parse.ly sell to increase stickiness.</div>
+        <div class="quote-attr">— NPS survey · Mar 1, 2026</div>
+        <div class="quote-footer">
+          <span class="sentiment-dot positive"></span>
+          <span class="pill pill-neutral">nps</span>
+          <span class="pill pill-neutral">satisfaction</span>
+          <span class="pill pill-neutral">parsely</span>
+          <span class="pill pill-sage">Public-safe (ask first)</span>
+          <span class="pill pill-neutral">Verbatim</span>
+          <button class="btn" style="margin-left: auto;">Copy</button>
+          <button class="btn">Use in report</button>
+        </div>
+      </article>
+
+      <article class="quote-row">
+        <div class="quote-body">Bringing the account into DORA compliance is a priority, and SOC 2 Type II-style reporting would be ideal for our security and cyber teams.</div>
+        <div class="quote-attr">— Chris Anderson (attributed) · Mar 10, 2025, Gong call</div>
+        <div class="quote-footer">
+          <span class="sentiment-dot neutral"></span>
+          <span class="pill pill-neutral">compliance</span>
+          <span class="pill pill-neutral">dora</span>
+          <span class="pill pill-neutral">soc2</span>
+          <span class="pill pill-neutral">Internal only</span>
+          <span class="pill pill-neutral">Near-verbatim</span>
+          <button class="btn" style="margin-left: auto;">Copy</button>
+          <button class="btn">Use in report</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ═════════ COMMERCIAL SHAPE (reference weight) ═════════ -->
+  <section class="chapter" id="ch-commercial">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <div class="chapter-title-ref">Commercial shape</div>
+    </div>
+    <div class="chapter-meta">
+      Updated Apr 9 · <span class="stale">Several fields unverified — see gaps below</span>
+    </div>
+
+    <div class="ref-grid">
+      <div class="ref-row">
+        <span class="ref-label">ARR (current)</span>
+        <span class="ref-value turmeric">$185,400 · auto-renew: yes</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">12-month trend</span>
+        <span class="ref-value">
+          <span class="sparkline-inline">
+            <span class="bar" style="height:8px"></span>
+            <span class="bar" style="height:8px"></span>
+            <span class="bar" style="height:9px"></span>
+            <span class="bar" style="height:9px"></span>
+            <span class="bar" style="height:9px"></span>
+            <span class="bar" style="height:10px"></span>
+            <span class="bar" style="height:10px"></span>
+            <span class="bar" style="height:10px"></span>
+            <span class="bar" style="height:11px"></span>
+            <span class="bar" style="height:11px"></span>
+            <span class="bar" style="height:11px"></span>
+            <span class="bar" style="height:12px"></span>
+          </span>
+          +0% YoY — flat
+        </span>
+      </div>
+      <div class="ref-row"><span class="ref-label">Contract type</span><span class="ref-value">Annual</span></div>
+      <div class="ref-row"><span class="ref-label">Renewal date</span><span class="ref-value">May 1, 2026</span></div>
+      <div class="ref-row"><span class="ref-label">Multi-year remaining</span><span class="ref-value gap">— not captured</span></div>
+      <div class="ref-row"><span class="ref-label">Customer fiscal year</span><span class="ref-value gap">— not captured</span></div>
+      <div class="ref-row"><span class="ref-label">Previous renewal outcome</span><span class="ref-value gap">— not captured</span></div>
+      <div class="ref-row"><span class="ref-label">Procurement complexity</span><span class="ref-value gap">— not yet surveyed</span></div>
+      <div class="ref-row"><span class="ref-label">Discount history</span><span class="ref-value gap">— none captured</span></div>
+      <div class="ref-row"><span class="ref-label">Discount appetite</span><span class="ref-value gap">— unknown</span></div>
+      <div class="ref-row"><span class="ref-label">Payment behavior</span><span class="ref-value gap">— unknown</span></div>
+      <div class="ref-row"><span class="ref-label">Budget holder</span><span class="ref-value gap">— unknown</span></div>
+    </div>
+
+    <div class="gap-annotation">
+      7 of 10 commercial fields unfilled
+      <a href="#">Capture now →</a>
+    </div>
+  </section>
+
+  <!-- ═════════ TECHNICAL SHAPE ═════════ -->
+  <section class="chapter" id="ch-technical">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <div class="chapter-title-ref">Technical shape</div>
+    </div>
+    <div class="chapter-meta">Updated Apr 9 · 1 open ticket · 18 features active</div>
+
+    <div class="ref-grid">
+      <div class="ref-row"><span class="ref-label">Usage tier</span><span class="ref-value gap">— not captured</span></div>
+      <div class="ref-row"><span class="ref-label">Active users</span><span class="ref-value gap">— not captured</span></div>
+      <div class="ref-row"><span class="ref-label">Services stage</span><span class="ref-value gap">— not captured</span></div>
+      <div class="ref-row"><span class="ref-label">Support tier</span><span class="ref-value gap">— not captured</span></div>
+      <div class="ref-row"><span class="ref-label">Open tickets</span><span class="ref-value">1</span></div>
+      <div class="ref-row"><span class="ref-label">CSAT</span><span class="ref-value">4.5</span></div>
+      <div class="ref-row"><span class="ref-label">Adoption score</span><span class="ref-value gap">— not computed</span></div>
+      <div class="ref-row"><span class="ref-label">Integrations</span><span class="ref-value gap">— not captured</span></div>
+    </div>
+
+    <div class="subsection-label">Feature adoption · 18 active</div>
+    <div class="feature-grid">
+      <div class="feature-item"><span class="feature-dot"></span> Defensive Mode</div>
+      <div class="feature-item"><span class="feature-dot"></span> Safe Publishing</div>
+      <div class="feature-item"><span class="feature-dot"></span> Headless</div>
+      <div class="feature-item"><span class="feature-dot"></span> Anomaly Detection</div>
+      <div class="feature-item"><span class="feature-dot"></span> APM — Browser Monitoring</div>
+      <div class="feature-item"><span class="feature-dot"></span> APM — Synthetics Monitoring</div>
+      <div class="feature-item"><span class="feature-dot"></span> Application Downtime Monitoring</div>
+      <div class="feature-item"><span class="feature-dot"></span> Concierge Onboarding</div>
+      <div class="feature-item"><span class="feature-dot"></span> Database Backup Shipping</div>
+      <div class="feature-item"><span class="feature-dot"></span> Debugging</div>
+      <div class="feature-item"><span class="feature-dot"></span> Enhanced Support</div>
+      <div class="feature-item"><span class="feature-dot"></span> Geographical Redundancy</div>
+      <div class="feature-item"><span class="feature-dot"></span> Hourly Backups</div>
+      <div class="feature-item"><span class="feature-dot"></span> Log Shipping</div>
+      <div class="feature-item"><span class="feature-dot"></span> Multisite Support</div>
+      <div class="feature-item"><span class="feature-dot"></span> Non-Production Environments</div>
+      <div class="feature-item"><span class="feature-dot"></span> Preview Environment + Sandbox</div>
+      <div class="feature-item"><span class="feature-dot"></span> + 1 more</div>
+    </div>
+    <div class="feature-note">All 18 features active as of Apr 8, 2026 (Glean)</div>
+
+    <div class="gap-annotation">
+      4 of 6 technical fields unfilled · Last update Apr 9
+    </div>
+  </section>
+
+  <!-- ═════════ RELATIONSHIP FABRIC ═════════ -->
+  <section class="chapter" id="ch-relationship">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Relationship fabric</h2>
+    </div>
+    <div class="chapter-meta">
+      <span class="stale">Most fields not captured — this is a known gap</span>
+    </div>
+
+    <div class="fabric-list">
+      <div class="fabric-row">
+        <span class="ref-label">Reference customer</span>
+        <span class="fabric-content gap">Unknown — not captured</span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Logo permission</span>
+        <span class="fabric-content gap">Unknown — not captured</span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Case study</span>
+        <span class="fabric-content gap">None — not captured</span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Beta programs</span>
+        <span class="fabric-content">
+          <strong>Safe Publisher</strong> — planned March 2026 · engagement: active
+        </span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">NPS history</span>
+        <span class="fabric-content">
+          <span class="fabric-nps-number">67</span>
+          <span class="fabric-nps-quote">"Customer is happy with VIP..."</span>
+          <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em;">(Mar 1, 2026)</span>
+        </span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Speaking slots</span>
+        <span class="fabric-content gap">None captured</span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Referrals made</span>
+        <span class="fabric-content gap">None captured</span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Advocacy trend</span>
+        <span class="fabric-content gap">Unknown — not captured</span>
+      </div>
+    </div>
+
+    <!-- Editorial close as PullQuote -->
+    <blockquote class="pullquote" style="margin-top: var(--space-2xl);">
+      We haven't systematically captured advocacy signal for Globex Holdings. Given the NPS 67 and healthy relationship, this is a likely source of unrealized value.
+    </blockquote>
+  </section>
+
+  <!-- ═════════ ABOUT ═════════ -->
+  <section class="chapter" id="ch-about">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">About this context</h2>
+    </div>
+
+    <div class="about-block">
+      <div class="about-label">Our data capture gap</div>
+      <p class="about-text">
+        Stakeholder assessments for <strong>Diego Martinez</strong> and <strong>Riley Park</strong> flagged for verification — they've been in 3+ meetings but we haven't characterized their role or influence. Two Globex Holdings attendees (<strong>Priya Shah</strong>, <strong>Miguel Torres</strong>) have zero assessment despite 3 meetings each.
+      </p>
+    </div>
+
+    <div class="about-block">
+      <div class="about-label">Source coverage</div>
+      <p class="about-text">
+        Glean flagged that <strong>at least one Globex Holdings call wasn't captured in Gong</strong> (Amy used a local recording). Staircase notes hit-or-miss. Notion not indexed. Commercial dossier fields (procurement, payment behavior, fiscal alignment, discount history) all unfilled — these require manual capture.
+      </p>
+    </div>
+
+    <div class="about-block">
+      <div class="about-label">Freshness</div>
+      <p class="about-text">
+        14 meetings on record · 5 with transcripts · Last full update: Apr 16, 2026 · Stale fields: commercial shape (7 of 10), relationship fabric (6 of 8)
+      </p>
+    </div>
+  </section>
+
+  <div class="finis">
+    <div class="finis-mark">* * *</div>
+    <div class="finis-date">Context pull Apr 17, 2026 · 12 people · 5 priorities · 6 quotes · 11 gaps identified</div>
+  </div>
+
+</div>
+
+<div class="switcher">
+  <button>Health &amp; Outlook</button>
+  <button class="active">Context</button>
+  <button>The Work</button>
+</div>
+
+<nav class="nav-island" aria-label="Chapter navigation">
+  <button class="nav-item" data-target="ch-thesis">Thesis</button>
+  <button class="nav-item" data-target="ch-room">The Room</button>
+  <button class="nav-item" data-target="ch-world">Their world</button>
+  <button class="nav-item" data-target="ch-built">What we've built</button>
+  <button class="nav-item" data-target="ch-voice">Their voice</button>
+  <button class="nav-item" data-target="ch-commercial">Commercial</button>
+  <button class="nav-item" data-target="ch-technical">Technical</button>
+  <button class="nav-item" data-target="ch-relationship">Relationship</button>
+  <button class="nav-item" data-target="ch-about">About</button>
+</nav>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const navItems = document.querySelectorAll('.nav-item');
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const target = document.getElementById(item.dataset.target);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  const sections = document.querySelectorAll('.chapter[id]');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navItems.forEach(item => item.classList.toggle('active', item.dataset.target === entry.target.id));
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  sections.forEach(s => observer.observe(s));
+});
+</script>
+
+</body>
+</html>

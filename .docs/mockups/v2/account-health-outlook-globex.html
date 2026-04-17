@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Health &amp; Outlook — Globex Holdings (v2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,200..800;1,200..800&family=DM+Sans:ital,wght@0,100..1000;1,100..1000&family=JetBrains+Mono:wght@100..800&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+/* ═════════ DESIGN TOKENS — traced to DESIGN-SYSTEM.md §2 Color, §3 Spacing ═════════ */
+:root {
+  /* Paper */
+  --color-paper-cream: #f5f2ef;
+  --color-paper-linen: #e8e2d9;
+  --color-paper-warm-white: #faf8f6;
+  /* Desk */
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+  --color-desk-espresso: #3d2e27;
+  /* Spice */
+  --color-spice-turmeric: #c9a227;
+  --color-spice-saffron: #deb841;
+  --color-spice-terracotta: #c4654a;
+  --color-spice-chili: #9b3a2a;
+  /* Garden */
+  --color-garden-sage: #7eaa7b;
+  --color-garden-olive: #6b7c52;
+  --color-garden-rosemary: #4a6741;
+  --color-garden-larkspur: #8fa3c4;
+  --color-garden-eucalyptus: #6ba8a4;
+  /* Entity */
+  --color-entity-account: var(--color-spice-turmeric);
+  --color-entity-person: var(--color-garden-larkspur);
+  --color-entity-action: var(--color-spice-terracotta);
+  /* Text */
+  --color-text-primary: var(--color-desk-charcoal);
+  --color-text-secondary: #5a6370;
+  --color-text-tertiary: #6b7280;
+  /* Rules */
+  --color-rule-heavy: rgba(30, 37, 48, 0.12);
+  --color-rule-light: rgba(30, 37, 48, 0.06);
+  /* Opacity tints (I447) */
+  --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-spice-saffron-10: rgba(222, 184, 65, 0.10);
+  --color-spice-terracotta-10: rgba(196, 101, 74, 0.10);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-garden-larkspur-12: rgba(143, 163, 196, 0.12);
+  --color-desk-charcoal-4: rgba(30, 37, 48, 0.04);
+  --color-desk-charcoal-8: rgba(30, 37, 48, 0.08);
+  /* Fonts — §1 */
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-mark: 'Montserrat', sans-serif;
+  /* Spacing — §3 */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --space-5xl: 80px;
+  /* Radius — §4 */
+  --radius-editorial-sm: 4px;
+  --radius-editorial-md: 10px;
+  --radius-editorial-lg: 12px;
+  --radius-editorial-xl: 16px;
+  /* Shadow */
+  --shadow-md: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+  /* Z-index — §4 */
+  --z-atmosphere: 0;
+  --z-page-content: 1;
+  --z-app-shell: 100;
+  /* Page */
+  --page-max-width: 1100px;
+  --page-padding-horizontal: 120px;
+  --page-margin-top: 40px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100%; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-paper-cream);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.55;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ═════════ ATMOSPHERE LAYER — §5 ═════════ */
+.atmosphere {
+  position: fixed; inset: 0;
+  z-index: var(--z-atmosphere); pointer-events: none;
+  background:
+    radial-gradient(ellipse 900px 700px at 20% 15%, rgba(201, 162, 39, 0.09), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 85% 70%, rgba(201, 162, 39, 0.06), transparent 55%);
+  animation: atmosphere-breathe 14s ease-in-out infinite;
+}
+@keyframes atmosphere-breathe {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+
+/* ═════════ FOLIO BAR — §5 ═════════ */
+.folio {
+  position: fixed; top: 0; left: 0; right: 0; height: 40px;
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-rule-light);
+  z-index: var(--z-app-shell);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.folio-left { display: flex; align-items: center; gap: var(--space-md); }
+.folio-mark {
+  font-family: var(--font-mark); font-weight: 800; font-size: 18px;
+  color: var(--color-spice-turmeric);
+  line-height: 1; letter-spacing: 0;
+}
+.folio-center { letter-spacing: 0.1em; }
+.folio-right { display: flex; align-items: center; gap: var(--space-sm); }
+.folio-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+
+/* ═════════ PAGE CONTAINER — §4 ═════════ */
+.page {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: var(--page-margin-top) var(--page-padding-horizontal) 160px;
+  position: relative;
+  z-index: var(--z-page-content);
+}
+
+/* ═════════ ASTERISK WATERMARK — §5 ═════════ */
+.hero { position: relative; padding-top: var(--space-xl); }
+.watermark {
+  position: absolute; top: 20px; right: -40px;
+  font-family: var(--font-mark); font-weight: 800; font-size: 420px;
+  color: var(--color-spice-turmeric);
+  opacity: 0.07; line-height: 1;
+  transform: rotate(12deg);
+  z-index: -1; pointer-events: none;
+  user-select: none;
+}
+
+/* ═════════ HERO — §1 type scale ═════════ */
+.hero-meta {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: var(--space-md) 0 var(--space-lg);
+  display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;
+}
+.hero-meta-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+.hero-name {
+  font-family: var(--font-serif); font-size: 76px; font-weight: 400;
+  letter-spacing: -0.025em; line-height: 1.06;
+  padding-bottom: var(--space-md);
+}
+.hero-vitals {
+  display: flex; gap: var(--space-2xl); flex-wrap: wrap;
+  padding: var(--space-md) 0 var(--space-xl);
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xl);
+}
+.vital-accent { color: var(--color-spice-turmeric); }
+
+/* ═════════ PILLS — §8 canonical 100px ═════════ */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+  padding: 5px 14px; border-radius: 100px;
+  line-height: 1;
+}
+.pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+.pill-sage { background: var(--color-garden-sage-12); color: var(--color-garden-rosemary); }
+.pill-sage::before { background: var(--color-garden-sage); }
+.pill-turmeric { background: var(--color-spice-turmeric-12); color: #8e7018; }
+.pill-turmeric::before { background: var(--color-spice-turmeric); }
+.pill-terracotta { background: var(--color-spice-terracotta-10); color: #8a4330; }
+.pill-terracotta::before { background: var(--color-spice-terracotta); }
+.pill-saffron { background: var(--color-spice-saffron-10); color: #a6862c; }
+.pill-saffron::before { background: var(--color-spice-saffron); }
+.pill-neutral {
+  background: var(--color-desk-charcoal-4); color: var(--color-text-secondary);
+  padding: 5px 14px;
+}
+.pill-neutral::before { display: none; }
+
+/* ═════════ CHAPTER HEADING — §6 ═════════ */
+.chapter { padding-top: var(--space-4xl); }
+.chapter-rule {
+  border: none; border-top: 1px solid var(--color-rule-heavy);
+  margin-bottom: var(--space-lg);
+}
+.chapter-title-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+.chapter-title {
+  font-family: var(--font-serif); font-size: 28px; font-weight: 400;
+  color: var(--color-text-primary); letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.chapter-count {
+  font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+}
+.chapter-count.needs-attention { color: var(--color-spice-terracotta); }
+.chapter-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xl);
+}
+.chapter-meta a {
+  color: var(--color-spice-turmeric); text-decoration: none;
+  border-bottom: 1px dotted var(--color-spice-turmeric);
+}
+
+/* ═════════ ROW PATTERN (replaces card-based triage) — §4 ═════════ */
+/* Rows = structure from type + dividers, not backgrounds. Entity left-border only. */
+.row {
+  display: grid;
+  grid-template-columns: 3px 1fr auto;
+  gap: var(--space-xl);
+  padding: var(--space-xl) 0 var(--space-xl) var(--space-md);
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: start;
+}
+.row:last-child { border-bottom: none; }
+.row-spine { width: 3px; align-self: stretch; border-radius: 2px; }
+.row-spine-urgent { background: var(--color-spice-terracotta); }
+.row-spine-soon { background: var(--color-spice-turmeric); }
+.row-spine-gap { background: var(--color-garden-larkspur); }
+.row-spine-divergence { background: var(--color-spice-saffron); }
+
+.row-body { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
+.row-kind {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  margin-bottom: var(--space-xs);
+}
+.row-kind-urgent { color: var(--color-spice-terracotta); }
+.row-kind-soon { color: #8e7018; }
+.row-kind-gap { color: #4a6186; }
+.row-kind-divergence { color: #a6862c; }
+
+.row-headline {
+  font-family: var(--font-serif); font-size: 20px; font-weight: 500;
+  line-height: 1.3; color: var(--color-text-primary);
+  letter-spacing: -0.005em;
+}
+.row-evidence {
+  font-family: var(--font-sans); font-size: 15px; line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 640px;
+  margin-top: var(--space-xs);
+}
+.row-evidence strong { color: var(--color-text-primary); font-weight: 500; }
+.row-evidence em { font-style: italic; }
+
+.row-sources {
+  display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md);
+  padding-top: var(--space-sm);
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--color-text-tertiary); letter-spacing: 0.04em;
+  align-items: center;
+}
+.row-sources a {
+  color: var(--color-text-tertiary); text-decoration: none;
+  border-bottom: 1px dotted var(--color-text-tertiary);
+}
+.row-sources a:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
+.source-tag {
+  padding: 2px 7px; border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-mono); font-size: 9px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.source-tag-local { background: var(--color-desk-charcoal-4); color: var(--color-text-secondary); }
+.source-tag-glean { background: var(--color-spice-turmeric-12); color: #8e7018; }
+
+.row-actions { display: flex; gap: var(--space-sm); align-items: center; flex-wrap: wrap; }
+.btn {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+  background: none; border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary); padding: 8px 14px;
+  border-radius: 100px; cursor: pointer; white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+.btn:hover { border-color: var(--color-text-tertiary); color: var(--color-text-primary); }
+.btn-primary {
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  border-color: var(--color-desk-charcoal);
+}
+.btn-primary:hover { background: var(--color-desk-ink); border-color: var(--color-desk-ink); color: var(--color-paper-cream); }
+
+/* ═════════ PULL QUOTE — §6 ═════════ */
+.pullquote {
+  margin: var(--space-lg) 0;
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--color-spice-turmeric-8);
+  border-left: 3px solid var(--color-spice-turmeric);
+  border-radius: 0 var(--radius-editorial-md) var(--radius-editorial-md) 0;
+  font-family: var(--font-serif); font-size: 17px; font-style: italic;
+  line-height: 1.65; color: var(--color-text-primary);
+  max-width: 720px;
+}
+.pullquote-attr {
+  font-family: var(--font-mono); font-size: 10px; font-style: normal;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-sm); display: block;
+}
+
+/* Sentiment hero block — uses pullquote for the note */
+.sentiment-hero { padding-top: var(--space-2xl); }
+.sentiment-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--color-text-tertiary); margin-bottom: var(--space-md);
+}
+.sentiment-value-row {
+  display: flex; align-items: baseline; gap: var(--space-lg);
+  margin-bottom: var(--space-sm); flex-wrap: wrap;
+}
+.sentiment-value {
+  font-family: var(--font-serif); font-size: 44px; font-weight: 400;
+  line-height: 1; letter-spacing: -0.015em;
+}
+.sentiment-value-concerning { color: var(--color-spice-saffron); }
+.sentiment-value-ontrack { color: var(--color-garden-sage); }
+
+.sparkline {
+  display: inline-flex; align-items: flex-end; gap: 3px; height: 20px;
+  padding-left: var(--space-sm);
+}
+.spark-bar { width: 4px; border-radius: 2px; }
+.spark-good { background: var(--color-garden-sage); }
+.spark-mid { background: var(--color-spice-saffron); }
+.spark-h8 { height: 9px; }
+.spark-h12 { height: 13px; }
+.spark-h16 { height: 17px; }
+.spark-h20 { height: 20px; }
+
+.sentiment-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-md);
+}
+.sentiment-meta a {
+  color: var(--color-spice-turmeric); text-decoration: none;
+  border-bottom: 1px dotted var(--color-spice-turmeric);
+}
+
+/* ═════════ EDITORIAL ANNOTATION (saffron signal — preserved from v1) ═════════ */
+.annotation {
+  padding: var(--space-md) 0 var(--space-lg);
+  margin-top: var(--space-lg);
+  max-width: 680px;
+}
+.annotation-label {
+  display: flex; align-items: center; gap: var(--space-sm);
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: #a6862c; font-weight: 600;
+  margin-bottom: var(--space-sm);
+}
+.annotation-label::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-spice-saffron); flex-shrink: 0;
+}
+.annotation-body {
+  padding-left: 14px;
+  font-family: var(--font-serif); font-style: italic; font-size: 15px;
+  line-height: 1.65; color: var(--color-text-secondary);
+}
+.annotation-body strong { color: var(--color-text-primary); font-weight: 500; font-style: normal; }
+.annotation-body a {
+  color: #a6862c; font-style: normal; text-decoration: none;
+  border-bottom: 1px dotted #a6862c;
+}
+
+/* Subgroup heading — divergences section */
+.subgroup {
+  padding-top: var(--space-2xl);
+  padding-bottom: var(--space-md);
+  display: flex; align-items: baseline; gap: var(--space-md); flex-wrap: wrap;
+  border-top: 1px solid var(--color-rule-heavy);
+  margin-top: var(--space-2xl);
+}
+.subgroup-label {
+  font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: #a6862c; font-weight: 600;
+}
+.subgroup-note {
+  font-family: var(--font-sans); font-size: 13px; font-style: italic;
+  color: var(--color-text-tertiary);
+}
+
+/* ═════════ OUTLOOK FEATURED BLOCK (remains a featured surface — §4 exception) ═════════ */
+.outlook-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2xl);
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border-radius: var(--radius-editorial-xl);
+  box-shadow: var(--shadow-md);
+  margin-top: var(--space-lg);
+}
+.outlook-block-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--color-text-tertiary); margin-bottom: var(--space-xs);
+}
+.outlook-block-value {
+  font-family: var(--font-serif); font-size: 32px; font-weight: 400;
+  line-height: 1.1; color: var(--color-text-primary);
+  margin-bottom: var(--space-sm); letter-spacing: -0.015em;
+}
+.outlook-value-saffron { color: var(--color-spice-saffron); }
+.outlook-value-sage { color: var(--color-garden-sage); }
+.outlook-value-turmeric { color: var(--color-spice-turmeric); }
+.outlook-block-detail {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+/* ═════════ SUPPORTING / TENSION (row-style) ═════════ */
+.tension-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2xl);
+  padding: var(--space-xl) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+.tension-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary); margin-bottom: var(--space-xs);
+}
+.tension-value {
+  font-family: var(--font-serif); font-size: 40px; font-weight: 400; line-height: 1;
+  margin-bottom: var(--space-xs); letter-spacing: -0.02em;
+}
+.tension-green { color: var(--color-garden-sage); }
+.tension-red { color: var(--color-spice-terracotta); }
+.tension-meta {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+.tension-note {
+  padding: var(--space-lg) 0;
+  font-family: var(--font-serif); font-size: 16px; font-style: italic;
+  line-height: 1.65; color: var(--color-text-secondary);
+  max-width: 680px;
+}
+
+.dimensions {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg) var(--space-xl);
+  padding-top: var(--space-xl);
+}
+.dim { display: flex; flex-direction: column; gap: var(--space-xs); }
+.dim-name {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  display: flex; justify-content: space-between;
+}
+.dim-score { color: var(--color-text-secondary); }
+.dim-bar { height: 4px; background: var(--color-rule-light); border-radius: 2px; overflow: hidden; }
+.dim-fill { height: 100%; border-radius: 2px; }
+.dim-fill-green { background: var(--color-garden-sage); }
+.dim-fill-yellow { background: var(--color-spice-turmeric); }
+.dim-fill-red { background: var(--color-spice-terracotta); }
+.dim-evidence {
+  font-family: var(--font-sans); font-size: 12px;
+  color: var(--color-text-tertiary); line-height: 1.5;
+}
+
+/* ═════════ META / ABOUT (row-style, no card) ═════════ */
+.about-block {
+  padding: var(--space-lg) 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+.about-label {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--color-text-tertiary); margin-bottom: var(--space-sm);
+}
+.about-text {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 640px;
+}
+.about-text strong { color: var(--color-text-primary); font-weight: 500; }
+
+/* ═════════ FINIS MARKER — §6 (non-negotiable) ═════════ */
+.finis {
+  text-align: center;
+  padding: var(--space-4xl) 0 var(--space-2xl);
+  color: var(--color-text-tertiary);
+}
+.finis-mark {
+  font-family: var(--font-mark); font-weight: 800; font-size: 14px;
+  color: var(--color-spice-turmeric); opacity: 0.5;
+  letter-spacing: 0.5em;
+}
+.finis-date {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-top: var(--space-sm);
+}
+
+/* ═════════ NAV ISLAND — §5 ═════════ */
+.nav-island {
+  position: fixed; right: 28px; top: 50%; transform: translateY(-50%);
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-xl);
+  box-shadow: 0 4px 20px rgba(30, 37, 48, 0.06);
+  padding: var(--space-sm);
+  z-index: 90;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 168px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 7px 10px;
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  cursor: pointer; border-radius: var(--radius-editorial-md);
+  border: none; background: none; text-align: left;
+  transition: color 0.15s, background 0.15s;
+}
+.nav-item::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-rule-heavy); flex-shrink: 0;
+  transition: background 0.15s;
+}
+.nav-item:hover { color: var(--color-text-secondary); background: var(--color-desk-charcoal-4); }
+.nav-item.active { color: var(--color-text-primary); font-weight: 600; }
+.nav-item.active::before { background: var(--color-spice-turmeric); }
+@media (max-width: 1400px) { .nav-island { display: none; } }
+
+/* ═════════ SWITCHER + MOCKUP NOTE ═════════ */
+.switcher {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--color-desk-charcoal); border-radius: 100px;
+  box-shadow: 0 2px 8px rgba(30, 37, 48, 0.15); z-index: var(--z-app-shell);
+}
+.switcher button {
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  padding: 8px 20px; border: none; border-radius: 100px;
+  cursor: pointer; background: transparent; color: rgba(255, 255, 255, 0.5);
+}
+.switcher button.active { background: rgba(255, 255, 255, 0.15); color: white; }
+
+.mockup-note {
+  position: fixed; top: 48px; left: 10px;
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  padding: 4px 8px; border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-mono); font-size: 9px; z-index: var(--z-app-shell);
+  line-height: 1.3; opacity: 0.55;
+  max-width: 180px;
+  white-space: nowrap; overflow: hidden; cursor: default;
+  transition: opacity 0.15s, max-width 0.2s, white-space 0s linear 0.2s;
+}
+.mockup-note:hover {
+  opacity: 1; max-width: 320px; white-space: normal;
+  transition: opacity 0.15s, max-width 0.2s, white-space 0s;
+}
+.mockup-note strong {
+  color: var(--color-spice-turmeric); display: inline;
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 9px;
+}
+.mockup-note .body { display: none; }
+.mockup-note:hover .body { display: block; margin-top: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Atmosphere Layer -->
+<div class="atmosphere" aria-hidden="true"></div>
+
+<!-- Folio Bar -->
+<header class="folio" role="banner">
+  <div class="folio-left">
+    <span class="folio-mark">*</span>
+    <span>Accounts / Globex Holdings / Health</span>
+  </div>
+  <div class="folio-center">Apr 17, 2026 · 10:42</div>
+  <div class="folio-right">
+    <span class="folio-status-dot"></span>
+    <span>&gt;_ ready</span>
+  </div>
+</header>
+
+<!-- Mockup note -->
+<div class="mockup-note">
+  <strong>Mockup v2 · Health</strong>
+  <div class="body">Design-system constrained. Rebuilt from v1 with canonical DESIGN-SYSTEM.md patterns. Rows over cards, editorial components, existing paint reused.</div>
+</div>
+
+<div class="page">
+
+  <!-- ═════════ HERO ═════════ -->
+  <div class="hero">
+    <div class="watermark" aria-hidden="true">*</div>
+    <div class="hero-meta">
+      <span class="hero-meta-dot"></span>
+      <span>Updated 1w ago</span>
+      <span class="pill pill-turmeric">Customer</span>
+      <span>5 transcripts · 24 emails · Zendesk · Gong · SF · Glean</span>
+    </div>
+    <h1 class="hero-name">Globex Holdings</h1>
+    <div class="hero-vitals">
+      <span class="vital-accent">$185K ARR</span>
+      <span>Green Health</span>
+      <span>Steady-State</span>
+      <span>NPS 67 · CSAT 4.5</span>
+      <span>Renewal in 221d</span>
+    </div>
+  </div>
+
+  <!-- ═════════ YOUR ASSESSMENT ═════════ -->
+  <section class="sentiment-hero chapter" id="ch-sentiment">
+    <div class="sentiment-label">Your Assessment</div>
+    <div class="sentiment-value-row">
+      <span class="sentiment-value sentiment-value-concerning">Concerning</span>
+      <span class="sparkline" aria-label="Sentiment · last 90 days">
+        <span class="spark-bar spark-good spark-h16"></span>
+        <span class="spark-bar spark-good spark-h16"></span>
+        <span class="spark-bar spark-mid spark-h12"></span>
+        <span class="spark-bar spark-good spark-h16"></span>
+        <span class="spark-bar spark-good spark-h20"></span>
+        <span class="spark-bar spark-mid spark-h12"></span>
+        <span class="spark-bar spark-mid spark-h8"></span>
+      </span>
+      <button class="btn">Update</button>
+    </div>
+    <div class="sentiment-meta">
+      Set 12 days ago · 1 note · <a href="#">Still accurate?</a>
+    </div>
+
+    <!-- Your private note — PullQuote -->
+    <blockquote class="pullquote">
+      "James checked out on Feb 17 — Jorge dominated the architecture discussion. Block editor issues piling up. Concerned we're losing the architect conversation to a headless mindset."
+      <span class="pullquote-attr">— Your note, Apr 4</span>
+    </blockquote>
+
+    <!-- Divergence annotation — saffron signal -->
+    <div class="annotation">
+      <div class="annotation-label">Signals currently disagree</div>
+      <div class="annotation-body">
+        Computed health is <strong style="color: var(--color-garden-sage);">Green +12</strong> and trending up. No ticket escalation, no cadence drop visible in the data. Your read on James's disengagement is earlier than the machine's — the note above is the kind of signal that trains the system. <a href="#">Add more detail →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ NEEDS ATTENTION ═════════ -->
+  <section class="chapter" id="ch-attention">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Needs attention</h2>
+      <span class="chapter-count needs-attention">6 items · scan 60s</span>
+    </div>
+
+    <!-- Row: expansion question unanswered -->
+    <article class="row">
+      <div class="row-spine row-spine-soon"></div>
+      <div class="row-body">
+        <span class="row-kind row-kind-soon">Expansion window · question unanswered</span>
+        <h3 class="row-headline">Jorge asked about headless pricing on Feb 17. No follow-up sent.</h3>
+        <p class="row-evidence">
+          <em>"How does headless pricing work? What does the architecture service look like for React/Next.js?"</em> — Diego Martinez, Globex Holdings technical lead, in the Feb 17 Gong call. Already on the open commitments list assigned to Jamie Carter with no due date. <strong>59 days</strong> since asked. Expansion signal is cooling from "evaluating" to "unaddressed."
+        </p>
+        <div class="row-sources">
+          <span class="source-tag source-tag-local">Local</span>
+          <a href="#">Transcript · Feb 17</a>
+          <a href="#">Open commitment</a>
+        </div>
+      </div>
+      <div class="row-actions">
+        <button class="btn">Reassign</button>
+        <button class="btn btn-primary">Send pricing</button>
+      </div>
+    </article>
+
+    <!-- Row: Defensive Mode blocking API -->
+    <article class="row">
+      <div class="row-spine row-spine-urgent"></div>
+      <div class="row-body">
+        <span class="row-kind row-kind-urgent">Active friction · unresolved</span>
+        <h3 class="row-headline">Our Defensive Mode has been blocking Globex Holdings's WP REST API traffic.</h3>
+        <p class="row-evidence">
+          Mar 14, a <strong>495,000-request spike</strong> triggered Defensive Mode. <strong>Thirteen days later</strong>, Globex Holdings reported WP REST API requests returning 403s — traced to the Defensive Mode engagement threshold set at 50% (manual). VIP recommended raising it to 80%. A second surge served <strong>673,545 requests in 20 minutes</strong> on Apr 5. Protection is impairing their legitimate API usage.
+        </p>
+        <div class="row-sources">
+          <span class="source-tag source-tag-local">Local</span>
+          <a href="#">Risk assessment · Apr 9</a>
+          <a href="#">ZD #223999 · Mar 27</a>
+          <a href="#">ZD #223283 · Apr 5</a>
+        </div>
+      </div>
+      <div class="row-actions">
+        <button class="btn">Snooze</button>
+        <button class="btn btn-primary">Confirm resolved</button>
+      </div>
+    </article>
+
+    <!-- Row: compliance gap -->
+    <article class="row">
+      <div class="row-spine row-spine-urgent"></div>
+      <div class="row-body">
+        <span class="row-kind row-kind-urgent">Renewal drag · compliance gap</span>
+        <h3 class="row-headline">Globex Holdings needs DORA + SOC 2 Type II. Trust Center doesn't meet it.</h3>
+        <p class="row-evidence">
+          On <strong>Mar 10, 2025</strong>, Globex Holdings stated bringing the account into <strong>DORA compliance</strong> was a priority and <strong>SOC 2 Type II-style reporting</strong> would be ideal for their security and cyber teams. <strong>Fabric</strong> (third-party reviewer) has contract-language requirements we cannot meet. For a financial-services customer, unresolved compliance is a <strong>renewal drag even when day-to-day is healthy</strong>.
+        </p>
+        <div class="row-sources">
+          <span class="source-tag source-tag-glean">Glean</span>
+          <a href="#">Gong · Mar 10, 2025</a>
+          <a href="#">Transcript · Feb 17, 2026</a>
+          <a href="#">ZD #218756 · Dec 22</a>
+        </div>
+      </div>
+      <div class="row-actions">
+        <button class="btn">Not now</button>
+        <button class="btn btn-primary">Start compliance plan</button>
+      </div>
+    </article>
+
+    <!-- Row: headless strategic drift -->
+    <article class="row">
+      <div class="row-spine row-spine-soon"></div>
+      <div class="row-body">
+        <span class="row-kind row-kind-soon">Strategic drift · not casual</span>
+        <h3 class="row-headline">Headless CMS isn't curiosity — it's on the renewal opportunity metadata.</h3>
+        <p class="row-evidence">
+          Globex Holdings is actively evaluating <strong>React / Next.js</strong> paths. Jorge said PHP/WordPress talent is scarce; James said headless handles personalization better. <strong>Salesforce opportunity 006UU...YAT carries campaign metadata tagged "headless wordpress"</strong> — this is on the renewal deal. Architecture exploration with organizational momentum. If we can't satisfy the motivations, this evolves into stack drift.
+        </p>
+        <div class="row-sources">
+          <span class="source-tag source-tag-local">Local</span>
+          <a href="#">Transcript · Feb 17</a>
+          <span class="source-tag source-tag-glean">Glean</span>
+          <a href="#">SF opportunity metadata</a>
+        </div>
+      </div>
+      <div class="row-actions">
+        <button class="btn">Dismiss</button>
+        <button class="btn btn-primary">Draft headless position</button>
+      </div>
+    </article>
+
+    <!-- Row: disproportionate technical load -->
+    <article class="row">
+      <div class="row-spine row-spine-soon"></div>
+      <div class="row-body">
+        <span class="row-kind row-kind-soon">Workload signal</span>
+        <h3 class="row-headline">Globex Holdings consumes disproportionate TAM/CSE attention for their size.</h3>
+        <p class="row-evidence">
+          Recent recurring tickets: VIP CLI deploy failures (Jan 20), environment cloning media-path breaks (Jan 19), cache-personalization guidance (Mar 24), proxy onboarding token mismatches (Apr 8), cache-hit-rate anomaly alerts, cron-runner duration anomalies. Multisite complexity + custom blocks + reverse-proxy setup + cache personalization = an account that looks healthy on paper but operationally is high-dependency.
+        </p>
+        <div class="row-sources">
+          <span class="source-tag source-tag-glean">Glean</span>
+          <a href="#">ZD #219885</a> <a href="#">#219841</a> <a href="#">#223807</a>
+          <a href="#">#224818</a> <a href="#">#223286</a> <a href="#">#223364</a>
+        </div>
+      </div>
+      <div class="row-actions">
+        <button class="btn">Dismiss</button>
+        <button class="btn btn-primary">Log workload concern</button>
+      </div>
+    </article>
+
+    <!-- Row: new tech lead -->
+    <article class="row">
+      <div class="row-spine row-spine-gap"></div>
+      <div class="row-body">
+        <span class="row-kind row-kind-gap">Stakeholder change</span>
+        <h3 class="row-headline">A new technical lead surfaced — asked to be added to outreach.</h3>
+        <p class="row-evidence">
+          In a <strong>Feb 26 ticket</strong>, a Globex Holdings contact noted they had recently become <strong>technical lead for the VIP project</strong> and asked to be added to future outreach. Not yet in our stakeholder list. Combined with expanding technical ownership across security contacts (Landyn Sparacino, Jan 12), this is broader shared ownership rather than a single decisive owner — resetting context and escalation paths.
+        </p>
+        <div class="row-sources">
+          <span class="source-tag source-tag-local">Local</span>
+          <a href="#">Update · Feb 26</a>
+          <a href="#">Update · Jan 12</a>
+        </div>
+      </div>
+      <div class="row-actions">
+        <button class="btn">Dismiss</button>
+        <button class="btn btn-primary">Map stakeholder</button>
+      </div>
+    </article>
+  </section>
+
+  <!-- ═════════ DIVERGENCES ═════════ -->
+  <div class="subgroup chapter" id="ch-divergences">
+    <span class="subgroup-label">Divergences · data/narrative mismatches</span>
+    <span class="subgroup-note">The story doesn't match the data — usually the highest-signal thing on the page.</span>
+  </div>
+
+  <article class="row">
+    <div class="row-spine row-spine-divergence"></div>
+    <div class="row-body">
+      <span class="row-kind row-kind-divergence">CRM vs reality</span>
+      <h3 class="row-headline">Salesforce labels Globex Holdings "Disqualified" while everything else says active.</h3>
+      <p class="row-evidence">
+        Account Qualification Status = <strong>Disqualified</strong>. WPVIP Status = <strong>Active</strong>. Predictive Engagement Score = <strong>A</strong>. Prospecting Status = <strong>Active Opportunity</strong>. Any workflow or report keying off Qualification Status is <strong>dropping this $185K account</strong>. Data hygiene issue on opportunity 006XX00000EXAMPLE1.
+      </p>
+      <div class="row-sources">
+        <span class="source-tag source-tag-glean">Glean only</span>
+        <a href="#">SF Account 0010h00001EXAMPLE2</a>
+      </div>
+    </div>
+    <div class="row-actions">
+      <button class="btn">Snooze</button>
+      <button class="btn btn-primary">Fix in CRM</button>
+    </div>
+  </article>
+
+  <article class="row">
+    <div class="row-spine row-spine-divergence"></div>
+    <div class="row-body">
+      <span class="row-kind row-kind-divergence">Our pitch vs their authority</span>
+      <h3 class="row-headline">Our consolidation narrative assumes authority they don't have.</h3>
+      <p class="row-evidence">
+        We've pitched digital-estate consolidation and unified governance. But Jorge said many recognized sites are <strong>portfolio companies, not under their oversight</strong>. Chris Anderson said there may be some oversight "but not true standardization" and the details were <strong>"above my pay grade or not something he knew well yet"</strong>. The buyer doesn't have authority to standardize across adjacent properties — this weakens the expansion motion.
+      </p>
+      <div class="row-sources">
+        <span class="source-tag source-tag-local">Local</span>
+        <a href="#">Transcript · Feb 17 (domain mapping)</a>
+      </div>
+    </div>
+    <div class="row-actions">
+      <button class="btn">Dismiss</button>
+      <button class="btn btn-primary">Rescope the pitch</button>
+    </div>
+  </article>
+
+  <article class="row">
+    <div class="row-spine row-spine-divergence"></div>
+    <div class="row-body">
+      <span class="row-kind row-kind-divergence">Channel divergence</span>
+      <h3 class="row-headline">Support tickets frustrated. Meetings cordial.</h3>
+      <p class="row-evidence">
+        3 tickets Mar 14–27 carry escalating tone — Defensive Mode blocking API, cert renewal failures, proxy onboarding confusion. The Feb 17 Gong call rated positive, and Globex Holdings hasn't raised these issues in scheduled meetings. Customer is performing cordiality in synchronous conversations while friction accumulates asynchronously.
+      </p>
+      <div class="row-sources">
+        <span class="source-tag source-tag-glean">Glean</span>
+        <a href="#">ZD #223999, #223554, #224818</a>
+        <a href="#">Gong · Feb 17 (positive)</a>
+      </div>
+    </div>
+    <div class="row-actions">
+      <button class="btn">Dismiss</button>
+      <button class="btn btn-primary">Address in next meeting</button>
+    </div>
+  </article>
+
+  <!-- ═════════ OUTLOOK (featured card — summary block) ═════════ -->
+  <section class="chapter" id="ch-outlook">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Outlook: renewal</h2>
+    </div>
+
+    <div class="outlook-grid">
+      <div>
+        <div class="outlook-block-label">Confidence</div>
+        <div class="outlook-block-value outlook-value-saffron">55%</div>
+        <p class="outlook-block-detail">Moderate. Risk factors: block editor performance, dashboard renewal-date visibility, compliance documentation gap.</p>
+      </div>
+      <div>
+        <div class="outlook-block-label">Benchmark</div>
+        <div class="outlook-block-value outlook-value-sage">87%</div>
+        <p class="outlook-block-detail">Accounts like Globex Holdings — Enterprise Financial Services, $100–300K ARR, Green→Yellow→Green pattern — renewed at 87% over the last 12mo (n=14).</p>
+      </div>
+      <div>
+        <div class="outlook-block-label">Recommended start</div>
+        <div class="outlook-block-value outlook-value-turmeric">Apr 15</div>
+        <p class="outlook-block-detail">221 days to renewal. Window opens now — address compliance gap and get the headless conversation in hand before commercial cycle.</p>
+      </div>
+    </div>
+
+    <!-- Benchmark insight as PullQuote -->
+    <blockquote class="pullquote" style="margin-top: var(--space-xl);">
+      The 55% confidence is <strong style="font-style: normal; color: var(--color-garden-sage);">pessimistic</strong> for your profile. Baseline expectation should be closer to 87%. Capture the compliance friction and headless alignment, and this renewal should land at baseline or above — the question is not <em>whether</em> they renew, but <em>at what size</em>.
+    </blockquote>
+  </section>
+
+  <!-- ═════════ SUPPORTING ═════════ -->
+  <section class="chapter" id="ch-supporting">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">Supporting · computed vs signal trend</h2>
+    </div>
+
+    <div class="tension-grid">
+      <div>
+        <div class="tension-label">Computed score</div>
+        <div class="tension-value tension-green">72</div>
+        <div class="tension-meta">Green · ▲ +12 in 30d · "improving"</div>
+      </div>
+      <div>
+        <div class="tension-label">Signal trend (from Glean)</div>
+        <div class="tension-value tension-red">Worsening</div>
+        <div class="tension-meta">Infra drift ▲ · Defensive Mode unsettled · Headless ▲ · Compliance persistent</div>
+      </div>
+    </div>
+
+    <p class="tension-note">
+      The score is lagging. Five of ten Glean signals trend "worsening" or "strengthening" (as concerns). The score caught up to the Q1 crisis and is reading the recovery as a rising trajectory — but the new signal layer is showing fresh friction: infra drift, Defensive Mode calibration, headless exploration, operational load. Trust the triage rows above over the score.
+    </p>
+
+    <div class="dimensions">
+      <div class="dim">
+        <div class="dim-name"><span>Engagement</span><span class="dim-score">85</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-green" style="width: 85%"></div></div>
+        <div class="dim-evidence">24 email updates, stable</div>
+      </div>
+      <div class="dim">
+        <div class="dim-name"><span>Stakeholder Coverage</span><span class="dim-score">100</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-green" style="width: 100%"></div></div>
+        <div class="dim-evidence">23 mapped · new tech lead not yet in</div>
+      </div>
+      <div class="dim">
+        <div class="dim-name"><span>Signal Momentum</span><span class="dim-score">87</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-green" style="width: 87%"></div></div>
+        <div class="dim-evidence">4,551 updates in 30d — some adversarial</div>
+      </div>
+      <div class="dim">
+        <div class="dim-name"><span>Champion Health</span><span class="dim-score">70</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-green" style="width: 70%"></div></div>
+        <div class="dim-evidence">Chris Anderson · 2 meetings in 90d · strong</div>
+      </div>
+      <div class="dim">
+        <div class="dim-name"><span>Financial Proximity</span><span class="dim-score">66</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-yellow" style="width: 66%"></div></div>
+        <div class="dim-evidence">221 days to renewal</div>
+      </div>
+      <div class="dim">
+        <div class="dim-name"><span>Meeting Cadence</span><span class="dim-score">30</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-red" style="width: 30%"></div></div>
+        <div class="dim-evidence">1 in 30d ▼ · next Apr 23</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ ABOUT ═════════ -->
+  <section class="chapter" id="ch-about">
+    <hr class="chapter-rule">
+    <div class="chapter-title-row">
+      <h2 class="chapter-title">About this context</h2>
+    </div>
+    <div class="about-block">
+      <div class="about-label">Our data capture gap</div>
+      <p class="about-text">
+        Glean flagged that <strong>at least one Globex Holdings call wasn't captured in Gong</strong> (Amy used a local recording). Staircase notes are "hit-or-miss" depending on TAM/RM diligence. <strong>This account may be systematically under-informed</strong> in automated analyses. Notion isn't indexed for Globex Holdings. No standalone Slack search available. Fix upstream.
+      </p>
+    </div>
+  </section>
+
+  <!-- FINIS MARKER -->
+  <div class="finis">
+    <div class="finis-mark">* * *</div>
+    <div class="finis-date">Glean pull Apr 16, 2026 · 10 updates · 4 divergences · 3 source gaps</div>
+  </div>
+
+</div>
+
+<!-- Switcher -->
+<div class="switcher">
+  <button class="active">Health &amp; Outlook</button>
+  <button>Context</button>
+  <button>The Work</button>
+</div>
+
+<!-- Nav Island -->
+<nav class="nav-island" aria-label="Chapter navigation">
+  <button class="nav-item" data-target="ch-sentiment">Your sentiment</button>
+  <button class="nav-item" data-target="ch-attention">Needs attention</button>
+  <button class="nav-item" data-target="ch-divergences">Divergences</button>
+  <button class="nav-item" data-target="ch-outlook">Outlook</button>
+  <button class="nav-item" data-target="ch-supporting">Supporting</button>
+  <button class="nav-item" data-target="ch-about">About</button>
+</nav>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const navItems = document.querySelectorAll('.nav-item');
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const target = document.getElementById(item.dataset.target);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  const sections = document.querySelectorAll('.chapter[id]');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navItems.forEach(item => item.classList.toggle('active', item.dataset.target === entry.target.id));
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  sections.forEach(s => observer.observe(s));
+});
+</script>
+
+</body>
+</html>

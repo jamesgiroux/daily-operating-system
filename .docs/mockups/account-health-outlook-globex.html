@@ -90,9 +90,9 @@ body {
   background: var(--color-spice-turmeric-12);
   color: var(--color-spice-turmeric);
   font-family: var(--font-mono);
-  font-size: 10px;
-  padding: 3px 10px;
-  border-radius: var(--radius-sm);
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: 100px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -142,7 +142,8 @@ body {
   margin-bottom: var(--space-sm);
 }
 .sentiment-set-value {
-  font-family: var(--font-serif); font-size: 36px; font-weight: 400; line-height: 1;
+  font-family: var(--font-serif); font-size: 44px; font-weight: 400; line-height: 1;
+  letter-spacing: -0.015em;
 }
 .sentiment-set-value-strong { color: var(--color-garden-sage); }
 .sentiment-set-value-ontrack { color: var(--color-garden-sage); }
@@ -452,7 +453,11 @@ body {
 .outlook-section { padding-top: 96px; }
 .outlook-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2xl);
-  padding-top: var(--space-lg);
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  margin-top: var(--space-lg);
 }
 .outlook-block-label {
   font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
@@ -460,28 +465,104 @@ body {
   margin-bottom: var(--space-xs);
 }
 .outlook-block-value {
-  font-family: var(--font-serif); font-size: 28px; font-weight: 400;
+  font-family: var(--font-serif); font-size: 32px; font-weight: 400;
   line-height: 1.1; color: var(--color-text-primary); margin-bottom: var(--space-sm);
+  letter-spacing: -0.015em;
 }
 .outlook-value-confidence { color: var(--color-spice-saffron); }
 .outlook-value-benchmark { color: var(--color-garden-sage); }
 .outlook-value-prep { color: var(--color-spice-turmeric); }
 .outlook-block-detail {
-  font-family: var(--font-sans); font-size: 13px; line-height: 1.5;
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
   color: var(--color-text-secondary);
 }
-.outlook-benchmark-insight {
-  margin-top: var(--space-2xl); padding: var(--space-xl) var(--space-2xl);
-  background: var(--color-desk-charcoal-4);
-  border-radius: var(--radius-md);
+
+/* PullQuote — turmeric-bordered italic serif, cream/turmeric-tint background */
+.pullquote {
+  margin: var(--space-xl) 0 0;
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--color-spice-turmeric-8);
+  border-left: 3px solid var(--color-spice-turmeric);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   font-family: var(--font-serif); font-size: 17px; font-style: italic;
-  line-height: 1.65; color: var(--color-text-primary); max-width: 720px;
+  line-height: 1.65; color: var(--color-text-primary);
+  max-width: 680px;
 }
-.outlook-benchmark-insight strong { color: var(--color-garden-sage); font-weight: 500; font-style: normal; }
+.pullquote strong { font-style: normal; font-weight: 500; }
+.pullquote-attr {
+  font-family: var(--font-mono); font-size: 10px; font-style: normal;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-sm); display: block;
+}
+
+/* ═════════ CHROME: ATMOSPHERE + FOLIO + WATERMARK — §5 ═════════ */
+.atmosphere {
+  position: fixed; inset: 0;
+  z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 900px 700px at 20% 15%, rgba(201, 162, 39, 0.09), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 85% 70%, rgba(201, 162, 39, 0.06), transparent 55%);
+  animation: atmosphere-breathe 14s ease-in-out infinite;
+}
+@keyframes atmosphere-breathe {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+.folio {
+  position: fixed; top: 0; left: 0; right: 0; height: 40px;
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-rule-light);
+  z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.folio-left { display: flex; align-items: center; gap: var(--space-md); }
+.folio-mark {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 18px;
+  color: var(--color-spice-turmeric);
+  line-height: 1; letter-spacing: 0;
+}
+.folio-center { letter-spacing: 0.1em; }
+.folio-right { display: flex; align-items: center; gap: var(--space-sm); }
+.folio-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+.page { position: relative; z-index: 1; }
+.hero-watermark-wrap { position: relative; }
+.hero-watermark {
+  position: absolute; top: -120px; right: -40px;
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 420px;
+  color: var(--color-spice-turmeric);
+  opacity: 0.07; line-height: 1;
+  transform: rotate(12deg);
+  z-index: -1; pointer-events: none; user-select: none;
+}
 
 </style>
 </head>
 <body>
+
+<!-- Atmosphere Layer -->
+<div class="atmosphere" aria-hidden="true"></div>
+
+<!-- Folio Bar -->
+<header class="folio" role="banner">
+  <div class="folio-left">
+    <span class="folio-mark">*</span>
+    <span>Accounts / Globex Holdings / Health</span>
+  </div>
+  <div class="folio-center">Apr 17, 2026 · 10:42</div>
+  <div class="folio-right">
+    <span class="folio-status-dot"></span>
+    <span>&gt;_ ready</span>
+  </div>
+</header>
 
 <div class="mockup-note">
   <strong>Mockup v2 · Health</strong>
@@ -499,7 +580,10 @@ body {
       · Sources: 5 transcripts · 24 emails · Zendesk · Gong · SF · <span style="color: var(--color-spice-turmeric);">Glean ●</span>
     </span>
   </div>
-  <h1 class="name">Globex Holdings</h1>
+  <div class="hero-watermark-wrap">
+    <div class="hero-watermark" aria-hidden="true">*</div>
+    <h1 class="name">Globex Holdings</h1>
+  </div>
   <div class="vitals">
     <span class="vital-arr">$185K ARR</span>
     <span>•</span>
@@ -538,14 +622,14 @@ body {
       Set 12 days ago · 1 note · <a href="#">Still accurate?</a>
     </div>
 
-    <div class="sentiment-note">
+    <blockquote class="pullquote">
       "James checked out on Feb 17 — Jorge dominated the architecture discussion. Block editor issues piling up. Concerned we're losing the architect conversation to a headless mindset."
-      <div class="sentiment-note-date">— Your note, Apr 4</div>
-    </div>
+      <span class="pullquote-attr">— Your note, Apr 4</span>
+    </blockquote>
 
     <!-- Inline divergence: your read doesn't match computed. Acknowledge, don't contradict. -->
     <div class="sentiment-divergence-flag">
-      <strong>Signals currently disagree</strong>
+      <strong>Updates currently disagree</strong>
       Computed health is <strong style="color: var(--color-garden-sage);">Green +12</strong> and trending up. No ticket escalation, no cadence drop visible in the data. Your read on James's disengagement is earlier than the machine's — the note above is the kind of signal that trains the system. <a href="#" style="color: var(--color-spice-saffron); border-bottom: 1px dotted;">Add more detail →</a>
     </div>
   </section>
@@ -709,8 +793,8 @@ body {
         </div>
         <div class="triage-sources">
           <span class="source-tag-local">Local</span>
-          <a href="#">Signal · Feb 26</a>
-          <a href="#">Signal · Jan 12</a>
+          <a href="#">Update · Feb 26</a>
+          <a href="#">Update · Jan 12</a>
         </div>
       </div>
       <div class="triage-action">
@@ -823,9 +907,9 @@ body {
       </div>
     </div>
 
-    <div class="outlook-benchmark-insight">
-      The 55% confidence is <strong>pessimistic</strong> for your profile. Baseline expectation should be closer to 87%. Capture the compliance friction and headless alignment, and this renewal should land at baseline or above — the question is not <em>whether</em> they renew, but <em>at what size</em>.
-    </div>
+    <blockquote class="pullquote">
+      The 55% confidence is <strong style="color: var(--color-garden-sage);">pessimistic</strong> for your profile. Baseline expectation should be closer to 87%. Capture the compliance friction and headless alignment, and this renewal should land at baseline or above — the question is not <em>whether</em> they renew, but <em>at what size</em>.
+    </blockquote>
   </section>
 
   <!-- ═════════ SUPPORTING: computed vs signal trend TENSION ═════════ -->
@@ -839,7 +923,7 @@ body {
         <div class="tension-block-meta">Green · ▲ +12 in 30d · "improving"</div>
       </div>
       <div class="tension-block">
-        <div class="tension-block-label">Signal trend (from Glean)</div>
+        <div class="tension-block-label">Update trend (from Glean)</div>
         <div class="tension-block-value tension-block-value-red">Worsening</div>
         <div class="tension-block-meta">Infra drift ▲ · Defensive Mode unsettled · Headless ▲ · Compliance persistent</div>
       </div>
@@ -865,7 +949,7 @@ body {
         <div class="dim-evidence">23 mapped · new tech lead not yet in</div>
       </div>
       <div class="dim">
-        <div class="dim-name"><span>Signal Momentum</span><span class="dim-score">87</span></div>
+        <div class="dim-name"><span>Update Momentum</span><span class="dim-score">87</span></div>
         <div class="dim-bar"><div class="dim-fill dim-fill-green" style="width: 87%"></div></div>
         <div class="dim-evidence">4,551 signals in 30d — some adversarial</div>
       </div>
