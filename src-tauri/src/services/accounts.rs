@@ -83,20 +83,25 @@ pub fn create_child_account_record(
             .map_err(|e| e.to_string())?;
     }
 
+    if let Some(desc) = description {
+        let trimmed = desc.trim();
+        if !trimmed.is_empty() {
+            let _ = db.update_account_field(&account.id, "notes", trimmed);
+        }
+    }
+
+    let account = db
+        .get_account(&account.id)
+        .map_err(|e| e.to_string())?
+        .unwrap_or(account);
+
     if let Some(ws) = workspace {
         let account_dir = crate::accounts::resolve_account_dir(ws, &account);
         let _ = std::fs::create_dir_all(&account_dir);
         let _ = crate::util::bootstrap_entity_directory(&account_dir, name, "account");
 
-        let mut json = default_account_json(&account);
-        if let Some(desc) = description {
-            let trimmed = desc.trim();
-            if !trimmed.is_empty() {
-                json.notes = Some(trimmed.to_string());
-            }
-        }
-        let _ = crate::accounts::write_account_json(ws, &account, Some(&json), db);
-        let _ = crate::accounts::write_account_markdown(ws, &account, Some(&json), db);
+        let _ = crate::accounts::write_account_json(ws, &account, None, db);
+        let _ = crate::accounts::write_account_markdown(ws, &account, None, db);
     }
 
     Ok(account)
@@ -117,9 +122,16 @@ pub fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::
             csm: None,
             champion: None,
         },
-        company_overview: None,
-        strategic_programs: Vec::new(),
-        notes: None,
+        company_overview: account
+            .company_overview
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok()),
+        strategic_programs: account
+            .strategic_programs
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default(),
+        notes: account.notes.clone(),
         custom_sections: Vec::new(),
         parent_id: account.parent_id.clone(),
     }
@@ -1575,18 +1587,8 @@ pub fn update_account_field(
                 .ok()
                 .flatten()
                 .unwrap_or(account);
-            let json_path =
-                crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
-            let existing = if json_path.exists() {
-                crate::accounts::read_account_json(&json_path)
-                    .ok()
-                    .map(|r| r.json)
-            } else {
-                None
-            };
-            let _ = crate::accounts::write_account_json(workspace, &account, existing.as_ref(), db);
-            let _ =
-                crate::accounts::write_account_markdown(workspace, &account, existing.as_ref(), db);
+            let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+            let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
         }
     }
 
@@ -1637,14 +1639,17 @@ pub fn set_user_health_sentiment(
     Ok(())
 }
 
-/// Update account notes (narrative field — JSON only, not SQLite).
-/// Writes dashboard.json + regenerates dashboard.md.
+/// Update account notes (narrative field).
+/// Writes to SQLite, then regenerates dashboard.json + dashboard.md.
 pub fn update_account_notes(
     db: &ActionDb,
     state: &AppState,
     account_id: &str,
     notes: &str,
 ) -> Result<(), String> {
+    db.update_account_field(account_id, "notes", notes)
+        .map_err(|e| e.to_string())?;
+
     let account = db
         .get_account(account_id)
         .map_err(|e| e.to_string())?
@@ -1654,24 +1659,8 @@ pub fn update_account_notes(
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
-    let json_path =
-        crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
-    let mut existing = if json_path.exists() {
-        crate::accounts::read_account_json(&json_path)
-            .map(|r| r.json)
-            .unwrap_or_else(|_| default_account_json(&account))
-    } else {
-        default_account_json(&account)
-    };
-
-    existing.notes = if notes.is_empty() {
-        None
-    } else {
-        Some(notes.to_string())
-    };
-
-    let _ = crate::accounts::write_account_json(workspace, &account, Some(&existing), db);
-    let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
+    let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+    let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
 
     // Emit field update signal (I377)
     crate::services::signals::emit_and_propagate(
@@ -1696,40 +1685,31 @@ pub fn update_account_notes(
     Ok(())
 }
 
-/// Update account strategic programs (narrative field — JSON only).
-/// Writes dashboard.json + regenerates dashboard.md.
+/// Update account strategic programs (narrative field).
+/// Validates JSON, writes to SQLite, then regenerates dashboard.json + dashboard.md.
 pub fn update_account_programs(
     db: &ActionDb,
     state: &AppState,
     account_id: &str,
     programs_json: &str,
 ) -> Result<(), String> {
+    let _: Vec<crate::accounts::StrategicProgram> =
+        serde_json::from_str(programs_json).map_err(|e| format!("Invalid programs JSON: {}", e))?;
+
+    db.update_account_field(account_id, "strategic_programs", programs_json)
+        .map_err(|e| e.to_string())?;
+
     let account = db
         .get_account(account_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-    let programs: Vec<crate::accounts::StrategicProgram> =
-        serde_json::from_str(programs_json).map_err(|e| format!("Invalid programs JSON: {}", e))?;
-
     let config = state.config.read();
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
-    let json_path =
-        crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
-    let mut existing = if json_path.exists() {
-        crate::accounts::read_account_json(&json_path)
-            .map(|r| r.json)
-            .unwrap_or_else(|_| default_account_json(&account))
-    } else {
-        default_account_json(&account)
-    };
-
-    existing.strategic_programs = programs;
-
-    let _ = crate::accounts::write_account_json(workspace, &account, Some(&existing), db);
-    let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
+    let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+    let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
 
     // Emit field update signal (I377)
     crate::services::signals::emit_and_propagate(

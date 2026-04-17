@@ -1003,6 +1003,16 @@ impl ActionDb {
     /// Update a single whitelisted field on an account.
     pub fn update_account_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
+        // JSON-typed columns: validate non-empty values parse as JSON to prevent
+        // silently storing corrupt data that later fails parse-on-read.
+        if matches!(field, "strategic_programs" | "company_overview") && !value.is_empty() {
+            serde_json::from_str::<serde_json::Value>(value).map_err(|e| {
+                DbError::Sqlite(rusqlite::Error::InvalidParameterName(format!(
+                    "Invalid JSON for field '{}': {}",
+                    field, e
+                )))
+            })?;
+        }
         // parent_id uses NULL for empty values (top-level accounts)
         if field == "parent_id" {
             if value.is_empty() {
@@ -1067,6 +1077,18 @@ impl ActionDb {
             }
             "sentiment_set_at" => {
                 "UPDATE accounts SET sentiment_set_at = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "tracker_path" => {
+                "UPDATE accounts SET tracker_path = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "notes" => {
+                "UPDATE accounts SET notes = CASE WHEN ?1 = '' THEN NULL ELSE ?1 END, updated_at = ?3 WHERE id = ?2"
+            }
+            "strategic_programs" => {
+                "UPDATE accounts SET strategic_programs = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "company_overview" => {
+                "UPDATE accounts SET company_overview = ?1, updated_at = ?3 WHERE id = ?2"
             }
             _ => {
                 return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
