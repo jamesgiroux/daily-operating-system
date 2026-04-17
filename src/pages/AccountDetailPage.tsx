@@ -17,6 +17,7 @@ import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { AccountBreadcrumbs } from "@/components/account/AccountBreadcrumbs";
 import { AccountRolloverPrompt } from "@/components/account/AccountRolloverPrompt";
 import { AccountDialogs } from "@/components/account/AccountDialogs";
+import { AccountViewSwitcher } from "@/components/account/AccountViewSwitcher";
 import { buildAccountVitals } from "@/components/account/account-detail-utils";
 
 import shared from "@/styles/entity-detail.module.css";
@@ -62,7 +63,9 @@ export default function AccountDetailPage() {
         )}
       </section>
 
-      {/* Views will be added in Steps 4-5 */}
+      {/* Views added in Step 5 */}
+
+      <AccountViewSwitcher activeView={page.activeView} onViewChange={page.setActiveView} />
 
       <AccountDialogs accountId={page.accountId} accountName={detail.name} accountType={detail.accountType}
         archiveDialogOpen={page.archiveDialogOpen} onArchiveDialogChange={page.setArchiveDialogOpen} onArchive={acct.handleArchive}
