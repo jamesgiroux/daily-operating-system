@@ -34,7 +34,6 @@ import { AccountBreadcrumbs } from "@/components/account/AccountBreadcrumbs";
 import { AccountRolloverPrompt } from "@/components/account/AccountRolloverPrompt";
 import { AccountDialogs } from "@/components/account/AccountDialogs";
 import { AccountDetailProvider } from "@/contexts/AccountDetailContext";
-import { AccountViewSwitcher } from "@/components/account/AccountViewSwitcher";
 import type { AccountDetailContextValue } from "@/contexts/AccountDetailContext";
 import { buildAccountVitals, buildHealthChapters, buildContextChapters, buildWorkChapters } from "@/components/account/account-detail-utils";
 
@@ -182,8 +181,6 @@ export default function AccountDetailShell() {
       </section>
 
       <Outlet />
-
-      <AccountViewSwitcher />
 
       <AccountDialogs accountId={accountId!} accountName={detail.name} accountType={detail.accountType}
         archiveDialogOpen={archiveDialogOpen} onArchiveDialogChange={setArchiveDialogOpen} onArchive={acct.handleArchive}
