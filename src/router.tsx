@@ -6,6 +6,7 @@ import {
   Outlet,
   useRouterState,
   useNavigate,
+  useParams,
 } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -539,6 +540,42 @@ const accountDetailRoute = createRoute({
   component: AccountDetailPage,
 });
 
+// Redirect components for old /health, /context, /work URLs — preserve
+// bookmarks and briefing deep links from the child-route era.
+function makeViewRedirect(view: "health" | "context" | "work") {
+  return function ViewRedirect() {
+    const navigate = useNavigate();
+    const { accountId } = useParams({ strict: false }) as { accountId: string };
+    useEffect(() => {
+      navigate({
+        to: "/accounts/$accountId",
+        params: { accountId },
+        search: { view },
+        replace: true,
+      });
+    }, [accountId, navigate]);
+    return null;
+  };
+}
+
+const accountHealthRedirectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/accounts/$accountId/health",
+  component: makeViewRedirect("health"),
+});
+
+const accountContextRedirectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/accounts/$accountId/context",
+  component: makeViewRedirect("context"),
+});
+
+const accountWorkRedirectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/accounts/$accountId/work",
+  component: makeViewRedirect("work"),
+});
+
 const riskBriefingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/accounts/$accountId/reports/risk_briefing",
@@ -696,6 +733,9 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   accountsRoute,
   accountDetailRoute,
+  accountHealthRedirectRoute,
+  accountContextRedirectRoute,
+  accountWorkRedirectRoute,
   riskBriefingRoute,
   accountHealthRoute,
   ebrQbrRoute,
