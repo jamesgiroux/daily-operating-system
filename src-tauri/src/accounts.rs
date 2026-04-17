@@ -179,11 +179,16 @@ pub fn write_account_json(
             csm: None,
             champion: None,
         },
-        company_overview: existing_json.and_then(|j| j.company_overview.clone()),
-        strategic_programs: existing_json
-            .map(|j| j.strategic_programs.clone())
+        company_overview: account
+            .company_overview
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok()),
+        strategic_programs: account
+            .strategic_programs
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or_default(),
-        notes: existing_json.and_then(|j| j.notes.clone()),
+        notes: account.notes.clone(),
         custom_sections: existing_json
             .map(|j| j.custom_sections.clone())
             .unwrap_or_default(),
@@ -195,12 +200,12 @@ pub fn write_account_json(
 
 /// Write `dashboard.md` for an account (generated artifact).
 ///
-/// Combines structured data from SQLite with narrative data from JSON
-/// and auto-generated sections from meeting/action/capture history.
+/// Combines structured data from SQLite with auto-generated sections
+/// from meeting/action/capture history.
 pub fn write_account_markdown(
     workspace: &Path,
     account: &DbAccount,
-    json: Option<&AccountJson>,
+    _json: Option<&AccountJson>,
     db: &ActionDb,
 ) -> Result<(), String> {
     let dir = resolve_account_dir(workspace, account);
@@ -253,13 +258,17 @@ pub fn write_account_markdown(
     // Read intelligence from DB (I513)
     let intel_data = db.get_entity_intelligence(&account.id).ok().flatten();
 
-    // Company Overview (from JSON — skipped when intelligence.json has company_context)
+    // Company Overview (from DB — skipped when intelligence has company_context)
     let intel_has_company = intel_data
         .as_ref()
         .and_then(|i| i.company_context.as_ref())
         .is_some();
     if !intel_has_company {
-        if let Some(overview) = json.and_then(|j| j.company_overview.as_ref()) {
+        let overview: Option<CompanyOverview> = account
+            .company_overview
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok());
+        if let Some(overview) = overview {
             md.push_str("## Company Overview\n\n");
             if let Some(ref desc) = overview.description {
                 md.push_str(desc);
@@ -278,29 +287,32 @@ pub fn write_account_markdown(
         }
     }
 
-    // Strategic Programs (from JSON)
-    if let Some(programs) = json.map(|j| &j.strategic_programs) {
-        if !programs.is_empty() {
-            md.push_str("## Strategic Programs\n\n");
-            for p in programs.iter() {
-                let status_badge = match p.status.as_str() {
-                    "completed" => "✅",
-                    "in_progress" => "🔄",
-                    "planned" => "📋",
-                    _ => "•",
-                };
-                md.push_str(&format!("- {} **{}** — {}", status_badge, p.name, p.status));
-                if let Some(ref notes) = p.notes {
-                    md.push_str(&format!(" — {}", notes));
-                }
-                md.push('\n');
+    // Strategic Programs (from DB)
+    let programs: Vec<StrategicProgram> = account
+        .strategic_programs
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+    if !programs.is_empty() {
+        md.push_str("## Strategic Programs\n\n");
+        for p in &programs {
+            let status_badge = match p.status.as_str() {
+                "completed" => "✅",
+                "in_progress" => "🔄",
+                "planned" => "📋",
+                _ => "•",
+            };
+            md.push_str(&format!("- {} **{}** — {}", status_badge, p.name, p.status));
+            if let Some(ref notes) = p.notes {
+                md.push_str(&format!(" — {}", notes));
             }
             md.push('\n');
         }
+        md.push('\n');
     }
 
-    // Notes (from JSON)
-    if let Some(notes) = json.and_then(|j| j.notes.as_ref()) {
+    // Notes (from DB)
+    if let Some(ref notes) = account.notes {
         if !notes.is_empty() {
             md.push_str("## Notes\n\n");
             md.push_str(notes);
@@ -1028,7 +1040,7 @@ pub fn build_file_context(_workspace: &Path, db: &ActionDb, account_id: &str) ->
 // Account enrichment via PTY removed per ADR-0086 (I376).
 // Entity intelligence is now enriched solely via intel_queue.
 
-/// Create a minimal AccountJson from a DbAccount (no narrative fields).
+/// Create an AccountJson from a DbAccount, reading narrative fields from DB columns.
 fn default_account_json(account: &DbAccount) -> AccountJson {
     AccountJson {
         version: 1,
@@ -1043,9 +1055,16 @@ fn default_account_json(account: &DbAccount) -> AccountJson {
             csm: None,
             champion: None,
         },
-        company_overview: None,
-        strategic_programs: Vec::new(),
-        notes: None,
+        company_overview: account
+            .company_overview
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok()),
+        strategic_programs: account
+            .strategic_programs
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default(),
+        notes: account.notes.clone(),
         custom_sections: Vec::new(),
         parent_id: account.parent_id.clone(),
     }
@@ -1108,40 +1127,27 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let workspace = dir.path();
         let db = test_db();
-        let account = sample_account("Acme Corp");
+
+        let overview = CompanyOverview {
+            description: Some("A great company.".to_string()),
+            industry: Some("Tech".to_string()),
+            size: None,
+            headquarters: None,
+            enriched_at: None,
+        };
+        let programs = vec![StrategicProgram {
+            name: "Migration".to_string(),
+            status: "in_progress".to_string(),
+            notes: Some("Phase 2".to_string()),
+        }];
+
+        let mut account = sample_account("Acme Corp");
+        account.company_overview = Some(serde_json::to_string(&overview).unwrap());
+        account.strategic_programs = Some(serde_json::to_string(&programs).unwrap());
+        account.notes = Some("Key account.".to_string());
         db.upsert_account(&account).unwrap();
 
-        let json = AccountJson {
-            version: 1,
-            entity_type: "account".to_string(),
-            structured: AccountStructured {
-                arr: account.arr,
-                health: account.health.clone(),
-                lifecycle: account.lifecycle.clone(),
-                renewal_date: account.contract_end.clone(),
-                nps: account.nps,
-                account_team: Vec::new(),
-                csm: None,
-                champion: None,
-            },
-            company_overview: Some(CompanyOverview {
-                description: Some("A great company.".to_string()),
-                industry: Some("Tech".to_string()),
-                size: None,
-                headquarters: None,
-                enriched_at: None,
-            }),
-            strategic_programs: vec![StrategicProgram {
-                name: "Migration".to_string(),
-                status: "in_progress".to_string(),
-                notes: Some("Phase 2".to_string()),
-            }],
-            notes: Some("Key account.".to_string()),
-            custom_sections: vec![],
-            parent_id: None,
-        };
-
-        write_account_markdown(workspace, &account, Some(&json), &db).unwrap();
+        write_account_markdown(workspace, &account, None, &db).unwrap();
 
         let md_path = workspace.join("Accounts/Acme Corp/dashboard.md");
         assert!(md_path.exists());
@@ -1217,38 +1223,21 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let workspace = dir.path();
         let db = test_db();
-        let account = sample_account("Gamma Ltd");
 
-        let existing = AccountJson {
-            version: 1,
-            entity_type: "account".to_string(),
-            structured: AccountStructured {
-                arr: account.arr,
-                health: account.health.clone(),
-                lifecycle: account.lifecycle.clone(),
-                renewal_date: account.contract_end.clone(),
-                nps: account.nps,
-                account_team: Vec::new(),
-                csm: None,
-                champion: None,
-            },
-            company_overview: Some(CompanyOverview {
-                description: Some("Important context.".to_string()),
-                industry: None,
-                size: None,
-                headquarters: None,
-                enriched_at: None,
-            }),
-            strategic_programs: vec![],
-            notes: Some("Don't lose these notes.".to_string()),
-            custom_sections: vec![],
-            parent_id: None,
+        let overview = CompanyOverview {
+            description: Some("Important context.".to_string()),
+            industry: None,
+            size: None,
+            headquarters: None,
+            enriched_at: None,
         };
 
-        // Write with existing narrative data
-        write_account_json(workspace, &account, Some(&existing), &db).unwrap();
+        let mut account = sample_account("Gamma Ltd");
+        account.company_overview = Some(serde_json::to_string(&overview).unwrap());
+        account.notes = Some("Don't lose these notes.".to_string());
 
-        // Read back and verify narrative preserved
+        write_account_json(workspace, &account, None, &db).unwrap();
+
         let json_path = workspace.join("Accounts/Gamma Ltd/dashboard.json");
         let result = read_account_json(&json_path).unwrap();
         assert_eq!(
