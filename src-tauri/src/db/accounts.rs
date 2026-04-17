@@ -1068,6 +1068,18 @@ impl ActionDb {
             "sentiment_set_at" => {
                 "UPDATE accounts SET sentiment_set_at = ?1, updated_at = ?3 WHERE id = ?2"
             }
+            "tracker_path" => {
+                "UPDATE accounts SET tracker_path = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "notes" => {
+                "UPDATE accounts SET notes = CASE WHEN ?1 = '' THEN NULL ELSE ?1 END, updated_at = ?3 WHERE id = ?2"
+            }
+            "strategic_programs" => {
+                "UPDATE accounts SET strategic_programs = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "company_overview" => {
+                "UPDATE accounts SET company_overview = ?1, updated_at = ?3 WHERE id = ?2"
+            }
             _ => {
                 return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
                     format!("Field '{}' is not updatable", field),
