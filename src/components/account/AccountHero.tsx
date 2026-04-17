@@ -7,9 +7,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
-import { hasBleedFlag } from "@/lib/contamination-guard";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
-import { ContaminationWarning } from "@/components/ui/ContaminationWarning";
 import { EditableText } from "@/components/ui/EditableText";
 import { ChevronDown } from "lucide-react";
 import styles from "./AccountHero.module.css";
@@ -45,16 +43,8 @@ export function AccountHero({
   vitalsSlot,
   provenanceSlot,
 }: AccountHeroProps) {
-  // Extract all paragraphs of executive assessment as the narrative
-  const paragraphs = intelligence?.executiveAssessment?.split("\n").filter((p) => p.trim()) ?? [];
-  const LEDE_LIMIT = 500;
-  const [showFullLede, setShowFullLede] = useState(false);
-  const fullNarrative = paragraphs.join("\n\n");
-  const narrativeTruncated = fullNarrative.length > LEDE_LIMIT && !showFullLede;
-  const narrative = narrativeTruncated ? fullNarrative.slice(0, LEDE_LIMIT) + "…" : fullNarrative;
-
-  // DOS-83: Check if executive assessment is flagged as cross-entity contamination.
-  const assessmentBleed = hasBleedFlag(intelligence?.consistencyFindings, "executiveAssessment");
+  // NOTE: Executive assessment narrative moved to AccountExecutiveSummary
+  // component, rendered in the Context view. See DOS-48 refactor.
 
   return (
     <div className={styles.hero}>
@@ -113,28 +103,9 @@ export function AccountHero({
         )}
       </h1>
 
-      {/* I550: Vitals strip between name and narrative */}
+      {/* Vitals strip below name — narrative moved to AccountExecutiveSummary (Context view) */}
       {vitalsSlot}
       {provenanceSlot ? <div className={styles.provenance}>{provenanceSlot}</div> : null}
-
-      {/* Executive assessment narrative — italic serif, all paragraphs */}
-      {narrative && (
-        <div className={styles.lede}>
-          {assessmentBleed && <ContaminationWarning />}
-          {!assessmentBleed && narrative.split("\n\n").map((p, i) => (
-            <p key={i} className={i === 0 ? styles.ledeParagraph : styles.ledeParagraphSpaced}>{p}</p>
-          ))}
-          {!assessmentBleed && narrativeTruncated && (
-            <button
-              onClick={() => setShowFullLede(true)}
-              className={styles.readMore}
-            >
-              Read more
-            </button>
-          )}
-        </div>
-      )}
-
     </div>
   );
 }

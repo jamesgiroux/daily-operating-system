@@ -135,6 +135,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
 
   // ─── Active item ref for chapter pill Y alignment ─────────────────────
   const globalPillRef = useRef<HTMLElement>(null);
+  const localPillRef = useRef<HTMLElement>(null);
   const activeItemRef = useRef<HTMLButtonElement | null>(null);
   const [localPillTop, setLocalPillTop] = useState(0);
 
@@ -143,7 +144,19 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
     activeItemRef.current = node;
   }, []);
 
-  // Compute the local pill's top position relative to the global pill
+  // Compute the local pill's top position relative to the global pill.
+  //
+  // Ideal: top of local pill aligns with top of active icon (spatial context:
+  // "these chapters belong to this entity").
+  //
+  // Constraint: the local pill must NOT extend past the global pill's bottom,
+  // otherwise the fixed flex container grows taller than the global pill and
+  // the whole nav island shifts up — pushing the global pill over the folio
+  // bar and covering the CMD+K button.
+  //
+  // Fallback: if aligning to the active icon would overflow, clamp top to 0
+  // (local pill starts at the global pill's top). Both pills share a hard
+  // top edge, and the container height = global pill height.
   useLayoutEffect(() => {
     if (!hasChapters || !hasGlobalPill || !activeItemRef.current || !globalPillRef.current) {
       setLocalPillTop(0);
@@ -151,10 +164,17 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
     }
     const containerRect = globalPillRef.current.getBoundingClientRect();
     const activeRect = activeItemRef.current.getBoundingClientRect();
-    // Align top of local pill with the active icon's top, with pill padding offset
-    const offset = activeRect.top - containerRect.top - 8; // subtract local pill's own padding
-    setLocalPillTop(Math.max(0, offset));
-  }, [hasChapters, hasGlobalPill, activePage, activeChapterId]);
+    const localHeight = localPillRef.current?.getBoundingClientRect().height ?? 0;
+    const globalHeight = containerRect.height;
+
+    // Desired top: align with active icon (minus local pill padding)
+    const desiredTop = Math.max(0, activeRect.top - containerRect.top - 8);
+
+    // Overflow check: would the local pill's bottom extend past the global pill's bottom?
+    const wouldOverflow = desiredTop + localHeight > globalHeight;
+
+    setLocalPillTop(wouldOverflow ? 0 : desiredTop);
+  }, [hasChapters, hasGlobalPill, activePage, activeChapterId, chapters]);
 
   // ─── Chapter-only mode (OnboardingFlow) ───────────────────────────────
   if (!hasGlobalPill && hasChapters) {
@@ -242,6 +262,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
     <div className={styles.navIslandContainer}>
       {/* LOCAL PILL — chapter/section navigation (left side) */}
       <nav
+        ref={localPillRef}
         className={`${styles.navIslandLocal} ${hasChapters ? '' : styles.navIslandLocalHidden}`}
         style={{ '--local-pill-top': `${localPillTop}px` } as React.CSSProperties}
         aria-label="Section navigation"
