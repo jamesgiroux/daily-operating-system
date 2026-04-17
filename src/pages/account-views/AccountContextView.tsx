@@ -75,7 +75,7 @@ export default function AccountContextView() {
           actionSlot={<AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />} />
       </MarginSection>
 
-      {acct.files.length > 0 && <MarginSection label="Files" reveal={false}><FileListSection files={acct.files} /></MarginSection>}
+      {acct.files.length > 0 && <MarginSection id="files" label="Files" reveal={false}><FileListSection files={acct.files} /></MarginSection>}
 
       <div className="editorial-reveal"><FinisMarker enrichedAt={intelligence?.enrichedAt} /></div>
     </>
