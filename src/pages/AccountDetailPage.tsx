@@ -28,6 +28,7 @@ import { AccountOutlook } from "@/components/entity/AccountOutlook";
 import { AccountPortfolioSection } from "@/components/account/AccountPortfolioSection";
 import { AccountProductsSection } from "@/components/account/AccountProductsSection";
 // View 2 — Context
+import { AccountExecutiveSummary } from "@/components/account/AccountExecutiveSummary";
 import { AccountPullQuote } from "@/components/account/AccountPullQuote";
 import { AccountTechnicalFootprint } from "@/components/account/AccountTechnicalFootprint";
 import { StateOfPlay } from "@/components/entity/StateOfPlay";
@@ -85,6 +86,8 @@ export default function AccountDetailPage() {
   // ─── View 2: Context ────────────────────────────────────────────────────
   const renderContextView = () => (
     <>
+      <AccountExecutiveSummary intelligence={intelligence} />
+
       {intelligence && <AccountPullQuote intelligence={intelligence} />}
 
       <MarginSection id="state-of-play" label={<>State of<br/>Play</>}>
