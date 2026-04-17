@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Work — Globex Holdings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,200..800;1,200..800&family=DM+Sans:ital,wght@0,100..1000;1,100..1000&family=JetBrains+Mono:wght@100..800&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+/* ═════════ DESIGN TOKENS (copied verbatim from Health/Context) ═════════ */
+:root {
+  --color-paper-cream: #f5f2ef;
+  --color-paper-linen: #e8e2d9;
+  --color-paper-warm-white: #faf8f6;
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+  --color-spice-turmeric: #c9a227;
+  --color-spice-saffron: #deb841;
+  --color-spice-terracotta: #c4654a;
+  --color-spice-chili: #9b3a2a;
+  --color-garden-sage: #7eaa7b;
+  --color-garden-olive: #6b7c52;
+  --color-garden-rosemary: #4a6741;
+  --color-garden-larkspur: #8fa3c4;
+  --color-garden-eucalyptus: #6ba8a4;
+  --color-text-primary: var(--color-desk-charcoal);
+  --color-text-secondary: #5a6370;
+  --color-text-tertiary: #6b7280;
+  --color-rule-heavy: rgba(30, 37, 48, 0.12);
+  --color-rule-light: rgba(30, 37, 48, 0.06);
+  --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-spice-turmeric-15: rgba(201, 162, 39, 0.15);
+  --color-spice-saffron-10: rgba(222, 184, 65, 0.10);
+  --color-spice-saffron-15: rgba(222, 184, 65, 0.15);
+  --color-spice-terracotta-10: rgba(196, 101, 74, 0.10);
+  --color-spice-terracotta-15: rgba(196, 101, 74, 0.15);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-garden-sage-15: rgba(126, 170, 123, 0.15);
+  --color-garden-larkspur-15: rgba(143, 163, 196, 0.15);
+  --color-desk-charcoal-4: rgba(30, 37, 48, 0.04);
+  --color-desk-charcoal-8: rgba(30, 37, 48, 0.08);
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --radius-sm: 4px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --shadow-sm: 0 2px 8px rgba(30, 37, 48, 0.1);
+  --shadow-md: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-paper-cream);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 120px 200px;
+}
+
+/* ═════════ SHARED HEADER ═════════ */
+.hero-date {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: var(--space-xl) 0 var(--space-lg);
+  display: flex; align-items: center; gap: var(--space-md);
+}
+.hero-date-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+.badge-customer {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+  font-family: var(--font-mono); font-size: 10px;
+  padding: 3px 10px; border-radius: var(--radius-sm);
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.name {
+  font-family: var(--font-serif); font-size: 76px; font-weight: 400;
+  letter-spacing: -0.025em; line-height: 1.06;
+  padding-bottom: var(--space-md);
+}
+.vitals {
+  display: flex; gap: var(--space-2xl);
+  padding: var(--space-md) 0 var(--space-xl);
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xl);
+}
+.vital-arr { color: var(--color-spice-turmeric); }
+
+/* Switcher / Mockup note (shared) */
+.switcher {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--color-desk-charcoal); border-radius: 100px;
+  box-shadow: var(--shadow-sm); z-index: 100;
+}
+.switcher button {
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  padding: 8px 20px; border: none; border-radius: 100px;
+  cursor: pointer; background: transparent; color: rgba(255,255,255,0.5);
+}
+.switcher button.active { background: rgba(255,255,255,0.15); color: white; }
+
+.mockup-note {
+  position: fixed; top: 10px; left: 10px;
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  padding: 4px 8px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 9px; z-index: 100;
+  line-height: 1.3; opacity: 0.55;
+  max-width: 140px;
+  white-space: nowrap; overflow: hidden;
+  cursor: default;
+  transition: opacity 0.15s ease, max-width 0.2s ease, white-space 0s linear 0.2s;
+}
+.mockup-note:hover {
+  opacity: 1; max-width: 280px; white-space: normal;
+  transition: opacity 0.15s ease, max-width 0.2s ease, white-space 0s;
+}
+.mockup-note strong {
+  color: var(--color-spice-turmeric); display: inline;
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 9px;
+}
+.mockup-note .mockup-note-body { display: none; }
+.mockup-note:hover .mockup-note-body { display: block; margin-top: 3px; }
+
+/* ═════════ CHAPTER (shared pattern from Context) ═════════ */
+.chapter { padding-top: 112px; }
+.chapter-rule {
+  border: none; border-top: 1px solid var(--color-rule-heavy);
+  margin-bottom: var(--space-lg);
+}
+.chapter-title {
+  font-family: var(--font-serif); font-size: 32px; font-weight: 400;
+  color: var(--color-text-primary); letter-spacing: -0.01em;
+}
+.chapter-sublabel {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-sm);
+}
+.freshness-strip {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-top: var(--space-md); margin-bottom: var(--space-2xl);
+  display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;
+}
+.freshness-strip a {
+  color: var(--color-spice-turmeric); text-decoration: none;
+  border-bottom: 1px dotted var(--color-spice-turmeric);
+}
+
+/* ═════════ CITE CHIPS (shared) ═════════ */
+.cite-chip {
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--color-text-tertiary); letter-spacing: 0.04em;
+  border-bottom: 1px dotted var(--color-text-tertiary);
+  text-decoration: none; white-space: nowrap;
+  padding-bottom: 1px;
+}
+.cite-chip:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
+
+/* ═════════ CHAPTER 1 — 90-DAY FOCUS (editorial numbered list) ═════════ */
+.focus-list {
+  display: flex; flex-direction: column;
+  gap: var(--space-3xl);
+  padding-top: var(--space-lg);
+}
+.focus-item {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: var(--space-xl);
+  align-items: baseline;
+}
+.focus-numeral {
+  font-family: var(--font-serif); font-size: 72px; font-weight: 300;
+  line-height: 1; color: var(--color-rule-heavy);
+  letter-spacing: -0.03em;
+  text-align: right;
+  padding-top: 4px;
+}
+.focus-body { display: flex; flex-direction: column; gap: var(--space-md); }
+.focus-headline {
+  font-family: var(--font-serif); font-size: 26px; font-weight: 400;
+  line-height: 1.25; color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+.focus-para {
+  font-family: var(--font-sans); font-size: 15px; line-height: 1.7;
+  color: var(--color-text-secondary); max-width: 680px;
+}
+.focus-provenance {
+  font-family: var(--font-sans); font-size: 12px; line-height: 1.7;
+  color: var(--color-text-tertiary);
+  display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-sm);
+  align-items: center;
+  padding-top: var(--space-xs);
+}
+.focus-provenance-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-right: var(--space-xs);
+}
+.focus-edit {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  border: none; background: none; cursor: pointer;
+  border-bottom: 1px dotted var(--color-text-tertiary);
+  padding: 0 0 1px; margin-left: auto;
+  align-self: flex-end;
+}
+.focus-edit:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
+
+/* ═════════ CHAPTER 2 — PROGRAMS & MOTIONS ═════════ */
+.programs-row {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg);
+  padding-top: var(--space-sm);
+}
+.program-pill {
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
+  display: flex; flex-direction: column; gap: var(--space-md);
+  border-left: 2px solid var(--color-spice-turmeric);
+}
+.program-state {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--color-spice-turmeric);
+}
+.program-description {
+  font-family: var(--font-serif); font-size: 15px; line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.program-xref {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-spice-turmeric);
+  text-decoration: none; border-bottom: 1px dotted var(--color-spice-turmeric);
+  padding-bottom: 1px;
+  margin-top: auto; align-self: flex-start;
+}
+
+/* ═════════ CHAPTER 3 — COMMITMENTS ═════════ */
+.commitment-list {
+  display: flex; flex-direction: column;
+  gap: var(--space-xl);
+}
+.commitment-card {
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
+  display: flex; flex-direction: column; gap: var(--space-md);
+}
+.commitment-headline {
+  font-family: var(--font-serif); font-size: 19px; font-weight: 400;
+  line-height: 1.4; color: var(--color-text-primary);
+}
+.commitment-meta-row {
+  display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md);
+  align-items: center;
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+}
+.commitment-meta-row strong {
+  color: var(--color-text-secondary); font-weight: 600;
+}
+.commitment-owner-row {
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.6;
+  color: var(--color-text-secondary);
+  display: flex; gap: var(--space-md); flex-wrap: wrap; align-items: center;
+}
+.pill-row {
+  display: flex; flex-wrap: wrap; gap: var(--space-sm);
+  align-items: center;
+}
+
+/* Audience pill */
+.audience-pill {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 4px 9px; border-radius: 3px;
+}
+.audience-pill.customer { background: var(--color-garden-sage-15); color: var(--color-garden-rosemary); }
+.audience-pill.internal { background: var(--color-desk-charcoal-8); color: var(--color-text-secondary); }
+
+/* Visibility pill — private vs shared */
+.visibility-pill {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 4px 10px; border-radius: 3px;
+  display: inline-flex; align-items: center; gap: 6px;
+  text-decoration: none;
+}
+.visibility-pill::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%;
+}
+.visibility-pill.private {
+  background: var(--color-desk-charcoal-8);
+  color: var(--color-text-secondary);
+}
+.visibility-pill.private::before { background: var(--color-text-tertiary); }
+.visibility-pill.shared {
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-rosemary);
+  border-bottom: 1px dotted var(--color-garden-rosemary);
+}
+.visibility-pill.shared::before { background: var(--color-garden-sage); }
+
+.soft-nudge {
+  font-family: var(--font-serif); font-size: 13px; font-style: italic;
+  color: #a6862c;
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: var(--space-sm) var(--space-md);
+  line-height: 1.5;
+}
+.soft-nudge-label {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.1em; font-weight: 700; font-style: normal;
+  color: #a6862c; margin-right: var(--space-sm);
+}
+.linear-status-note {
+  font-family: var(--font-sans); font-size: 12px; font-style: italic;
+  color: var(--color-text-secondary);
+  padding: var(--space-xs) 0;
+}
+
+.commitment-actions {
+  display: flex; flex-wrap: wrap; gap: var(--space-sm);
+  padding-top: var(--space-md);
+  margin-top: var(--space-xs);
+  border-top: 1px dashed var(--color-rule-light);
+  align-items: center;
+}
+.work-btn {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; font-weight: 600;
+  background: none; border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary); padding: 7px 13px;
+  border-radius: 100px; cursor: pointer; white-space: nowrap;
+}
+.work-btn:hover { border-color: var(--color-text-tertiary); color: var(--color-text-primary); }
+.work-btn-primary {
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  border-color: var(--color-desk-charcoal);
+}
+.work-btn-primary:hover { background: var(--color-desk-ink); border-color: var(--color-desk-ink); }
+.work-btn-accent {
+  background: var(--color-spice-turmeric); color: white;
+  border-color: var(--color-spice-turmeric);
+}
+.work-btn-accent:hover { background: #b58f1f; border-color: #b58f1f; }
+.work-btn-muted {
+  color: var(--color-text-tertiary); border-color: transparent;
+  background: none;
+}
+.work-btn-muted:hover { color: var(--color-text-secondary); }
+
+/* ═════════ CHAPTER 4 — RECOMMENDATIONS ═════════ */
+.rec-list {
+  display: flex; flex-direction: column;
+  gap: var(--space-xl);
+}
+.recommendation-card {
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  display: flex; flex-direction: column; gap: var(--space-md);
+}
+.rec-label {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: #a6862c;
+}
+.rec-headline {
+  font-family: var(--font-serif); font-size: 20px; font-weight: 400;
+  line-height: 1.35; color: var(--color-text-primary);
+}
+.rec-rationale {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.7;
+  color: var(--color-text-secondary); max-width: 680px;
+}
+.rec-provenance {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+  display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-sm);
+  align-items: center;
+}
+.rec-actions {
+  display: flex; flex-wrap: wrap; gap: var(--space-sm);
+  padding-top: var(--space-md);
+  border-top: 1px dashed var(--color-rule-light);
+  align-items: center;
+}
+.rec-dismiss-hint {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary); font-style: italic;
+  margin-left: auto;
+}
+
+/* ═════════ CHAPTER 5 — SHARED WITH THE TEAM ═════════ */
+.shared-subsection-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.14em; color: var(--color-text-tertiary);
+  margin-top: var(--space-3xl); margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px dashed var(--color-rule-light);
+}
+.shared-subsection-label:first-of-type { margin-top: var(--space-lg); }
+
+.ref-row {
+  display: grid; grid-template-columns: 120px 1fr auto;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.ref-row:last-child { border-bottom: none; }
+.ref-row-id {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--color-garden-rosemary); letter-spacing: 0.04em;
+  text-decoration: none; border-bottom: 1px dotted var(--color-garden-rosemary);
+}
+.ref-row-body {
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.6;
+  color: var(--color-text-primary);
+}
+.ref-row-body strong { font-weight: 500; }
+.ref-row-meta {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+.ref-divergence {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-spice-saffron);
+  display: inline-flex; align-items: center; gap: 4px;
+  border-bottom: 1px dotted var(--color-spice-saffron);
+  text-decoration: none; padding-bottom: 1px;
+  margin-left: var(--space-sm);
+}
+
+/* ═════════ CHAPTER 6 — RECENTLY LANDED ═════════ */
+.timeline-list {
+  display: flex; flex-direction: column;
+  padding-top: var(--space-sm);
+}
+.timeline-row {
+  display: grid; grid-template-columns: 80px 1fr auto;
+  gap: var(--space-xl);
+  padding: var(--space-lg) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.timeline-row:last-child { border-bottom: none; }
+.timeline-date {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-garden-rosemary);
+}
+.timeline-event {
+  font-family: var(--font-serif); font-size: 16px; line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.timeline-source {
+  font-family: var(--font-sans); font-size: 12px; font-style: italic;
+  color: var(--color-text-tertiary); margin-top: var(--space-xs);
+}
+.timeline-source a {
+  color: var(--color-spice-turmeric); text-decoration: none;
+  border-bottom: 1px dotted var(--color-spice-turmeric); font-style: normal;
+}
+
+/* ═════════ CHAPTER 7 — OUTPUTS ═════════ */
+.report-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg);
+  padding-top: var(--space-sm);
+}
+.report-card {
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
+  display: flex; flex-direction: column; gap: var(--space-md);
+  min-height: 220px;
+}
+.report-type {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--color-spice-turmeric);
+}
+.report-title {
+  font-family: var(--font-serif); font-size: 17px; font-weight: 400;
+  line-height: 1.4; color: var(--color-text-primary);
+}
+.report-gen {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+  line-height: 1.55;
+  margin-top: auto;
+}
+.report-actions {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding-top: var(--space-md);
+  border-top: 1px dashed var(--color-rule-light);
+}
+.report-footer-note {
+  margin-top: var(--space-xl);
+  font-family: var(--font-sans); font-size: 12px; font-style: italic;
+  color: var(--color-text-tertiary); line-height: 1.6;
+  max-width: 620px;
+}
+.report-footer-note a {
+  color: var(--color-spice-turmeric); text-decoration: none;
+  border-bottom: 1px dotted var(--color-spice-turmeric); font-style: normal;
+}
+
+/* ═════════ CHAPTER 8 — NUDGES ═════════ */
+.nudge-list {
+  display: flex; flex-direction: column;
+  gap: var(--space-md);
+  padding-top: var(--space-sm);
+}
+.nudge-card {
+  background: var(--color-desk-charcoal-4);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: var(--space-lg) var(--space-xl);
+  display: flex; flex-direction: column; gap: var(--space-sm);
+}
+.nudge-headline {
+  font-family: var(--font-serif); font-size: 16px; font-weight: 400;
+  line-height: 1.45; color: var(--color-text-primary);
+}
+.nudge-body {
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 680px;
+}
+.nudge-actions {
+  display: flex; flex-wrap: wrap; gap: var(--space-sm);
+  padding-top: var(--space-xs);
+}
+
+/* ═════════ FINIS (shared) ═════════ */
+.finis { text-align: center; padding: var(--space-4xl) 0 var(--space-2xl); color: var(--color-text-tertiary); }
+.finis-mark {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 14px;
+  color: var(--color-spice-turmeric); opacity: 0.4; letter-spacing: 0.5em;
+}
+.finis-date {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; margin-top: var(--space-sm);
+}
+</style>
+</head>
+<body>
+
+<div class="mockup-note">
+  <strong>Mockup v1 · The Work</strong>
+  <div class="mockup-note-body">Real Globex Holdings data + synthesized commitments. Zero-guilt execution surface: private/shared visibility pills, soft nudges, no shame counters. Workbench, not todo list.</div>
+</div>
+
+<div class="page">
+
+  <!-- ═════════ SHARED HEADER ═════════ -->
+  <div class="hero-date">
+    <span class="hero-date-dot"></span>
+    Last updated 1w ago
+    <span class="badge-customer">Customer ▾</span>
+    <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); letter-spacing: 0.04em;">
+      · Sources: 5 transcripts · 24 emails · Zendesk · Gong · SF · <span style="color: var(--color-spice-turmeric);">Glean ●</span>
+    </span>
+  </div>
+  <h1 class="name">Globex Holdings</h1>
+  <div class="vitals">
+    <span class="vital-arr">$185K ARR</span>
+    <span>•</span>
+    <span>Green Health</span>
+    <span>•</span>
+    <span>Steady-State Lifecycle</span>
+    <span>•</span>
+    <span>NPS 67 · CSAT 4.5</span>
+    <span>•</span>
+    <span>Renewal in 221d</span>
+  </div>
+
+  <!-- ═════════ CHAPTER 1 — 90-DAY FOCUS ═════════ -->
+  <section class="chapter" style="padding-top: 100px;">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">90-day focus</h2>
+    <div class="chapter-sublabel">Our active plan · editable</div>
+    <div class="freshness-strip">
+      Drafted from 3 commitments + 2 recommendations + 1 program
+      <span>·</span>
+      Last refreshed 2 days ago
+      <span>·</span>
+      <a href="#">Regenerate</a>
+    </div>
+
+    <div class="focus-list">
+
+      <article class="focus-item">
+        <div class="focus-numeral">1</div>
+        <div class="focus-body">
+          <h3 class="focus-headline">Land the compliance story</h3>
+          <p class="focus-para">
+            Close out Globex Holdings's VRM/cybersecurity risk assessment. Align on DORA + SOC 2 Type II positioning before the renewal cycle opens — for a financial-services customer, unresolved compliance is a renewal drag even when day-to-day is healthy.
+          </p>
+          <div class="focus-provenance">
+            <span class="focus-provenance-label">Synthesized from</span>
+            <a href="#" class="cite-chip">Health triage · DORA + SOC 2</a>
+            <a href="#" class="cite-chip">Commitment · compliance plan</a>
+            <button class="focus-edit">Edit</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="focus-item">
+        <div class="focus-numeral">2</div>
+        <div class="focus-body">
+          <h3 class="focus-headline">Get Jorge on the FDE call</h3>
+          <p class="focus-para">
+            Schedule the head-of-FDE introduction with Jamie Carter. Convert Jorge's headless pricing question — asked Feb 17, still unanswered — into an architecture services conversation instead of letting it drift toward a headless-replatform decision.
+          </p>
+          <div class="focus-provenance">
+            <span class="focus-provenance-label">Synthesized from</span>
+            <a href="#" class="cite-chip">Commitment · FDE call</a>
+            <a href="#" class="cite-chip">Health triage · pricing unanswered</a>
+            <button class="focus-edit">Edit</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="focus-item">
+        <div class="focus-numeral">3</div>
+        <div class="focus-body">
+          <h3 class="focus-headline">On-site for 2026 success-plan alignment (NYC, late March / early April)</h3>
+          <p class="focus-para">
+            Confirm attendees — including the Marketing / digital content owner we don't yet have a relationship with. Agenda covers personalization tooling, editor improvements, content parity across portfolio properties, and governance expectations.
+          </p>
+          <div class="focus-provenance">
+            <span class="focus-provenance-label">Synthesized from</span>
+            <a href="#" class="cite-chip">Program · renewal prep</a>
+            <a href="#" class="cite-chip">1 email thread</a>
+            <button class="focus-edit">Edit</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="focus-item">
+        <div class="focus-numeral">4</div>
+        <div class="focus-body">
+          <h3 class="focus-headline">Demo Safe Publisher beta</h3>
+          <p class="focus-para">
+            Globex Holdings is enrolled. Schedule a dedicated walkthrough before they self-onboard — the beta lands better as a guided experience than a self-serve trial, especially given their multisite complexity.
+          </p>
+          <div class="focus-provenance">
+            <span class="focus-provenance-label">Synthesized from</span>
+            <a href="#" class="cite-chip">Program · Safe Publisher beta</a>
+            <a href="#" class="cite-chip">Commitment · beta invite + onboarding</a>
+            <button class="focus-edit">Edit</button>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 2 — PROGRAMS & MOTIONS ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Programs &amp; motions</h2>
+    <div class="chapter-sublabel">Standing states · orientation, not to-dos</div>
+    <div class="freshness-strip">
+      3 motions active
+      <span>·</span>
+      Last refreshed Apr 16
+    </div>
+
+    <div class="programs-row">
+
+      <article class="program-pill">
+        <div class="program-state">In renewal prep</div>
+        <div class="program-description">
+          Window opens Apr 15 · 221d to renewal · started Mar 1
+        </div>
+        <a href="#" class="program-xref">See Outlook in Health →</a>
+      </article>
+
+      <article class="program-pill">
+        <div class="program-state">In Safe Publisher beta</div>
+        <div class="program-description">
+          Planned March 2026 · engagement: active
+        </div>
+        <a href="#" class="program-xref">See Context feature adoption →</a>
+      </article>
+
+      <article class="program-pill">
+        <div class="program-state">Under compliance review</div>
+        <div class="program-description">
+          DORA + SOC 2 Type II · Trust package sent · awaiting response
+        </div>
+        <a href="#" class="program-xref">See Health triage →</a>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 3 — COMMITMENTS ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Commitments</h2>
+    <div class="chapter-sublabel">What we've said we'll do</div>
+    <div class="freshness-strip">
+      3 open · 1 shared · 2 private
+      <span>·</span>
+      Natural sort by recency
+      <span>·</span>
+      <a href="#">Filter</a>
+    </div>
+
+    <div class="commitment-list">
+
+      <!-- 1. Headless pricing send -->
+      <article class="commitment-card">
+        <h3 class="commitment-headline">
+          Send headless application pricing and architecture service details to Globex Holdings
+        </h3>
+        <div class="commitment-meta-row">
+          <strong>From:</strong>
+          <a href="#" class="cite-chip">meeting · Feb 17</a>
+          <span>·</span>
+          <a href="#" class="cite-chip">Globex Holdings/WPVIP Check In</a>
+        </div>
+        <div class="commitment-owner-row">
+          <span><strong style="font-weight: 600;">Owner:</strong> Jamie Carter</span>
+          <span>·</span>
+          <span><strong style="font-weight: 600;">Due:</strong> no date set</span>
+        </div>
+        <div class="pill-row">
+          <span class="audience-pill customer">Customer-facing</span>
+          <span class="visibility-pill private">Private</span>
+        </div>
+        <div class="soft-nudge">
+          <span class="soft-nudge-label">Still active?</span>
+          59 days on the list. Flagged in Health triage as unaddressed — but no date, no shame.
+        </div>
+        <div class="commitment-actions">
+          <button class="work-btn work-btn-primary">Mark done</button>
+          <button class="work-btn">Push to Linear</button>
+          <button class="work-btn">Push to Salesforce</button>
+          <button class="work-btn work-btn-muted">Dismiss</button>
+        </div>
+      </article>
+
+      <!-- 2. Safe Publisher beta onboarding (SHARED) -->
+      <article class="commitment-card">
+        <h3 class="commitment-headline">
+          Invite Globex Holdings to Safe Publisher beta and provide onboarding
+        </h3>
+        <div class="commitment-meta-row">
+          <strong>From:</strong>
+          <a href="#" class="cite-chip">meeting · Feb 17</a>
+        </div>
+        <div class="commitment-owner-row">
+          <span><strong style="font-weight: 600;">Owner:</strong> James Giroux</span>
+          <span>·</span>
+          <span><strong style="font-weight: 600;">Due:</strong> Mar 31</span>
+        </div>
+        <div class="pill-row">
+          <span class="audience-pill customer">Customer-facing</span>
+          <a href="#" class="visibility-pill shared">Shared · Linear DOS-103</a>
+        </div>
+        <div class="linear-status-note">
+          In progress in Linear · moved to "In progress" on Apr 2
+        </div>
+        <div class="soft-nudge">
+          <span class="soft-nudge-label">Still active?</span>
+          Due date passed 14 days ago. Worth a glance, not a panic.
+        </div>
+        <div class="commitment-actions">
+          <button class="work-btn work-btn-primary">Mark done</button>
+          <button class="work-btn">View in Linear</button>
+          <button class="work-btn">Nudge assignee</button>
+          <button class="work-btn work-btn-muted">Dismiss</button>
+        </div>
+      </article>
+
+      <!-- 3. FDE head of program call -->
+      <article class="commitment-card">
+        <h3 class="commitment-headline">
+          Schedule call with head of Forward Deployed Engineering (FDE) program for Globex Holdings
+        </h3>
+        <div class="commitment-meta-row">
+          <strong>From:</strong>
+          <a href="#" class="cite-chip">meeting · Feb 17</a>
+        </div>
+        <div class="commitment-owner-row">
+          <span><strong style="font-weight: 600;">Owner:</strong> Jamie Carter</span>
+          <span>·</span>
+          <span><strong style="font-weight: 600;">Due:</strong> no date set</span>
+        </div>
+        <div class="pill-row">
+          <span class="audience-pill internal">Internal</span>
+          <span class="visibility-pill private">Private</span>
+        </div>
+        <div class="commitment-actions">
+          <button class="work-btn work-btn-primary">Mark done</button>
+          <button class="work-btn">Push to Linear</button>
+          <button class="work-btn">Assign to me</button>
+          <button class="work-btn work-btn-muted">Dismiss</button>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 4 — RECOMMENDATIONS ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Recommendations</h2>
+    <div class="chapter-sublabel">AI proposed · accept or dismiss</div>
+    <div class="freshness-strip">
+      2 proposals
+      <span>·</span>
+      Drafted from Health triage + signal trends
+      <span>·</span>
+      Last refreshed Apr 16
+    </div>
+
+    <div class="rec-list">
+
+      <article class="recommendation-card">
+        <div class="rec-label">Proposal · one-click accept</div>
+        <h3 class="rec-headline">
+          Confirm resolved — Defensive Mode engagement threshold raise
+        </h3>
+        <p class="rec-rationale">
+          Risk assessment flagged that VIP recommended raising the engagement threshold from 50% to 80%. A second 673K-request surge on Apr 5 served without issues. Recommend confirming the Health triage card resolved and closing it out — the behavior is the evidence.
+        </p>
+        <div class="rec-provenance">
+          <span>Drafted from</span>
+          <a href="#" class="cite-chip">Health triage</a>
+          <a href="#" class="cite-chip">ZD #223999</a>
+          <a href="#" class="cite-chip">ZD #223283</a>
+        </div>
+        <div class="rec-actions">
+          <button class="work-btn work-btn-accent">Accept → create commitment</button>
+          <button class="work-btn work-btn-muted">Dismiss (teaches system)</button>
+          <span class="rec-dismiss-hint">Dismissals feed Bayesian weights</span>
+        </div>
+      </article>
+
+      <article class="recommendation-card">
+        <div class="rec-label">Proposal · stakeholder</div>
+        <h3 class="rec-headline">
+          Reach out to Priya Shah and Miguel Torres for introductory call
+        </h3>
+        <p class="rec-rationale">
+          Both Globex Holdings attendees have joined 3+ meetings with zero assessment in our stakeholder notes. Understanding their role and influence strengthens the account plan ahead of renewal — and surfaces whether either is the Marketing / digital content owner we haven't mapped yet.
+        </p>
+        <div class="rec-provenance">
+          <span>Drafted from</span>
+          <a href="#" class="cite-chip">Context dossier gaps</a>
+          <a href="#" class="cite-chip">Stakeholder needs-assessment flags</a>
+        </div>
+        <div class="rec-actions">
+          <button class="work-btn work-btn-accent">Accept → create commitment</button>
+          <button class="work-btn work-btn-muted">Dismiss (teaches system)</button>
+          <span class="rec-dismiss-hint">Dismissals feed Bayesian weights</span>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 5 — SHARED WITH THE TEAM ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Shared with the team</h2>
+    <div class="chapter-sublabel">What the rest of the org sees — Linear, Salesforce, Slack</div>
+    <div class="freshness-strip">
+      3 Linear issues · 1 Salesforce opportunity · 1 shared Slack canvas
+      <span>·</span>
+      Last synced Apr 16
+    </div>
+
+    <div class="shared-subsection-label">Linear · 3 issues</div>
+    <div>
+      <div class="ref-row">
+        <a href="#" class="ref-row-id">DOS-103</a>
+        <div class="ref-row-body">
+          Safe Publisher beta onboarding for Globex Holdings
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px;">
+            In Progress · Assignee: James Giroux
+          </div>
+        </div>
+        <span class="ref-row-meta">Updated Apr 2</span>
+      </div>
+      <div class="ref-row">
+        <a href="#" class="ref-row-id">DOS-187</a>
+        <div class="ref-row-body">
+          Defensive Mode threshold tuning — Globex Holdings
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px;">
+            Triage · Assignee: none
+          </div>
+        </div>
+        <span class="ref-row-meta">Updated Apr 9</span>
+      </div>
+      <div class="ref-row">
+        <a href="#" class="ref-row-id">DOS-201</a>
+        <div class="ref-row-body">
+          DORA compliance documentation package
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px;">
+            Backlog · Assignee: Jamie Carter
+          </div>
+        </div>
+        <span class="ref-row-meta">Updated Mar 28</span>
+      </div>
+    </div>
+
+    <div class="shared-subsection-label">Salesforce · 1 opportunity</div>
+    <div>
+      <div class="ref-row">
+        <a href="#" class="ref-row-id">006UU…YAT</a>
+        <div class="ref-row-body">
+          $185K renewal · Stage: <strong>Closed Won Pending</strong> · Close date May 1, 2026
+          <div style="margin-top: 6px;">
+            <a href="#" class="ref-divergence">Divergence in Health — SF says "Disqualified" on Account Qualification Status →</a>
+          </div>
+        </div>
+        <span class="ref-row-meta">Modified Mar 15</span>
+      </div>
+    </div>
+
+    <div class="shared-subsection-label">Shared Slack · 1 canvas</div>
+    <div>
+      <div class="ref-row">
+        <a href="#" class="ref-row-id">#wpvip-globex</a>
+        <div class="ref-row-body">
+          Shared canvas · "Block editor performance follow-up"
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px;">
+            12 messages this week
+          </div>
+        </div>
+        <span class="ref-row-meta">Last activity Apr 15</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 6 — RECENTLY LANDED ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Recently landed</h2>
+    <div class="chapter-sublabel">30-day tail · what we delivered</div>
+    <div class="freshness-strip">
+      2 items delivered
+      <span>·</span>
+      Promotes to Context "value delivered" in 30 days
+    </div>
+
+    <div class="timeline-list">
+
+      <div class="timeline-row">
+        <div class="timeline-date">Apr 5</div>
+        <div>
+          <div class="timeline-event">Resolved Defensive Mode 673K-request surge without service impact</div>
+          <div class="timeline-source">Came from Health triage · <a href="#">See Context value →</a></div>
+        </div>
+        <span class="ref-row-meta" style="color: var(--color-garden-rosemary);">Delivered</span>
+      </div>
+
+      <div class="timeline-row">
+        <div class="timeline-date">Mar 28</div>
+        <div>
+          <div class="timeline-event">Delivered Trust Package for Globex Holdings VRM assessment</div>
+          <div class="timeline-source">Came from Program "compliance review" · <a href="#">See Context value →</a></div>
+        </div>
+        <span class="ref-row-meta" style="color: var(--color-garden-rosemary);">Delivered</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 7 — OUTPUTS ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Outputs</h2>
+    <div class="chapter-sublabel">Generated reports</div>
+    <div class="freshness-strip">
+      3 reports available for this account
+    </div>
+
+    <div class="report-grid">
+
+      <article class="report-card">
+        <div class="report-type">Account Health Review</div>
+        <h3 class="report-title">Globex Holdings — Q2 2026 Health Review</h3>
+        <div class="report-gen">
+          Generated Apr 16<br>
+          Trigger: scheduled weekly
+        </div>
+        <div class="report-actions">
+          <button class="work-btn work-btn-primary">Open</button>
+          <button class="work-btn">Regenerate</button>
+          <button class="work-btn">Export to Google Doc</button>
+        </div>
+      </article>
+
+      <article class="report-card">
+        <div class="report-type">EBR / QBR</div>
+        <h3 class="report-title">Globex Holdings — Q1 QBR Narrative</h3>
+        <div class="report-gen">
+          Generated Mar 28<br>
+          Trigger: manual
+        </div>
+        <div class="report-actions">
+          <button class="work-btn work-btn-primary">Open</button>
+          <button class="work-btn">Regenerate</button>
+          <button class="work-btn">Export to Google Doc</button>
+        </div>
+      </article>
+
+      <article class="report-card">
+        <div class="report-type">Stakeholder Map</div>
+        <h3 class="report-title">Globex Holdings — Room + Org Landscape</h3>
+        <div class="report-gen">
+          Generated Apr 14<br>
+          Trigger: new-stakeholder signal
+        </div>
+        <div class="report-actions">
+          <button class="work-btn work-btn-primary">Open</button>
+          <button class="work-btn">Regenerate</button>
+          <button class="work-btn">Export to Google Doc</button>
+        </div>
+      </article>
+
+    </div>
+
+    <p class="report-footer-note">
+      Account plan synthesis in development — see <a href="https://linear.app/dailyos/issue/DOS-40">DOS-40</a>.
+    </p>
+  </section>
+
+  <!-- ═════════ CHAPTER 8 — NUDGES ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Nudges</h2>
+    <div class="chapter-sublabel">Gentle check-ins · hidden when empty</div>
+    <div class="freshness-strip">
+      2 soft surfaces
+      <span>·</span>
+      Zero-guilt · leave anything as-is
+    </div>
+
+    <div class="nudge-list">
+
+      <article class="nudge-card">
+        <h3 class="nudge-headline">A commitment has been kept private for 59 days</h3>
+        <p class="nudge-body">
+          The headless pricing send (owner: Jamie Carter) has been here since Feb 17 without a due date or being shared to Linear. Keep it private, or push it out so the team can see?
+        </p>
+        <div class="nudge-actions">
+          <button class="work-btn">Push to Linear</button>
+          <button class="work-btn">Dismiss</button>
+          <button class="work-btn work-btn-muted">Leave as-is</button>
+        </div>
+      </article>
+
+      <article class="nudge-card">
+        <h3 class="nudge-headline">Two accepted recommendations never became commitments</h3>
+        <p class="nudge-body">
+          You accepted "Capture Jorge verbatim quote set" (Mar 20) and "Log workload concern" (Apr 9) but neither became a tracked commitment. Revisit when convenient — no rush.
+        </p>
+        <div class="nudge-actions">
+          <button class="work-btn">Revisit now</button>
+          <button class="work-btn work-btn-muted">Leave as-is</button>
+        </div>
+      </article>
+
+      <article class="nudge-card">
+        <h3 class="nudge-headline">Shared status out of sync with Linear</h3>
+        <p class="nudge-body">
+          The Safe Publisher beta commitment is shared to Linear (DOS-103) but the onboarding status hasn't synced back here in 6 days. The Linear writeback loop may have stalled.
+        </p>
+        <div class="nudge-actions">
+          <button class="work-btn work-btn-primary">Check writeback</button>
+          <button class="work-btn">Dismiss</button>
+          <button class="work-btn work-btn-muted">Leave as-is</button>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═════════ FINIS ═════════ -->
+  <div class="finis">
+    <div class="finis-mark">* * *</div>
+    <div class="finis-date">Work surface · Apr 17, 2026 · 4 focus areas · 3 programs · 3 commitments · 2 recommendations · Zero guilt</div>
+  </div>
+
+</div>
+
+<!-- Switcher -->
+<div class="switcher">
+  <button>Health &amp; Outlook</button>
+  <button>Context</button>
+  <button class="active">The Work</button>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Health & Outlook — Globex Holdings (Glean-enriched)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,200..800;1,200..800&family=DM+Sans:ital,wght@0,100..1000;1,100..1000&family=JetBrains+Mono:wght@100..800&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+/* ═════════ DESIGN TOKENS ═════════ */
+:root {
+  --color-paper-cream: #f5f2ef;
+  --color-paper-linen: #e8e2d9;
+  --color-paper-warm-white: #faf8f6;
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+  --color-spice-turmeric: #c9a227;
+  --color-spice-saffron: #deb841;
+  --color-spice-terracotta: #c4654a;
+  --color-spice-chili: #9b3a2a;
+  --color-garden-sage: #7eaa7b;
+  --color-garden-olive: #6b7c52;
+  --color-garden-rosemary: #4a6741;
+  --color-garden-larkspur: #8fa3c4;
+  --color-garden-eucalyptus: #6ba8a4;
+  --color-text-primary: var(--color-desk-charcoal);
+  --color-text-secondary: #5a6370;
+  --color-text-tertiary: #6b7280;
+  --color-rule-heavy: rgba(30, 37, 48, 0.12);
+  --color-rule-light: rgba(30, 37, 48, 0.06);
+  --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-spice-turmeric-15: rgba(201, 162, 39, 0.15);
+  --color-spice-saffron-10: rgba(222, 184, 65, 0.10);
+  --color-spice-saffron-15: rgba(222, 184, 65, 0.15);
+  --color-spice-terracotta-10: rgba(196, 101, 74, 0.10);
+  --color-spice-terracotta-15: rgba(196, 101, 74, 0.15);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-garden-sage-15: rgba(126, 170, 123, 0.15);
+  --color-garden-larkspur-15: rgba(143, 163, 196, 0.15);
+  --color-desk-charcoal-4: rgba(30, 37, 48, 0.04);
+  --color-desk-charcoal-8: rgba(30, 37, 48, 0.08);
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --radius-sm: 4px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --shadow-sm: 0 2px 8px rgba(30, 37, 48, 0.1);
+  --shadow-md: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-paper-cream);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 120px 200px;
+}
+
+/* ═════════ SHARED HEADER ═════════ */
+.hero-date {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: var(--space-xl) 0 var(--space-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+.hero-date-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+.badge-customer {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.name {
+  font-family: var(--font-serif);
+  font-size: 76px;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1.06;
+  padding-bottom: var(--space-md);
+}
+.vitals {
+  display: flex;
+  gap: var(--space-2xl);
+  padding: var(--space-md) 0 var(--space-xl);
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xl);
+}
+.vital-arr { color: var(--color-spice-turmeric); }
+
+/* ═════════ SENTIMENT HEADLINE ═════════ */
+.sentiment-hero { padding-top: var(--space-2xl); padding-bottom: var(--space-2xl); }
+.sentiment-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary); margin-bottom: var(--space-md);
+}
+.sentiment-unset {
+  font-family: var(--font-serif); font-size: 28px; font-weight: 400;
+  line-height: 1.25; color: var(--color-text-tertiary); font-style: italic;
+}
+.sentiment-unset button {
+  background: none; border: none;
+  font-family: var(--font-serif); font-size: inherit; font-weight: 500;
+  color: var(--color-spice-turmeric); cursor: pointer;
+  border-bottom: 1px solid var(--color-spice-turmeric);
+  padding: 0 2px; font-style: italic;
+}
+.sentiment-set-row {
+  display: flex; align-items: baseline; gap: var(--space-lg);
+  margin-bottom: var(--space-sm);
+}
+.sentiment-set-value {
+  font-family: var(--font-serif); font-size: 36px; font-weight: 400; line-height: 1;
+}
+.sentiment-set-value-strong { color: var(--color-garden-sage); }
+.sentiment-set-value-ontrack { color: var(--color-garden-sage); }
+.sentiment-set-value-concerning { color: var(--color-spice-saffron); }
+.sentiment-set-value-atrisk { color: var(--color-spice-terracotta); }
+.sentiment-set-value-critical { color: var(--color-spice-chili); }
+.sentiment-sparkline {
+  display: inline-flex; align-items: flex-end; gap: 3px; height: 20px;
+  padding-left: var(--space-sm);
+}
+.spark-bar { width: 4px; border-radius: 2px; }
+.spark-good { background: var(--color-garden-sage); }
+.spark-mid { background: var(--color-spice-saffron); }
+.spark-warn { background: var(--color-spice-terracotta); }
+.spark-bar-h4 { height: 5px; }
+.spark-bar-h8 { height: 9px; }
+.spark-bar-h12 { height: 13px; }
+.spark-bar-h16 { height: 17px; }
+.spark-bar-h20 { height: 20px; }
+.sentiment-sparkline-label {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+  padding-left: var(--space-sm);
+}
+.sentiment-update-btn {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; font-weight: 600;
+  background: none; border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary); padding: 6px 12px;
+  border-radius: 100px; cursor: pointer; white-space: nowrap;
+  margin-left: auto;
+}
+.sentiment-meta {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-top: var(--space-md);
+}
+.sentiment-meta a { color: var(--color-spice-turmeric); text-decoration: none; border-bottom: 1px solid var(--color-spice-turmeric); }
+.sentiment-note {
+  margin-top: var(--space-lg);
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border-left: 2px solid var(--color-text-tertiary);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-family: var(--font-serif); font-size: 16px; font-style: italic;
+  line-height: 1.65; color: var(--color-text-secondary); max-width: 620px;
+}
+.sentiment-note-date {
+  font-family: var(--font-mono); font-size: 10px; font-style: normal;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--color-text-tertiary); margin-top: var(--space-sm);
+}
+.sentiment-divergence-flag {
+  margin-top: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.6;
+  color: var(--color-text-secondary); max-width: 620px;
+}
+.sentiment-divergence-flag strong {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-spice-saffron); font-weight: 600;
+  display: block; margin-bottom: var(--space-xs);
+}
+
+/* ═════════ TRIAGE SURFACE ═════════ */
+.triage-header { padding-top: var(--space-4xl); padding-bottom: var(--space-xl); }
+.triage-rule {
+  border: none; border-top: 1px solid var(--color-rule-heavy); margin-bottom: var(--space-lg);
+}
+.triage-title-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md);
+}
+.triage-title {
+  font-family: var(--font-serif); font-size: 28px; font-weight: 400; color: var(--color-text-primary);
+}
+.triage-count {
+  font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-spice-terracotta);
+}
+
+/* Individual triage card */
+.triage-card {
+  display: grid;
+  grid-template-columns: 3px 1fr auto;
+  gap: var(--space-xl);
+  padding: var(--space-xl) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: start;
+}
+.triage-card:last-child { border-bottom: none; }
+
+.triage-spine { width: 3px; align-self: stretch; border-radius: 2px; }
+.triage-spine-urgent { background: var(--color-spice-terracotta); }
+.triage-spine-soon { background: var(--color-spice-turmeric); }
+.triage-spine-gap { background: var(--color-garden-larkspur); }
+.triage-spine-divergence { background: var(--color-spice-saffron); }
+.triage-spine-meta { background: var(--color-text-tertiary); opacity: 0.5; }
+
+.triage-body { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
+.triage-kind {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.triage-kind-urgent { color: var(--color-spice-terracotta); }
+.triage-kind-soon { color: var(--color-spice-turmeric); }
+.triage-kind-gap { color: var(--color-garden-larkspur); }
+.triage-kind-divergence { color: var(--color-spice-saffron); }
+.triage-kind-meta { color: var(--color-text-tertiary); }
+
+.triage-headline {
+  font-family: var(--font-serif); font-size: 21px; font-weight: 400;
+  line-height: 1.3; color: var(--color-text-primary);
+}
+.triage-evidence {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 620px;
+}
+.triage-evidence strong { color: var(--color-text-primary); font-weight: 500; }
+
+.triage-sources {
+  display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md);
+  padding-top: var(--space-sm);
+  font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  align-items: center;
+}
+.triage-sources a {
+  color: var(--color-text-tertiary); text-decoration: none;
+  border-bottom: 1px dotted var(--color-text-tertiary);
+}
+.triage-sources a:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
+.source-tag-local {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-secondary);
+  padding: 2px 6px; border-radius: 3px;
+  font-size: 9px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.source-tag-glean {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+  padding: 2px 6px; border-radius: 3px;
+  font-size: 9px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.triage-action { display: flex; gap: var(--space-sm); align-items: center; }
+.triage-btn {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; font-weight: 600;
+  background: none; border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary); padding: 8px 14px;
+  border-radius: 100px; cursor: pointer; white-space: nowrap;
+}
+.triage-btn:hover { border-color: var(--color-text-tertiary); color: var(--color-text-primary); }
+.triage-btn-primary {
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  border-color: var(--color-desk-charcoal);
+}
+.triage-btn-primary:hover { background: var(--color-desk-ink); border-color: var(--color-desk-ink); }
+
+/* ═════════ DIVERGENCE SUB-HEADER ═════════ */
+.subgroup-header {
+  padding-top: var(--space-2xl);
+  padding-bottom: var(--space-md);
+  display: flex; align-items: baseline; gap: var(--space-md);
+  border-top: 1px solid var(--color-rule-heavy);
+  margin-top: var(--space-2xl);
+}
+.subgroup-label {
+  font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-spice-saffron); font-weight: 600;
+}
+.subgroup-note {
+  font-family: var(--font-sans); font-size: 13px; font-style: italic;
+  color: var(--color-text-tertiary);
+}
+
+/* ═════════ SUPPORTING ═════════ */
+.supporting { padding-top: 96px; }
+.supporting-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary); margin-bottom: var(--space-lg);
+}
+.supporting-tension {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2xl);
+  padding-bottom: var(--space-2xl);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+.tension-block { }
+.tension-block-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs);
+}
+.tension-block-value {
+  font-family: var(--font-serif); font-size: 36px; font-weight: 400; line-height: 1;
+  margin-bottom: var(--space-xs);
+}
+.tension-block-value-green { color: var(--color-garden-sage); }
+.tension-block-value-red { color: var(--color-spice-terracotta); }
+.tension-block-meta {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+}
+.tension-note {
+  padding-top: var(--space-lg);
+  font-family: var(--font-sans); font-size: 13px; font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-secondary); max-width: 620px;
+}
+
+.dimensions {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg) var(--space-xl);
+  padding-top: var(--space-2xl);
+}
+.dim { display: flex; flex-direction: column; gap: 4px; }
+.dim-name {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  display: flex; justify-content: space-between;
+}
+.dim-score { font-family: var(--font-mono); color: var(--color-text-secondary); }
+.dim-bar { height: 4px; background: var(--color-rule-light); border-radius: 2px; overflow: hidden; }
+.dim-fill { height: 100%; border-radius: 2px; }
+.dim-fill-green { background: var(--color-garden-sage); }
+.dim-fill-yellow { background: var(--color-spice-turmeric); }
+.dim-fill-red { background: var(--color-spice-terracotta); }
+.dim-evidence {
+  font-family: var(--font-sans); font-size: 11px;
+  color: var(--color-text-tertiary); line-height: 1.4;
+}
+
+/* ═════════ FINIS ═════════ */
+.finis { text-align: center; padding: var(--space-4xl) 0 var(--space-2xl); color: var(--color-text-tertiary); }
+.finis-mark {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 14px;
+  color: var(--color-spice-turmeric); opacity: 0.4; letter-spacing: 0.5em;
+}
+.finis-date {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; margin-top: var(--space-sm);
+}
+
+/* View switcher */
+.switcher {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--color-desk-charcoal); border-radius: 100px;
+  box-shadow: var(--shadow-sm); z-index: 100;
+}
+.switcher button {
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  padding: 8px 20px; border: none; border-radius: 100px;
+  cursor: pointer; background: transparent; color: rgba(255,255,255,0.5);
+}
+.switcher button.active { background: rgba(255,255,255,0.15); color: white; }
+
+/* Mockup note */
+.mockup-note {
+  position: fixed; top: 10px; left: 10px;
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  padding: 4px 8px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 9px; z-index: 100;
+  line-height: 1.3; opacity: 0.55;
+  max-width: 140px;
+  white-space: nowrap; overflow: hidden;
+  cursor: default;
+  transition: opacity 0.15s ease, max-width 0.2s ease, white-space 0s linear 0.2s;
+}
+.mockup-note:hover {
+  opacity: 1; max-width: 280px; white-space: normal;
+  transition: opacity 0.15s ease, max-width 0.2s ease, white-space 0s;
+}
+.mockup-note strong {
+  color: var(--color-spice-turmeric); display: inline;
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 9px;
+}
+.mockup-note .mockup-note-body { display: none; }
+.mockup-note:hover .mockup-note-body { display: block; margin-top: 3px; }
+
+/* Meta section */
+.meta-section {
+  padding-top: 96px;
+  padding-bottom: var(--space-lg);
+}
+.meta-card {
+  background: var(--color-desk-charcoal-4);
+  border-left: 2px solid var(--color-text-tertiary);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: var(--space-lg) var(--space-xl);
+  margin-top: var(--space-md);
+}
+.meta-card-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary); margin-bottom: var(--space-xs);
+}
+.meta-card-text {
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.55;
+  color: var(--color-text-secondary); max-width: 620px;
+}
+
+/* ═════════ OUTLOOK SECTION ═════════ */
+.outlook-section { padding-top: 96px; }
+.outlook-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2xl);
+  padding-top: var(--space-lg);
+}
+.outlook-block-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs);
+}
+.outlook-block-value {
+  font-family: var(--font-serif); font-size: 28px; font-weight: 400;
+  line-height: 1.1; color: var(--color-text-primary); margin-bottom: var(--space-sm);
+}
+.outlook-value-confidence { color: var(--color-spice-saffron); }
+.outlook-value-benchmark { color: var(--color-garden-sage); }
+.outlook-value-prep { color: var(--color-spice-turmeric); }
+.outlook-block-detail {
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+.outlook-benchmark-insight {
+  margin-top: var(--space-2xl); padding: var(--space-xl) var(--space-2xl);
+  background: var(--color-desk-charcoal-4);
+  border-radius: var(--radius-md);
+  font-family: var(--font-serif); font-size: 17px; font-style: italic;
+  line-height: 1.65; color: var(--color-text-primary); max-width: 720px;
+}
+.outlook-benchmark-insight strong { color: var(--color-garden-sage); font-weight: 500; font-style: normal; }
+
+</style>
+</head>
+<body>
+
+<div class="mockup-note">
+  <strong>Mockup v2 · Health</strong>
+  <div class="mockup-note-body">Real Globex Holdings data from Glean MCP pull (Apr 16, 2026). All evidence dated and cited. New: divergence card type (saffron), meta card for our own data-capture gaps.</div>
+</div>
+
+<div class="page">
+
+  <!-- ═════════ SHARED HEADER ═════════ -->
+  <div class="hero-date">
+    <span class="hero-date-dot"></span>
+    Last updated 1w ago
+    <span class="badge-customer">Customer ▾</span>
+    <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); letter-spacing: 0.04em;">
+      · Sources: 5 transcripts · 24 emails · Zendesk · Gong · SF · <span style="color: var(--color-spice-turmeric);">Glean ●</span>
+    </span>
+  </div>
+  <h1 class="name">Globex Holdings</h1>
+  <div class="vitals">
+    <span class="vital-arr">$185K ARR</span>
+    <span>•</span>
+    <span>Green Health</span>
+    <span>•</span>
+    <span>Steady-State Lifecycle</span>
+    <span>•</span>
+    <span>NPS 67 · CSAT 4.5</span>
+    <span>•</span>
+    <span>Renewal in 221d</span>
+  </div>
+
+  <!-- ═════════ SENTIMENT HEADLINE (elevated — journal, timeline, divergence flag) ═════════ -->
+  <section class="sentiment-hero">
+    <div class="sentiment-label">Your Assessment</div>
+
+    <div class="sentiment-set-row">
+      <span class="sentiment-set-value sentiment-set-value-concerning">Concerning</span>
+
+      <!-- 90-day sparkline: oscillation suggests instability worth noting -->
+      <div class="sentiment-sparkline" aria-label="Sentiment over last 90 days">
+        <div class="spark-bar spark-good spark-bar-h16"></div>
+        <div class="spark-bar spark-good spark-bar-h16"></div>
+        <div class="spark-bar spark-mid spark-bar-h12"></div>
+        <div class="spark-bar spark-good spark-bar-h16"></div>
+        <div class="spark-bar spark-good spark-bar-h20"></div>
+        <div class="spark-bar spark-mid spark-bar-h12"></div>
+        <div class="spark-bar spark-mid spark-bar-h8"></div>
+      </div>
+      <span class="sentiment-sparkline-label">90d</span>
+
+      <button class="sentiment-update-btn">Update</button>
+    </div>
+
+    <div class="sentiment-meta">
+      Set 12 days ago · 1 note · <a href="#">Still accurate?</a>
+    </div>
+
+    <div class="sentiment-note">
+      "James checked out on Feb 17 — Jorge dominated the architecture discussion. Block editor issues piling up. Concerned we're losing the architect conversation to a headless mindset."
+      <div class="sentiment-note-date">— Your note, Apr 4</div>
+    </div>
+
+    <!-- Inline divergence: your read doesn't match computed. Acknowledge, don't contradict. -->
+    <div class="sentiment-divergence-flag">
+      <strong>Signals currently disagree</strong>
+      Computed health is <strong style="color: var(--color-garden-sage);">Green +12</strong> and trending up. No ticket escalation, no cadence drop visible in the data. Your read on James's disengagement is earlier than the machine's — the note above is the kind of signal that trains the system. <a href="#" style="color: var(--color-spice-saffron); border-bottom: 1px dotted;">Add more detail →</a>
+    </div>
+  </section>
+
+  <!-- ═════════ TRIAGE: NEEDS ATTENTION ═════════ -->
+  <section class="triage-header">
+    <hr class="triage-rule">
+    <div class="triage-title-row">
+      <h2 class="triage-title">Needs attention</h2>
+      <span class="triage-count">6 items · scan 60s</span>
+    </div>
+  </section>
+
+  <div>
+
+    <!-- 0. SOON: Expansion question unanswered -->
+    <article class="triage-card">
+      <div class="triage-spine triage-spine-soon"></div>
+      <div class="triage-body">
+        <span class="triage-kind triage-kind-soon">Expansion window · question unanswered</span>
+        <div class="triage-headline">Jorge asked about headless pricing on Feb 17. No follow-up sent.</div>
+        <div class="triage-evidence">
+          <em>"How does headless pricing work? What does the architecture service look
+          like for React/Next.js?"</em> — Diego Martinez, Globex Holdings technical
+          lead, in the Feb 17 Gong call. Already on the open commitments list
+          assigned to Jamie Carter with no due date. <strong>59 days</strong> since
+          asked. Expansion signal is cooling from "evaluating" to "unaddressed."
+        </div>
+        <div class="triage-sources">
+          <span class="source-tag-local">Local</span>
+          <a href="#">Transcript · Feb 17</a>
+          <a href="#">Open commitment</a>
+        </div>
+      </div>
+      <div class="triage-action">
+        <button class="triage-btn">Reassign</button>
+        <button class="triage-btn triage-btn-primary">Send pricing</button>
+      </div>
+    </article>
+
+    <!-- 1. URGENT: Defensive Mode blocking their own API -->
+    <article class="triage-card">
+      <div class="triage-spine triage-spine-urgent"></div>
+      <div class="triage-body">
+        <span class="triage-kind triage-kind-urgent">Active friction · unresolved</span>
+        <div class="triage-headline">Our Defensive Mode has been blocking Globex Holdings's WP REST API traffic.</div>
+        <div class="triage-evidence">
+          Mar 14, a <strong>495,000-request spike</strong> triggered Defensive Mode.
+          <strong>Thirteen days later</strong>, Globex Holdings reported WP REST API requests
+          returning 403s — traced to the Defensive Mode engagement threshold set at 50%
+          (manual). VIP recommended raising it to 80%. A second surge served
+          <strong>673,545 requests in 20 minutes</strong> on Apr 5. Protection is
+          impairing their legitimate API usage.
+        </div>
+        <div class="triage-sources">
+          <span class="source-tag-local">Local</span>
+          <a href="#">Risk assessment · Apr 9</a>
+          <a href="#">ZD #223999 · Mar 27</a>
+          <a href="#">ZD #223283 · Apr 5</a>
+        </div>
+      </div>
+      <div class="triage-action">
+        <button class="triage-btn">Snooze</button>
+        <button class="triage-btn triage-btn-primary">Confirm resolved</button>
+      </div>
+    </article>
+
+    <!-- 2. URGENT: Compliance gap — DORA + SOC 2 Type II -->
+    <article class="triage-card">
+      <div class="triage-spine triage-spine-urgent"></div>
+      <div class="triage-body">
+        <span class="triage-kind triage-kind-urgent">Renewal drag · compliance gap</span>
+        <div class="triage-headline">Globex Holdings needs DORA + SOC 2 Type II. Trust Center doesn't meet it.</div>
+        <div class="triage-evidence">
+          On <strong>Mar 10, 2025</strong>, Globex Holdings stated bringing the account into
+          <strong>DORA compliance</strong> was a priority and <strong>SOC 2 Type II-style
+          reporting</strong> would be ideal for their security and cyber teams.
+          <strong>Fabric</strong> (third-party reviewer) has contract-language
+          requirements we cannot meet. For a financial-services customer, unresolved
+          compliance is a <strong>renewal drag even when day-to-day is healthy</strong>.
+        </div>
+        <div class="triage-sources">
+          <span class="source-tag-glean">Glean</span>
+          <a href="#">Gong · Mar 10, 2025</a>
+          <a href="#">Transcript · Feb 17, 2026</a>
+          <a href="#">ZD #218756 · Dec 22</a>
+        </div>
+      </div>
+      <div class="triage-action">
+        <button class="triage-btn">Not now</button>
+        <button class="triage-btn triage-btn-primary">Start compliance plan</button>
+      </div>
+    </article>
+
+    <!-- 3. SOON: Headless strategic drift (on renewal opportunity metadata) -->
+    <article class="triage-card">
+      <div class="triage-spine triage-spine-soon"></div>
+      <div class="triage-body">
+        <span class="triage-kind triage-kind-soon">Strategic drift · not casual</span>
+        <div class="triage-headline">Headless CMS isn't curiosity — it's on the renewal opportunity metadata.</div>
+        <div class="triage-evidence">
+          Globex Holdings is actively evaluating <strong>React / Next.js</strong> paths.
+          Jorge said PHP/WordPress talent is scarce; James said headless handles
+          personalization better. <strong>Salesforce opportunity 006UU...YAT
+          carries campaign metadata tagged "headless wordpress"</strong> — this is on
+          the renewal deal. Architecture exploration with organizational momentum.
+          If we can't satisfy the motivations, this evolves into stack drift.
+        </div>
+        <div class="triage-sources">
+          <span class="source-tag-local">Local</span>
+          <a href="#">Transcript · Feb 17</a>
+          <span class="source-tag-glean">Glean</span>
+          <a href="#">SF opportunity metadata</a>
+        </div>
+      </div>
+      <div class="triage-action">
+        <button class="triage-btn">Dismiss</button>
+        <button class="triage-btn triage-btn-primary">Draft headless position</button>
+      </div>
+    </article>
+
+    <!-- 4. SOON: Disproportionate technical load -->
+    <article class="triage-card">
+      <div class="triage-spine triage-spine-soon"></div>
+      <div class="triage-body">
+        <span class="triage-kind triage-kind-soon">Workload signal</span>
+        <div class="triage-headline">Globex Holdings consumes disproportionate TAM/CSE attention for their size.</div>
+        <div class="triage-evidence">
+          Recent recurring tickets: VIP CLI deploy failures (Jan 20), environment
+          cloning media-path breaks (Jan 19), cache-personalization guidance (Mar 24),
+          proxy onboarding token mismatches (Apr 8), cache-hit-rate anomaly alerts,
+          cron-runner duration anomalies. Multisite complexity + custom blocks +
+          reverse-proxy setup + cache personalization = an account that looks healthy
+          on paper but operationally is high-dependency.
+        </div>
+        <div class="triage-sources">
+          <span class="source-tag-glean">Glean</span>
+          <a href="#">ZD #219885</a> <a href="#">#219841</a> <a href="#">#223807</a>
+          <a href="#">#224818</a> <a href="#">#223286</a> <a href="#">#223364</a>
+        </div>
+      </div>
+      <div class="triage-action">
+        <button class="triage-btn">Dismiss</button>
+        <button class="triage-btn triage-btn-primary">Log workload concern</button>
+      </div>
+    </article>
+
+    <!-- 5. STAKEHOLDER: New tech lead surfaced -->
+    <article class="triage-card">
+      <div class="triage-spine triage-spine-gap"></div>
+      <div class="triage-body">
+        <span class="triage-kind triage-kind-gap">Stakeholder change</span>
+        <div class="triage-headline">A new technical lead surfaced — asked to be added to outreach.</div>
+        <div class="triage-evidence">
+          In a <strong>Feb 26 ticket</strong>, a Globex Holdings contact noted they had
+          recently become <strong>technical lead for the VIP project</strong> and asked
+          to be added to future outreach. Not yet in our stakeholder list.
+          Combined with expanding technical ownership across security contacts
+          (Landyn Sparacino, Jan 12), this is broader shared ownership rather than a
+          single decisive owner — resetting context and escalation paths.
+        </div>
+        <div class="triage-sources">
+          <span class="source-tag-local">Local</span>
+          <a href="#">Signal · Feb 26</a>
+          <a href="#">Signal · Jan 12</a>
+        </div>
+      </div>
+      <div class="triage-action">
+        <button class="triage-btn">Dismiss</button>
+        <button class="triage-btn triage-btn-primary">Map stakeholder</button>
+      </div>
+    </article>
+
+  </div>
+
+  <!-- ═════════ DIVERGENCES ═════════ -->
+  <div class="subgroup-header">
+    <span class="subgroup-label">Divergences · data/narrative mismatches</span>
+    <span class="subgroup-note">The story doesn't match the data — usually the highest-signal thing on the page.</span>
+  </div>
+
+  <!-- DIV 1: CRM hygiene bomb -->
+  <article class="triage-card">
+    <div class="triage-spine triage-spine-divergence"></div>
+    <div class="triage-body">
+      <span class="triage-kind triage-kind-divergence">CRM vs reality</span>
+      <div class="triage-headline">Salesforce labels Globex Holdings "Disqualified" while everything else says active.</div>
+      <div class="triage-evidence">
+        Account Qualification Status = <strong>Disqualified</strong>.
+        WPVIP Status = <strong>Active</strong>. Predictive Engagement Score = <strong>A</strong>.
+        Prospecting Status = <strong>Active Opportunity</strong>. Any workflow or
+        report keying off Qualification Status is <strong>dropping this $185K account</strong>.
+        Data hygiene issue on opportunity 006XX00000EXAMPLE1.
+      </div>
+      <div class="triage-sources">
+        <span class="source-tag-glean">Glean only</span>
+        <a href="#">SF Account 0010h00001EXAMPLE2</a>
+      </div>
+    </div>
+    <div class="triage-action">
+      <button class="triage-btn">Snooze</button>
+      <button class="triage-btn triage-btn-primary">Fix in CRM</button>
+    </div>
+  </article>
+
+  <!-- DIV 2: Our story vs their authority -->
+  <article class="triage-card">
+    <div class="triage-spine triage-spine-divergence"></div>
+    <div class="triage-body">
+      <span class="triage-kind triage-kind-divergence">Our pitch vs their authority</span>
+      <div class="triage-headline">Our consolidation narrative assumes authority they don't have.</div>
+      <div class="triage-evidence">
+        We've pitched digital-estate consolidation and unified governance. But Jorge
+        said many recognized sites are <strong>portfolio companies, not under their
+        oversight</strong>. Chris Anderson said there may be some oversight "but not true
+        standardization" and the details were <strong>"above my pay grade or not
+        something he knew well yet"</strong>. The buyer doesn't have authority to
+        standardize across adjacent properties — this weakens the expansion motion.
+      </div>
+      <div class="triage-sources">
+        <span class="source-tag-local">Local</span>
+        <a href="#">Transcript · Feb 17 (domain mapping)</a>
+      </div>
+    </div>
+    <div class="triage-action">
+      <button class="triage-btn">Dismiss</button>
+      <button class="triage-btn triage-btn-primary">Rescope the pitch</button>
+    </div>
+  </article>
+
+  <!-- DIV 3: Channel divergence — tickets frustrated, meetings cordial -->
+  <article class="triage-card">
+    <div class="triage-spine triage-spine-divergence"></div>
+    <div class="triage-body">
+      <span class="triage-kind triage-kind-divergence">Channel divergence</span>
+      <div class="triage-headline">Support tickets frustrated. Meetings cordial.</div>
+      <div class="triage-evidence">
+        3 tickets Mar 14–27 carry escalating tone — Defensive Mode blocking API,
+        cert renewal failures, proxy onboarding confusion. The Feb 17 Gong call
+        rated positive, and Globex Holdings hasn't raised these issues in scheduled
+        meetings. Customer is performing cordiality in synchronous conversations
+        while friction accumulates asynchronously.
+      </div>
+      <div class="triage-sources">
+        <span class="source-tag-glean">Glean</span>
+        <a href="#">ZD #223999, #223554, #224818</a>
+        <a href="#">Gong · Feb 17 (positive)</a>
+      </div>
+    </div>
+    <div class="triage-action">
+      <button class="triage-btn">Dismiss</button>
+      <button class="triage-btn triage-btn-primary">Address in next meeting</button>
+    </div>
+  </article>
+
+  <!-- ═════════ OUTLOOK: renewal ═════════ -->
+  <section class="outlook-section">
+    <div class="supporting-label">Outlook: renewal</div>
+
+    <div class="outlook-grid">
+      <div>
+        <div class="outlook-block-label">Confidence</div>
+        <div class="outlook-block-value outlook-value-confidence">55%</div>
+        <div class="outlook-block-detail">Moderate. Risk factors: block editor performance, dashboard renewal-date visibility, compliance documentation gap.</div>
+      </div>
+      <div>
+        <div class="outlook-block-label">Benchmark</div>
+        <div class="outlook-block-value outlook-value-benchmark">87%</div>
+        <div class="outlook-block-detail">Accounts like Globex Holdings — Enterprise Financial Services, $100–300K ARR, Green→Yellow→Green pattern — renewed at 87% over the last 12mo (n=14).</div>
+      </div>
+      <div>
+        <div class="outlook-block-label">Recommended start</div>
+        <div class="outlook-block-value outlook-value-prep">Apr 15</div>
+        <div class="outlook-block-detail">221 days to renewal. Window opens now — address compliance gap and get the headless conversation in hand before commercial cycle.</div>
+      </div>
+    </div>
+
+    <div class="outlook-benchmark-insight">
+      The 55% confidence is <strong>pessimistic</strong> for your profile. Baseline expectation should be closer to 87%. Capture the compliance friction and headless alignment, and this renewal should land at baseline or above — the question is not <em>whether</em> they renew, but <em>at what size</em>.
+    </div>
+  </section>
+
+  <!-- ═════════ SUPPORTING: computed vs signal trend TENSION ═════════ -->
+  <section class="supporting">
+    <div class="supporting-label">Supporting: computed health vs signal trend</div>
+
+    <div class="supporting-tension">
+      <div class="tension-block">
+        <div class="tension-block-label">Computed score</div>
+        <div class="tension-block-value tension-block-value-green">72</div>
+        <div class="tension-block-meta">Green · ▲ +12 in 30d · "improving"</div>
+      </div>
+      <div class="tension-block">
+        <div class="tension-block-label">Signal trend (from Glean)</div>
+        <div class="tension-block-value tension-block-value-red">Worsening</div>
+        <div class="tension-block-meta">Infra drift ▲ · Defensive Mode unsettled · Headless ▲ · Compliance persistent</div>
+      </div>
+    </div>
+
+    <p class="tension-note">
+      The score is lagging. Five of ten Glean signals trend "worsening" or
+      "strengthening" (as concerns). The score caught up to the Q1 crisis and is
+      reading the recovery as a rising trajectory — but the new signal layer is
+      showing fresh friction: infra drift, Defensive Mode calibration, headless
+      exploration, operational load. Trust the triage cards above over the score.
+    </p>
+
+    <div class="dimensions">
+      <div class="dim">
+        <div class="dim-name"><span>Engagement</span><span class="dim-score">85</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-green" style="width: 85%"></div></div>
+        <div class="dim-evidence">24 email signals, stable</div>
+      </div>
+      <div class="dim">
+        <div class="dim-name"><span>Stakeholder Coverage</span><span class="dim-score">100</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-green" style="width: 100%"></div></div>
+        <div class="dim-evidence">23 mapped · new tech lead not yet in</div>
+      </div>
+      <div class="dim">
+        <div class="dim-name"><span>Signal Momentum</span><span class="dim-score">87</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-green" style="width: 87%"></div></div>
+        <div class="dim-evidence">4,551 signals in 30d — some adversarial</div>
+      </div>
+      <div class="dim">
+        <div class="dim-name"><span>Champion Health</span><span class="dim-score">70</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-green" style="width: 70%"></div></div>
+        <div class="dim-evidence">Chris Anderson · 2 meetings in 90d · strong</div>
+      </div>
+      <div class="dim">
+        <div class="dim-name"><span>Financial Proximity</span><span class="dim-score">66</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-yellow" style="width: 66%"></div></div>
+        <div class="dim-evidence">221 days to renewal</div>
+      </div>
+      <div class="dim">
+        <div class="dim-name"><span>Meeting Cadence</span><span class="dim-score">30</span></div>
+        <div class="dim-bar"><div class="dim-fill dim-fill-red" style="width: 30%"></div></div>
+        <div class="dim-evidence">1 in 30d ▼ · next Apr 23</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ META: our own data capture gaps ═════════ -->
+  <section class="meta-section">
+    <div class="supporting-label">About this intelligence</div>
+
+    <div class="meta-card">
+      <div class="meta-card-label">Our data capture gap</div>
+      <div class="meta-card-text">
+        Glean flagged that <strong>at least one Globex Holdings call wasn't captured in
+        Gong</strong> (Amy used a local recording). Staircase notes are "hit-or-miss"
+        depending on TAM/RM diligence. <strong>This account may be systematically
+        under-informed</strong> in automated analyses. Notion isn't indexed for
+        Globex Holdings. No standalone Slack search available. Fix upstream.
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ FINIS ═════════ -->
+  <div class="finis">
+    <div class="finis-mark">* * *</div>
+    <div class="finis-date">Glean pull Apr 16, 2026 · 10 signals · 4 divergences · 3 source gaps</div>
+  </div>
+
+</div>
+
+<!-- Switcher -->
+<div class="switcher">
+  <button class="active">Health & Outlook</button>
+  <button>Context</button>
+  <button>The Work</button>
+</div>
+
+</body>
+</html>
