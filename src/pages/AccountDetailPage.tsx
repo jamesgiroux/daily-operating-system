@@ -47,6 +47,7 @@ import { AccountReportsSection } from "@/components/account/AccountReportsSectio
 import { buildAccountVitals } from "@/components/account/account-detail-utils";
 
 import shared from "@/styles/entity-detail.module.css";
+import pageStyles from "./AccountDetailPage.module.css";
 
 export default function AccountDetailPage() {
   const { accountId } = useParams({ strict: false });
@@ -198,13 +199,13 @@ export default function AccountDetailPage() {
       </section>
 
       {/* All 3 views rendered, inactive hidden with display:none */}
-      <div style={{ display: activeView === "health" ? "block" : "none" }}>
+      <div className={pageStyles.view} style={{ display: activeView === "health" ? "block" : "none" }}>
         {renderHealthView()}
       </div>
-      <div style={{ display: activeView === "context" ? "block" : "none" }}>
+      <div className={pageStyles.view} style={{ display: activeView === "context" ? "block" : "none" }}>
         {renderContextView()}
       </div>
-      <div style={{ display: activeView === "work" ? "block" : "none" }}>
+      <div className={pageStyles.view} style={{ display: activeView === "work" ? "block" : "none" }}>
         {renderWorkView()}
       </div>
 

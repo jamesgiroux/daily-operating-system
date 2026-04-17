@@ -1,5 +1,10 @@
 .hero {
   composes: hero from "../entity/EntityHeroBase.module.css";
+  /* Override base 70vh min-height — narrative moved to Context view,
+     hero is now just identity (name + badges + vitals). Size to content. */
+  min-height: auto;
+  justify-content: flex-start;
+  padding-bottom: var(--space-md);
 }
 
 .heroDate {
