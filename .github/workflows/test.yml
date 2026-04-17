@@ -3,12 +3,12 @@ name: Test
 on:
   push:
     branches:
-      - main
+      - trunk
     tags-ignore:
       - 'v*'
   pull_request:
     branches:
-      - main
+      - trunk
 
 jobs:
   test:
