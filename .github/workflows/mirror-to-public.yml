@@ -1,0 +1,33 @@
+name: Mirror Tagged Release to Public
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged commit with full history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "James Giroux"
+          git config user.email "james.giroux@automattic.com"
+
+      - name: Push tag and commits to public repo
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          git remote add public "https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/jamesgiroux/daily-operating-system.git"
+          git push --force public "${COMMIT_SHA}:refs/heads/main"
+          git push public "${TAG_NAME}"
