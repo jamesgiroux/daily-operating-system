@@ -18,9 +18,23 @@ import { useAccountFieldSave } from "@/hooks/useAccountFieldSave";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { FolioReportsDropdown } from "@/components/folio/FolioReportsDropdown";
 import { FolioToolsDropdown } from "@/components/folio/FolioToolsDropdown";
-import { buildChapters } from "@/components/account/account-detail-utils";
+import {
+  buildHealthChapters,
+  buildContextChapters,
+  buildWorkChapters,
+} from "@/components/account/account-detail-utils";
+import type { AccountView } from "@/components/account/AccountViewSwitcher";
 
 import shared from "@/styles/entity-detail.module.css";
+
+const VALID_VIEWS: AccountView[] = ["health", "context", "work"];
+
+function readViewFromUrl(): AccountView {
+  if (typeof window === "undefined") return "health";
+  const params = new URLSearchParams(window.location.search);
+  const v = params.get("view");
+  return v && (VALID_VIEWS as string[]).includes(v) ? (v as AccountView) : "health";
+}
 
 export function useAccountDetailPage(accountId: string | undefined) {
   const navigate = useNavigate();
@@ -41,11 +55,34 @@ export function useAccountDetailPage(accountId: string | undefined) {
   const feedback = useIntelligenceFeedback(accountId, "account");
   const entityCtx = useEntityContextEntries("account", accountId ?? null);
 
-  // Chapter navigation (all chapters for now; will switch to per-view in Step 4)
-  const chapters = useMemo(
-    () => buildChapters(acct.detail?.isParent ?? false, !!acct.intelligence?.health),
-    [acct.detail?.isParent, acct.intelligence?.health],
-  );
+  // View state — driven by ?view= URL param, synced back on change
+  const [activeView, setActiveView] = useState<AccountView>(() => readViewFromUrl());
+
+  // Sync view → URL (replaceState, no navigation, no re-render)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === activeView) return;
+    params.set("view", activeView);
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState(null, "", newUrl);
+  }, [activeView]);
+
+  // Scroll to top on view change (each view has its own section layout)
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [activeView]);
+
+  // Per-view chapter arrays
+  const chapters = useMemo(() => {
+    if (activeView === "health") {
+      return buildHealthChapters(
+        acct.detail?.isParent ?? false,
+        !!acct.intelligence?.health,
+      );
+    }
+    if (activeView === "context") return buildContextChapters();
+    return buildWorkChapters();
+  }, [activeView, acct.detail?.isParent, acct.intelligence?.health]);
 
   // Magazine shell registration
   const shellConfig = useMemo(() => ({
@@ -115,6 +152,10 @@ export function useAccountDetailPage(accountId: string | undefined) {
     intelligence: acct.detail?.intelligence ?? null,
     loading: acct.loading,
     error: acct.error,
+
+    // View switching
+    activeView,
+    setActiveView,
 
     // Field operations
     handleUpdateIntelField,
