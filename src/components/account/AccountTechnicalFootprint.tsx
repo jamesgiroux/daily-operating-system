@@ -9,26 +9,36 @@ interface AccountTechnicalFootprintProps {
   variant?: "inline" | "chapter";
   /** DOS-18: feature list from productAdoption.featureAdoption (chapter variant only). */
   featureAdoption?: string[];
+  /**
+   * DOS-231: when provided, gap rows expose a "Capture now →" affordance that
+   * routes to the structured technical-footprint editor. This is a frontend
+   * link only; writing to `account_technical_footprint` lands with the
+   * Context schema work in v1.2.2 (DOS-207). Until that exists the link
+   * surfaces the absence of the capture path rather than silently accepting
+   * text that the backend can't persist.
+   */
+  onCaptureGap?: (field: string) => void;
 }
 
 interface RefRow {
   label: string;
+  field: string;
   value: string;
   gap?: boolean;
 }
 
-export function AccountTechnicalFootprint({ footprint, variant = "inline", featureAdoption }: AccountTechnicalFootprintProps) {
+export function AccountTechnicalFootprint({ footprint, variant = "inline", featureAdoption, onCaptureGap }: AccountTechnicalFootprintProps) {
   const tf = footprint;
 
   if (variant === "chapter") {
     const rows: RefRow[] = [
-      { label: "Usage tier", value: tf.usageTier ?? "— not captured", gap: !tf.usageTier },
-      { label: "Active users", value: tf.activeUsers != null && tf.activeUsers > 0 ? tf.activeUsers.toLocaleString() : "— not captured", gap: !(tf.activeUsers && tf.activeUsers > 0) },
-      { label: "Services stage", value: tf.servicesStage ?? "— not captured", gap: !tf.servicesStage },
-      { label: "Support tier", value: tf.supportTier ?? "— not captured", gap: !tf.supportTier },
-      { label: "Open tickets", value: tf.openTickets != null ? String(tf.openTickets) : "— not captured", gap: tf.openTickets == null },
-      { label: "CSAT", value: tf.csatScore != null && tf.csatScore > 0 ? `${tf.csatScore.toFixed(1)}/5` : "— not captured", gap: !(tf.csatScore && tf.csatScore > 0) },
-      { label: "Adoption score", value: tf.adoptionScore != null && tf.adoptionScore > 0 ? `${Math.round(tf.adoptionScore * 100)}%` : "— not computed", gap: !(tf.adoptionScore && tf.adoptionScore > 0) },
+      { label: "Usage tier", field: "usage_tier", value: tf.usageTier ?? "— not captured", gap: !tf.usageTier },
+      { label: "Active users", field: "active_users", value: tf.activeUsers != null && tf.activeUsers > 0 ? tf.activeUsers.toLocaleString() : "— not captured", gap: !(tf.activeUsers && tf.activeUsers > 0) },
+      { label: "Services stage", field: "services_stage", value: tf.servicesStage ?? "— not captured", gap: !tf.servicesStage },
+      { label: "Support tier", field: "support_tier", value: tf.supportTier ?? "— not captured", gap: !tf.supportTier },
+      { label: "Open tickets", field: "open_tickets", value: tf.openTickets != null ? String(tf.openTickets) : "— not captured", gap: tf.openTickets == null },
+      { label: "CSAT", field: "csat_score", value: tf.csatScore != null && tf.csatScore > 0 ? `${tf.csatScore.toFixed(1)}/5` : "— not captured", gap: !(tf.csatScore && tf.csatScore > 0) },
+      { label: "Adoption score", field: "adoption_score", value: tf.adoptionScore != null && tf.adoptionScore > 0 ? `${Math.round(tf.adoptionScore * 100)}%` : "— not computed", gap: !(tf.adoptionScore && tf.adoptionScore > 0) },
     ];
     const gapCount = rows.filter((r) => r.gap).length;
 
@@ -40,9 +50,30 @@ export function AccountTechnicalFootprint({ footprint, variant = "inline", featu
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)" }}>
                 {row.label}
               </span>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: row.gap ? "var(--color-text-tertiary)" : "var(--color-text-primary)", fontStyle: row.gap ? "italic" : "normal", textAlign: "right" }}>
-                {row.value}
-              </span>
+              {row.gap && onCaptureGap ? (
+                <button
+                  type="button"
+                  onClick={() => onCaptureGap(row.field)}
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 13,
+                    color: "var(--color-spice-saffron)",
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    textAlign: "right",
+                    fontStyle: "italic",
+                  }}
+                  aria-label={`Capture ${row.label.toLowerCase()}`}
+                >
+                  {row.value} · Capture now →
+                </button>
+              ) : (
+                <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: row.gap ? "var(--color-text-tertiary)" : "var(--color-text-primary)", fontStyle: row.gap ? "italic" : "normal", textAlign: "right" }}>
+                  {row.value}
+                </span>
+              )}
             </div>
           ))}
         </div>
