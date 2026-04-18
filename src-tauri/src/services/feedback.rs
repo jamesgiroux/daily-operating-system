@@ -311,15 +311,18 @@ pub fn submit_intelligence_correction(
     }
 
     // Health recalc — only on a corrected action against a health-affecting
-    // field on an account. Recompute synchronously so the next detail read
-    // reflects the correction; compute_account_health is stateless + cheap.
+    // field on an account. Route through the full pipeline so
+    // entity_assessment.health_json + entity_quality are updated and signals
+    // propagate; otherwise the next detail read would still see stale health.
     if action == CorrectionAction::Corrected
         && entity_type == "account"
         && is_health_affecting_field(field)
     {
-        if let Ok(Some(account)) = db.get_account(entity_id) {
-            let _ = crate::intelligence::health_scoring::compute_account_health(
-                db, &account, None,
+        if let Err(e) =
+            crate::services::intelligence::recompute_entity_health(db, entity_id, "account")
+        {
+            log::warn!(
+                "recompute_entity_health failed after correction of {field} on {entity_id}: {e}"
             );
         }
     }
@@ -682,5 +685,111 @@ mod correction_tests {
             .expect_err("required fields must be non-empty");
             assert!(!err.is_empty());
         }
+    }
+
+    /// DOS-227: when a health-affecting field (arr, lifecycle, health,
+    /// contract_end, renewal_date) is corrected, the feedback service must
+    /// drive the full health pipeline — not just compute and discard. That
+    /// means entity_assessment.health_json and entity_quality.health_score
+    /// both reflect the recomputed state on the next read.
+    #[test]
+    fn corrected_health_affecting_field_updates_persisted_health_state() {
+        use crate::intelligence::io::IntelligenceJson;
+
+        let db = test_db();
+        seed_account(&db, "acct-dos227");
+
+        // Seed minimal intelligence so recompute_entity_health has something
+        // to hydrate from (it early-returns without a row). Mirrors the
+        // recompute_entity_health test fixture in services::intelligence.
+        let intel = IntelligenceJson {
+            entity_id: "acct-dos227".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-04-18T00:00:00Z".to_string(),
+            ..Default::default()
+        };
+        db.upsert_entity_intelligence(&intel)
+            .expect("seed intelligence");
+
+        // Precondition: no entity_quality row yet.
+        let pre_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM entity_quality WHERE entity_id = 'acct-dos227'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(pre_count, 0, "no entity_quality row before correction");
+
+        // Correct a health-affecting field (arr).
+        submit_intelligence_correction(
+            &db,
+            "acct-dos227",
+            "account",
+            "arr",
+            CorrectionAction::Corrected,
+            Some("250000"),
+            None,
+        )
+        .expect("corrected submission");
+
+        // Post: entity_quality.health_score populated by the full pipeline.
+        let score: Option<f64> = db
+            .conn_ref()
+            .query_row(
+                "SELECT health_score FROM entity_quality WHERE entity_id = 'acct-dos227'",
+                [],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+        assert!(
+            score.is_some(),
+            "entity_quality.health_score must be written after correction"
+        );
+
+        // Post: entity_assessment.health_json reflects the recomputed health.
+        let refreshed = db
+            .get_entity_intelligence("acct-dos227")
+            .expect("read intelligence")
+            .expect("intelligence row exists");
+        assert!(
+            refreshed.health.is_some(),
+            "IntelligenceJson.health must be populated (surfaces via health_json)"
+        );
+    }
+
+    /// DOS-227: non-health-affecting fields must NOT trigger a health
+    /// recompute. Guards against regression where the branch broadens and
+    /// cascades unnecessary work / signals on every correction.
+    #[test]
+    fn corrected_non_health_affecting_field_does_not_touch_entity_quality() {
+        let db = test_db();
+        seed_account(&db, "acct-dos227-neg");
+
+        submit_intelligence_correction(
+            &db,
+            "acct-dos227-neg",
+            "account",
+            "state_of_play",
+            CorrectionAction::Corrected,
+            Some("new narrative"),
+            None,
+        )
+        .expect("corrected submission on non-health field");
+
+        let count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM entity_quality WHERE entity_id = 'acct-dos227-neg'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            count, 0,
+            "non-health-affecting correction must not write entity_quality"
+        );
     }
 }
