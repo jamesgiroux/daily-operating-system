@@ -578,6 +578,15 @@ impl ClassifiedMeeting {
             )
         };
 
+        // DOS-224: also carry full scored resolutions so the calendar-sync
+        // persistence path can make primary-vs-suggestion decisions instead
+        // of defaulting every link to confidence 0.95 / is_primary 1.
+        let scored_classified_entities = if self.resolved_entities.is_empty() {
+            None
+        } else {
+            Some(self.resolved_entities.clone())
+        };
+
         crate::types::CalendarEvent {
             id: self.id.clone(),
             title: self.title.clone(),
@@ -589,6 +598,7 @@ impl ClassifiedMeeting {
             is_all_day: self.is_all_day,
             linked_entities: None,
             classified_entities,
+            scored_classified_entities,
         }
     }
 }
