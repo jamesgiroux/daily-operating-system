@@ -692,7 +692,7 @@ mod tests {
     // Ignored: pre-existing failure on dev at this worktree's base commit — the
     // router logic doesn't resolve "Crestview Media--Corporate-Services-B2B-..."
     // filenames to a nested BU directory. Not related to DOS-18/DOS-203; tracked
-    // separately (see also the AcmeCorp→Crestview Media test-data rename).
+    // separately (see also the parent→Crestview Media test-data rename).
     #[test]
     #[ignore]
     fn test_infer_entity_tracker_path_from_explicit_filename() {
