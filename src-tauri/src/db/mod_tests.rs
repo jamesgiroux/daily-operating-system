@@ -260,7 +260,7 @@ fn test_dos226_mark_failed_for_retry_preserves_attempts() {
     let db = test_db();
     seed_failed_email(&db, "em-stuck-1");
 
-    let marked = db.mark_failed_for_retry().expect("mark");
+    let marked = db.mark_failed_for_retry("batch-a").expect("mark");
     assert_eq!(marked, 1);
 
     let (state, attempts) = read_enrichment_state(&db, "em-stuck-1");
@@ -275,7 +275,7 @@ fn test_dos226_pending_retry_still_counts_as_failed_in_stats() {
     // include rows in the transitional `pending_retry` state.
     let db = test_db();
     seed_failed_email(&db, "em-stuck-1");
-    db.mark_failed_for_retry().expect("mark");
+    db.mark_failed_for_retry("batch-b").expect("mark");
 
     let stats = db.get_email_sync_stats().expect("stats");
     assert_eq!(
@@ -292,8 +292,8 @@ fn test_dos226_rollback_restores_failed_state() {
     let db = test_db();
     seed_failed_email(&db, "em-stuck-1");
 
-    db.mark_failed_for_retry().expect("mark");
-    let rolled = db.rollback_pending_retry().expect("rollback");
+    db.mark_failed_for_retry("batch-c").expect("mark");
+    let rolled = db.rollback_pending_retry("batch-c").expect("rollback");
     assert_eq!(rolled, 1);
 
     let (state, attempts) = read_enrichment_state(&db, "em-stuck-1");
@@ -309,13 +309,161 @@ fn test_dos226_finalize_success_promotes_to_pending_and_zeros_attempts() {
     let db = test_db();
     seed_failed_email(&db, "em-stuck-1");
 
-    db.mark_failed_for_retry().expect("mark");
-    let promoted = db.finalize_pending_retry_success().expect("finalize");
+    db.mark_failed_for_retry("batch-d").expect("mark");
+    let promoted = db.finalize_pending_retry_success("batch-d").expect("finalize");
     assert_eq!(promoted, 1);
 
     let (state, attempts) = read_enrichment_state(&db, "em-stuck-1");
     assert_eq!(state, "pending");
     assert_eq!(attempts, 0);
+}
+
+#[test]
+fn test_dos226_finalize_is_scoped_to_batch_id() {
+    // Codex finding 2: a finalize from refresh A must not accidentally
+    // adopt rows owned by refresh B. If batching were ignored, a rapid
+    // double-refresh could drop rows into `pending` with attempts=0 that
+    // the first refresh had not yet finished processing.
+    let db = test_db();
+    seed_failed_email(&db, "em-batch-a-1");
+    seed_failed_email(&db, "em-batch-a-2");
+
+    db.mark_failed_for_retry("batch-A").expect("mark A");
+
+    // Simulate a second refresh arriving before A finalizes.
+    let bogus = db
+        .finalize_pending_retry_success("batch-B")
+        .expect("finalize B");
+    assert_eq!(bogus, 0, "finalize for unknown batch must touch zero rows");
+
+    // A's rows are still in pending_retry.
+    let (state, _) = read_enrichment_state(&db, "em-batch-a-1");
+    assert_eq!(state, "pending_retry");
+
+    // A finalizes its own batch correctly.
+    let promoted = db
+        .finalize_pending_retry_success("batch-A")
+        .expect("finalize A");
+    assert_eq!(promoted, 2);
+}
+
+#[test]
+fn test_dos226_rollback_is_scoped_to_batch_id() {
+    // Codex finding 2: rollback from one batch must not clobber another
+    // batch's in-flight rows.
+    let db = test_db();
+    seed_failed_email(&db, "em-rb-1");
+
+    db.mark_failed_for_retry("batch-X").expect("mark X");
+    let rolled = db.rollback_pending_retry("batch-Y").expect("rollback Y");
+    assert_eq!(rolled, 0, "rollback for unknown batch is a no-op");
+
+    let (state, _) = read_enrichment_state(&db, "em-rb-1");
+    assert_eq!(state, "pending_retry", "X's row must be untouched");
+}
+
+#[test]
+fn test_dos226_rollback_stale_pending_retry_recovers_orphans() {
+    // Codex finding 2: simulate a crash between mark_failed_for_retry and
+    // refresh completion. The row is stranded in pending_retry with a
+    // batch_id that will never be finalized or rolled back by its owner.
+    // Phase-0 recovery on the next refresh must promote it back to `failed`
+    // so retry_failed_emails() will actually re-run it.
+    let db = test_db();
+    seed_failed_email(&db, "em-crashed");
+
+    db.mark_failed_for_retry("batch-crashed").expect("mark");
+
+    // Backdate retry_started_at to simulate staleness (older than the
+    // recovery bound). Without this the row would be considered fresh.
+    db.conn
+        .execute(
+            "UPDATE emails SET retry_started_at = '2020-01-01T00:00:00Z' \
+             WHERE email_id = 'em-crashed'",
+            [],
+        )
+        .expect("backdate");
+
+    // `retry_failed_emails` counted only `failed` before the fix. Verify
+    // the count_retriable helper includes pending_retry rows so a user
+    // clicking Retry still triggers a refresh (the refresh's phase-0
+    // recovery will then roll this row back to failed).
+    let retriable = db.count_retriable_emails().expect("count retriable");
+    assert_eq!(
+        retriable, 1,
+        "count_retriable must include pending_retry so orphans aren't invisible to Retry"
+    );
+
+    // Run the stale-recovery pass with a short bound.
+    let recovered = db
+        .rollback_stale_pending_retry(60)
+        .expect("recover stale");
+    assert_eq!(recovered, 1);
+
+    let (state, attempts) = read_enrichment_state(&db, "em-crashed");
+    assert_eq!(state, "failed", "stale pending_retry must be rolled back");
+    assert_eq!(attempts, 3, "attempts untouched during recovery");
+
+    // Columns cleared so the recovered row can participate in a fresh batch.
+    let (batch_id, started_at): (Option<String>, Option<String>) = db
+        .conn
+        .query_row(
+            "SELECT retry_batch_id, retry_started_at FROM emails WHERE email_id = 'em-crashed'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read cols");
+    assert!(batch_id.is_none(), "retry_batch_id cleared on recovery");
+    assert!(started_at.is_none(), "retry_started_at cleared on recovery");
+}
+
+#[test]
+fn test_dos226_rollback_stale_respects_fresh_batches() {
+    // Codex finding 2: a concurrent refresh's fresh rows must survive the
+    // recovery pass — only stale rows are rolled back.
+    let db = test_db();
+    seed_failed_email(&db, "em-fresh");
+
+    db.mark_failed_for_retry("batch-fresh").expect("mark");
+
+    let recovered = db
+        .rollback_stale_pending_retry(600)
+        .expect("recover stale");
+    assert_eq!(recovered, 0, "fresh batches must not be disturbed");
+
+    let (state, _) = read_enrichment_state(&db, "em-fresh");
+    assert_eq!(state, "pending_retry");
+}
+
+#[test]
+fn test_dos226_pending_retry_eligible_for_enrichment_after_finalize() {
+    // Codex finding 1 regression guard: the whole retry loop hinges on
+    // the retried row becoming eligible for the next enrichment pass.
+    // Before this fix, `pending_retry` at attempts=3 would be filtered
+    // out by `get_pending_enrichment` (which requires attempts < 3), so
+    // the user-visible "retrying" state translated to zero work done.
+    //
+    // After finalize, the row must be state=pending + attempts=0 and
+    // therefore selectable by `get_pending_enrichment`.
+    let db = test_db();
+    seed_failed_email(&db, "em-e2e");
+
+    // Sanity: attempts=3 in `failed` is selected by get_pending_enrichment
+    // (the query matches failed|pending|pending_retry). But the important
+    // case for finding 1 is post-finalize eligibility, below.
+    db.mark_failed_for_retry("batch-e2e").expect("mark");
+    db.finalize_pending_retry_success("batch-e2e")
+        .expect("finalize");
+
+    let pending = db.get_pending_enrichment(10).expect("query pending");
+    assert!(
+        pending.iter().any(|e| e.email_id == "em-e2e"),
+        "finalized retry row must be visible to enrichment; \
+         otherwise the user-facing retry is a no-op"
+    );
+    let entry = pending.iter().find(|e| e.email_id == "em-e2e").unwrap();
+    assert_eq!(entry.enrichment_state, "pending");
+    assert_eq!(entry.enrichment_attempts, 0);
 }
 
 #[test]
