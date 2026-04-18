@@ -494,9 +494,21 @@ impl ActionDb {
     }
 
     /// DOS-74: Link a meeting to an entity with per-junction confidence + primary flag.
-    /// If the link already exists, upgrades confidence/is_primary when the new
-    /// values are higher (never downgrades — a later low-confidence sweep
-    /// should not stomp a high-confidence manual link).
+    /// If the link already exists, upgrades `confidence` when the new value is
+    /// higher (never downgrades — a later low-confidence sweep should not
+    /// stomp a high-confidence manual link).
+    ///
+    /// DOS-224: single-primary invariant. When writing a new primary, this
+    /// runs inside a transaction that FIRST demotes any existing
+    /// `is_primary = 1` rows with the same `(meeting_id, entity_type)` to
+    /// `is_primary = 0`, THEN upserts the new primary. The previous
+    /// implementation used `is_primary = MAX(is_primary, excluded.is_primary)`
+    /// which could never demote — so a later batch electing a different
+    /// primary left two rows with `is_primary = 1` for the same
+    /// `(meeting_id, entity_type)`, breaking the UI's single-primary
+    /// assumption. When `is_primary = false`, no demotion is performed
+    /// (suggestion writes cannot steal primaryhood, and we must still not
+    /// downgrade an existing primary via the upsert path).
     pub fn link_meeting_entity_with_confidence(
         &self,
         meeting_id: &str,
@@ -506,14 +518,39 @@ impl ActionDb {
         is_primary: bool,
     ) -> Result<(), DbError> {
         let primary_int: i64 = if is_primary { 1 } else { 0 };
-        self.conn.execute(
-            "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence, is_primary)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(meeting_id, entity_id) DO UPDATE SET
-                 confidence = MAX(confidence, excluded.confidence),
-                 is_primary = MAX(is_primary, excluded.is_primary)",
-            params![meeting_id, entity_id, entity_type, confidence, primary_int],
-        )?;
+
+        if is_primary {
+            // Transactional demote-then-upsert: guarantees exactly one
+            // `is_primary = 1` row per `(meeting_id, entity_type)`.
+            let tx = self.conn.unchecked_transaction()?;
+            tx.execute(
+                "UPDATE meeting_entities
+                    SET is_primary = 0
+                  WHERE meeting_id = ?1
+                    AND entity_type = ?2
+                    AND entity_id <> ?3
+                    AND is_primary = 1",
+                params![meeting_id, entity_type, entity_id],
+            )?;
+            tx.execute(
+                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence, is_primary)
+                 VALUES (?1, ?2, ?3, ?4, 1)
+                 ON CONFLICT(meeting_id, entity_id) DO UPDATE SET
+                     confidence = MAX(confidence, excluded.confidence),
+                     is_primary = 1",
+                params![meeting_id, entity_id, entity_type, confidence],
+            )?;
+            tx.commit()?;
+        } else {
+            // Suggestion write: never promote, never demote an existing primary.
+            self.conn.execute(
+                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence, is_primary)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(meeting_id, entity_id) DO UPDATE SET
+                     confidence = MAX(confidence, excluded.confidence)",
+                params![meeting_id, entity_id, entity_type, confidence, primary_int],
+            )?;
+        }
         Ok(())
     }
 
