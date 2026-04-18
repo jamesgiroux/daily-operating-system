@@ -437,6 +437,42 @@ pub async fn submit_intelligence_feedback(
         .await
 }
 
+/// DOS-41: Submit a consolidated intelligence correction.
+///
+/// Replaces the legacy thumbs up/down + separate "replaced" paths with a
+/// single command that handles all three user actions:
+/// - `confirmed`  — user agrees with the AI output
+/// - `annotated`  — user adds context without rejecting the output
+/// - `corrected`  — user replaces the output with a new value
+///
+/// Frontend integration: `useIntelligenceCorrection` hook. Component
+/// placement (`IntelligenceCorrection.tsx`) lands in Wave 1.
+#[tauri::command]
+pub async fn submit_intelligence_correction(
+    entity_id: String,
+    entity_type: String,
+    field: String,
+    action: String,
+    corrected_value: Option<String>,
+    annotation: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let parsed = crate::db::feedback::CorrectionAction::parse(&action)?;
+    state
+        .db_write(move |db| {
+            crate::services::feedback::submit_intelligence_correction(
+                db,
+                &entity_id,
+                &entity_type,
+                &field,
+                parsed,
+                corrected_value.as_deref(),
+                annotation.as_deref(),
+            )
+        })
+        .await
+}
+
 /// Get all feedback records for an entity.
 #[tauri::command]
 pub async fn get_entity_feedback(
