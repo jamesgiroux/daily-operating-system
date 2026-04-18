@@ -1067,13 +1067,13 @@ pub fn accept_account_field_conflict(
     suggested_value: &str,
     source: &str,
     signal_id: Option<&str>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let next_value = if field == "lifecycle" {
         normalized_lifecycle(suggested_value)
     } else {
         suggested_value.to_string()
     };
-    update_account_field(db, state, account_id, field, &next_value)?;
+    update_account_field_inner(db, state, account_id, field, &next_value)?;
 
     if matches!(field, "arr" | "lifecycle" | "contract_end" | "nps") {
         db.set_account_field_provenance(account_id, field, source, None)
@@ -1148,7 +1148,9 @@ pub fn accept_account_field_conflict(
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
 
-    Ok(())
+    // DOS-229 Wave 0e Fix 5: return post-write detail so the frontend can
+    // setDetail(result) without a second fetch.
+    build_account_detail_result(db, account_id)
 }
 
 pub fn dismiss_account_field_conflict(
@@ -1159,7 +1161,7 @@ pub fn dismiss_account_field_conflict(
     signal_id: &str,
     source: &str,
     suggested_value: Option<&str>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let feedback_id = uuid::Uuid::new_v4().to_string();
     let feedback_key = account_field_conflict_feedback_key(field, suggested_value.unwrap_or(""));
     let context = serde_json::json!({
@@ -1232,7 +1234,7 @@ pub fn dismiss_account_field_conflict(
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
 
-    Ok(())
+    build_account_detail_result(db, account_id)
 }
 
 /// Get full detail for an account by ID.
@@ -1511,6 +1513,21 @@ pub fn build_account_detail_result(
 /// Update a single structured field on an account.
 /// Writes to SQLite, emits signal, then regenerates dashboard.json + dashboard.md.
 pub fn update_account_field(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    field: &str,
+    value: &str,
+) -> Result<AccountDetailResult, String> {
+    update_account_field_inner(db, state, account_id, field, value)?;
+    // DOS-229 generalization (Wave 0e Fix 5): return the fresh detail
+    // assembled on the SAME writer connection so the frontend hook can
+    // setDetail(result) without a follow-up silentRefresh (which hits a
+    // different pool reader whose WAL snapshot may lag).
+    build_account_detail_result(db, account_id)
+}
+
+fn update_account_field_inner(
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
@@ -2754,6 +2771,17 @@ pub fn update_stakeholder_engagement(
     account_id: &str,
     person_id: &str,
     engagement: &str,
+) -> Result<AccountDetailResult, String> {
+    update_stakeholder_engagement_inner(db, engine, account_id, person_id, engagement)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn update_stakeholder_engagement_inner(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    engagement: &str,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
         tx.conn_ref()
@@ -2789,6 +2817,17 @@ pub fn update_stakeholder_assessment(
     account_id: &str,
     person_id: &str,
     assessment: &str,
+) -> Result<AccountDetailResult, String> {
+    update_stakeholder_assessment_inner(db, engine, account_id, person_id, assessment)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn update_stakeholder_assessment_inner(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    assessment: &str,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
         tx.conn_ref()
@@ -2816,6 +2855,17 @@ pub fn update_stakeholder_assessment(
 
 /// Add a role to a stakeholder (multi-role — doesn't replace existing roles).
 pub fn add_stakeholder_role(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<AccountDetailResult, String> {
+    add_stakeholder_role_inner(db, engine, account_id, person_id, role)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn add_stakeholder_role_inner(
     db: &ActionDb,
     engine: &PropagationEngine,
     account_id: &str,
@@ -2857,6 +2907,17 @@ pub fn add_stakeholder_role(
 
 /// Remove a specific role from a stakeholder.
 pub fn remove_stakeholder_role(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<AccountDetailResult, String> {
+    remove_stakeholder_role_inner(db, engine, account_id, person_id, role)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn remove_stakeholder_role_inner(
     db: &ActionDb,
     engine: &PropagationEngine,
     account_id: &str,

@@ -10,6 +10,13 @@ export function useAccountFields(
   detail: AccountDetail | null,
   reload: () => Promise<void>,
   setError: (e: string | null) => void,
+  /**
+   * DOS-229 Wave 0e Fix 5: direct-apply for AccountDetailResult returns.
+   * update_account_field now returns the fresh detail assembled on the
+   * writer connection; the hook consumes it via this callback instead of
+   * issuing a follow-up reload that hits a different pool reader.
+   */
+  applyDetail?: (d: AccountDetail) => void,
 ) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
@@ -52,18 +59,31 @@ export function useAccountFields(
       if (editRenewal !== (detail.renewalDate ?? "")) fieldUpdates.push(["contract_end", editRenewal]);
       if (editParentId !== (detail.parentId ?? "")) fieldUpdates.push(["parent_id", editParentId]);
 
+      // DOS-229 Wave 0e Fix 5: each update_account_field returns the
+      // refreshed AccountDetail from the writer connection. Apply the LAST
+      // response directly — dropping the follow-up reload that hits a
+      // different pool reader whose WAL snapshot can lag.
+      let latest: AccountDetail | null = null;
       for (const [field, value] of fieldUpdates) {
-        await invoke("update_account_field", { accountId: detail.id, field, value });
+        latest = await invoke<AccountDetail>("update_account_field", {
+          accountId: detail.id,
+          field,
+          value,
+        });
       }
       setDirty(false);
       setEditing(false);
-      await reload();
+      if (latest && applyDetail) {
+        applyDetail(latest);
+      } else {
+        await reload();
+      }
     } catch (e) {
       setError(String(e));
     } finally {
       setSaving(false);
     }
-  }, [detail, editName, editHealth, editLifecycle, editArr, editNps, editRenewal, editParentId, reload, setError]);
+  }, [detail, editName, editHealth, editLifecycle, editArr, editNps, editRenewal, editParentId, reload, setError, applyDetail]);
 
   // Save a single field immediately with the provided value.
   // Avoids the stale-state problem where setState hasn't flushed
@@ -71,12 +91,20 @@ export function useAccountFields(
   const saveField = useCallback(async (field: string, value: string) => {
     if (!detail) return;
     try {
-      await invoke("update_account_field", { accountId: detail.id, field, value });
-      await reload();
+      const result = await invoke<AccountDetail>("update_account_field", {
+        accountId: detail.id,
+        field,
+        value,
+      });
+      if (applyDetail) {
+        applyDetail(result);
+      } else {
+        await reload();
+      }
     } catch (e) {
       setError(String(e));
     }
-  }, [detail, reload, setError]);
+  }, [detail, reload, setError, applyDetail]);
 
   const handleCancelEdit = useCallback(() => {
     if (!detail) return;
