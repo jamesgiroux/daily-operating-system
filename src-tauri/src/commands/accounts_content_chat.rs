@@ -345,7 +345,7 @@ pub async fn retry_risk_briefing(
     account_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::accounts::retry_risk_briefing(state.inner(), &account_id)
+    crate::services::accounts::retry_risk_briefing(state.inner(), &account_id).await
 }
 
 #[tauri::command]
