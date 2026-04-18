@@ -1481,10 +1481,19 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
         reconcile_inbox_emails(&email_result.raw_emails, &db);
 
-        // NOTE: We intentionally do NOT auto-reset failed enrichments here.
-        // Emails that fail 3 times likely have deterministic issues (bad content,
-        // unsupported format). Auto-resetting would create infinite retry loops.
-        // Users can explicitly retry via the "Retry" button (DOS-197).
+        // DOS-31: Record that a Gmail fetch succeeded (independent of whether
+        // downstream enrichment succeeds below). This is the canonical "fetch
+        // is healthy" timestamp surfaced in the sync status UI, as opposed to
+        // `last_seen_at` which only moves when individual rows are upserted.
+        if let Err(e) = db.set_last_successful_fetch_at() {
+            log::warn!("DOS-31: failed to record last_successful_fetch_at: {}", e);
+        }
+
+        // DOS-31: `retry_failed_emails` command + `refresh_emails` service both
+        // reset `failed → pending` before we reach this point. Emails that
+        // genuinely have deterministic issues will fail again and land back in
+        // `failed`, but the user keeps full control via the explicit Retry
+        // button on the sync status notice.
     }
 
     // I370: Refresh thread positions from sent messages
