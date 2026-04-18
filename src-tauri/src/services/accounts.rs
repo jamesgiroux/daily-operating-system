@@ -1253,7 +1253,22 @@ pub async fn get_account_detail(
 
     let account_id = account_id.to_string();
     state
-        .db_read(move |db| {
+        .db_read(move |db| build_account_detail_result(db, &account_id))
+        .await
+}
+
+/// DOS-229: Synchronous assembly of `AccountDetailResult` against a given DB
+/// connection. Extracted so write commands can read back post-write state
+/// from the SAME writer connection (avoiding SQLite WAL reader-snapshot lag
+/// that makes a follow-up `db_read` return stale rows until app reload).
+pub fn build_account_detail_result(
+    db: &ActionDb,
+    account_id: &str,
+) -> Result<AccountDetailResult, String> {
+    // Shadow with owned String so the rest of the original closure body —
+    // which takes `&account_id` referring to a `String` — still borrows as
+    // `&String` (coerces to `&str`). Keeps the diff minimal on extract.
+    let account_id: String = account_id.to_string();
             let account = db
                 .get_account(&account_id)
                 .map_err(|e| e.to_string())?
@@ -1486,8 +1501,6 @@ pub async fn get_account_detail(
                 health_sparkline,
                 glean_signals,
             })
-        })
-        .await
 }
 
 /// Update a single structured field on an account.
@@ -1657,7 +1670,7 @@ pub fn set_user_health_sentiment(
     account_id: &str,
     sentiment: &str,
     note: Option<&str>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     const VALID_SENTIMENTS: &[&str] =
         &["strong", "on_track", "concerning", "at_risk", "critical"];
     if !VALID_SENTIMENTS.contains(&sentiment) {
@@ -1729,7 +1742,10 @@ pub fn set_user_health_sentiment(
         enqueue_risk_briefing(state, account_id.to_string());
     }
 
-    Ok(())
+    // DOS-229: Read back the updated detail on the SAME writer connection so
+    // the frontend sees post-write state immediately. A follow-up `db_read`
+    // hits a different pool connection whose WAL snapshot can lag.
+    build_account_detail_result(db, account_id)
 }
 
 /// DOS-27: Spawn a background risk-briefing generation task.
@@ -3382,5 +3398,37 @@ mod tests {
             alpha
         );
         assert!(beta > 1.0, "Beta should increase on correct (was {})", beta);
+    }
+
+    /// DOS-229: `build_account_detail_result` — called on the writer
+    /// connection after a mutation — must reflect the just-written state.
+    /// Regression guard for the SQLite WAL reader-snapshot lag that caused
+    /// save→refresh UI staleness on account detail pages.
+    #[test]
+    fn test_build_account_detail_reflects_writer_updates() {
+        let db = test_db();
+        let account = make_account("acc-dos229", "Post-Write Corp");
+        db.upsert_account(&account).unwrap();
+
+        // Baseline: no sentiment set.
+        let before = super::build_account_detail_result(&db, "acc-dos229")
+            .expect("baseline build");
+        assert!(before.user_health_sentiment.is_none());
+        assert!(before.sentiment_set_at.is_none());
+
+        // Simulate the writer-side mutation that `set_user_health_sentiment`
+        // performs (field update only — signal emission needs AppState).
+        db.update_account_field("acc-dos229", "user_health_sentiment", "at_risk")
+            .expect("write sentiment");
+        let ts = chrono::Utc::now().to_rfc3339();
+        db.update_account_field("acc-dos229", "sentiment_set_at", &ts)
+            .expect("write sentiment_set_at");
+
+        // Re-assembling the detail on the SAME connection must reflect the
+        // write — this is the invariant DOS-229 depends on.
+        let after = super::build_account_detail_result(&db, "acc-dos229")
+            .expect("post-write build");
+        assert_eq!(after.user_health_sentiment.as_deref(), Some("at_risk"));
+        assert_eq!(after.sentiment_set_at.as_deref(), Some(ts.as_str()));
     }
 }
