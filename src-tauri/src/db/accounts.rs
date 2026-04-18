@@ -3014,67 +3014,106 @@ impl ActionDb {
     // lifecycle transition (enqueued → running → complete|failed).
     // =========================================================================
 
-    /// Mark a risk briefing as enqueued for `account_id`.
-    /// Overwrites any prior job for this account — only the latest attempt is
-    /// retained; history lives in the audit log / reports table.
-    pub fn upsert_risk_briefing_job_enqueued(&self, account_id: &str) -> Result<(), DbError> {
+    /// Mark a risk briefing as enqueued for `account_id` with a fresh
+    /// `attempt_id`. Overwrites any prior job — only the latest attempt is
+    /// retained. The caller (service layer) owns the returned attempt_id and
+    /// must present it on every subsequent transition for compare-and-set.
+    ///
+    /// DOS-228 Wave 0e Fix 2: the attempt_id column lets a superseding
+    /// retry invalidate a prior lifecycle runner's updates instead of
+    /// last-write-wins corruption when two retries race.
+    pub fn upsert_risk_briefing_job_enqueued(
+        &self,
+        account_id: &str,
+        attempt_id: &str,
+    ) -> Result<(), DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "INSERT INTO risk_briefing_jobs
-                (account_id, status, enqueued_at, completed_at, error_message)
-             VALUES (?1, 'enqueued', ?2, NULL, NULL)
+                (account_id, status, enqueued_at, completed_at, error_message, attempt_id)
+             VALUES (?1, 'enqueued', ?2, NULL, NULL, ?3)
              ON CONFLICT(account_id) DO UPDATE SET
                 status        = 'enqueued',
                 enqueued_at   = excluded.enqueued_at,
                 completed_at  = NULL,
-                error_message = NULL",
-            params![account_id, now],
+                error_message = NULL,
+                attempt_id    = excluded.attempt_id",
+            params![account_id, now, attempt_id],
         )?;
         Ok(())
     }
 
-    /// Mark the current job as running. No-op if the row is missing — the
-    /// status transitions are driven by the service layer which always calls
-    /// `upsert_risk_briefing_job_enqueued` first.
-    pub fn mark_risk_briefing_job_running(&self, account_id: &str) -> Result<(), DbError> {
-        self.conn.execute(
+    /// Compare-and-set transition to `running`. Returns true if the row's
+    /// `attempt_id` still matches `attempt_id` — i.e. this runner still owns
+    /// the lifecycle. Returns false if superseded (another retry has
+    /// stamped a newer attempt_id), in which case the caller must exit
+    /// without further writes.
+    pub fn mark_risk_briefing_job_running(
+        &self,
+        account_id: &str,
+        attempt_id: &str,
+    ) -> Result<bool, DbError> {
+        let affected = self.conn.execute(
             "UPDATE risk_briefing_jobs
                 SET status = 'running', completed_at = NULL, error_message = NULL
-              WHERE account_id = ?1",
-            params![account_id],
+              WHERE account_id = ?1 AND attempt_id = ?2",
+            params![account_id, attempt_id],
         )?;
-        Ok(())
+        Ok(affected > 0)
     }
 
-    /// Mark the current job as complete. Clears any prior error message.
-    pub fn mark_risk_briefing_job_complete(&self, account_id: &str) -> Result<(), DbError> {
+    /// Compare-and-set terminal transition to `complete`. Returns true if
+    /// this runner's attempt is still current.
+    pub fn mark_risk_briefing_job_complete(
+        &self,
+        account_id: &str,
+        attempt_id: &str,
+    ) -> Result<bool, DbError> {
         let now = chrono::Utc::now().to_rfc3339();
-        self.conn.execute(
+        let affected = self.conn.execute(
             "UPDATE risk_briefing_jobs
                 SET status = 'complete', completed_at = ?2, error_message = NULL
-              WHERE account_id = ?1",
-            params![account_id, now],
+              WHERE account_id = ?1 AND attempt_id = ?3",
+            params![account_id, now, attempt_id],
         )?;
-        Ok(())
+        Ok(affected > 0)
     }
 
-    /// Mark the current job as failed with a truncated error message.
-    /// Errors over 2000 chars are truncated — we don't want to bloat the row
-    /// with a full PTY stderr dump. Truncation is deterministic.
+    /// Compare-and-set terminal transition to `failed` with a truncated
+    /// error message (>2000 chars are clipped to keep rows compact).
     pub fn mark_risk_briefing_job_failed(
         &self,
         account_id: &str,
+        attempt_id: &str,
         error_message: &str,
-    ) -> Result<(), DbError> {
+    ) -> Result<bool, DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         let truncated: String = error_message.chars().take(2_000).collect();
-        self.conn.execute(
+        let affected = self.conn.execute(
             "UPDATE risk_briefing_jobs
                 SET status = 'failed', completed_at = ?2, error_message = ?3
-              WHERE account_id = ?1",
-            params![account_id, now, truncated],
+              WHERE account_id = ?1 AND attempt_id = ?4",
+            params![account_id, now, truncated, attempt_id],
         )?;
-        Ok(())
+        Ok(affected > 0)
+    }
+
+    /// Current status of the risk-briefing job, if any. Used by
+    /// `retry_risk_briefing` to reject retries while a job is running.
+    pub fn get_risk_briefing_job_status(
+        &self,
+        account_id: &str,
+    ) -> Result<Option<String>, DbError> {
+        let result = self.conn.query_row(
+            "SELECT status FROM risk_briefing_jobs WHERE account_id = ?1",
+            params![account_id],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::from(e)),
+        }
     }
 
     /// Read the current (latest) job row for `account_id`.
@@ -3103,6 +3142,46 @@ impl ActionDb {
             Err(e) => Err(DbError::from(e)),
         }
     }
+
+    // =========================================================================
+    // DOS-228 Wave 0e Fix 3: health_recompute_pending — durable debounce
+    // marker. Scheduling a recompute writes a row; a successful recompute
+    // clears it. Startup drains whatever survived a crash so committed
+    // field edits never silently lose their health recompute.
+    // =========================================================================
+
+    /// Mark a pending health recompute for `account_id`. Idempotent — stamps
+    /// `requested_at` on each call so diagnostics can show staleness.
+    pub fn mark_health_recompute_pending(&self, account_id: &str) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO health_recompute_pending (account_id, requested_at)
+             VALUES (?1, ?2)
+             ON CONFLICT(account_id) DO UPDATE SET requested_at = excluded.requested_at",
+            params![account_id, now],
+        )?;
+        Ok(())
+    }
+
+    /// Clear the pending marker for `account_id`. Called after a successful
+    /// recompute so the drain on next startup won't redo the work.
+    pub fn clear_health_recompute_pending(&self, account_id: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM health_recompute_pending WHERE account_id = ?1",
+            params![account_id],
+        )?;
+        Ok(())
+    }
+
+    /// List all account_ids with a pending health recompute. Ordered by
+    /// requested_at so startup drains oldest-first.
+    pub fn list_health_recompute_pending(&self) -> Result<Vec<String>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT account_id FROM health_recompute_pending ORDER BY requested_at ASC",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
 }
 
 /// DOS-228 Fix 3: Status of a risk-briefing generation job.
@@ -3119,6 +3198,12 @@ pub struct DbRiskBriefingJob {
     pub completed_at: Option<String>,
     pub error_message: Option<String>,
 }
+
+// Note: `attempt_id` is an internal CAS token (DOS-228 Wave 0e Fix 2) and is
+// intentionally NOT exposed on `DbRiskBriefingJob` — the frontend only needs
+// `status`/`enqueuedAt`/`completedAt`/`errorMessage` to render progress and
+// retry affordance, and hiding the token prevents UI code from accidentally
+// making it part of a retry contract.
 
 /// One sentiment journal entry for API exposure.
 #[derive(Debug, Clone, serde::Serialize)]

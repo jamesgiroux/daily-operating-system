@@ -423,6 +423,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 101,
         sql: include_str!("migrations/100_email_retry_batch.sql"),
     },
+    // DOS-228 Wave 0e fixes: risk_briefing_jobs.attempt_id (CAS lifecycle)
+    // + health_recompute_pending (durable debouncer). Combined migration to
+    // minimize collision with parallel work.
+    Migration {
+        version: 102,
+        sql: include_str!("migrations/101_risk_briefing_attempt_and_recompute_pending.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

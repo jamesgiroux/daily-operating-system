@@ -95,6 +95,29 @@ pub fn schedule_recompute(state: &Arc<AppState>, account_id: &str) {
     let state_clone = state.clone();
     let account_id = account_id.to_string();
 
+    // DOS-228 Wave 0e Fix 3: persist a durable marker BEFORE spawning the
+    // sleep task. If the app crashes or exits during the 2s window, the
+    // committed field edit's recompute is no longer lost — `drain_pending`
+    // at startup picks it up. The marker is cleared only when the
+    // recompute succeeds; failures leave the marker so the next startup
+    // will retry.
+    let marker_state = state.clone();
+    let marker_id = account_id.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = marker_state
+            .db_write(move |db| {
+                db.mark_health_recompute_pending(&marker_id)
+                    .map_err(|e| e.to_string())
+            })
+            .await
+        {
+            log::warn!(
+                "DOS-228: failed to persist health_recompute_pending marker: {}",
+                e
+            );
+        }
+    });
+
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(HEALTH_RECOMPUTE_DEBOUNCE_MS)).await;
 
@@ -119,17 +142,95 @@ pub fn schedule_recompute(state: &Arc<AppState>, account_id: &str) {
             .await;
 
         match write_result {
-            Ok(()) => log::info!(
-                "DOS-228: debounced health recompute complete for {}",
-                account_id
-            ),
+            Ok(()) => {
+                log::info!(
+                    "DOS-228: debounced health recompute complete for {}",
+                    account_id
+                );
+                // Clear the durable marker so the next startup drain does
+                // not redo this work.
+                let clear_id = account_id.clone();
+                let _ = state_clone
+                    .db_write(move |db| {
+                        db.clear_health_recompute_pending(&clear_id)
+                            .map_err(|e| e.to_string())
+                    })
+                    .await;
+            }
             Err(e) => log::warn!(
-                "DOS-228: debounced health recompute failed for {}: {}",
+                "DOS-228: debounced health recompute failed for {}: {} (marker retained for startup retry)",
                 account_id,
                 e
             ),
         }
     });
+}
+
+/// DOS-228 Wave 0e Fix 3: Drain persisted `health_recompute_pending`
+/// markers on app startup. Any row surviving a crash gets its recompute run
+/// synchronously (from the caller's perspective — each is a separate
+/// `db_write`) and, on success, its marker cleared. Failures are logged
+/// and the marker is retained so the NEXT startup tries again.
+///
+/// Call this once during `AppState` initialization, after migrations have
+/// run and before any user-facing command handlers are registered.
+pub async fn drain_pending(state: &Arc<AppState>) {
+    let pending = match state
+        .db_read(|db| db.list_health_recompute_pending().map_err(|e| e.to_string()))
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!(
+                "DOS-228: failed to list pending health recomputes on startup: {}",
+                e
+            );
+            return;
+        }
+    };
+
+    if pending.is_empty() {
+        return;
+    }
+
+    log::info!(
+        "DOS-228: draining {} pending health recompute(s) on startup",
+        pending.len()
+    );
+
+    for account_id in pending {
+        let id_for_write = account_id.clone();
+        let recompute_result = state
+            .db_write(move |db| {
+                crate::services::intelligence::recompute_entity_health(
+                    db,
+                    &id_for_write,
+                    "account",
+                )
+            })
+            .await;
+
+        match recompute_result {
+            Ok(()) => {
+                let clear_id = account_id.clone();
+                let _ = state
+                    .db_write(move |db| {
+                        db.clear_health_recompute_pending(&clear_id)
+                            .map_err(|e| e.to_string())
+                    })
+                    .await;
+                log::info!(
+                    "DOS-228: startup-drained health recompute for {}",
+                    account_id
+                );
+            }
+            Err(e) => log::warn!(
+                "DOS-228: startup drain failed for {}: {} (marker retained)",
+                account_id,
+                e
+            ),
+        }
+    }
 }
 
 #[cfg(test)]
