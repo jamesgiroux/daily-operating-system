@@ -66,6 +66,11 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "linear_issue_completed",
     "linear_issue_blocked",
     "linear_issue_overdue",
+    // DOS-15: Glean leading-signal enrichment (health_outlook_signals_json).
+    "champion_at_risk",
+    "sentiment_divergence",
+    "competitor_decision_relevant",
+    "budget_cycle_locked",
 ];
 
 // ---------------------------------------------------------------------------
