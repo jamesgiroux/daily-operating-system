@@ -113,6 +113,39 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
             Some(embedding_ref),
         );
 
+        // DOS-240 (Codex): dismissed outcomes must be filtered BEFORE
+        // selection, not after. Previously the resolver persistence path
+        // filtered dismissals inside `persist_and_invalidate_entity_links_sync_scored`
+        // — which meant a dismissed top candidate would win
+        // `select_auto_link_candidates`, then get filtered at the persist
+        // edge, leaving the second-best candidate unpromoted and the
+        // meeting with no primary. Filtering here lets the runner-up
+        // correctly take over as primary on the next resolver pass.
+        let dismissed = db
+            .list_dismissed_meeting_entities(&meeting.id)
+            .unwrap_or_default();
+        let outcomes: Vec<crate::prepare::entity_resolver::ResolutionOutcome> = if dismissed
+            .is_empty()
+        {
+            outcomes
+        } else {
+            outcomes
+                .into_iter()
+                .filter(|outcome| {
+                    let entity = match outcome {
+                        crate::prepare::entity_resolver::ResolutionOutcome::Resolved(e)
+                        | crate::prepare::entity_resolver::ResolutionOutcome::ResolvedWithFlag(e)
+                        | crate::prepare::entity_resolver::ResolutionOutcome::Suggestion(e) => e,
+                        _ => return true,
+                    };
+                    !dismissed.contains(&(
+                        entity.entity_id.clone(),
+                        entity.entity_type.as_str().to_string(),
+                    ))
+                })
+                .collect()
+        };
+
         // Auto-link only high-confidence `Resolved` outcomes and pick at most
         // one entity per type to avoid multi-account contamination.
         let selected = select_auto_link_candidates(&outcomes);
@@ -484,6 +517,80 @@ mod tests {
 
         let selected = select_auto_link_candidates(&outcomes);
         assert!(selected.is_empty());
+    }
+
+    /// DOS-240 (Codex): when the top-confidence resolver candidate is
+    /// dismissed, filtering BEFORE `select_auto_link_candidates` must let
+    /// the runner-up be selected and persisted as primary. Filtering
+    /// AFTER selection (the pre-fix behavior) would pick the dismissed
+    /// top candidate, then drop it at the persist edge, leaving the
+    /// meeting with no primary for that type.
+    #[test]
+    fn dismissed_top_candidate_promotes_runner_up_after_pre_filter() {
+        let outcomes = vec![
+            // Top candidate — will be dismissed.
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "acct-top".to_string(),
+                entity_type: EntityType::Account,
+                confidence: 0.98,
+                source: "keyword".to_string(),
+            }),
+            // Runner-up — must become primary after filter.
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "acct-runner-up".to_string(),
+                entity_type: EntityType::Account,
+                confidence: 0.90,
+                source: "keyword".to_string(),
+            }),
+        ];
+
+        // Dismissed set: only the top candidate.
+        let dismissed: std::collections::HashSet<(String, String)> =
+            [("acct-top".to_string(), "account".to_string())]
+                .into_iter()
+                .collect();
+
+        // Pre-filter (mirrors the production path in `run_entity_resolution`).
+        let filtered: Vec<ResolutionOutcome> = outcomes
+            .into_iter()
+            .filter(|outcome| match outcome {
+                ResolutionOutcome::Resolved(e)
+                | ResolutionOutcome::ResolvedWithFlag(e)
+                | ResolutionOutcome::Suggestion(e) => !dismissed.contains(&(
+                    e.entity_id.clone(),
+                    e.entity_type.as_str().to_string(),
+                )),
+                _ => true,
+            })
+            .collect();
+
+        let selected = select_auto_link_candidates(&filtered);
+        assert_eq!(selected.len(), 1, "one primary per type after pre-filter");
+        assert_eq!(
+            selected[0].entity_id, "acct-runner-up",
+            "runner-up must be promoted when top candidate is dismissed",
+        );
+
+        // Sanity check: without the pre-filter, the dismissed top would
+        // still win selection — this is the bug we're fixing. Only after
+        // persistence-level filtering would it be dropped, stranding the
+        // runner-up.
+        let unfiltered_outcomes = vec![
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "acct-top".to_string(),
+                entity_type: EntityType::Account,
+                confidence: 0.98,
+                source: "keyword".to_string(),
+            }),
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "acct-runner-up".to_string(),
+                entity_type: EntityType::Account,
+                confidence: 0.90,
+                source: "keyword".to_string(),
+            }),
+        ];
+        let pre_fix = select_auto_link_candidates(&unfiltered_outcomes);
+        assert_eq!(pre_fix[0].entity_id, "acct-top");
     }
 
     #[test]
