@@ -722,6 +722,7 @@ pub fn run() {
             // DOS-13: Recommended Actions from Intelligence
             commands::track_recommendation,
             commands::dismiss_recommendation,
+            commands::mark_commitment_done,
             commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
