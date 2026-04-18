@@ -756,8 +756,20 @@ fn populate_people_from_events(
             }
         }
 
-        // I653 FIX 3: Persist classification-time entity links to meeting_entities
-        if let Some(ref entities) = event.classified_entities {
+        // I653 FIX 3 / DOS-224: Persist classification-time entity links to
+        // meeting_entities. Prefer the scored variant (full confidence +
+        // source) so weak title-only matches land as non-primary suggestions
+        // instead of masquerading as 0.95-confidence primaries. Fall back to
+        // the legacy `(id, type)` pairs only when scored data is absent.
+        if let Some(ref scored) = event.scored_classified_entities {
+            if !scored.is_empty() {
+                let _ = crate::services::meetings::persist_classification_entities_scored(
+                    &db,
+                    &meeting_id,
+                    scored,
+                );
+            }
+        } else if let Some(ref entities) = event.classified_entities {
             if !entities.is_empty() {
                 let _ = crate::services::meetings::persist_classification_entities(
                     &db,
@@ -1490,6 +1502,7 @@ mod tests {
             is_all_day: false,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         }
     }
 
@@ -1625,6 +1638,7 @@ mod tests {
             is_all_day: true,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         };
 
         assert!(event.is_all_day || !PREP_ELIGIBLE_TYPES.contains(&event.meeting_type));

@@ -567,6 +567,9 @@ pub fn run() {
             // I52: Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,
+            // DOS-240: meeting entity dismissal dictionary
+            commands::dismiss_meeting_entity,
+            commands::restore_meeting_entity,
             commands::get_meeting_entities,
             commands::update_meeting_entity,
             // I184: Additive multi-entity link/unlink

@@ -130,6 +130,7 @@ pub fn db_meeting_to_calendar_event(meeting: &crate::db::DbMeeting) -> CalendarE
         is_all_day: false,
         linked_entities: None,
         classified_entities: None,
+        scored_classified_entities: None,
     }
 }
 
@@ -300,6 +301,7 @@ mod tests {
             is_all_day,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         }
     }
 
