@@ -222,8 +222,16 @@ export function useAccountDetail(accountId: string | undefined) {
 
   // ─── Composed sub-hooks ───────────────────────────────────────────────
 
-  const fields = useAccountFields(detail, load, setError);
-  const team = useTeamManagement(accountId, silentRefresh);
+  // DOS-229 Wave 0e Fix 5: expose setDetail to sub-hooks so commands that
+  // return a fresh AccountDetail can apply it directly (no follow-up
+  // silentRefresh needed, avoiding SQLite WAL reader-snapshot lag).
+  const applyDetail = useCallback((d: AccountDetail) => {
+    setDetail(d);
+    setPrograms(d.strategicPrograms);
+  }, []);
+
+  const fields = useAccountFields(detail, load, setError, applyDetail);
+  const team = useTeamManagement(accountId, silentRefresh, applyDetail);
 
   // I575: Progressive enrichment — refresh data as each dimension completes
   const enrichmentProgress = useEnrichmentProgress(accountId, silentRefresh);
@@ -497,6 +505,30 @@ export function useAccountDetail(accountId: string | undefined) {
     setPrograms(result.strategicPrograms);
   }
 
+  // ─── DOS-228 Wave 0e Fix 4: risk briefing status + retry ──────────────
+
+  const riskBriefingJob = detail?.riskBriefingJob ?? null;
+
+  /**
+   * Kick off a new risk-briefing generation attempt. Safe to call from a
+   * UI button — backend coalesces into an already-running job and the
+   * status transitions become visible on the next `get_account_detail`
+   * (we optimistically refresh after a short delay to pick up the
+   * enqueued → running transition).
+   */
+  async function retryRiskBriefing() {
+    if (!accountId) return;
+    try {
+      await invoke("retry_risk_briefing", { accountId });
+      // Pick up the fresh 'enqueued' row. We can't use the DOS-229 pattern
+      // here because retry_risk_briefing returns void — the status is
+      // persisted on a separate writer call and we already wait for it.
+      await silentRefresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   // ─── Flat public API ──────────────────────────────────────────────────
 
   // DOS-15: Glean leading-signal enrichment bundle for Health & Outlook tab.
@@ -580,5 +612,9 @@ export function useAccountDetail(accountId: string | undefined) {
     sentiment,
     setUserHealthSentiment,
     acknowledgeSentimentStale,
+
+    // DOS-228 Wave 0e Fix 4: risk briefing status + retry
+    riskBriefingJob,
+    retryRiskBriefing,
   };
 }

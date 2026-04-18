@@ -1550,6 +1550,23 @@ export interface AccountDetail extends AccountListItem {
   healthSparkline?: HealthSparklinePoint[];
   /** DOS-15: Glean leading-signal enrichment bundle (health & outlook signals). */
   gleanSignals?: HealthOutlookSignals | null;
+  /**
+   * DOS-228 Wave 0e Fix 4: Current risk-briefing generation job status.
+   * Present when a briefing has ever been enqueued for this account. The
+   * Health tab uses this to pin a "generating…" affordance at the top while
+   * status === "running", surface the error + retry button when
+   * status === "failed", and confirm success with the completedAt timestamp.
+   */
+  riskBriefingJob?: RiskBriefingJob;
+}
+
+/** DOS-228 Wave 0e Fix 4: Risk-briefing job status contract. */
+export interface RiskBriefingJob {
+  /** One of: `enqueued`, `running`, `complete`, `failed`. */
+  status: "enqueued" | "running" | "complete" | "failed";
+  enqueuedAt: string;
+  completedAt?: string;
+  errorMessage?: string;
 }
 
 /** DOS-27: A single sentiment journal entry. */
