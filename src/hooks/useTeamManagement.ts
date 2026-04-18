@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Person, StakeholderSuggestion } from "@/types";
+import type { AccountDetail, Person, StakeholderSuggestion } from "@/types";
 
 function normalizeTeamRole(role: string): string {
   return role.trim(); // empty = no role (unassigned), not "associated"
@@ -23,6 +23,14 @@ function syntheticUnknownEmail(name: string): string {
 export function useTeamManagement(
   accountId: string | undefined,
   reload: () => Promise<void>,
+  /**
+   * DOS-229 Wave 0e Fix 5: Stakeholder mutation commands now return a full
+   * AccountDetail assembled on the writer connection. When provided, the
+   * hook applies the returned detail directly instead of re-fetching —
+   * closes the WAL-snapshot lag window where suggestions/role changes
+   * briefly showed stale data.
+   */
+  applyDetail?: (d: AccountDetail) => void,
 ) {
   const [teamSearchQuery, setTeamSearchQuery] = useState("");
   const [teamSearchResults, setTeamSearchResults] = useState<Person[]>([]);
@@ -164,29 +172,42 @@ export function useTeamManagement(
       .catch(() => setSuggestions([]));
   }, [accountId, reload]);
 
+  // DOS-229 Wave 0e Fix 5: direct-apply the returned AccountDetail when the
+  // hook was wired with an applyDetail callback; fall back to refresh if
+  // not (keeps the hook usable from sites that don't own the detail state).
+  // Suggestions are a separate query so we still fetch those post-write.
+  const applyAndRefreshSuggestions = useCallback(async (detail: AccountDetail) => {
+    if (applyDetail) applyDetail(detail);
+    else await reload();
+    if (!accountId) return;
+    invoke<StakeholderSuggestion[]>("get_stakeholder_suggestions", { accountId })
+      .then(setSuggestions)
+      .catch(() => setSuggestions([]));
+  }, [accountId, applyDetail, reload]);
+
   const updateStakeholderEngagement = useCallback(async (personId: string, engagement: string) => {
     if (!accountId) return;
-    await invoke("update_stakeholder_engagement", { accountId, personId, engagement });
-    await refreshWithSuggestions();
-  }, [accountId, refreshWithSuggestions]);
+    const result = await invoke<AccountDetail>("update_stakeholder_engagement", { accountId, personId, engagement });
+    await applyAndRefreshSuggestions(result);
+  }, [accountId, applyAndRefreshSuggestions]);
 
   const updateStakeholderAssessment = useCallback(async (personId: string, assessment: string) => {
     if (!accountId) return;
-    await invoke("update_stakeholder_assessment", { accountId, personId, assessment });
-    await refreshWithSuggestions();
-  }, [accountId, refreshWithSuggestions]);
+    const result = await invoke<AccountDetail>("update_stakeholder_assessment", { accountId, personId, assessment });
+    await applyAndRefreshSuggestions(result);
+  }, [accountId, applyAndRefreshSuggestions]);
 
   const addStakeholderRole = useCallback(async (personId: string, role: string) => {
     if (!accountId) return;
-    await invoke("add_stakeholder_role", { accountId, personId, role });
-    await refreshWithSuggestions();
-  }, [accountId, refreshWithSuggestions]);
+    const result = await invoke<AccountDetail>("add_stakeholder_role", { accountId, personId, role });
+    await applyAndRefreshSuggestions(result);
+  }, [accountId, applyAndRefreshSuggestions]);
 
   const removeStakeholderRole = useCallback(async (personId: string, role: string) => {
     if (!accountId) return;
-    await invoke("remove_stakeholder_role", { accountId, personId, role });
-    await refreshWithSuggestions();
-  }, [accountId, refreshWithSuggestions]);
+    const result = await invoke<AccountDetail>("remove_stakeholder_role", { accountId, personId, role });
+    await applyAndRefreshSuggestions(result);
+  }, [accountId, applyAndRefreshSuggestions]);
 
   const acceptSuggestion = useCallback(async (suggestionId: number) => {
     await invoke("accept_stakeholder_suggestion", { suggestionId });
