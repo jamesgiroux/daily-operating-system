@@ -132,6 +132,11 @@ pub fn run() {
                         log::warn!("DbService init failed: {e}. Falling back to sync mutex.");
                     } else {
                         log::info!("DbService initialized (1 writer + 2 readers)");
+                        // DOS-228 Wave 0e Fix 3: drain persisted
+                        // health_recompute_pending markers that survived a
+                        // prior crash. Runs once on startup; failures leave
+                        // markers in place for the next attempt.
+                        crate::services::health_debouncer::drain_pending(&init_state).await;
                     }
                 });
             } else {

@@ -1067,13 +1067,13 @@ pub fn accept_account_field_conflict(
     suggested_value: &str,
     source: &str,
     signal_id: Option<&str>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let next_value = if field == "lifecycle" {
         normalized_lifecycle(suggested_value)
     } else {
         suggested_value.to_string()
     };
-    update_account_field(db, state, account_id, field, &next_value)?;
+    update_account_field_inner(db, state, account_id, field, &next_value)?;
 
     if matches!(field, "arr" | "lifecycle" | "contract_end" | "nps") {
         db.set_account_field_provenance(account_id, field, source, None)
@@ -1148,7 +1148,9 @@ pub fn accept_account_field_conflict(
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
 
-    Ok(())
+    // DOS-229 Wave 0e Fix 5: return post-write detail so the frontend can
+    // setDetail(result) without a second fetch.
+    build_account_detail_result(db, account_id)
 }
 
 pub fn dismiss_account_field_conflict(
@@ -1159,7 +1161,7 @@ pub fn dismiss_account_field_conflict(
     signal_id: &str,
     source: &str,
     suggested_value: Option<&str>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let feedback_id = uuid::Uuid::new_v4().to_string();
     let feedback_key = account_field_conflict_feedback_key(field, suggested_value.unwrap_or(""));
     let context = serde_json::json!({
@@ -1232,7 +1234,7 @@ pub fn dismiss_account_field_conflict(
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
 
-    Ok(())
+    build_account_detail_result(db, account_id)
 }
 
 /// Get full detail for an account by ID.
@@ -1528,6 +1530,21 @@ pub fn update_account_field(
     account_id: &str,
     field: &str,
     value: &str,
+) -> Result<AccountDetailResult, String> {
+    update_account_field_inner(db, state, account_id, field, value)?;
+    // DOS-229 generalization (Wave 0e Fix 5): return the fresh detail
+    // assembled on the SAME writer connection so the frontend hook can
+    // setDetail(result) without a follow-up silentRefresh (which hits a
+    // different pool reader whose WAL snapshot may lag).
+    build_account_detail_result(db, account_id)
+}
+
+fn update_account_field_inner(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    field: &str,
+    value: &str,
 ) -> Result<(), String> {
     let normalized_value = if field == "lifecycle" {
         normalized_lifecycle(value)
@@ -1798,8 +1815,18 @@ pub fn set_user_health_sentiment(
             .map(|p| RISK_SENTIMENTS.contains(&p))
             .unwrap_or(false);
 
+    // DOS-228 Wave 0e Fix 1: persist the `enqueued` row on THIS writer
+    // connection BEFORE we build the result. Previously the row was written
+    // by a spawned `db_write` task, which cannot execute while the current
+    // writer closure is still running — so the first AccountDetailResult
+    // the user saw had a missing/stale `risk_briefing_job`. Enqueue on the
+    // same connection, then kick off the async lifecycle runner with the
+    // attempt_id we just stamped.
     if transitioning_into_risk {
-        enqueue_risk_briefing(state, account_id.to_string());
+        let attempt_id = uuid::Uuid::new_v4().to_string();
+        db.upsert_risk_briefing_job_enqueued(account_id, &attempt_id)
+            .map_err(|e| format!("persist risk briefing enqueue: {e}"))?;
+        spawn_risk_briefing_lifecycle(state, account_id.to_string(), attempt_id);
     }
 
     // DOS-229: Read back the updated detail on the SAME writer connection so
@@ -1808,52 +1835,51 @@ pub fn set_user_health_sentiment(
     build_account_detail_result(db, account_id)
 }
 
-/// DOS-27 / DOS-228 Fix 3: Spawn a background risk-briefing generation task.
-/// Runs on the Tauri async runtime. Job lifecycle is persisted to
-/// `risk_briefing_jobs` so the UI can render progress and offer a retry on
-/// failure instead of the old log-only failure mode.
-pub(crate) fn enqueue_risk_briefing(state: &std::sync::Arc<AppState>, account_id: String) {
+/// DOS-228 Wave 0e Fix 2: Spawn the SINGLE ordered lifecycle task for a
+/// risk briefing attempt.
+///
+/// The caller is responsible for having written the `enqueued` row with
+/// `attempt_id` on the originating writer connection; this task only runs
+/// the enqueued → running → complete|failed transitions, each gated by a
+/// compare-and-set against `attempt_id`. If a superseding retry overwrites
+/// the row's attempt_id between two of our transitions, our CAS fails and
+/// we bail out cleanly — preventing the "two racing retries corrupt each
+/// other" last-write-wins bug that the prior two-spawn design had.
+fn spawn_risk_briefing_lifecycle(
+    state: &std::sync::Arc<AppState>,
+    account_id: String,
+    attempt_id: String,
+) {
     let state_clone = state.clone();
     let handle = state.app_handle();
 
-    // DOS-228: record enqueue BEFORE spawning so the UI sees the status even
-    // if the spawned task is slow to start. Write through db_write for
-    // serialization; ignore errors (best-effort status tracking, never
-    // blocks the user's sentiment save).
-    let enqueue_id = account_id.clone();
-    let enqueue_state = state.clone();
-    tauri::async_runtime::spawn(async move {
-        let id_for_write = enqueue_id.clone();
-        if let Err(e) = enqueue_state
-            .db_write(move |db| {
-                db.upsert_risk_briefing_job_enqueued(&id_for_write)
-                    .map_err(|e| e.to_string())
-            })
-            .await
-        {
-            log::warn!(
-                "DOS-228: failed to persist risk briefing 'enqueued' status for {}: {}",
-                enqueue_id,
-                e
-            );
-        }
-    });
-
     tauri::async_runtime::spawn(async move {
         log::info!(
-            "DOS-27: enqueueing background risk briefing for account {}",
+            "DOS-27: risk briefing lifecycle {} for account {}",
+            attempt_id,
             account_id
         );
 
-        // Transition enqueued → running.
+        // Transition enqueued → running (CAS).
         let running_id = account_id.clone();
+        let running_attempt = attempt_id.clone();
         let running_state = state_clone.clone();
-        let _ = running_state
+        let owns_attempt = running_state
             .db_write(move |db| {
-                db.mark_risk_briefing_job_running(&running_id)
+                db.mark_risk_briefing_job_running(&running_id, &running_attempt)
                     .map_err(|e| e.to_string())
             })
-            .await;
+            .await
+            .unwrap_or(false);
+
+        if !owns_attempt {
+            log::info!(
+                "DOS-228: risk briefing attempt {} for {} superseded before running; exiting",
+                attempt_id,
+                account_id
+            );
+            return;
+        }
 
         let outcome = crate::services::intelligence::generate_risk_briefing(
             &state_clone,
@@ -1862,24 +1888,33 @@ pub(crate) fn enqueue_risk_briefing(state: &std::sync::Arc<AppState>, account_id
         )
         .await;
 
-        // Terminal transition: record complete or failed. The error message
-        // is persisted so the UI can explain WHY a retry is offered.
+        // Terminal transition (CAS). A superseding retry that landed while
+        // generation was running will own the next attempt; our update
+        // affects zero rows and we log+exit without clobbering.
         let terminal_id = account_id.clone();
+        let terminal_attempt = attempt_id.clone();
         let terminal_state = state_clone.clone();
-        let terminal_outcome = outcome
-            .as_ref()
-            .map(|_| ())
-            .map_err(|e| e.clone());
-        let _ = terminal_state
+        let terminal_outcome = outcome.as_ref().map(|_| ()).map_err(|e| e.clone());
+        let still_current = terminal_state
             .db_write(move |db| match &terminal_outcome {
                 Ok(()) => db
-                    .mark_risk_briefing_job_complete(&terminal_id)
+                    .mark_risk_briefing_job_complete(&terminal_id, &terminal_attempt)
                     .map_err(|e| e.to_string()),
                 Err(msg) => db
-                    .mark_risk_briefing_job_failed(&terminal_id, msg)
+                    .mark_risk_briefing_job_failed(&terminal_id, &terminal_attempt, msg)
                     .map_err(|e| e.to_string()),
             })
-            .await;
+            .await
+            .unwrap_or(false);
+
+        if !still_current {
+            log::info!(
+                "DOS-228: risk briefing attempt {} for {} superseded before terminal write; outcome discarded",
+                attempt_id,
+                account_id
+            );
+            return;
+        }
 
         match outcome {
             Ok(_) => log::info!(
@@ -1895,20 +1930,61 @@ pub(crate) fn enqueue_risk_briefing(state: &std::sync::Arc<AppState>, account_id
     });
 }
 
-/// DOS-228 Fix 3: Re-enqueue a risk briefing generation for an account.
+/// DOS-228 Wave 0e Fix 2: Re-enqueue a risk briefing generation.
 ///
-/// Intended for UI "retry" buttons that surface after a failed job. Only the
-/// latest attempt is retained in `risk_briefing_jobs`; calling this on an
-/// account with a `complete` job is also allowed — it overwrites the row and
-/// regenerates the briefing (useful when underlying intel has changed).
-///
-/// Returns immediately; the regeneration runs on the async runtime and
-/// status transitions are visible via `get_account_detail`.
-pub fn retry_risk_briefing(
+/// Behavior is now guarded:
+/// 1. The account must exist (rejects dangling IDs that would otherwise
+///    spawn a useless lifecycle task).
+/// 2. If the current job is `running`, the retry is COALESCED into the
+///    existing attempt — we return Ok without spawning a duplicate runner.
+///    This closes the "tap retry twice fast → two runners corrupt each
+///    other" hole.
+/// 3. Otherwise (failed / complete / no prior row / enqueued-but-not-yet-
+///    started) we stamp a fresh attempt_id and spawn a new lifecycle. The
+///    CAS machinery ensures any stale runner from a prior attempt can't
+///    clobber the new one's state.
+pub async fn retry_risk_briefing(
     state: &std::sync::Arc<AppState>,
     account_id: &str,
 ) -> Result<(), String> {
-    enqueue_risk_briefing(state, account_id.to_string());
+    let id_for_read = account_id.to_string();
+    let (exists, current_status) = state
+        .db_read(move |db| {
+            let exists = db
+                .get_account(&id_for_read)
+                .map_err(|e| e.to_string())?
+                .is_some();
+            let status = db
+                .get_risk_briefing_job_status(&id_for_read)
+                .map_err(|e| e.to_string())?;
+            Ok::<_, String>((exists, status))
+        })
+        .await?;
+
+    if !exists {
+        return Err(format!("Account not found: {}", account_id));
+    }
+
+    // Coalesce: don't start a second runner while one is actively generating.
+    if current_status.as_deref() == Some("running") {
+        log::info!(
+            "DOS-228: retry_risk_briefing for {} coalesced into running job",
+            account_id
+        );
+        return Ok(());
+    }
+
+    let attempt_id = uuid::Uuid::new_v4().to_string();
+    let enqueue_id = account_id.to_string();
+    let enqueue_attempt = attempt_id.clone();
+    state
+        .db_write(move |db| {
+            db.upsert_risk_briefing_job_enqueued(&enqueue_id, &enqueue_attempt)
+                .map_err(|e| e.to_string())
+        })
+        .await?;
+
+    spawn_risk_briefing_lifecycle(state, account_id.to_string(), attempt_id);
     Ok(())
 }
 
@@ -2756,6 +2832,17 @@ pub fn update_stakeholder_engagement(
     account_id: &str,
     person_id: &str,
     engagement: &str,
+) -> Result<AccountDetailResult, String> {
+    update_stakeholder_engagement_inner(db, engine, account_id, person_id, engagement)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn update_stakeholder_engagement_inner(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    engagement: &str,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
         tx.conn_ref()
@@ -2791,6 +2878,17 @@ pub fn update_stakeholder_assessment(
     account_id: &str,
     person_id: &str,
     assessment: &str,
+) -> Result<AccountDetailResult, String> {
+    update_stakeholder_assessment_inner(db, engine, account_id, person_id, assessment)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn update_stakeholder_assessment_inner(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    assessment: &str,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
         tx.conn_ref()
@@ -2818,6 +2916,17 @@ pub fn update_stakeholder_assessment(
 
 /// Add a role to a stakeholder (multi-role — doesn't replace existing roles).
 pub fn add_stakeholder_role(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<AccountDetailResult, String> {
+    add_stakeholder_role_inner(db, engine, account_id, person_id, role)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn add_stakeholder_role_inner(
     db: &ActionDb,
     engine: &PropagationEngine,
     account_id: &str,
@@ -2859,6 +2968,17 @@ pub fn add_stakeholder_role(
 
 /// Remove a specific role from a stakeholder.
 pub fn remove_stakeholder_role(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<AccountDetailResult, String> {
+    remove_stakeholder_role_inner(db, engine, account_id, person_id, role)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn remove_stakeholder_role_inner(
     db: &ActionDb,
     engine: &PropagationEngine,
     account_id: &str,
@@ -3564,5 +3684,31 @@ mod tests {
             .expect("post-write build");
         assert_eq!(after.user_health_sentiment.as_deref(), Some("at_risk"));
         assert_eq!(after.sentiment_set_at.as_deref(), Some(ts.as_str()));
+    }
+
+    /// DOS-228 Wave 0e Fix 1: the `risk_briefing_job` row must be visible
+    /// on the FIRST result returned from the sentiment save. Previously the
+    /// row was written by a separately spawned task and the first response
+    /// had `risk_briefing_job: None`. This test simulates the writer-side
+    /// sequence: persist the enqueued row on the same connection, THEN
+    /// build the result — which must include the enqueued status.
+    #[test]
+    fn test_build_account_detail_includes_enqueued_risk_briefing_job() {
+        let db = test_db();
+        let account = make_account("acc-w0eb-1", "Sentiment Co");
+        db.upsert_account(&account).unwrap();
+
+        // Simulate the order production code now enforces:
+        db.upsert_risk_briefing_job_enqueued("acc-w0eb-1", "attempt-xyz")
+            .expect("enqueue on writer");
+        let result = super::build_account_detail_result(&db, "acc-w0eb-1")
+            .expect("build");
+
+        let job = result
+            .risk_briefing_job
+            .as_ref()
+            .expect("risk_briefing_job must be present on first response");
+        assert_eq!(job.status, "enqueued");
+        assert!(job.error_message.is_none());
     }
 }
