@@ -4841,3 +4841,90 @@ fn test_dos74_link_confidence_never_downgrades() {
     assert!(linked[0].is_primary, "primary flag must not be cleared");
     assert!(linked[0].confidence >= 0.9, "confidence must not decrease");
 }
+
+#[test]
+fn test_dos228_sentiment_note_bound_to_current_value() {
+    // DOS-228 Fix 1: get_latest_sentiment_note must return None when the
+    // account's current sentiment has no associated note, even if older
+    // sentiment values have notes in the journal history.
+    let db = test_db();
+    let acct = sample_account("acct-sent", "Sent Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    // Step 1: set sentiment to at_risk with a note
+    db.update_account_field("acct-sent", "user_health_sentiment", "at_risk")
+        .expect("set at_risk");
+    db.insert_sentiment_journal_entry(
+        "acct-sent",
+        "at_risk",
+        Some("churn risk — exec escalation"),
+        None,
+        None,
+    )
+    .expect("journal at_risk");
+
+    let note = db
+        .get_latest_sentiment_note("acct-sent")
+        .expect("lookup1");
+    assert!(
+        note.as_ref().map(|(n, _)| n.as_str()) == Some("churn risk — exec escalation"),
+        "should return the at_risk note while at_risk is current, got {:?}",
+        note
+    );
+
+    // Step 2: transition to on_track with NO note
+    db.update_account_field("acct-sent", "user_health_sentiment", "on_track")
+        .expect("set on_track");
+    db.insert_sentiment_journal_entry("acct-sent", "on_track", None, None, None)
+        .expect("journal on_track");
+
+    // Assertion: the stale at_risk note must NOT leak through.
+    let note = db
+        .get_latest_sentiment_note("acct-sent")
+        .expect("lookup2");
+    assert_eq!(
+        note, None,
+        "note must be None when current sentiment has no note attached"
+    );
+
+    // Step 3: add a note against on_track — should surface now
+    db.insert_sentiment_journal_entry(
+        "acct-sent",
+        "on_track",
+        Some("stabilized after QBR"),
+        None,
+        None,
+    )
+    .expect("journal on_track with note");
+    let note = db
+        .get_latest_sentiment_note("acct-sent")
+        .expect("lookup3");
+    assert_eq!(
+        note.map(|(n, _)| n),
+        Some("stabilized after QBR".to_string())
+    );
+}
+
+#[test]
+fn test_dos228_sentiment_note_none_when_no_current_sentiment() {
+    // DOS-228 Fix 1: when user_health_sentiment is NULL, return None even if
+    // historical journal entries exist.
+    let db = test_db();
+    let acct = sample_account("acct-no-sent", "NoSent Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    // Historical note against at_risk, but no current sentiment set.
+    db.insert_sentiment_journal_entry(
+        "acct-no-sent",
+        "at_risk",
+        Some("legacy note"),
+        None,
+        None,
+    )
+    .expect("journal");
+
+    let note = db
+        .get_latest_sentiment_note("acct-no-sent")
+        .expect("lookup");
+    assert_eq!(note, None);
+}
