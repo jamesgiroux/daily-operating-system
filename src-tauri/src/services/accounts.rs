@@ -1670,6 +1670,55 @@ pub fn update_account_field(
 /// background risk-briefing generation.
 const RISK_SENTIMENTS: &[&str] = &["at_risk", "critical"];
 
+/// DOS-231 Codex fix: persist a single gap-row field on `account_technical_footprint`.
+///
+/// Intelligence Loop 5Q:
+///   1. Emits a `field_updated` signal with source `user_edit` and
+///      confidence 0.9 — same propagation path as `update_account_field`.
+///   2. Technical-footprint fields already feed the health scoring behavioral
+///      layer (see `intelligence::health_scoring`), so a user edit
+///      materially improves the dimension's signal quality.
+///   3. Is included in `build_intelligence_context` via the existing
+///      `DbAccountTechnicalFootprint` block (read by prompts.rs / meeting_context.rs).
+///   4. No new briefing callout type required — the existing
+///      `field_updated` signal covers it.
+///   5. User corrections are already recorded against the "glean" enrichment
+///      source when applicable via the self-healing feedback system; here we
+///      stamp `source = 'user_edit'` on the row.
+pub fn update_technical_footprint_field(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    field: &str,
+    value: &str,
+) -> Result<AccountDetailResult, String> {
+    db.update_technical_footprint_field(account_id, field, value)
+        .map_err(|e| e.to_string())?;
+
+    // Emit field-update signal + self-healing evaluation so the rest of
+    // the Intelligence Loop picks up the user correction.
+    crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"table\":\"account_technical_footprint\",\"field\":\"{}\",\"value\":\"{}\"}}",
+            field,
+            value.replace('"', "\\\"")
+        )),
+        0.9,
+        &state.intel_queue,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
+
+    // Return the updated detail on the SAME writer connection so the
+    // frontend sees the persisted value immediately (DOS-229 pattern).
+    build_account_detail_result(db, account_id)
+}
+
 /// DOS-110 / DOS-27: Set the user's manual health sentiment on an account.
 /// Writes the current sentiment + timestamp, appends a journal entry (value +
 /// optional note + computed band snapshot), emits a `field_updated` signal,

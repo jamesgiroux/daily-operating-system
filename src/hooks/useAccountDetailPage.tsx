@@ -15,6 +15,7 @@ import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 import { useAccountFieldSave } from "@/hooks/useAccountFieldSave";
+import { toast } from "sonner";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { FolioReportsDropdown } from "@/components/folio/FolioReportsDropdown";
 import { FolioToolsDropdown } from "@/components/folio/FolioToolsDropdown";
@@ -135,6 +136,38 @@ export function useAccountDetailPage(accountId: string | undefined) {
       .then(setAncestors).catch(() => setAncestors([]));
   }, [accountId]);
 
+  // DOS-231 Codex fix: persist a single gap-row field on
+  // `account_technical_footprint` and refresh the account. Prompts the user
+  // for the value inline so v1.2.1 doesn't need to ship a full structured
+  // editor — the full editor lands with DOS-207.
+  const captureTechnicalFootprintField = async (field: string) => {
+    if (!accountId) return;
+    const labelMap: Record<string, string> = {
+      usage_tier: "Usage tier (e.g. enterprise, professional, starter)",
+      services_stage: "Services stage (e.g. onboarding, implementation, optimization, steady-state)",
+      support_tier: "Support tier (e.g. premium, standard, basic)",
+      active_users: "Active users (integer)",
+      open_tickets: "Open tickets (integer)",
+      csat_score: "CSAT score (0 - 5)",
+      adoption_score: "Adoption score (0.0 - 1.0)",
+    };
+    const prompt = labelMap[field] ?? `New value for ${field}`;
+    const value = typeof window !== "undefined" ? window.prompt(prompt) : null;
+    if (value == null) return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    try {
+      await invoke("update_technical_footprint_field", {
+        accountId, field, value: trimmed,
+      });
+      await acct.load();
+      toast.success(`${field.replace(/_/g, " ")} saved`);
+    } catch (err) {
+      console.error("update_technical_footprint_field failed:", err);
+      toast.error(`Failed to save ${field.replace(/_/g, " ")}`);
+    }
+  };
+
   // Metadata change handler
   const handleMetadataChange = (key: string, value: string) => {
     setMetadataValues((prev) => { const updated = { ...prev, [key]: value }; void saveMetadata(updated); return updated; });
@@ -160,6 +193,7 @@ export function useAccountDetailPage(accountId: string | undefined) {
     // Field operations
     handleUpdateIntelField,
     saveAccountField,
+    captureTechnicalFootprintField,
     saveMetadata,
     conflictsForStrip,
     metadataValues,

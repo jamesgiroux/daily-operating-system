@@ -372,14 +372,13 @@ export default function AccountDetailPage() {
               footprint={detail.technicalFootprint}
               variant="chapter"
               featureAdoption={featureAdoption}
-              // DOS-231: gap rows expose a "Capture now" affordance. The
-              // structured editor for `account_technical_footprint` lands
-              // with DOS-207 in v1.2.2; for now we log the intent so the
-              // pathway is visible without silently accepting writes.
-              onCaptureGap={(field) => {
-                // eslint-disable-next-line no-console
-                console.info(`[DOS-231] Capture requested for technical field: ${field}. Structured editor lands with DOS-207.`);
-              }}
+              // DOS-231: gap rows expose a "Capture now" affordance. Until
+              // the structured editor lands with DOS-207, we prompt inline
+              // for the value, persist through
+              // `update_technical_footprint_field`, and refresh. This gives
+              // the Intelligence Loop a real signal + updated footprint
+              // immediately instead of a silent console log.
+              onCaptureGap={(field) => { void page.captureTechnicalFootprintField(field); }}
             />
           </MarginSection>
         )}

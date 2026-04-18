@@ -325,6 +325,30 @@ pub async fn update_account_field(
         .await
 }
 
+/// DOS-231 Codex fix: persist a single gap-row field on
+/// `account_technical_footprint` and return the refreshed account detail so
+/// the frontend can render the value without a follow-up fetch.
+#[tauri::command]
+pub async fn update_technical_footprint_field(
+    account_id: String,
+    field: String,
+    value: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<AccountDetailResult, String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_technical_footprint_field(
+                db,
+                &app_state,
+                &account_id,
+                &field,
+                &value,
+            )
+        })
+        .await
+}
+
 /// DOS-110 / DOS-27: Set the user's manual health sentiment on an account,
 /// optionally attaching a journal note.
 #[tauri::command]
