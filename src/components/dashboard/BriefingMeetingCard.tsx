@@ -390,13 +390,16 @@ export function BriefingMeetingCard({
   const prepDiscuss = meeting.prep?.actions ?? meeting.prep?.questions ?? [];
   const prepWatch = meeting.prep?.risks ?? [];
   const prepWins = meeting.prep?.wins ?? [];
-  const hasVisualContent = !!(
+  // DOS-30: "meaningful" prep — anything that would actually render in the panel.
+  // If none of these are present, we still expand but show a graceful empty state
+  // with the bridge link as the primary action (rather than an empty panel).
+  const hasPrepContent = !!(
     cleanDescription || meeting.prep?.context ||
     (meeting.calendarAttendees?.length ?? 0) > 0 || (meeting.prep?.stakeholders?.length ?? 0) > 0 ||
     prepDiscuss.length > 0 || prepWatch.length > 0 || prepWins.length > 0 ||
     meetingActions.length > 0
   );
-  const canExpand = (state === "upcoming" || state === "in-progress") && hasVisualContent;
+  const canExpand = state === "upcoming" || state === "in-progress";
 
   // Measure expansion panel content
   useLayoutEffect(() => {
@@ -494,41 +497,49 @@ export function BriefingMeetingCard({
           style={{ maxHeight: isExpanded ? measuredHeight : 0 }}
         >
           <div ref={innerRef} className={s.expansionInner}>
-            {/* Meeting context: calendar description (organizer's words) or AI brief */}
-            {cleanDescription ? (
-              <p className={s.expansionDescription}>
-                {cleanDescription.length > 400
-                  ? `${cleanDescription.slice(0, 400)}…`
-                  : cleanDescription}
-              </p>
-            ) : meeting.prep?.context ? (
-              <p className={s.expansionNarrative}>
-                {meeting.prep.context.length > 320
-                  ? `${meeting.prep.context.slice(0, 320)}…`
-                  : meeting.prep.context}
-              </p>
-            ) : null}
+            {hasPrepContent ? (
+              <>
+                {/* Meeting context: calendar description (organizer's words) or AI brief */}
+                {cleanDescription ? (
+                  <p className={s.expansionDescription}>
+                    {cleanDescription.length > 400
+                      ? `${cleanDescription.slice(0, 400)}…`
+                      : cleanDescription}
+                  </p>
+                ) : meeting.prep?.context ? (
+                  <p className={s.expansionNarrative}>
+                    {meeting.prep.context.length > 320
+                      ? `${meeting.prep.context.slice(0, 320)}…`
+                      : meeting.prep.context}
+                  </p>
+                ) : null}
 
-            {/* The Room — calendar invitees grouped by side */}
-            {(meeting.calendarAttendees?.length || meeting.prep?.stakeholders?.length) ? (
-              <KeyPeopleFlow
-                attendees={meeting.calendarAttendees}
-                userDomain={userDomain}
-                stakeholders={meeting.prep?.stakeholders}
-              />
-            ) : null}
+                {/* The Room — calendar invitees grouped by side */}
+                {(meeting.calendarAttendees?.length || meeting.prep?.stakeholders?.length) ? (
+                  <KeyPeopleFlow
+                    attendees={meeting.calendarAttendees}
+                    userDomain={userDomain}
+                    stakeholders={meeting.prep?.stakeholders}
+                  />
+                ) : null}
 
-            {/* Prep grid: Discuss, Watch, Wins */}
-            <PrepGrid meeting={meeting} />
+                {/* Prep grid: Discuss, Watch, Wins */}
+                <PrepGrid meeting={meeting} />
 
-            {/* Before this meeting: action checklist */}
-            <MeetingActionChecklist
-              actions={meetingActions}
-              completedIds={completedIds}
-              onComplete={onComplete}
-            />
+                {/* Before this meeting: action checklist */}
+                <MeetingActionChecklist
+                  actions={meetingActions}
+                  completedIds={completedIds}
+                  onComplete={onComplete}
+                />
+              </>
+            ) : (
+              /* DOS-30: graceful empty state — prep not yet generated.
+                 Bridge link below remains the primary action. */
+              <p className={s.expansionNarrative}>No prep available yet.</p>
+            )}
 
-            {/* Bridge link */}
+            {/* Bridge link — always accessible, even when prep is empty */}
             <div className={s.meetingLinks}>
               <Link
                 to="/meeting/$meetingId"
