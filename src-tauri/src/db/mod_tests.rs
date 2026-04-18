@@ -5536,3 +5536,195 @@ fn test_dos240_restore_allows_relink() {
     assert_eq!(rows.len(), 1);
     assert!(rows[0].is_primary);
 }
+
+// ---------------------------------------------------------------------------
+// DOS-232 Codex fix: account-specific recentMeetings must include non-primary
+// high-confidence account links. DOS-224 persists exactly one primary per
+// meeting even when multiple accounts share that meeting, so gating on
+// `is_primary = 1` hid legitimate secondary accounts from their own dossier.
+// ---------------------------------------------------------------------------
+
+/// A meeting linked to account A at is_primary=1 confidence=0.95 AND account
+/// B at is_primary=0 confidence=0.80 must appear in BOTH accounts'
+/// `get_meetings_for_account_with_prep` results.
+#[test]
+fn test_dos232_recent_meetings_includes_non_primary_high_confidence() {
+    let db = test_db();
+    let a = sample_account("acct-a", "Account A");
+    let b = sample_account("acct-b", "Account B");
+    db.upsert_account(&a).expect("upsert a");
+    db.upsert_account(&b).expect("upsert b");
+    setup_meeting(&db, "m_shared", "Shared Meeting");
+
+    db.link_meeting_entity_with_confidence("m_shared", "acct-a", "account", 0.95, true)
+        .expect("link primary");
+    db.link_meeting_entity_with_confidence("m_shared", "acct-b", "account", 0.80, false)
+        .expect("link secondary");
+
+    let rows_a = db
+        .get_meetings_for_account_with_prep("acct-a", 10)
+        .expect("a record");
+    assert_eq!(rows_a.len(), 1, "primary account sees the meeting");
+    assert_eq!(rows_a[0].id, "m_shared");
+
+    let rows_b = db
+        .get_meetings_for_account_with_prep("acct-b", 10)
+        .expect("b record");
+    assert_eq!(
+        rows_b.len(),
+        1,
+        "DOS-232: secondary account above confidence floor must also see the meeting"
+    );
+    assert_eq!(rows_b[0].id, "m_shared");
+}
+
+/// The 0.70 confidence floor still applies — a speculative domain-match at
+/// confidence 0.50 must not surface on the account's Record, is_primary or
+/// not.
+#[test]
+fn test_dos232_recent_meetings_still_filters_below_confidence_floor() {
+    let db = test_db();
+    let a = sample_account("acct-lowconf", "Low Confidence Account");
+    db.upsert_account(&a).expect("upsert");
+    setup_meeting(&db, "m_weak", "Weak Link");
+
+    db.link_meeting_entity_with_confidence("m_weak", "acct-lowconf", "account", 0.50, false)
+        .expect("link weak");
+
+    let rows = db
+        .get_meetings_for_account_with_prep("acct-lowconf", 10)
+        .expect("query");
+    assert!(
+        rows.is_empty(),
+        "sub-0.70 junctions must remain excluded from The Record"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DOS-233 Codex fix: unbounded count queries for About-this-dossier totals.
+// ---------------------------------------------------------------------------
+
+/// `get_meeting_count_for_account` must return COUNT(*) without applying the
+/// preview-list LIMIT of 10. `get_transcript_count_for_account` must return
+/// the distinct number of meetings that have a transcript on record.
+#[test]
+fn test_dos233_account_meeting_and_transcript_counts_unbounded() {
+    let db = test_db();
+    let a = sample_account("acct-big", "Big Account");
+    db.upsert_account(&a).expect("upsert");
+
+    // 12 meetings linked at confidence 0.95 — well above the LIMIT 10 of the
+    // preview query — half carry transcripts, half don't.
+    for i in 0..12 {
+        let mid = format!("m_big_{i}");
+        setup_meeting(&db, &mid, &format!("Meeting {i}"));
+        db.link_meeting_entity_with_confidence(&mid, "acct-big", "account", 0.95, i == 0)
+            .expect("link");
+        if i % 2 == 0 {
+            db.conn_ref()
+                .execute(
+                    "UPDATE meeting_transcripts SET transcript_path = ?1 WHERE meeting_id = ?2",
+                    rusqlite::params![format!("/tmp/transcript_{i}.txt"), mid],
+                )
+                .expect("mark transcript");
+        }
+    }
+
+    // And one low-confidence junction that must NOT count.
+    setup_meeting(&db, "m_weak", "Speculative Match");
+    db.link_meeting_entity_with_confidence("m_weak", "acct-big", "account", 0.50, false)
+        .expect("link weak");
+
+    let meeting_count = db
+        .get_total_meeting_count_for_account("acct-big")
+        .expect("meeting count");
+    assert_eq!(
+        meeting_count, 12,
+        "DOS-233: meeting total must be 12 (unbounded) — LIMIT 10 was not applied, 0.50 link excluded"
+    );
+
+    let transcript_count = db
+        .get_total_transcript_count_for_account("acct-big")
+        .expect("transcript count");
+    assert_eq!(
+        transcript_count, 6,
+        "DOS-233: transcript total must be 6 — every other meeting carries a transcript"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DOS-231 Codex fix: `update_technical_footprint_field` persists a single
+// whitelisted column on `account_technical_footprint`. Creates the row if it
+// does not yet exist; stamps `source = 'user_edit'`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dos231_update_technical_footprint_field_creates_row_and_writes_text() {
+    let db = test_db();
+    let a = sample_account("acct-tf", "TF Account");
+    db.upsert_account(&a).expect("upsert");
+
+    db.update_technical_footprint_field("acct-tf", "usage_tier", "enterprise")
+        .expect("write usage tier");
+
+    let tf = db
+        .get_account_technical_footprint("acct-tf")
+        .expect("query")
+        .expect("row exists");
+    assert_eq!(tf.usage_tier.as_deref(), Some("enterprise"));
+    assert_eq!(tf.source, "user_edit");
+}
+
+#[test]
+fn test_dos231_update_technical_footprint_field_parses_numerics() {
+    let db = test_db();
+    let a = sample_account("acct-tf2", "TF Account 2");
+    db.upsert_account(&a).expect("upsert");
+
+    db.update_technical_footprint_field("acct-tf2", "active_users", "1250")
+        .expect("int");
+    db.update_technical_footprint_field("acct-tf2", "csat_score", "4.3")
+        .expect("real");
+    db.update_technical_footprint_field("acct-tf2", "adoption_score", "0.82")
+        .expect("real");
+
+    let tf = db
+        .get_account_technical_footprint("acct-tf2")
+        .expect("q")
+        .expect("row");
+    assert_eq!(tf.active_users, Some(1250));
+    assert!((tf.csat_score.unwrap() - 4.3).abs() < 1e-6);
+    assert!((tf.adoption_score.unwrap() - 0.82).abs() < 1e-6);
+}
+
+#[test]
+fn test_dos231_update_technical_footprint_field_rejects_unknown_field() {
+    let db = test_db();
+    let a = sample_account("acct-tf3", "TF Account 3");
+    db.upsert_account(&a).expect("upsert");
+
+    let err = db
+        .update_technical_footprint_field("acct-tf3", "integrations_json", "garbage")
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unsupported field"),
+        "unsupported fields must be rejected, got: {msg}"
+    );
+}
+
+#[test]
+fn test_dos231_update_technical_footprint_field_rejects_bad_numeric() {
+    let db = test_db();
+    let a = sample_account("acct-tf4", "TF Account 4");
+    db.upsert_account(&a).expect("upsert");
+
+    let err = db
+        .update_technical_footprint_field("acct-tf4", "active_users", "not-a-number")
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("not a valid integer"),
+        "bad integer must be rejected, got: {msg}"
+    );
+}
