@@ -904,13 +904,19 @@ impl ActionDb {
         account_id: &str,
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
-        // DOS-232: restrict The Record to primary, high-confidence meeting
-        // links only. The entity resolver (DOS-74) writes `is_primary = 1` on
-        // the highest-confidence account link per meeting and confidence
-        // REAL in [0.0, 1.0]. We use a 0.70 threshold — the same floor the
+        // DOS-232 Codex fix: account-specific The Record / recentMeetings
+        // queries must include EVERY meeting whose junction to this account
+        // is above the accepted-confidence floor (0.70), regardless of the
+        // `is_primary` flag. DOS-224 intentionally persists exactly one
+        // primary per meeting even when multiple accounts share that meeting
+        // — so a secondary account at confidence 0.80 on a meeting where
+        // another account is the primary would previously be hidden from its
+        // own timeline/dossier counts. `is_primary` stays as the
+        // meeting-chip prominence signal (used elsewhere), not as an account
+        // visibility gate. The 0.70 floor — the same threshold the
         // classifier uses to promote all-internal meetings (see
-        // google_api/classify.rs) — to filter out speculative domain-match
-        // junctions that previously surfaced unrelated items on The Record.
+        // google_api/classify.rs) — still filters out speculative
+        // domain-match junctions.
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
                     m.attendees, m.notes_path, mt.summary, m.created_at,
@@ -921,7 +927,6 @@ impl ActionDb {
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1
                AND me.entity_type = 'account'
-               AND me.is_primary = 1
                AND me.confidence >= 0.70
              ORDER BY m.start_time DESC
              LIMIT ?2",

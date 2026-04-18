@@ -5428,3 +5428,66 @@ fn test_dos240_restore_allows_relink() {
     assert_eq!(rows.len(), 1);
     assert!(rows[0].is_primary);
 }
+
+// ---------------------------------------------------------------------------
+// DOS-232 Codex fix: account-specific recentMeetings must include non-primary
+// high-confidence account links. DOS-224 persists exactly one primary per
+// meeting even when multiple accounts share that meeting, so gating on
+// `is_primary = 1` hid legitimate secondary accounts from their own dossier.
+// ---------------------------------------------------------------------------
+
+/// A meeting linked to account A at is_primary=1 confidence=0.95 AND account
+/// B at is_primary=0 confidence=0.80 must appear in BOTH accounts'
+/// `get_meetings_for_account_with_prep` results.
+#[test]
+fn test_dos232_recent_meetings_includes_non_primary_high_confidence() {
+    let db = test_db();
+    let a = sample_account("acct-a", "Account A");
+    let b = sample_account("acct-b", "Account B");
+    db.upsert_account(&a).expect("upsert a");
+    db.upsert_account(&b).expect("upsert b");
+    setup_meeting(&db, "m_shared", "Shared Meeting");
+
+    db.link_meeting_entity_with_confidence("m_shared", "acct-a", "account", 0.95, true)
+        .expect("link primary");
+    db.link_meeting_entity_with_confidence("m_shared", "acct-b", "account", 0.80, false)
+        .expect("link secondary");
+
+    let rows_a = db
+        .get_meetings_for_account_with_prep("acct-a", 10)
+        .expect("a record");
+    assert_eq!(rows_a.len(), 1, "primary account sees the meeting");
+    assert_eq!(rows_a[0].id, "m_shared");
+
+    let rows_b = db
+        .get_meetings_for_account_with_prep("acct-b", 10)
+        .expect("b record");
+    assert_eq!(
+        rows_b.len(),
+        1,
+        "DOS-232: secondary account above confidence floor must also see the meeting"
+    );
+    assert_eq!(rows_b[0].id, "m_shared");
+}
+
+/// The 0.70 confidence floor still applies — a speculative domain-match at
+/// confidence 0.50 must not surface on the account's Record, is_primary or
+/// not.
+#[test]
+fn test_dos232_recent_meetings_still_filters_below_confidence_floor() {
+    let db = test_db();
+    let a = sample_account("acct-lowconf", "Low Confidence Account");
+    db.upsert_account(&a).expect("upsert");
+    setup_meeting(&db, "m_weak", "Weak Link");
+
+    db.link_meeting_entity_with_confidence("m_weak", "acct-lowconf", "account", 0.50, false)
+        .expect("link weak");
+
+    let rows = db
+        .get_meetings_for_account_with_prep("acct-lowconf", 10)
+        .expect("query");
+    assert!(
+        rows.is_empty(),
+        "sub-0.70 junctions must remain excluded from The Record"
+    );
+}
