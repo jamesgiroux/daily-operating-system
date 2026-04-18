@@ -130,7 +130,7 @@ impl ActionDb {
                         relevance_score, score_reason,
                         pinned_at, commitments, questions
                  FROM emails
-                 WHERE enrichment_state IN ('pending', 'failed')
+                 WHERE enrichment_state IN ('pending', 'pending_retry', 'failed')
                    AND enrichment_attempts < 3
                  ORDER BY created_at
                  LIMIT ?1",
@@ -293,10 +293,16 @@ impl ActionDb {
             )
             .map_err(|e| format!("Failed to count pending emails: {e}"))?;
 
+        // DOS-226: `pending_retry` is a transitional state owned by the retry
+        // service. It represents rows that were `failed` until the user
+        // clicked Retry; they stay counted as failed in the UI so the
+        // "Retry" notice remains visible until the in-flight refresh
+        // confirms success (promoting them to `pending`) or fails
+        // (rolling them back to `failed`).
         let failed: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM emails WHERE resolved_at IS NULL AND enrichment_state = 'failed'",
+                "SELECT COUNT(*) FROM emails WHERE resolved_at IS NULL AND enrichment_state IN ('failed', 'pending_retry')",
                 [],
                 |row| row.get(0),
             )
@@ -305,7 +311,10 @@ impl ActionDb {
         // DOS-31: fetch the last successful Gmail fetch timestamp (separate from
         // per-row last_seen_at so the UI can tell "fetch healthy, enrichment stuck"
         // apart from "we can't reach Gmail").
-        let last_successful_fetch_at = self.get_last_successful_fetch_at().unwrap_or(None);
+        // DOS-226: propagate unexpected errors — swallowing them previously
+        // masked schema drift (e.g. migration 094 never applied) as a silent
+        // "never fetched" state.
+        let last_successful_fetch_at = self.get_last_successful_fetch_at()?;
 
         Ok(EmailSyncStats {
             last_fetch_at,
@@ -317,21 +326,35 @@ impl ActionDb {
         })
     }
 
-    /// DOS-31: Record that a Gmail fetch just completed successfully. Writes to
-    /// the singleton `email_sync_meta` row (migration 093). Safe to call from
-    /// any place that has an `ActionDb`; no-ops gracefully if the meta row is
-    /// missing (e.g. first run before migrations).
+    /// DOS-31 / DOS-226: Record that a Gmail fetch just completed successfully.
+    /// Writes to the singleton `email_sync_meta` row (migration 093/094).
+    ///
+    /// DOS-226: Previously this used a bare `UPDATE WHERE id = 1` without
+    /// checking affected rows, so if the singleton seed row was ever missing
+    /// (fresh install racing migrations, partial restore, manual DB edit),
+    /// the write silently no-op'd and the UI showed "never fetched" forever.
+    /// We now upsert so the row materializes on first call regardless of
+    /// seed state, and assert exactly one row was written as a defense in
+    /// depth against a future schema change (e.g. losing the `id = 1`
+    /// singleton PK check).
     pub fn set_last_successful_fetch_at(&self) -> Result<(), String> {
         let now = Utc::now().to_rfc3339();
-        self.conn
+        let rows = self
+            .conn
             .execute(
-                "UPDATE email_sync_meta
-                    SET last_successful_fetch_at = ?1,
-                        updated_at = ?1
-                  WHERE id = 1",
+                "INSERT INTO email_sync_meta (id, last_successful_fetch_at, updated_at)
+                 VALUES (1, ?1, ?1)
+                 ON CONFLICT(id) DO UPDATE SET
+                    last_successful_fetch_at = excluded.last_successful_fetch_at,
+                    updated_at = excluded.updated_at",
                 params![now],
             )
-            .map_err(|e| format!("Failed to update email_sync_meta: {e}"))?;
+            .map_err(|e| format!("Failed to upsert email_sync_meta: {e}"))?;
+        if rows != 1 {
+            return Err(format!(
+                "email_sync_meta upsert affected {rows} rows; expected 1 (schema drift?)"
+            ));
+        }
         Ok(())
     }
 
@@ -637,16 +660,59 @@ impl ActionDb {
         Ok(results)
     }
 
-    /// Reset all failed enrichments to pending so they can be retried.
-    pub fn reset_failed_enrichments(&self) -> Result<usize, String> {
+    /// DOS-226: Transition `failed` emails to the transitional `pending_retry`
+    /// state while a user-initiated retry is in flight.
+    ///
+    /// Unlike a direct `failed -> pending` reset (the old behaviour), this
+    /// keeps `enrichment_attempts` intact so we can roll back cleanly if
+    /// the subsequent Gmail refresh fails, and the UI failed-count query
+    /// continues to include these rows so the "Retry" notice stays visible
+    /// until the refresh outcome is known.
+    ///
+    /// Returns the number of rows transitioned.
+    pub fn mark_failed_for_retry(&self) -> Result<usize, String> {
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE emails SET enrichment_state = 'pending_retry', updated_at = ?1
+                 WHERE enrichment_state = 'failed' AND resolved_at IS NULL",
+                params![now],
+            )
+            .map_err(|e| format!("Failed to mark emails for retry: {e}"))
+    }
+
+    /// DOS-226: Promote `pending_retry` rows to `pending` after the Gmail
+    /// refresh succeeded. Zeroes `enrichment_attempts` so the enrichment
+    /// pipeline picks them up on the next pass instead of skipping them for
+    /// having reached the 3-attempt cap.
+    ///
+    /// Returns the number of rows transitioned.
+    pub fn finalize_pending_retry_success(&self) -> Result<usize, String> {
         let now = Utc::now().to_rfc3339();
         self.conn
             .execute(
                 "UPDATE emails SET enrichment_state = 'pending', enrichment_attempts = 0, updated_at = ?1
-                 WHERE enrichment_state = 'failed' AND resolved_at IS NULL",
+                 WHERE enrichment_state = 'pending_retry' AND resolved_at IS NULL",
                 params![now],
             )
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("Failed to finalize retry (success): {e}"))
+    }
+
+    /// DOS-226: Roll `pending_retry` rows back to `failed` after the Gmail
+    /// refresh failed. The user's "Retry" notice reappears and they can try
+    /// again. `enrichment_attempts` was never touched, so the row returns
+    /// to exactly its pre-retry state.
+    ///
+    /// Returns the number of rows transitioned.
+    pub fn rollback_pending_retry(&self) -> Result<usize, String> {
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE emails SET enrichment_state = 'failed', updated_at = ?1
+                 WHERE enrichment_state = 'pending_retry' AND resolved_at IS NULL",
+                params![now],
+            )
+            .map_err(|e| format!("Failed to roll back retry: {e}"))
     }
 
     /// Mark an email as enriched, setting `enriched_at` to now (I652 Phase 5).

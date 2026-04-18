@@ -548,18 +548,22 @@ pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Res
     crate::services::emails::archive_low_priority_emails(&state).await
 }
 
-/// Reset failed email enrichments and trigger re-enrichment (DOS-195).
+/// Reset failed email enrichments and trigger re-enrichment (DOS-195, DOS-226).
+///
+/// DOS-226: This command previously mutated the DB directly (`failed -> pending`
+/// with attempts=0) *before* calling `refresh_emails`, meaning a Gmail refresh
+/// failure would leave rows looking healthy while enrichment had never re-run,
+/// silently dismissing the user-visible Retry notice. The retry semantics now
+/// live in `services::emails::retry_failed_emails`, which performs the
+/// transition through a transitional `pending_retry` state that rolls back on
+/// refresh failure. The command is a thin delegate so the rollback-safe path
+/// is the only path.
 #[tauri::command]
 pub async fn retry_failed_emails(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<usize, String> {
-    let count = state.db_write(|db| db.reset_failed_enrichments()).await?;
-    if count > 0 {
-        log::info!("retry_failed_emails: reset {count} failed emails, triggering re-enrichment");
-        crate::services::emails::refresh_emails(state.inner(), app_handle).await?;
-    }
-    Ok(count)
+    crate::services::emails::retry_failed_emails(state.inner(), app_handle).await
 }
 
 /// Set user profile (customer-success or general)

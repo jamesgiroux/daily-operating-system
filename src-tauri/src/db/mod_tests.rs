@@ -222,40 +222,144 @@ fn test_dos31_sync_stats_includes_last_successful_fetch_at() {
     );
 }
 
-#[test]
-fn test_dos31_reset_failed_enrichments_makes_stuck_emails_retryable() {
-    // DOS-31 AC: manual refresh resets `enrichment_attempts` for failed emails
-    // so they re-enter the pending queue instead of silently blocking today's
-    // inbox. Verifies the bookkeeping used by `services::emails::refresh_emails`
-    // and the `retry_failed_emails` Tauri command.
-    let db = test_db();
-
-    let mut stuck = sample_email("em-stuck-1", "thread-stuck", "Stuck email");
+/// Seed a single email row in the `failed` state at the 3-attempt cap.
+/// Centralized so the DOS-226 rollback/finalize tests stay readable.
+#[cfg(test)]
+fn seed_failed_email(db: &ActionDb, email_id: &str) {
+    let mut stuck = sample_email(email_id, "thread-stuck", "Stuck email");
     stuck.enrichment_state = "failed".to_string();
     stuck.enrichment_attempts = 3;
     db.upsert_email(&stuck).expect("upsert stuck");
-    // upsert_email doesn't persist enrichment_state/attempts on conflict; ensure
-    // the row is in the expected failed/3 state for the test.
+    // upsert_email doesn't persist enrichment_state/attempts on conflict; force
+    // the row into the expected failed/3 state.
     db.conn
         .execute(
             "UPDATE emails SET enrichment_state = 'failed', enrichment_attempts = 3 WHERE email_id = ?1",
-            rusqlite::params!["em-stuck-1"],
+            rusqlite::params![email_id],
         )
         .expect("seed failed state");
+}
 
-    let reset = db.reset_failed_enrichments().expect("reset");
-    assert_eq!(reset, 1, "one failed email should be reset");
-
-    let (state, attempts): (String, i32) = db
-        .conn
+#[cfg(test)]
+fn read_enrichment_state(db: &ActionDb, email_id: &str) -> (String, i32) {
+    db.conn
         .query_row(
             "SELECT enrichment_state, enrichment_attempts FROM emails WHERE email_id = ?1",
-            rusqlite::params!["em-stuck-1"],
+            rusqlite::params![email_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .expect("read back state");
+        .expect("read back state")
+}
+
+#[test]
+fn test_dos226_mark_failed_for_retry_preserves_attempts() {
+    // DOS-226: the retry transition must preserve enrichment_attempts so a
+    // rollback (refresh failure) can restore the row to exactly its pre-retry
+    // state. Counting the row as failed in the UI also depends on the
+    // attempts cap staying at 3.
+    let db = test_db();
+    seed_failed_email(&db, "em-stuck-1");
+
+    let marked = db.mark_failed_for_retry().expect("mark");
+    assert_eq!(marked, 1);
+
+    let (state, attempts) = read_enrichment_state(&db, "em-stuck-1");
+    assert_eq!(state, "pending_retry");
+    assert_eq!(attempts, 3, "attempts must be preserved for rollback");
+}
+
+#[test]
+fn test_dos226_pending_retry_still_counts_as_failed_in_stats() {
+    // DOS-226: while a retry is in flight, the UI must keep rendering the
+    // Retry notice. That means `get_email_sync_stats().failed` needs to
+    // include rows in the transitional `pending_retry` state.
+    let db = test_db();
+    seed_failed_email(&db, "em-stuck-1");
+    db.mark_failed_for_retry().expect("mark");
+
+    let stats = db.get_email_sync_stats().expect("stats");
+    assert_eq!(
+        stats.failed, 1,
+        "pending_retry must count as failed for UI purposes"
+    );
+}
+
+#[test]
+fn test_dos226_rollback_restores_failed_state() {
+    // DOS-226: If the Gmail refresh fails mid-retry, the rows must return
+    // to `failed` with their original `enrichment_attempts` so the user
+    // can retry again (and the Retry notice never silently disappeared).
+    let db = test_db();
+    seed_failed_email(&db, "em-stuck-1");
+
+    db.mark_failed_for_retry().expect("mark");
+    let rolled = db.rollback_pending_retry().expect("rollback");
+    assert_eq!(rolled, 1);
+
+    let (state, attempts) = read_enrichment_state(&db, "em-stuck-1");
+    assert_eq!(state, "failed");
+    assert_eq!(attempts, 3, "attempts must be restored");
+}
+
+#[test]
+fn test_dos226_finalize_success_promotes_to_pending_and_zeros_attempts() {
+    // DOS-226: On refresh success, `pending_retry` rows must become `pending`
+    // with zeroed attempts so the enrichment pipeline actually re-runs them
+    // (it skips rows that have reached the 3-attempt cap).
+    let db = test_db();
+    seed_failed_email(&db, "em-stuck-1");
+
+    db.mark_failed_for_retry().expect("mark");
+    let promoted = db.finalize_pending_retry_success().expect("finalize");
+    assert_eq!(promoted, 1);
+
+    let (state, attempts) = read_enrichment_state(&db, "em-stuck-1");
     assert_eq!(state, "pending");
     assert_eq!(attempts, 0);
+}
+
+#[test]
+fn test_dos226_set_last_successful_fetch_at_is_upsert() {
+    // DOS-226: If the `email_sync_meta` singleton row is missing (fresh DB
+    // that skipped the seed insert, partial restore, etc.), the timestamp
+    // write must still materialize. The old UPDATE-only path silently
+    // no-op'd, leaving the UI stuck on "never fetched".
+    let db = test_db();
+
+    // Simulate the missing-singleton case — this is the exact drift the fix
+    // defends against.
+    db.conn
+        .execute("DELETE FROM email_sync_meta WHERE id = 1", [])
+        .expect("delete seed");
+
+    db.set_last_successful_fetch_at()
+        .expect("upsert must succeed even when seed row is missing");
+
+    let stamped = db
+        .get_last_successful_fetch_at()
+        .expect("read back")
+        .expect("timestamp must be populated after upsert");
+    assert!(!stamped.is_empty());
+}
+
+#[test]
+fn test_dos226_get_email_sync_stats_propagates_errors() {
+    // DOS-226: `get_email_sync_stats` previously swallowed errors from the
+    // meta query as `Ok(None)`, masking schema drift (e.g. migration 094
+    // never applied) as a benign "never fetched". Verify errors bubble up.
+    let db = test_db();
+
+    // Simulate schema drift: drop the meta table entirely. `get_last_...`
+    // must now return Err, and the stats query must propagate it.
+    db.conn
+        .execute("DROP TABLE email_sync_meta", [])
+        .expect("drop meta");
+
+    let result = db.get_email_sync_stats();
+    assert!(
+        result.is_err(),
+        "sync stats must propagate unexpected meta query errors"
+    );
 }
 
 #[test]

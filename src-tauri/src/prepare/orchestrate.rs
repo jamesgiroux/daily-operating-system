@@ -1489,11 +1489,13 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
             log::warn!("DOS-31: failed to record last_successful_fetch_at: {}", e);
         }
 
-        // DOS-31: `retry_failed_emails` command + `refresh_emails` service both
-        // reset `failed → pending` before we reach this point. Emails that
-        // genuinely have deterministic issues will fail again and land back in
-        // `failed`, but the user keeps full control via the explicit Retry
-        // button on the sync status notice.
+        // DOS-31 / DOS-226: `services::emails::refresh_emails` marks failed rows
+        // as `pending_retry` before we reach this point and will finalize them
+        // to `pending` only after the fetch above (and the enrichment below)
+        // completes without a top-level error. Emails that genuinely have
+        // deterministic issues will fail again and land back in `failed`, but
+        // the rollback-safe transition means a transient Gmail fetch failure
+        // no longer silently clears the user-visible Retry notice.
     }
 
     // I370: Refresh thread positions from sent messages
