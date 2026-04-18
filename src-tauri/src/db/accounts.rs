@@ -897,6 +897,48 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// DOS-233 Codex fix: total count of meetings linked to an account above
+    /// the accepted-confidence floor (0.70). Used by the About-this-dossier
+    /// counts so active accounts don't stall at "10 meetings on record" —
+    /// the preview list still caps at 10, but totals come from COUNT(*)
+    /// without a LIMIT. Matches the visibility rule used by
+    /// `get_meetings_for_account_with_prep`: include every junction above
+    /// the floor regardless of `is_primary`.
+    pub fn get_total_meeting_count_for_account(&self, account_id: &str) -> Result<i64, DbError> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM meeting_entities me
+                 WHERE me.entity_id = ?1
+                   AND me.entity_type = 'account'
+                   AND me.confidence >= 0.70",
+                params![account_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(DbError::from)
+    }
+
+    /// DOS-233 Codex fix: total count of transcripts for meetings linked to
+    /// an account above the accepted-confidence floor. Joined through
+    /// meeting_transcripts (a meeting only counts when it has a transcript
+    /// row AND a non-null transcript_path).
+    pub fn get_total_transcript_count_for_account(&self, account_id: &str) -> Result<i64, DbError> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(DISTINCT m.id)
+                 FROM meetings m
+                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 INNER JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                 WHERE me.entity_id = ?1
+                   AND me.entity_type = 'account'
+                   AND me.confidence >= 0.70
+                   AND mt.transcript_path IS NOT NULL",
+                params![account_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(DbError::from)
+    }
+
     /// Get past meetings for an account with prep context (ADR-0063).
     /// Used only on account detail page where prep preview cards are needed.
     pub fn get_meetings_for_account_with_prep(

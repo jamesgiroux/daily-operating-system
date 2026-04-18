@@ -1328,6 +1328,16 @@ pub fn build_account_detail_result(
                 })
                 .collect();
 
+            // DOS-233 Codex fix: totals are COUNT(*) without a LIMIT so
+            // active accounts don't stall at 10 meetings / transcripts in
+            // the About-this-dossier chapter.
+            let meeting_total_count = db
+                .get_total_meeting_count_for_account(&account_id)
+                .unwrap_or(0);
+            let transcript_total_count = db
+                .get_total_transcript_count_for_account(&account_id)
+                .unwrap_or(0);
+
             let recent_meetings: Vec<MeetingPreview> =
                 db.get_meetings_for_account_with_prep(&account_id, 10)
                     .map_err(|e| e.to_string())?
@@ -1476,6 +1486,8 @@ pub fn build_account_detail_result(
                 open_actions,
                 upcoming_meetings,
                 recent_meetings,
+                meeting_total_count,
+                transcript_total_count,
                 linked_people,
                 account_team,
                 account_team_import_notes,
