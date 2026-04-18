@@ -1538,9 +1538,21 @@ pub async fn archive_low_priority_emails(state: &AppState) -> Result<usize, Stri
 
 /// Refresh emails independently without re-running the full /today pipeline (I20).
 ///
-/// DOS-31: Before kicking off refresh, reset any `failed` emails back to `pending`
-/// so a manual refresh actually retries them. Failed enrichment on yesterday's
-/// emails must not silently block today's inbox from appearing.
+/// DOS-31 / DOS-226: Manual refresh is a user signal that they want previously
+/// failed enrichments retried. The retry is rollback-safe:
+///
+/// 1. Mark `failed` rows as `pending_retry` (keeps `enrichment_attempts`
+///    intact; UI still counts them as failed so the Retry notice stays
+///    visible while the refresh is in flight).
+/// 2. Run the Gmail refresh + enrichment pipeline.
+/// 3. On success: transition `pending_retry -> pending` and zero
+///    `enrichment_attempts` so enrichment picks them up.
+/// 4. On failure: transition `pending_retry -> failed`, preserving the
+///    original failed state so the Retry notice reappears.
+///
+/// Prior behaviour (pre-DOS-226) reset `failed -> pending` with attempts=0
+/// *before* the refresh ran; a refresh failure then left rows looking
+/// healthy when in fact enrichment had never re-run.
 pub async fn refresh_emails(
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
@@ -1551,35 +1563,103 @@ pub async fn refresh_emails(
         .clone()
         .ok_or("No configuration loaded")?;
 
-    // DOS-31: Reset failed enrichments before kicking off refresh. Prior behavior
-    // left 3x-failed emails stuck forever; manual refresh is a clear user signal
-    // that they want another attempt. Failed enrichment on yesterday's emails
-    // must not silently block today's inbox from appearing.
-    let reset_count = state
-        .db_write(|db| db.reset_failed_enrichments())
+    // DOS-226: Phase 1 — move failed rows into the transitional state. If
+    // this bookkeeping write itself fails we surface the error rather than
+    // silently proceeding; otherwise a schema drift could hide the retry
+    // not running.
+    let marked = state
+        .db_write(|db| db.mark_failed_for_retry())
         .await
-        .unwrap_or_else(|e| {
-            log::warn!("DOS-31: reset_failed_enrichments failed: {}", e);
-            0
-        });
-    if reset_count > 0 {
-        log::info!(
-            "DOS-31: reset {} failed emails to pending before refresh",
-            reset_count
-        );
+        .map_err(|e| format!("Failed to mark failed emails for retry: {e}"))?;
+    if marked > 0 {
+        log::info!("DOS-226: marked {marked} failed emails as pending_retry");
     }
 
     let state_clone = state.clone();
     let workspace_path = config.workspace_path.clone();
 
-    tauri::async_runtime::spawn(async move {
+    // Phase 2 — run the refresh. We capture its outcome so we can finalize
+    // or roll back the transitional state regardless of how it ends.
+    let refresh_outcome: Result<(), String> = tauri::async_runtime::spawn(async move {
         let workspace = std::path::Path::new(&workspace_path);
         let executor = crate::executor::Executor::new(state_clone, app_handle);
         executor.execute_email_refresh(workspace).await
     })
     .await
-    .map_err(|e| format!("Email refresh task failed: {}", e))?
-    .map(|_| "Email refresh complete".to_string())
+    .map_err(|e| format!("Email refresh task failed: {}", e))
+    .and_then(|inner| inner);
+
+    // Phase 3 — finalize or roll back. These writes are best-effort-logged
+    // only when `marked == 0` (nothing to clean up); otherwise any failure
+    // here is itself user-visible because it leaves the state inconsistent.
+    match &refresh_outcome {
+        Ok(_) => {
+            if marked > 0 {
+                let promoted = state
+                    .db_write(|db| db.finalize_pending_retry_success())
+                    .await
+                    .map_err(|e| {
+                        format!("Refresh succeeded but retry finalize failed: {e}")
+                    })?;
+                log::info!(
+                    "DOS-226: refresh succeeded, promoted {promoted} pending_retry -> pending"
+                );
+            }
+        }
+        Err(refresh_err) => {
+            if marked > 0 {
+                match state.db_write(|db| db.rollback_pending_retry()).await {
+                    Ok(rolled) => log::warn!(
+                        "DOS-226: refresh failed ({refresh_err}); rolled back {rolled} pending_retry -> failed"
+                    ),
+                    Err(e) => log::error!(
+                        "DOS-226: refresh failed AND rollback failed: refresh={refresh_err}, rollback={e}"
+                    ),
+                }
+            }
+        }
+    }
+
+    refresh_outcome.map(|_| "Email refresh complete".to_string())
+}
+
+/// DOS-226: Reset failed email enrichments and trigger re-enrichment.
+///
+/// Centralizes retry semantics previously split between the Tauri command
+/// (`commands::workspace::retry_failed_emails`) and `refresh_emails`. The
+/// command now delegates here so there is exactly one place to reason about
+/// failed-state transitions.
+///
+/// Returns the number of rows that were in the `failed` state at the moment
+/// the retry was kicked off (regardless of whether they ultimately re-enriched
+/// successfully — that lands in the sync-stats query on the next UI poll).
+pub async fn retry_failed_emails(
+    state: &std::sync::Arc<AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<usize, String> {
+    let failed_before: usize = state
+        .db_read(|db| {
+            db.conn_ref()
+                .query_row(
+                    "SELECT COUNT(*) FROM emails WHERE enrichment_state = 'failed' AND resolved_at IS NULL",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map(|n| n as usize)
+                .map_err(|e| format!("Failed to count failed emails: {e}"))
+        })
+        .await?;
+
+    if failed_before == 0 {
+        log::info!("DOS-226: retry_failed_emails called with no failed rows; no-op");
+        return Ok(0);
+    }
+
+    log::info!(
+        "DOS-226: retry_failed_emails starting; {failed_before} failed rows will be retried"
+    );
+    refresh_emails(state, app_handle).await?;
+    Ok(failed_before)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
