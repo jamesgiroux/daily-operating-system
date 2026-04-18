@@ -38,6 +38,7 @@ import { OutlookPanel } from "@/components/health/OutlookPanel";
 import { SupportingTension } from "@/components/health/SupportingTension";
 import { AboutIntelligence } from "@/components/health/AboutIntelligence";
 import { OnTrackChapter } from "@/components/health/OnTrackChapter";
+import { RiskBriefingStatus } from "@/components/health/RiskBriefingStatus";
 // View 2 — Context
 import { AccountPullQuote } from "@/components/account/AccountPullQuote";
 import { AccountTechnicalFootprint } from "@/components/account/AccountTechnicalFootprint";
@@ -106,6 +107,13 @@ export default function AccountDetailPage() {
 
     return (
       <>
+        {/* DOS-228 Wave 0e Fix 4: pinned risk-briefing status at top of
+            Health tab. Renders nothing when there's no active job; shows
+            running/failed states with a retry affordance on failure. */}
+        <RiskBriefingStatus
+          job={acct.riskBriefingJob}
+          onRetry={acct.retryRiskBriefing}
+        />
         {/* Chapter 1: Sentiment hero */}
         <SentimentHero
           view={acct.sentiment}
