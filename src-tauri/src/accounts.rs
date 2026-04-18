@@ -1428,7 +1428,7 @@ END_ENRICHMENT";
 
         // Create a child account with tracker_path pointing to nested dir
         let account = DbAccount {
-            id: "cox--consumer-brands".to_string(),
+            id: "crestview-media--consumer-brands".to_string(),
             name: "Consumer-Brands".to_string(),
             lifecycle: None,
             arr: Some(500_000.0),
@@ -1437,7 +1437,7 @@ END_ENRICHMENT";
             contract_end: None,
             nps: None,
             tracker_path: Some("Accounts/Crestview Media/Consumer-Brands".to_string()),
-            parent_id: Some("cox".to_string()),
+            parent_id: Some("crestview-media".to_string()),
             account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
@@ -1511,7 +1511,7 @@ END_ENRICHMENT";
 
         // Insert parent
         let parent = DbAccount {
-            id: "cox".to_string(),
+            id: "crestview-media".to_string(),
             name: "Crestview Media".to_string(),
             lifecycle: None,
             arr: Some(5_000_000.0),
@@ -1533,7 +1533,7 @@ END_ENRICHMENT";
 
         // Insert children
         let child1 = DbAccount {
-            id: "cox--consumer-brands".to_string(),
+            id: "crestview-media--consumer-brands".to_string(),
             name: "Consumer-Brands".to_string(),
             lifecycle: None,
             arr: Some(2_000_000.0),
@@ -1542,7 +1542,7 @@ END_ENRICHMENT";
             contract_end: None,
             nps: None,
             tracker_path: Some("Accounts/Crestview Media/Consumer-Brands".to_string()),
-            parent_id: Some("cox".to_string()),
+            parent_id: Some("crestview-media".to_string()),
             account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
@@ -1554,7 +1554,7 @@ END_ENRICHMENT";
         db.upsert_account(&child1).unwrap();
 
         let child2 = DbAccount {
-            id: "cox--enterprise".to_string(),
+            id: "crestview-media--enterprise".to_string(),
             name: "Enterprise".to_string(),
             lifecycle: None,
             arr: Some(3_000_000.0),
@@ -1563,7 +1563,7 @@ END_ENRICHMENT";
             contract_end: None,
             nps: None,
             tracker_path: Some("Accounts/Crestview Media/Enterprise".to_string()),
-            parent_id: Some("cox".to_string()),
+            parent_id: Some("crestview-media".to_string()),
             account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
@@ -1577,13 +1577,13 @@ END_ENRICHMENT";
         // top-level should only include parent
         let top = db.get_top_level_accounts().unwrap();
         assert_eq!(top.len(), 1);
-        assert_eq!(top[0].id, "cox");
+        assert_eq!(top[0].id, "crestview-media");
 
         // children query
-        let children = db.get_child_accounts("cox").unwrap();
+        let children = db.get_child_accounts("crestview-media").unwrap();
         assert_eq!(children.len(), 2);
-        assert!(children.iter().any(|c| c.id == "cox--consumer-brands"));
-        assert!(children.iter().any(|c| c.id == "cox--enterprise"));
+        assert!(children.iter().any(|c| c.id == "crestview-media--consumer-brands"));
+        assert!(children.iter().any(|c| c.id == "crestview-media--enterprise"));
     }
 
     #[test]

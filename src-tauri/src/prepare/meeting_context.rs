@@ -1900,7 +1900,7 @@ mod tests {
         // Match by domain (most common for BU meetings)
         let meeting = json!({
             "title": "Weekly Sync",
-            "external_domains": ["consumer-brands.cox.com"],
+            "external_domains": ["consumer-brands.crestviewmedia.com"],
         });
         let matched = guess_account_name(&meeting, dir.path()).unwrap();
         assert_eq!(matched.name, "Consumer-Brands");
