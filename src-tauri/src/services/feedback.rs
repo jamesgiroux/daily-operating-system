@@ -8,6 +8,7 @@
 //! 2. All entities: fall back to most recent enrichment signal source for the entity
 //! 3. If no source identifiable: record feedback with `source = null` (signal still emitted)
 
+use crate::db::feedback::CorrectionAction;
 use crate::db::ActionDb;
 
 /// Submit feedback on an intelligence field for an entity.
@@ -128,6 +129,207 @@ fn resolve_intelligence_source(
     coarse
 }
 
+/// DOS-41: Fields whose correction should trigger a background health recalc.
+///
+/// These mirror the fields `services::accounts::update_account_field` treats
+/// as provenance-worthy plus the explicit health scoring surface. When a user
+/// corrects any of these on an account, the account's health score is
+/// recomputed so the UI reflects the correction immediately without waiting
+/// for the next enrichment pass.
+fn is_health_affecting_field(field: &str) -> bool {
+    matches!(
+        field,
+        "arr"
+            | "lifecycle"
+            | "contract_end"
+            | "renewal_date"
+            | "nps"
+            | "health"
+            | "health_score"
+            | "health_assessment"
+            | "risk_level"
+    )
+}
+
+/// DOS-41: Submit a consolidated intelligence correction.
+///
+/// Persists the correction into `entity_feedback_events` with one of three
+/// actions (`confirmed` | `annotated` | `corrected`), then runs the
+/// downstream side effects appropriate to the action:
+///
+/// - `confirmed` → rewards the attributed source (Bayesian alpha++) and emits
+///   an `intelligence_confirmed` signal.
+/// - `annotated` → stores the user-authored note in `reason`; next
+///   intelligence prompt will thread this as user context. Emits
+///   `intelligence_annotated`.
+/// - `corrected` → captures `previous_value` + `corrected_value`, penalizes
+///   the source (Bayesian beta++), emits `intelligence_corrected`, and — if
+///   the field is health-affecting on an account — triggers a background
+///   health recalc so the UI reflects the correction immediately.
+///
+/// All three paths write through `record_feedback_event`, keeping
+/// `entity_feedback_events` as the single source of truth for correction
+/// history.
+pub fn submit_intelligence_correction(
+    db: &ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    field: &str,
+    action: CorrectionAction,
+    corrected_value: Option<&str>,
+    annotation: Option<&str>,
+) -> Result<(), String> {
+    // Resolve the source that produced this intelligence so we can attribute
+    // Bayesian weight adjustments + tag the feedback row.
+    let prior_source = resolve_intelligence_source(db, entity_id, entity_type, field);
+
+    // Capture the previous value only when we are correcting. We read it from
+    // the most recent feedback event for this field (falls back to None), so
+    // successive corrections chain: v1 → v2 captures v1, v2 → v3 captures v2.
+    let previous_value = if action == CorrectionAction::Corrected {
+        latest_corrected_value(db, entity_id, field).or_else(|| {
+            // No prior correction — on accounts, fall back to the stored
+            // column value if the field is a known account column. This is
+            // best-effort; None is acceptable when the field lives inside
+            // an intelligence JSON blob.
+            read_account_field_snapshot(db, entity_id, entity_type, field)
+        })
+    } else {
+        None
+    };
+
+    // Write the feedback event. `reason` carries the user's annotation for
+    // annotated + corrected actions so it can be threaded into the next
+    // intelligence prompt and displayed in correction history.
+    db.record_feedback_event(
+        entity_id,
+        entity_type,
+        field,
+        None, // item_key — reserved for list-item corrections
+        action.as_str(),
+        None, // source_system — intelligence correction UX is app-driven
+        prior_source.as_deref(),
+        previous_value.as_deref(),
+        corrected_value,
+        annotation,
+    )
+    .map_err(|e| format!("record_feedback_event: {e}"))?;
+
+    // Bayesian source-weight update. `confirmed` rewards, `corrected`
+    // penalizes, `annotated` is neutral (user added context but didn't
+    // reject the AI output).
+    if let Some(ref source) = prior_source {
+        let field_category = field_to_signal_category(field);
+        match action {
+            CorrectionAction::Confirmed => {
+                let _ = db.upsert_signal_weight(source, entity_type, &field_category, 1.0, 0.0);
+            }
+            CorrectionAction::Corrected => {
+                let _ = db.upsert_signal_weight(source, entity_type, &field_category, 0.0, 1.0);
+            }
+            CorrectionAction::Annotated => {}
+        }
+    }
+
+    // Emit a signal for downstream propagation (intel prompts, suppression,
+    // health context, etc.). Keep confidence consistent with the existing
+    // feedback path (0.8).
+    let signal_type = match action {
+        CorrectionAction::Confirmed => "intelligence_confirmed",
+        CorrectionAction::Annotated => "intelligence_annotated",
+        CorrectionAction::Corrected => "intelligence_corrected",
+    };
+    let value_json = serde_json::json!({
+        "field": field,
+        "action": action.as_str(),
+        "source": prior_source,
+        "previous_value": previous_value,
+        "corrected_value": corrected_value,
+        "annotation": annotation,
+    })
+    .to_string();
+    let _ = crate::services::signals::emit(
+        db,
+        entity_type,
+        entity_id,
+        signal_type,
+        "user_feedback",
+        Some(&value_json),
+        0.8,
+    );
+
+    // Self-healing tie-in: a correction is a strong negative signal for the
+    // attributed enrichment source on Clay-enrichable account fields. Reuses
+    // the same pattern as `services::accounts::update_account_field`.
+    if action == CorrectionAction::Corrected
+        && entity_type == "account"
+        && matches!(field, "lifecycle" | "arr" | "health" | "nps")
+    {
+        if let Some(ref source) = prior_source {
+            crate::self_healing::feedback::record_enrichment_correction(
+                db, entity_id, "account", source,
+            );
+        }
+    }
+
+    // Health recalc — only on a corrected action against a health-affecting
+    // field on an account. Recompute synchronously so the next detail read
+    // reflects the correction; compute_account_health is stateless + cheap.
+    if action == CorrectionAction::Corrected
+        && entity_type == "account"
+        && is_health_affecting_field(field)
+    {
+        if let Ok(Some(account)) = db.get_account(entity_id) {
+            let _ = crate::intelligence::health_scoring::compute_account_health(
+                db, &account, None,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Best-effort: read the latest `corrected_value` recorded for a field so
+/// successive corrections can chain their previous_value.
+fn latest_corrected_value(db: &ActionDb, entity_id: &str, field: &str) -> Option<String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT corrected_value FROM entity_feedback_events \
+             WHERE entity_id = ?1 AND field_key = ?2 \
+             AND feedback_type = 'corrected' AND corrected_value IS NOT NULL \
+             ORDER BY created_at DESC, id DESC LIMIT 1",
+            rusqlite::params![entity_id, field],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+}
+
+/// Best-effort snapshot of an account column value for previous_value capture.
+/// Returns None for fields not stored as top-level columns (intelligence JSON
+/// fields, etc.) — that's acceptable; the feedback row simply records None.
+fn read_account_field_snapshot(
+    db: &ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    field: &str,
+) -> Option<String> {
+    if entity_type != "account" {
+        return None;
+    }
+    let account = db.get_account(entity_id).ok().flatten()?;
+    match field {
+        "name" => Some(account.name),
+        "lifecycle" => account.lifecycle,
+        "arr" => account.arr.map(|v| v.to_string()),
+        "health" => account.health,
+        "nps" => account.nps.map(|v| v.to_string()),
+        "contract_end" => account.contract_end,
+        "renewal_date" => account.contract_end.clone(),
+        _ => None,
+    }
+}
+
 /// Map an intelligence field name to a signal weight category.
 fn field_to_signal_category(field: &str) -> String {
     match field {
@@ -143,5 +345,219 @@ fn field_to_signal_category(field: &str) -> String {
         "state_of_play" | "watch_list" | "risks" | "plan" => "intelligence_assessment".to_string(),
         // Fallback
         _ => format!("intelligence_{field}"),
+    }
+}
+
+#[cfg(test)]
+mod correction_tests {
+    //! DOS-41: Unit tests for `submit_intelligence_correction`.
+    //!
+    //! Each of the three actions (confirmed / annotated / corrected) goes
+    //! through a distinct downstream path; the tests here exercise each.
+
+    use super::*;
+    use crate::db::{DbAccount, test_utils::test_db};
+
+    fn seed_account(db: &ActionDb, id: &str) {
+        let account = DbAccount {
+            id: id.to_string(),
+            name: format!("Test {}", id),
+            lifecycle: Some("renewing".to_string()),
+            arr: Some(100_000.0),
+            health: Some("green".to_string()),
+            contract_end: Some("2026-12-31".to_string()),
+            nps: Some(50),
+            updated_at: "2026-04-18T00:00:00Z".to_string(),
+            ..Default::default()
+        };
+        db.upsert_account(&account).expect("seed account");
+    }
+
+    /// Read all feedback rows for an entity; newest first.
+    fn feedback_rows(db: &ActionDb, entity_id: &str) -> Vec<(String, Option<String>, Option<String>, Option<String>)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT feedback_type, previous_value, corrected_value, reason \
+                 FROM entity_feedback_events WHERE entity_id = ?1 \
+                 ORDER BY created_at DESC, id DESC",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map(rusqlite::params![entity_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    }
+
+    #[test]
+    fn confirmed_persists_action_and_emits_signal() {
+        let db = test_db();
+        seed_account(&db, "acct-1");
+
+        submit_intelligence_correction(
+            &db,
+            "acct-1",
+            "account",
+            "state_of_play",
+            CorrectionAction::Confirmed,
+            None,
+            None,
+        )
+        .expect("confirmed submission");
+
+        let rows = feedback_rows(&db, "acct-1");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "confirmed");
+        assert!(rows[0].1.is_none(), "no previous_value on confirmed");
+        assert!(rows[0].2.is_none(), "no corrected_value on confirmed");
+
+        // Signal must have been emitted.
+        let sig_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events \
+                 WHERE entity_id = 'acct-1' AND signal_type = 'intelligence_confirmed'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(sig_count, 1);
+    }
+
+    #[test]
+    fn annotated_stores_reason_without_previous_or_corrected_value() {
+        let db = test_db();
+        seed_account(&db, "acct-2");
+
+        submit_intelligence_correction(
+            &db,
+            "acct-2",
+            "account",
+            "state_of_play",
+            CorrectionAction::Annotated,
+            None,
+            Some("This is a crucial nuance the model missed."),
+        )
+        .expect("annotated submission");
+
+        let rows = feedback_rows(&db, "acct-2");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "annotated");
+        assert!(rows[0].1.is_none());
+        assert!(rows[0].2.is_none());
+        assert_eq!(
+            rows[0].3.as_deref(),
+            Some("This is a crucial nuance the model missed.")
+        );
+
+        let sig_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events \
+                 WHERE entity_id = 'acct-2' AND signal_type = 'intelligence_annotated'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(sig_count, 1);
+    }
+
+    #[test]
+    fn corrected_captures_previous_and_corrected_values() {
+        let db = test_db();
+        seed_account(&db, "acct-3");
+
+        // health is a health-affecting field → also exercises the recalc
+        // branch. compute_account_health is stateless + cheap.
+        submit_intelligence_correction(
+            &db,
+            "acct-3",
+            "account",
+            "health",
+            CorrectionAction::Corrected,
+            Some("yellow"),
+            Some("Stakeholder just flagged concerns — no longer green."),
+        )
+        .expect("corrected submission");
+
+        let rows = feedback_rows(&db, "acct-3");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "corrected");
+        // Previous value falls back to stored account column value.
+        assert_eq!(rows[0].1.as_deref(), Some("green"));
+        assert_eq!(rows[0].2.as_deref(), Some("yellow"));
+        assert_eq!(
+            rows[0].3.as_deref(),
+            Some("Stakeholder just flagged concerns — no longer green.")
+        );
+
+        let sig_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events \
+                 WHERE entity_id = 'acct-3' AND signal_type = 'intelligence_corrected'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(sig_count, 1);
+    }
+
+    #[test]
+    fn successive_corrections_chain_previous_values() {
+        let db = test_db();
+        seed_account(&db, "acct-4");
+
+        // First correction: green → yellow
+        submit_intelligence_correction(
+            &db, "acct-4", "account", "health",
+            CorrectionAction::Corrected, Some("yellow"), None,
+        )
+        .unwrap();
+
+        // Second correction: yellow → red. Previous should be "yellow"
+        // (pulled from the prior correction row), not "green".
+        submit_intelligence_correction(
+            &db, "acct-4", "account", "health",
+            CorrectionAction::Corrected, Some("red"), None,
+        )
+        .unwrap();
+
+        let rows = feedback_rows(&db, "acct-4");
+        assert_eq!(rows.len(), 2, "both corrections persisted");
+        // rows are DESC by id — newest first
+        assert_eq!(rows[0].1.as_deref(), Some("yellow"),
+            "second correction's previous_value chains from first");
+        assert_eq!(rows[0].2.as_deref(), Some("red"));
+        assert_eq!(rows[1].1.as_deref(), Some("green"),
+            "first correction's previous_value came from account column");
+        assert_eq!(rows[1].2.as_deref(), Some("yellow"));
+    }
+
+    #[test]
+    fn correction_action_parse_rejects_invalid() {
+        assert!(CorrectionAction::parse("confirmed").is_ok());
+        assert!(CorrectionAction::parse("annotated").is_ok());
+        assert!(CorrectionAction::parse("corrected").is_ok());
+        assert!(CorrectionAction::parse("").is_err());
+        assert!(CorrectionAction::parse("CONFIRMED").is_err());
+        assert!(CorrectionAction::parse("nope").is_err());
+    }
+
+    #[test]
+    fn is_health_affecting_field_covers_known_surface() {
+        assert!(is_health_affecting_field("arr"));
+        assert!(is_health_affecting_field("lifecycle"));
+        assert!(is_health_affecting_field("health"));
+        assert!(is_health_affecting_field("renewal_date"));
+        assert!(!is_health_affecting_field("state_of_play"));
+        assert!(!is_health_affecting_field("watch_list"));
     }
 }

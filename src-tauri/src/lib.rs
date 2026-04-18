@@ -857,6 +857,8 @@ pub fn run() {
             // I529: Intelligence Quality Feedback
             commands::submit_intelligence_feedback,
             commands::get_entity_feedback,
+            // DOS-41: Consolidated intelligence correction
+            commands::submit_intelligence_correction,
             // I645: Feedback & Suppression Diagnostics
             commands::get_feedback_diagnostics,
         ])
