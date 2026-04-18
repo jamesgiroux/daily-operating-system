@@ -1536,23 +1536,43 @@ pub async fn archive_low_priority_emails(state: &AppState) -> Result<usize, Stri
     Ok(archived)
 }
 
+/// DOS-226 (Codex finding 2): bound for `rollback_stale_pending_retry`.
+/// Any `pending_retry` row older than this is assumed to belong to a
+/// crashed or never-finalized refresh from a previous process instance.
+/// 10 minutes comfortably exceeds the p99 refresh duration even with slow
+/// PTY enrichment while still recovering before the user retries again.
+const PENDING_RETRY_STALE_AFTER_SECS: i64 = 600;
+
 /// Refresh emails independently without re-running the full /today pipeline (I20).
 ///
 /// DOS-31 / DOS-226: Manual refresh is a user signal that they want previously
-/// failed enrichments retried. The retry is rollback-safe:
+/// failed enrichments retried. The retry is rollback-safe and crash-safe:
 ///
-/// 1. Mark `failed` rows as `pending_retry` (keeps `enrichment_attempts`
-///    intact; UI still counts them as failed so the Retry notice stays
-///    visible while the refresh is in flight).
-/// 2. Run the Gmail refresh + enrichment pipeline.
-/// 3. On success: transition `pending_retry -> pending` and zero
-///    `enrichment_attempts` so enrichment picks them up.
-/// 4. On failure: transition `pending_retry -> failed`, preserving the
-///    original failed state so the Retry notice reappears.
+/// 1. Recover any `pending_retry` rows stranded by a prior crashed refresh
+///    back to `failed` (Codex finding 2). Without this step, a crash between
+///    `mark_failed_for_retry` and finalize/rollback would orphan rows in
+///    `pending_retry` forever: stats would count them failed, but the count
+///    query in `retry_failed_emails` (matching `failed` only) would return
+///    0 and the refresh would never re-run on them.
+/// 2. Allocate a fresh `batch_id` and mark `failed` rows `pending_retry`
+///    under that batch. Keeps `enrichment_attempts` intact; the UI still
+///    counts them as failed so the Retry notice stays visible while the
+///    refresh is in flight.
+/// 3. Run the Gmail refresh + enrichment pipeline. Inside the orchestrator
+///    the batch is promoted to `pending` with `enrichment_attempts = 0`
+///    *after* Gmail fetch success and *before* enrichment runs — so the
+///    enrichment pass actually processes the retried rows (Codex finding 1).
+/// 4. On any error surfaced from the refresh, roll back this batch's
+///    rows to `failed`. Rollback failure is no longer log-only: it
+///    surfaces to the caller so the UI can report the real state
+///    (Codex finding 2).
 ///
 /// Prior behaviour (pre-DOS-226) reset `failed -> pending` with attempts=0
 /// *before* the refresh ran; a refresh failure then left rows looking
-/// healthy when in fact enrichment had never re-run.
+/// healthy when in fact enrichment had never re-run. The initial DOS-226
+/// fix deferred the attempts reset to *after* the refresh returned, which
+/// meant enrichment's `attempts < 3` filter skipped the retried rows
+/// (Codex finding 1).
 pub async fn refresh_emails(
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
@@ -1563,59 +1583,90 @@ pub async fn refresh_emails(
         .clone()
         .ok_or("No configuration loaded")?;
 
-    // DOS-226: Phase 1 — move failed rows into the transitional state. If
-    // this bookkeeping write itself fails we surface the error rather than
-    // silently proceeding; otherwise a schema drift could hide the retry
-    // not running.
+    // Phase 0 — recover stranded rows from any prior crashed refresh
+    // before we stamp a new batch. Silent no-op in the happy path.
+    let recovered = state
+        .db_write(|db| db.rollback_stale_pending_retry(PENDING_RETRY_STALE_AFTER_SECS))
+        .await
+        .map_err(|e| format!("Failed to recover stale pending_retry rows: {e}"))?;
+    if recovered > 0 {
+        log::warn!(
+            "DOS-226: recovered {recovered} stale pending_retry rows (stranded by a prior crashed refresh)"
+        );
+    }
+
+    // Phase 1 — mark failed rows as pending_retry under a new batch_id.
+    let batch_id = uuid::Uuid::new_v4().to_string();
+    let batch_id_for_mark = batch_id.clone();
     let marked = state
-        .db_write(|db| db.mark_failed_for_retry())
+        .db_write(move |db| db.mark_failed_for_retry(&batch_id_for_mark))
         .await
         .map_err(|e| format!("Failed to mark failed emails for retry: {e}"))?;
     if marked > 0 {
-        log::info!("DOS-226: marked {marked} failed emails as pending_retry");
+        log::info!(
+            "DOS-226: marked {marked} failed emails as pending_retry under batch {batch_id}"
+        );
     }
 
     let state_clone = state.clone();
     let workspace_path = config.workspace_path.clone();
+    let batch_id_for_exec = batch_id.clone();
 
-    // Phase 2 — run the refresh. We capture its outcome so we can finalize
-    // or roll back the transitional state regardless of how it ends.
+    // Phase 2 — run the refresh. The orchestrator will finalize our batch
+    // mid-run (after Gmail fetch succeeds, before enrichment) so the
+    // retried rows are eligible for the enrichment pass that just started.
     let refresh_outcome: Result<(), String> = tauri::async_runtime::spawn(async move {
         let workspace = std::path::Path::new(&workspace_path);
         let executor = crate::executor::Executor::new(state_clone, app_handle);
-        executor.execute_email_refresh(workspace).await
+        executor
+            .execute_email_refresh_with_retry_batch(workspace, Some(&batch_id_for_exec))
+            .await
     })
     .await
     .map_err(|e| format!("Email refresh task failed: {}", e))
     .and_then(|inner| inner);
 
-    // Phase 3 — finalize or roll back. These writes are best-effort-logged
-    // only when `marked == 0` (nothing to clean up); otherwise any failure
-    // here is itself user-visible because it leaves the state inconsistent.
+    // Phase 3 — on error, roll back this batch's rows. Success path is
+    // already finalized inside the orchestrator (see Codex finding 1).
+    // We still defensively finalize on the success path to clean up any
+    // pending_retry rows that predate the Gmail-fetch-success hook
+    // (shouldn't happen now, but cheap insurance).
     match &refresh_outcome {
         Ok(_) => {
             if marked > 0 {
-                let promoted = state
-                    .db_write(|db| db.finalize_pending_retry_success())
+                let batch_id_for_finalize = batch_id.clone();
+                let residual = state
+                    .db_write(move |db| {
+                        db.finalize_pending_retry_success(&batch_id_for_finalize)
+                    })
                     .await
                     .map_err(|e| {
                         format!("Refresh succeeded but retry finalize failed: {e}")
                     })?;
-                log::info!(
-                    "DOS-226: refresh succeeded, promoted {promoted} pending_retry -> pending"
-                );
+                if residual > 0 {
+                    log::warn!(
+                        "DOS-226: finalized {residual} residual pending_retry rows in batch {batch_id} (orchestrator should have handled these mid-run)"
+                    );
+                }
             }
         }
         Err(refresh_err) => {
             if marked > 0 {
-                match state.db_write(|db| db.rollback_pending_retry()).await {
-                    Ok(rolled) => log::warn!(
-                        "DOS-226: refresh failed ({refresh_err}); rolled back {rolled} pending_retry -> failed"
-                    ),
-                    Err(e) => log::error!(
-                        "DOS-226: refresh failed AND rollback failed: refresh={refresh_err}, rollback={e}"
-                    ),
-                }
+                // Codex finding 2: rollback failure MUST surface. Log-only
+                // previously orphaned rows in pending_retry.
+                let batch_id_for_rollback = batch_id.clone();
+                let rolled = state
+                    .db_write(move |db| db.rollback_pending_retry(&batch_id_for_rollback))
+                    .await
+                    .map_err(|e| {
+                        log::error!(
+                            "DOS-226: refresh failed AND rollback failed: refresh={refresh_err}, rollback={e}"
+                        );
+                        format!("Email refresh failed ({refresh_err}); rollback also failed ({e}). Retry state is inconsistent.")
+                    })?;
+                log::warn!(
+                    "DOS-226: refresh failed ({refresh_err}); rolled back {rolled} pending_retry rows in batch {batch_id}"
+                );
             }
         }
     }
@@ -1637,29 +1688,24 @@ pub async fn retry_failed_emails(
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<usize, String> {
-    let failed_before: usize = state
-        .db_read(|db| {
-            db.conn_ref()
-                .query_row(
-                    "SELECT COUNT(*) FROM emails WHERE enrichment_state = 'failed' AND resolved_at IS NULL",
-                    [],
-                    |row| row.get::<_, i64>(0),
-                )
-                .map(|n| n as usize)
-                .map_err(|e| format!("Failed to count failed emails: {e}"))
-        })
+    // DOS-226 (Codex finding 2): include `pending_retry` in the retriable
+    // count so rows orphaned by a prior crashed refresh don't silently
+    // drop to "nothing to retry". The refresh's phase-0 recovery will
+    // roll them back to `failed` before the new batch is stamped.
+    let retriable_before: usize = state
+        .db_read(|db| db.count_retriable_emails())
         .await?;
 
-    if failed_before == 0 {
-        log::info!("DOS-226: retry_failed_emails called with no failed rows; no-op");
+    if retriable_before == 0 {
+        log::info!("DOS-226: retry_failed_emails called with no retriable rows; no-op");
         return Ok(0);
     }
 
     log::info!(
-        "DOS-226: retry_failed_emails starting; {failed_before} failed rows will be retried"
+        "DOS-226: retry_failed_emails starting; {retriable_before} failed/pending_retry rows will be retried"
     );
     refresh_emails(state, app_handle).await?;
-    Ok(failed_before)
+    Ok(retriable_before)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

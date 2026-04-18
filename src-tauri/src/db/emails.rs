@@ -661,58 +661,134 @@ impl ActionDb {
     }
 
     /// DOS-226: Transition `failed` emails to the transitional `pending_retry`
-    /// state while a user-initiated retry is in flight.
+    /// state while a user-initiated retry is in flight. Stamps `retry_batch_id`
+    /// and `retry_started_at` so concurrent refreshes and crash-recovery can
+    /// tell this batch's rows apart from any rows stranded by a prior run
+    /// (Codex finding 2).
     ///
-    /// Unlike a direct `failed -> pending` reset (the old behaviour), this
-    /// keeps `enrichment_attempts` intact so we can roll back cleanly if
-    /// the subsequent Gmail refresh fails, and the UI failed-count query
+    /// Unlike a direct `failed -> pending` reset (the pre-DOS-226 behaviour),
+    /// this keeps `enrichment_attempts` intact so we can roll back cleanly
+    /// if the subsequent Gmail refresh fails, and the UI failed-count query
     /// continues to include these rows so the "Retry" notice stays visible
     /// until the refresh outcome is known.
     ///
     /// Returns the number of rows transitioned.
-    pub fn mark_failed_for_retry(&self) -> Result<usize, String> {
+    pub fn mark_failed_for_retry(&self, batch_id: &str) -> Result<usize, String> {
         let now = Utc::now().to_rfc3339();
         self.conn
             .execute(
-                "UPDATE emails SET enrichment_state = 'pending_retry', updated_at = ?1
+                "UPDATE emails
+                 SET enrichment_state = 'pending_retry',
+                     retry_batch_id = ?1,
+                     retry_started_at = ?2,
+                     updated_at = ?2
                  WHERE enrichment_state = 'failed' AND resolved_at IS NULL",
-                params![now],
+                params![batch_id, now],
             )
             .map_err(|e| format!("Failed to mark emails for retry: {e}"))
     }
 
-    /// DOS-226: Promote `pending_retry` rows to `pending` after the Gmail
-    /// refresh succeeded. Zeroes `enrichment_attempts` so the enrichment
-    /// pipeline picks them up on the next pass instead of skipping them for
-    /// having reached the 3-attempt cap.
+    /// DOS-226 (Codex finding 1): Promote this batch's `pending_retry` rows
+    /// to `pending` and zero `enrichment_attempts` so the enrichment pipeline
+    /// can pick them up. MUST be called BEFORE the enrichment pass that is
+    /// meant to process the retried rows — `get_pending_enrichment` filters
+    /// `enrichment_attempts < 3`, so rows left in `pending_retry` at attempts=3
+    /// are skipped entirely by enrichment. Pre-fix the UI reported "retrying,
+    /// cleared" while zero work happened.
+    ///
+    /// Scoped to `batch_id` (Codex finding 2) so a finalize from refresh A
+    /// cannot accidentally adopt rows owned by refresh B.
     ///
     /// Returns the number of rows transitioned.
-    pub fn finalize_pending_retry_success(&self) -> Result<usize, String> {
+    pub fn finalize_pending_retry_success(&self, batch_id: &str) -> Result<usize, String> {
         let now = Utc::now().to_rfc3339();
         self.conn
             .execute(
-                "UPDATE emails SET enrichment_state = 'pending', enrichment_attempts = 0, updated_at = ?1
-                 WHERE enrichment_state = 'pending_retry' AND resolved_at IS NULL",
-                params![now],
+                "UPDATE emails
+                 SET enrichment_state = 'pending',
+                     enrichment_attempts = 0,
+                     retry_batch_id = NULL,
+                     retry_started_at = NULL,
+                     updated_at = ?1
+                 WHERE enrichment_state = 'pending_retry'
+                   AND retry_batch_id = ?2
+                   AND resolved_at IS NULL",
+                params![now, batch_id],
             )
             .map_err(|e| format!("Failed to finalize retry (success): {e}"))
     }
 
-    /// DOS-226: Roll `pending_retry` rows back to `failed` after the Gmail
-    /// refresh failed. The user's "Retry" notice reappears and they can try
-    /// again. `enrichment_attempts` was never touched, so the row returns
-    /// to exactly its pre-retry state.
+    /// DOS-226: Roll this batch's `pending_retry` rows back to `failed` after
+    /// the Gmail refresh failed. The user's "Retry" notice reappears and they
+    /// can try again. `enrichment_attempts` was never touched, so the row
+    /// returns to exactly its pre-retry state. Scoped to `batch_id` (Codex
+    /// finding 2) so concurrent refreshes cannot clobber each other.
     ///
     /// Returns the number of rows transitioned.
-    pub fn rollback_pending_retry(&self) -> Result<usize, String> {
+    pub fn rollback_pending_retry(&self, batch_id: &str) -> Result<usize, String> {
         let now = Utc::now().to_rfc3339();
         self.conn
             .execute(
-                "UPDATE emails SET enrichment_state = 'failed', updated_at = ?1
-                 WHERE enrichment_state = 'pending_retry' AND resolved_at IS NULL",
-                params![now],
+                "UPDATE emails
+                 SET enrichment_state = 'failed',
+                     retry_batch_id = NULL,
+                     retry_started_at = NULL,
+                     updated_at = ?1
+                 WHERE enrichment_state = 'pending_retry'
+                   AND retry_batch_id = ?2
+                   AND resolved_at IS NULL",
+                params![now, batch_id],
             )
             .map_err(|e| format!("Failed to roll back retry: {e}"))
+    }
+
+    /// DOS-226 (Codex finding 2): Roll back `pending_retry` rows stranded by
+    /// a crashed or never-finalized refresh. Called at the start of every
+    /// refresh so stale batches from a previous process are recovered before
+    /// the current batch is stamped.
+    ///
+    /// A row counts as "stale" if it's in `pending_retry` and either:
+    /// - has no `retry_batch_id` (migrated from the pre-batching schema, or
+    ///   a write crashed between the state flip and the batch_id stamp), or
+    /// - its `retry_started_at` is older than `stale_after_seconds`.
+    ///
+    /// Returns the number of rows rolled back to `failed`.
+    pub fn rollback_stale_pending_retry(&self, stale_after_seconds: i64) -> Result<usize, String> {
+        let now = Utc::now();
+        let cutoff = now - chrono::Duration::seconds(stale_after_seconds);
+        let now_iso = now.to_rfc3339();
+        let cutoff_iso = cutoff.to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE emails
+                 SET enrichment_state = 'failed',
+                     retry_batch_id = NULL,
+                     retry_started_at = NULL,
+                     updated_at = ?1
+                 WHERE enrichment_state = 'pending_retry'
+                   AND resolved_at IS NULL
+                   AND (retry_batch_id IS NULL OR retry_started_at IS NULL OR retry_started_at < ?2)",
+                params![now_iso, cutoff_iso],
+            )
+            .map_err(|e| format!("Failed to roll back stale retries: {e}"))
+    }
+
+    /// DOS-226 (Codex finding 2): Count rows that are either `failed` or
+    /// stuck in `pending_retry`. Used by `retry_failed_emails` so a user
+    /// clicking Retry still triggers a refresh even if all their rows
+    /// were orphaned by a prior crashed refresh (the pre-fix count
+    /// matched only `failed` and silently returned 0 in this case).
+    pub fn count_retriable_emails(&self) -> Result<usize, String> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM emails
+                 WHERE enrichment_state IN ('failed', 'pending_retry')
+                   AND resolved_at IS NULL",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|n| n as usize)
+            .map_err(|e| format!("Failed to count retriable emails: {e}"))
     }
 
     /// Mark an email as enriched, setting `enriched_at` to now (I652 Phase 5).
