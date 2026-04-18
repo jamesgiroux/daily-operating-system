@@ -96,6 +96,39 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0076](0076-brand-identity.md) | Brand identity — personal computing reclaimed, material color families, asterisk mark, DOS heritage | Accepted |
 | [0078](0078-nomic-embed-text-model-switch.md) | Switch embedding model to nomic-embed-text-v1.5 via fastembed — supersedes ADR-0074 model choice | Accepted |
 | [0079](0079-role-presets.md) | Role presets replace Kits and configurable metadata — 8 shipped presets + community JSON format (supersedes ADR-0046 Kits/Intelligence, ADR-0051) | Accepted |
+| [0080](0080-signal-intelligence-architecture.md) | Signal intelligence architecture with Bayesian fusion | Proposed |
+| [0081](0081-event-driven-meeting-intelligence.md) | Event-driven meeting intelligence generation | Accepted |
+| [0082](0082-entity-generic-prep-pipeline.md) | Entity-generic prep pipeline with four-phase strategy | Accepted |
+| [0083](0083-product-vocabulary.md) | Product vocabulary — user-facing language standard | Proposed |
+| [0084](0084-surface-jobs-to-be-done.md) | Surface jobs-to-be-done across all visible elements | Accepted |
+| [0085](0085-email-as-intelligence-input.md) | Email as intelligence input, not display surface | Accepted |
+| [0086](0086-intelligence-as-shared-service.md) | Intelligence as shared service for all surfaces | Accepted |
+| [0087](0087-entity-hierarchy-intelligence.md) | Entity hierarchy intelligence with portfolio surfaces | Accepted |
+| [0088](0088-people-relationship-network-intelligence.md) | People relationship network with graph model | Accepted |
+| [0089](0089-user-entity-and-professional-context.md) | User entity and professional context layer | Accepted |
+| [0090](0090-user-entity-page-architecture.md) | User entity page architecture and context surfaces | Accepted |
+| [0091](0091-intelligence-provider-abstraction.md) | IntelligenceProvider abstraction for multi-LLM support | Accepted |
+| [0092](0092-data-security-at-rest-and-operational-hardening.md) | Data security at rest and operational hardening | Accepted |
+| [0093](0093-prompt-injection-hardening.md) | Prompt injection hardening for untrusted content | Accepted |
+| [0094](0094-audit-log-and-enterprise-observability.md) | Audit log and enterprise observability | Accepted |
+| [0095](0095-dual-mode-context-architecture.md) | Dual-mode context architecture — local + Glean | Accepted |
+| [0096](0096-glean-mode-local-footprint.md) | Glean mode local footprint and caching strategy | Accepted |
+| [0097](0097-account-health-scoring-architecture.md) | Account health scoring architecture | Proposed |
+| [0098](0098-data-governance-source-aware-lifecycle.md) | Data governance — source-aware lifecycle | Proposed |
+| [0099](0099-remote-first-server-canonical-architecture.md) | Remote-first architecture — server-canonical | Withdrawn |
+| [0100](0100-glean-first-intelligence-architecture.md) | Glean-first intelligence architecture | Accepted |
+| [0101](0101-service-boundary-enforcement.md) | Service boundary enforcement and mutation audit | Accepted |
+| [0102](0102-abilities-as-runtime-contract.md) | Abilities as the runtime contract (v1.4.0 foundation) | Proposed |
+| [0103](0103-maintenance-ability-safety-constraints.md) | Maintenance ability safety constraints (v1.4.0) | Proposed |
+| [0104](0104-execution-mode-and-mode-aware-services.md) | ExecutionMode and mode-aware services (v1.4.0 prerequisite) | Proposed |
+| [0105](0105-provenance-as-first-class-output.md) | Provenance as first-class output (v1.4.0 trust/attribution/reproducibility) | Proposed |
+| [0106](0106-prompt-fingerprinting-and-provider-interface.md) | Prompt fingerprinting and IntelligenceProvider extension (v1.4.0) | Proposed |
+| [0107](0107-source-taxonomy-alignment.md) | Source taxonomy alignment — canonical DataSource enum (v1.4.0) | Proposed |
+| [0108](0108-provenance-rendering-and-privacy.md) | Provenance rendering, per-surface rules, and privacy (v1.4.0) | Proposed |
+| [0109](0109-temporal-primitives-in-the-entity-graph.md) | Temporal primitives — trajectory, engagement, role progression (v1.4.0) | Proposed |
+| [0110](0110-evaluation-harness-for-abilities.md) | Evaluation harness — fixtures, scoring, regression classification (v1.4.0) | Proposed |
+| [0111](0111-surface-independent-ability-invocation.md) | Surface-independent ability invocation — Tauri/MCP/worker bridges (v1.4.0) | Proposed |
+| [0112](0112-migration-strategy-parallel-run-and-cutover.md) | Migration strategy — parallel run, cutover, substrate migrations (v1.4.0) | Proposed |
 
 ---
 
