@@ -190,14 +190,24 @@ export default function AccountDetailPage() {
   const renderContextView = () => {
     // Freshness fragment helpers derived from existing data. No new schema.
     const manifest = intelligence?.sourceManifest ?? [];
-    const transcriptCount = manifest.filter((m) => (m.format ?? "").toLowerCase().includes("transcript")).length;
+    // DOS-233 Codex fix: prefer the backend COUNT(*) when available; fall
+    // back to the manifest-derived count for older snapshots.
+    const transcriptCount =
+      detail.transcriptTotalCount
+      ?? manifest.filter((m) => (m.format ?? "").toLowerCase().includes("transcript")).length;
     // DOS-233: About-this-dossier counts previously used `acct.events` (lifecycle
     // events — churn/renewal records) instead of meetings, producing obviously
     // wrong figures like "0 meetings on record" on active accounts. The source
-    // of truth for meetings linked to the account is `detail.recentMeetings`,
-    // which is populated from `meeting_entities` joined with `meetings`
-    // (see db/accounts.rs::get_meetings_for_account_with_prep).
-    const meetingCount = detail.recentMeetings?.length ?? 0;
+    // of truth for meetings linked to the account is `meeting_entities` joined
+    // with `meetings` (see db/accounts.rs).
+    //
+    // DOS-233 Codex fix: `recentMeetings` is capped at 10 for preview rendering,
+    // so an account with 47 meetings previously stalled at "10 meetings on
+    // record". The backend now exposes `meetingTotalCount` /
+    // `transcriptTotalCount` (unbounded COUNT(*) queries). Fall back to
+    // `recentMeetings.length` only when the total is not yet available.
+    const meetingCount =
+      detail.meetingTotalCount ?? detail.recentMeetings?.length ?? 0;
     const thesisFragments: string[] = [];
     if (meetingCount) thesisFragments.push(`Synthesized from ${meetingCount} meeting${meetingCount === 1 ? "" : "s"}`);
     if (transcriptCount) thesisFragments.push(`${transcriptCount} transcript${transcriptCount === 1 ? "" : "s"}`);
@@ -361,14 +371,13 @@ export default function AccountDetailPage() {
               footprint={detail.technicalFootprint}
               variant="chapter"
               featureAdoption={featureAdoption}
-              // DOS-231: gap rows expose a "Capture now" affordance. The
-              // structured editor for `account_technical_footprint` lands
-              // with DOS-207 in v1.2.2; for now we log the intent so the
-              // pathway is visible without silently accepting writes.
-              onCaptureGap={(field) => {
-                // eslint-disable-next-line no-console
-                console.info(`[DOS-231] Capture requested for technical field: ${field}. Structured editor lands with DOS-207.`);
-              }}
+              // DOS-231: gap rows expose a "Capture now" affordance. Until
+              // the structured editor lands with DOS-207, we prompt inline
+              // for the value, persist through
+              // `update_technical_footprint_field`, and refresh. This gives
+              // the Intelligence Loop a real signal + updated footprint
+              // immediately instead of a silent console log.
+              onCaptureGap={(field) => { void page.captureTechnicalFootprintField(field); }}
             />
           </MarginSection>
         )}
