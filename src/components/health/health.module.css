@@ -1,0 +1,340 @@
+/**
+ * Health & Outlook chapter styles (DOS-203).
+ *
+ * Mirrors `.docs/mockups/account-health-outlook-globex.html` and
+ * `.docs/mockups/account-health-fine-globex.html`.
+ *
+ * Uses existing design tokens from design-tokens.css; no new tokens.
+ */
+
+/* ═════════ TRIAGE HEADER ═════════ */
+.triageHeader {
+  padding-top: var(--space-4xl, 72px);
+  padding-bottom: var(--space-xl, 32px);
+}
+.triageRule {
+  border: none;
+  border-top: 1px solid var(--color-rule-heavy);
+  margin-bottom: var(--space-lg, 24px);
+}
+.triageTitleRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md, 16px);
+}
+.triageTitle {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+.triageCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-spice-terracotta);
+}
+
+/* ═════════ TRIAGE CARD ═════════ */
+.triageCard {
+  display: grid;
+  grid-template-columns: 3px 1fr auto;
+  gap: var(--space-xl, 32px);
+  padding: var(--space-xl, 32px) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: start;
+}
+.triageCard:last-child { border-bottom: none; }
+
+.triageSpine { width: 3px; align-self: stretch; border-radius: 2px; }
+.spineUrgent { background: var(--color-spice-terracotta); }
+.spineSoon { background: var(--color-spice-turmeric); }
+.spineGap { background: var(--color-garden-larkspur); }
+.spineDivergence { background: var(--color-spice-saffron); }
+.spineMeta { background: var(--color-text-tertiary); opacity: 0.5; }
+
+.triageBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md, 16px);
+  min-width: 0;
+}
+.triageKind {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.kindUrgent { color: var(--color-spice-terracotta); }
+.kindSoon { color: var(--color-spice-turmeric); }
+.kindGap { color: var(--color-garden-larkspur); }
+.kindDivergence { color: var(--color-spice-saffron); }
+.kindMeta { color: var(--color-text-tertiary); }
+
+.triageHeadline {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--color-text-primary);
+}
+.triageEvidence {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 620px;
+}
+.triageEvidence strong { color: var(--color-text-primary); font-weight: 500; }
+
+.triageSources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding-top: var(--space-sm, 8px);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  align-items: center;
+}
+.sourceTagLocal {
+  background: rgba(30, 37, 48, 0.04);
+  color: var(--color-text-secondary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.sourceTagGlean {
+  background: rgba(201, 162, 39, 0.12);
+  color: var(--color-spice-turmeric);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ═════════ DIVERGENCE SUB-HEADER ═════════ */
+.divergenceHeader {
+  padding-top: var(--space-2xl, 48px);
+  padding-bottom: var(--space-md, 16px);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md, 16px);
+  border-top: 1px solid var(--color-rule-heavy);
+  margin-top: var(--space-2xl, 48px);
+  flex-wrap: wrap;
+}
+.divergenceLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-spice-saffron);
+  font-weight: 600;
+}
+.divergenceNote {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+}
+
+/* ═════════ OUTLOOK GRID ═════════ */
+.outlookGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2xl, 48px);
+  padding: var(--space-xl, 32px);
+  background: var(--color-paper-warm-white, #faf8f6);
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+  margin-top: var(--space-lg, 24px);
+}
+.outlookBlockLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs, 4px);
+}
+.outlookBlockValue {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.1;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-sm, 8px);
+  letter-spacing: -0.015em;
+}
+.outlookValueLow { color: var(--color-spice-saffron); }
+.outlookValueHigh { color: var(--color-garden-sage); }
+.outlookValueNeutral { color: var(--color-spice-turmeric); }
+.outlookBlockDetail {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 900px) {
+  .outlookGrid { grid-template-columns: 1fr; }
+}
+
+/* ═════════ SUPPORTING TENSION ═════════ */
+.supportingTension {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2xl, 48px);
+  padding-bottom: var(--space-2xl, 48px);
+  border-bottom: 1px solid var(--color-rule-light);
+  padding-top: var(--space-lg, 24px);
+}
+.tensionBlockLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs, 4px);
+}
+.tensionBlockValue {
+  font-family: var(--font-serif);
+  font-size: 36px;
+  font-weight: 400;
+  line-height: 1;
+  margin-bottom: var(--space-xs, 4px);
+}
+.tensionValueGreen { color: var(--color-garden-sage); }
+.tensionValueYellow { color: var(--color-spice-saffron); }
+.tensionValueRed { color: var(--color-spice-terracotta); }
+.tensionValueNeutral { color: var(--color-text-secondary); }
+.tensionBlockMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+.tensionNote {
+  padding-top: var(--space-lg, 24px);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 620px;
+}
+
+@media (max-width: 720px) {
+  .supportingTension { grid-template-columns: 1fr; }
+}
+
+/* ═════════ META: About this intelligence ═════════ */
+.metaCard {
+  background: rgba(30, 37, 48, 0.04);
+  border-left: 2px solid var(--color-text-tertiary);
+  border-radius: 0 10px 10px 0;
+  padding: var(--space-lg, 24px) var(--space-xl, 32px);
+  margin-top: var(--space-md, 16px);
+}
+.metaCardLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs, 4px);
+}
+.metaCardText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  max-width: 680px;
+}
+.metaCardProse {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 680px;
+}
+
+/* ═════════ ON-TRACK (fine state) ═════════ */
+.ontrackBody {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  max-width: 720px;
+  margin-top: var(--space-lg, 24px);
+  margin-bottom: var(--space-3xl, 56px);
+}
+.peerStrip {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: var(--space-xl, 32px);
+  align-items: center;
+  padding: var(--space-xl, 32px) 0;
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+  margin-top: var(--space-2xl, 48px);
+}
+.peerNumber {
+  font-family: var(--font-serif);
+  font-size: 72px;
+  font-weight: 400;
+  color: var(--color-garden-sage);
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+.peerLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  max-width: 160px;
+  line-height: 1.5;
+}
+.peerContext {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 560px;
+}
+.peerContext strong { color: var(--color-text-primary); font-weight: 500; }
+
+@media (max-width: 720px) {
+  .peerStrip { grid-template-columns: 1fr; text-align: left; }
+}
+
+/* ═════════ OUTLOOK PULL-QUOTE ═════════ */
+.outlookPullQuote {
+  margin: var(--space-xl, 32px) 0 0;
+  padding: var(--space-lg, 24px) var(--space-xl, 32px);
+  background: rgba(201, 162, 39, 0.08);
+  border-left: 3px solid var(--color-spice-turmeric);
+  border-radius: 0 10px 10px 0;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  max-width: 680px;
+}
+.outlookPullQuote strong { font-style: normal; font-weight: 500; }
