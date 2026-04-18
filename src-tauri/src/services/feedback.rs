@@ -179,6 +179,44 @@ pub fn submit_intelligence_correction(
     corrected_value: Option<&str>,
     annotation: Option<&str>,
 ) -> Result<(), String> {
+    // Authoritative backend validation. The Tauri IPC boundary is
+    // reachable by any caller, not just the useIntelligenceCorrection
+    // hook — enforce action-specific payload shape here so invalid
+    // submissions cannot write rows, penalize Bayesian weights, or
+    // emit correction signals through a direct IPC call.
+    if entity_id.trim().is_empty() {
+        return Err("entity_id is required".to_string());
+    }
+    if entity_type.trim().is_empty() {
+        return Err("entity_type is required".to_string());
+    }
+    if field.trim().is_empty() {
+        return Err("field is required".to_string());
+    }
+    match action {
+        CorrectionAction::Corrected => {
+            let ok = corrected_value
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            if !ok {
+                return Err(
+                    "corrected action requires a non-empty corrected_value".to_string(),
+                );
+            }
+        }
+        CorrectionAction::Annotated => {
+            let ok = annotation.map(|v| !v.trim().is_empty()).unwrap_or(false);
+            if !ok {
+                return Err(
+                    "annotated action requires a non-empty annotation".to_string(),
+                );
+            }
+        }
+        CorrectionAction::Confirmed => {
+            // Confirmed carries neither corrected_value nor annotation.
+        }
+    }
+
     // Resolve the source that produced this intelligence so we can attribute
     // Bayesian weight adjustments + tag the feedback row.
     let prior_source = resolve_intelligence_source(db, entity_id, entity_type, field);
@@ -559,5 +597,90 @@ mod correction_tests {
         assert!(is_health_affecting_field("renewal_date"));
         assert!(!is_health_affecting_field("state_of_play"));
         assert!(!is_health_affecting_field("watch_list"));
+    }
+
+    /// DOS-41 backend hardening: invalid IPC payloads must be rejected
+    /// before any DB write, signal emission, or Bayesian weight update.
+    /// The hook has client-side guards but those are not the boundary.
+    #[test]
+    fn corrected_without_corrected_value_is_rejected() {
+        let db = test_db();
+        seed_account(&db, "acct-1");
+
+        let err = submit_intelligence_correction(
+            &db,
+            "acct-1",
+            "account",
+            "state_of_play",
+            CorrectionAction::Corrected,
+            None,
+            None,
+        )
+        .expect_err("corrected requires corrected_value");
+        assert!(err.contains("corrected_value"), "err: {err}");
+        assert!(
+            feedback_rows(&db, "acct-1").is_empty(),
+            "validation rejection must not persist any feedback rows",
+        );
+    }
+
+    #[test]
+    fn corrected_with_whitespace_corrected_value_is_rejected() {
+        let db = test_db();
+        seed_account(&db, "acct-1");
+
+        let err = submit_intelligence_correction(
+            &db,
+            "acct-1",
+            "account",
+            "state_of_play",
+            CorrectionAction::Corrected,
+            Some("   "),
+            None,
+        )
+        .expect_err("whitespace corrected_value is not valid");
+        assert!(err.contains("corrected_value"), "err: {err}");
+        assert!(feedback_rows(&db, "acct-1").is_empty());
+    }
+
+    #[test]
+    fn annotated_without_annotation_is_rejected() {
+        let db = test_db();
+        seed_account(&db, "acct-1");
+
+        let err = submit_intelligence_correction(
+            &db,
+            "acct-1",
+            "account",
+            "state_of_play",
+            CorrectionAction::Annotated,
+            None,
+            None,
+        )
+        .expect_err("annotated requires annotation");
+        assert!(err.contains("annotation"), "err: {err}");
+        assert!(feedback_rows(&db, "acct-1").is_empty());
+    }
+
+    #[test]
+    fn empty_required_fields_are_rejected() {
+        let db = test_db();
+        for (eid, etype, field) in &[
+            ("", "account", "state_of_play"),
+            ("acct-1", "", "state_of_play"),
+            ("acct-1", "account", ""),
+        ] {
+            let err = submit_intelligence_correction(
+                &db,
+                eid,
+                etype,
+                field,
+                CorrectionAction::Confirmed,
+                None,
+                None,
+            )
+            .expect_err("required fields must be non-empty");
+            assert!(!err.is_empty());
+        }
     }
 }
