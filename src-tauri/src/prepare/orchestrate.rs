@@ -1421,6 +1421,27 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
 /// Replaces refresh_emails.py. Writes: _today/data/email-refresh-directive.json
 pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), ExecutionError> {
+    refresh_emails_with_retry_batch(state, workspace, None).await
+}
+
+/// DOS-226 (Codex finding 1): Email refresh variant that understands an
+/// in-flight user-initiated retry batch.
+///
+/// When `retry_batch_id` is Some, this function promotes the batch's
+/// `pending_retry` rows to `pending` with `enrichment_attempts = 0`
+/// *after* the Gmail fetch succeeds and *before* the enrichment pass
+/// runs. This ordering is load-bearing: `get_pending_enrichment` filters
+/// `enrichment_attempts < 3`, so rows left in `pending_retry` at the
+/// 3-attempt cap would be skipped by the enrichment pass they're meant
+/// to participate in — the bug Codex caught.
+///
+/// When `retry_batch_id` is None (auto-poll, /today pipeline) the
+/// function behaves exactly like the pre-DOS-226 refresh.
+pub async fn refresh_emails_with_retry_batch(
+    state: &AppState,
+    workspace: &Path,
+    retry_batch_id: Option<&str>,
+) -> Result<(), ExecutionError> {
     // I567: Permit moved to wrap only the PTY enrichment call below.
     // Gmail fetch, DB persistence, thread update, signal emission run without the permit.
 
@@ -1544,13 +1565,39 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
             log::warn!("DOS-31: failed to record last_successful_fetch_at: {}", e);
         }
 
-        // DOS-31 / DOS-226: `services::emails::refresh_emails` marks failed rows
-        // as `pending_retry` before we reach this point and will finalize them
-        // to `pending` only after the fetch above (and the enrichment below)
-        // completes without a top-level error. Emails that genuinely have
-        // deterministic issues will fail again and land back in `failed`, but
-        // the rollback-safe transition means a transient Gmail fetch failure
-        // no longer silently clears the user-visible Retry notice.
+        // DOS-226 (Codex finding 1): promote this retry batch's rows
+        // *before* enrichment runs below. `get_pending_enrichment` filters
+        // `enrichment_attempts < 3`; leaving rows at attempts=3 in
+        // `pending_retry` means the enrichment pass immediately below
+        // skips the very rows the user asked to retry. Pre-fix, the
+        // finalize lived in `services::emails::refresh_emails` and fired
+        // *after* orchestrate returned — which is why the UI reported
+        // "retrying, cleared" while zero enrichment work happened.
+        if let Some(batch_id) = retry_batch_id {
+            match db.finalize_pending_retry_success(batch_id) {
+                Ok(promoted) if promoted > 0 => {
+                    log::info!(
+                        "DOS-226: Gmail fetch succeeded, promoted {} pending_retry rows to pending for batch {} (attempts reset to 0)",
+                        promoted,
+                        batch_id
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    // Non-fatal to the fetch itself (the data is still
+                    // refreshed), but user retry expectations are violated.
+                    // Log and continue — the service-layer caller sees
+                    // the refresh as "succeeded" and therefore won't roll
+                    // back; the stale-recovery pass on the next refresh
+                    // will clean up anything left behind.
+                    log::error!(
+                        "DOS-226: finalize_pending_retry_success failed for batch {}: {}",
+                        batch_id,
+                        e
+                    );
+                }
+            }
+        }
     }
 
     // I370: Refresh thread positions from sent messages

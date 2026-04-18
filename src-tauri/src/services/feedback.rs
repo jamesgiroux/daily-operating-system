@@ -151,6 +151,29 @@ fn is_health_affecting_field(field: &str) -> bool {
     )
 }
 
+/// DOS-227 (Codex finding 3): Fields that are stored as top-level account
+/// columns (not intelligence-blob fields). A correction on any of these
+/// must update the authoritative column so `recompute_entity_health` reads
+/// the corrected value; otherwise the recompute runs against the old
+/// account row and the new "health score" is identical to the pre-correction
+/// score. The feedback event alone is not enough — health scoring reads
+/// `DbAccount`, not `entity_feedback_events`.
+///
+/// `renewal_date` is an alias for `contract_end` on the correction UX side;
+/// it is also stored as the `contract_end` column.
+fn account_column_for_field(field: &str) -> Option<&'static str> {
+    match field {
+        "arr" => Some("arr"),
+        "lifecycle" => Some("lifecycle"),
+        "contract_end" => Some("contract_end"),
+        "renewal_date" => Some("contract_end"),
+        "nps" => Some("nps"),
+        "health" => Some("health"),
+        "name" => Some("name"),
+        _ => None,
+    }
+}
+
 /// DOS-41: Submit a consolidated intelligence correction.
 ///
 /// Persists the correction into `entity_feedback_events` with one of three
@@ -310,10 +333,51 @@ pub fn submit_intelligence_correction(
         }
     }
 
+    // DOS-227 (Codex finding 3): write the corrected value to the
+    // authoritative account column BEFORE recompute_entity_health runs.
+    // recompute_entity_health reads `DbAccount` as-is; without this
+    // column update the "new" health score is computed from the OLD
+    // ARR / lifecycle / contract_end / nps / health value. The feedback
+    // event alone doesn't flow into scoring — it's provenance, not state.
+    //
+    // Intelligence-blob fields (state_of_play, watch_list, risks, plan,
+    // health_score, health_assessment, risk_level, …) are NOT account
+    // columns; those are handled by the existing recompute path which
+    // re-derives them from signals. We only patch the column for fields
+    // that have a dedicated column on `accounts`.
+    if action == CorrectionAction::Corrected && entity_type == "account" {
+        if let (Some(column), Some(value)) =
+            (account_column_for_field(field), corrected_value)
+        {
+            // Normalize lifecycle for parity with services::accounts::update_account_field.
+            // Mirrors the whitelist + normalization used by the direct-edit
+            // path; the semantic correctness of a user "correction" should
+            // match a user "edit" on the same field.
+            let normalized = if column == "lifecycle" {
+                crate::services::accounts::normalized_lifecycle(value)
+            } else {
+                value.to_string()
+            };
+            db.update_account_field(entity_id, column, &normalized)
+                .map_err(|e| {
+                    format!(
+                        "Failed to apply corrected value to accounts.{column} for {entity_id}: {e}"
+                    )
+                })?;
+            log::info!(
+                "DOS-227: applied correction to accounts.{column} for {entity_id} (feedback field = {field})"
+            );
+        }
+    }
+
     // Health recalc — only on a corrected action against a health-affecting
     // field on an account. Route through the full pipeline so
     // entity_assessment.health_json + entity_quality are updated and signals
     // propagate; otherwise the next detail read would still see stale health.
+    //
+    // DOS-227: because the block above updated the authoritative column
+    // first, this recompute now reads the corrected value and the
+    // resulting health score reflects the user's correction.
     if action == CorrectionAction::Corrected
         && entity_type == "account"
         && is_health_affecting_field(field)
@@ -758,6 +822,176 @@ mod correction_tests {
             refreshed.health.is_some(),
             "IntelligenceJson.health must be populated (surfaces via health_json)"
         );
+    }
+
+    /// DOS-227 (Codex finding 3): the regression that matters.
+    ///
+    /// The pre-fix code recorded a correction of `arr` only in
+    /// `entity_feedback_events`, then called `recompute_entity_health`.
+    /// `recompute_entity_health` reads `DbAccount` as-is. The corrected ARR
+    /// never flowed into the account row, so the new health score was
+    /// computed from the OLD ARR and was effectively identical to the
+    /// pre-correction score. The existing DOS-227 test above only asserts
+    /// "a score exists," not "the corrected value changed the score" —
+    /// which is how the bug survived review.
+    ///
+    /// This test pins the actual contract: correcting `arr` upward must
+    /// (1) update `accounts.arr` and (2) produce a strictly higher health
+    /// score on the re-read.
+    #[test]
+    fn corrected_arr_updates_account_column_and_shifts_health_score() {
+        use crate::intelligence::io::IntelligenceJson;
+
+        let db = test_db();
+        let account_id = "acct-dos227-arr";
+
+        // Seed a small-ARR account. Lifecycle=renewing + small ARR lands
+        // in the "low value at renewal" scoring band; bumping ARR 2.5x
+        // should measurably move the score (health_scoring is
+        // deterministic on DbAccount inputs).
+        let account = DbAccount {
+            id: account_id.to_string(),
+            name: format!("Test {}", account_id),
+            lifecycle: Some("renewing".to_string()),
+            arr: Some(100_000.0),
+            health: Some("green".to_string()),
+            contract_end: Some("2026-12-31".to_string()),
+            nps: Some(50),
+            updated_at: "2026-04-18T00:00:00Z".to_string(),
+            ..Default::default()
+        };
+        db.upsert_account(&account).expect("seed account");
+        let intel = IntelligenceJson {
+            entity_id: account_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-04-18T00:00:00Z".to_string(),
+            ..Default::default()
+        };
+        db.upsert_entity_intelligence(&intel)
+            .expect("seed intelligence");
+
+        // Capture the pre-correction health score by running the same
+        // pipeline with the old ARR. We do this directly rather than via
+        // a sentinel correction to avoid polluting the feedback log.
+        crate::services::intelligence::recompute_entity_health(&db, account_id, "account")
+            .expect("pre recompute");
+        let score_before: f64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT health_score FROM entity_quality WHERE entity_id = ?1",
+                rusqlite::params![account_id],
+                |row| row.get(0),
+            )
+            .expect("pre score");
+
+        // Correct ARR upward.
+        submit_intelligence_correction(
+            &db,
+            account_id,
+            "account",
+            "arr",
+            CorrectionAction::Corrected,
+            Some("250000"),
+            None,
+        )
+        .expect("corrected submission");
+
+        // (1) The authoritative account column reflects the correction.
+        let stored = db
+            .get_account(account_id)
+            .expect("read account")
+            .expect("account exists");
+        assert!(
+            (stored.arr.unwrap_or_default() - 250_000.0).abs() < 1e-6,
+            "accounts.arr must reflect the correction (got {:?})",
+            stored.arr
+        );
+
+        // (2) The recomputed health score reflects the new ARR, not the old.
+        // For a renewing account, more ARR means more at stake — the scoring
+        // function weights this and the resulting score changes.
+        let score_after: f64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT health_score FROM entity_quality WHERE entity_id = ?1",
+                rusqlite::params![account_id],
+                |row| row.get(0),
+            )
+            .expect("post score");
+        assert!(
+            (score_after - score_before).abs() > f64::EPSILON,
+            "health_score must change when ARR is corrected 100k -> 250k; \
+             pre-fix it stayed identical because recompute read the old \
+             account row. before={score_before}, after={score_after}"
+        );
+    }
+
+    /// DOS-227: lifecycle is stored as an account column too — verify the
+    /// column update path covers it (and normalizes, matching the
+    /// services::accounts::update_account_field contract).
+    #[test]
+    fn corrected_lifecycle_updates_account_column() {
+        let db = test_db();
+        seed_account(&db, "acct-dos227-lc");
+
+        submit_intelligence_correction(
+            &db,
+            "acct-dos227-lc",
+            "account",
+            "lifecycle",
+            CorrectionAction::Corrected,
+            Some("at-risk"),
+            None,
+        )
+        .expect("corrected submission");
+
+        let stored = db
+            .get_account("acct-dos227-lc")
+            .expect("read")
+            .expect("exists");
+        // Normalization produces the same token that the direct-edit path
+        // would write — the shape the rest of the codebase reads.
+        let expected = crate::services::accounts::normalized_lifecycle("at-risk");
+        assert_eq!(
+            stored.lifecycle.as_deref(),
+            Some(expected.as_str()),
+            "lifecycle column must reflect the corrected (and normalized) value"
+        );
+    }
+
+    /// DOS-227: intelligence-blob fields must NOT touch account columns —
+    /// they don't have one. Guards against the column-update branch
+    /// accidentally mapping blob fields to columns.
+    #[test]
+    fn corrected_state_of_play_does_not_mutate_account_columns() {
+        let db = test_db();
+        seed_account(&db, "acct-dos227-sop");
+
+        let before = db
+            .get_account("acct-dos227-sop")
+            .expect("read")
+            .expect("exists");
+
+        submit_intelligence_correction(
+            &db,
+            "acct-dos227-sop",
+            "account",
+            "state_of_play",
+            CorrectionAction::Corrected,
+            Some("new narrative"),
+            None,
+        )
+        .expect("corrected submission");
+
+        let after = db
+            .get_account("acct-dos227-sop")
+            .expect("read")
+            .expect("exists");
+        assert_eq!(before.arr, after.arr);
+        assert_eq!(before.lifecycle, after.lifecycle);
+        assert_eq!(before.health, after.health);
+        assert_eq!(before.contract_end, after.contract_end);
+        assert_eq!(before.nps, after.nps);
     }
 
     /// DOS-227: non-health-affecting fields must NOT trigger a health

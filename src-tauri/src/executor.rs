@@ -1273,6 +1273,19 @@ impl Executor {
     /// 5. Emit operation-delivered for frontend refresh
     /// 6. Clean up refresh directive
     pub async fn execute_email_refresh(&self, workspace: &Path) -> Result<(), String> {
+        self.execute_email_refresh_with_retry_batch(workspace, None)
+            .await
+    }
+
+    /// DOS-226 (Codex finding 1): Variant of `execute_email_refresh` that
+    /// threads a user-initiated retry batch id into the orchestrator so
+    /// `pending_retry` rows belonging to that batch are promoted to
+    /// `pending` *before* the enrichment pass runs.
+    pub async fn execute_email_refresh_with_retry_batch(
+        &self,
+        workspace: &Path,
+        retry_batch_id: Option<&str>,
+    ) -> Result<(), String> {
         // Guard: reject if /today pipeline is currently running
         let today_status = self.state.get_workflow_status(WorkflowId::Today);
         if matches!(today_status, WorkflowStatus::Running { .. }) {
@@ -1282,7 +1295,13 @@ impl Executor {
 
         // Step 1: Rust-native email fetch + classify
         log::info!("Email refresh: Rust-native fetch + classify");
-        if let Err(e) = crate::prepare::orchestrate::refresh_emails(&self.state, workspace).await {
+        if let Err(e) = crate::prepare::orchestrate::refresh_emails_with_retry_batch(
+            &self.state,
+            workspace,
+            retry_batch_id,
+        )
+        .await
+        {
             let sync = self.build_email_sync_status(
                 EmailSyncState::Error,
                 EmailSyncStage::Refresh,
