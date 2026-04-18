@@ -1480,6 +1480,124 @@ pub async fn dismiss_recommendation(
         .await
 }
 
+/// DOS-13 / Wave 0e: Mark an open commitment as done.
+///
+/// Removes the commitment at `index` from `openCommitments`, promotes it
+/// into `valueDelivered` as a completion record, persists the updated
+/// intelligence, and emits a `commitment_completed` signal so downstream
+/// health scoring and briefing callouts see the transition.
+///
+/// Entity lookup and filesystem write mirror `dismiss_recommendation` so
+/// the DB and on-disk intelligence.json stay in lockstep.
+pub async fn mark_commitment_done(
+    entity_id: &str,
+    entity_type: &str,
+    index: usize,
+    state: &AppState,
+) -> Result<(), String> {
+    let config = state.config.read().clone();
+    let config = config.ok_or("No configuration loaded")?;
+    let workspace_path = config.workspace_path.clone();
+
+    let engine = state.signals.engine.clone();
+    let entity_id = entity_id.to_string();
+    let entity_type = entity_type.to_string();
+
+    state
+        .db_write(move |db| {
+            let workspace = Path::new(&workspace_path);
+
+            let account = if entity_type == "account" {
+                db.get_account(&entity_id).map_err(|e| e.to_string())?
+            } else {
+                None
+            };
+
+            let entity_name = match entity_type.as_str() {
+                "account" => account.as_ref().map(|a| a.name.clone()),
+                "project" => db
+                    .get_project(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                "person" => db
+                    .get_person(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                _ => return Err(format!("Unsupported entity type: {}", entity_type)),
+            }
+            .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
+
+            let dir = crate::intelligence::resolve_entity_dir(
+                workspace,
+                &entity_type,
+                &entity_name,
+                account.as_ref(),
+            )?;
+
+            let mut intel = db
+                .get_entity_intelligence(&entity_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "No DB intelligence row for {} — cannot mark commitment done",
+                        entity_id
+                    )
+                })?;
+
+            let commitment = {
+                let list = intel.open_commitments.as_mut().ok_or_else(|| {
+                    format!("Entity {} has no open commitments", entity_id)
+                })?;
+                if index >= list.len() {
+                    return Err(format!("Commitment index {} out of bounds", index));
+                }
+                list.remove(index)
+            };
+
+            // Promote into value_delivered as a completion record. The
+            // "date" field takes now(); the original source is preserved so
+            // the Context value-delivered chapter can show provenance.
+            let now = chrono::Utc::now().to_rfc3339();
+            intel
+                .value_delivered
+                .push(crate::intelligence::io::ValueItem {
+                    date: Some(now.clone()),
+                    statement: commitment.description.clone(),
+                    source: commitment.source.clone(),
+                    impact: None,
+                    item_source: Some(crate::intelligence::io::ItemSource {
+                        source: "commitment_completed".to_string(),
+                        confidence: 0.95,
+                        sourced_at: now.clone(),
+                        reference: commitment.owner.clone(),
+                    }),
+                    discrepancy: None,
+                });
+
+            crate::intelligence::write_intelligence_json(&dir, &intel)
+                .map_err(|e| format!("Failed to write intelligence: {}", e))?;
+            db.upsert_entity_intelligence(&intel)
+                .map_err(|e| e.to_string())?;
+
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                &entity_type,
+                &entity_id,
+                "commitment_completed",
+                "user_curation",
+                Some(&format!(
+                    "{{\"description\":\"{}\"}}",
+                    commitment.description.replace('"', "\\\"")
+                )),
+                0.85,
+            );
+
+            Ok(())
+        })
+        .await
+}
+
 /// DOS-13: Get recommended actions for all entities (for use in the actions page).
 pub fn get_all_recommended_actions(
     db: &ActionDb,

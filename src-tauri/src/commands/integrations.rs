@@ -226,6 +226,19 @@ pub async fn dismiss_recommendation(
         .await
 }
 
+/// DOS-13 / Wave 0e: Mark an open commitment as done. Promotes the
+/// commitment into value-delivered and emits `commitment_completed`.
+#[tauri::command]
+pub async fn mark_commitment_done(
+    entity_id: String,
+    entity_type: String,
+    index: usize,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::intelligence::mark_commitment_done(&entity_id, &entity_type, index, &state)
+        .await
+}
+
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.
 #[tauri::command]
 pub async fn update_stakeholders(

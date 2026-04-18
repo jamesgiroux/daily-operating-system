@@ -22,6 +22,12 @@ import {
   MessageSquareQuote,
   Cpu,
   BookOpen,
+  Target,
+  Flag,
+  Sparkles,
+  Share2,
+  PackageCheck,
+  Bell,
 } from "lucide-react";
 
 /* ── Vitals assembly ── */
@@ -171,11 +177,30 @@ export function buildContextChapters() {
   ];
 }
 
+/**
+ * DOS-13 Work tab IA — 8 chapter pills matching section ids rendered by
+ * AccountDetailPage.renderWorkView. Each id here MUST match a MarginSection
+ * id in the page or the nav anchor will dead-link.
+ *
+ * Section-id contract (verified in tests/account-detail-utils.test.ts):
+ *   focus, programs, commitments, suggestions, shared, recently-landed,
+ *   outputs, nudges.
+ *
+ * Note: v1.2.1 hides the "shared" chapter entirely (honest degradation —
+ * tracker provenance lands in v1.2.2, DOS-75). The pill is still emitted
+ * here for routing symmetry; AccountDetailPage gates the visible section
+ * independently.
+ */
 export function buildWorkChapters() {
   return [
-    { id: "the-work", label: "The Work", icon: React.createElement(CheckSquare2, { size: 18, strokeWidth: 1.5 }) },
-    { id: "watch-list", label: "Watch List", icon: React.createElement(Eye, { size: 18, strokeWidth: 1.5 }) },
-    { id: "reports", label: "Reports", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) },
+    { id: "focus", label: "90-day focus", icon: React.createElement(Target, { size: 18, strokeWidth: 1.5 }) },
+    { id: "programs", label: "Programs & motions", icon: React.createElement(Flag, { size: 18, strokeWidth: 1.5 }) },
+    { id: "commitments", label: "Commitments", icon: React.createElement(CheckSquare2, { size: 18, strokeWidth: 1.5 }) },
+    { id: "suggestions", label: "Suggestions", icon: React.createElement(Sparkles, { size: 18, strokeWidth: 1.5 }) },
+    { id: "shared", label: "Shared with team", icon: React.createElement(Share2, { size: 18, strokeWidth: 1.5 }) },
+    { id: "recently-landed", label: "Recently landed", icon: React.createElement(PackageCheck, { size: 18, strokeWidth: 1.5 }) },
+    { id: "outputs", label: "Outputs", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) },
+    { id: "nudges", label: "Nudges", icon: React.createElement(Bell, { size: 18, strokeWidth: 1.5 }) },
   ];
 }
 
