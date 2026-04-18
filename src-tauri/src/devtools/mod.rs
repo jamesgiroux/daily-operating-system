@@ -608,6 +608,11 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
     let n2 = delete_mock("meeting_entities", "meeting_id");
     summary.push(format!("meeting_entities: {}", n1 + n2));
 
+    // DOS-240: dismissal dictionary — clear by meeting_id / entity_id patterns.
+    let n1 = delete_mock("meeting_entity_dismissals", "meeting_id");
+    let n2 = delete_mock("meeting_entity_dismissals", "entity_id");
+    summary.push(format!("meeting_entity_dismissals: {}", n1 + n2));
+
     let n = delete_mock("meeting_attendees", "person_id");
     summary.push(format!("meeting_attendees: {}", n));
 
@@ -2056,6 +2061,27 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             rusqlite::params![meeting_id, entity_id, entity_type],
         ).map_err(|e| format!("Today meeting-entity link: {}", e))?;
     }
+
+    // DOS-240: seed a meeting-entity dismissal so the fixture scenario exercises
+    // the "dismissed entity stays gone across sync" guard. The Acme Weekly
+    // meeting pretends a user dismissed a stray "mock-initech" resolution —
+    // any calendar-sync / resolver pass that would re-match Initech against
+    // that meeting must now short-circuit before re-inserting the junction row.
+    let dismissal_meeting_id = format!("mock-mtg-acme-weekly-{}", today_str);
+    let dismissed_at = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO meeting_entity_dismissals
+             (meeting_id, entity_id, entity_type, dismissed_at, dismissed_by)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            dismissal_meeting_id,
+            "mock-initech",
+            "account",
+            dismissed_at,
+            Option::<&str>::None,
+        ],
+    )
+    .map_err(|e| format!("Dismissal seed: {}", e))?;
 
     // --- Captures ---
     let capture_rows: Vec<(&str, &str, &str, Option<&str>, &str, &str)> = vec![
@@ -5954,6 +5980,7 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
             is_all_day: false,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         }
     };
 

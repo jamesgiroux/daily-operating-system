@@ -3697,21 +3697,16 @@ fn test_reclassify_people_for_domains() {
 #[test]
 fn test_reclassify_meeting_types_from_attendees() {
     let db = test_db();
-    setup_meeting(&db, "m1", "Subsidiary Sync");
+    // DOS-225: Path A now requires full attendee coverage via the `attendees`
+    // JSON blob, so the meeting must have it populated explicitly rather than
+    // relying on junction-join coverage alone.
+    setup_meeting_with_attendees(&db, "m1", "customer", r#"["alice@subsidiary.com"]"#);
 
     // Create person who is currently external
     let mut p1 = sample_person("alice@subsidiary.com");
     p1.relationship = "external".to_string();
     db.upsert_person(&p1).expect("upsert");
     db.record_meeting_attendance("m1", &p1.id).expect("attend");
-
-    // Meeting was classified as 'customer' because alice was external
-    db.conn
-        .execute(
-            "UPDATE meetings SET meeting_type = 'customer' WHERE id = 'm1'",
-            [],
-        )
-        .expect("set type");
 
     // Now reclassify alice as internal
     let domains = vec!["myco.com".to_string(), "subsidiary.com".to_string()];
@@ -3746,7 +3741,14 @@ fn test_reclassify_meeting_types_from_attendees() {
 #[test]
 fn test_dos206_reclassify_catches_stale_customer_meetings() {
     let db = test_db();
-    setup_meeting(&db, "m_stale", "Internal Ops Sync");
+    // DOS-225: populate the attendees JSON blob — the new Path A enforces
+    // full-attendee-coverage against this canonical list.
+    setup_meeting_with_attendees(
+        &db,
+        "m_stale",
+        "customer",
+        r#"["alice@internal.co"]"#,
+    );
 
     // Alice is ALREADY internal before the sweep — this mirrors the case
     // where domains were set correctly but an older meeting was misclassified.
@@ -3755,14 +3757,6 @@ fn test_dos206_reclassify_catches_stale_customer_meetings() {
     db.upsert_person(&alice).expect("upsert");
     db.record_meeting_attendance("m_stale", &alice.id)
         .expect("attend");
-
-    // Meeting is stuck on 'customer' from a prior mis-classification.
-    db.conn
-        .execute(
-            "UPDATE meetings SET meeting_type = 'customer' WHERE id = 'm_stale'",
-            [],
-        )
-        .expect("set type");
 
     // Reclassify: no people changed, but the meeting must still be flipped.
     let changed = db
@@ -5141,4 +5135,296 @@ fn test_dos228_risk_briefing_job_error_truncation() {
         job.error_message.as_ref().map(|s| s.chars().count()),
         Some(2_000)
     );
+}
+
+// ---------------------------------------------------------------------------
+// DOS-240: meeting-entity dismissal dictionary
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dos240_dismissal_roundtrip() {
+    let db = test_db();
+    assert!(!db
+        .is_meeting_entity_dismissed("m1", "acct1", "account")
+        .expect("probe"));
+
+    db.record_meeting_entity_dismissal("m1", "acct1", "account", Some("user"))
+        .expect("record");
+    assert!(db
+        .is_meeting_entity_dismissed("m1", "acct1", "account")
+        .expect("probe"));
+
+    let set = db
+        .list_dismissed_meeting_entities("m1")
+        .expect("list");
+    assert!(set.contains(&("acct1".to_string(), "account".to_string())));
+
+    // Undo / restore
+    let removed = db
+        .remove_meeting_entity_dismissal("m1", "acct1", "account")
+        .expect("remove");
+    assert!(removed);
+    assert!(!db
+        .is_meeting_entity_dismissed("m1", "acct1", "account")
+        .expect("probe after remove"));
+}
+
+// ---------------------------------------------------------------------------
+// DOS-225: Path A reclassify — full-attendee-coverage regression
+// ---------------------------------------------------------------------------
+
+fn setup_meeting_with_attendees(
+    db: &ActionDb,
+    id: &str,
+    meeting_type: &str,
+    attendees_json: &str,
+) {
+    let now = Utc::now().to_rfc3339();
+    let meeting = DbMeeting {
+        id: id.to_string(),
+        title: "test".to_string(),
+        meeting_type: meeting_type.to_string(),
+        start_time: now.clone(),
+        end_time: None,
+        attendees: Some(attendees_json.to_string()),
+        notes_path: None,
+        summary: None,
+        created_at: now,
+        calendar_event_id: None,
+        description: None,
+        prep_context_json: None,
+        user_agenda_json: None,
+        user_notes: None,
+        prep_frozen_json: None,
+        prep_frozen_at: None,
+        prep_snapshot_path: None,
+        prep_snapshot_hash: None,
+        transcript_path: None,
+        transcript_processed_at: None,
+        intelligence_state: None,
+        intelligence_quality: None,
+        last_enriched_at: None,
+        signal_count: None,
+        has_new_signals: None,
+        last_viewed_at: None,
+    };
+    db.upsert_meeting(&meeting).expect("upsert meeting");
+}
+
+/// DOS-225 regression: a meeting whose raw-email attendee list contains
+/// BOTH an internal attendee (with a people row) AND an external attendee
+/// (no people row, unknown domain) must NOT flip to `internal`. The prior
+/// Path A implementation JOIN-dropped the external attendee and the
+/// aggregate falsely reported all-internal coverage.
+#[test]
+fn test_dos225_mixed_attendees_blocks_internal_flip() {
+    let db = test_db();
+    // Internal attendee — has a people row, relationship=internal.
+    let mut internal = sample_person("alice@company.com");
+    internal.relationship = "internal".to_string();
+    db.upsert_person(&internal).expect("upsert internal");
+
+    // Attendee JSON contains the internal email AND an external email that
+    // has NO people row (simulates a fresh Gmail attendee).
+    let attendees_json = r#"["alice@company.com","stranger@external.com"]"#;
+    setup_meeting_with_attendees(&db, "m_mixed", "customer", attendees_json);
+
+    // Link only the internal attendee via the junction (the external never
+    // materialized into `people`).
+    db.record_meeting_attendance("m_mixed", &internal.id)
+        .expect("record");
+
+    let _changed = db
+        .reclassify_meeting_types_from_attendees()
+        .expect("reclassify");
+
+    // Must stay customer — unresolved external blocks the flip.
+    let row = db.get_meeting_by_id("m_mixed").expect("get").expect("some");
+    assert_eq!(
+        row.meeting_type, "customer",
+        "DOS-225: unresolved external attendee must block Path A flip"
+    );
+}
+
+/// DOS-225 regression: a fully-internal meeting (every raw attendee has a
+/// people row with relationship=internal) must still flip to `internal`.
+#[test]
+fn test_dos225_fully_internal_still_flips() {
+    let db = test_db();
+    let mut alice = sample_person("alice@company.com");
+    alice.relationship = "internal".to_string();
+    db.upsert_person(&alice).expect("upsert alice");
+    let mut bob = sample_person("bob@company.com");
+    bob.relationship = "internal".to_string();
+    db.upsert_person(&bob).expect("upsert bob");
+
+    let attendees_json = r#"["alice@company.com","bob@company.com"]"#;
+    setup_meeting_with_attendees(&db, "m_internal", "customer", attendees_json);
+    db.record_meeting_attendance("m_internal", &alice.id)
+        .expect("rec a");
+    db.record_meeting_attendance("m_internal", &bob.id)
+        .expect("rec b");
+
+    let _ = db
+        .reclassify_meeting_types_from_attendees()
+        .expect("reclassify");
+
+    let row = db.get_meeting_by_id("m_internal").expect("get").expect("some");
+    assert_eq!(
+        row.meeting_type, "internal",
+        "DOS-225: all-internal coverage must flip"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DOS-224: scored persistence — calendar-sync path
+// ---------------------------------------------------------------------------
+
+use crate::google_api::classify::ResolvedMeetingEntity as Rme;
+
+fn rme(id: &str, confidence: f64, source: &str) -> Rme {
+    Rme {
+        entity_id: id.to_string(),
+        entity_type: "account".to_string(),
+        name: id.to_string(),
+        confidence,
+        source: source.to_string(),
+    }
+}
+
+/// DOS-224 regression: an all-internal meeting that title-matched a known
+/// account slug (confidence 0.50 / source="title") must NOT produce an
+/// `is_primary = 1` junction row on the calendar-sync path. The entity
+/// still persists — as a non-primary suggestion — so the UI can surface it
+/// in the affordance strip, but the briefing must not treat it as the
+/// meeting's primary account.
+#[test]
+fn test_dos224_title_only_never_primary_on_calendar_sync() {
+    let db = test_db();
+    let acct = sample_account("acme", "Acme Corp");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m_sync_1", "Acme Ops Planning");
+
+    let entities = vec![rme("acme", 0.50, "title")];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_sync_1",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 1, "title-only resolution still persists as suggestion");
+
+    let rows = db.get_meeting_linked_entities("m_sync_1").expect("linked");
+    assert_eq!(rows.len(), 1);
+    assert!(
+        !rows[0].is_primary,
+        "DOS-224: title-only (<0.70) must NEVER be is_primary=1 on calendar-sync"
+    );
+    assert!(rows[0].confidence < 0.70);
+}
+
+/// DOS-224 regression: when multiple domain-matched account entities land
+/// (e.g., parent BU + subsidiary sharing a domain), the calendar-sync
+/// persistence path must still pick exactly one primary and persist the
+/// others as suggestions. Mirrors the single-primary rule from the
+/// resolver path.
+#[test]
+fn test_dos224_multi_bu_single_primary_on_calendar_sync() {
+    let db = test_db();
+    let parent = sample_account("parent-bu", "Parent BU");
+    db.upsert_account(&parent).expect("upsert parent");
+    let sub = sample_account("sub-bu", "Subsidiary BU");
+    db.upsert_account(&sub).expect("upsert sub");
+    setup_meeting(&db, "m_sync_2", "Shared Domain Sync");
+
+    let entities = vec![
+        rme("parent-bu", 0.85, "domain"),
+        rme("sub-bu", 0.80, "domain"),
+    ];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_sync_2",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 2);
+
+    let rows = db.get_meeting_linked_entities("m_sync_2").expect("linked");
+    assert_eq!(rows.len(), 2);
+    let primaries: Vec<&_> = rows.iter().filter(|r| r.is_primary).collect();
+    assert_eq!(
+        primaries.len(),
+        1,
+        "DOS-224: calendar-sync must pick exactly one primary per entity_type"
+    );
+    assert_eq!(primaries[0].id, "parent-bu", "highest-confidence wins");
+}
+
+/// DOS-240 regression: a dismissed entity must NOT be re-linked by the
+/// calendar-sync persistence path, even if the resolver still thinks the
+/// match is valid. The legacy behavior (auto-relink on every sync) is the
+/// bug we're fixing.
+#[test]
+fn test_dos240_dismissal_blocks_calendar_sync_relink() {
+    let db = test_db();
+    let acct = sample_account("acme", "Acme Corp");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m_dismiss_1", "Acme Planning");
+
+    // User previously dismissed this account from this meeting.
+    db.record_meeting_entity_dismissal("m_dismiss_1", "acme", "account", None)
+        .expect("record dismissal");
+
+    let entities = vec![rme("acme", 0.85, "domain")];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_dismiss_1",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 0, "DOS-240: dismissed entity must be skipped");
+
+    let rows = db.get_meeting_linked_entities("m_dismiss_1").expect("linked");
+    assert!(rows.is_empty(), "no junction row should have been written");
+}
+
+/// DOS-240 regression: after `restore_meeting_entity` removes the dismissal
+/// record, the next persistence pass re-links the entity normally.
+#[test]
+fn test_dos240_restore_allows_relink() {
+    let db = test_db();
+    let acct = sample_account("acme", "Acme Corp");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m_dismiss_2", "Acme Planning");
+
+    db.record_meeting_entity_dismissal("m_dismiss_2", "acme", "account", None)
+        .expect("dismiss");
+    let entities = vec![rme("acme", 0.85, "domain")];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_dismiss_2",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 0);
+
+    // Restore: undo the dismissal.
+    let removed = db
+        .remove_meeting_entity_dismissal("m_dismiss_2", "acme", "account")
+        .expect("remove");
+    assert!(removed);
+
+    // Next sync re-matches and this time the link lands.
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_dismiss_2",
+        &entities,
+    )
+    .expect("persist after restore");
+    assert_eq!(linked, 1, "DOS-240: after restore the entity re-links");
+    let rows = db
+        .get_meeting_linked_entities("m_dismiss_2")
+        .expect("linked");
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].is_primary);
 }
