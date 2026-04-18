@@ -897,6 +897,48 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// DOS-233 Codex fix: total count of meetings linked to an account above
+    /// the accepted-confidence floor (0.70). Used by the About-this-dossier
+    /// counts so active accounts don't stall at "10 meetings on record" —
+    /// the preview list still caps at 10, but totals come from COUNT(*)
+    /// without a LIMIT. Matches the visibility rule used by
+    /// `get_meetings_for_account_with_prep`: include every junction above
+    /// the floor regardless of `is_primary`.
+    pub fn get_total_meeting_count_for_account(&self, account_id: &str) -> Result<i64, DbError> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM meeting_entities me
+                 WHERE me.entity_id = ?1
+                   AND me.entity_type = 'account'
+                   AND me.confidence >= 0.70",
+                params![account_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(DbError::from)
+    }
+
+    /// DOS-233 Codex fix: total count of transcripts for meetings linked to
+    /// an account above the accepted-confidence floor. Joined through
+    /// meeting_transcripts (a meeting only counts when it has a transcript
+    /// row AND a non-null transcript_path).
+    pub fn get_total_transcript_count_for_account(&self, account_id: &str) -> Result<i64, DbError> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(DISTINCT m.id)
+                 FROM meetings m
+                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 INNER JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                 WHERE me.entity_id = ?1
+                   AND me.entity_type = 'account'
+                   AND me.confidence >= 0.70
+                   AND mt.transcript_path IS NOT NULL",
+                params![account_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(DbError::from)
+    }
+
     /// Get past meetings for an account with prep context (ADR-0063).
     /// Used only on account detail page where prep preview cards are needed.
     pub fn get_meetings_for_account_with_prep(
@@ -904,13 +946,19 @@ impl ActionDb {
         account_id: &str,
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
-        // DOS-232: restrict The Record to primary, high-confidence meeting
-        // links only. The entity resolver (DOS-74) writes `is_primary = 1` on
-        // the highest-confidence account link per meeting and confidence
-        // REAL in [0.0, 1.0]. We use a 0.70 threshold — the same floor the
+        // DOS-232 Codex fix: account-specific The Record / recentMeetings
+        // queries must include EVERY meeting whose junction to this account
+        // is above the accepted-confidence floor (0.70), regardless of the
+        // `is_primary` flag. DOS-224 intentionally persists exactly one
+        // primary per meeting even when multiple accounts share that meeting
+        // — so a secondary account at confidence 0.80 on a meeting where
+        // another account is the primary would previously be hidden from its
+        // own timeline/dossier counts. `is_primary` stays as the
+        // meeting-chip prominence signal (used elsewhere), not as an account
+        // visibility gate. The 0.70 floor — the same threshold the
         // classifier uses to promote all-internal meetings (see
-        // google_api/classify.rs) — to filter out speculative domain-match
-        // junctions that previously surfaced unrelated items on The Record.
+        // google_api/classify.rs) — still filters out speculative
+        // domain-match junctions.
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
                     m.attendees, m.notes_path, mt.summary, m.created_at,
@@ -921,7 +969,6 @@ impl ActionDb {
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1
                AND me.entity_type = 'account'
-               AND me.is_primary = 1
                AND me.confidence >= 0.70
              ORDER BY m.start_time DESC
              LIMIT ?2",
@@ -2545,6 +2592,85 @@ impl ActionDb {
                 now,
             ],
         )?;
+        Ok(())
+    }
+
+    /// DOS-231 Codex fix: update a single column on `account_technical_footprint`.
+    /// Whitelisted to the gap-row fields surfaced by `AccountTechnicalFootprint`
+    /// in chapter variant — other columns (source, timestamps, integrations_json)
+    /// are not user-editable through this path.
+    ///
+    /// Creates the row if it does not yet exist (common for accounts Glean has
+    /// not enriched) so the first user write can succeed without a separate
+    /// bootstrap. Bumps `updated_at`; stamps `source = 'user_edit'` and
+    /// `sourced_at = now` so downstream signal emitters see a fresh user-
+    /// authored footprint.
+    pub fn update_technical_footprint_field(
+        &self,
+        account_id: &str,
+        field: &str,
+        value: &str,
+    ) -> Result<(), DbError> {
+        // Whitelist + column binding. We never interpolate `field` from the
+        // caller into SQL directly.
+        enum Kind {
+            Text,
+            Integer,
+            Real,
+        }
+        let (column, kind) = match field {
+            "usage_tier" => ("usage_tier", Kind::Text),
+            "services_stage" => ("services_stage", Kind::Text),
+            "support_tier" => ("support_tier", Kind::Text),
+            "active_users" => ("active_users", Kind::Integer),
+            "open_tickets" => ("open_tickets", Kind::Integer),
+            "csat_score" => ("csat_score", Kind::Real),
+            "adoption_score" => ("adoption_score", Kind::Real),
+            other => {
+                return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                    format!("update_technical_footprint_field: unsupported field '{other}'"),
+                )));
+            }
+        };
+
+        // Ensure a row exists first (idempotent). Uses the canonical upsert
+        // with NULLs — existing values are preserved by COALESCE.
+        self.upsert_account_technical_footprint(
+            account_id, None, None, None, None, None, None, 0, None, "user_edit",
+        )?;
+
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let sql = format!(
+            "UPDATE account_technical_footprint
+             SET {column} = ?1,
+                 source = 'user_edit',
+                 sourced_at = ?2,
+                 updated_at = ?2
+             WHERE account_id = ?3"
+        );
+        match kind {
+            Kind::Text => {
+                self.conn.execute(&sql, params![value, now, account_id])?;
+            }
+            Kind::Integer => {
+                let parsed: i64 = value.parse().map_err(|_| {
+                    DbError::Sqlite(rusqlite::Error::InvalidParameterName(format!(
+                        "update_technical_footprint_field: '{value}' is not a valid integer for {column}"
+                    )))
+                })?;
+                self.conn
+                    .execute(&sql, params![parsed, now, account_id])?;
+            }
+            Kind::Real => {
+                let parsed: f64 = value.parse().map_err(|_| {
+                    DbError::Sqlite(rusqlite::Error::InvalidParameterName(format!(
+                        "update_technical_footprint_field: '{value}' is not a valid number for {column}"
+                    )))
+                })?;
+                self.conn
+                    .execute(&sql, params![parsed, now, account_id])?;
+            }
+        }
         Ok(())
     }
 

@@ -50,6 +50,17 @@ pub struct AccountDetailResult {
     pub open_actions: Vec<crate::db::DbAction>,
     pub upcoming_meetings: Vec<MeetingSummary>,
     pub recent_meetings: Vec<MeetingPreview>,
+    /// DOS-233 Codex fix: total count of meetings linked to this account
+    /// above the accepted-confidence floor (0.70). `recent_meetings` is
+    /// capped at 10 for preview rendering; this field gives the About-
+    /// dossier its true "N meetings on record" number.
+    #[serde(default)]
+    pub meeting_total_count: i64,
+    /// DOS-233 Codex fix: total count of meetings with a transcript on
+    /// record for this account (unbounded). The preview/manifest lists
+    /// remain capped; this is the dossier count source of truth.
+    #[serde(default)]
+    pub transcript_total_count: i64,
     pub linked_people: Vec<crate::db::DbPerson>,
     pub account_team: Vec<crate::db::DbAccountTeamMember>,
     pub account_team_import_notes: Vec<crate::db::DbAccountTeamImportNote>,
@@ -304,6 +315,30 @@ pub async fn update_account_field(
     state
         .db_write(move |db| {
             crate::services::accounts::update_account_field(
+                db,
+                &app_state,
+                &account_id,
+                &field,
+                &value,
+            )
+        })
+        .await
+}
+
+/// DOS-231 Codex fix: persist a single gap-row field on
+/// `account_technical_footprint` and return the refreshed account detail so
+/// the frontend can render the value without a follow-up fetch.
+#[tauri::command]
+pub async fn update_technical_footprint_field(
+    account_id: String,
+    field: String,
+    value: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<AccountDetailResult, String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_technical_footprint_field(
                 db,
                 &app_state,
                 &account_id,
