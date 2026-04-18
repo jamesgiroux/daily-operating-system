@@ -3,7 +3,12 @@
  *
  * Shows linked entities as removable chips + an EntityPicker for adding more.
  * Supports multiple entities per meeting (M2M junction table).
- * Calls add_meeting_entity / remove_meeting_entity Tauri commands.
+ * Calls add_meeting_entity / dismiss_meeting_entity Tauri commands.
+ *
+ * DOS-240: chip X invokes `dismiss_meeting_entity` (not the legacy
+ * `remove_meeting_entity`) so that the dismissal is persisted into
+ * `meeting_entity_dismissals` and the entity cannot silently re-link on
+ * the next calendar-sync or resolver sweep.
  *
  * Uses optimistic local state so chips appear/disappear instantly without
  * triggering a full dashboard reload.
@@ -98,7 +103,12 @@ export function MeetingEntityChips({
       setLocalEntities((prev) => prev.filter((e) => e.id !== entityId));
 
       try {
-        await invoke("remove_meeting_entity", {
+        // DOS-240: use `dismiss_meeting_entity` so a dismissal row is
+        // recorded in `meeting_entity_dismissals`. The legacy
+        // `remove_meeting_entity` only unlinked + recorded feedback, which
+        // let the background resolver silently re-link the same entity on
+        // its next pass.
+        await invoke("dismiss_meeting_entity", {
           meetingId,
           entityId,
           entityType,

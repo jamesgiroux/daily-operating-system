@@ -3537,6 +3537,75 @@ pub async fn attach_meeting_transcript(
 #[cfg(test)]
 mod tests {
     use super::plan_refresh_completion;
+    use super::persist_classification_entities_scored;
+    use crate::db::test_utils::test_db;
+    use crate::google_api::classify::ResolvedMeetingEntity;
+
+    /// DOS-240 (chip-X → dismissal contract): after the UI dismisses an
+    /// auto-linked entity (via `dismiss_meeting_entity` writing a row to
+    /// `meeting_entity_dismissals`), the next classification persist pass
+    /// MUST NOT re-link the same (meeting_id, entity_id, entity_type). This
+    /// test pins the end-to-end contract the UI fix depends on: the chip X
+    /// now invokes `dismiss_meeting_entity` instead of the legacy
+    /// `remove_meeting_entity`, and the subsequent calendar-sync persist
+    /// respects the dismissal.
+    #[test]
+    fn dos240_chip_x_dismissal_blocks_next_persist_pass() {
+        let db = test_db();
+        let meeting_id = "mtg-dos240";
+        let entity_id = "acct-dos240";
+        let entity_type = "account";
+
+        // First pass: scored persist links the entity (simulates initial
+        // auto-resolution from calendar sync).
+        let entities = vec![ResolvedMeetingEntity {
+            entity_id: entity_id.to_string(),
+            entity_type: entity_type.to_string(),
+            name: "Example Co".to_string(),
+            confidence: 0.95,
+            source: "keyword".to_string(),
+        }];
+        let linked = persist_classification_entities_scored(&db, meeting_id, &entities)
+            .expect("first persist pass");
+        assert_eq!(linked, 1, "initial persist should link one entity");
+
+        // Simulate the chip X: record a dismissal + unlink. This mirrors
+        // what `services::meetings::dismiss_meeting_entity` does inside its
+        // db_write closure.
+        db.record_meeting_entity_dismissal(meeting_id, entity_id, entity_type, Some("user"))
+            .expect("record dismissal");
+        db.unlink_meeting_entity(meeting_id, entity_id)
+            .expect("unlink");
+
+        // Assert the dismissal row exists (the critical bug the first
+        // attempt missed: legacy `remove_meeting_entity` never wrote this).
+        assert!(
+            db.is_meeting_entity_dismissed(meeting_id, entity_id, entity_type)
+                .expect("probe"),
+            "dismissal row must exist in meeting_entity_dismissals",
+        );
+
+        // Second pass: the next calendar-sync classification runs again
+        // with the same scored outcome. The dismissal filter inside
+        // `persist_classification_entities_scored` MUST skip the write.
+        let linked2 = persist_classification_entities_scored(&db, meeting_id, &entities)
+            .expect("second persist pass");
+        assert_eq!(
+            linked2, 0,
+            "dismissed entity must not be re-linked on subsequent persist pass",
+        );
+
+        // And the junction table must still show the entity unlinked.
+        let still_linked: bool = db
+            .conn_ref()
+            .prepare("SELECT 1 FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2")
+            .and_then(|mut s| s.exists(rusqlite::params![meeting_id, entity_id]))
+            .unwrap_or(false);
+        assert!(
+            !still_linked,
+            "meeting_entities must remain empty for the dismissed (meeting, entity) pair",
+        );
+    }
 
     #[test]
     fn refresh_completion_restores_snapshot_on_full_failure() {
