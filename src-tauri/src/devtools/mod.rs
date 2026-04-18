@@ -5945,6 +5945,33 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     )
     .map_err(|e| format!("Seed risk_briefing_jobs (globex): {}", e))?;
 
+    // DOS-228 Wave 0e Fix 2: attempt_id for the two seeded rows. Both are
+    // terminal states so no live runner will touch them, but the column is
+    // NOT NULL-friendly only after a successful generation; we seed non-NULL
+    // values so devtools exercises the same code path production hits.
+    conn.execute(
+        "UPDATE risk_briefing_jobs SET attempt_id = 'seed-acme-attempt' WHERE account_id = ?1",
+        rusqlite::params!["mock-acme-corp"],
+    )
+    .map_err(|e| format!("Seed risk_briefing_jobs attempt_id (acme): {}", e))?;
+    conn.execute(
+        "UPDATE risk_briefing_jobs SET attempt_id = 'seed-globex-attempt' WHERE account_id = ?1",
+        rusqlite::params!["mock-globex-industries"],
+    )
+    .map_err(|e| format!("Seed risk_briefing_jobs attempt_id (globex): {}", e))?;
+
+    // DOS-228 Wave 0e Fix 3: seed one health_recompute_pending row so dev
+    // mode exercises the startup-drain path at least once. The drain is
+    // idempotent — if a real edit landed before devtools re-seeded, the
+    // next schedule_recompute simply re-marks this row.
+    let now_iso = now.to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO health_recompute_pending (account_id, requested_at)
+         VALUES (?1, ?2)",
+        rusqlite::params!["mock-acme-corp", &now_iso],
+    )
+    .map_err(|e| format!("Seed health_recompute_pending: {}", e))?;
+
     Ok(())
 }
 
