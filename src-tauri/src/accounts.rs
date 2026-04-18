@@ -1384,7 +1384,7 @@ END_ENRICHMENT";
         // Verify the -- separator is unambiguous
         assert_eq!(
             format!("{}--{}", slugify("Crestview Media"), slugify("REDACTED")),
-            "REDACTED--REDACTED"
+            "crestview-media--REDACTED"
         );
         // slugify collapses consecutive dashes so -- can't appear from slugify alone
         assert_eq!(slugify("Some--Thing"), "some-thing");
@@ -1421,9 +1421,9 @@ END_ENRICHMENT";
         std::fs::write(child_dir.join("dashboard.json"), json).unwrap();
 
         let result = read_account_json(&child_dir.join("dashboard.json")).unwrap();
-        assert_eq!(result.account.id, "REDACTED--REDACTED");
+        assert_eq!(result.account.id, "crestview-media--REDACTED");
         assert_eq!(result.account.name, "REDACTED");
-        assert_eq!(result.account.parent_id, Some("REDACTED".to_string()));
+        assert_eq!(result.account.parent_id, Some("crestview-media".to_string()));
         assert_eq!(
             result.account.tracker_path,
             Some("Accounts/Crestview Media/REDACTED".to_string())
