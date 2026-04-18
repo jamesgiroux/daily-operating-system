@@ -1504,6 +1504,12 @@ export interface AccountDetail extends AccountListItem {
   upcomingMeetings: MeetingSummary[];
   /** ADR-0063: richer type with optional prep context for preview cards. */
   recentMeetings: MeetingPreview[];
+  /** DOS-233 Codex fix: total meeting count for the About-dossier chapter.
+   * `recentMeetings` is capped at 10 for preview rendering; this is the
+   * unbounded COUNT(*) source of truth. */
+  meetingTotalCount?: number;
+  /** DOS-233 Codex fix: total transcripts-on-record count, unbounded. */
+  transcriptTotalCount?: number;
   openActions: Action[];
   linkedPeople: Person[];
   accountTeam: AccountTeamMember[];
