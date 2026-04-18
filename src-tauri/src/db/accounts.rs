@@ -2719,17 +2719,40 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Most recent note attached to the account's current sentiment value.
-    /// Returns None if no note has been recorded.
+    /// DOS-228 Fix 1: Most recent note attached to the account's CURRENT
+    /// sentiment value. If the account has no current sentiment, or no note
+    /// has ever been recorded against that sentiment value, returns None.
+    ///
+    /// Previously this returned the newest non-null note regardless of the
+    /// current `user_health_sentiment`, so a user could change sentiment
+    /// from `at_risk` (with a note) to `on_track` (no note) and the stale
+    /// at_risk note would still surface in the UI. The journal entry itself
+    /// is preserved for history — this accessor just filters by the value
+    /// that is currently set on the account.
     pub fn get_latest_sentiment_note(
         &self,
         account_id: &str,
     ) -> Result<Option<(String, String)>, DbError> {
+        // Look up the account's current sentiment. No sentiment → no note.
+        let current_sentiment: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT user_health_sentiment FROM accounts WHERE id = ?1",
+                params![account_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+
+        let Some(sentiment) = current_sentiment else {
+            return Ok(None);
+        };
+
         let result = self.conn.query_row(
             "SELECT note, set_at FROM user_sentiment_history
-             WHERE account_id = ?1 AND note IS NOT NULL
+             WHERE account_id = ?1 AND sentiment = ?2 AND note IS NOT NULL
              ORDER BY set_at DESC LIMIT 1",
-            params![account_id],
+            params![account_id, sentiment],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         );
         match result {
