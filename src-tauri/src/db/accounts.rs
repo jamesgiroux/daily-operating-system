@@ -2595,6 +2595,85 @@ impl ActionDb {
         Ok(())
     }
 
+    /// DOS-231 Codex fix: update a single column on `account_technical_footprint`.
+    /// Whitelisted to the gap-row fields surfaced by `AccountTechnicalFootprint`
+    /// in chapter variant — other columns (source, timestamps, integrations_json)
+    /// are not user-editable through this path.
+    ///
+    /// Creates the row if it does not yet exist (common for accounts Glean has
+    /// not enriched) so the first user write can succeed without a separate
+    /// bootstrap. Bumps `updated_at`; stamps `source = 'user_edit'` and
+    /// `sourced_at = now` so downstream signal emitters see a fresh user-
+    /// authored footprint.
+    pub fn update_technical_footprint_field(
+        &self,
+        account_id: &str,
+        field: &str,
+        value: &str,
+    ) -> Result<(), DbError> {
+        // Whitelist + column binding. We never interpolate `field` from the
+        // caller into SQL directly.
+        enum Kind {
+            Text,
+            Integer,
+            Real,
+        }
+        let (column, kind) = match field {
+            "usage_tier" => ("usage_tier", Kind::Text),
+            "services_stage" => ("services_stage", Kind::Text),
+            "support_tier" => ("support_tier", Kind::Text),
+            "active_users" => ("active_users", Kind::Integer),
+            "open_tickets" => ("open_tickets", Kind::Integer),
+            "csat_score" => ("csat_score", Kind::Real),
+            "adoption_score" => ("adoption_score", Kind::Real),
+            other => {
+                return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                    format!("update_technical_footprint_field: unsupported field '{other}'"),
+                )));
+            }
+        };
+
+        // Ensure a row exists first (idempotent). Uses the canonical upsert
+        // with NULLs — existing values are preserved by COALESCE.
+        self.upsert_account_technical_footprint(
+            account_id, None, None, None, None, None, None, 0, None, "user_edit",
+        )?;
+
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let sql = format!(
+            "UPDATE account_technical_footprint
+             SET {column} = ?1,
+                 source = 'user_edit',
+                 sourced_at = ?2,
+                 updated_at = ?2
+             WHERE account_id = ?3"
+        );
+        match kind {
+            Kind::Text => {
+                self.conn.execute(&sql, params![value, now, account_id])?;
+            }
+            Kind::Integer => {
+                let parsed: i64 = value.parse().map_err(|_| {
+                    DbError::Sqlite(rusqlite::Error::InvalidParameterName(format!(
+                        "update_technical_footprint_field: '{value}' is not a valid integer for {column}"
+                    )))
+                })?;
+                self.conn
+                    .execute(&sql, params![parsed, now, account_id])?;
+            }
+            Kind::Real => {
+                let parsed: f64 = value.parse().map_err(|_| {
+                    DbError::Sqlite(rusqlite::Error::InvalidParameterName(format!(
+                        "update_technical_footprint_field: '{value}' is not a valid number for {column}"
+                    )))
+                })?;
+                self.conn
+                    .execute(&sql, params![parsed, now, account_id])?;
+            }
+        }
+        Ok(())
+    }
+
     /// Get the technical footprint for an account, if present.
     pub fn get_account_technical_footprint(
         &self,
