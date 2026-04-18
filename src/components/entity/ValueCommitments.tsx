@@ -212,10 +212,21 @@ export function ValueCommitments({
                     </div>
                     {item.impact && (() => {
                       const kind = classifyImpact(item.impact);
+                      const label = impactTagLabel(kind);
+                      // DOS-230: When the raw impact string is just the enum
+                      // token (e.g. "revenue" → "Revenue"), the pill already
+                      // conveys it — suppress the plain-text duplicate.
+                      // A screen-reader-only copy preserves semantics so the
+                      // badge still has a label for assistive tech even when
+                      // the visual duplicate is gone.
+                      const normalized = item.impact.trim().toLowerCase();
+                      const duplicatesLabel = kind !== "default" && (normalized === kind || normalized === label.toLowerCase());
                       return (
                         <div className={css.valueImpact}>
-                          <span className={`${css.impactTag} ${impactTagClass(kind)}`}>{impactTagLabel(kind)}</span>
-                          {onUpdateField ? (
+                          <span className={`${css.impactTag} ${impactTagClass(kind)}`}>{label}</span>
+                          {duplicatesLabel ? (
+                            <span className="sr-only">{label}</span>
+                          ) : onUpdateField ? (
                             <EditableText
                               value={item.impact}
                               onChange={(v) =>
