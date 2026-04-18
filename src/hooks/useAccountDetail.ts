@@ -472,23 +472,29 @@ export function useAccountDetail(accountId: string | undefined) {
 
   async function setUserHealthSentiment(value: SentimentValue, note?: string) {
     if (!accountId) return;
-    await invoke("set_user_health_sentiment", {
+    // DOS-229: Command returns the updated AccountDetail assembled on the
+    // writer connection — apply it directly. Avoids the SQLite WAL reader
+    // snapshot lag that made a follow-up silentRefresh() show stale data
+    // until a manual reload.
+    const result = await invoke<AccountDetail>("set_user_health_sentiment", {
       accountId,
       sentiment: value,
       note: note?.trim() ? note.trim() : null,
     });
-    await silentRefresh();
+    setDetail(result);
+    setPrograms(result.strategicPrograms);
   }
 
   /** Re-stamp sentiment_set_at so the "Still accurate?" prompt resets for 30 days. */
   async function acknowledgeSentimentStale() {
     if (!accountId || !detail?.userHealthSentiment) return;
-    await invoke("set_user_health_sentiment", {
+    const result = await invoke<AccountDetail>("set_user_health_sentiment", {
       accountId,
       sentiment: detail.userHealthSentiment,
       note: null,
     });
-    await silentRefresh();
+    setDetail(result);
+    setPrograms(result.strategicPrograms);
   }
 
   // ─── Flat public API ──────────────────────────────────────────────────
