@@ -1536,6 +1536,35 @@ export interface AccountDetail extends AccountListItem {
   stakeholdersFull?: StakeholderFull[];
   /** I644: Per-field source attribution from account_source_refs. */
   sourceRefs?: AccountSourceRef[];
+  /** DOS-27: Most recent journal note attached to the current sentiment value. */
+  sentimentNote?: string;
+  /** DOS-27: Sentiment journal entries from the last 90 days, newest-first. */
+  sentimentHistory?: SentimentJournalEntry[];
+  /** DOS-27: Daily computed-health sparkline points (last 90 days, chronological). */
+  healthSparkline?: HealthSparklinePoint[];
+}
+
+/** DOS-27: A single sentiment journal entry. */
+export type SentimentValue =
+  | "strong"
+  | "on_track"
+  | "concerning"
+  | "at_risk"
+  | "critical";
+
+export interface SentimentJournalEntry {
+  sentiment: SentimentValue;
+  note?: string;
+  computedBand?: string;
+  computedScore?: number;
+  setAt: string;
+}
+
+/** DOS-27: One day of computed health score for the sparkline. */
+export interface HealthSparklinePoint {
+  day: string;
+  score: number;
+  band: string;
 }
 
 /** I644: Source reference for a tracked account field. */

@@ -92,6 +92,15 @@ pub struct AccountDetailResult {
     /// DOS-110: When the sentiment was last set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sentiment_set_at: Option<String>,
+    /// DOS-27: Most recent sentiment journal note for the current value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment_note: Option<String>,
+    /// DOS-27: Sentiment journal entries — last 90 days.
+    #[serde(default)]
+    pub sentiment_history: Vec<crate::db::accounts::DbSentimentJournalEntry>,
+    /// DOS-27: Daily computed-health sparkline — last 90 days.
+    #[serde(default)]
+    pub health_sparkline: Vec<crate::db::accounts::DbHealthSparklinePoint>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
@@ -291,11 +300,13 @@ pub async fn update_account_field(
         .await
 }
 
-/// DOS-110: Set the user's manual health sentiment on an account.
+/// DOS-110 / DOS-27: Set the user's manual health sentiment on an account,
+/// optionally attaching a journal note.
 #[tauri::command]
 pub async fn set_user_health_sentiment(
     account_id: String,
     sentiment: String,
+    note: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
@@ -306,6 +317,7 @@ pub async fn set_user_health_sentiment(
                 &app_state,
                 &account_id,
                 &sentiment,
+                note.as_deref(),
             )
         })
         .await

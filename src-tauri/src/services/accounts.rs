@@ -1413,6 +1413,19 @@ pub async fn get_account_detail(
             // I644: Source references for promoted account facts
             let source_refs = db.get_account_source_refs(&account.id).unwrap_or_default();
 
+            // DOS-27: Sentiment journal + sparkline (last 90 days).
+            let sentiment_history = db
+                .get_sentiment_history(&account.id, 90)
+                .unwrap_or_default();
+            let sentiment_note = db
+                .get_latest_sentiment_note(&account.id)
+                .ok()
+                .flatten()
+                .map(|(note, _)| note);
+            let health_sparkline = db
+                .get_health_score_sparkline(&account.id, 90)
+                .unwrap_or_default();
+
             Ok(AccountDetailResult {
                 id: account.id,
                 name: account.name,
@@ -1454,6 +1467,9 @@ pub async fn get_account_detail(
                 source_refs,
                 user_health_sentiment: account.user_health_sentiment,
                 sentiment_set_at: account.sentiment_set_at,
+                sentiment_note,
+                sentiment_history,
+                health_sparkline,
             })
         })
         .await
@@ -1534,6 +1550,21 @@ pub fn update_account_field(
         );
     }
 
+    // DOS-27: Health-relevant field edits trigger an immediate health recompute
+    // so the UI band reflects the new value. Frontend debounces at 2s before
+    // the mutation fires, so this is naturally coalesced across rapid edits.
+    if is_health_relevant_field(field) {
+        if let Err(e) =
+            crate::services::intelligence::recompute_entity_health(db, account_id, "account")
+        {
+            log::warn!(
+                "DOS-27: post-edit health recompute failed for {}: {}",
+                account_id,
+                e
+            );
+        }
+    }
+
     // Regenerate workspace files
     if let Ok(Some(account)) = db.get_account(account_id) {
         let config = state.config.read();
@@ -1595,13 +1626,22 @@ pub fn update_account_field(
     Ok(())
 }
 
-/// DOS-110: Set the user's manual health sentiment assessment on an account.
-/// Validates sentiment value, writes to DB, and emits a field_updated signal.
+/// DOS-27: Sentiment values that represent elevated risk.
+/// Transitioning INTO one of these from a non-risk value triggers
+/// background risk-briefing generation.
+const RISK_SENTIMENTS: &[&str] = &["at_risk", "critical"];
+
+/// DOS-110 / DOS-27: Set the user's manual health sentiment on an account.
+/// Writes the current sentiment + timestamp, appends a journal entry (value +
+/// optional note + computed band snapshot), emits a `field_updated` signal,
+/// and — on transition into at_risk/critical — enqueues a background risk
+/// briefing generation.
 pub fn set_user_health_sentiment(
     db: &ActionDb,
-    state: &AppState,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     sentiment: &str,
+    note: Option<&str>,
 ) -> Result<(), String> {
     const VALID_SENTIMENTS: &[&str] =
         &["strong", "on_track", "concerning", "at_risk", "critical"];
@@ -1613,11 +1653,37 @@ pub fn set_user_health_sentiment(
         ));
     }
 
+    let previous = db
+        .get_account(account_id)
+        .map_err(|e| e.to_string())?
+        .and_then(|a| a.user_health_sentiment);
+
     let now = Utc::now().to_rfc3339();
     db.update_account_field(account_id, "user_health_sentiment", sentiment)
         .map_err(|e| e.to_string())?;
     db.update_account_field(account_id, "sentiment_set_at", &now)
         .map_err(|e| e.to_string())?;
+
+    // Snapshot computed health at set-time for divergence analysis.
+    let (computed_band, computed_score) = db
+        .get_account(account_id)
+        .map_err(|e| e.to_string())?
+        .map(|acct| {
+            let health = crate::intelligence::health_scoring::compute_account_health(
+                db, &acct, None,
+            );
+            (Some(health.band), Some(health.score))
+        })
+        .unwrap_or((None, None));
+
+    db.insert_sentiment_journal_entry(
+        account_id,
+        sentiment,
+        note,
+        computed_band.as_deref(),
+        computed_score,
+    )
+    .map_err(|e| e.to_string())?;
 
     // Emit field_updated signal with high confidence (user-initiated)
     crate::services::signals::emit_propagate_and_evaluate(
@@ -1636,7 +1702,60 @@ pub fn set_user_health_sentiment(
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
 
+    // DOS-27: Transition INTO at_risk/critical enqueues background risk briefing.
+    // Not every save — only the transition. Silent on failure.
+    let transitioning_into_risk = RISK_SENTIMENTS.contains(&sentiment)
+        && !previous
+            .as_deref()
+            .map(|p| RISK_SENTIMENTS.contains(&p))
+            .unwrap_or(false);
+
+    if transitioning_into_risk {
+        enqueue_risk_briefing(state, account_id.to_string());
+    }
+
     Ok(())
+}
+
+/// DOS-27: Spawn a background risk-briefing generation task.
+/// Runs on the Tauri async runtime; errors are logged, never surfaced.
+fn enqueue_risk_briefing(state: &std::sync::Arc<AppState>, account_id: String) {
+    let state_clone = state.clone();
+    let handle = state.app_handle();
+    tauri::async_runtime::spawn(async move {
+        log::info!(
+            "DOS-27: enqueueing background risk briefing for account {}",
+            account_id
+        );
+        match crate::services::intelligence::generate_risk_briefing(
+            &state_clone,
+            &account_id,
+            handle,
+        )
+        .await
+        {
+            Ok(_) => log::info!(
+                "DOS-27: risk briefing generated for account {}",
+                account_id
+            ),
+            Err(e) => log::warn!(
+                "DOS-27: risk briefing generation failed for account {}: {}",
+                account_id,
+                e
+            ),
+        }
+    });
+}
+
+/// DOS-27: Field edits to health-relevant columns trigger a synchronous
+/// health recompute so the UI reflects the new band immediately.
+/// Rapid-fire edits are naturally coalesced: the frontend debounces at 2s
+/// before calling the backend command, so we don't duplicate the debounce here.
+pub fn is_health_relevant_field(field: &str) -> bool {
+    matches!(
+        field,
+        "health" | "lifecycle" | "contract_end" | "arr" | "nps"
+    )
 }
 
 /// Update account notes (narrative field).
