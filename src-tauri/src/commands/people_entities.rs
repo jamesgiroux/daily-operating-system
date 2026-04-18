@@ -203,6 +203,44 @@ pub async fn unlink_meeting_entity(
     .await
 }
 
+/// DOS-240: Dismiss an auto-resolved meeting entity. Unlinks it AND records
+/// a persistent dismissal so future calendar-sync / resolver sweeps do not
+/// re-link the same (meeting, entity, type) tuple.
+#[tauri::command]
+pub async fn dismiss_meeting_entity(
+    meeting_id: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::meetings::dismiss_meeting_entity(
+        &state,
+        &meeting_id,
+        &entity_id,
+        &entity_type,
+        None,
+    )
+    .await
+}
+
+/// DOS-240: Undo a previous dismissal. Removes the dismissal record so the
+/// entity can auto-link again on the next calendar-sync or resolver pass.
+#[tauri::command]
+pub async fn restore_meeting_entity(
+    meeting_id: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    crate::services::meetings::restore_meeting_entity(
+        &state,
+        &meeting_id,
+        &entity_id,
+        &entity_type,
+    )
+    .await
+}
+
 /// Get all entities linked to a meeting via the junction table.
 #[tauri::command]
 pub async fn get_meeting_entities(

@@ -526,6 +526,88 @@ impl ActionDb {
         Ok(())
     }
 
+    /// DOS-240: Record that the user has dismissed an auto-resolved entity
+    /// from a meeting. The dismissal persists across calendar-sync and
+    /// resolver sweeps so the entity will not silently re-link on its own.
+    /// The accompanying `unlink_meeting_entity` call is the caller's job —
+    /// this helper only writes the dictionary entry.
+    pub fn record_meeting_entity_dismissal(
+        &self,
+        meeting_id: &str,
+        entity_id: &str,
+        entity_type: &str,
+        dismissed_by: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO meeting_entity_dismissals
+                 (meeting_id, entity_id, entity_type, dismissed_at, dismissed_by)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(meeting_id, entity_id, entity_type) DO UPDATE SET
+                 dismissed_at = excluded.dismissed_at,
+                 dismissed_by = excluded.dismissed_by",
+            params![meeting_id, entity_id, entity_type, now, dismissed_by],
+        )?;
+        Ok(())
+    }
+
+    /// DOS-240: Remove a dismissal record so the entity can auto-link again
+    /// on the next resolver pass. Used by the undo / restore flow.
+    pub fn remove_meeting_entity_dismissal(
+        &self,
+        meeting_id: &str,
+        entity_id: &str,
+        entity_type: &str,
+    ) -> Result<bool, DbError> {
+        let removed = self.conn.execute(
+            "DELETE FROM meeting_entity_dismissals
+             WHERE meeting_id = ?1 AND entity_id = ?2 AND entity_type = ?3",
+            params![meeting_id, entity_id, entity_type],
+        )?;
+        Ok(removed > 0)
+    }
+
+    /// DOS-240: Is the given (meeting, entity, type) currently dismissed?
+    /// Used by both calendar-sync and resolver persistence paths to gate
+    /// re-insertion.
+    pub fn is_meeting_entity_dismissed(
+        &self,
+        meeting_id: &str,
+        entity_id: &str,
+        entity_type: &str,
+    ) -> Result<bool, DbError> {
+        let exists: bool = self
+            .conn
+            .prepare(
+                "SELECT 1 FROM meeting_entity_dismissals
+                 WHERE meeting_id = ?1 AND entity_id = ?2 AND entity_type = ?3",
+            )?
+            .exists(params![meeting_id, entity_id, entity_type])?;
+        Ok(exists)
+    }
+
+    /// DOS-240: List all (entity_id, entity_type) pairs dismissed for a
+    /// meeting. Used when persisting a batch of resolution outcomes so we
+    /// can filter the whole batch in a single query rather than probing
+    /// per-entity.
+    pub fn list_dismissed_meeting_entities(
+        &self,
+        meeting_id: &str,
+    ) -> Result<std::collections::HashSet<(String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT entity_id, entity_type FROM meeting_entity_dismissals
+             WHERE meeting_id = ?1",
+        )?;
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut set = std::collections::HashSet::new();
+        for r in rows {
+            set.insert(r?);
+        }
+        Ok(set)
+    }
+
     /// DOS-74: Get all linked entities for a meeting with confidence + primary
     /// flags, ordered by (is_primary DESC, confidence DESC, name ASC) so
     /// `[0]` is the single best primary entity and lower-confidence siblings

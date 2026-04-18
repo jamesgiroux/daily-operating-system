@@ -4841,3 +4841,35 @@ fn test_dos74_link_confidence_never_downgrades() {
     assert!(linked[0].is_primary, "primary flag must not be cleared");
     assert!(linked[0].confidence >= 0.9, "confidence must not decrease");
 }
+// ---------------------------------------------------------------------------
+// DOS-240: meeting-entity dismissal dictionary
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dos240_dismissal_roundtrip() {
+    let db = test_db();
+    assert!(!db
+        .is_meeting_entity_dismissed("m1", "acct1", "account")
+        .expect("probe"));
+
+    db.record_meeting_entity_dismissal("m1", "acct1", "account", Some("user"))
+        .expect("record");
+    assert!(db
+        .is_meeting_entity_dismissed("m1", "acct1", "account")
+        .expect("probe"));
+
+    let set = db
+        .list_dismissed_meeting_entities("m1")
+        .expect("list");
+    assert!(set.contains(&("acct1".to_string(), "account".to_string())));
+
+    // Undo / restore
+    let removed = db
+        .remove_meeting_entity_dismissal("m1", "acct1", "account")
+        .expect("remove");
+    assert!(removed);
+    assert!(!db
+        .is_meeting_entity_dismissed("m1", "acct1", "account")
+        .expect("probe after remove"));
+}
+
