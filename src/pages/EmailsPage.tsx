@@ -448,6 +448,13 @@ export default function EmailsPage() {
                 <button
                   className={e.syncRetryButton}
                   onClick={async () => {
+                    // DOS-226: retry is now rollback-safe on the backend —
+                    // if the Gmail refresh fails, rows stay in `failed` and
+                    // this Retry notice reappears on the next stats load.
+                    // Surface the error to the user (instead of only
+                    // logging) and always reload stats so the UI reflects
+                    // the actual post-retry state, whether that's
+                    // "Retry notice cleared" or "still failed, try again".
                     try {
                       const count = await invoke<number>("retry_failed_emails");
                       if (count > 0) {
@@ -455,6 +462,14 @@ export default function EmailsPage() {
                       }
                     } catch (err) {
                       console.error("retry_failed_emails:", err);
+                      toast.error(
+                        typeof err === "string"
+                          ? `Retry failed: ${err}`
+                          : "Retry failed — emails remain in the failed queue",
+                      );
+                      // Reload stats so the Retry notice re-renders with the
+                      // rolled-back state, not the stale in-flight view.
+                      loadEmails(true);
                     }
                   }}
                 >
