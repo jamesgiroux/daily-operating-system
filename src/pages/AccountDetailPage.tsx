@@ -41,6 +41,8 @@ import { ValueCommitments } from "@/components/entity/ValueCommitments";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { AddToRecord } from "@/components/entity/AddToRecord";
 import { FileListSection } from "@/components/entity/FileListSection";
+import { CommercialShape } from "@/components/context/CommercialShape";
+import { RelationshipFabric } from "@/components/context/RelationshipFabric";
 // View 3 — The Work
 import { RecommendedActions } from "@/components/entity/RecommendedActions";
 import { TheWork } from "@/components/entity/TheWork";
@@ -131,13 +133,21 @@ export default function AccountDetailPage() {
   };
 
   // ─── View 2: Context ────────────────────────────────────────────────────
-  // DOS-18: 7-chapter IA — Thesis / The Room / What matters / What we've built /
-  // Their voice / Technical shape / About this dossier. Work tab owns The Record + Files.
+  // DOS-18: 9-chapter IA — Thesis / The Room / What matters / What we've built /
+  // Their voice / Commercial shape / Technical shape / Relationship fabric /
+  // About this dossier. Timeline + Files stay inline to preserve existing
+  // scroll affordances until The Work migration (DOS-13).
   const renderContextView = () => {
     // Freshness fragment helpers derived from existing data. No new schema.
     const manifest = intelligence?.sourceManifest ?? [];
     const transcriptCount = manifest.filter((m) => (m.format ?? "").toLowerCase().includes("transcript")).length;
-    const meetingCount = acct.events?.length;
+    // DOS-233: About-this-dossier counts previously used `acct.events` (lifecycle
+    // events — churn/renewal records) instead of meetings, producing obviously
+    // wrong figures like "0 meetings on record" on active accounts. The source
+    // of truth for meetings linked to the account is `detail.recentMeetings`,
+    // which is populated from `meeting_entities` joined with `meetings`
+    // (see db/accounts.rs::get_meetings_for_account_with_prep).
+    const meetingCount = detail.recentMeetings?.length ?? 0;
     const thesisFragments: string[] = [];
     if (meetingCount) thesisFragments.push(`Synthesized from ${meetingCount} meeting${meetingCount === 1 ? "" : "s"}`);
     if (transcriptCount) thesisFragments.push(`${transcriptCount} transcript${transcriptCount === 1 ? "" : "s"}`);
@@ -267,7 +277,24 @@ export default function AccountDetailPage() {
           <QuoteWallPlaceholder />
         </MarginSection>
 
-        {/* Chapter 6: Technical shape — promoted footprint + feature list (reference weight) */}
+        {/* Chapter 6: Commercial shape — reference weight, most fields are gaps today */}
+        <MarginSection id="commercial-shape" label={<>Commercial<br/>shape</>}>
+          <ChapterHeading
+            title="Commercial shape"
+            variant="reference"
+            freshness={
+              <ChapterFreshness
+                enrichedAt={intelligence?.enrichedAt}
+                fragments={[
+                  { text: "Several fields unverified — see gaps below", stale: true },
+                ]}
+              />
+            }
+          />
+          <CommercialShape detail={detail} onUpdateField={page.saveAccountField} />
+        </MarginSection>
+
+        {/* Chapter 7: Technical shape — promoted footprint + feature list (reference weight) */}
         {detail.technicalFootprint && (
           <MarginSection id="technical-shape" label={<>Technical<br/>shape</>}>
             <ChapterHeading
@@ -284,9 +311,33 @@ export default function AccountDetailPage() {
               footprint={detail.technicalFootprint}
               variant="chapter"
               featureAdoption={featureAdoption}
+              // DOS-231: gap rows expose a "Capture now" affordance. The
+              // structured editor for `account_technical_footprint` lands
+              // with DOS-207 in v1.2.2; for now we log the intent so the
+              // pathway is visible without silently accepting writes.
+              onCaptureGap={(field) => {
+                // eslint-disable-next-line no-console
+                console.info(`[DOS-231] Capture requested for technical field: ${field}. Structured editor lands with DOS-207.`);
+              }}
             />
           </MarginSection>
         )}
+
+        {/* Chapter 8: Relationship fabric — advocacy, beta, NPS history */}
+        <MarginSection id="relationship-fabric" label={<>Relationship<br/>fabric</>}>
+          <ChapterHeading
+            title="Relationship fabric"
+            freshness={
+              <ChapterFreshness
+                enrichedAt={intelligence?.enrichedAt}
+                fragments={[
+                  { text: "Most fields not captured — known gap", stale: true },
+                ]}
+              />
+            }
+          />
+          <RelationshipFabric detail={detail} />
+        </MarginSection>
 
         {/* The record — timeline continuity (preserved to avoid regression). */}
         <MarginSection id="the-record" label={<>The<br/>Record</>}>
@@ -309,7 +360,7 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        {/* Chapter 7: About this dossier — always renders; our own data-quality story */}
+        {/* Chapter 9: About this dossier — always renders; our own data-quality story */}
         <MarginSection id="about-dossier" label={<>About the<br/>dossier</>} reveal={false}>
           <AboutThisDossier
             intelligence={intelligence}
