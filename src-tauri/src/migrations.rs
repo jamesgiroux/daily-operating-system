@@ -395,6 +395,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 94,
         sql: include_str!("migrations/093_email_sync_meta.sql"),
     },
+    Migration {
+        version: 95,
+        sql: include_str!("migrations/094_user_sentiment_history.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
