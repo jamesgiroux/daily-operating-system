@@ -904,6 +904,13 @@ impl ActionDb {
         account_id: &str,
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
+        // DOS-232: restrict The Record to primary, high-confidence meeting
+        // links only. The entity resolver (DOS-74) writes `is_primary = 1` on
+        // the highest-confidence account link per meeting and confidence
+        // REAL in [0.0, 1.0]. We use a 0.70 threshold — the same floor the
+        // classifier uses to promote all-internal meetings (see
+        // google_api/classify.rs) — to filter out speculative domain-match
+        // junctions that previously surfaced unrelated items on The Record.
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
                     m.attendees, m.notes_path, mt.summary, m.created_at,
@@ -912,7 +919,10 @@ impl ActionDb {
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
-             WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+             WHERE me.entity_id = ?1
+               AND me.entity_type = 'account'
+               AND me.is_primary = 1
+               AND me.confidence >= 0.70
              ORDER BY m.start_time DESC
              LIMIT ?2",
         )?;
