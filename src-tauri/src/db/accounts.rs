@@ -1704,23 +1704,101 @@ impl ActionDb {
     pub fn reclassify_meeting_types_from_attendees(&self) -> Result<usize, DbError> {
         let mut total = 0;
 
-        // DOS-206: Path A — via the meeting_attendees junction + people table.
-        // Meetings where EVERY resolvable (has a people row) attendee is
-        // internal should flip customer/external/one_on_one → internal.
-        // This runs first because it requires at least one resolvable
-        // attendee, which is a stronger signal than raw email parsing.
-        total += self.conn.execute(
-            "UPDATE meetings SET meeting_type = 'internal'
+        // DOS-225: Path A — flip meetings to internal only when EVERY attendee
+        // is accounted for as internal.
+        //
+        // The prior version joined `meeting_attendees` → `people` and required
+        // "zero joined attendees with non-internal relationship". That was
+        // broken: if a meeting had one internal attendee (joined) and one
+        // external attendee that never got a `people` row (e.g., a Gmail
+        // address or a new domain), the JOIN silently dropped the external
+        // row and the aggregate said "all internal" → the meeting flipped.
+        //
+        // The fix requires full coverage. For each candidate meeting we read
+        // `meetings.attendees` (canonical attendee JSON) and ensure EVERY
+        // parseable email is either:
+        //   (a) already resolved via `meeting_attendees` / `people` as
+        //       `relationship = 'internal'`, OR
+        //   (b) its domain matches a user-owned domain (config fallback).
+        // Any unresolved external email blocks the flip. Meetings with no
+        // attendees at all (attendees JSON empty / missing) are skipped —
+        // we can't judge coverage without attendees.
+        let user_domains_for_path_a: Vec<String> = crate::state::load_config()
+            .map(|c| c.resolved_user_domains())
+            .unwrap_or_default();
+
+        let mut path_a_stmt = self.conn.prepare(
+            "SELECT id, attendees FROM meetings
              WHERE meeting_type IN ('customer', 'external', 'one_on_one')
-               AND id IN (
-                   SELECT ma.meeting_id
-                   FROM meeting_attendees ma
-                   JOIN people p ON ma.person_id = p.id
-                   GROUP BY ma.meeting_id
-                   HAVING COUNT(CASE WHEN p.relationship != 'internal' THEN 1 END) = 0
-               )",
-            [],
+               AND attendees IS NOT NULL
+               AND attendees != ''",
         )?;
+        let path_a_rows = path_a_stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(path_a_stmt);
+
+        let mut internal_emails_stmt = self.conn.prepare(
+            "SELECT LOWER(p.email)
+             FROM meeting_attendees ma
+             JOIN people p ON ma.person_id = p.id
+             WHERE ma.meeting_id = ?1
+               AND p.relationship = 'internal'
+               AND p.email IS NOT NULL
+               AND p.email != ''",
+        )?;
+
+        let mut path_a_update_stmt = self
+            .conn
+            .prepare("UPDATE meetings SET meeting_type = 'internal' WHERE id = ?1")?;
+
+        for (meeting_id, attendees_str) in path_a_rows {
+            let attendees: Vec<String> =
+                match serde_json::from_str::<Vec<String>>(&attendees_str) {
+                    Ok(arr) => arr,
+                    Err(_) => attendees_str
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect(),
+                };
+
+            // Only parseable emails participate in the coverage check.
+            let emails: Vec<String> = attendees
+                .iter()
+                .filter(|a| a.contains('@'))
+                .map(|a| a.to_lowercase())
+                .collect();
+            if emails.is_empty() {
+                continue;
+            }
+
+            // Collect internal emails known via the junction.
+            let internal_from_people: std::collections::HashSet<String> = internal_emails_stmt
+                .query_map(params![meeting_id], |row| row.get::<_, String>(0))?
+                .filter_map(Result::ok)
+                .collect();
+
+            // Every attendee email must be resolvable as internal — either
+            // known-internal via people, or domain-owned via config.
+            let all_internal = emails.iter().all(|email| {
+                if internal_from_people.contains(email) {
+                    return true;
+                }
+                let domain = email.split('@').nth(1).unwrap_or("");
+                !domain.is_empty()
+                    && user_domains_for_path_a
+                        .iter()
+                        .any(|d| !d.is_empty() && domain.eq_ignore_ascii_case(d))
+            });
+
+            if all_internal {
+                path_a_update_stmt.execute(params![meeting_id])?;
+                total += 1;
+            }
+        }
 
         // DOS-206: Path B — via raw attendee email strings vs user_domains.
         // The people-join query above misses meetings where attendees are
