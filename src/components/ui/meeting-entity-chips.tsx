@@ -151,9 +151,14 @@ export function MeetingEntityChips({
             ? { personId: entity.id }
             : { accountId: entity.id };
 
+        // DOS-74: Render suggestion chips muted with a subtle "suggested"
+        // dashed border so users can see disambiguation options without
+        // mistaking them for co-equal primaries.
+        const isSuggested = entity.suggested === true;
         return (
           <span
             key={entity.id}
+            title={isSuggested ? "Suggested — not auto-linked" : undefined}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -162,11 +167,13 @@ export function MeetingEntityChips({
               fontSize,
               fontWeight: 400,
               color,
-              background: bg,
+              background: isSuggested ? "transparent" : bg,
               padding: chipPadding,
               borderRadius: 4,
               lineHeight: 1.3,
-              transition: "background 0.15s ease",
+              opacity: isSuggested ? 0.65 : 1,
+              border: isSuggested ? `1px dashed ${color}` : "none",
+              transition: "background 0.15s ease, opacity 0.15s ease",
             }}
           >
             <Icon style={{ width: iconSize, height: iconSize, opacity: 0.7, flexShrink: 0 }} />

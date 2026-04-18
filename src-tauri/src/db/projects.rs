@@ -493,6 +493,30 @@ impl ActionDb {
         Ok(())
     }
 
+    /// DOS-74: Link a meeting to an entity with per-junction confidence + primary flag.
+    /// If the link already exists, upgrades confidence/is_primary when the new
+    /// values are higher (never downgrades — a later low-confidence sweep
+    /// should not stomp a high-confidence manual link).
+    pub fn link_meeting_entity_with_confidence(
+        &self,
+        meeting_id: &str,
+        entity_id: &str,
+        entity_type: &str,
+        confidence: f64,
+        is_primary: bool,
+    ) -> Result<(), DbError> {
+        let primary_int: i64 = if is_primary { 1 } else { 0 };
+        self.conn.execute(
+            "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence, is_primary)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(meeting_id, entity_id) DO UPDATE SET
+                 confidence = MAX(confidence, excluded.confidence),
+                 is_primary = MAX(is_primary, excluded.is_primary)",
+            params![meeting_id, entity_id, entity_type, confidence, primary_int],
+        )?;
+        Ok(())
+    }
+
     /// Remove a meeting-entity link from the junction table.
     pub fn unlink_meeting_entity(&self, meeting_id: &str, entity_id: &str) -> Result<(), DbError> {
         self.conn.execute(
@@ -500,6 +524,38 @@ impl ActionDb {
             params![meeting_id, entity_id],
         )?;
         Ok(())
+    }
+
+    /// DOS-74: Get all linked entities for a meeting with confidence + primary
+    /// flags, ordered by (is_primary DESC, confidence DESC, name ASC) so
+    /// `[0]` is the single best primary entity and lower-confidence siblings
+    /// trail as suggestions.
+    pub fn get_meeting_linked_entities(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Vec<LinkedEntity>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT e.id, e.name, me.entity_type, me.confidence, me.is_primary
+             FROM meeting_entities me
+             JOIN entities e ON e.id = me.entity_id
+             WHERE me.meeting_id = ?1
+             ORDER BY me.is_primary DESC, me.confidence DESC, e.name ASC",
+        )?;
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            let confidence: f64 = row.get(3)?;
+            let is_primary: i64 = row.get(4)?;
+            let is_primary = is_primary != 0;
+            let suggested = !is_primary && confidence < 0.60;
+            Ok(LinkedEntity {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entity_type: row.get(2)?,
+                confidence,
+                is_primary,
+                suggested,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Get all entities linked to a meeting via the junction table.
@@ -525,6 +581,11 @@ impl ActionDb {
 
     /// Batch query: get linked entities for multiple meetings at once.
     /// Returns a map from meeting_id → Vec<LinkedEntity>.
+    ///
+    /// DOS-74: Results are ordered by confidence DESC within each meeting so
+    /// `entities[0]` is always the highest-confidence (primary) link. Low-
+    /// confidence siblings (<0.60) are flagged `suggested = true` for muted
+    /// UI rendering.
     pub fn get_meeting_entity_map(
         &self,
         meeting_ids: &[String],
@@ -536,10 +597,11 @@ impl ActionDb {
             .map(|i| format!("?{}", i + 1))
             .collect();
         let sql = format!(
-            "SELECT me.meeting_id, e.id, e.name, me.entity_type
+            "SELECT me.meeting_id, e.id, e.name, me.entity_type, me.confidence, me.is_primary
              FROM meeting_entities me
              JOIN entities e ON e.id = me.entity_id
-             WHERE me.meeting_id IN ({})",
+             WHERE me.meeting_id IN ({})
+             ORDER BY me.is_primary DESC, me.confidence DESC, e.name ASC",
             placeholders.join(", ")
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -548,12 +610,26 @@ impl ActionDb {
             .map(|id| id as &dyn rusqlite::types::ToSql)
             .collect();
         let rows = stmt.query_map(params.as_slice(), |row| {
+            let meeting_id: String = row.get(0)?;
+            let id: String = row.get(1)?;
+            let name: String = row.get(2)?;
+            let entity_type: String = row.get(3)?;
+            let confidence: f64 = row.get(4)?;
+            let is_primary: i64 = row.get(5)?;
+            let is_primary = is_primary != 0;
+            // DOS-74: suggestion tier is anything below the ResolvedWithFlag
+            // cutoff (0.60) that is also not flagged as primary. UI paints
+            // these muted with a "suggested" affordance.
+            let suggested = !is_primary && confidence < 0.60;
             Ok((
-                row.get::<_, String>(0)?,
+                meeting_id,
                 LinkedEntity {
-                    id: row.get(1)?,
-                    name: row.get(2)?,
-                    entity_type: row.get(3)?,
+                    id,
+                    name,
+                    entity_type,
+                    confidence,
+                    is_primary,
+                    suggested,
                 },
             ))
         })?;
