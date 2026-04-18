@@ -211,10 +211,15 @@ pub fn classify_meeting_multi(
     // ---- Entity-aware type override ----
     // If the title matched a known account entity with high confidence,
     // treat this as an account meeting regardless of attendee domains.
-    let has_account_entity = result
-        .resolved_entities
-        .iter()
-        .any(|e| e.entity_type == "account" && e.confidence >= 0.50);
+    //
+    // DOS-206: Title-slug matches alone (source="title", confidence=0.50)
+    // are too weak to promote an all-internal meeting to customer tier.
+    // Require either a stronger source (domain/keyword) OR confidence ≥ 0.70.
+    // Otherwise a word like "acme" appearing in an internal meeting title
+    // misclassifies the entire meeting as a customer call.
+    let has_account_entity = result.resolved_entities.iter().any(|e| {
+        e.entity_type == "account" && (e.confidence >= 0.70 || e.source != "title")
+    });
 
     // Check if best-matched account entity is a partner (I382)
     let best_account_is_partner = result
@@ -996,21 +1001,25 @@ mod tests {
 
     #[test]
     fn test_classify_internal_1on1_with_account_in_title() {
+        // DOS-206: A domain hint that does NOT match any attendee (attendees
+        // are all @company.com, account owns @acmecorp.com) gives us only
+        // a title-slug resolution at 0.50/source=title. That's below the
+        // entity-aware promotion threshold (0.70 or non-title source), so
+        // the meeting correctly stays at Person tier.
         let hints = vec![account_hint_with_domain(
             "acme-id",
             "Acme Corp",
             &["acmecorp.com"],
         )];
-        // All attendees are internal — normally would be "one_on_one" with Person tier
         let event = make_event(
             "Acme Corp 1:1",
             vec!["me@company.com", "colleague@company.com"],
             false,
         );
         let result = classify_meeting(&event, "company.com", &hints);
-        // Should be promoted to Entity tier because "Acme Corp" is a known account
         assert_eq!(result.meeting_type, "one_on_one");
-        assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Person);
+        // Resolver still records the weak match for suggestion surfaces.
         assert!(!result.resolved_entities.is_empty());
         assert_eq!(result.resolved_entities[0].entity_type, "account");
         assert_eq!(result.resolved_entities[0].name, "Acme Corp");
@@ -1018,20 +1027,77 @@ mod tests {
 
     #[test]
     fn test_classify_internal_meeting_with_account_in_title() {
+        // DOS-206: A title-slug-only match on an all-internal meeting is
+        // too weak to promote to Entity tier. The resolver still records
+        // the low-confidence resolution (so downstream suggestion UI can
+        // surface it), but the meeting type stays internal and the tier
+        // stays Person.
         let hints = vec![account_hint_with_domain(
             "acme-id",
             "Acme Corp",
             &["acme.com"],
         )];
-        // 3 internal attendees, "Acme" in title
         let event = make_event(
             "Acme Corp Planning Session",
             vec!["me@company.com", "a@company.com", "b@company.com"],
             false,
         );
         let result = classify_meeting(&event, "company.com", &hints);
-        assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
+        assert_eq!(result.meeting_type, "internal");
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Person);
+        // Resolver still surfaces the weak match for suggestions.
         assert!(!result.resolved_entities.is_empty());
+    }
+
+    /// DOS-206 regression: all-internal meeting whose title happens to
+    /// contain a known account slug must NOT be promoted to "customer".
+    /// Title-only slug matches produce confidence 0.50 via source="title",
+    /// which is below the 0.70 threshold for the entity-aware override.
+    #[test]
+    fn test_dos206_internal_title_slug_does_not_promote_to_customer() {
+        let hints = vec![account_hint_with_domain(
+            "acme-id",
+            "Acme",
+            &["acme.com"],
+        )];
+        // 3 internal attendees, title mentions "Acme" (slug-only match).
+        // No external domain signal exists, so the only resolution route is
+        // title-slug at confidence 0.50 / source="title". Must stay internal.
+        let event = make_event(
+            "Acme Ops Planning",
+            vec![
+                "me@company.com",
+                "a@company.com",
+                "b@company.com",
+                "c@company.com",
+            ],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &hints);
+        assert_eq!(
+            result.meeting_type, "internal",
+            "title-only slug match must not promote all-internal meeting to customer"
+        );
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Person);
+    }
+
+    /// DOS-206 regression: stronger signals (keyword match, domain match)
+    /// should still promote to entity tier even for all-internal meetings.
+    /// The fix narrows only the weakest source ("title"), not the others.
+    #[test]
+    fn test_dos206_internal_keyword_match_still_promotes() {
+        let mut hint = account_hint_with_domain("acme-id", "Acme Corp", &["acme.com"]);
+        hint.keywords = vec!["acme corp".to_string()];
+        let hints = vec![hint];
+        // Keyword match gives confidence 0.70 / source="keyword" — above the
+        // 0.70 threshold, so the override still fires.
+        let event = make_event(
+            "Acme Corp Strategy Review",
+            vec!["me@company.com", "a@company.com", "b@company.com"],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &hints);
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
     }
 
     #[test]
