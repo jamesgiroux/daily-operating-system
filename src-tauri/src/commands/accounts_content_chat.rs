@@ -315,7 +315,7 @@ pub async fn set_user_health_sentiment(
     sentiment: String,
     note: Option<String>,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
