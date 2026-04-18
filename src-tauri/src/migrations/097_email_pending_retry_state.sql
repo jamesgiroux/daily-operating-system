@@ -21,6 +21,15 @@
 -- SQLite can't ALTER a CHECK constraint in place, so we rebuild the table.
 -- The column list matches the accumulated ALTERs from migrations 034, 035,
 -- 071, and 082. Defaults and indexes are restored at the end.
+--
+-- DOS-226 follow-up (Codex finding 4): the initial revision of this migration
+-- restored only the indexes created by migration 034. `idx_emails_relevance`
+-- (035) and `idx_emails_enriched_at` (082) were silently dropped on upgrade,
+-- regressing query plans that rely on them (relevance-sorted inbox reads,
+-- recent-enriched filters). The explicit CREATE INDEX IF NOT EXISTS list at
+-- the bottom now enumerates every index known to exist on `emails` at this
+-- point in schema history. Any future index added to `emails` before this
+-- migration must also be listed here.
 
 -- Disable FK enforcement during the table swap so dependent rows survive.
 PRAGMA foreign_keys = OFF;
@@ -78,11 +87,16 @@ FROM emails;
 DROP TABLE emails;
 ALTER TABLE emails_new RENAME TO emails;
 
+-- Migration 034 baseline.
 CREATE INDEX IF NOT EXISTS idx_emails_thread_id ON emails(thread_id);
 CREATE INDEX IF NOT EXISTS idx_emails_enrichment ON emails(enrichment_state, enrichment_attempts);
 CREATE INDEX IF NOT EXISTS idx_emails_entity ON emails(entity_id, entity_type);
 CREATE INDEX IF NOT EXISTS idx_emails_priority_resolved ON emails(priority, resolved_at);
 CREATE INDEX IF NOT EXISTS idx_emails_last_seen ON emails(last_seen_at);
 CREATE INDEX IF NOT EXISTS idx_emails_resolved ON emails(resolved_at);
+-- Migration 035: relevance-sorted inbox.
+CREATE INDEX IF NOT EXISTS idx_emails_relevance ON emails(relevance_score);
+-- Migration 082: recent-enriched filter (Gate 0 dedup, UI "just enriched" surfaces).
+CREATE INDEX IF NOT EXISTS idx_emails_enriched_at ON emails(enriched_at DESC);
 
 PRAGMA foreign_keys = ON;
