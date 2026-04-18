@@ -4,6 +4,46 @@ use super::types::{DbError, FeedbackEvent, SuppressionTombstone};
 use super::ActionDb;
 use rusqlite::params;
 
+/// DOS-41: Correction actions a user can take on an AI-surfaced intelligence field.
+///
+/// Persisted in `entity_feedback_events.feedback_type` as a snake_case string.
+/// Each action has distinct downstream semantics in `services::feedback`:
+///
+/// - `Confirmed` → positive signal, rewards the source via Bayesian alpha++
+/// - `Annotated` → user note stored in `reason`, threaded into next intel prompt
+/// - `Corrected` → `previous_value` + `corrected_value` captured; penalizes source
+///   via Bayesian beta++; triggers health recalc when field is health-affecting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CorrectionAction {
+    Confirmed,
+    Annotated,
+    Corrected,
+}
+
+impl CorrectionAction {
+    /// String form persisted in `entity_feedback_events.feedback_type`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CorrectionAction::Confirmed => "confirmed",
+            CorrectionAction::Annotated => "annotated",
+            CorrectionAction::Corrected => "corrected",
+        }
+    }
+
+    /// Parse the wire-format action string coming from the Tauri command.
+    pub fn parse(raw: &str) -> Result<Self, String> {
+        match raw {
+            "confirmed" => Ok(CorrectionAction::Confirmed),
+            "annotated" => Ok(CorrectionAction::Annotated),
+            "corrected" => Ok(CorrectionAction::Corrected),
+            other => Err(format!(
+                "invalid correction action '{}' (expected confirmed|annotated|corrected)",
+                other
+            )),
+        }
+    }
+}
+
 impl ActionDb {
     /// Record a feedback event (dismiss, accept, reject, thumbs-up, thumbs-down, etc.).
     #[allow(clippy::too_many_arguments)]
