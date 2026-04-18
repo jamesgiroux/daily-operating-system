@@ -1413,6 +1413,20 @@ pub async fn get_account_detail(
             // I644: Source references for promoted account facts
             let source_refs = db.get_account_source_refs(&account.id).unwrap_or_default();
 
+            // DOS-15: Glean leading-signal enrichment bundle — nullable.
+            let glean_signals: Option<
+                crate::intelligence::glean_leading_signals::HealthOutlookSignals,
+            > = db
+                .conn_ref()
+                .query_row(
+                    "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+                    rusqlite::params![&account.id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .ok()
+                .flatten()
+                .and_then(|json| serde_json::from_str(&json).ok());
+
             Ok(AccountDetailResult {
                 id: account.id,
                 name: account.name,
@@ -1454,6 +1468,7 @@ pub async fn get_account_detail(
                 source_refs,
                 user_health_sentiment: account.user_health_sentiment,
                 sentiment_set_at: account.sentiment_set_at,
+                glean_signals,
             })
         })
         .await
