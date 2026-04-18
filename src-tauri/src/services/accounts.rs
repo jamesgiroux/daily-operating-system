@@ -1061,7 +1061,7 @@ pub fn correct_lifecycle_change(
 #[allow(clippy::too_many_arguments)]
 pub fn accept_account_field_conflict(
     db: &ActionDb,
-    state: &AppState,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     field: &str,
     suggested_value: &str,
@@ -1494,7 +1494,7 @@ pub async fn get_account_detail(
 /// Writes to SQLite, emits signal, then regenerates dashboard.json + dashboard.md.
 pub fn update_account_field(
     db: &ActionDb,
-    state: &AppState,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     field: &str,
     value: &str,
@@ -1565,19 +1565,13 @@ pub fn update_account_field(
         );
     }
 
-    // DOS-27: Health-relevant field edits trigger an immediate health recompute
-    // so the UI band reflects the new value. Frontend debounces at 2s before
-    // the mutation fires, so this is naturally coalesced across rapid edits.
+    // DOS-228 Fix 2: Health-relevant field edits schedule a DEBOUNCED recompute
+    // on the backend. 10 rapid edits within the debounce window coalesce into
+    // exactly one recompute, reflecting the last committed state. This replaces
+    // the previous synchronous recompute, which fired once per edit and could
+    // not be trusted (AI agents, chat, and automation bypass the UI debounce).
     if is_health_relevant_field(field) {
-        if let Err(e) =
-            crate::services::intelligence::recompute_entity_health(db, account_id, "account")
-        {
-            log::warn!(
-                "DOS-27: post-edit health recompute failed for {}: {}",
-                account_id,
-                e
-            );
-        }
+        crate::services::health_debouncer::schedule_recompute(state, account_id);
     }
 
     // Regenerate workspace files
