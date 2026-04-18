@@ -5953,6 +5953,7 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
             is_all_day: false,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         }
     };
 

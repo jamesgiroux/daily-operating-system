@@ -4873,3 +4873,156 @@ fn test_dos240_dismissal_roundtrip() {
         .expect("probe after remove"));
 }
 
+
+// ---------------------------------------------------------------------------
+// DOS-224: scored persistence — calendar-sync path
+// ---------------------------------------------------------------------------
+
+use crate::google_api::classify::ResolvedMeetingEntity as Rme;
+
+fn rme(id: &str, confidence: f64, source: &str) -> Rme {
+    Rme {
+        entity_id: id.to_string(),
+        entity_type: "account".to_string(),
+        name: id.to_string(),
+        confidence,
+        source: source.to_string(),
+    }
+}
+
+/// DOS-224 regression: an all-internal meeting that title-matched a known
+/// account slug (confidence 0.50 / source="title") must NOT produce an
+/// `is_primary = 1` junction row on the calendar-sync path. The entity
+/// still persists — as a non-primary suggestion — so the UI can surface it
+/// in the affordance strip, but the briefing must not treat it as the
+/// meeting's primary account.
+#[test]
+fn test_dos224_title_only_never_primary_on_calendar_sync() {
+    let db = test_db();
+    let acct = sample_account("acme", "Acme Corp");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m_sync_1", "Acme Ops Planning");
+
+    let entities = vec![rme("acme", 0.50, "title")];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_sync_1",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 1, "title-only resolution still persists as suggestion");
+
+    let rows = db.get_meeting_linked_entities("m_sync_1").expect("linked");
+    assert_eq!(rows.len(), 1);
+    assert!(
+        !rows[0].is_primary,
+        "DOS-224: title-only (<0.70) must NEVER be is_primary=1 on calendar-sync"
+    );
+    assert!(rows[0].confidence < 0.70);
+}
+
+/// DOS-224 regression: when multiple domain-matched account entities land
+/// (e.g., parent BU + subsidiary sharing a domain), the calendar-sync
+/// persistence path must still pick exactly one primary and persist the
+/// others as suggestions. Mirrors the single-primary rule from the
+/// resolver path.
+#[test]
+fn test_dos224_multi_bu_single_primary_on_calendar_sync() {
+    let db = test_db();
+    let parent = sample_account("parent-bu", "Parent BU");
+    db.upsert_account(&parent).expect("upsert parent");
+    let sub = sample_account("sub-bu", "Subsidiary BU");
+    db.upsert_account(&sub).expect("upsert sub");
+    setup_meeting(&db, "m_sync_2", "Shared Domain Sync");
+
+    let entities = vec![
+        rme("parent-bu", 0.85, "domain"),
+        rme("sub-bu", 0.80, "domain"),
+    ];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_sync_2",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 2);
+
+    let rows = db.get_meeting_linked_entities("m_sync_2").expect("linked");
+    assert_eq!(rows.len(), 2);
+    let primaries: Vec<&_> = rows.iter().filter(|r| r.is_primary).collect();
+    assert_eq!(
+        primaries.len(),
+        1,
+        "DOS-224: calendar-sync must pick exactly one primary per entity_type"
+    );
+    assert_eq!(primaries[0].id, "parent-bu", "highest-confidence wins");
+}
+
+/// DOS-240 regression: a dismissed entity must NOT be re-linked by the
+/// calendar-sync persistence path, even if the resolver still thinks the
+/// match is valid. The legacy behavior (auto-relink on every sync) is the
+/// bug we're fixing.
+#[test]
+fn test_dos240_dismissal_blocks_calendar_sync_relink() {
+    let db = test_db();
+    let acct = sample_account("acme", "Acme Corp");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m_dismiss_1", "Acme Planning");
+
+    // User previously dismissed this account from this meeting.
+    db.record_meeting_entity_dismissal("m_dismiss_1", "acme", "account", None)
+        .expect("record dismissal");
+
+    let entities = vec![rme("acme", 0.85, "domain")];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_dismiss_1",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 0, "DOS-240: dismissed entity must be skipped");
+
+    let rows = db.get_meeting_linked_entities("m_dismiss_1").expect("linked");
+    assert!(rows.is_empty(), "no junction row should have been written");
+}
+
+/// DOS-240 regression: after `restore_meeting_entity` removes the dismissal
+/// record, the next persistence pass re-links the entity normally.
+#[test]
+fn test_dos240_restore_allows_relink() {
+    let db = test_db();
+    let acct = sample_account("acme", "Acme Corp");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m_dismiss_2", "Acme Planning");
+
+    db.record_meeting_entity_dismissal("m_dismiss_2", "acme", "account", None)
+        .expect("dismiss");
+    let entities = vec![rme("acme", 0.85, "domain")];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_dismiss_2",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 0);
+
+    // Restore: undo the dismissal.
+    let removed = db
+        .remove_meeting_entity_dismissal("m_dismiss_2", "acme", "account")
+        .expect("remove");
+    assert!(removed);
+
+    // Next sync re-matches and this time the link lands.
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_dismiss_2",
+        &entities,
+    )
+    .expect("persist after restore");
+    assert_eq!(linked, 1, "DOS-240: after restore the entity re-links");
+    let rows = db
+        .get_meeting_linked_entities("m_dismiss_2")
+        .expect("linked");
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].is_primary);
+}

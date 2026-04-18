@@ -712,19 +712,47 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
                 // I653 FIX 5: Persist classification-time entity links (mirrors prepare_week:1139)
                 if let Some(entities) = cm.get("entities").and_then(|v| v.as_array()) {
-                    let entity_pairs: Vec<(String, String)> = entities
+                    // DOS-224: `cm["entities"]` is a ResolvedMeetingEntity[]
+                    // with camelCase serde — NOT the snake_case pairs the
+                    // previous reader expected. Parse the full scored shape
+                    // so the persistence layer can enforce primary rules.
+                    let scored: Vec<crate::google_api::classify::ResolvedMeetingEntity> = entities
                         .iter()
                         .filter_map(|e| {
-                            let id = e.get("entity_id").and_then(|v| v.as_str())?;
-                            let t = e.get("entity_type").and_then(|v| v.as_str())?;
-                            Some((id.to_string(), t.to_string()))
+                            let id = e
+                                .get("entityId")
+                                .or_else(|| e.get("entity_id"))
+                                .and_then(|v| v.as_str())?;
+                            let t = e
+                                .get("entityType")
+                                .or_else(|| e.get("entity_type"))
+                                .and_then(|v| v.as_str())?;
+                            let name = e
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let confidence =
+                                e.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let source = e
+                                .get("source")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            Some(crate::google_api::classify::ResolvedMeetingEntity {
+                                entity_id: id.to_string(),
+                                entity_type: t.to_string(),
+                                name,
+                                confidence,
+                                source,
+                            })
                         })
                         .collect();
-                    if !entity_pairs.is_empty() {
-                        let _ = crate::services::meetings::persist_classification_entities(
+                    if !scored.is_empty() {
+                        let _ = crate::services::meetings::persist_classification_entities_scored(
                             &db,
                             calendar_event_id,
-                            &entity_pairs,
+                            &scored,
                         );
                     }
                 }
@@ -1151,21 +1179,48 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                     new_id
                 };
 
-                // Link meeting entities (I336, refactored I653 to use centralized service)
+                // Link meeting entities (I336, refactored I653 to use centralized service).
+                // DOS-224: parse scored shape (camelCase) and route through the
+                // scored persistence path so weak title-only matches land as
+                // non-primary suggestions rather than bogus primaries.
                 if let Some(entities) = cm.get("entities").and_then(|v| v.as_array()) {
-                    let entity_pairs: Vec<(String, String)> = entities
+                    let scored: Vec<crate::google_api::classify::ResolvedMeetingEntity> = entities
                         .iter()
                         .filter_map(|e| {
-                            let id = e.get("entity_id").and_then(|v| v.as_str())?;
-                            let t = e.get("entity_type").and_then(|v| v.as_str())?;
-                            Some((id.to_string(), t.to_string()))
+                            let id = e
+                                .get("entityId")
+                                .or_else(|| e.get("entity_id"))
+                                .and_then(|v| v.as_str())?;
+                            let t = e
+                                .get("entityType")
+                                .or_else(|| e.get("entity_type"))
+                                .and_then(|v| v.as_str())?;
+                            let name = e
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let confidence =
+                                e.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let source = e
+                                .get("source")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            Some(crate::google_api::classify::ResolvedMeetingEntity {
+                                entity_id: id.to_string(),
+                                entity_type: t.to_string(),
+                                name,
+                                confidence,
+                                source,
+                            })
                         })
                         .collect();
-                    if !entity_pairs.is_empty() {
-                        let _ = crate::services::meetings::persist_classification_entities(
+                    if !scored.is_empty() {
+                        let _ = crate::services::meetings::persist_classification_entities_scored(
                             &db,
                             &meeting_id,
-                            &entity_pairs,
+                            &scored,
                         );
                     }
                 }

@@ -1990,6 +1990,13 @@ pub struct CalendarEvent {
     /// Default empty — only populated by classify_meeting_multi → to_calendar_event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub classified_entities: Option<Vec<(String, String)>>, // (entity_id, entity_type)
+    /// DOS-224: Scored entity resolutions from classification time. Unlike
+    /// `classified_entities` which loses confidence + source, this field
+    /// carries everything the persistence layer needs to make a principled
+    /// primary-vs-suggestion decision (and to refuse weak title-only
+    /// matches from claiming is_primary=1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scored_classified_entities: Option<Vec<crate::google_api::classify::ResolvedMeetingEntity>>,
 }
 
 // =============================================================================

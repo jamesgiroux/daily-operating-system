@@ -1778,34 +1778,143 @@ pub async fn unlink_meeting_entity_with_prep_queue(
 /// At this point, prep does not exist yet, so no invalidation is needed.
 /// Additive: INSERT OR IGNORE preserves existing manual user links.
 /// No signal emission — classification is detection, not user mutation.
+///
+/// DOS-224: Backward-compatible shim. Callers that only have `(id, type)`
+/// pairs land at confidence 0.95 / is_primary=1 (the same defaults the
+/// legacy `link_meeting_entity` used). For scored input use the
+/// `_scored` variant below — that's what the calendar-sync path does now.
+///
+/// DOS-240: Filters out any (entity_id, entity_type) the user previously
+/// dismissed so dismissals survive calendar-sync sweeps.
 pub fn persist_classification_entities(
     db: &crate::db::ActionDb,
     meeting_id: &str,
     entities: &[(String, String)], // (entity_id, entity_type)
 ) -> Result<usize, String> {
+    let scored: Vec<crate::google_api::classify::ResolvedMeetingEntity> = entities
+        .iter()
+        .map(
+            |(id, t)| crate::google_api::classify::ResolvedMeetingEntity {
+                entity_id: id.clone(),
+                entity_type: t.clone(),
+                name: String::new(),
+                confidence: 0.95,
+                source: "legacy".to_string(),
+            },
+        )
+        .collect();
+    persist_classification_entities_scored(db, meeting_id, &scored)
+}
+
+/// DOS-224: Scored variant of `persist_classification_entities`. Writes each
+/// junction row with its real confidence and a principled `is_primary`
+/// decision derived from the resolver output instead of pretending every
+/// classification-time link is a high-confidence primary.
+///
+/// Rules:
+///   - At most one `is_primary = 1` row per `entity_type` per meeting — the
+///     single highest-confidence resolution wins.
+///   - A resolution is eligible for primary only if it passes the DOS-206
+///     strength check: confidence >= 0.70 OR source != "title". Weaker
+///     title-only matches (confidence 0.50 / source="title") still land,
+///     but as non-primary suggestions — never as `is_primary = 1`.
+///   - `link_meeting_entity_with_confidence` uses `ON CONFLICT ... MAX(...)`
+///     so a later lower-confidence sweep can never downgrade a previously
+///     linked primary.
+///
+/// DOS-240: Dismissed entities (user-unlinked, recorded in
+/// `meeting_entity_dismissals`) are skipped before any write. This closes
+/// the "dismissed entity comes back every sync" loop at the calendar-sync
+/// edge, mirroring the guard in
+/// `persist_and_invalidate_entity_links_sync_scored` for the resolver edge.
+pub fn persist_classification_entities_scored(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    entities: &[crate::google_api::classify::ResolvedMeetingEntity],
+) -> Result<usize, String> {
+    if entities.is_empty() {
+        return Ok(0);
+    }
+
+    // DOS-240: filter dismissals up front.
+    let dismissed = db
+        .list_dismissed_meeting_entities(meeting_id)
+        .unwrap_or_default();
+    let filtered: Vec<&crate::google_api::classify::ResolvedMeetingEntity> = entities
+        .iter()
+        .filter(|e| !dismissed.contains(&(e.entity_id.clone(), e.entity_type.clone())))
+        .collect();
+
+    if filtered.len() < entities.len() {
+        log::info!(
+            "persist_classification_entities_scored: skipped {} dismissed entities for meeting {}",
+            entities.len() - filtered.len(),
+            meeting_id,
+        );
+    }
+
+    // DOS-224: pick at most one primary per entity_type (single-primary rule,
+    // mirrors `select_auto_link_candidates` in the resolver path). A resolution
+    // is "primary-eligible" only when it's stronger than a bare title-slug
+    // match (confidence >= 0.70 OR source != "title").
+    let mut primary_per_type: std::collections::HashMap<
+        String,
+        &crate::google_api::classify::ResolvedMeetingEntity,
+    > = std::collections::HashMap::new();
+    for entity in &filtered {
+        let eligible_for_primary = entity.confidence >= 0.70 || entity.source != "title";
+        if !eligible_for_primary {
+            continue;
+        }
+        let key = entity.entity_type.clone();
+        match primary_per_type.get(&key) {
+            None => {
+                primary_per_type.insert(key, *entity);
+            }
+            Some(existing) => {
+                if entity.confidence > existing.confidence {
+                    primary_per_type.insert(key, *entity);
+                }
+            }
+        }
+    }
+    let primary_ids: std::collections::HashSet<(String, String)> = primary_per_type
+        .values()
+        .map(|e| (e.entity_id.clone(), e.entity_type.clone()))
+        .collect();
+
     let mut linked = 0usize;
-    for (entity_id, entity_type) in entities {
-        match db.link_meeting_entity(meeting_id, entity_id, entity_type) {
-            Ok(_) => linked += 1,
+    for entity in &filtered {
+        let is_primary = primary_ids.contains(&(entity.entity_id.clone(), entity.entity_type.clone()));
+        let confidence = entity.confidence.clamp(0.0, 1.0);
+        match db.link_meeting_entity_with_confidence(
+            meeting_id,
+            &entity.entity_id,
+            &entity.entity_type,
+            confidence,
+            is_primary,
+        ) {
+            Ok(()) => linked += 1,
             Err(e) => {
-                // INSERT OR IGNORE — duplicates are expected, real errors are not
                 let msg = e.to_string();
                 if !msg.contains("UNIQUE constraint") {
                     log::warn!(
-                        "persist_classification_entities: failed to link {} → {} ({}): {}",
+                        "persist_classification_entities_scored: failed to link {} → {} ({}): {}",
                         meeting_id,
-                        entity_id,
-                        entity_type,
+                        entity.entity_id,
+                        entity.entity_type,
                         msg,
                     );
                 }
             }
         }
     }
+
     if linked > 0 {
         log::info!(
-            "persist_classification_entities: linked {} entities to meeting {}",
+            "persist_classification_entities_scored: linked {} entities ({} primary) to meeting {}",
             linked,
+            primary_ids.len(),
             meeting_id,
         );
     }
@@ -3075,6 +3184,7 @@ pub async fn reprocess_meeting_transcript(
         account: None, // Resolved by transcript pipeline from meeting_entities
         linked_entities: None,
         classified_entities: None,
+        scored_classified_entities: None,
     };
 
     // Re-run the full pipeline via the existing attach path
