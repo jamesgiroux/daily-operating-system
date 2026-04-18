@@ -705,6 +705,8 @@ pub fn run() {
             // Risk Briefing
             commands::generate_risk_briefing,
             commands::get_risk_briefing,
+            // DOS-228 Fix 3: Risk briefing retry (surfaces failed jobs)
+            commands::retry_risk_briefing,
             // Reports (v0.15.0)
             commands::generate_report,
             commands::get_report,

@@ -2793,6 +2793,117 @@ impl ActionDb {
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
+
+    // =========================================================================
+    // DOS-228 Fix 3: risk_briefing_jobs — persisted status for async risk
+    // briefing generation. One row per account; the row is upserted at each
+    // lifecycle transition (enqueued → running → complete|failed).
+    // =========================================================================
+
+    /// Mark a risk briefing as enqueued for `account_id`.
+    /// Overwrites any prior job for this account — only the latest attempt is
+    /// retained; history lives in the audit log / reports table.
+    pub fn upsert_risk_briefing_job_enqueued(&self, account_id: &str) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO risk_briefing_jobs
+                (account_id, status, enqueued_at, completed_at, error_message)
+             VALUES (?1, 'enqueued', ?2, NULL, NULL)
+             ON CONFLICT(account_id) DO UPDATE SET
+                status        = 'enqueued',
+                enqueued_at   = excluded.enqueued_at,
+                completed_at  = NULL,
+                error_message = NULL",
+            params![account_id, now],
+        )?;
+        Ok(())
+    }
+
+    /// Mark the current job as running. No-op if the row is missing — the
+    /// status transitions are driven by the service layer which always calls
+    /// `upsert_risk_briefing_job_enqueued` first.
+    pub fn mark_risk_briefing_job_running(&self, account_id: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE risk_briefing_jobs
+                SET status = 'running', completed_at = NULL, error_message = NULL
+              WHERE account_id = ?1",
+            params![account_id],
+        )?;
+        Ok(())
+    }
+
+    /// Mark the current job as complete. Clears any prior error message.
+    pub fn mark_risk_briefing_job_complete(&self, account_id: &str) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE risk_briefing_jobs
+                SET status = 'complete', completed_at = ?2, error_message = NULL
+              WHERE account_id = ?1",
+            params![account_id, now],
+        )?;
+        Ok(())
+    }
+
+    /// Mark the current job as failed with a truncated error message.
+    /// Errors over 2000 chars are truncated — we don't want to bloat the row
+    /// with a full PTY stderr dump. Truncation is deterministic.
+    pub fn mark_risk_briefing_job_failed(
+        &self,
+        account_id: &str,
+        error_message: &str,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let truncated: String = error_message.chars().take(2_000).collect();
+        self.conn.execute(
+            "UPDATE risk_briefing_jobs
+                SET status = 'failed', completed_at = ?2, error_message = ?3
+              WHERE account_id = ?1",
+            params![account_id, now, truncated],
+        )?;
+        Ok(())
+    }
+
+    /// Read the current (latest) job row for `account_id`.
+    pub fn get_risk_briefing_job(
+        &self,
+        account_id: &str,
+    ) -> Result<Option<DbRiskBriefingJob>, DbError> {
+        let result = self.conn.query_row(
+            "SELECT account_id, status, enqueued_at, completed_at, error_message
+               FROM risk_briefing_jobs
+              WHERE account_id = ?1",
+            params![account_id],
+            |row| {
+                Ok(DbRiskBriefingJob {
+                    account_id: row.get(0)?,
+                    status: row.get(1)?,
+                    enqueued_at: row.get(2)?,
+                    completed_at: row.get(3)?,
+                    error_message: row.get(4)?,
+                })
+            },
+        );
+        match result {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::from(e)),
+        }
+    }
+}
+
+/// DOS-228 Fix 3: Status of a risk-briefing generation job.
+/// Exposed via `get_account_detail` so the UI can render a "generating…"
+/// indicator, a "retry" affordance on failure, or the timestamp of the last
+/// successful generation.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbRiskBriefingJob {
+    pub account_id: String,
+    /// One of: `enqueued`, `running`, `complete`, `failed`.
+    pub status: String,
+    pub enqueued_at: String,
+    pub completed_at: Option<String>,
+    pub error_message: Option<String>,
 }
 
 /// One sentiment journal entry for API exposure.

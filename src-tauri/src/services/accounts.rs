@@ -1413,6 +1413,10 @@ pub async fn get_account_detail(
             // I644: Source references for promoted account facts
             let source_refs = db.get_account_source_refs(&account.id).unwrap_or_default();
 
+            // DOS-228 Fix 3: current risk-briefing job status for UI progress
+            // and retry affordance.
+            let risk_briefing_job = db.get_risk_briefing_job(&account.id).ok().flatten();
+
             // DOS-27: Sentiment journal + sparkline (last 90 days).
             let sentiment_history = db
                 .get_sentiment_history(&account.id, 90)
@@ -1485,6 +1489,7 @@ pub async fn get_account_detail(
                 sentiment_history,
                 health_sparkline,
                 glean_signals,
+                risk_briefing_job,
             })
         })
         .await
@@ -1726,23 +1731,80 @@ pub fn set_user_health_sentiment(
     Ok(())
 }
 
-/// DOS-27: Spawn a background risk-briefing generation task.
-/// Runs on the Tauri async runtime; errors are logged, never surfaced.
-fn enqueue_risk_briefing(state: &std::sync::Arc<AppState>, account_id: String) {
+/// DOS-27 / DOS-228 Fix 3: Spawn a background risk-briefing generation task.
+/// Runs on the Tauri async runtime. Job lifecycle is persisted to
+/// `risk_briefing_jobs` so the UI can render progress and offer a retry on
+/// failure instead of the old log-only failure mode.
+pub(crate) fn enqueue_risk_briefing(state: &std::sync::Arc<AppState>, account_id: String) {
     let state_clone = state.clone();
     let handle = state.app_handle();
+
+    // DOS-228: record enqueue BEFORE spawning so the UI sees the status even
+    // if the spawned task is slow to start. Write through db_write for
+    // serialization; ignore errors (best-effort status tracking, never
+    // blocks the user's sentiment save).
+    let enqueue_id = account_id.clone();
+    let enqueue_state = state.clone();
+    tauri::async_runtime::spawn(async move {
+        let id_for_write = enqueue_id.clone();
+        if let Err(e) = enqueue_state
+            .db_write(move |db| {
+                db.upsert_risk_briefing_job_enqueued(&id_for_write)
+                    .map_err(|e| e.to_string())
+            })
+            .await
+        {
+            log::warn!(
+                "DOS-228: failed to persist risk briefing 'enqueued' status for {}: {}",
+                enqueue_id,
+                e
+            );
+        }
+    });
+
     tauri::async_runtime::spawn(async move {
         log::info!(
             "DOS-27: enqueueing background risk briefing for account {}",
             account_id
         );
-        match crate::services::intelligence::generate_risk_briefing(
+
+        // Transition enqueued → running.
+        let running_id = account_id.clone();
+        let running_state = state_clone.clone();
+        let _ = running_state
+            .db_write(move |db| {
+                db.mark_risk_briefing_job_running(&running_id)
+                    .map_err(|e| e.to_string())
+            })
+            .await;
+
+        let outcome = crate::services::intelligence::generate_risk_briefing(
             &state_clone,
             &account_id,
             handle,
         )
-        .await
-        {
+        .await;
+
+        // Terminal transition: record complete or failed. The error message
+        // is persisted so the UI can explain WHY a retry is offered.
+        let terminal_id = account_id.clone();
+        let terminal_state = state_clone.clone();
+        let terminal_outcome = outcome
+            .as_ref()
+            .map(|_| ())
+            .map_err(|e| e.clone());
+        let _ = terminal_state
+            .db_write(move |db| match &terminal_outcome {
+                Ok(()) => db
+                    .mark_risk_briefing_job_complete(&terminal_id)
+                    .map_err(|e| e.to_string()),
+                Err(msg) => db
+                    .mark_risk_briefing_job_failed(&terminal_id, msg)
+                    .map_err(|e| e.to_string()),
+            })
+            .await;
+
+        match outcome {
             Ok(_) => log::info!(
                 "DOS-27: risk briefing generated for account {}",
                 account_id
@@ -1754,6 +1816,23 @@ fn enqueue_risk_briefing(state: &std::sync::Arc<AppState>, account_id: String) {
             ),
         }
     });
+}
+
+/// DOS-228 Fix 3: Re-enqueue a risk briefing generation for an account.
+///
+/// Intended for UI "retry" buttons that surface after a failed job. Only the
+/// latest attempt is retained in `risk_briefing_jobs`; calling this on an
+/// account with a `complete` job is also allowed — it overwrites the row and
+/// regenerates the briefing (useful when underlying intel has changed).
+///
+/// Returns immediately; the regeneration runs on the async runtime and
+/// status transitions are visible via `get_account_detail`.
+pub fn retry_risk_briefing(
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+) -> Result<(), String> {
+    enqueue_risk_briefing(state, account_id.to_string());
+    Ok(())
 }
 
 /// DOS-27: Field edits to health-relevant columns trigger a synchronous

@@ -4928,3 +4928,113 @@ fn test_dos228_sentiment_note_none_when_no_current_sentiment() {
         .expect("lookup");
     assert_eq!(note, None);
 }
+
+#[test]
+fn test_dos228_risk_briefing_job_lifecycle() {
+    // DOS-228 Fix 3: job progresses enqueued → running → complete.
+    let db = test_db();
+    let acct = sample_account("acct-rb", "RB Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    // Initially no job exists.
+    assert!(db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .is_none());
+
+    // Enqueue.
+    db.upsert_risk_briefing_job_enqueued("acct-rb")
+        .expect("enqueue");
+    let job = db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "enqueued");
+    assert!(job.completed_at.is_none());
+    assert!(job.error_message.is_none());
+
+    // Running.
+    db.mark_risk_briefing_job_running("acct-rb")
+        .expect("running");
+    let job = db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "running");
+
+    // Complete.
+    db.mark_risk_briefing_job_complete("acct-rb")
+        .expect("complete");
+    let job = db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "complete");
+    assert!(job.completed_at.is_some());
+    assert!(job.error_message.is_none());
+}
+
+#[test]
+fn test_dos228_risk_briefing_job_failure_path() {
+    // DOS-228 Fix 3: failed jobs persist an error_message so the UI can
+    // explain the retry prompt.
+    let db = test_db();
+    let acct = sample_account("acct-rb-fail", "Fail Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    db.upsert_risk_briefing_job_enqueued("acct-rb-fail")
+        .expect("enqueue");
+    db.mark_risk_briefing_job_running("acct-rb-fail")
+        .expect("running");
+    db.mark_risk_briefing_job_failed("acct-rb-fail", "Claude timeout after 30s")
+        .expect("failed");
+
+    let job = db
+        .get_risk_briefing_job("acct-rb-fail")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "failed");
+    assert_eq!(
+        job.error_message.as_deref(),
+        Some("Claude timeout after 30s")
+    );
+    assert!(job.completed_at.is_some());
+
+    // Retry: re-enqueuing must reset status and clear the error.
+    db.upsert_risk_briefing_job_enqueued("acct-rb-fail")
+        .expect("retry enqueue");
+    let job = db
+        .get_risk_briefing_job("acct-rb-fail")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "enqueued");
+    assert!(
+        job.error_message.is_none(),
+        "re-enqueue must clear prior error_message"
+    );
+    assert!(job.completed_at.is_none());
+}
+
+#[test]
+fn test_dos228_risk_briefing_job_error_truncation() {
+    // DOS-228 Fix 3: huge error blobs are truncated to 2000 chars so a
+    // runaway PTY stderr cannot bloat the DB.
+    let db = test_db();
+    let acct = sample_account("acct-rb-big", "Big Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    db.upsert_risk_briefing_job_enqueued("acct-rb-big")
+        .expect("enqueue");
+    let huge = "x".repeat(10_000);
+    db.mark_risk_briefing_job_failed("acct-rb-big", &huge)
+        .expect("failed");
+
+    let job = db
+        .get_risk_briefing_job("acct-rb-big")
+        .expect("get")
+        .expect("present");
+    assert_eq!(
+        job.error_message.as_ref().map(|s| s.chars().count()),
+        Some(2_000)
+    );
+}
