@@ -11,6 +11,7 @@ import { useParams } from "@tanstack/react-router";
 import { useAccountDetailPage } from "@/hooks/useAccountDetailPage";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
+import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { ChapterFreshness } from "@/components/editorial/ChapterFreshness";
 import { QuoteWallPlaceholder } from "@/components/editorial/QuoteWallPlaceholder";
@@ -56,8 +57,6 @@ import {
   ProgramPillRow,
   CommitmentCard,
   SuggestionCard,
-  SharedRefRow,
-  SharedSubsectionLabel,
   RecentlyLandedList,
   RecentlyLandedRow,
   ReportCard,
@@ -70,7 +69,7 @@ import {
 } from "@/components/work/WorkSurface";
 import { getAccountReports } from "@/lib/report-config";
 import { buildAccountVitals } from "@/components/account/account-detail-utils";
-import { formatShortDate, formatRelativeDate } from "@/lib/utils";
+import { formatShortDate } from "@/lib/utils";
 
 import shared from "@/styles/entity-detail.module.css";
 import pageStyles from "./AccountDetailPage.module.css";
@@ -489,26 +488,21 @@ export default function AccountDetailPage() {
     const activePrograms = programs.filter((p) => p.name);
 
     // ── Chapter 3: Commitments ───────────────────────────────────────────
-    // Heuristic classification from existing fields (no new schema):
-    //   · visibility = shared iff the source mentions a linked tracker
-    //     (Linear/Salesforce/Slack appear in the source string). Else private.
-    //   · audience = internal iff owner is Jamie-style (external-team-looking)
-    //     indicator absent; we default to customer-facing unless description
-    //     explicitly says "internal" or the source is an internal program.
-    //     This is intentionally conservative — real provenance wiring lands in
-    //     a follow-up (DOS-75 tracker-link backend).
-    //   · stillActiveNote synthesized only when a due date has passed OR the
-    //     record is >45d old — always opens with "Still active?" never "OVERDUE".
-    const commitmentCounts = {
-      total: openCommitments.length,
-      shared: 0,
-      private: 0,
-    };
+    // v1.2.1 scope: real tracker provenance (structured trackerLink with
+    // system/externalId/href) lands in DOS-75 (v1.2.2). Until then we render
+    // every commitment as Private. Regex-sniffing the free-text `source`
+    // string for "Linear"/"Salesforce"/etc. generated false Shared labels
+    // with no authoritative link to back them up, so we stop guessing.
+    //
+    // Audience classification similarly waits for structured data — we
+    // default to customer-facing unless the description or source string
+    // explicitly says "internal".
+    //
+    // stillActiveNote is synthesized only when a due date has passed —
+    // copy always opens with "Still active?" never "OVERDUE".
     const commitmentCards = openCommitments.map((c, idx) => {
       const sourceLower = (c.source ?? "").toLowerCase();
-      const isShared = /linear|salesforce|slack|jira|asana|dos-|opp/i.test(c.source ?? "");
       const isInternal = /internal|^program\b|team/i.test(c.description) || /internal/.test(sourceLower);
-      if (isShared) commitmentCounts.shared += 1; else commitmentCounts.private += 1;
 
       const provenance: { label: string; href?: string }[] = [];
       if (c.source) provenance.push({ label: c.source });
@@ -522,6 +516,8 @@ export default function AccountDetailPage() {
         }
       }
 
+      const doneBusy = acct.commitmentDoneInFlight.has(idx);
+      const dismissBusy = acct.commitmentDismissInFlight.has(idx);
       return (
         <CommitmentCard
           key={idx}
@@ -530,19 +526,24 @@ export default function AccountDetailPage() {
           owner={c.owner ?? null}
           due={c.dueDate ? formatShortDate(c.dueDate) : null}
           audience={isInternal ? "internal" : "customer"}
-          visibility={isShared ? "shared" : "private"}
-          sharedRef={isShared ? { label: c.source ?? "Linked" } : undefined}
-          linearStatus={c.status && isShared ? `${c.status} in Linear` : undefined}
+          visibility="private"
           stillActiveNote={stillActiveNote}
           actions={
             <>
-              <WorkButton kind="primary">Mark done</WorkButton>
-              {isShared ? (
-                <WorkButton>View in Linear</WorkButton>
-              ) : (
-                <WorkButton>Push to Linear</WorkButton>
-              )}
-              <WorkButton kind="muted">Dismiss</WorkButton>
+              <WorkButton
+                kind="primary"
+                disabled={doneBusy || dismissBusy}
+                onClick={() => acct.handleMarkCommitmentDone(idx)}
+              >
+                {doneBusy ? "Marking done…" : "Mark done"}
+              </WorkButton>
+              <WorkButton
+                kind="muted"
+                disabled={doneBusy || dismissBusy}
+                onClick={() => acct.handleDismissCommitment(idx, c.description)}
+              >
+                {dismissBusy ? "Dismissing…" : "Dismiss"}
+              </WorkButton>
             </>
           }
         />
@@ -550,29 +551,32 @@ export default function AccountDetailPage() {
     });
 
     const commitmentFragments: string[] = [];
-    if (commitmentCounts.total) commitmentFragments.push(`${commitmentCounts.total} open`);
-    if (commitmentCounts.shared) commitmentFragments.push(`${commitmentCounts.shared} shared`);
-    if (commitmentCounts.private) commitmentFragments.push(`${commitmentCounts.private} private`);
-
-    // ── Chapter 5: Shared with the team ──────────────────────────────────
-    // Mirror of externally-visible state. Derived from shared commitments
-    // (DOS-75 will wire real Linear/Salesforce/Slack feeds in v1.2.2).
-    const sharedItems = openCommitments.filter((c) =>
-      /linear|salesforce|slack|jira|asana|dos-|opp/i.test(c.source ?? ""),
-    );
+    if (openCommitments.length) {
+      commitmentFragments.push(`${openCommitments.length} open · all private in v1.2.1`);
+    }
 
     // ── Chapter 6: Recently landed ───────────────────────────────────────
     // 30-day tail from wins + lifecycle events.
+    //
+    // Contract: only items with a real timestamp inside the 30-day window
+    // render here. Undated wins are excluded outright — rendering them as
+    // "Delivered" under a 30-day tail label is a false claim. If a win is
+    // missing sourcedAt it drops off this surface; it can still be picked
+    // up by Context's value-delivered list.
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const recentWinsRows = wins.map((w, i) => ({
-      key: `win-${i}`,
-      date: w.itemSource?.sourcedAt
-        ? formatShortDate(w.itemSource.sourcedAt).toUpperCase()
-        : "Recently",
-      event: w.text,
-      source: w.source ? `Came from ${w.source}` : null,
-      ts: w.itemSource?.sourcedAt ? new Date(w.itemSource.sourcedAt).getTime() : 0,
-    }));
+    const recentWinsRows = wins
+      .map((w, i) => {
+        const sourcedAt = w.itemSource?.sourcedAt;
+        const ts = sourcedAt ? new Date(sourcedAt).getTime() : Number.NaN;
+        return {
+          key: `win-${i}`,
+          date: sourcedAt ? formatShortDate(sourcedAt).toUpperCase() : "",
+          event: w.text,
+          source: w.source ? `Came from ${w.source}` : null,
+          ts,
+        };
+      })
+      .filter((row) => Number.isFinite(row.ts) && row.ts >= thirtyDaysAgo);
     const recentEventRows = accountEvents
       .filter((e) => {
         const t = new Date(e.eventDate).getTime();
@@ -612,53 +616,56 @@ export default function AccountDetailPage() {
     type Nudge = { headline: string; body: string; actions: React.ReactNode };
     const nudges: Nudge[] = [];
 
-    // Private-for-too-long nudge: private commitment with no due date, aged >45d.
-    const oldestPrivate = openCommitments
-      .filter((c) => !/linear|salesforce|slack|jira|asana|dos-/i.test(c.source ?? ""))
-      .filter((c) => !c.dueDate)[0];
-    if (oldestPrivate) {
+    // Private-for-too-long nudge: private commitment with no due date that
+    // has sat untouched for at least PRIVATE_NUDGE_THRESHOLD_DAYS. Age is
+    // computed from authoritative itemSource.sourcedAt — a brand-new private
+    // commitment is NOT nagged. If sourcedAt is missing we skip the nudge
+    // entirely rather than guess.
+    const PRIVATE_NUDGE_THRESHOLD_DAYS = 45;
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    const agedPrivate = openCommitments
+      .map((c, originalIndex) => {
+        if (c.dueDate) return null;
+        const sourcedAt = c.itemSource?.sourcedAt;
+        const ts = sourcedAt ? new Date(sourcedAt).getTime() : Number.NaN;
+        const ageDays = Number.isFinite(ts)
+          ? Math.floor((nowMs - ts) / MS_PER_DAY)
+          : Number.NaN;
+        return { c, ageDays, originalIndex };
+      })
+      .filter((x): x is { c: typeof openCommitments[number]; ageDays: number; originalIndex: number } =>
+        x !== null && Number.isFinite(x.ageDays) && x.ageDays >= PRIVATE_NUDGE_THRESHOLD_DAYS,
+      )
+      .sort((a, b) => b.ageDays - a.ageDays)[0];
+    if (agedPrivate) {
+      const { c: oldestPrivate, ageDays, originalIndex } = agedPrivate;
+      const dismissBusy = acct.commitmentDismissInFlight.has(originalIndex);
       nudges.push({
         headline: "A commitment has been kept private",
-        body: `"${oldestPrivate.description}"${oldestPrivate.owner ? ` (owner: ${oldestPrivate.owner})` : ""} is still private — no due date, nothing pushed out to Linear. Keep it private, or push it out so the team can see?`,
+        body: `"${oldestPrivate.description}"${oldestPrivate.owner ? ` (owner: ${oldestPrivate.owner})` : ""} has been kept private for ${ageDays} day${ageDays === 1 ? "" : "s"} with no due date — leave as-is, or dismiss if it's no longer live.`,
         actions: (
           <>
-            <WorkButton>Push to Linear</WorkButton>
-            <WorkButton>Dismiss</WorkButton>
+            <WorkButton
+              disabled={dismissBusy}
+              onClick={() => acct.handleDismissCommitment(originalIndex, oldestPrivate.description)}
+            >
+              {dismissBusy ? "Dismissing…" : "Dismiss"}
+            </WorkButton>
             <WorkButton kind="muted">Leave as-is</WorkButton>
           </>
         ),
       });
     }
 
-    // Shared-out-of-sync nudge: shared commitment whose source references a
-    // tracker but there's no recent writeback. Synthesized from item freshness.
-    const staleShared = openCommitments
-      .filter((c) => /linear|salesforce|slack|dos-/i.test(c.source ?? ""))
-      .find((c) => {
-        const at = c.itemSource?.sourcedAt;
-        if (!at) return false;
-        const diff = Date.now() - new Date(at).getTime();
-        return diff > 6 * 24 * 60 * 60 * 1000;
-      });
-    if (staleShared) {
-      nudges.push({
-        headline: "Shared status out of sync with the tracker",
-        body: `"${staleShared.description}" is shared to ${staleShared.source} but hasn't synced back here recently. The writeback loop may have stalled.`,
-        actions: (
-          <>
-            <WorkButton kind="primary">Check writeback</WorkButton>
-            <WorkButton>Dismiss</WorkButton>
-            <WorkButton kind="muted">Leave as-is</WorkButton>
-          </>
-        ),
-      });
-    }
+    // Stale-shared-writeback nudge removed in v1.2.1: it was synthesized from
+    // regex-inferred Shared state with no authoritative tracker link. Real
+    // writeback-freshness nudges return with DOS-75's trackerLink schema.
 
     const hasFocus = focusItems.length > 0;
     const hasPrograms = activePrograms.length > 0;
     const hasCommitments = openCommitments.length > 0;
     const hasSuggestions = recommendedActions.length > 0;
-    const hasShared = sharedItems.length > 0;
     const hasRecentlyLanded = recentlyLanded.length > 0;
     const hasReports = reports.length > 0;
     const hasNudges = nudges.length > 0;
@@ -749,46 +756,32 @@ export default function AccountDetailPage() {
                   headline={r.title}
                   rationale={r.rationale}
                   provenance={[{ label: "Account intelligence" }]}
+                  accepting={acct.suggestionAcceptInFlight.has(i)}
+                  dismissing={acct.suggestionDismissInFlight.has(i)}
+                  onAccept={() => acct.handleAcceptSuggestion(i)}
+                  onDismiss={() => acct.handleDismissSuggestion(i)}
                 />
               ))}
             </div>
           </MarginSection>
         )}
 
-        {/* Chapter 5: Shared with the team — mirror of externally-visible state */}
-        {hasShared && (
-          <MarginSection id="shared" label={<>Shared<br/>with<br/>team</>}>
-            <ChapterHeading
-              title="Shared with the team"
-              freshness={
-                <ChapterFreshness
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={[
-                    `${sharedItems.length} shared item${sharedItems.length === 1 ? "" : "s"}`,
-                    "What the rest of the org sees",
-                  ]}
-                />
-              }
-            />
-            <SharedSubsectionLabel>Linked trackers</SharedSubsectionLabel>
-            <div>
-              {sharedItems.map((c, i) => (
-                <SharedRefRow
-                  key={i}
-                  id={c.source ?? "Linked"}
-                  body={<>{c.description}</>}
-                  subline={
-                    <>
-                      {c.status ? `${c.status}` : "Shared"}
-                      {c.owner ? ` · Assignee: ${c.owner}` : ""}
-                    </>
-                  }
-                  meta={c.itemSource?.sourcedAt ? `Updated ${formatRelativeDate(c.itemSource.sourcedAt)}` : undefined}
-                />
-              ))}
-            </div>
-          </MarginSection>
-        )}
+        {/* Chapter 5: Shared with the team — tracker integrations land in v1.2.2 (DOS-75) */}
+        <MarginSection id="shared" label={<>Shared<br/>with<br/>team</>}>
+          <ChapterHeading
+            title="Shared with the team"
+            freshness={
+              <ChapterFreshness
+                enrichedAt={intelligence?.enrichedAt}
+                fragments={["Tracker integrations arrive in v1.2.2"]}
+              />
+            }
+          />
+          <EditorialEmpty
+            title="Nothing is shared to a tracker yet."
+            message="Tracker integrations (Linear, Salesforce, Slack) land in v1.2.2 — DOS-75. Once wired, commitments with a real external link will appear here, with live writeback status."
+          />
+        </MarginSection>
 
         {/* Chapter 6: Recently landed — 30-day completion tail */}
         {hasRecentlyLanded && (
