@@ -1660,6 +1660,84 @@ pub async fn link_meeting_entity_with_prep_queue(
     Ok(())
 }
 
+/// DOS-240: Dismiss an auto-resolved meeting entity. This both unlinks the
+/// current row AND records a persistent dismissal so calendar-sync and the
+/// background resolver will not re-link the same (meeting, entity, type)
+/// tuple on subsequent sweeps. Prep is invalidated and re-enqueued so the
+/// meeting briefing reflects the removal immediately.
+pub async fn dismiss_meeting_entity(
+    state: &AppState,
+    meeting_id: &str,
+    entity_id: &str,
+    entity_type: &str,
+    dismissed_by: Option<&str>,
+) -> Result<(), String> {
+    let meeting_id_s = meeting_id.to_string();
+    let entity_id_s = entity_id.to_string();
+    let entity_type_s = entity_type.to_string();
+    let dismissed_by_s = dismissed_by.map(|s| s.to_string());
+    state
+        .db_write(move |db| {
+            db.record_meeting_entity_dismissal(
+                &meeting_id_s,
+                &entity_id_s,
+                &entity_type_s,
+                dismissed_by_s.as_deref(),
+            )
+            .map_err(|e| e.to_string())?;
+            db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
+                .map_err(|e| e.to_string())?;
+            let _ = db.conn_ref().execute(
+                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                rusqlite::params![meeting_id_s],
+            );
+            Ok(())
+        })
+        .await?;
+    state
+        .meeting_prep_queue
+        .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+            meeting_id.to_string(),
+            crate::meeting_prep_queue::PrepPriority::Manual,
+        ));
+    state.integrations.prep_queue_wake.notify_one();
+    log::info!(
+        "dismiss_meeting_entity: dismissed {} from {} ({}), recorded persistent dismissal",
+        entity_id,
+        meeting_id,
+        entity_type,
+    );
+    Ok(())
+}
+
+/// DOS-240: Restore a previously-dismissed meeting entity by deleting the
+/// dismissal record. The entity will not appear immediately; it will reappear
+/// on the next calendar-sync or resolver pass that produces the same match.
+pub async fn restore_meeting_entity(
+    state: &AppState,
+    meeting_id: &str,
+    entity_id: &str,
+    entity_type: &str,
+) -> Result<bool, String> {
+    let meeting_id_s = meeting_id.to_string();
+    let entity_id_s = entity_id.to_string();
+    let entity_type_s = entity_type.to_string();
+    let removed = state
+        .db_write(move |db| {
+            db.remove_meeting_entity_dismissal(&meeting_id_s, &entity_id_s, &entity_type_s)
+                .map_err(|e| e.to_string())
+        })
+        .await?;
+    log::info!(
+        "restore_meeting_entity: {} dismissal for {} → {} ({})",
+        if removed { "removed" } else { "no-op (none)" },
+        meeting_id,
+        entity_id,
+        entity_type,
+    );
+    Ok(removed)
+}
+
 /// Unlink meeting entity: DB unlink, clear prep, enqueue re-assembly.
 pub async fn unlink_meeting_entity_with_prep_queue(
     state: &AppState,
@@ -1870,9 +1948,31 @@ pub fn persist_and_invalidate_entity_links_sync_scored(
         return Ok(0);
     }
 
+    // DOS-240: user-dismissed entities must NOT be re-linked by the
+    // background resolver. Mirror of the guard in
+    // `persist_classification_entities_scored`.
+    let dismissed = db
+        .list_dismissed_meeting_entities(meeting_id)
+        .unwrap_or_default();
+    let original_len = candidates.len();
+    let candidates: Vec<&EntityLinkCandidate> = candidates
+        .iter()
+        .filter(|c| !dismissed.contains(&(c.entity_id.clone(), c.entity_type.clone())))
+        .collect();
+    if candidates.len() < original_len {
+        log::info!(
+            "persist_and_invalidate_entity_links_sync_scored: skipped {} dismissed entities for meeting {}",
+            original_len - candidates.len(),
+            meeting_id,
+        );
+    }
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+
     // Track whether a link existed before for prep-invalidation accounting.
     let mut linked = 0usize;
-    for candidate in candidates {
+    for candidate in &candidates {
         // Check existence first so we can increment only on new inserts.
         let already: bool = db
             .conn_ref()
