@@ -299,7 +299,7 @@ pub async fn update_account_field(
     field: String,
     value: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
@@ -421,7 +421,7 @@ pub async fn accept_account_field_conflict(
     source: String,
     signal_id: Option<String>,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
@@ -446,7 +446,7 @@ pub async fn dismiss_account_field_conflict(
     source: String,
     suggested_value: Option<String>,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
@@ -701,7 +701,7 @@ pub async fn update_stakeholder_engagement(
     person_id: String,
     engagement: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
@@ -723,7 +723,7 @@ pub async fn update_stakeholder_assessment(
     person_id: String,
     assessment: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
@@ -759,7 +759,7 @@ pub async fn add_stakeholder_role(
     person_id: String,
     role: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
@@ -781,7 +781,7 @@ pub async fn remove_stakeholder_role(
     person_id: String,
     role: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
