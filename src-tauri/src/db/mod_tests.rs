@@ -3631,6 +3631,55 @@ fn test_reclassify_meeting_types_from_attendees() {
     assert_eq!(meeting, "internal");
 }
 
+/// DOS-206 regression: stale meeting rows must be swept even when no people
+/// rows changed during the current reclassification pass.
+///
+/// Scenario: user adds a new user_domain. People records were already
+/// correctly classified (alice@subsidiary.com was `internal` before this
+/// sweep). But an old meeting is still stuck at `customer` because it was
+/// classified before the people correction. Re-running
+/// `reclassify_meeting_types_from_attendees()` must flip it to `internal`.
+#[test]
+fn test_dos206_reclassify_catches_stale_customer_meetings() {
+    let db = test_db();
+    setup_meeting(&db, "m_stale", "Internal Ops Sync");
+
+    // Alice is ALREADY internal before the sweep — this mirrors the case
+    // where domains were set correctly but an older meeting was misclassified.
+    let mut alice = sample_person("alice@internal.co");
+    alice.relationship = "internal".to_string();
+    db.upsert_person(&alice).expect("upsert");
+    db.record_meeting_attendance("m_stale", &alice.id)
+        .expect("attend");
+
+    // Meeting is stuck on 'customer' from a prior mis-classification.
+    db.conn
+        .execute(
+            "UPDATE meetings SET meeting_type = 'customer' WHERE id = 'm_stale'",
+            [],
+        )
+        .expect("set type");
+
+    // Reclassify: no people changed, but the meeting must still be flipped.
+    let changed = db
+        .reclassify_meeting_types_from_attendees()
+        .expect("reclassify");
+    assert!(
+        changed >= 1,
+        "stale customer meeting with all-internal attendees must be reclassified"
+    );
+
+    let meeting_type: String = db
+        .conn
+        .query_row(
+            "SELECT meeting_type FROM meetings WHERE id = 'm_stale'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("query");
+    assert_eq!(meeting_type, "internal");
+}
+
 #[test]
 fn test_reclassify_preserves_title_based_types() {
     let db = test_db();
@@ -4720,4 +4769,75 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
     assert_eq!(health_delta.previous, 72.0);
     assert_eq!(health_delta.current, 84.0);
     assert!(!thread.is_first_meeting);
+}
+
+/// DOS-74 regression: when a meeting's linked_entities junction contains a
+/// high-confidence primary plus a low-confidence sibling (a "suggestion"),
+/// `get_meeting_linked_entities` returns them in primary-first, confidence-
+/// descending order and flags the sibling as `suggested`.
+#[test]
+fn test_dos74_get_meeting_linked_entities_primary_then_suggestions() {
+    let db = test_db();
+
+    // Seed two accounts + their junction entity rows.
+    let parent = sample_account("parent", "Parent Co");
+    db.upsert_account(&parent).expect("upsert parent");
+    let sub = sample_account("sub", "Subsidiary BU");
+    db.upsert_account(&sub).expect("upsert sub");
+
+    setup_meeting(&db, "m_dos74", "Joint Strategy Sync");
+
+    // High-confidence primary link (e.g. resolved from strong domain signal).
+    db.link_meeting_entity_with_confidence("m_dos74", "parent", "account", 0.95, true)
+        .expect("link primary");
+    // Low-confidence sibling link (domain_sibling tier, DOS-74 suggestion).
+    db.link_meeting_entity_with_confidence("m_dos74", "sub", "account", 0.45, false)
+        .expect("link suggestion");
+
+    let linked = db
+        .get_meeting_linked_entities("m_dos74")
+        .expect("get linked");
+    assert_eq!(linked.len(), 2);
+
+    // [0] must be the primary, [1] the suggestion.
+    assert_eq!(linked[0].id, "parent");
+    assert!(linked[0].is_primary);
+    assert!(!linked[0].suggested);
+    assert!(linked[0].confidence >= 0.9);
+
+    assert_eq!(linked[1].id, "sub");
+    assert!(!linked[1].is_primary);
+    assert!(linked[1].suggested, "low-confidence sibling must render as suggestion");
+    assert!(linked[1].confidence < 0.60);
+}
+
+/// DOS-74 regression: `link_meeting_entity_with_confidence` must NEVER
+/// downgrade an existing high-confidence link. If a manual/junction
+/// resolution already wrote confidence 0.95 / is_primary=true, a later
+/// background sweep at 0.45 must not stomp that row.
+#[test]
+fn test_dos74_link_confidence_never_downgrades() {
+    let db = test_db();
+    let acct = sample_account("acct1", "Acct One");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m1", "Sync");
+
+    // First: low confidence sibling write.
+    db.link_meeting_entity_with_confidence("m1", "acct1", "account", 0.45, false)
+        .expect("initial weak link");
+    // Second: high confidence primary write — should upgrade.
+    db.link_meeting_entity_with_confidence("m1", "acct1", "account", 0.95, true)
+        .expect("upgrade to primary");
+
+    let linked = db.get_meeting_linked_entities("m1").expect("get");
+    assert_eq!(linked.len(), 1);
+    assert!(linked[0].is_primary);
+    assert!(linked[0].confidence >= 0.9);
+
+    // Third: another weak write should NOT downgrade.
+    db.link_meeting_entity_with_confidence("m1", "acct1", "account", 0.30, false)
+        .expect("weak retry");
+    let linked = db.get_meeting_linked_entities("m1").expect("get");
+    assert!(linked[0].is_primary, "primary flag must not be cleared");
+    assert!(linked[0].confidence >= 0.9, "confidence must not decrease");
 }

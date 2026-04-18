@@ -131,6 +131,12 @@ export interface LinkedEntity {
   id: string;
   name: string;
   entityType: "account" | "project" | "person";
+  /** DOS-74: per-junction confidence (0.0 – 1.0). Higher = stronger match. */
+  confidence?: number;
+  /** DOS-74: true if this is the primary entity for the meeting. */
+  isPrimary?: boolean;
+  /** DOS-74: true for low-confidence siblings rendered as muted suggestions. */
+  suggested?: boolean;
 }
 
 export interface Meeting {

@@ -1555,6 +1555,9 @@ pub async fn get_meeting_intelligence(
                     id: e.id,
                     name: e.name,
                     entity_type: e.entity_type.as_str().to_string(),
+                    confidence: 0.95,
+                    is_primary: true,
+                    suggested: false,
                 })
                 .collect::<Vec<_>>();
 
@@ -1811,9 +1814,23 @@ pub async fn persist_and_invalidate_entity_links(
     Ok(linked)
 }
 
+/// DOS-74: Entity link candidate with per-junction confidence and primary flag.
+#[derive(Debug, Clone)]
+pub struct EntityLinkCandidate {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub confidence: f64,
+    pub is_primary: bool,
+}
+
 /// Sync variant of persist_and_invalidate_entity_links for callers that
 /// already hold a DB handle (e.g., event_trigger background task).
 /// AC4 requires all entity linking to go through service functions.
+///
+/// DOS-74: Backward-compatible wrapper around
+/// `persist_and_invalidate_entity_links_sync_scored` that treats all
+/// inputs as high-confidence primaries (confidence 0.95, is_primary true).
+/// New callers with scored outcomes should use the scored variant directly.
 pub fn persist_and_invalidate_entity_links_sync(
     db: &crate::db::ActionDb,
     meeting_id: &str,
@@ -1821,20 +1838,65 @@ pub fn persist_and_invalidate_entity_links_sync(
     prep_queue: &crate::meeting_prep_queue::MeetingPrepQueue,
     prep_queue_wake: &tokio::sync::Notify,
 ) -> Result<usize, String> {
-    if entities.is_empty() {
+    let candidates: Vec<EntityLinkCandidate> = entities
+        .iter()
+        .map(|(id, typ)| EntityLinkCandidate {
+            entity_id: id.clone(),
+            entity_type: typ.clone(),
+            confidence: 0.95,
+            is_primary: true,
+        })
+        .collect();
+    persist_and_invalidate_entity_links_sync_scored(
+        db,
+        meeting_id,
+        &candidates,
+        prep_queue,
+        prep_queue_wake,
+    )
+}
+
+/// DOS-74: Scored variant of persist_and_invalidate_entity_links_sync.
+/// Writes each junction row with its per-link confidence + is_primary flag
+/// so the frontend can render one primary entity and N muted suggestions.
+pub fn persist_and_invalidate_entity_links_sync_scored(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    candidates: &[EntityLinkCandidate],
+    prep_queue: &crate::meeting_prep_queue::MeetingPrepQueue,
+    prep_queue_wake: &tokio::sync::Notify,
+) -> Result<usize, String> {
+    if candidates.is_empty() {
         return Ok(0);
     }
 
+    // Track whether a link existed before for prep-invalidation accounting.
     let mut linked = 0usize;
-    for (entity_id, entity_type) in entities {
-        match db.link_meeting_entity_if_absent(meeting_id, entity_id, entity_type) {
-            Ok(true) => linked += 1,
-            Ok(false) => {}
+    for candidate in candidates {
+        // Check existence first so we can increment only on new inserts.
+        let already: bool = db
+            .conn_ref()
+            .prepare("SELECT 1 FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2")
+            .and_then(|mut s| s.exists(rusqlite::params![meeting_id, candidate.entity_id]))
+            .unwrap_or(false);
+
+        match db.link_meeting_entity_with_confidence(
+            meeting_id,
+            &candidate.entity_id,
+            &candidate.entity_type,
+            candidate.confidence,
+            candidate.is_primary,
+        ) {
+            Ok(()) => {
+                if !already {
+                    linked += 1;
+                }
+            }
             Err(e) => {
                 log::warn!(
                     "persist_and_invalidate_sync: failed to link {} → {}: {}",
                     meeting_id,
-                    entity_id,
+                    candidate.entity_id,
                     e,
                 );
             }
