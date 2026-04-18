@@ -630,6 +630,39 @@ impl GleanIntelligenceProvider {
     pub fn endpoint(&self) -> &str {
         &self.endpoint
     }
+
+    /// DOS-15: Supplemental leading-signals enrichment for the Health & Outlook tab.
+    ///
+    /// Runs a second Glean `chat` call with the leading-signals prompt, parses the
+    /// 7-bucket JSON response, and returns a normalized `HealthOutlookSignals`.
+    /// Called by `intel_queue.rs` after the main per-dimension enrichment completes
+    /// successfully. Returns `Err` on chat failure, timeout, or unparseable response
+    /// — the caller swallows the error (silent fallback per ADR-0100).
+    pub async fn enrich_leading_signals(
+        &self,
+        entity_name: &str,
+    ) -> Result<super::glean_leading_signals::HealthOutlookSignals, String> {
+        let prompt = super::glean_leading_signals::build_leading_signals_prompt(entity_name);
+        let client = GleanMcpClient::new(&self.endpoint);
+
+        let response_text =
+            tokio::time::timeout(Duration::from_secs(45), client.chat(&prompt, None))
+                .await
+                .map_err(|_| {
+                    format!("Glean leading-signals chat timed out for {}", entity_name)
+                })?
+                .map_err(|e| {
+                    format!("Glean leading-signals chat failed for {}: {}", entity_name, e)
+                })?;
+
+        log::info!(
+            "[DOS-15] Glean leading-signals response for {} — {} chars",
+            entity_name,
+            response_text.len()
+        );
+
+        super::glean_leading_signals::parse_leading_signals(&response_text)
+    }
 }
 
 /// Path 2c: Placeholder for domain extraction from Glean enrichment.

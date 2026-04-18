@@ -380,12 +380,18 @@ export function useAccountDetail(accountId: string | undefined) {
 
   // ─── Flat public API ──────────────────────────────────────────────────
 
+  // DOS-15: Glean leading-signal enrichment bundle for Health & Outlook tab.
+  // Namespaced under `gleanSignals` per v121-foundation peer coordination
+  // (does not collide with DOS-27's `sentiment.*` namespace).
+  const gleanSignals = detail?.gleanSignals ?? null;
+
   return {
     // Core data
     detail,
     loading,
     error,
     intelligence,
+    gleanSignals,
     files,
     events,
     programs,
