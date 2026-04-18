@@ -4619,6 +4619,16 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params![signals_json],
     ).ok();
 
+    // ── DOS-15: Seed health_outlook_signals_json on mock accounts ──
+    // Leading signals that complement base enrichment — champion risk, usage
+    // trend, channel sentiment, commercial signals, quote wall. Keeps dev-mode
+    // Health & Outlook tab realistic without touching production data.
+    let health_outlook_signals = r#"{"championRisk":{"championName":"Sarah Chen","atRisk":false,"riskLevel":"low","riskEvidence":["Response time steady under 6 hours","Attended last 4 QBRs"],"tenureSignal":"2.5 years in role","recentRoleChange":null,"emailSentimentTrend30d":"stable_positive","emailResponseTimeTrend":"steady","backupChampionCandidates":[{"name":"Jordan Park","role":"Director of Engineering","why":"Shadows Sarah on technical decisions","engagementLevel":"medium"}]},"productUsageTrend":{"trajectory":"growing","evidenceSummary":"Seat activation up 18% quarter-over-quarter","weeklyActiveUsersTrend":"rising","featureAdoptionHighlights":["Workflow automation now used by 3 teams","API ingestion live since Feb"]},"channelSentiment":{"divergenceDetected":false,"supportTicketTone":"cordial","meetingTone":"collaborative","emailTone":"friendly","summary":"All channels aligned — low-risk"},"transcriptExtraction":{"churnAdjacentQuestions":[],"expansionAdjacentQuestions":[{"question":"Can we extend this to our APAC engineering org?","askedBy":"Sarah Chen","meetingDate":"2026-02-28","meetingTitle":"Q1 QBR","sentiment":"positive","whyItMatters":"Live expansion signal — APAC onboarding already on the milestone list"}]},"commercialSignals":{"arrDirection":"growing","paymentBehavior":"on_time","discountStacking":"minimal","budgetStatus":"confirmed_fy27","procurementFriction":"low"},"advocacyTrack":{"referenceReady":true,"caseStudyWillingness":"expressed_interest","speakingSlotsOffered":[],"referralsMade":1},"quoteWall":[{"speaker":"Sarah Chen","quote":"The workflow automation has genuinely changed how we ship.","meetingDate":"2026-02-28","meetingTitle":"Q1 QBR","topicTags":["adoption","value"],"sentiment":"positive","publicSafeConfidence":"high"}]}"#;
+    conn.execute(
+        "UPDATE entity_assessment SET health_outlook_signals_json = ?1 WHERE entity_id = 'mock-acme-corp'",
+        rusqlite::params![health_outlook_signals],
+    ).ok();
+
     Ok(())
 }
 

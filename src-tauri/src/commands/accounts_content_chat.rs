@@ -92,6 +92,13 @@ pub struct AccountDetailResult {
     /// DOS-110: When the sentiment was last set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sentiment_set_at: Option<String>,
+    /// DOS-15: Glean leading-signal enrichment bundle (champion risk, usage
+    /// trends, sentiment divergence, transcript extraction, commercial signals,
+    /// advocacy, quote wall). Null when Glean is not configured or enrichment
+    /// has not yet run for this account.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "gleanSignals")]
+    pub glean_signals:
+        Option<crate::intelligence::glean_leading_signals::HealthOutlookSignals>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
