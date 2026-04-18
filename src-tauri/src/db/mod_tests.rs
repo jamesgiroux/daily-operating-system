@@ -5170,6 +5170,114 @@ fn test_dos240_dismissal_roundtrip() {
 }
 
 // ---------------------------------------------------------------------------
+// DOS-224: single-primary invariant on scored junction writes
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dos224_new_primary_demotes_stale_primary() {
+    // Codex: the previous `ON CONFLICT DO UPDATE SET is_primary = MAX(..)`
+    // could never demote an existing primary. If batch N elected A as
+    // primary and batch N+1 elected B, both ended up `is_primary = 1` for
+    // the same (meeting_id, entity_type). Fix runs demote-then-upsert in a
+    // transaction so exactly one row has `is_primary = 1` per
+    // (meeting_id, entity_type).
+    let db = test_db();
+    let meeting_id = "mtg-dos224";
+
+    // Batch N: stale primary A at 0.95.
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-a", "account", 0.95, true)
+        .expect("seed primary A");
+
+    // Batch N+1: a different candidate B wins primary at 0.98.
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-b", "account", 0.98, true)
+        .expect("promote primary B");
+
+    // Exactly one row must have is_primary = 1 for (meeting_id, entity_type).
+    let primaries: Vec<(String, i64)> = db
+        .conn_ref()
+        .prepare(
+            "SELECT entity_id, is_primary FROM meeting_entities
+             WHERE meeting_id = ?1 AND entity_type = 'account'
+             ORDER BY entity_id",
+        )
+        .expect("prepare")
+        .query_map(rusqlite::params![meeting_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .expect("query")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect");
+
+    assert_eq!(primaries.len(), 2, "both rows should still exist");
+    let primary_count: usize = primaries.iter().filter(|(_, p)| *p == 1).count();
+    assert_eq!(
+        primary_count, 1,
+        "exactly one row must be is_primary = 1 per (meeting_id, entity_type)",
+    );
+    let (only_primary, _) = primaries
+        .iter()
+        .find(|(_, p)| *p == 1)
+        .expect("one primary");
+    assert_eq!(only_primary, "acct-b", "newer candidate B must be the primary");
+}
+
+#[test]
+fn test_dos224_suggestion_write_does_not_demote_primary() {
+    // A non-primary (suggestion) write must never demote an existing
+    // primary on the same (meeting_id, entity_type).
+    let db = test_db();
+    let meeting_id = "mtg-dos224-sugg";
+
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-a", "account", 0.95, true)
+        .expect("seed primary A");
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-b", "account", 0.70, false)
+        .expect("write suggestion B");
+
+    let primary_a: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT is_primary FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = 'acct-a'",
+            rusqlite::params![meeting_id],
+            |row| row.get(0),
+        )
+        .expect("get A");
+    let primary_b: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT is_primary FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = 'acct-b'",
+            rusqlite::params![meeting_id],
+            |row| row.get(0),
+        )
+        .expect("get B");
+    assert_eq!(primary_a, 1, "existing primary A must remain primary");
+    assert_eq!(primary_b, 0, "suggestion B must not be promoted");
+}
+
+#[test]
+fn test_dos224_primary_upsert_does_not_downgrade_confidence() {
+    // When the same entity is re-asserted as primary at lower confidence,
+    // the stored confidence must not decrease (existing MAX(..) guarantee
+    // still holds post-fix).
+    let db = test_db();
+    let meeting_id = "mtg-dos224-conf";
+
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-a", "account", 0.95, true)
+        .expect("seed primary A @ 0.95");
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-a", "account", 0.60, true)
+        .expect("re-assert A @ 0.60");
+
+    let conf: f64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT confidence FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = 'acct-a'",
+            rusqlite::params![meeting_id],
+            |row| row.get(0),
+        )
+        .expect("get");
+    assert!(conf >= 0.95, "confidence must not be downgraded, got {}", conf);
+}
+
+// ---------------------------------------------------------------------------
 // DOS-225: Path A reclassify — full-attendee-coverage regression
 // ---------------------------------------------------------------------------
 
