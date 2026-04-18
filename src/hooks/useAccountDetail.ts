@@ -17,6 +17,9 @@ import type {
   AccountDetail,
   AccountEvent,
   ContentFile,
+  HealthSparklinePoint,
+  SentimentJournalEntry,
+  SentimentValue,
   StrategicProgram,
 } from "@/types";
 import { useAccountFields } from "./useAccountFields";
@@ -30,6 +33,91 @@ interface BackgroundWorkStatusEvent {
   entityType?: string;
   stage?: string;
   error?: string;
+}
+
+/** DOS-27: Band steps used to score divergence magnitude. */
+const SENTIMENT_RANK: Record<SentimentValue, number> = {
+  strong: 4,
+  on_track: 3,
+  concerning: 2,
+  at_risk: 1,
+  critical: 0,
+};
+
+const COMPUTED_BAND_RANK: Record<string, number> = {
+  green: 4,
+  yellow: 2,
+  red: 0,
+};
+
+const MILLIS_PER_DAY = 24 * 60 * 60 * 1000;
+const SENTIMENT_STALE_DAYS = 30;
+
+/** CS preset — default labels. Other presets would override via hook composition later. */
+export const DEFAULT_SENTIMENT_LABELS: Record<SentimentValue, string> = {
+  strong: "Strong",
+  on_track: "On Track",
+  concerning: "Concerning",
+  at_risk: "At Risk",
+  critical: "Critical",
+};
+
+export interface SentimentDivergence {
+  severity: "minor" | "major";
+  computedBand: string;
+  delta: number;
+}
+
+export interface SentimentView {
+  current: SentimentValue | null;
+  note: string | null;
+  setAt: string | null;
+  history: SentimentJournalEntry[];
+  sparkline: HealthSparklinePoint[];
+  divergence: SentimentDivergence | null;
+  isStale: boolean;
+  presetLabels: Record<SentimentValue, string>;
+}
+
+function buildSentimentView(detail: AccountDetail | null): SentimentView {
+  const current = (detail?.userHealthSentiment ?? null) as SentimentValue | null;
+  const setAt = detail?.sentimentSetAt ?? null;
+  const note = detail?.sentimentNote ?? null;
+  const history = detail?.sentimentHistory ?? [];
+  const sparkline = detail?.healthSparkline ?? [];
+
+  // Divergence: compare sentiment rank against current computed band rank.
+  let divergence: SentimentDivergence | null = null;
+  const computedBand = (detail?.health ?? "").toLowerCase();
+  if (current && COMPUTED_BAND_RANK[computedBand] !== undefined) {
+    const sRank = SENTIMENT_RANK[current];
+    const cRank = COMPUTED_BAND_RANK[computedBand];
+    const delta = Math.abs(sRank - cRank);
+    if (delta >= 2) {
+      divergence = {
+        severity: delta >= 3 ? "major" : "minor",
+        computedBand,
+        delta,
+      };
+    }
+  }
+
+  let isStale = false;
+  if (setAt) {
+    const ageDays = (Date.now() - new Date(setAt).getTime()) / MILLIS_PER_DAY;
+    isStale = ageDays >= SENTIMENT_STALE_DAYS;
+  }
+
+  return {
+    current,
+    note,
+    setAt,
+    history,
+    sparkline,
+    divergence,
+    isStale,
+    presetLabels: DEFAULT_SENTIMENT_LABELS,
+  };
 }
 
 export function useAccountDetail(accountId: string | undefined) {
@@ -378,6 +466,31 @@ export function useAccountDetail(accountId: string | undefined) {
     }
   }
 
+  // ─── DOS-27: Sentiment journal + divergence ───────────────────────────
+
+  const sentiment = buildSentimentView(detail);
+
+  async function setUserHealthSentiment(value: SentimentValue, note?: string) {
+    if (!accountId) return;
+    await invoke("set_user_health_sentiment", {
+      accountId,
+      sentiment: value,
+      note: note?.trim() ? note.trim() : null,
+    });
+    await silentRefresh();
+  }
+
+  /** Re-stamp sentiment_set_at so the "Still accurate?" prompt resets for 30 days. */
+  async function acknowledgeSentimentStale() {
+    if (!accountId || !detail?.userHealthSentiment) return;
+    await invoke("set_user_health_sentiment", {
+      accountId,
+      sentiment: detail.userHealthSentiment,
+      note: null,
+    });
+    await silentRefresh();
+  }
+
   // ─── Flat public API ──────────────────────────────────────────────────
 
   return {
@@ -450,5 +563,10 @@ export function useAccountDetail(accountId: string | undefined) {
     handleCreateInlineTeamMember: team.handleCreateInlineTeamMember,
     handleImportNoteCreateAndAdd: team.handleImportNoteCreateAndAdd,
     handleCreateAction,
+
+    // DOS-27: sentiment journal
+    sentiment,
+    setUserHealthSentiment,
+    acknowledgeSentimentStale,
   };
 }
