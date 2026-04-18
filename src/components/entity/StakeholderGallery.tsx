@@ -52,6 +52,10 @@ interface StakeholderGalleryProps {
   suggestions?: StakeholderSuggestion[];
   sectionId?: string;
   chapterTitle?: string;
+  /** DOS-18: Optional freshness strip rendered under the chapter heading. */
+  chapterFreshness?: React.ReactNode;
+  /** DOS-18: When true, render "Their team" / "Our team" subsection labels per account-context mockup. */
+  subsectionLabels?: boolean;
   /** Entity ID for intelligence updates. */
   entityId?: string;
   /** Entity type for intelligence updates. */
@@ -292,6 +296,8 @@ export function StakeholderGallery({
   suggestions,
   sectionId = "the-room",
   chapterTitle = "The Room",
+  chapterFreshness,
+  subsectionLabels = false,
   entityId,
   entityType,
   onIntelligenceUpdated,
@@ -440,7 +446,24 @@ export function StakeholderGallery({
 
   return (
     <section id={sectionId || undefined} className={css.section}>
-      <ChapterHeading title={chapterTitle} epigraph={epigraph} />
+      <ChapterHeading title={chapterTitle} epigraph={epigraph} freshness={chapterFreshness} />
+
+      {subsectionLabels && visibleConfirmed.length > 0 && (
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
+            color: "var(--color-text-secondary)",
+            marginBottom: 16,
+            marginTop: 8,
+          }}
+        >
+          Their team
+        </div>
+      )}
 
       {/* ── Confirmed stakeholders (from DB) ── */}
       {visibleConfirmed.length > 0 && (
@@ -805,7 +828,7 @@ export function StakeholderGallery({
       {(teamMembers.length > 0 || canEditTeam) && (
         <div className={css.teamChipsSection}>
           <div className={css.teamHeader}>
-            <span className={css.teamLabel}>Your Team</span>
+            <span className={css.teamLabel}>{subsectionLabels ? "Our team" : "Your Team"}</span>
           </div>
           <div className={css.teamChips}>
             {teamMembers.map((member) => (

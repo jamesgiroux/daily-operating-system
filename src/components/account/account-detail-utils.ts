@@ -18,6 +18,10 @@ import {
   Award,
   Compass,
   Telescope,
+  Quote,
+  MessageSquareQuote,
+  Cpu,
+  BookOpen,
 } from "lucide-react";
 
 /* ── Vitals assembly ── */
@@ -152,11 +156,16 @@ export function buildHealthChapters(isParent: boolean, hasHealth: boolean) {
 }
 
 export function buildContextChapters() {
+  // DOS-18: 7-chapter IA matches account-context-globex.html mockup.
+  // The Record + Files kept as continuity chapters below the dossier.
   return [
-    { id: "state-of-play", label: "State of Play", icon: React.createElement(Clock, { size: 18, strokeWidth: 1.5 }) },
+    { id: "thesis", label: "Thesis", icon: React.createElement(Quote, { size: 18, strokeWidth: 1.5 }) },
     { id: "the-room", label: "The Room", icon: React.createElement(Users, { size: 18, strokeWidth: 1.5 }) },
-    { id: "strategic-landscape", label: "Competitive & Strategic", icon: React.createElement(Compass, { size: 18, strokeWidth: 1.5 }) },
-    { id: "value-commitments", label: "Value & Commitments", icon: React.createElement(Award, { size: 18, strokeWidth: 1.5 }) },
+    { id: "what-matters", label: "What matters", icon: React.createElement(Compass, { size: 18, strokeWidth: 1.5 }) },
+    { id: "value-commitments", label: "What we've built", icon: React.createElement(Award, { size: 18, strokeWidth: 1.5 }) },
+    { id: "their-voice", label: "Their voice", icon: React.createElement(MessageSquareQuote, { size: 18, strokeWidth: 1.5 }) },
+    { id: "technical-shape", label: "Technical shape", icon: React.createElement(Cpu, { size: 18, strokeWidth: 1.5 }) },
+    { id: "about-dossier", label: "About this dossier", icon: React.createElement(BookOpen, { size: 18, strokeWidth: 1.5 }) },
     { id: "the-record", label: "The Record", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) },
     { id: "files", label: "Files", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) },
   ];
