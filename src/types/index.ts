@@ -265,9 +265,16 @@ export interface EmailSyncStatus {
   lastSuccessAt?: string;
 }
 
-/** Email sync stats from DB enrichment state counts (I373). */
+/** Email sync stats from DB enrichment state counts (I373 / DOS-31). */
 export interface EmailSyncStats {
   lastFetchAt: string | null;
+  /**
+   * DOS-31: Last time the Gmail fetch itself completed successfully,
+   * independent of enrichment success. When `lastFetchAt` is stale but
+   * `lastSuccessfulFetchAt` is recent, the inbox is healthy and only the
+   * enrichment pipeline is stuck — different message than "can't reach Gmail".
+   */
+  lastSuccessfulFetchAt: string | null;
   total: number;
   enriched: number;
   pending: number;

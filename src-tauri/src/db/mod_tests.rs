@@ -187,6 +187,78 @@ fn test_archive_email_archives_entire_thread() {
 }
 
 #[test]
+fn test_dos31_last_successful_fetch_at_roundtrip() {
+    // DOS-31: the `email_sync_meta` singleton row must be seeded by migration 094
+    // and round-trip through the get/set API. Starts as None, becomes Some(now)
+    // after a recorded successful fetch.
+    let db = test_db();
+
+    let initial = db
+        .get_last_successful_fetch_at()
+        .expect("meta query should succeed even when value is NULL");
+    assert_eq!(initial, None, "meta row seeded with NULL last_successful_fetch_at");
+
+    db.set_last_successful_fetch_at()
+        .expect("set_last_successful_fetch_at should succeed");
+
+    let after = db
+        .get_last_successful_fetch_at()
+        .expect("meta query after set");
+    assert!(after.is_some(), "timestamp should be populated after set");
+}
+
+#[test]
+fn test_dos31_sync_stats_includes_last_successful_fetch_at() {
+    // DOS-31 AC: `get_email_sync_stats` exposes the separate
+    // `last_successful_fetch_at` timestamp so the UI can distinguish a healthy
+    // fetch from a stalled enrichment pipeline.
+    let db = test_db();
+    db.set_last_successful_fetch_at().expect("record fetch");
+
+    let stats = db.get_email_sync_stats().expect("sync stats");
+    assert!(
+        stats.last_successful_fetch_at.is_some(),
+        "stats must surface last_successful_fetch_at after a recorded fetch"
+    );
+}
+
+#[test]
+fn test_dos31_reset_failed_enrichments_makes_stuck_emails_retryable() {
+    // DOS-31 AC: manual refresh resets `enrichment_attempts` for failed emails
+    // so they re-enter the pending queue instead of silently blocking today's
+    // inbox. Verifies the bookkeeping used by `services::emails::refresh_emails`
+    // and the `retry_failed_emails` Tauri command.
+    let db = test_db();
+
+    let mut stuck = sample_email("em-stuck-1", "thread-stuck", "Stuck email");
+    stuck.enrichment_state = "failed".to_string();
+    stuck.enrichment_attempts = 3;
+    db.upsert_email(&stuck).expect("upsert stuck");
+    // upsert_email doesn't persist enrichment_state/attempts on conflict; ensure
+    // the row is in the expected failed/3 state for the test.
+    db.conn
+        .execute(
+            "UPDATE emails SET enrichment_state = 'failed', enrichment_attempts = 3 WHERE email_id = ?1",
+            rusqlite::params!["em-stuck-1"],
+        )
+        .expect("seed failed state");
+
+    let reset = db.reset_failed_enrichments().expect("reset");
+    assert_eq!(reset, 1, "one failed email should be reset");
+
+    let (state, attempts): (String, i32) = db
+        .conn
+        .query_row(
+            "SELECT enrichment_state, enrichment_attempts FROM emails WHERE email_id = ?1",
+            rusqlite::params!["em-stuck-1"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read back state");
+    assert_eq!(state, "pending");
+    assert_eq!(attempts, 0);
+}
+
+#[test]
 fn test_get_account_actions() {
     let db = test_db();
 

@@ -302,13 +302,53 @@ impl ActionDb {
             )
             .map_err(|e| format!("Failed to count failed emails: {e}"))?;
 
+        // DOS-31: fetch the last successful Gmail fetch timestamp (separate from
+        // per-row last_seen_at so the UI can tell "fetch healthy, enrichment stuck"
+        // apart from "we can't reach Gmail").
+        let last_successful_fetch_at = self.get_last_successful_fetch_at().unwrap_or(None);
+
         Ok(EmailSyncStats {
             last_fetch_at,
+            last_successful_fetch_at,
             total,
             enriched,
             pending,
             failed,
         })
+    }
+
+    /// DOS-31: Record that a Gmail fetch just completed successfully. Writes to
+    /// the singleton `email_sync_meta` row (migration 093). Safe to call from
+    /// any place that has an `ActionDb`; no-ops gracefully if the meta row is
+    /// missing (e.g. first run before migrations).
+    pub fn set_last_successful_fetch_at(&self) -> Result<(), String> {
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE email_sync_meta
+                    SET last_successful_fetch_at = ?1,
+                        updated_at = ?1
+                  WHERE id = 1",
+                params![now],
+            )
+            .map_err(|e| format!("Failed to update email_sync_meta: {e}"))?;
+        Ok(())
+    }
+
+    /// DOS-31: Read the last successful Gmail fetch timestamp. `Ok(None)` means
+    /// we've never completed a successful fetch (fresh install or the meta row
+    /// was never seeded — which shouldn't happen post-migration-094).
+    pub fn get_last_successful_fetch_at(&self) -> Result<Option<String>, String> {
+        let result: Result<Option<String>, rusqlite::Error> = self.conn.query_row(
+            "SELECT last_successful_fetch_at FROM email_sync_meta WHERE id = 1",
+            [],
+            |row| row.get(0),
+        );
+        match result {
+            Ok(ts) => Ok(ts),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("Failed to query last_successful_fetch_at: {e}")),
+        }
     }
 
     /// Update the entity assignment for an email (I395 — user correction).

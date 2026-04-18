@@ -594,6 +594,10 @@ pub struct DbEmail {
 #[serde(rename_all = "camelCase")]
 pub struct EmailSyncStats {
     pub last_fetch_at: Option<String>,
+    /// DOS-31: Last time the Gmail fetch itself completed successfully,
+    /// independent of whether enrichment succeeded. Used to distinguish
+    /// "fetch is healthy but enrichment is stuck" from "we can't reach Gmail".
+    pub last_successful_fetch_at: Option<String>,
     pub total: i32,
     pub enriched: i32,
     pub pending: i32,
