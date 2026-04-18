@@ -107,6 +107,39 @@ function getCommitmentStatusLabel(status?: string): string {
   }
 }
 
+/** DOS-18: Classify impact text into the canonical revenue|cost|risk|speed enum.
+ *  Falls back to "default" when no enum marker is present. The impact field can
+ *  contain either a bare enum token or a sentence; both cases are handled. */
+function classifyImpact(raw?: string): "revenue" | "cost" | "risk" | "speed" | "default" {
+  if (!raw) return "default";
+  const s = raw.toLowerCase();
+  if (/\brevenue\b|\bexpansion\b|\barr\b|\bupsell\b/.test(s)) return "revenue";
+  if (/\bcost\b|\bsavings?\b|\bavoid(ed|ance)?\b/.test(s)) return "cost";
+  if (/\brisk\b|\bcompliance\b|\bsecurity\b|\bdora\b|\bsoc\b/.test(s)) return "risk";
+  if (/\bspeed\b|\bfaster\b|\btime to\b|\bthroughput\b|\bproductivity\b/.test(s)) return "speed";
+  return "default";
+}
+
+function impactTagClass(kind: string): string {
+  switch (kind) {
+    case "revenue": return css.impactTagRevenue;
+    case "cost": return css.impactTagCost;
+    case "risk": return css.impactTagRisk;
+    case "speed": return css.impactTagSpeed;
+    default: return css.impactTagDefault;
+  }
+}
+
+function impactTagLabel(kind: string): string {
+  switch (kind) {
+    case "revenue": return "Revenue";
+    case "cost": return "Cost";
+    case "risk": return "Risk";
+    case "speed": return "Speed";
+    default: return "Impact";
+  }
+}
+
 /** Heuristic: is this a short, display-worthy metric value (number, percentage, grade)?
  *  If not, it's narrative text that shouldn't render at 28px serif. */
 function isShortValue(value?: string): boolean {
@@ -177,23 +210,27 @@ export function ValueCommitments({
                         item.statement
                       )}
                     </div>
-                    {item.impact && (
-                      <div className={css.valueImpact}>
-                        {onUpdateField ? (
-                          <EditableText
-                            value={item.impact}
-                            onChange={(v) =>
-                              onUpdateField(`valueDelivered[${i}].impact`, v)
-                            }
-                            as="span"
-                            multiline
-                            className={css.impactText}
-                          />
-                        ) : (
-                          <span className={css.impactText}>{item.impact}</span>
-                        )}
-                      </div>
-                    )}
+                    {item.impact && (() => {
+                      const kind = classifyImpact(item.impact);
+                      return (
+                        <div className={css.valueImpact}>
+                          <span className={`${css.impactTag} ${impactTagClass(kind)}`}>{impactTagLabel(kind)}</span>
+                          {onUpdateField ? (
+                            <EditableText
+                              value={item.impact}
+                              onChange={(v) =>
+                                onUpdateField(`valueDelivered[${i}].impact`, v)
+                              }
+                              as="span"
+                              multiline
+                              className={css.impactText}
+                            />
+                          ) : (
+                            <span className={css.impactText}>{item.impact}</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <span className={css.provenanceRow}>
                       {item.itemSource?.source === "user_correction" && (
                         <span className={css.confirmedBadge}>

@@ -88,7 +88,11 @@
 }
 
 .valueImpact {
-  margin-top: 6px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .impactText {
@@ -97,6 +101,45 @@
   line-height: 1.5;
   color: var(--color-text-tertiary);
   font-style: italic;
+}
+
+/* DOS-18: Impact tag pills — revenue|cost|risk|speed enum */
+.impactTag {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.impactTagRevenue {
+  background: var(--color-garden-sage-14);
+  color: var(--color-garden-sage);
+}
+
+.impactTagCost {
+  background: var(--color-spice-turmeric-14, var(--color-spice-turmeric-12));
+  color: var(--color-spice-turmeric);
+}
+
+.impactTagRisk {
+  background: var(--color-spice-terracotta-14, var(--color-spice-terracotta-12));
+  color: var(--color-spice-terracotta);
+}
+
+.impactTagSpeed {
+  background: var(--color-garden-larkspur-14);
+  color: var(--color-garden-larkspur);
+}
+
+.impactTagDefault {
+  background: var(--color-desk-charcoal-8);
+  color: var(--color-text-tertiary);
 }
 
 /* -- Success Metrics -- dashboard strip -- */

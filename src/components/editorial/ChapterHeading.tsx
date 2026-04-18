@@ -13,16 +13,37 @@ interface ChapterHeadingProps {
   epigraph?: string;
   /** I529: Optional inline feedback controls rendered after the title */
   feedbackSlot?: ReactNode;
+  /** DOS-18: Freshness strip rendered between title and epigraph. */
+  freshness?: ReactNode;
+  /** DOS-18: Render title in compact monospace uppercase ("reference weight") per mockup. */
+  variant?: "primary" | "reference";
 }
 
-export function ChapterHeading({ title, epigraph, feedbackSlot }: ChapterHeadingProps) {
+export function ChapterHeading({ title, epigraph, feedbackSlot, freshness, variant = "primary" }: ChapterHeadingProps) {
   return (
     <div className={styles.heading}>
       <hr className={styles.rule} />
       <div className={styles.titleRow}>
-        <h2 className={styles.title}>{title}</h2>
+        {variant === "reference" ? (
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.14em",
+              color: "var(--color-text-secondary)",
+              margin: 0,
+            }}
+          >
+            {title}
+          </div>
+        ) : (
+          <h2 className={styles.title}>{title}</h2>
+        )}
         {feedbackSlot ? <span className={styles.feedback}>{feedbackSlot}</span> : null}
       </div>
+      {freshness}
       {epigraph ? <p className={styles.epigraph}>{epigraph}</p> : null}
     </div>
   );
