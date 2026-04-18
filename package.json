@@ -17,7 +17,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "build:mcp": "bash src-tauri/scripts/build-mcp.sh"
+    "build:mcp": "bash src-tauri/scripts/build-mcp.sh",
+    "build:mcp:stub": "bash src-tauri/scripts/build-mcp.sh --stub",
+    "postinstall": "bash src-tauri/scripts/build-mcp.sh --stub"
   },
   "keywords": [],
   "author": "",
