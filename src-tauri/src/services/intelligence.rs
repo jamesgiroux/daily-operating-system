@@ -520,6 +520,94 @@ pub fn upsert_assessment_snapshot(
     Ok(())
 }
 
+/// DOS-15: Persist the Glean leading-signals JSON blob on `entity_assessment`
+/// and emit the four callout-worthy signals derived from it.
+///
+/// Wrapped in a transaction so the blob write and signal emissions either all
+/// land or all roll back. Source is tagged `glean_leading_signals` at confidence
+/// 0.8 (champion_at_risk), 0.75 (competitor_decision_relevant), 0.7
+/// (sentiment_divergence), 0.75 (budget_cycle_locked) — matching the tier policy
+/// of other Glean-derived signals registered in `signals/callouts.rs`.
+pub fn upsert_health_outlook_signals(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    signals: &crate::intelligence::glean_leading_signals::HealthOutlookSignals,
+) -> Result<(), String> {
+    let blob = serde_json::to_string(signals)
+        .map_err(|e| format!("Failed to serialize health_outlook_signals: {e}"))?;
+
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE entity_assessment SET health_outlook_signals_json = ?1 WHERE entity_id = ?2",
+                rusqlite::params![&blob, entity_id],
+            )
+            .map_err(|e| format!("Failed to upsert health_outlook_signals_json: {e}"))?;
+
+        let derived = signals.derive_signals();
+
+        if let Some(payload) = derived.champion_at_risk {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                engine,
+                entity_type,
+                entity_id,
+                "champion_at_risk",
+                "glean_leading_signals",
+                Some(&payload),
+                0.8,
+            )
+            .map_err(|e| format!("champion_at_risk emit failed: {e}"))?;
+        }
+
+        if let Some(payload) = derived.sentiment_divergence {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                engine,
+                entity_type,
+                entity_id,
+                "sentiment_divergence",
+                "glean_leading_signals",
+                Some(&payload),
+                0.7,
+            )
+            .map_err(|e| format!("sentiment_divergence emit failed: {e}"))?;
+        }
+
+        for payload in derived.competitor_decision_relevant {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                engine,
+                entity_type,
+                entity_id,
+                "competitor_decision_relevant",
+                "glean_leading_signals",
+                Some(&payload),
+                0.75,
+            )
+            .map_err(|e| format!("competitor_decision_relevant emit failed: {e}"))?;
+        }
+
+        if let Some(payload) = derived.budget_cycle_locked {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                engine,
+                entity_type,
+                entity_id,
+                "budget_cycle_locked",
+                "glean_leading_signals",
+                Some(&payload),
+                0.75,
+            )
+            .map_err(|e| format!("budget_cycle_locked emit failed: {e}"))?;
+        }
+
+        Ok(())
+    })
+}
+
 /// Persist AI-inferred person relationships for an enrichment run (I504).
 ///
 /// - Skips invalid/self edges.

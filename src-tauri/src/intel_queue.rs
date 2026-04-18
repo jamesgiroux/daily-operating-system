@@ -715,6 +715,59 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
+            // DOS-15: Supplemental leading-signals enrichment for Health & Outlook.
+            // Runs only for accounts and only when Glean is configured. Silent
+            // fallback: any error (chat failure, timeout, parse) is logged and
+            // ignored — users without Glean never see this surface.
+            if state.context_provider().is_remote() && request.entity_type == "account" {
+                let endpoint = state
+                    .context_provider()
+                    .remote_endpoint()
+                    .map(|s| s.to_string());
+                if let Some(endpoint) = endpoint {
+                    let entity_name = input.entity_name.clone();
+                    let entity_id = request.entity_id.clone();
+                    let entity_type = request.entity_type.clone();
+                    let engine = std::sync::Arc::clone(&state.signals.engine);
+                    tauri::async_runtime::spawn(async move {
+                        let provider = crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
+                        match provider.enrich_leading_signals(&entity_name).await {
+                            Ok(signals) => {
+                                if let Ok(db) = crate::db::ActionDb::open() {
+                                    if let Err(e) =
+                                        crate::services::intelligence::upsert_health_outlook_signals(
+                                            &db,
+                                            &engine,
+                                            &entity_type,
+                                            &entity_id,
+                                            &signals,
+                                        )
+                                    {
+                                        log::warn!(
+                                            "[DOS-15] upsert_health_outlook_signals failed for {}: {}",
+                                            entity_id,
+                                            e
+                                        );
+                                    } else {
+                                        log::info!(
+                                            "[DOS-15] Leading signals persisted for {}",
+                                            entity_id
+                                        );
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::info!(
+                                    "[DOS-15] Leading-signals enrichment skipped for {}: {}",
+                                    entity_id,
+                                    e
+                                );
+                            }
+                        }
+                    });
+                }
+            }
+
             if !parsed.inferred_relationships.is_empty() {
                 let db = match crate::db::ActionDb::open() {
                     Ok(db) => db,

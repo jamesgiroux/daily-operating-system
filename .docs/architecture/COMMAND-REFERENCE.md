@@ -2,8 +2,8 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-04-15 by `.docs/generators/gen-command-reference.sh`
-**Registered in lib.rs:** ~366 commands
+**Auto-generated:** 2026-04-18 by `.docs/generators/gen-command-reference.sh`
+**Registered in lib.rs:** ~369 commands
 **Source files:** 11
 
 ---
@@ -48,6 +48,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `remove_stakeholder_role` | yes | account_id, person_id, role |
 | `reveal_in_finder` | — | path |
 | `set_team_member_role` | yes | account_id, person_id, new_role |
+| `set_user_health_sentiment` | yes | account_id, sentiment, note |
 | `update_account_field` | yes | account_id, field, value |
 | `update_account_notes` | yes | account_id, notes |
 | `update_account_programs` | yes | account_id, programs_json |
@@ -279,6 +280,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `remove_meeting_entity` | yes | meeting_id, entity_id, entity_type |
 | `remove_project_keyword` | yes | project_id, keyword |
 | `search_people` | yes | query |
+| `submit_intelligence_correction` | yes | entity_id, entity_type, field, action, corrected_value, annotation |
 | `submit_intelligence_feedback` | yes | entity_id, entity_type, field, feedback_type, context |
 | `unlink_meeting_entity` | yes | meeting_id, entity_id |
 | `unlink_person_entity` | yes | person_id, entity_id |
@@ -401,6 +403,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `process_user_attachment` | yes | path |
 | `refresh_emails` | yes | — |
 | `reset_ai_models_to_recommended` | — | — |
+| `retry_failed_emails` | yes | — |
 | `set_ai_model` | — | tier, model |
 | `set_developer_mode` | yes | enabled |
 | `set_entity_mode` | — | mode |
