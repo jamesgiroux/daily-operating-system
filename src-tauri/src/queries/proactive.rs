@@ -390,6 +390,7 @@ mod tests {
             is_all_day: false,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         }
     }
 
