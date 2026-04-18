@@ -5543,3 +5543,80 @@ fn test_dos233_account_meeting_and_transcript_counts_unbounded() {
         "DOS-233: transcript total must be 6 — every other meeting carries a transcript"
     );
 }
+
+// ---------------------------------------------------------------------------
+// DOS-231 Codex fix: `update_technical_footprint_field` persists a single
+// whitelisted column on `account_technical_footprint`. Creates the row if it
+// does not yet exist; stamps `source = 'user_edit'`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dos231_update_technical_footprint_field_creates_row_and_writes_text() {
+    let db = test_db();
+    let a = sample_account("acct-tf", "TF Account");
+    db.upsert_account(&a).expect("upsert");
+
+    db.update_technical_footprint_field("acct-tf", "usage_tier", "enterprise")
+        .expect("write usage tier");
+
+    let tf = db
+        .get_account_technical_footprint("acct-tf")
+        .expect("query")
+        .expect("row exists");
+    assert_eq!(tf.usage_tier.as_deref(), Some("enterprise"));
+    assert_eq!(tf.source, "user_edit");
+}
+
+#[test]
+fn test_dos231_update_technical_footprint_field_parses_numerics() {
+    let db = test_db();
+    let a = sample_account("acct-tf2", "TF Account 2");
+    db.upsert_account(&a).expect("upsert");
+
+    db.update_technical_footprint_field("acct-tf2", "active_users", "1250")
+        .expect("int");
+    db.update_technical_footprint_field("acct-tf2", "csat_score", "4.3")
+        .expect("real");
+    db.update_technical_footprint_field("acct-tf2", "adoption_score", "0.82")
+        .expect("real");
+
+    let tf = db
+        .get_account_technical_footprint("acct-tf2")
+        .expect("q")
+        .expect("row");
+    assert_eq!(tf.active_users, Some(1250));
+    assert!((tf.csat_score.unwrap() - 4.3).abs() < 1e-6);
+    assert!((tf.adoption_score.unwrap() - 0.82).abs() < 1e-6);
+}
+
+#[test]
+fn test_dos231_update_technical_footprint_field_rejects_unknown_field() {
+    let db = test_db();
+    let a = sample_account("acct-tf3", "TF Account 3");
+    db.upsert_account(&a).expect("upsert");
+
+    let err = db
+        .update_technical_footprint_field("acct-tf3", "integrations_json", "garbage")
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unsupported field"),
+        "unsupported fields must be rejected, got: {msg}"
+    );
+}
+
+#[test]
+fn test_dos231_update_technical_footprint_field_rejects_bad_numeric() {
+    let db = test_db();
+    let a = sample_account("acct-tf4", "TF Account 4");
+    db.upsert_account(&a).expect("upsert");
+
+    let err = db
+        .update_technical_footprint_field("acct-tf4", "active_users", "not-a-number")
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("not a valid integer"),
+        "bad integer must be rejected, got: {msg}"
+    );
+}
