@@ -1548,6 +1548,8 @@ export interface AccountDetail extends AccountListItem {
   sentimentHistory?: SentimentJournalEntry[];
   /** DOS-27: Daily computed-health sparkline points (last 90 days, chronological). */
   healthSparkline?: HealthSparklinePoint[];
+  /** DOS-15: Glean leading-signal enrichment bundle (health & outlook signals). */
+  gleanSignals?: HealthOutlookSignals | null;
 }
 
 /** DOS-27: A single sentiment journal entry. */
@@ -1571,6 +1573,181 @@ export interface HealthSparklinePoint {
   day: string;
   score: number;
   band: string;
+}
+
+/** DOS-15: Glean leading-signal enrichment types (Health & Outlook tab). */
+export interface HealthOutlookSignals {
+  championRisk?: ChampionRiskSignal | null;
+  productUsageTrend?: ProductUsageTrendSignal | null;
+  channelSentiment?: ChannelSentimentSignal | null;
+  transcriptExtraction?: TranscriptExtractionSignal | null;
+  commercialSignals?: CommercialSignalsBlock | null;
+  advocacyTrack?: AdvocacyTrackSignal | null;
+  quoteWall: QuoteWallEntry[];
+  /** Trend signals from a separate PTY pass (DOS-204). `null` until that pass runs. */
+  trends?: TrendSignals | null;
+}
+
+export interface ChampionRiskSignal {
+  championName?: string | null;
+  atRisk: boolean;
+  riskLevel?: "low" | "moderate" | "high" | null;
+  riskEvidence: string[];
+  tenureSignal?: string | null;
+  recentRoleChange?: string | null;
+  emailSentimentTrend30d?: "warming" | "stable" | "cooling" | null;
+  emailResponseTimeTrend?: "faster" | "stable" | "slower" | "unknown" | null;
+  backupChampionCandidates: {
+    name: string;
+    role?: string | null;
+    why?: string | null;
+    engagementLevel?: "high" | "medium" | "low" | null;
+  }[];
+}
+
+export interface ProductUsageTrendSignal {
+  overallTrend30d?: "growing" | "stable" | "declining" | "unknown" | null;
+  overallTrend90d?: "growing" | "stable" | "declining" | "unknown" | null;
+  features: {
+    name: string;
+    adoptionStatus?: string | null;
+    activeUsersEstimate?: unknown;
+    usageTrend30d?: string | null;
+    evidence?: string | null;
+  }[];
+  underutilizedFeatures: {
+    name: string;
+    licensedButUnusedDays?: number | null;
+    coachingOpportunity?: string | null;
+  }[];
+  highlyStickyFeatures: { name: string; whySticky?: string | null }[];
+  summary?: string | null;
+}
+
+export interface ChannelSentimentSignal {
+  email?: ChannelReading | null;
+  meetings?: ChannelReading | null;
+  supportTickets?: ChannelReading | null;
+  slack?: ChannelReading | null;
+  divergenceDetected: boolean;
+  divergenceSummary?: string | null;
+}
+
+export interface ChannelReading {
+  sentiment?: string | null;
+  trend30d?: "warming" | "stable" | "cooling" | null;
+  evidence?: string | null;
+}
+
+export interface TranscriptExtractionSignal {
+  churnAdjacentQuestions: TranscriptQuestion[];
+  expansionAdjacentQuestions: TranscriptQuestion[];
+  competitorBenchmarks: {
+    competitor: string;
+    context?: string | null;
+    threatLevel?:
+      | "mentioned"
+      | "evaluating"
+      | "actively_comparing"
+      | "decision_relevant"
+      | null;
+    date?: string | null;
+    source?: string | null;
+  }[];
+  decisionMakerShifts: {
+    shift: string;
+    who?: string | null;
+    date?: string | null;
+    source?: string | null;
+    implication?: string | null;
+  }[];
+  budgetCycleSignals: {
+    signal: string;
+    date?: string | null;
+    source?: string | null;
+    implication?: string | null;
+    locked: boolean;
+  }[];
+}
+
+export interface TranscriptQuestion {
+  question: string;
+  speaker?: string | null;
+  date?: string | null;
+  source?: string | null;
+  riskSignal?: string | null;
+  opportunitySignal?: string | null;
+  estimatedArrUpside?: unknown;
+}
+
+export interface CommercialSignalsBlock {
+  arrTrend12mo: { period: string; arr?: number | null; note?: string | null }[];
+  arrDirection?: "growing" | "flat" | "shrinking" | null;
+  paymentBehavior?: string | null;
+  paymentEvidence?: string | null;
+  discountHistory: {
+    date?: string | null;
+    percentOrAmount?: string | null;
+    reason?: string | null;
+  }[];
+  discountAppetiteRemaining?: "full" | "partial" | "exhausted" | "unknown" | null;
+  budgetCycleAlignment?: string | null;
+  procurementComplexity?: {
+    lastCycleLengthDays?: number | null;
+    signersRequired?: number | null;
+    legalReviewRequired?: boolean | null;
+    knownGotchas?: string | null;
+  } | null;
+  previousRenewalOutcome?: string | null;
+}
+
+export interface AdvocacyTrackSignal {
+  isReferenceCustomer?: boolean | null;
+  logoPermission?: "yes" | "no" | "requested" | "unknown" | null;
+  caseStudy?: {
+    published?: boolean | null;
+    inProgress?: boolean | null;
+    topic?: string | null;
+    publishDate?: string | null;
+  } | null;
+  speakingSlots: {
+    event: string;
+    date?: string | null;
+    speaker?: string | null;
+    topic?: string | null;
+  }[];
+  betaProgramsIn: {
+    program: string;
+    enrolledDate?: string | null;
+    engagementLevel?: string | null;
+  }[];
+  referralsMade: {
+    referredCompany: string;
+    outcome?: string | null;
+    date?: string | null;
+  }[];
+  npsHistory: {
+    surveyDate?: string | null;
+    score?: number | null;
+    verbatim?: string | null;
+    respondent?: string | null;
+  }[];
+  advocacyTrend?: "strengthening" | "stable" | "cooling" | null;
+}
+
+export interface QuoteWallEntry {
+  quote: string;
+  speaker?: string | null;
+  role?: string | null;
+  date?: string | null;
+  source?: string | null;
+  sentiment?: "positive" | "neutral" | "negative" | "mixed" | null;
+  whyItMatters?: string | null;
+}
+
+export interface TrendSignals {
+  usageTrajectory: unknown[];
+  sentimentOverTime: unknown[];
 }
 
 /** I644: Source reference for a tracked account field. */

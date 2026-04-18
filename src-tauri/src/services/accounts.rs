@@ -1426,6 +1426,20 @@ pub async fn get_account_detail(
                 .get_health_score_sparkline(&account.id, 90)
                 .unwrap_or_default();
 
+            // DOS-15: Glean leading-signal enrichment bundle — nullable.
+            let glean_signals: Option<
+                crate::intelligence::glean_leading_signals::HealthOutlookSignals,
+            > = db
+                .conn_ref()
+                .query_row(
+                    "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+                    rusqlite::params![&account.id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .ok()
+                .flatten()
+                .and_then(|json| serde_json::from_str(&json).ok());
+
             Ok(AccountDetailResult {
                 id: account.id,
                 name: account.name,
@@ -1470,6 +1484,7 @@ pub async fn get_account_detail(
                 sentiment_note,
                 sentiment_history,
                 health_sparkline,
+                glean_signals,
             })
         })
         .await

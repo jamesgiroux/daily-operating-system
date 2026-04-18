@@ -101,6 +101,13 @@ pub struct AccountDetailResult {
     /// DOS-27: Daily computed-health sparkline — last 90 days.
     #[serde(default)]
     pub health_sparkline: Vec<crate::db::accounts::DbHealthSparklinePoint>,
+    /// DOS-15: Glean leading-signal enrichment bundle (champion risk, usage
+    /// trends, sentiment divergence, transcript extraction, commercial signals,
+    /// advocacy, quote wall). Null when Glean is not configured or enrichment
+    /// has not yet run for this account.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "gleanSignals")]
+    pub glean_signals:
+        Option<crate::intelligence::glean_leading_signals::HealthOutlookSignals>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
