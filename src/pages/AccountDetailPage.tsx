@@ -563,16 +563,26 @@ export default function AccountDetailPage() {
 
     // ── Chapter 6: Recently landed ───────────────────────────────────────
     // 30-day tail from wins + lifecycle events.
+    //
+    // Contract: only items with a real timestamp inside the 30-day window
+    // render here. Undated wins are excluded outright — rendering them as
+    // "Delivered" under a 30-day tail label is a false claim. If a win is
+    // missing sourcedAt it drops off this surface; it can still be picked
+    // up by Context's value-delivered list.
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const recentWinsRows = wins.map((w, i) => ({
-      key: `win-${i}`,
-      date: w.itemSource?.sourcedAt
-        ? formatShortDate(w.itemSource.sourcedAt).toUpperCase()
-        : "Recently",
-      event: w.text,
-      source: w.source ? `Came from ${w.source}` : null,
-      ts: w.itemSource?.sourcedAt ? new Date(w.itemSource.sourcedAt).getTime() : 0,
-    }));
+    const recentWinsRows = wins
+      .map((w, i) => {
+        const sourcedAt = w.itemSource?.sourcedAt;
+        const ts = sourcedAt ? new Date(sourcedAt).getTime() : Number.NaN;
+        return {
+          key: `win-${i}`,
+          date: sourcedAt ? formatShortDate(sourcedAt).toUpperCase() : "",
+          event: w.text,
+          source: w.source ? `Came from ${w.source}` : null,
+          ts,
+        };
+      })
+      .filter((row) => Number.isFinite(row.ts) && row.ts >= thirtyDaysAgo);
     const recentEventRows = accountEvents
       .filter((e) => {
         const t = new Date(e.eventDate).getTime();
