@@ -117,22 +117,42 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
         // one entity per type to avoid multi-account contamination.
         let selected = select_auto_link_candidates(&outcomes);
 
-        // I653 AC4: Use centralized service function for entity linking.
-        // Collects selected entities as (id, type) pairs for the service layer.
-        let selected_pairs: Vec<(String, String)> = selected
-            .iter()
-            .map(|e| (e.entity_id.clone(), e.entity_type.as_str().to_string()))
-            .collect();
+        // DOS-74: Gather primary IDs so suggestion candidates don't duplicate
+        // entities we already auto-linked as primaries.
+        let primary_ids: std::collections::HashSet<String> =
+            selected.iter().map(|e| e.entity_id.clone()).collect();
+        let suggestions = select_suggestion_candidates(&outcomes, &primary_ids);
 
         let linked_account_id: Option<String> = selected
             .iter()
             .find(|e| e.entity_type.as_str() == "account")
             .map(|e| e.entity_id.clone());
 
-        let linked = crate::services::meetings::persist_and_invalidate_entity_links_sync(
+        // DOS-74: Persist scored candidates so junction rows carry confidence
+        // + is_primary. Primaries auto-link at full confidence; suggestions
+        // write at their signal confidence with is_primary = false.
+        let mut candidates: Vec<crate::services::meetings::EntityLinkCandidate> = Vec::new();
+        for entity in &selected {
+            candidates.push(crate::services::meetings::EntityLinkCandidate {
+                entity_id: entity.entity_id.clone(),
+                entity_type: entity.entity_type.as_str().to_string(),
+                confidence: entity.confidence.max(0.95),
+                is_primary: true,
+            });
+        }
+        for entity in &suggestions {
+            candidates.push(crate::services::meetings::EntityLinkCandidate {
+                entity_id: entity.entity_id.clone(),
+                entity_type: entity.entity_type.as_str().to_string(),
+                confidence: entity.confidence,
+                is_primary: false,
+            });
+        }
+
+        let linked = crate::services::meetings::persist_and_invalidate_entity_links_sync_scored(
             &db,
             &meeting.id,
-            &selected_pairs,
+            &candidates,
             &state.meeting_prep_queue,
             &state.integrations.prep_queue_wake,
         )
@@ -248,6 +268,29 @@ fn select_auto_link_candidates(
     }
 
     best_by_type.into_values().collect()
+}
+
+/// DOS-74: Select suggestion-tier outcomes that should be persisted as
+/// non-primary junction rows. These render as muted "suggested" chips in the
+/// UI rather than co-equal primary entities. Suggestions never cross to
+/// auto-linked — they exist purely for disambiguation affordance.
+fn select_suggestion_candidates(
+    outcomes: &[crate::prepare::entity_resolver::ResolutionOutcome],
+    primary_ids: &std::collections::HashSet<String>,
+) -> Vec<crate::prepare::entity_resolver::ResolvedEntity> {
+    outcomes
+        .iter()
+        .filter_map(|outcome| match outcome {
+            crate::prepare::entity_resolver::ResolutionOutcome::Suggestion(e) => {
+                if primary_ids.contains(&e.entity_id) {
+                    None
+                } else {
+                    Some(e.clone())
+                }
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Extract unique domains from attendee email addresses.
