@@ -4133,6 +4133,7 @@ mod tests {
                 id: "acc-record".to_string(),
                 name: "Acme Corp".to_string(),
                 entity_type: "account".to_string(),
+                ..Default::default()
             }]),
             classified_entities: None,
         };
@@ -4269,6 +4270,7 @@ mod tests {
                 id: "proj-route".to_string(),
                 name: "Platform Migration".to_string(),
                 entity_type: "project".to_string(),
+                ..Default::default()
             }]),
             classified_entities: None,
         };
@@ -4285,6 +4287,7 @@ mod tests {
                 id: "proj-route".to_string(),
                 name: "Platform Migration".to_string(),
                 entity_type: "project".to_string(),
+                ..Default::default()
             }]),
             classified_entities: None,
         };
@@ -4301,6 +4304,7 @@ mod tests {
                 id: "person-route".to_string(),
                 name: "Pat Kim".to_string(),
                 entity_type: "person".to_string(),
+                ..Default::default()
             }]),
             classified_entities: None,
         };

@@ -1704,7 +1704,11 @@ impl ActionDb {
     pub fn reclassify_meeting_types_from_attendees(&self) -> Result<usize, DbError> {
         let mut total = 0;
 
-        // Meetings classified as customer/external/one_on_one but ALL attendees are now internal → internal
+        // DOS-206: Path A — via the meeting_attendees junction + people table.
+        // Meetings where EVERY resolvable (has a people row) attendee is
+        // internal should flip customer/external/one_on_one → internal.
+        // This runs first because it requires at least one resolvable
+        // attendee, which is a stronger signal than raw email parsing.
         total += self.conn.execute(
             "UPDATE meetings SET meeting_type = 'internal'
              WHERE meeting_type IN ('customer', 'external', 'one_on_one')
@@ -1717,6 +1721,74 @@ impl ActionDb {
                )",
             [],
         )?;
+
+        // DOS-206: Path B — via raw attendee email strings vs user_domains.
+        // The people-join query above misses meetings where attendees are
+        // stored only in the `meetings.attendees` JSON / CSV blob and have
+        // never been materialized into the `people` table. We need a second
+        // sweep that parses the raw attendee strings and flips meetings
+        // where every parseable email ends in a user-owned domain.
+        //
+        // The config's user_domains is the source of truth; we load it in
+        // Rust and iterate, rather than trying to SQL-parse attendees.
+        let user_domains: Vec<String> = crate::state::load_config()
+            .map(|c| c.resolved_user_domains())
+            .unwrap_or_default();
+
+        if !user_domains.is_empty() {
+            // Fetch candidate meetings that are currently customer/external/one_on_one.
+            let mut stmt = self.conn.prepare(
+                "SELECT id, attendees FROM meetings
+                 WHERE meeting_type IN ('customer', 'external', 'one_on_one')
+                   AND attendees IS NOT NULL
+                   AND attendees != ''",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            drop(stmt);
+
+            let mut update_stmt = self
+                .conn
+                .prepare("UPDATE meetings SET meeting_type = 'internal' WHERE id = ?1")?;
+
+            for (id, attendees_str) in rows {
+                let attendees: Vec<String> =
+                    match serde_json::from_str::<Vec<String>>(&attendees_str) {
+                        Ok(arr) => arr,
+                        Err(_) => attendees_str
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect(),
+                    };
+
+                // Parseable emails only. If no emails at all, skip (can't judge).
+                let emails: Vec<String> = attendees
+                    .iter()
+                    .filter(|a| a.contains('@'))
+                    .map(|a| a.to_lowercase())
+                    .collect();
+                if emails.is_empty() {
+                    continue;
+                }
+
+                // Every parseable email must end in a user_domain → all-internal.
+                let all_internal = emails.iter().all(|e| {
+                    let domain = e.split('@').nth(1).unwrap_or("");
+                    user_domains
+                        .iter()
+                        .any(|d| !d.is_empty() && domain.eq_ignore_ascii_case(d))
+                });
+
+                if all_internal {
+                    update_stmt.execute(params![id])?;
+                    total += 1;
+                }
+            }
+        }
 
         // Meetings classified as internal but ANY attendee is now external → customer
         total += self.conn.execute(

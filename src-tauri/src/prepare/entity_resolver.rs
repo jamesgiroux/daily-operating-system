@@ -267,12 +267,23 @@ fn signal_junction_lookup(
 
 /// Signal 2: Domain-based matching from attendee email domains.
 /// Extracts domains from attendee emails and matches to accounts via account_domains table.
-/// Confidence: 0.75 per matched account (strong signal, org-owned domain).
+///
+/// DOS-74: When a single domain resolves to multiple accounts (e.g. parent
+/// company + subsidiary business units both own `example.com`), we promote
+/// only the first account (ordered by account_type ASC, name ASC — i.e.,
+/// customer before subsidiary before partner; alphabetical within tier) to
+/// the full 0.75 domain-strength signal. Siblings drop to 0.45, below the
+/// `ResolvedWithFlag` threshold, so they surface as suggestions rather than
+/// co-equal auto-links. This prevents meeting briefings from displaying
+/// every domain-matched BU as an equal primary chip.
 fn signal_domain_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal> {
     let attendees = helpers::extract_attendee_emails(meeting);
     if attendees.is_empty() {
         return Vec::new();
     }
+
+    const DOMAIN_BEST_CONFIDENCE: f64 = 0.75;
+    const DOMAIN_SIBLING_CONFIDENCE: f64 = 0.45; // below ResolvedWithFlag (0.60) → suggestion
 
     let mut signals = Vec::new();
     let mut seen_accounts: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -281,16 +292,28 @@ fn signal_domain_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal> 
     for email in attendees {
         if let Some(domain) = email.split('@').nth(1) {
             let domain_str = domain.to_lowercase();
-            // Lookup accounts that own this domain
+            // Lookup accounts that own this domain (pre-ordered by type, name)
             if let Ok(accounts) = db.lookup_account_candidates_by_domain(&domain_str) {
+                let mut is_best_for_domain = true;
                 for account in accounts {
                     if seen_accounts.insert(account.id.clone()) {
+                        let confidence = if is_best_for_domain {
+                            DOMAIN_BEST_CONFIDENCE
+                        } else {
+                            DOMAIN_SIBLING_CONFIDENCE
+                        };
+                        let source = if is_best_for_domain {
+                            format!("domain:{}", domain_str)
+                        } else {
+                            format!("domain_sibling:{}", domain_str)
+                        };
                         signals.push(ResolutionSignal {
                             entity_id: account.id,
                             entity_type: EntityType::Account,
-                            confidence: 0.75, // Strong signal: org-owned domain
-                            source: format!("domain:{}", domain_str),
+                            confidence,
+                            source,
                         });
+                        is_best_for_domain = false;
                     }
                 }
             }

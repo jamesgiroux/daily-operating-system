@@ -393,19 +393,29 @@ pub async fn set_user_domains(domains: &str, state: &AppState) -> Result<Config,
     if !parsed.is_empty() {
         let _ = state
             .db_write(move |db| {
+                // Always run people reclassification; log count for observability.
                 match db.reclassify_people_for_domains(&parsed) {
-                    Ok(n) if n > 0 => {
-                        log::info!("Reclassified {} people after domain change", n);
-                        match db.reclassify_meeting_types_from_attendees() {
-                            Ok(m) if m > 0 => {
-                                log::info!("Reclassified {} meetings after domain change", m);
-                            }
-                            Ok(_) => {}
-                            Err(e) => log::warn!("Meeting reclassification failed: {}", e),
+                    Ok(n) => {
+                        if n > 0 {
+                            log::info!("Reclassified {} people after domain change", n);
                         }
                     }
-                    Ok(_) => {}
                     Err(e) => log::warn!("People reclassification failed: {}", e),
+                }
+
+                // DOS-206: Always run meeting reclassification after a domain
+                // save, regardless of whether any *people* rows changed. When
+                // people are already correctly classified but meetings were
+                // previously mis-typed (e.g., a past all-internal meeting
+                // stuck on "customer" due to a title-slug match), we still
+                // need to sweep the stale meeting rows.
+                match db.reclassify_meeting_types_from_attendees() {
+                    Ok(m) => {
+                        if m > 0 {
+                            log::info!("Reclassified {} meetings after domain change", m);
+                        }
+                    }
+                    Err(e) => log::warn!("Meeting reclassification failed: {}", e),
                 }
                 Ok(())
             })
