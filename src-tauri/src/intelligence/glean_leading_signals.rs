@@ -16,7 +16,7 @@ use super::glean_provider::extract_json_object;
 
 /// Root struct persisted to `entity_assessment.health_outlook_signals_json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct HealthOutlookSignals {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub champion_risk: Option<ChampionRisk>,
@@ -40,7 +40,7 @@ pub struct HealthOutlookSignals {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct ChampionRisk {
     #[serde(default)]
     pub champion_name: Option<String>,
@@ -63,7 +63,7 @@ pub struct ChampionRisk {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct BackupChampion {
     pub name: String,
     #[serde(default)]
@@ -75,7 +75,7 @@ pub struct BackupChampion {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct ProductUsageTrend {
     #[serde(default)]
     pub overall_trend_30d: Option<String>,
@@ -92,7 +92,7 @@ pub struct ProductUsageTrend {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct FeatureUsage {
     pub name: String,
     #[serde(default)]
@@ -106,7 +106,7 @@ pub struct FeatureUsage {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct UnderutilizedFeature {
     pub name: String,
     #[serde(default)]
@@ -116,7 +116,7 @@ pub struct UnderutilizedFeature {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct StickyFeature {
     pub name: String,
     #[serde(default)]
@@ -124,7 +124,7 @@ pub struct StickyFeature {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct ChannelSentiment {
     #[serde(default)]
     pub email: Option<ChannelReading>,
@@ -141,7 +141,7 @@ pub struct ChannelSentiment {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct ChannelReading {
     #[serde(default)]
     pub sentiment: Option<String>,
@@ -152,7 +152,7 @@ pub struct ChannelReading {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct TranscriptExtraction {
     #[serde(default)]
     pub churn_adjacent_questions: Vec<TranscriptQuestion>,
@@ -167,7 +167,7 @@ pub struct TranscriptExtraction {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct TranscriptQuestion {
     pub question: String,
     #[serde(default)]
@@ -185,7 +185,7 @@ pub struct TranscriptQuestion {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct CompetitorBenchmark {
     pub competitor: String,
     #[serde(default)]
@@ -199,7 +199,7 @@ pub struct CompetitorBenchmark {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct DecisionMakerShift {
     pub shift: String,
     #[serde(default)]
@@ -213,7 +213,7 @@ pub struct DecisionMakerShift {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct BudgetCycleSignal {
     pub signal: String,
     #[serde(default)]
@@ -229,7 +229,7 @@ pub struct BudgetCycleSignal {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct CommercialSignals {
     #[serde(default)]
     pub arr_trend_12mo: Vec<ArrTrendPoint>,
@@ -252,7 +252,7 @@ pub struct CommercialSignals {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct ArrTrendPoint {
     pub period: String,
     #[serde(default)]
@@ -262,7 +262,7 @@ pub struct ArrTrendPoint {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct DiscountEntry {
     #[serde(default)]
     pub date: Option<String>,
@@ -273,7 +273,7 @@ pub struct DiscountEntry {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct ProcurementComplexity {
     #[serde(default)]
     pub last_cycle_length_days: Option<i64>,
@@ -286,7 +286,7 @@ pub struct ProcurementComplexity {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct AdvocacyTrack {
     #[serde(default)]
     pub is_reference_customer: Option<bool>,
@@ -307,7 +307,7 @@ pub struct AdvocacyTrack {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct CaseStudy {
     #[serde(default)]
     pub published: Option<bool>,
@@ -320,7 +320,7 @@ pub struct CaseStudy {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct SpeakingSlot {
     pub event: String,
     #[serde(default)]
@@ -332,7 +332,7 @@ pub struct SpeakingSlot {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct BetaProgram {
     pub program: String,
     #[serde(default)]
@@ -342,7 +342,7 @@ pub struct BetaProgram {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct Referral {
     pub referred_company: String,
     #[serde(default)]
@@ -352,7 +352,7 @@ pub struct Referral {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct NpsEntry {
     #[serde(default)]
     pub survey_date: Option<String>,
@@ -365,7 +365,7 @@ pub struct NpsEntry {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct QuoteWallEntry {
     pub quote: String,
     #[serde(default)]
@@ -386,7 +386,7 @@ pub struct QuoteWallEntry {
 /// sentiment (DOS-204 chapter-by-chapter enrichment). Empty vectors when no
 /// pass has run for the entity yet.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+#[serde(rename_all = "camelCase")]
 pub struct TrendSignals {
     #[serde(default)]
     pub usage_trajectory: Vec<serde_json::Value>,
@@ -490,15 +490,67 @@ Your response begins with `{{` and ends with `}}`. Nothing else."#,
 /// Parse a raw Glean chat response into a normalized `HealthOutlookSignals`.
 ///
 /// Tolerant of minor prose preamble — extracts the first balanced JSON object
-/// via `extract_json_object`. Unknown fields are ignored; missing fields
-/// default to empty/None. Returns `Err` only when no JSON object is present
-/// or the JSON is structurally invalid.
+/// via `extract_json_object`. Glean's prompt contract returns snake_case keys;
+/// the struct canonical shape (frontend + on-disk storage) is camelCase. We
+/// normalize the parsed JSON keys from snake_case to camelCase recursively
+/// before deserializing so that round-tripping write→read never loses data.
+/// Unknown fields are ignored; missing fields default to empty/None.
+/// Returns `Err` only when no JSON object is present or the JSON is structurally invalid.
 pub fn parse_leading_signals(raw: &str) -> Result<HealthOutlookSignals, String> {
     let json_text = extract_json_object(raw)
         .ok_or_else(|| "Glean leading-signals response contained no JSON object".to_string())?;
 
-    serde_json::from_str::<HealthOutlookSignals>(json_text)
-        .map_err(|e| format!("Failed to parse leading-signals JSON: {}", e))
+    let mut value: serde_json::Value = serde_json::from_str(json_text)
+        .map_err(|e| format!("Failed to parse leading-signals JSON: {}", e))?;
+    snake_to_camel_keys(&mut value);
+
+    serde_json::from_value::<HealthOutlookSignals>(value)
+        .map_err(|e| format!("Failed to deserialize leading-signals JSON: {}", e))
+}
+
+/// Recursively rewrite object keys from `snake_case` to `camelCase`.
+///
+/// Used by `parse_leading_signals` so Glean's snake_case output deserializes
+/// into the struct's canonical camelCase shape. Keys that are already
+/// camelCase (no underscores) pass through unchanged. Array element keys are
+/// rewritten in place; scalar values are untouched.
+fn snake_to_camel_keys(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            let keys: Vec<String> = map.keys().cloned().collect();
+            for key in keys {
+                let camel = snake_to_camel(&key);
+                let mut inner = map.remove(&key).unwrap();
+                snake_to_camel_keys(&mut inner);
+                map.insert(camel, inner);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                snake_to_camel_keys(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn snake_to_camel(s: &str) -> String {
+    if !s.contains('_') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut upper_next = false;
+    for ch in s.chars() {
+        if ch == '_' {
+            upper_next = true;
+        } else if upper_next {
+            out.extend(ch.to_uppercase());
+            upper_next = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 /// Derived signal emissions from a parsed `HealthOutlookSignals`.
@@ -750,5 +802,75 @@ mod tests {
             ..Default::default()
         });
         assert!(signals.derive_signals().budget_cycle_locked.is_some());
+    }
+
+    /// The real DOS-15 correctness gate: parse Glean's snake_case, serialize
+    /// as camelCase for storage, then deserialize that camelCase blob back
+    /// into the same struct. Every populated field must survive the full
+    /// round-trip. Regression guard for the write→read data-loss bug where
+    /// camelCase storage couldn't deserialize under a snake_case-only reader.
+    #[test]
+    fn roundtrip_snake_case_glean_through_camelcase_storage_preserves_fields() {
+        let glean_output = r#"{
+            "champion_risk": {
+                "champion_name": "Alex Morgan",
+                "at_risk": true,
+                "risk_level": "high",
+                "risk_evidence": ["two tickets unanswered", "role change March 4"],
+                "backup_champion_candidates": [
+                    { "name": "Jordan Kim", "role": "Director of Ops", "engagement_level": "medium" }
+                ]
+            },
+            "channel_sentiment": {
+                "divergence_detected": true,
+                "divergence_summary": "meetings cordial, tickets frustrated"
+            },
+            "transcript_extraction": {
+                "budget_cycle_signals": [
+                    { "signal": "Q3 budget locked", "locked": true }
+                ]
+            },
+            "quote_wall": [
+                { "quote": "we love the latest release", "speaker": "Alex Morgan", "sentiment": "positive" }
+            ]
+        }"#;
+
+        let parsed = parse_leading_signals(glean_output).expect("parse");
+        let stored = serde_json::to_string(&parsed).expect("serialize");
+        let reread: HealthOutlookSignals = serde_json::from_str(&stored).expect("deserialize");
+
+        let cr = reread.champion_risk.as_ref().expect("champion_risk survives");
+        assert_eq!(cr.champion_name.as_deref(), Some("Alex Morgan"));
+        assert!(cr.at_risk);
+        assert_eq!(cr.risk_level.as_deref(), Some("high"));
+        assert_eq!(cr.risk_evidence.len(), 2);
+        assert_eq!(cr.backup_champion_candidates.len(), 1);
+        assert_eq!(cr.backup_champion_candidates[0].name, "Jordan Kim");
+
+        let cs = reread.channel_sentiment.as_ref().expect("channel_sentiment survives");
+        assert!(cs.divergence_detected);
+        assert_eq!(cs.divergence_summary.as_deref(), Some("meetings cordial, tickets frustrated"));
+
+        let te = reread.transcript_extraction.as_ref().expect("transcript_extraction survives");
+        assert_eq!(te.budget_cycle_signals.len(), 1);
+        assert!(te.budget_cycle_signals[0].locked);
+
+        assert_eq!(reread.quote_wall.len(), 1);
+        assert_eq!(reread.quote_wall[0].quote, "we love the latest release");
+
+        // Derived signals still fire correctly after round-trip.
+        let derived = reread.derive_signals();
+        assert!(derived.champion_at_risk.is_some(), "champion risk derives after roundtrip");
+        assert!(derived.sentiment_divergence.is_some(), "divergence derives after roundtrip");
+        assert!(derived.budget_cycle_locked.is_some(), "budget locked derives after roundtrip");
+    }
+
+    #[test]
+    fn snake_to_camel_preserves_already_camel() {
+        assert_eq!(snake_to_camel("championRisk"), "championRisk");
+        assert_eq!(snake_to_camel("champion_risk"), "championRisk");
+        assert_eq!(snake_to_camel("nested_a_b_c"), "nestedABC");
+        assert_eq!(snake_to_camel("simple"), "simple");
+        assert_eq!(snake_to_camel(""), "");
     }
 }
