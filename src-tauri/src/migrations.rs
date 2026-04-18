@@ -1608,6 +1608,51 @@ mod tests {
         );
     }
 
+    /// DOS-226 (Codex finding 4): migration 097 rebuilds the `emails` table to
+    /// widen the `enrichment_state` CHECK constraint. The rebuild must
+    /// recreate every index that existed on the old table. If any index is
+    /// dropped silently (as was the case pre-fix for `idx_emails_relevance`
+    /// and `idx_emails_enriched_at`), inbox/read query plans regress without
+    /// any visible error at upgrade time.
+    #[test]
+    fn test_emails_indexes_survive_migration_097() {
+        let conn = mem_db();
+        let applied = run_migrations(&conn).expect("migrations should succeed");
+        assert_eq!(applied, MIGRATIONS.len(), "all migrations applied");
+
+        // Introspect sqlite_master for every index currently on `emails`.
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'emails' AND name NOT LIKE 'sqlite_%'")
+            .expect("prepare sqlite_master query");
+        let rows: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query sqlite_master")
+            .filter_map(Result::ok)
+            .collect();
+
+        // Every index declared in the migration history for `emails` must be
+        // present after the full migration chain runs. This is a regression
+        // guard against future table rebuilds losing indexes.
+        let required = [
+            "idx_emails_thread_id",
+            "idx_emails_enrichment",
+            "idx_emails_entity",
+            "idx_emails_priority_resolved",
+            "idx_emails_last_seen",
+            "idx_emails_resolved",
+            "idx_emails_relevance",   // migration 035 — regressed pre-fix
+            "idx_emails_enriched_at", // migration 082 — regressed pre-fix
+        ];
+        for expected in required {
+            assert!(
+                rows.iter().any(|n| n == expected),
+                "expected index `{}` to exist after migrations; found: {:?}",
+                expected,
+                rows
+            );
+        }
+    }
+
     #[test]
     fn test_should_try_encrypted_backup_fallback_matches_expected_errors() {
         assert!(should_try_encrypted_backup_fallback(
