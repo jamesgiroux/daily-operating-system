@@ -469,7 +469,9 @@ export default function EmailsPage() {
                 </button>
               </span>
             )}
-            {syncStats.total === 0 && syncStats.lastFetchAt === null && (
+            {syncStats.total === 0
+              && syncStats.lastFetchAt === null
+              && syncStats.lastSuccessfulFetchAt === null && (
               <span className={e.syncStatusAlert}>
                 using cached data
               </span>
