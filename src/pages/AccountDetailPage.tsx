@@ -622,18 +622,33 @@ export default function AccountDetailPage() {
     type Nudge = { headline: string; body: string; actions: React.ReactNode };
     const nudges: Nudge[] = [];
 
-    // Private-for-too-long nudge: private commitment with no due date, aged >45d.
-    const oldestPrivate = openCommitments
-      .filter((c) => !/linear|salesforce|slack|jira|asana|dos-/i.test(c.source ?? ""))
-      .filter((c) => !c.dueDate)[0];
-    if (oldestPrivate) {
+    // Private-for-too-long nudge: private commitment with no due date that
+    // has sat untouched for at least PRIVATE_NUDGE_THRESHOLD_DAYS. Age is
+    // computed from authoritative itemSource.sourcedAt — a brand-new private
+    // commitment is NOT nagged. If sourcedAt is missing we skip the nudge
+    // entirely rather than guess.
+    const PRIVATE_NUDGE_THRESHOLD_DAYS = 45;
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    const agedPrivate = openCommitments
+      .filter((c) => !c.dueDate)
+      .map((c) => {
+        const sourcedAt = c.itemSource?.sourcedAt;
+        const ts = sourcedAt ? new Date(sourcedAt).getTime() : Number.NaN;
+        const ageDays = Number.isFinite(ts)
+          ? Math.floor((nowMs - ts) / MS_PER_DAY)
+          : Number.NaN;
+        return { c, ageDays };
+      })
+      .filter((x) => Number.isFinite(x.ageDays) && x.ageDays >= PRIVATE_NUDGE_THRESHOLD_DAYS)
+      .sort((a, b) => b.ageDays - a.ageDays)[0];
+    if (agedPrivate) {
+      const { c: oldestPrivate, ageDays } = agedPrivate;
       nudges.push({
         headline: "A commitment has been kept private",
-        body: `"${oldestPrivate.description}"${oldestPrivate.owner ? ` (owner: ${oldestPrivate.owner})` : ""} is still private — no due date, nothing pushed out to Linear. Keep it private, or push it out so the team can see?`,
+        body: `"${oldestPrivate.description}"${oldestPrivate.owner ? ` (owner: ${oldestPrivate.owner})` : ""} has been kept private for ${ageDays} day${ageDays === 1 ? "" : "s"} with no due date — push it out when you're ready, or leave it as-is.`,
         actions: (
           <>
-            <WorkButton>Push to Linear</WorkButton>
-            <WorkButton>Dismiss</WorkButton>
             <WorkButton kind="muted">Leave as-is</WorkButton>
           </>
         ),
