@@ -5491,3 +5491,55 @@ fn test_dos232_recent_meetings_still_filters_below_confidence_floor() {
         "sub-0.70 junctions must remain excluded from The Record"
     );
 }
+
+// ---------------------------------------------------------------------------
+// DOS-233 Codex fix: unbounded count queries for About-this-dossier totals.
+// ---------------------------------------------------------------------------
+
+/// `get_meeting_count_for_account` must return COUNT(*) without applying the
+/// preview-list LIMIT of 10. `get_transcript_count_for_account` must return
+/// the distinct number of meetings that have a transcript on record.
+#[test]
+fn test_dos233_account_meeting_and_transcript_counts_unbounded() {
+    let db = test_db();
+    let a = sample_account("acct-big", "Big Account");
+    db.upsert_account(&a).expect("upsert");
+
+    // 12 meetings linked at confidence 0.95 — well above the LIMIT 10 of the
+    // preview query — half carry transcripts, half don't.
+    for i in 0..12 {
+        let mid = format!("m_big_{i}");
+        setup_meeting(&db, &mid, &format!("Meeting {i}"));
+        db.link_meeting_entity_with_confidence(&mid, "acct-big", "account", 0.95, i == 0)
+            .expect("link");
+        if i % 2 == 0 {
+            db.conn_ref()
+                .execute(
+                    "UPDATE meeting_transcripts SET transcript_path = ?1 WHERE meeting_id = ?2",
+                    rusqlite::params![format!("/tmp/transcript_{i}.txt"), mid],
+                )
+                .expect("mark transcript");
+        }
+    }
+
+    // And one low-confidence junction that must NOT count.
+    setup_meeting(&db, "m_weak", "Speculative Match");
+    db.link_meeting_entity_with_confidence("m_weak", "acct-big", "account", 0.50, false)
+        .expect("link weak");
+
+    let meeting_count = db
+        .get_total_meeting_count_for_account("acct-big")
+        .expect("meeting count");
+    assert_eq!(
+        meeting_count, 12,
+        "DOS-233: meeting total must be 12 (unbounded) — LIMIT 10 was not applied, 0.50 link excluded"
+    );
+
+    let transcript_count = db
+        .get_total_transcript_count_for_account("acct-big")
+        .expect("transcript count");
+    assert_eq!(
+        transcript_count, 6,
+        "DOS-233: transcript total must be 6 — every other meeting carries a transcript"
+    );
+}
