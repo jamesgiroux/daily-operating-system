@@ -5041,7 +5041,8 @@ fn test_dos228_risk_briefing_job_lifecycle() {
         .is_none());
 
     // Enqueue.
-    db.upsert_risk_briefing_job_enqueued("acct-rb")
+    let attempt = "attempt-1";
+    db.upsert_risk_briefing_job_enqueued("acct-rb", attempt)
         .expect("enqueue");
     let job = db
         .get_risk_briefing_job("acct-rb")
@@ -5051,18 +5052,20 @@ fn test_dos228_risk_briefing_job_lifecycle() {
     assert!(job.completed_at.is_none());
     assert!(job.error_message.is_none());
 
-    // Running.
-    db.mark_risk_briefing_job_running("acct-rb")
-        .expect("running");
+    // Running (CAS must succeed for the current attempt).
+    assert!(db
+        .mark_risk_briefing_job_running("acct-rb", attempt)
+        .expect("running"));
     let job = db
         .get_risk_briefing_job("acct-rb")
         .expect("get")
         .expect("present");
     assert_eq!(job.status, "running");
 
-    // Complete.
-    db.mark_risk_briefing_job_complete("acct-rb")
-        .expect("complete");
+    // Complete (CAS).
+    assert!(db
+        .mark_risk_briefing_job_complete("acct-rb", attempt)
+        .expect("complete"));
     let job = db
         .get_risk_briefing_job("acct-rb")
         .expect("get")
@@ -5080,12 +5083,15 @@ fn test_dos228_risk_briefing_job_failure_path() {
     let acct = sample_account("acct-rb-fail", "Fail Co");
     db.upsert_account(&acct).expect("upsert");
 
-    db.upsert_risk_briefing_job_enqueued("acct-rb-fail")
+    let attempt_a = "attempt-a";
+    db.upsert_risk_briefing_job_enqueued("acct-rb-fail", attempt_a)
         .expect("enqueue");
-    db.mark_risk_briefing_job_running("acct-rb-fail")
-        .expect("running");
-    db.mark_risk_briefing_job_failed("acct-rb-fail", "Claude timeout after 30s")
-        .expect("failed");
+    assert!(db
+        .mark_risk_briefing_job_running("acct-rb-fail", attempt_a)
+        .expect("running"));
+    assert!(db
+        .mark_risk_briefing_job_failed("acct-rb-fail", attempt_a, "Claude timeout after 30s")
+        .expect("failed"));
 
     let job = db
         .get_risk_briefing_job("acct-rb-fail")
@@ -5098,8 +5104,10 @@ fn test_dos228_risk_briefing_job_failure_path() {
     );
     assert!(job.completed_at.is_some());
 
-    // Retry: re-enqueuing must reset status and clear the error.
-    db.upsert_risk_briefing_job_enqueued("acct-rb-fail")
+    // Retry: re-enqueuing with a fresh attempt_id must reset status and
+    // clear the error. The old attempt_id's CAS writes would now no-op.
+    let attempt_b = "attempt-b";
+    db.upsert_risk_briefing_job_enqueued("acct-rb-fail", attempt_b)
         .expect("retry enqueue");
     let job = db
         .get_risk_briefing_job("acct-rb-fail")
@@ -5121,11 +5129,13 @@ fn test_dos228_risk_briefing_job_error_truncation() {
     let acct = sample_account("acct-rb-big", "Big Co");
     db.upsert_account(&acct).expect("upsert");
 
-    db.upsert_risk_briefing_job_enqueued("acct-rb-big")
+    let attempt_big = "attempt-big";
+    db.upsert_risk_briefing_job_enqueued("acct-rb-big", attempt_big)
         .expect("enqueue");
     let huge = "x".repeat(10_000);
-    db.mark_risk_briefing_job_failed("acct-rb-big", &huge)
-        .expect("failed");
+    assert!(db
+        .mark_risk_briefing_job_failed("acct-rb-big", attempt_big, &huge)
+        .expect("failed"));
 
     let job = db
         .get_risk_briefing_job("acct-rb-big")
@@ -5135,6 +5145,85 @@ fn test_dos228_risk_briefing_job_error_truncation() {
         job.error_message.as_ref().map(|s| s.chars().count()),
         Some(2_000)
     );
+}
+
+#[test]
+fn test_dos228_w0eb_risk_briefing_cas_rejects_stale_attempt() {
+    // Wave 0e Fix 2: a superseding retry overwrites attempt_id; writes from
+    // the prior runner must no-op instead of corrupting the new attempt.
+    let db = test_db();
+    let acct = sample_account("acct-rb-cas", "CAS Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    db.upsert_risk_briefing_job_enqueued("acct-rb-cas", "old-attempt")
+        .expect("enqueue old");
+
+    // Retry lands — overwrites attempt_id.
+    db.upsert_risk_briefing_job_enqueued("acct-rb-cas", "new-attempt")
+        .expect("enqueue new");
+
+    // Stale runner tries to transition → running. Must NOT succeed, and the
+    // row must stay in the "enqueued / new-attempt" state.
+    let ran = db
+        .mark_risk_briefing_job_running("acct-rb-cas", "old-attempt")
+        .expect("stale running");
+    assert!(!ran, "stale CAS running must fail");
+
+    let job = db
+        .get_risk_briefing_job("acct-rb-cas")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "enqueued");
+
+    // New runner transitions normally.
+    assert!(db
+        .mark_risk_briefing_job_running("acct-rb-cas", "new-attempt")
+        .expect("running"));
+    assert!(db
+        .mark_risk_briefing_job_complete("acct-rb-cas", "new-attempt")
+        .expect("complete"));
+
+    // Stale runner's terminal write must fail the CAS.
+    let stale_fail = db
+        .mark_risk_briefing_job_failed("acct-rb-cas", "old-attempt", "stale error")
+        .expect("stale failed");
+    assert!(!stale_fail, "stale CAS failed must be no-op");
+    let job = db
+        .get_risk_briefing_job("acct-rb-cas")
+        .expect("get")
+        .expect("present");
+    assert_eq!(
+        job.status, "complete",
+        "stale terminal write must not overwrite new attempt outcome"
+    );
+}
+
+#[test]
+fn test_dos228_w0eb_health_recompute_pending_marker_lifecycle() {
+    // Wave 0e Fix 3: mark/list/clear supports startup drain of debounced
+    // recomputes that would otherwise be lost on crash.
+    let db = test_db();
+    assert!(db
+        .list_health_recompute_pending()
+        .expect("list")
+        .is_empty());
+
+    db.mark_health_recompute_pending("acct-1").expect("mark 1");
+    db.mark_health_recompute_pending("acct-2").expect("mark 2");
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(pending.len(), 2);
+    assert!(pending.contains(&"acct-1".to_string()));
+    assert!(pending.contains(&"acct-2".to_string()));
+
+    db.clear_health_recompute_pending("acct-1").expect("clear 1");
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(pending, vec!["acct-2".to_string()]);
+
+    // Double-clear is idempotent.
+    db.clear_health_recompute_pending("acct-1").expect("clear 1 again");
+    // Re-mark refreshes timestamp but keeps the row.
+    db.mark_health_recompute_pending("acct-2").expect("remark 2");
+    assert_eq!(db.list_health_recompute_pending().expect("list").len(), 1);
 }
 
 // ---------------------------------------------------------------------------
