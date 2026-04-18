@@ -1,0 +1,196 @@
+//! DOS-228 Fix 2: Backend-side debounce for post-edit health recompute.
+//!
+//! Previously, every health-relevant field edit synchronously invoked
+//! `recompute_entity_health` inside `services::accounts::update_account_field`.
+//! Ten rapid edits in under two seconds produced ten recomputes — wasteful and
+//! racy when the scoring pass overlapped with subsequent writes. The frontend
+//! debounce could not be trusted because:
+//!   1. AI agents and automation can call `update_account_field` directly.
+//!   2. Chat/correction backends (DOS-229) skip the UI debounce entirely.
+//!   3. Health recompute cost scales with signal volume; we must coalesce.
+//!
+//! This module provides a per-account debouncer. Each call to
+//! `schedule_recompute(account_id)` updates a "last requested at" timestamp
+//! for that account and spawns a Tauri async task that sleeps for the debounce
+//! window. When it wakes, it compares the stored timestamp against the one it
+//! captured before sleeping — if any newer edit has landed, it exits without
+//! recomputing. Exactly one recompute per quiet window.
+//!
+//! Exactly-one semantics per burst:
+//! - Fire edits 1..10 at t0, t0+50ms, ..., t0+450ms.
+//! - Each edit stores `Instant::now()` under its account_id and spawns a task.
+//! - At t0+2000ms the first task wakes, sees its captured instant is stale
+//!   (some other task wrote a newer one), and no-ops.
+//! - Same for tasks 2..9.
+//! - Task 10 wakes at t0+2450ms, finds its captured instant still matches,
+//!   runs the recompute, and clears the entry.
+//! - Final state reflects the LAST edit because recompute reads the account
+//!   row from the DB after all writes have committed.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
+
+use crate::state::AppState;
+
+/// Debounce window between the last health-relevant edit and the recompute.
+/// Matches the prior frontend debounce — 2 seconds is long enough to absorb
+/// a rapid slider/arrow-key storm without making the UI feel laggy.
+pub const HEALTH_RECOMPUTE_DEBOUNCE_MS: u64 = 2_000;
+
+/// Per-account last-requested timestamp. Kept deliberately small — the map
+/// only holds accounts with a pending recompute and is cleared on flush.
+#[derive(Default)]
+pub struct HealthRecomputeDebouncer {
+    pending: Mutex<HashMap<String, Instant>>,
+}
+
+impl HealthRecomputeDebouncer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Number of accounts with a pending recompute — test hook only.
+    #[cfg(test)]
+    pub fn pending_count(&self) -> usize {
+        self.pending.lock().len()
+    }
+
+    /// Record an edit for `account_id`. Returns the timestamp that callers
+    /// must present at flush time. If this timestamp is still the latest
+    /// when the debounce window expires, the caller runs the recompute.
+    fn record(&self, account_id: &str) -> Instant {
+        let now = Instant::now();
+        self.pending.lock().insert(account_id.to_string(), now);
+        now
+    }
+
+    /// Attempt to claim the recompute slot for `account_id`.
+    ///
+    /// Returns true if `captured` is still the latest recorded timestamp for
+    /// this account — the caller owns the recompute and the entry is cleared.
+    /// Returns false if a newer edit has landed; the caller should bail.
+    fn try_claim(&self, account_id: &str, captured: Instant) -> bool {
+        let mut guard = self.pending.lock();
+        match guard.get(account_id) {
+            Some(latest) if *latest == captured => {
+                guard.remove(account_id);
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Schedule a debounced health recompute for `account_id`.
+///
+/// Call this from mutation paths that were previously invoking
+/// `recompute_entity_health` synchronously. The function returns immediately;
+/// the recompute is executed on the Tauri async runtime after the debounce
+/// window closes, and only if no newer edit has landed in the meantime.
+pub fn schedule_recompute(state: &Arc<AppState>, account_id: &str) {
+    let captured = state.health_recompute_debouncer.record(account_id);
+    let state_clone = state.clone();
+    let account_id = account_id.to_string();
+
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(HEALTH_RECOMPUTE_DEBOUNCE_MS)).await;
+
+        if !state_clone
+            .health_recompute_debouncer
+            .try_claim(&account_id, captured)
+        {
+            log::debug!(
+                "DOS-228: health recompute for {} superseded by newer edit",
+                account_id
+            );
+            return;
+        }
+
+        // Flush through the db_write path so the recompute sees committed
+        // writes from all coalesced edits.
+        let id_for_write = account_id.clone();
+        let write_result = state_clone
+            .db_write(move |db| {
+                crate::services::intelligence::recompute_entity_health(db, &id_for_write, "account")
+            })
+            .await;
+
+        match write_result {
+            Ok(()) => log::info!(
+                "DOS-228: debounced health recompute complete for {}",
+                account_id
+            ),
+            Err(e) => log::warn!(
+                "DOS-228: debounced health recompute failed for {}: {}",
+                account_id,
+                e
+            ),
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_and_claim_happy_path() {
+        let d = HealthRecomputeDebouncer::new();
+        let ts = d.record("a");
+        assert_eq!(d.pending_count(), 1);
+        assert!(d.try_claim("a", ts), "claim should succeed");
+        assert_eq!(d.pending_count(), 0, "claim clears the entry");
+    }
+
+    #[test]
+    fn newer_edit_supersedes_older_claim() {
+        let d = HealthRecomputeDebouncer::new();
+        let first = d.record("a");
+        // Force time to advance so the two Instants differ. Instant is
+        // monotonic; sleeping 1ms is sufficient.
+        std::thread::sleep(Duration::from_millis(1));
+        let _second = d.record("a");
+        assert!(
+            !d.try_claim("a", first),
+            "old claim must NOT win over newer edit"
+        );
+        assert_eq!(
+            d.pending_count(),
+            1,
+            "failed claim must NOT clear the pending entry"
+        );
+    }
+
+    #[test]
+    fn rapid_burst_only_latest_claims() {
+        // Simulate 10 rapid edits on the same account — only the last one
+        // should successfully claim the recompute slot.
+        let d = HealthRecomputeDebouncer::new();
+        let mut stamps = Vec::new();
+        for _ in 0..10 {
+            stamps.push(d.record("a"));
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let last = *stamps.last().expect("stamps not empty");
+        for older in &stamps[..9] {
+            assert!(
+                !d.try_claim("a", *older),
+                "older edits must not claim the recompute"
+            );
+        }
+        assert!(d.try_claim("a", last), "last edit must claim");
+        assert_eq!(d.pending_count(), 0);
+    }
+
+    #[test]
+    fn different_accounts_are_independent() {
+        let d = HealthRecomputeDebouncer::new();
+        let a = d.record("a");
+        let b = d.record("b");
+        assert!(d.try_claim("a", a));
+        assert!(d.try_claim("b", b));
+    }
+}

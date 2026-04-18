@@ -5892,6 +5892,33 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     // I645: entity_feedback_events and suppression_tombstones are populated
     // by user actions (thumbs/dismiss/accept). No mock seeds — start empty.
 
+    // DOS-228 Fix 3: seed two risk_briefing_jobs rows so dev mode exercises
+    // the full UI surface — one successful (complete) and one failed (retry
+    // affordance). Globex is the "needs retry" case and Acme is "complete"
+    // so engineers can visually diff the two states without running the
+    // real PTY pipeline.
+    let one_hour_ago = (now - chrono::Duration::hours(1)).to_rfc3339();
+    let five_min_ago = (now - chrono::Duration::minutes(5)).to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO risk_briefing_jobs
+            (account_id, status, enqueued_at, completed_at, error_message)
+         VALUES (?1, 'complete', ?2, ?3, NULL)",
+        rusqlite::params!["mock-acme-corp", &one_hour_ago, &five_min_ago],
+    )
+    .map_err(|e| format!("Seed risk_briefing_jobs (acme): {}", e))?;
+    conn.execute(
+        "INSERT OR REPLACE INTO risk_briefing_jobs
+            (account_id, status, enqueued_at, completed_at, error_message)
+         VALUES (?1, 'failed', ?2, ?3, ?4)",
+        rusqlite::params![
+            "mock-globex-industries",
+            &one_hour_ago,
+            &five_min_ago,
+            "Claude Code timeout after 30s — retry to re-run",
+        ],
+    )
+    .map_err(|e| format!("Seed risk_briefing_jobs (globex): {}", e))?;
+
     Ok(())
 }
 

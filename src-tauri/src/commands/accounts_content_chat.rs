@@ -108,6 +108,13 @@ pub struct AccountDetailResult {
     #[serde(skip_serializing_if = "Option::is_none", rename = "gleanSignals")]
     pub glean_signals:
         Option<crate::intelligence::glean_leading_signals::HealthOutlookSignals>,
+    /// DOS-228 Fix 3: Current risk-briefing generation job status.
+    /// Present when a briefing has ever been enqueued for this account; the
+    /// frontend uses this to render progress, surface failures, and expose a
+    /// retry affordance. Replaces the old fire-and-forget behaviour where
+    /// failures only appeared in the log stream.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk_briefing_job: Option<crate::db::accounts::DbRiskBriefingJob>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
@@ -328,6 +335,17 @@ pub async fn set_user_health_sentiment(
             )
         })
         .await
+}
+
+/// DOS-228 Fix 3: Retry a failed (or re-run a prior) risk-briefing job.
+/// Returns immediately; the user should refetch `get_account_detail` to see
+/// the `risk_briefing_job` row progress through enqueued → running → complete.
+#[tauri::command]
+pub async fn retry_risk_briefing(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::accounts::retry_risk_briefing(state.inner(), &account_id)
 }
 
 #[tauri::command]

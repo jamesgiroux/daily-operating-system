@@ -4945,3 +4945,200 @@ fn test_dos74_link_confidence_never_downgrades() {
     assert!(linked[0].is_primary, "primary flag must not be cleared");
     assert!(linked[0].confidence >= 0.9, "confidence must not decrease");
 }
+
+#[test]
+fn test_dos228_sentiment_note_bound_to_current_value() {
+    // DOS-228 Fix 1: get_latest_sentiment_note must return None when the
+    // account's current sentiment has no associated note, even if older
+    // sentiment values have notes in the journal history.
+    let db = test_db();
+    let acct = sample_account("acct-sent", "Sent Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    // Step 1: set sentiment to at_risk with a note
+    db.update_account_field("acct-sent", "user_health_sentiment", "at_risk")
+        .expect("set at_risk");
+    db.insert_sentiment_journal_entry(
+        "acct-sent",
+        "at_risk",
+        Some("churn risk — exec escalation"),
+        None,
+        None,
+    )
+    .expect("journal at_risk");
+
+    let note = db
+        .get_latest_sentiment_note("acct-sent")
+        .expect("lookup1");
+    assert!(
+        note.as_ref().map(|(n, _)| n.as_str()) == Some("churn risk — exec escalation"),
+        "should return the at_risk note while at_risk is current, got {:?}",
+        note
+    );
+
+    // Step 2: transition to on_track with NO note
+    db.update_account_field("acct-sent", "user_health_sentiment", "on_track")
+        .expect("set on_track");
+    db.insert_sentiment_journal_entry("acct-sent", "on_track", None, None, None)
+        .expect("journal on_track");
+
+    // Assertion: the stale at_risk note must NOT leak through.
+    let note = db
+        .get_latest_sentiment_note("acct-sent")
+        .expect("lookup2");
+    assert_eq!(
+        note, None,
+        "note must be None when current sentiment has no note attached"
+    );
+
+    // Step 3: add a note against on_track — should surface now
+    db.insert_sentiment_journal_entry(
+        "acct-sent",
+        "on_track",
+        Some("stabilized after QBR"),
+        None,
+        None,
+    )
+    .expect("journal on_track with note");
+    let note = db
+        .get_latest_sentiment_note("acct-sent")
+        .expect("lookup3");
+    assert_eq!(
+        note.map(|(n, _)| n),
+        Some("stabilized after QBR".to_string())
+    );
+}
+
+#[test]
+fn test_dos228_sentiment_note_none_when_no_current_sentiment() {
+    // DOS-228 Fix 1: when user_health_sentiment is NULL, return None even if
+    // historical journal entries exist.
+    let db = test_db();
+    let acct = sample_account("acct-no-sent", "NoSent Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    // Historical note against at_risk, but no current sentiment set.
+    db.insert_sentiment_journal_entry(
+        "acct-no-sent",
+        "at_risk",
+        Some("legacy note"),
+        None,
+        None,
+    )
+    .expect("journal");
+
+    let note = db
+        .get_latest_sentiment_note("acct-no-sent")
+        .expect("lookup");
+    assert_eq!(note, None);
+}
+
+#[test]
+fn test_dos228_risk_briefing_job_lifecycle() {
+    // DOS-228 Fix 3: job progresses enqueued → running → complete.
+    let db = test_db();
+    let acct = sample_account("acct-rb", "RB Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    // Initially no job exists.
+    assert!(db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .is_none());
+
+    // Enqueue.
+    db.upsert_risk_briefing_job_enqueued("acct-rb")
+        .expect("enqueue");
+    let job = db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "enqueued");
+    assert!(job.completed_at.is_none());
+    assert!(job.error_message.is_none());
+
+    // Running.
+    db.mark_risk_briefing_job_running("acct-rb")
+        .expect("running");
+    let job = db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "running");
+
+    // Complete.
+    db.mark_risk_briefing_job_complete("acct-rb")
+        .expect("complete");
+    let job = db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "complete");
+    assert!(job.completed_at.is_some());
+    assert!(job.error_message.is_none());
+}
+
+#[test]
+fn test_dos228_risk_briefing_job_failure_path() {
+    // DOS-228 Fix 3: failed jobs persist an error_message so the UI can
+    // explain the retry prompt.
+    let db = test_db();
+    let acct = sample_account("acct-rb-fail", "Fail Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    db.upsert_risk_briefing_job_enqueued("acct-rb-fail")
+        .expect("enqueue");
+    db.mark_risk_briefing_job_running("acct-rb-fail")
+        .expect("running");
+    db.mark_risk_briefing_job_failed("acct-rb-fail", "Claude timeout after 30s")
+        .expect("failed");
+
+    let job = db
+        .get_risk_briefing_job("acct-rb-fail")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "failed");
+    assert_eq!(
+        job.error_message.as_deref(),
+        Some("Claude timeout after 30s")
+    );
+    assert!(job.completed_at.is_some());
+
+    // Retry: re-enqueuing must reset status and clear the error.
+    db.upsert_risk_briefing_job_enqueued("acct-rb-fail")
+        .expect("retry enqueue");
+    let job = db
+        .get_risk_briefing_job("acct-rb-fail")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "enqueued");
+    assert!(
+        job.error_message.is_none(),
+        "re-enqueue must clear prior error_message"
+    );
+    assert!(job.completed_at.is_none());
+}
+
+#[test]
+fn test_dos228_risk_briefing_job_error_truncation() {
+    // DOS-228 Fix 3: huge error blobs are truncated to 2000 chars so a
+    // runaway PTY stderr cannot bloat the DB.
+    let db = test_db();
+    let acct = sample_account("acct-rb-big", "Big Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    db.upsert_risk_briefing_job_enqueued("acct-rb-big")
+        .expect("enqueue");
+    let huge = "x".repeat(10_000);
+    db.mark_risk_briefing_job_failed("acct-rb-big", &huge)
+        .expect("failed");
+
+    let job = db
+        .get_risk_briefing_job("acct-rb-big")
+        .expect("get")
+        .expect("present");
+    assert_eq!(
+        job.error_message.as_ref().map(|s| s.chars().count()),
+        Some(2_000)
+    );
+}

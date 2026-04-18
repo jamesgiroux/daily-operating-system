@@ -237,6 +237,12 @@ pub struct AppState {
     pub capture: CaptureState,
     /// Background intelligence enrichment queue (I132)
     pub intel_queue: Arc<crate::intel_queue::IntelligenceQueue>,
+    /// DOS-228 Fix 2: Per-account debouncer for post-edit health recompute.
+    /// Rapid edits (10 in 2s) coalesce into a single recompute that reflects
+    /// the final committed state. Replaces the old synchronous recompute in
+    /// `services::accounts::update_account_field`.
+    pub health_recompute_debouncer:
+        Arc<crate::services::health_debouncer::HealthRecomputeDebouncer>,
     /// Shared embedding model runtime (Sprint 26).
     pub embedding_model: Arc<crate::embeddings::EmbeddingModel>,
     /// Background embedding generation queue (Sprint 26).
@@ -525,6 +531,9 @@ impl AppState {
                 transcript_processed: Mutex::new(transcript_processed),
             },
             intel_queue: intel_queue_arc,
+            health_recompute_debouncer: Arc::new(
+                crate::services::health_debouncer::HealthRecomputeDebouncer::new(),
+            ),
             embedding_model,
             embedding_queue: Arc::new(crate::processor::embeddings::EmbeddingQueue::new()),
             hygiene: HygieneState {
