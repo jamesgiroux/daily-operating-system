@@ -1537,6 +1537,10 @@ pub async fn archive_low_priority_emails(state: &AppState) -> Result<usize, Stri
 }
 
 /// Refresh emails independently without re-running the full /today pipeline (I20).
+///
+/// DOS-31: Before kicking off refresh, reset any `failed` emails back to `pending`
+/// so a manual refresh actually retries them. Failed enrichment on yesterday's
+/// emails must not silently block today's inbox from appearing.
 pub async fn refresh_emails(
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
@@ -1546,6 +1550,24 @@ pub async fn refresh_emails(
         .read()
         .clone()
         .ok_or("No configuration loaded")?;
+
+    // DOS-31: Reset failed enrichments before kicking off refresh. Prior behavior
+    // left 3x-failed emails stuck forever; manual refresh is a clear user signal
+    // that they want another attempt. Failed enrichment on yesterday's emails
+    // must not silently block today's inbox from appearing.
+    let reset_count = state
+        .db_write(|db| db.reset_failed_enrichments())
+        .await
+        .unwrap_or_else(|e| {
+            log::warn!("DOS-31: reset_failed_enrichments failed: {}", e);
+            0
+        });
+    if reset_count > 0 {
+        log::info!(
+            "DOS-31: reset {} failed emails to pending before refresh",
+            reset_count
+        );
+    }
 
     let state_clone = state.clone();
     let workspace_path = config.workspace_path.clone();
