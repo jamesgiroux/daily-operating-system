@@ -2588,4 +2588,134 @@ impl ActionDb {
         )?;
         Ok(())
     }
+
+    // =========================================================================
+    // DOS-27: Sentiment journal
+    // =========================================================================
+
+    /// Insert a sentiment journal entry (value + optional note + timestamp).
+    /// Computed band and score at set-time are stored for divergence analysis.
+    pub fn insert_sentiment_journal_entry(
+        &self,
+        account_id: &str,
+        sentiment: &str,
+        note: Option<&str>,
+        computed_band: Option<&str>,
+        computed_score: Option<f64>,
+    ) -> Result<(), DbError> {
+        let note_clean = note.and_then(|n| {
+            let trimmed = n.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+        self.conn.execute(
+            "INSERT INTO user_sentiment_history
+                (account_id, sentiment, note, computed_band, computed_score)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![account_id, sentiment, note_clean, computed_band, computed_score],
+        )?;
+        Ok(())
+    }
+
+    /// Get sentiment journal entries for an account within the last N days.
+    /// Returns entries ordered newest-first.
+    pub fn get_sentiment_history(
+        &self,
+        account_id: &str,
+        days: i64,
+    ) -> Result<Vec<DbSentimentJournalEntry>, DbError> {
+        let cutoff = format!("-{} days", days);
+        let mut stmt = self.conn.prepare(
+            "SELECT sentiment, note, computed_band, computed_score, set_at
+             FROM user_sentiment_history
+             WHERE account_id = ?1
+               AND set_at >= datetime('now', ?2)
+             ORDER BY set_at DESC",
+        )?;
+        let rows = stmt.query_map(params![account_id, cutoff], |row| {
+            Ok(DbSentimentJournalEntry {
+                sentiment: row.get(0)?,
+                note: row.get(1)?,
+                computed_band: row.get(2)?,
+                computed_score: row.get(3)?,
+                set_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Most recent note attached to the account's current sentiment value.
+    /// Returns None if no note has been recorded.
+    pub fn get_latest_sentiment_note(
+        &self,
+        account_id: &str,
+    ) -> Result<Option<(String, String)>, DbError> {
+        let result = self.conn.query_row(
+            "SELECT note, set_at FROM user_sentiment_history
+             WHERE account_id = ?1 AND note IS NOT NULL
+             ORDER BY set_at DESC LIMIT 1",
+            params![account_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        );
+        match result {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::from(e)),
+        }
+    }
+
+    /// Return the daily-bucketed computed health scores for an account over
+    /// the last N days, for sparkline rendering.
+    /// Newest-last so the sparkline reads left-to-right chronologically.
+    pub fn get_health_score_sparkline(
+        &self,
+        account_id: &str,
+        days: i64,
+    ) -> Result<Vec<DbHealthSparklinePoint>, DbError> {
+        let cutoff = format!("-{} days", days);
+        let mut stmt = self.conn.prepare(
+            "SELECT date(computed_at) AS day,
+                    AVG(score) AS avg_score,
+                    (SELECT band FROM health_score_history h2
+                     WHERE h2.account_id = h1.account_id
+                       AND date(h2.computed_at) = date(h1.computed_at)
+                     ORDER BY h2.computed_at DESC LIMIT 1) AS last_band
+             FROM health_score_history h1
+             WHERE account_id = ?1
+               AND computed_at >= datetime('now', ?2)
+             GROUP BY date(computed_at)
+             ORDER BY day ASC",
+        )?;
+        let rows = stmt.query_map(params![account_id, cutoff], |row| {
+            Ok(DbHealthSparklinePoint {
+                day: row.get(0)?,
+                score: row.get(1)?,
+                band: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+}
+
+/// One sentiment journal entry for API exposure.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSentimentJournalEntry {
+    pub sentiment: String,
+    pub note: Option<String>,
+    pub computed_band: Option<String>,
+    pub computed_score: Option<f64>,
+    pub set_at: String,
+}
+
+/// One daily sparkline point for the Health sentiment hero.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbHealthSparklinePoint {
+    pub day: String,
+    pub score: f64,
+    pub band: String,
 }

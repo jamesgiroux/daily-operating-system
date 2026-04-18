@@ -76,9 +76,9 @@ export default function AccountDetailPage() {
     return (
       <>
         <SentimentHero
-          userHealthSentiment={detail.userHealthSentiment}
-          sentimentSetAt={detail.sentimentSetAt}
-          intelligenceHealth={intelligence?.health}
+          view={acct.sentiment}
+          onSetSentiment={acct.setUserHealthSentiment}
+          onAcknowledgeStale={acct.acknowledgeSentimentStale}
         />
 
         {isFineState ? (
