@@ -516,6 +516,8 @@ export default function AccountDetailPage() {
         }
       }
 
+      const doneBusy = acct.commitmentDoneInFlight.has(idx);
+      const dismissBusy = acct.commitmentDismissInFlight.has(idx);
       return (
         <CommitmentCard
           key={idx}
@@ -528,8 +530,20 @@ export default function AccountDetailPage() {
           stillActiveNote={stillActiveNote}
           actions={
             <>
-              <WorkButton kind="primary">Mark done</WorkButton>
-              <WorkButton kind="muted">Dismiss</WorkButton>
+              <WorkButton
+                kind="primary"
+                disabled={doneBusy || dismissBusy}
+                onClick={() => acct.handleMarkCommitmentDone(idx)}
+              >
+                {doneBusy ? "Marking done…" : "Mark done"}
+              </WorkButton>
+              <WorkButton
+                kind="muted"
+                disabled={doneBusy || dismissBusy}
+                onClick={() => acct.handleDismissCommitment(idx, c.description)}
+              >
+                {dismissBusy ? "Dismissing…" : "Dismiss"}
+              </WorkButton>
             </>
           }
         />
@@ -611,24 +625,33 @@ export default function AccountDetailPage() {
     const MS_PER_DAY = 24 * 60 * 60 * 1000;
     const nowMs = Date.now();
     const agedPrivate = openCommitments
-      .filter((c) => !c.dueDate)
-      .map((c) => {
+      .map((c, originalIndex) => {
+        if (c.dueDate) return null;
         const sourcedAt = c.itemSource?.sourcedAt;
         const ts = sourcedAt ? new Date(sourcedAt).getTime() : Number.NaN;
         const ageDays = Number.isFinite(ts)
           ? Math.floor((nowMs - ts) / MS_PER_DAY)
           : Number.NaN;
-        return { c, ageDays };
+        return { c, ageDays, originalIndex };
       })
-      .filter((x) => Number.isFinite(x.ageDays) && x.ageDays >= PRIVATE_NUDGE_THRESHOLD_DAYS)
+      .filter((x): x is { c: typeof openCommitments[number]; ageDays: number; originalIndex: number } =>
+        x !== null && Number.isFinite(x.ageDays) && x.ageDays >= PRIVATE_NUDGE_THRESHOLD_DAYS,
+      )
       .sort((a, b) => b.ageDays - a.ageDays)[0];
     if (agedPrivate) {
-      const { c: oldestPrivate, ageDays } = agedPrivate;
+      const { c: oldestPrivate, ageDays, originalIndex } = agedPrivate;
+      const dismissBusy = acct.commitmentDismissInFlight.has(originalIndex);
       nudges.push({
         headline: "A commitment has been kept private",
-        body: `"${oldestPrivate.description}"${oldestPrivate.owner ? ` (owner: ${oldestPrivate.owner})` : ""} has been kept private for ${ageDays} day${ageDays === 1 ? "" : "s"} with no due date — push it out when you're ready, or leave it as-is.`,
+        body: `"${oldestPrivate.description}"${oldestPrivate.owner ? ` (owner: ${oldestPrivate.owner})` : ""} has been kept private for ${ageDays} day${ageDays === 1 ? "" : "s"} with no due date — leave as-is, or dismiss if it's no longer live.`,
         actions: (
           <>
+            <WorkButton
+              disabled={dismissBusy}
+              onClick={() => acct.handleDismissCommitment(originalIndex, oldestPrivate.description)}
+            >
+              {dismissBusy ? "Dismissing…" : "Dismiss"}
+            </WorkButton>
             <WorkButton kind="muted">Leave as-is</WorkButton>
           </>
         ),
@@ -733,6 +756,10 @@ export default function AccountDetailPage() {
                   headline={r.title}
                   rationale={r.rationale}
                   provenance={[{ label: "Account intelligence" }]}
+                  accepting={acct.suggestionAcceptInFlight.has(i)}
+                  dismissing={acct.suggestionDismissInFlight.has(i)}
+                  onAccept={() => acct.handleAcceptSuggestion(i)}
+                  onDismiss={() => acct.handleDismissSuggestion(i)}
                 />
               ))}
             </div>
