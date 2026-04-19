@@ -25,6 +25,35 @@ import styles from "./health.module.css";
 
 const RENEWAL_RUNWAY_DAYS = 120;
 
+/**
+ * Compute the renewal "call" — the verdict rendered as the chapter title.
+ * The title is the judgment, not a label: what are we saying about this
+ * account's next commercial moment?
+ *
+ *   confidence "low"                              → "Churn risk"
+ *   confidence "high" + substantive expansion     → "Expansion"
+ *   everything else (incl. missing, moderate)     → "Renewal"
+ *
+ * "Substantive expansion" = the AI emitted a non-empty narrative >80 chars
+ * that isn't just "none identified" / "no expansion surfaced". At that
+ * threshold the signal is stable enough to name the call "Expansion"
+ * rather than default "Renewal".
+ */
+export function renewalCallVerdict(outlook: RenewalOutlook | null | undefined): string {
+  const conf = (outlook?.confidence ?? "").toLowerCase();
+  if (conf === "low") return "Churn risk";
+  const expansion = (outlook?.expansionPotential ?? "").trim();
+  const expansionLooksNegative = /^(none|no\b|not\s)/i.test(expansion);
+  if (
+    conf === "high" &&
+    expansion.length > 80 &&
+    !expansionLooksNegative
+  ) {
+    return "Expansion";
+  }
+  return "Renewal";
+}
+
 function confidenceColorClass(c?: string): string {
   const v = (c ?? "").toLowerCase();
   if (v === "high") return styles.outlookValueHigh;
