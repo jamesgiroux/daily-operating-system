@@ -3,7 +3,7 @@
 **Auto-generated:** 2026-04-19 by `.docs/generators/gen-data-model.sh`
 
 **Database:** SQLite (SQLCipher-encrypted, WAL mode)
-**Migrations:** 106 files (`001_baseline.sql` through `105_email_noise_recovery.sql`)
+**Migrations:** 108 files (`001_baseline.sql` through `107_stakeholder_role_dismissals.sql`)
 **DB modules:** `src-tauri/src/db/`
 
 ---
@@ -22,7 +22,7 @@
 | `account_objectives_new` | `069_account_events_expand` | — |
 | `account_products` | `075_v110_lifecycle_products_provenance` | 079_product_classification |
 | `account_source_refs` | `076_source_aware_account_truth` | — |
-| `account_stakeholder_roles` | `080_stakeholder_source_of_truth` | — |
+| `account_stakeholder_roles` | `080_stakeholder_source_of_truth` | 107_stakeholder_role_dismissals |
 | `account_stakeholders` | `055_schema_decomposition` | 061_stakeholder_glean_staleness |
 | `account_stakeholders_new` | `056_account_stakeholders_data_source` | — |
 | `account_team` | `003_account_team` | — |
@@ -363,6 +363,7 @@
 | `role` |        TEXT NOT NULL |
 | `data_source` | TEXT NOT NULL DEFAULT 'ai' |
 | `created_at` |  TEXT NOT NULL DEFAULT (datetime('now')) |
+- `dismissed_at` *(added in 107_stakeholder_role_dismissals)*
 
 ---
 
@@ -1869,62 +1870,3 @@
 | `person_id` |  TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE |
 | `meeting_id` | TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE |
 | `person_id` |  TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE |
-
----
-
-### `meeting_champion_health`
-
-**Created in:** `070_captures_metadata`
-
-| Column | Definition |
-|--------|-----------|
-| `meeting_id` | TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE |
-| `champion_name` | TEXT |
-| `champion_status` | TEXT NOT NULL CHECK(champion_status IN ('strong', 'weak', 'lost', 'none')) |
-| `champion_evidence` | TEXT |
-| `champion_risk` | TEXT |
-| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
-
----
-
-### `meeting_entities`
-
-**Created in:** `001_baseline`
-
-| Column | Definition |
-|--------|-----------|
-| `meeting_id` | TEXT NOT NULL |
-| `entity_id` | TEXT NOT NULL |
-| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
-| `meeting_id` |  TEXT NOT NULL REFERENCES meetings_history(id) ON DELETE CASCADE |
-| `entity_id` |   TEXT NOT NULL |
-| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
-| `meeting_id` |  TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE |
-| `entity_id` |   TEXT NOT NULL |
-| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
-- `confidence` *(added in 095_meeting_entities_confidence)*
-- `is_primary` *(added in 095_meeting_entities_confidence)*
-
-**Indexes:** idx_meeting_entities_entity
-
----
-
-### `meeting_entities_new`
-
-**Created in:** `032_junction_fks_and_expr_indexes`
-
-| Column | Definition |
-|--------|-----------|
-| `meeting_id` |  TEXT NOT NULL REFERENCES meetings_history(id) ON DELETE CASCADE |
-| `entity_id` |   TEXT NOT NULL |
-| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
-| `meeting_id` |  TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE |
-| `entity_id` |   TEXT NOT NULL |
-| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
-
----
-
-### `meeting_entity_dismissals`
-
-**Created in:** `099_meeting_entity_dismissals`
-

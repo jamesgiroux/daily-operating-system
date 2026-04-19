@@ -466,6 +466,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 107,
         sql: include_str!("migrations/106_email_resuppress_noreply.sql"),
     },
+    // Stakeholder-role soft-delete: `dismissed_at` tombstones user-removed
+    // role rows so subsequent enrichment can't silently re-surface the
+    // role via intel_queue's INSERT ON CONFLICT path.
+    Migration {
+        version: 108,
+        sql: include_str!("migrations/107_stakeholder_role_dismissals.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
