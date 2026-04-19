@@ -132,7 +132,7 @@ const PORTFOLIO_CHAPTER = {
 
 const HEALTH_CHAPTER = {
   id: "relationship-health",
-  label: "Health",
+  label: "The Read",
   icon: React.createElement(BarChart3, { size: 18, strokeWidth: 1.5 }),
 };
 

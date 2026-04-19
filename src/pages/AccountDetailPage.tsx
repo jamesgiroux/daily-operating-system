@@ -27,7 +27,6 @@ import { AccountRolloverPrompt } from "@/components/account/AccountRolloverPromp
 import { AccountDialogs } from "@/components/account/AccountDialogs";
 import { AccountViewSwitcher } from "@/components/account/AccountViewSwitcher";
 // View 1 — Health & Outlook
-import { AccountHealthSection } from "@/components/account/AccountHealthSection";
 // AccountOutlook (legacy 3-section component) is no longer rendered on the
 // Health tab — OutlookPanel is the replacement. The component still lives in
 // the codebase for possible Context-tab reuse, but it is not imported here.
@@ -161,21 +160,17 @@ export default function AccountDetailPage() {
           </MarginSection>
         ) : null}
 
-        {/* Chapter 5: Supporting — computed vs signal trend + dimension bars */}
+        {/* Chapter 5: The Read — the computed-score-vs-signal-trend chapter.
+            Gutter "The Read" (pairs with "The Call" in Outlook as the two
+            verdict chapters). Inline 28px serif h2 "Health Score vs. Signals"
+            is descriptive, not jargon. AccountHealthSection removed — its
+            dimension block is a legacy duplicate of SupportingTension's
+            own dimension grid. ChapterFreshness strip removed (not in
+            mockup). */}
         {intelligence?.health && (
-          <MarginSection id="relationship-health" label={<>Supporting</>}>
-            <ChapterHeading
-              title="Computed health vs signal trend"
-              variant="reference"
-              freshness={
-                <ChapterFreshness
-                  enrichedAt={intelligence.enrichedAt}
-                  fragments={["Lagging score · leading trend"]}
-                />
-              }
-            />
+          <MarginSection id="relationship-health" label="The Read">
+            <ChapterHeading title="Health Score vs. Signals" />
             <SupportingTension intelligence={intelligence} gleanSignals={glean} />
-            <AccountHealthSection health={intelligence.health} consistencyFindings={intelligence.consistencyFindings} />
           </MarginSection>
         )}
 
