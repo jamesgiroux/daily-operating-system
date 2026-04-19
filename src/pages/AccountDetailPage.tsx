@@ -305,7 +305,9 @@ export default function AccountDetailPage() {
               if (!ok) return;
               try {
                 await invoke("delete_person", { personId });
-                await acct.load();
+                // Silent refresh so the card disappears without a full
+                // loading state / scroll jump.
+                acct.silentRefresh();
               } catch (e) {
                 toast.error(`Failed to delete: ${e}`);
               }

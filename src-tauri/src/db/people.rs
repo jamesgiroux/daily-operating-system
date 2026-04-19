@@ -1389,6 +1389,19 @@ impl ActionDb {
                     params![person_id],
                 )
                 .map_err(|e| e.to_string())?;
+            // Clay enrichment queue — no FK, so we have to clean up by
+            // hand. Without this, deleting a junk person (e.g. a Gong
+            // bot that got auto-created from a meeting attendee list)
+            // leaves the clay_sync_state row orphaned. Next sweep tries
+            // to enrich a ghost, logs warnings, never completes.
+            // gravatar_cache.person_id has ON DELETE SET NULL per its
+            // migration, so gravatar cleanup is automatic.
+            tx.conn
+                .execute(
+                    "DELETE FROM clay_sync_state WHERE entity_type = 'person' AND entity_id = ?1",
+                    params![person_id],
+                )
+                .map_err(|e| e.to_string())?;
             tx.conn
                 .execute("DELETE FROM people WHERE id = ?1", params![person_id])
                 .map_err(|e| e.to_string())?;
