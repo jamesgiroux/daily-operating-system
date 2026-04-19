@@ -13,8 +13,11 @@
  *   otherwise              → "In Nd" + "M days to renewal"
  *
  * Benchmark cohort is not yet wired (DOS-204 peer benchmarking pipeline).
- * We render "—" until the data exists — never fabricate a number.
+ * Rather than render a dead "—" cell, the Benchmark slot is suppressed
+ * entirely until peer-cohort data lands; the grid gracefully collapses from
+ * three columns to two. See `TODO(DOS-204)` below.
  */
+import type { CSSProperties } from "react";
 import type { EntityIntelligence, RenewalOutlook } from "@/types";
 import styles from "./health.module.css";
 
@@ -100,28 +103,47 @@ export function OutlookPanel({ intelligence }: OutlookPanelProps) {
   const conf = confidenceCell(outlook);
   const start = recommendedStartCell(intelligence?.contractContext?.renewalDate);
 
+  // TODO(DOS-204): when peer benchmark cohort data lands, render the
+  // Benchmark cell between Confidence and Recommended start. Today the cell
+  // is suppressed — collapsing the 3-col grid to 2-col — rather than showing
+  // a dead placeholder.
+  const hasBenchmark = false;
+
+  const gridStyle: CSSProperties | undefined = hasBenchmark
+    ? undefined
+    : { gridTemplateColumns: "repeat(2, 1fr)" };
+
   return (
-    <div className={styles.outlookGrid}>
-      <div>
-        <div className={styles.outlookBlockLabel}>Confidence</div>
-        <div className={`${styles.outlookBlockValue} ${confidenceColorClass(outlook.confidence)}`}>
-          {conf.label}
+    <>
+      <div className={styles.outlookGrid} style={gridStyle}>
+        <div>
+          <div className={styles.outlookBlockLabel}>Confidence</div>
+          <div className={`${styles.outlookBlockValue} ${confidenceColorClass(outlook.confidence)}`}>
+            {conf.label}
+          </div>
+          <div className={styles.outlookBlockDetail}>{conf.detail}</div>
         </div>
-        <div className={styles.outlookBlockDetail}>{conf.detail}</div>
+
+        <div>
+          <div className={styles.outlookBlockLabel}>Recommended start</div>
+          <div className={`${styles.outlookBlockValue} ${start.className}`}>{start.label}</div>
+          <div className={styles.outlookBlockDetail}>{start.detail}</div>
+        </div>
       </div>
 
-      <div>
-        <div className={styles.outlookBlockLabel}>Benchmark</div>
-        {/* TODO(DOS-204): peer benchmark cohort comparison — not wired yet. */}
-        <div className={`${styles.outlookBlockValue} ${styles.outlookValueNeutral}`}>—</div>
-        <div className={styles.outlookBlockDetail}>Peer cohort benchmark not yet captured.</div>
-      </div>
+      {/*
+        TODO(DOS-250): editorial pull-quote below the Outlook grid (see
+        mockup lines 910-912 of .docs/mockups/account-health-outlook-globex.html).
+        `RenewalOutlook` has no narrative/prose field today — once a
+        synthesized outlook commentary lands on the backend, render it via
+        the existing `.outlookPullQuote` class:
 
-      <div>
-        <div className={styles.outlookBlockLabel}>Recommended start</div>
-        <div className={`${styles.outlookBlockValue} ${start.className}`}>{start.label}</div>
-        <div className={styles.outlookBlockDetail}>{start.detail}</div>
-      </div>
-    </div>
+          {outlook.narrative ? (
+            <blockquote className={styles.outlookPullQuote}>
+              {outlook.narrative}
+            </blockquote>
+          ) : null}
+      */}
+    </>
   );
 }

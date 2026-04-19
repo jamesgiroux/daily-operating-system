@@ -12,7 +12,12 @@
  * No rename needed; if `intelligence.health` is null at runtime the
  * AccountHealth blob failed to deserialize or was absent in health_json.
  */
-import type { EntityIntelligence, DimensionScore, RelationshipDimensions } from "@/types";
+import type {
+  EntityIntelligence,
+  DimensionScore,
+  HealthOutlookSignals,
+  RelationshipDimensions,
+} from "@/types";
 import styles from "./health.module.css";
 
 function scoreColorClass(band?: string): string {
@@ -57,9 +62,15 @@ const DIMENSION_LABELS: Array<{ key: keyof RelationshipDimensions; label: string
 
 interface SupportingTensionProps {
   intelligence: EntityIntelligence | null;
+  /**
+   * Glean enrichment payload. Drives the "Signal trend" label swap — when
+   * Glean signals are present the trend is Glean-sourced per the mockup
+   * (lines 925-929 of `.docs/mockups/account-health-outlook-globex.html`).
+   */
+  gleanSignals?: HealthOutlookSignals | null;
 }
 
-export function SupportingTension({ intelligence }: SupportingTensionProps) {
+export function SupportingTension({ intelligence, gleanSignals }: SupportingTensionProps) {
   const health = intelligence?.health;
   if (!health) return null;
   const sufficient = health.sufficientData !== false;
@@ -90,7 +101,9 @@ export function SupportingTension({ intelligence }: SupportingTensionProps) {
           </div>
         </div>
         <div>
-          <div className={styles.tensionBlockLabel}>Signal trend</div>
+          <div className={styles.tensionBlockLabel}>
+            {gleanSignals ? "Update trend (from Glean)" : "Signal trend"}
+          </div>
           <div className={`${styles.tensionBlockValue} ${trendColorClass(dir)}`}>
             {trendLabel(dir)}
           </div>
@@ -99,6 +112,10 @@ export function SupportingTension({ intelligence }: SupportingTensionProps) {
           </div>
         </div>
       </div>
+
+      {rationale ? (
+        <p className={styles.tensionNote}>{rationale}</p>
+      ) : null}
 
       {dims ? (
         <div className={styles.dimensions}>

@@ -301,19 +301,21 @@ export function SentimentHero({
               {noteCount} note{noteCount === 1 ? "" : "s"}
             </>
           )}
-          {view.isStale && (
-            <>
-              {" · "}
-              <button
-                type="button"
-                className={css.metaLink}
-                onClick={onAcknowledgeStale}
-                title="Tap to confirm this still reflects the account"
-              >
-                Still accurate?
-              </button>
-            </>
-          )}
+          {/*
+            Mockup convention (lines 622 / 467): "Still accurate?" is always
+            rendered in the meta line — it's a zero-pressure prompt, not a
+            staleness escalation. The `view.isStale` boolean still governs
+            whether this interaction clears an explicit stale flag.
+          */}
+          {" · "}
+          <button
+            type="button"
+            className={css.metaLink}
+            onClick={onAcknowledgeStale}
+            title="Tap to confirm this still reflects the account"
+          >
+            Still accurate?
+          </button>
         </div>
       )}
 

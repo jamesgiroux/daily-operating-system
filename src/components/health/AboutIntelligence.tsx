@@ -62,7 +62,7 @@ export function AboutIntelligence({ intelligence, gleanSignals, fine = false }: 
   if (!hasEnriched) {
     return (
       <div className={styles.metaCard}>
-        <div className={styles.metaCardLabel}>Data capture</div>
+        <div className={styles.metaCardLabel}>Our data capture gap</div>
         <div className={styles.metaCardText}>
           Enrichment has not yet run for this account.
         </div>
