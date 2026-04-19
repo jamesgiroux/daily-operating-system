@@ -1022,7 +1022,7 @@ export default function AccountDetailPage() {
     <>
       <AccountBreadcrumbs ancestors={page.ancestors} currentName={detail.name ?? ""} />
 
-      <section id="headline" className={shared.chapterSection}>
+      <section id="headline" className={shared.chapterHeadline}>
         <AccountHero detail={detail} intelligence={intelligence}
           editName={acct.editName} setEditName={(v) => { acct.setEditName(v); acct.setDirty(true); }}
           editHealth={acct.editHealth} setEditHealth={(v) => { acct.setEditHealth(v); acct.setDirty(true); }}
