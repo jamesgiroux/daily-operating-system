@@ -141,11 +141,11 @@ export function PersonCard({
     <article className={cardClasses.join(" ")}>
       <div className={css.personHeader}>
         <div className={css.avatar}>
-          {person.photoUrl ? (
-            <img src={person.photoUrl} alt={person.personName} className={css.avatarImage} />
-          ) : (
-            initials
-          )}
+          <PersonAvatar
+            photoUrl={person.photoUrl}
+            name={person.personName}
+            initials={initials}
+          />
         </div>
         <div className={css.personIdentity}>
           <div className={css.personName}>{person.personName}</div>
@@ -214,6 +214,53 @@ export function PersonCard({
         <MetaFooter meetingCount={meetingCount} lastSeen={lastSeen} emailCount={null} />
       ) : null}
     </article>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Avatar renderer with graceful fallback.
+ *
+ * When a person's photo URL 404s, stalls, or returns an invalid image
+ * (common for Clay-enriched URLs that expire, or Gravatar hashes with
+ * no account backing), the raw <img> tag renders the browser's default
+ * broken-image glyph — a gray square with a question mark. Ugly, and
+ * breaks the editorial register of the card grid.
+ *
+ * This component swaps to serif initials on the `onError` event so
+ * every card reads the same (initials) whether or not the photo
+ * resolved. We also reset the error flag when the URL changes so a
+ * later enrichment that writes a working URL gets a fresh attempt
+ * instead of being stuck on the last failure.
+ */
+function PersonAvatar({
+  photoUrl,
+  name,
+  initials,
+}: {
+  photoUrl: string | null | undefined;
+  name: string;
+  initials: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  // Reset error state when the photo URL changes (e.g. a re-enrichment
+  // writes a new Clay URL). Without this, a single bad URL would latch
+  // failure for the component's lifetime.
+  useEffect(() => {
+    setFailed(false);
+  }, [photoUrl]);
+
+  if (!photoUrl || failed) {
+    return <>{initials}</>;
+  }
+  return (
+    <img
+      src={photoUrl}
+      alt={name}
+      className={css.avatarImage}
+      onError={() => setFailed(true)}
+    />
   );
 }
 
