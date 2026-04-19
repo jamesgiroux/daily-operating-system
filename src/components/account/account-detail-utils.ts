@@ -178,30 +178,35 @@ export function buildContextChapters() {
 }
 
 /**
- * DOS-13 Work tab IA — 8 chapter pills matching section ids rendered by
+ * DOS-13 Work tab IA — chapter pills matching section ids rendered by
  * AccountDetailPage.renderWorkView. Each id here MUST match a MarginSection
  * id in the page or the nav anchor will dead-link.
  *
  * Section-id contract (verified in tests/account-detail-utils.test.ts):
- *   focus, programs, commitments, suggestions, shared, recently-landed,
+ *   focus, programs, commitments, suggestions, [shared?], recently-landed,
  *   outputs, nudges.
  *
- * Note: v1.2.1 hides the "shared" chapter entirely (honest degradation —
- * tracker provenance lands in v1.2.2, DOS-75). The pill is still emitted
- * here for routing symmetry; AccountDetailPage gates the visible section
- * independently.
+ * Wave 0g Finding 2 (honest degradation): the "shared" pill is only emitted
+ * when real tracker provenance exists on the account. Without it, the page
+ * suppresses the chapter — the pill would dead-link. Tracker provenance
+ * lands in v1.2.2 (DOS-75); until then hasSharedData is always false.
  */
-export function buildWorkChapters() {
-  return [
+export function buildWorkChapters(hasSharedData: boolean = false) {
+  const chapters = [
     { id: "focus", label: "90-day focus", icon: React.createElement(Target, { size: 18, strokeWidth: 1.5 }) },
     { id: "programs", label: "Programs & motions", icon: React.createElement(Flag, { size: 18, strokeWidth: 1.5 }) },
     { id: "commitments", label: "Commitments", icon: React.createElement(CheckSquare2, { size: 18, strokeWidth: 1.5 }) },
     { id: "suggestions", label: "Suggestions", icon: React.createElement(Sparkles, { size: 18, strokeWidth: 1.5 }) },
-    { id: "shared", label: "Shared with team", icon: React.createElement(Share2, { size: 18, strokeWidth: 1.5 }) },
+  ];
+  if (hasSharedData) {
+    chapters.push({ id: "shared", label: "Shared with team", icon: React.createElement(Share2, { size: 18, strokeWidth: 1.5 }) });
+  }
+  chapters.push(
     { id: "recently-landed", label: "Recently landed", icon: React.createElement(PackageCheck, { size: 18, strokeWidth: 1.5 }) },
     { id: "outputs", label: "Outputs", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) },
     { id: "nudges", label: "Nudges", icon: React.createElement(Bell, { size: 18, strokeWidth: 1.5 }) },
-  ];
+  );
+  return chapters;
 }
 
 /* ── Field formatting helpers ── */
