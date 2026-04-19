@@ -234,16 +234,33 @@
    The old .divergenceHeader / .divergenceLabel / .divergenceNote rules were
    removed so the two sections can't drift apart. */
 
-/* ═════════ OUTLOOK GRID ═════════ */
+/* ═════════ OUTLOOK CHAPTER ═════════
+   The gutter already carries "Outlook" — inside the content column we use
+   the mockup's .supporting-label treatment (small mono uppercase) as the
+   sub-title rather than a competing 28px h2. */
+.outlookSubLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-lg, 24px);
+}
+
 .outlookGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-2xl, 48px);
   padding: var(--space-xl, 32px);
   background: var(--color-paper-warm-white, #faf8f6);
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+  border-radius: var(--radius-xl, 16px);
+  box-shadow: var(--shadow-md);
   margin-top: var(--space-lg, 24px);
+}
+/* 2-col fallback while the Benchmark cohort is unwired (DOS-204). Swap out
+   the CSSProperties inline style previously doing this; CSS-module only. */
+.outlookGridTwoCol {
+  grid-template-columns: repeat(2, 1fr);
 }
 .outlookBlockLabel {
   font-family: var(--font-mono);
@@ -265,6 +282,7 @@
 .outlookValueLow { color: var(--color-spice-terracotta); }
 .outlookValueHigh { color: var(--color-garden-sage); }
 .outlookValueNeutral { color: var(--color-spice-saffron); }
+.outlookValuePrep { color: var(--color-spice-turmeric); }
 .outlookBlockDetail {
   font-family: var(--font-sans);
   font-size: 13px;
