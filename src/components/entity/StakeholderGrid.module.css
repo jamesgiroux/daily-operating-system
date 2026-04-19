@@ -508,39 +508,24 @@
 
 /* ═════════ ROLE PICKER DROPDOWN ═════════ */
 
-.rolePickerWrap {
-  position: relative;
-  display: inline-flex;
-}
-
 /*
- * Role picker dropdown. Renders inside whichever card opened it, so
- * the immediate parent (card background) can show through a
- * translucent token. The picker is a menu — it needs to read as a
- * clearly-detached surface regardless of which variant opened it,
- * including internal cards which sit on a charcoal-4 tint.
+ * Role picker dropdown. Portaled to document.body via React createPortal
+ * so no parent stacking context or overflow clipping can affect it —
+ * same pattern as the existing TeamRoleSelector. Inline `top` / `left`
+ * come from the trigger button's getBoundingClientRect() and are
+ * recomputed on scroll while the menu is open.
  *
- * Explicit solid hex instead of var(--color-paper-cream) guards
- * against any ancestor that sets a background through a translucent
- * token: paper-cream resolves to a solid color today, but if the
- * token ever flips to an rgba the dropdown would inherit the card
- * tint underneath and look "see-through". The hard-coded background
- * also keeps the menu readable if a future dark theme lands before
- * this file gets touched again.
- *
- * Higher z-index than before so the menu always paints over the
- * card's role-pill row even when the card sits in a flex container
- * that establishes its own stacking context.
+ * position: fixed pairs with the portal — the body-level coordinates
+ * are viewport-relative so they match what the trigger's
+ * getBoundingClientRect() returns without any extra offsetParent math.
  */
 .rolePickerMenu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  background-color: #f5f2ef; /* --color-paper-cream, solid */
+  position: fixed;
+  background-color: var(--color-paper-cream);
   border: 1px solid var(--color-rule-heavy);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
-  z-index: 100;
+  z-index: 1000;
   min-width: 180px;
   padding: 4px 0;
 }
