@@ -2633,10 +2633,24 @@ impl ActionDb {
             }
         };
 
-        // Ensure a row exists first (idempotent). Uses the canonical upsert
-        // with NULLs — existing values are preserved by COALESCE.
-        self.upsert_account_technical_footprint(
-            account_id, None, None, None, None, None, None, 0, None, "user_edit",
+        // Ensure a row exists first (idempotent). INSERT-OR-IGNORE bootstraps
+        // a blank row only when none exists; existing rows (with real
+        // `open_tickets`, `adoption_score`, etc.) are left untouched because
+        // the full-row `upsert_account_technical_footprint` would clobber
+        // `open_tickets` on the UPDATE branch (its UPSERT clause writes
+        // `open_tickets = excluded.open_tickets` unconditionally, so the
+        // sentinel `0` passed here would silently wipe real support data
+        // whenever a user edits `usage_tier`, `csat_score`, or any other
+        // non-`open_tickets` gap field — DOS-231 Codex follow-up).
+        let bootstrap_now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO account_technical_footprint
+                (account_id, integrations_json, usage_tier, adoption_score, active_users,
+                 support_tier, csat_score, open_tickets, services_stage, source, sourced_at, updated_at)
+             VALUES (?1, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, 'user_edit', ?2, ?2)",
+            params![account_id, bootstrap_now],
         )?;
 
         let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
