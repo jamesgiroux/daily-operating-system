@@ -4,14 +4,16 @@
    Flows from the top of the page per the canonical mockups — no viewport
    centering. The hero-date row carries its own `padding-top: var(--space-xl)`
    matching the mockup spec, so this block only establishes the flex
-   container and bottom breathing room for the row below.
+   container.
+   No padding-bottom: the next section (e.g. SentimentHero) owns the gap via
+   its own top padding. Adding a bottom pad here double-counts and produces
+   the ~120px orphan gap that appeared below the vitals strip.
    Do NOT reintroduce min-height or `justify-content: center` here — the
    old 70vh centering was a legacy from when every entity hero carried a
    large italic lede; the redesigned heroes are identity-only and must
    line up against the shared header spec. */
 .hero {
   position: relative;
-  padding-bottom: var(--space-2xl);
   display: flex;
   flex-direction: column;
 }
