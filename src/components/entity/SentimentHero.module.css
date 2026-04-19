@@ -179,8 +179,8 @@
   font-size: 17px;
   font-style: italic;
   line-height: 1.65;
-  color: var(--color-text-secondary);
-  max-width: 620px;
+  color: var(--color-text-primary);
+  max-width: 680px;
 }
 
 .pullquoteAttr {
