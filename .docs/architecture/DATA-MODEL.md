@@ -3,7 +3,7 @@
 **Auto-generated:** 2026-04-19 by `.docs/generators/gen-data-model.sh`
 
 **Database:** SQLite (SQLCipher-encrypted, WAL mode)
-**Migrations:** 105 files (`001_baseline.sql` through `104_email_noise_recovery.sql`)
+**Migrations:** 106 files (`001_baseline.sql` through `105_email_noise_recovery.sql`)
 **DB modules:** `src-tauri/src/db/`
 
 ---
@@ -56,7 +56,7 @@
 | `email_signals_new` | `063_email_signals_source` | — |
 | `email_sync_meta` | `093_email_sync_meta` | — |
 | `email_threads` | `027_email_threads` | — |
-| `emails` | `034_emails` | 035_email_relevance_score, 071_email_triage_columns, 082_email_enriched_at, 100_email_retry_batch, 102_email_is_noise, 103_email_auto_retry_count |
+| `emails` | `034_emails` | 035_email_relevance_score, 071_email_triage_columns, 082_email_enriched_at, 100_email_retry_batch, 102_email_is_noise, 103_email_auto_retry_count, 104_email_is_noise_defensive |
 | `emails_new` | `097_email_pending_retry_state` | — |
 | `enrichment_log` | `016_clay_enrichment` | — |
 | `entities` | `001_baseline` | 095_meeting_entities_confidence |
@@ -1232,6 +1232,7 @@
 - `retry_started_at` *(added in 100_email_retry_batch)*
 - `is_noise` *(added in 102_email_is_noise)*
 - `auto_retry_count` *(added in 103_email_auto_retry_count)*
+- `is_noise` *(added in 104_email_is_noise_defensive)*
 
 **Indexes:** idx_emails_enriched_at, idx_emails_enrichment, idx_emails_entity, idx_emails_is_noise, idx_emails_last_seen, idx_emails_priority_resolved, idx_emails_relevance, idx_emails_resolved, idx_emails_thread_id, idx_person_emails_email, idx_post_meeting_emails_meeting
 
@@ -1838,3 +1839,92 @@
 | `state` | TEXT |
 | `url` | TEXT |
 | `synced_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `meeting_attendees`
+
+**Created in:** `001_baseline`
+
+| Column | Definition |
+|--------|-----------|
+| `meeting_id` | TEXT NOT NULL |
+| `person_id` | TEXT NOT NULL |
+| `meeting_id` | TEXT NOT NULL REFERENCES meetings_history(id) ON DELETE CASCADE |
+| `person_id` |  TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE |
+| `meeting_id` | TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE |
+| `person_id` |  TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE |
+
+**Indexes:** idx_attendees_person
+
+---
+
+### `meeting_attendees_new`
+
+**Created in:** `032_junction_fks_and_expr_indexes`
+
+| Column | Definition |
+|--------|-----------|
+| `meeting_id` | TEXT NOT NULL REFERENCES meetings_history(id) ON DELETE CASCADE |
+| `person_id` |  TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE |
+| `meeting_id` | TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE |
+| `person_id` |  TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE |
+
+---
+
+### `meeting_champion_health`
+
+**Created in:** `070_captures_metadata`
+
+| Column | Definition |
+|--------|-----------|
+| `meeting_id` | TEXT PRIMARY KEY REFERENCES meetings(id) ON DELETE CASCADE |
+| `champion_name` | TEXT |
+| `champion_status` | TEXT NOT NULL CHECK(champion_status IN ('strong', 'weak', 'lost', 'none')) |
+| `champion_evidence` | TEXT |
+| `champion_risk` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `meeting_entities`
+
+**Created in:** `001_baseline`
+
+| Column | Definition |
+|--------|-----------|
+| `meeting_id` | TEXT NOT NULL |
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `meeting_id` |  TEXT NOT NULL REFERENCES meetings_history(id) ON DELETE CASCADE |
+| `entity_id` |   TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `meeting_id` |  TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE |
+| `entity_id` |   TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+- `confidence` *(added in 095_meeting_entities_confidence)*
+- `is_primary` *(added in 095_meeting_entities_confidence)*
+
+**Indexes:** idx_meeting_entities_entity
+
+---
+
+### `meeting_entities_new`
+
+**Created in:** `032_junction_fks_and_expr_indexes`
+
+| Column | Definition |
+|--------|-----------|
+| `meeting_id` |  TEXT NOT NULL REFERENCES meetings_history(id) ON DELETE CASCADE |
+| `entity_id` |   TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `meeting_id` |  TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE |
+| `entity_id` |   TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+
+---
+
+### `meeting_entity_dismissals`
+
+**Created in:** `099_meeting_entity_dismissals`
+
