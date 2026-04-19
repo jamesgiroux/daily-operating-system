@@ -1,15 +1,24 @@
 @import "../../styles/design-tokens.css";
 
+/* Hero region for entity detail pages (Account / Project / Person).
+   Flows from the top of the page per the canonical mockups — no viewport
+   centering. The hero-date row carries its own `padding-top: var(--space-xl)`
+   matching the mockup spec, so this block only establishes the flex
+   container and bottom breathing room for the row below.
+   Do NOT reintroduce min-height or `justify-content: center` here — the
+   old 70vh centering was a legacy from when every entity hero carried a
+   large italic lede; the redesigned heroes are identity-only and must
+   line up against the shared header spec. */
 .hero {
   position: relative;
-  padding-top: var(--space-5xl);
   padding-bottom: var(--space-2xl);
-  min-height: 70vh;
   display: flex;
   flex-direction: column;
-  justify-content: center;
 }
 
+/* Top-of-hero mono/uppercase row. Padding matches the mockup's shared
+   header spec (`padding: var(--space-xl) 0 var(--space-lg);`) so every
+   entity hero starts with the same breathing room above the date line. */
 .heroDate {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -17,7 +26,7 @@
   color: var(--color-text-tertiary);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-bottom: var(--space-lg);
+  padding: var(--space-xl) 0 var(--space-lg);
 }
 
 .heroTitle {

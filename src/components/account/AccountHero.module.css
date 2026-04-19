@@ -1,14 +1,5 @@
 .hero {
   composes: hero from "../entity/EntityHeroBase.module.css";
-  /* Override base 70vh min-height + centered layout — narrative moved to
-     Context view, hero is now just identity (name + badges + vitals).
-     Align to top of container so content fits above the fold at default
-     app height; the base's 80px top pad was pushing the SentimentHero
-     below the viewport on a standard window. */
-  min-height: auto;
-  justify-content: flex-start;
-  padding-top: var(--space-xl);
-  padding-bottom: var(--space-md);
 }
 
 .heroDate {
