@@ -443,6 +443,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 104,
         sql: include_str!("migrations/103_email_auto_retry_count.sql"),
     },
+    // DOS-247: Recover emails over-suppressed by DOS-242 Rule 3
+    // (List-Unsubscribe alone). Rule is tightened in code; this
+    // migration restores is_noise=0 for rows outside the bulk allow-list.
+    Migration {
+        version: 105,
+        sql: include_str!("migrations/104_email_noise_recovery.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
