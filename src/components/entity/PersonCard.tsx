@@ -40,14 +40,26 @@ export const EXTERNAL_ROLE_CATALOG: RoleOption[] = [
   { value: "end_user", label: "End User", tone: "default" },
 ];
 
-/** Canonical role catalog for internal team members (Our team). */
+/**
+ * Canonical role catalog for internal team members (Our team).
+ *
+ * Source of truth: the stored values used by the existing
+ * `set_team_member_role` / `add_stakeholder_role` backends and by the
+ * legacy `TeamRoleSelector` component. Keeping these in lockstep so the
+ * same stored role renders the same label everywhere in the app.
+ * Internal labels are short codes per product vocabulary (CSM / AE / RM)
+ * — different from external stakeholder types (Champion / Technical /
+ * Economic), which is a separate catalog entirely.
+ */
 export const INTERNAL_ROLE_CATALOG: RoleOption[] = [
+  { value: "ae", label: "AE", tone: "internal" },
   { value: "csm", label: "CSM", tone: "internal" },
-  { value: "am", label: "Account Manager", tone: "internal" },
-  { value: "ae", label: "Account Executive", tone: "internal" },
-  { value: "se", label: "Sales Engineer", tone: "internal" },
-  { value: "rm", label: "Relationship Manager", tone: "internal" },
-  { value: "support", label: "Support", tone: "internal" },
+  { value: "tam", label: "TAM", tone: "internal" },
+  { value: "rm", label: "RM", tone: "internal" },
+  { value: "ao", label: "AO", tone: "internal" },
+  { value: "se", label: "SE", tone: "internal" },
+  { value: "executive_sponsor", label: "Exec Sponsor", tone: "internal" },
+  { value: "implementation", label: "Implementation", tone: "internal" },
   { value: "associated", label: "Associated", tone: "internal" },
 ];
 

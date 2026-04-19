@@ -21,8 +21,8 @@
  */
 import { useState } from "react";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import type { AccountTeamMember, StakeholderFull } from "@/types";
-import { PersonCard, EXTERNAL_ROLE_CATALOG, INTERNAL_ROLE_CATALOG } from "./PersonCard";
+import type { AccountTeamMember, StakeholderFull, StakeholderSuggestion } from "@/types";
+import { PersonCard, EXTERNAL_ROLE_CATALOG, INTERNAL_ROLE_CATALOG, type RoleOption } from "./PersonCard";
 import css from "./StakeholderGrid.module.css";
 
 const PRIMARY_COUNT = 4;
@@ -44,6 +44,11 @@ interface StakeholderGridProps {
   /** Internal team add/remove (preserved from the v1.0 component). */
   onAddTeamMember?: () => void;
   onRemoveTeamMember?: (personId: string, role: string) => void;
+
+  /** AI-proposed stakeholder overrides awaiting human review (Phase 3). */
+  suggestions?: StakeholderSuggestion[];
+  onAcceptSuggestion?: (suggestionId: number) => void;
+  onDismissSuggestion?: (suggestionId: number) => void;
 }
 
 export function StakeholderGrid({
@@ -56,6 +61,9 @@ export function StakeholderGrid({
   onRemoveRole,
   onAddTeamMember,
   onRemoveTeamMember,
+  suggestions,
+  onAcceptSuggestion,
+  onDismissSuggestion,
 }: StakeholderGridProps) {
   const external = stakeholders ?? [];
   const internal = accountTeam ?? [];
@@ -116,6 +124,12 @@ export function StakeholderGrid({
           {tier2.length > 0 ? <MoreAssociatedRow people={tier2} /> : null}
         </>
       ) : null}
+
+      <SuggestionsQueue
+        suggestions={suggestions}
+        onAccept={onAcceptSuggestion}
+        onDismiss={onDismissSuggestion}
+      />
 
       {hasAnyInternal ? (
         <>
@@ -227,11 +241,123 @@ function isTier2(s: StakeholderFull): boolean {
   return !hasRole && !hasAssessment;
 }
 
+/* ─────────────────────────────────────────────────────────────────────── */
+
+/**
+ * SuggestionsQueue — pending AI-proposed stakeholder overrides.
+ *
+ * AI discovers new people or disagrees with human-pinned assignments
+ * during enrichment. Rather than silently overwriting user decisions,
+ * the Intelligence Loop writes to `stakeholder_suggestions` where they
+ * sit until a human accepts or dismisses. Without a UI surface for
+ * this queue, the suggestions accumulate invisibly — this component
+ * is that surface.
+ *
+ * Filters out non-pending rows (already resolved) and dedupes against
+ * confirmed stakeholders handled upstream in useTeamManagement. Empty
+ * set → renders nothing (no "no suggestions yet" placeholder to clutter
+ * the chapter).
+ */
+function SuggestionsQueue({
+  suggestions,
+  onAccept,
+  onDismiss,
+}: {
+  suggestions?: StakeholderSuggestion[];
+  onAccept?: (suggestionId: number) => void;
+  onDismiss?: (suggestionId: number) => void;
+}) {
+  const pending = (suggestions ?? []).filter((s) => s.status === "pending");
+  if (pending.length === 0) return null;
+
+  return (
+    <section className={css.suggestionsSection}>
+      <div className={css.suggestionsLabel}>
+        Suggestions · AI-proposed additions
+        <span className={css.suggestionsHint}>
+          Accept to add to the team. Dismiss teaches the system.
+        </span>
+      </div>
+      <div className={css.suggestionList}>
+        {pending.map((s) => {
+          const displayName = s.suggestedName || "Unnamed suggestion";
+          const metaParts: string[] = [];
+          if (s.suggestedRole) metaParts.push(roleLabelForMeta(s.suggestedRole));
+          if (s.suggestedEmail) metaParts.push(s.suggestedEmail);
+          if (s.source) metaParts.push(`via ${s.source}`);
+          return (
+            <div key={s.id} className={css.suggestionRow}>
+              <div className={css.suggestionBody}>
+                <div className={css.suggestionName}>{displayName}</div>
+                {metaParts.length > 0 ? (
+                  <div className={css.suggestionMeta}>
+                    {metaParts.map((part, i) => (
+                      <span key={i}>{part}</span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <div className={css.suggestionActions}>
+                {onDismiss ? (
+                  <button
+                    type="button"
+                    className={css.suggestionBtn}
+                    onClick={() => onDismiss(s.id)}
+                  >
+                    Dismiss
+                  </button>
+                ) : null}
+                {onAccept ? (
+                  <button
+                    type="button"
+                    className={`${css.suggestionBtn} ${css.suggestionBtnPrimary}`}
+                    onClick={() => onAccept(s.id)}
+                  >
+                    Accept
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/** Look up a role's display label across both catalogs for suggestion meta. */
+function roleLabelForMeta(storedRole: string): string {
+  const normalized = storedRole.trim().toLowerCase();
+  const catalogs: RoleOption[][] = [EXTERNAL_ROLE_CATALOG, INTERNAL_ROLE_CATALOG];
+  for (const catalog of catalogs) {
+    const found = catalog.find((r) => r.value === normalized);
+    if (found) return found.label;
+  }
+  // Unknown — humanise the stored value.
+  return normalized
+    .split(/[_\s]+/)
+    .map((w) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1) : ""))
+    .join(" ");
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+
 function teamMemberAsStakeholder(m: AccountTeamMember): StakeholderFull {
-  // Internal team members come from a different table shape. Adapt to the
-  // StakeholderFull contract PersonCard expects so the card component stays
-  // single-source-of-truth on layout. Role comes across as the single
-  // assignment the row carries.
+  // Internal team members come from `get_account_team` which returns the
+  // concatenated role string GROUP_CONCAT'd from account_stakeholder_roles
+  // (e.g. "rm,csm" when a person carries multiple roles). Split back into
+  // individual StakeholderRole entries so the chip editor renders one pill
+  // per role — the old adapter treated the whole concatenated string as a
+  // single role and broke the add/remove flow for internal members.
+  //
+  // `get_account_team` doesn't carry per-role `data_source`, so we assume
+  // 'user' here. Internal team assignments are almost always human-pinned
+  // (team management is a manual workflow); if the backend ever wires
+  // per-role provenance we'll thread it through.
+  const roleStrings = (m.role ?? "")
+    .split(",")
+    .map((r) => r.trim())
+    .filter((r) => r.length > 0);
   return {
     personId: m.personId,
     personName: m.personName,
@@ -239,7 +365,7 @@ function teamMemberAsStakeholder(m: AccountTeamMember): StakeholderFull {
     organization: null,
     personRole: null,
     stakeholderRole: m.role,
-    roles: m.role ? [{ role: m.role, dataSource: "user" }] : [],
+    roles: roleStrings.map((role) => ({ role, dataSource: "user" })),
     dataSource: "user",
     engagement: null,
     dataSourceEngagement: null,
