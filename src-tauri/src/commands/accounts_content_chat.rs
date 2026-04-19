@@ -742,7 +742,7 @@ pub async fn update_stakeholder_engagement(
         .db_write(move |db| {
             crate::services::accounts::update_stakeholder_engagement(
                 db,
-                &app_state.signals.engine,
+                &app_state,
                 &account_id,
                 &person_id,
                 &engagement,
@@ -764,7 +764,7 @@ pub async fn update_stakeholder_assessment(
         .db_write(move |db| {
             crate::services::accounts::update_stakeholder_assessment(
                 db,
-                &app_state.signals.engine,
+                &app_state,
                 &account_id,
                 &person_id,
                 &assessment,
@@ -800,7 +800,7 @@ pub async fn add_stakeholder_role(
         .db_write(move |db| {
             crate::services::accounts::add_stakeholder_role(
                 db,
-                &app_state.signals.engine,
+                &app_state,
                 &account_id,
                 &person_id,
                 &role,
@@ -822,7 +822,7 @@ pub async fn remove_stakeholder_role(
         .db_write(move |db| {
             crate::services::accounts::remove_stakeholder_role(
                 db,
-                &app_state.signals.engine,
+                &app_state,
                 &account_id,
                 &person_id,
                 &role,
