@@ -3426,6 +3426,151 @@ mod tests {
         );
     }
 
+    /// Regression test for the "AI overwrites my pinned champion" bug.
+    ///
+    /// Before the fix, `set_team_member_role` deleted EVERY role row for the
+    /// (account, person) pair regardless of provenance. A user dropdown
+    /// swap from Champion → Economic wiped out the AI-surfaced Technical
+    /// role alongside the user's Champion pin. The next enrichment
+    /// re-inserted Champion with `data_source='ai'`, silently erasing the
+    /// human's original intent.
+    ///
+    /// Post-fix behavior: set_team_member_role only touches user-owned
+    /// rows. AI-surfaced rows survive. A subsequent role pin can promote
+    /// an AI row to user ownership via the ON CONFLICT clause.
+    #[test]
+    fn test_set_team_member_role_preserves_ai_owned_roles() {
+        let db = test_db();
+        let account = make_account("acc-rp", "RolePreserve Corp");
+        db.upsert_account(&account).unwrap();
+
+        // Seed a person and a stakeholder link
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES ('p-rp', 'rp@x.com', 'RoleP', '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acc-rp', 'p-rp', 'user')",
+                [],
+            )
+            .unwrap();
+
+        // Seed two existing roles: one user-pinned (champion), one
+        // AI-surfaced (technical). This is the Chris-on-Blackstone shape.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES ('acc-rp', 'p-rp', 'champion', 'user')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES ('acc-rp', 'p-rp', 'technical', 'ai')",
+                [],
+            )
+            .unwrap();
+
+        // User swaps their pinned role from Champion → Economic.
+        db.set_team_member_role("acc-rp", "p-rp", "economic")
+            .expect("set_team_member_role should succeed");
+
+        // AI-surfaced 'technical' row MUST survive the user action.
+        let technical_survived: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-rp' AND person_id = 'p-rp'
+                   AND role = 'technical' AND data_source = 'ai'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            technical_survived, 1,
+            "AI-owned 'technical' role should survive a user role swap"
+        );
+
+        // The old user-pinned 'champion' row should be gone (user chose
+        // to swap) and 'economic' should now be user-owned.
+        let champion_gone: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-rp' AND person_id = 'p-rp' AND role = 'champion'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(champion_gone, 0, "Old user-pinned 'champion' should be cleared by the swap");
+
+        let economic: (i64, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*), COALESCE(MAX(data_source), '')
+                 FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-rp' AND person_id = 'p-rp' AND role = 'economic'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(economic.0, 1, "New 'economic' role should be present");
+        assert_eq!(economic.1, "user", "New 'economic' role should be user-owned");
+    }
+
+    /// When the user re-pins a role that the AI had previously surfaced,
+    /// `set_team_member_role` should flip provenance to 'user' via the
+    /// ON CONFLICT promotion clause rather than error or leave it as 'ai'.
+    #[test]
+    fn test_set_team_member_role_promotes_ai_row_to_user() {
+        let db = test_db();
+        let account = make_account("acc-pr", "Promote Corp");
+        db.upsert_account(&account).unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES ('p-pr', 'pr@x.com', 'PromoteP', '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acc-pr', 'p-pr', 'ai')",
+                [],
+            )
+            .unwrap();
+        // AI had surfaced Chris as Champion; user now explicitly pins Champion.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES ('acc-pr', 'p-pr', 'champion', 'ai')",
+                [],
+            )
+            .unwrap();
+
+        db.set_team_member_role("acc-pr", "p-pr", "champion")
+            .expect("set_team_member_role should succeed");
+
+        let champion: (i64, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*), COALESCE(MAX(data_source), '')
+                 FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-pr' AND person_id = 'p-pr' AND role = 'champion'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(champion.0, 1, "Champion row should still exist");
+        assert_eq!(
+            champion.1, "user",
+            "Re-pinning an AI-surfaced role should promote data_source to 'user'",
+        );
+    }
+
     /// Test account event recording at DB level with signal emission.
     #[test]
     fn test_record_account_event() {

@@ -637,8 +637,21 @@ impl ActionDb {
     }
 
     /// Replace all roles for a team member (single-select role change).
-    /// Deletes existing roles and inserts the new one in a single transaction.
-    /// If new_role is empty, removes all roles (person stays as stakeholder with no role).
+    /// Replace the user's pinned roles with a single new user-owned role.
+    ///
+    /// Semantics: this is the "swap my pinned role" operation. It touches
+    /// ONLY rows where `data_source = 'user'`. AI-surfaced roles
+    /// (`data_source = 'ai' | 'glean' | 'pty_synthesis'`) survive untouched.
+    ///
+    /// The old implementation deleted ALL roles for the person-account
+    /// pair regardless of provenance. That let a single user dropdown
+    /// click wipe out AI-surfaced role rows, and the next enrichment
+    /// would then re-insert Champion/Technical/etc. with `data_source='ai'`,
+    /// silently losing the human's original pin — the primary cause of
+    /// the "AI keeps overwriting my champion" bug the user reported.
+    ///
+    /// `new_role` empty → remove the user's pinned role(s) entirely;
+    /// person stays as stakeholder with any AI-surfaced roles intact.
     pub fn set_team_member_role(
         &self,
         account_id: &str,
@@ -646,17 +659,24 @@ impl ActionDb {
         new_role: &str,
     ) -> Result<(), DbError> {
         let role = new_role.trim().to_lowercase();
-        // Remove all existing roles for this person-account pair
+        // Remove only user-owned roles. AI-surfaced rows are preserved so
+        // a role swap in the UI can't silently drop enrichment-discovered
+        // context.
         self.conn.execute(
-            "DELETE FROM account_stakeholder_roles WHERE account_id = ?1 AND person_id = ?2",
+            "DELETE FROM account_stakeholder_roles
+             WHERE account_id = ?1 AND person_id = ?2 AND data_source = 'user'",
             params![account_id, person_id],
         )?;
-        // Insert the new role (if non-empty)
+        // Insert the new user-owned role. ON CONFLICT promotes an AI row
+        // to user ownership without churning the row (so if the user
+        // pins the same role AI had surfaced, provenance flips cleanly).
         if !role.is_empty() {
             let now = Utc::now().to_rfc3339();
             self.conn.execute(
                 "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
-                 VALUES (?1, ?2, ?3, 'user', ?4)",
+                 VALUES (?1, ?2, ?3, 'user', ?4)
+                 ON CONFLICT(account_id, person_id, role) DO UPDATE SET
+                    data_source = 'user'",
                 params![account_id, person_id, role, now],
             )?;
         }
