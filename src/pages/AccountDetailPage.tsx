@@ -143,7 +143,14 @@ export default function AccountDetailPage() {
           </MarginSection>
         ) : (
           <MarginSection id="needs-attention" label={<>Needs<br/>attention</>}>
-            {showTriage && <TriageSection intelligence={intelligence} gleanSignals={glean} />}
+            {showTriage && (
+              <TriageSection
+                intelligence={intelligence}
+                gleanSignals={glean}
+                entityId={page.accountId}
+                entityType="account"
+              />
+            )}
             {showDivergence && <DivergenceSection findings={findings} gleanSignals={glean} />}
           </MarginSection>
         )}
@@ -186,7 +193,7 @@ export default function AccountDetailPage() {
                 />
               }
             />
-            <SupportingTension intelligence={intelligence} />
+            <SupportingTension intelligence={intelligence} gleanSignals={glean} />
             <AccountHealthSection health={intelligence.health} consistencyFindings={intelligence.consistencyFindings} />
           </MarginSection>
         )}
@@ -212,7 +219,7 @@ export default function AccountDetailPage() {
             title="About this intelligence"
             variant="reference"
           />
-          <AboutIntelligence intelligence={intelligence} fine={isFineState} />
+          <AboutIntelligence intelligence={intelligence} gleanSignals={glean} fine={isFineState} />
         </MarginSection>
 
         {/* Chapter 7: Finis */}

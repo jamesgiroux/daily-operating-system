@@ -8,8 +8,13 @@
  * `status === "complete"` or no job exists it renders nothing — the
  * briefing content itself lives in the reports table and is surfaced
  * elsewhere.
+ *
+ * Styling lives in `RiskBriefingStatus.module.css` (DOS-249 polish): the
+ * prior inline-style block bypassed design tokens. All colours, spacing,
+ * and typography now route through the shared token system.
  */
 import type { RiskBriefingJob } from "@/types";
+import styles from "./RiskBriefingStatus.module.css";
 
 interface RiskBriefingStatusProps {
   job: RiskBriefingJob | null;
@@ -35,34 +40,21 @@ export function RiskBriefingStatus({ job, onRetry }: RiskBriefingStatusProps) {
       role="status"
       aria-live="polite"
       data-risk-briefing-status={job.status}
-      style={{
-        // Minimal inline styling — page CSS governs the editorial look;
-        // this keeps the component usable even if the stylesheet lags.
-        border: "1px solid var(--border-subtle, #d4d4d4)",
-        borderRadius: 6,
-        padding: "0.75rem 1rem",
-        marginBottom: "1rem",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "1rem",
-      }}
+      className={styles.riskBriefingStatus}
     >
       <div>
-        <strong>{labelById[job.status]}</strong>
+        <strong className={styles.riskBriefingStatusLabel}>
+          {labelById[job.status]}
+        </strong>
         {job.status === "failed" && job.errorMessage && (
           <div
-            style={{
-              fontSize: "0.85em",
-              opacity: 0.75,
-              marginTop: "0.25rem",
-            }}
+            className={`${styles.riskBriefingStatusDetail} ${styles.riskBriefingStatusError}`}
           >
             {job.errorMessage}
           </div>
         )}
         {job.status === "running" && (
-          <div style={{ fontSize: "0.85em", opacity: 0.75 }}>
+          <div className={styles.riskBriefingStatusDetail}>
             Started {new Date(job.enqueuedAt).toLocaleTimeString()}
           </div>
         )}
@@ -72,6 +64,7 @@ export function RiskBriefingStatus({ job, onRetry }: RiskBriefingStatusProps) {
           type="button"
           onClick={() => void onRetry()}
           data-action="retry-risk-briefing"
+          className={styles.riskBriefingStatusRetry}
         >
           Retry
         </button>
