@@ -12,7 +12,7 @@
 | Module | Files | Public Fns | Purpose |
 |--------|-------|-----------|---------|
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment (I228). |
-| `commands/` | 10 | 376 | Tauri IPC command handlers |
+| `commands/` | 10 | 378 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
 | `db/` | 22 | 25 | SQLite database modules |
 | `devtools/` | 1 | 11 | Dev tools for scenario switching and mock data. |
@@ -74,9 +74,9 @@
 | `intel_queue.rs` | 2857 | 4 | Background intelligence enrichment queue (I132). |
 | `json_loader.rs` | 615 | 3 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
-| `lib.rs` | 883 | 1 | App setup, command registration, plugin init |
+| `lib.rs` | 886 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 982 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 1691 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 1699 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (I51 / ADR-0047). |

@@ -1,5 +1,13 @@
 use super::*;
 
+/// DOS-31 / DOS-29: Cumulative cap on automatic stale-failed retries. Defined
+/// at the DB layer because `get_email_sync_stats` needs it to compute the
+/// `permanently_failed` subset, but the actual retry call lives in
+/// `services::emails` (which references this same constant). Keeping a single
+/// source of truth means the stats UI and the retry pass agree on which rows
+/// are "permanently" failed.
+pub const STALE_FAILED_MAX_AUTO_RETRIES: i32 = 5;
+
 impl ActionDb {
     // =========================================================================
     // Emails (I368)
@@ -338,6 +346,23 @@ impl ActionDb {
         // "never fetched" state.
         let last_successful_fetch_at = self.get_last_successful_fetch_at()?;
 
+        // DOS-29: subset of `failed` that the system has stopped auto-retrying.
+        // The `failed` count above includes rows still eligible for the next
+        // refresh's stale-recovery promotion (DOS-31) — those don't need
+        // user intervention. `permanently_failed` is what the user-facing
+        // "couldn't be enriched" UX should display + act on.
+        let permanently_failed: i32 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM emails
+                 WHERE resolved_at IS NULL
+                   AND enrichment_state = 'failed'
+                   AND COALESCE(auto_retry_count, 0) >= ?1",
+                params![STALE_FAILED_MAX_AUTO_RETRIES],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to count permanently failed emails: {e}"))?;
+
         Ok(EmailSyncStats {
             last_fetch_at,
             last_successful_fetch_at,
@@ -345,6 +370,7 @@ impl ActionDb {
             enriched,
             pending,
             failed,
+            permanently_failed,
         })
     }
 
@@ -698,18 +724,26 @@ impl ActionDb {
     ///
     /// Returns the number of rows transitioned.
     pub fn mark_failed_for_retry(&self, batch_id: &str) -> Result<usize, String> {
-        let now = Utc::now().to_rfc3339();
-        self.conn
-            .execute(
-                "UPDATE emails
-                 SET enrichment_state = 'pending_retry',
-                     retry_batch_id = ?1,
-                     retry_started_at = ?2,
-                     updated_at = ?2
-                 WHERE enrichment_state = 'failed' AND resolved_at IS NULL",
-                params![batch_id, now],
-            )
-            .map_err(|e| format!("Failed to mark emails for retry: {e}"))
+        // DOS-226: wrap in `with_transaction` so the state flip + batch_id stamp
+        // + started_at stamp commit atomically. Today this is a single UPDATE so
+        // SQLite's implicit transaction is sufficient, but the retry primitive
+        // is the documented seam where future signal emissions / audit rows
+        // attach (Intelligence Loop check). A transaction boundary here means
+        // those additions cannot leave a half-marked batch behind.
+        self.with_transaction(|tx| {
+            let now = Utc::now().to_rfc3339();
+            tx.conn
+                .execute(
+                    "UPDATE emails
+                     SET enrichment_state = 'pending_retry',
+                         retry_batch_id = ?1,
+                         retry_started_at = ?2,
+                         updated_at = ?2
+                     WHERE enrichment_state = 'failed' AND resolved_at IS NULL",
+                    params![batch_id, now],
+                )
+                .map_err(|e| format!("Failed to mark emails for retry: {e}"))
+        })
     }
 
     /// DOS-226 (Codex finding 1): Promote this batch's `pending_retry` rows
@@ -725,21 +759,27 @@ impl ActionDb {
     ///
     /// Returns the number of rows transitioned.
     pub fn finalize_pending_retry_success(&self, batch_id: &str) -> Result<usize, String> {
-        let now = Utc::now().to_rfc3339();
-        self.conn
-            .execute(
-                "UPDATE emails
-                 SET enrichment_state = 'pending',
-                     enrichment_attempts = 0,
-                     retry_batch_id = NULL,
-                     retry_started_at = NULL,
-                     updated_at = ?1
-                 WHERE enrichment_state = 'pending_retry'
-                   AND retry_batch_id = ?2
-                   AND resolved_at IS NULL",
-                params![now, batch_id],
-            )
-            .map_err(|e| format!("Failed to finalize retry (success): {e}"))
+        // DOS-226: transactional so the state flip + attempts reset + batch_id
+        // clear commit together. Splitting these would let a crash mid-finalize
+        // leave a row at state=pending with a stale batch_id pointing at this
+        // refresh — invisible to both the retry and the stale-recovery passes.
+        self.with_transaction(|tx| {
+            let now = Utc::now().to_rfc3339();
+            tx.conn
+                .execute(
+                    "UPDATE emails
+                     SET enrichment_state = 'pending',
+                         enrichment_attempts = 0,
+                         retry_batch_id = NULL,
+                         retry_started_at = NULL,
+                         updated_at = ?1
+                     WHERE enrichment_state = 'pending_retry'
+                       AND retry_batch_id = ?2
+                       AND resolved_at IS NULL",
+                    params![now, batch_id],
+                )
+                .map_err(|e| format!("Failed to finalize retry (success): {e}"))
+        })
     }
 
     /// DOS-226: Roll this batch's `pending_retry` rows back to `failed` after
@@ -750,20 +790,27 @@ impl ActionDb {
     ///
     /// Returns the number of rows transitioned.
     pub fn rollback_pending_retry(&self, batch_id: &str) -> Result<usize, String> {
-        let now = Utc::now().to_rfc3339();
-        self.conn
-            .execute(
-                "UPDATE emails
-                 SET enrichment_state = 'failed',
-                     retry_batch_id = NULL,
-                     retry_started_at = NULL,
-                     updated_at = ?1
-                 WHERE enrichment_state = 'pending_retry'
-                   AND retry_batch_id = ?2
-                   AND resolved_at IS NULL",
-                params![now, batch_id],
-            )
-            .map_err(|e| format!("Failed to roll back retry: {e}"))
+        // DOS-226: transactional rollback. If we're going to surface the
+        // rollback error to the caller (Codex finding 2), the rollback itself
+        // must be atomic — a partial rollback that reports failure would leave
+        // some rows in `failed` and others in `pending_retry`, confusing both
+        // the next retry attempt and the stale-recovery pass.
+        self.with_transaction(|tx| {
+            let now = Utc::now().to_rfc3339();
+            tx.conn
+                .execute(
+                    "UPDATE emails
+                     SET enrichment_state = 'failed',
+                         retry_batch_id = NULL,
+                         retry_started_at = NULL,
+                         updated_at = ?1
+                     WHERE enrichment_state = 'pending_retry'
+                       AND retry_batch_id = ?2
+                       AND resolved_at IS NULL",
+                    params![now, batch_id],
+                )
+                .map_err(|e| format!("Failed to roll back retry: {e}"))
+        })
     }
 
     /// DOS-226 (Codex finding 2): Roll back `pending_retry` rows stranded by
@@ -795,6 +842,149 @@ impl ActionDb {
                 params![now_iso, cutoff_iso],
             )
             .map_err(|e| format!("Failed to roll back stale retries: {e}"))
+    }
+
+    /// DOS-31: Auto-retry stale `failed` emails on every refresh.
+    ///
+    /// The original failure mode: an enrichment error (PTY hiccup, transient
+    /// API failure, classification edge case) bumped a row to `failed` and
+    /// it stayed there forever. The user had to notice the "Retry" notice
+    /// and click it manually for each batch. Failed rows accumulated and
+    /// the inbox always looked partially broken.
+    ///
+    /// New behaviour: on every refresh, any `failed` row that is BOTH
+    /// (a) older than `stale_after_seconds` (measured against
+    ///     `last_enrichment_at`, falling back to `created_at`) and
+    /// (b) under the cumulative `max_auto_retries` cap
+    /// is silently promoted back to `pending` with `enrichment_attempts = 0`
+    /// and `auto_retry_count` incremented. The next enrichment pass picks
+    /// it up automatically — no user action, no UI notice.
+    ///
+    /// Rows at or above the cap stay in `failed` and surface in the
+    /// "couldn't be enriched" UX (DOS-29) where the user decides between
+    /// one more manual retry or skipping permanently.
+    ///
+    /// Staleness is measured against `last_enrichment_at` so we don't
+    /// instantly re-attempt a brand-new failure. `created_at` is the
+    /// fallback for rows that never recorded an enrichment attempt.
+    ///
+    /// Returns the number of rows promoted to `pending`.
+    pub fn auto_retry_stale_failed(
+        &self,
+        stale_after_seconds: i64,
+        max_auto_retries: i32,
+    ) -> Result<usize, String> {
+        self.with_transaction(|tx| {
+            let now = Utc::now();
+            let cutoff = now - chrono::Duration::seconds(stale_after_seconds);
+            let now_iso = now.to_rfc3339();
+            let cutoff_iso = cutoff.to_rfc3339();
+            tx.conn
+                .execute(
+                    "UPDATE emails
+                     SET enrichment_state = 'pending',
+                         enrichment_attempts = 0,
+                         auto_retry_count = COALESCE(auto_retry_count, 0) + 1,
+                         updated_at = ?1
+                     WHERE enrichment_state = 'failed'
+                       AND resolved_at IS NULL
+                       AND COALESCE(auto_retry_count, 0) < ?2
+                       AND COALESCE(last_enrichment_at, created_at) < ?3",
+                    params![now_iso, max_auto_retries, cutoff_iso],
+                )
+                .map_err(|e| format!("Failed to auto-retry stale failed emails: {e}"))
+        })
+    }
+
+    /// DOS-29: Count failed rows that have exhausted automatic retries
+    /// (`auto_retry_count >= cap`). These are the rows the user-facing
+    /// "couldn't be enriched" UX surfaces — rows the system has stopped
+    /// trying to fix on its own. Distinct from the broader failed-count
+    /// which still includes rows eligible for the next refresh's
+    /// auto-retry pass (and shouldn't bother the user yet).
+    pub fn count_permanently_failed_emails(&self, max_auto_retries: i32) -> Result<usize, String> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM emails
+                 WHERE resolved_at IS NULL
+                   AND enrichment_state = 'failed'
+                   AND COALESCE(auto_retry_count, 0) >= ?1",
+                params![max_auto_retries],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|n| n as usize)
+            .map_err(|e| format!("Failed to count permanently failed emails: {e}"))
+    }
+
+    /// DOS-29: Return a small preview of permanently-failed emails so the
+    /// "View details" affordance can show subjects + senders without the
+    /// caller having to fetch the full email list. Capped at `limit` rows.
+    pub fn list_permanently_failed_previews(
+        &self,
+        max_auto_retries: i32,
+        limit: usize,
+    ) -> Result<Vec<FailedEmailPreview>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT email_id, subject, sender_email, sender_name, last_enrichment_at,
+                        COALESCE(auto_retry_count, 0)
+                 FROM emails
+                 WHERE resolved_at IS NULL
+                   AND enrichment_state = 'failed'
+                   AND COALESCE(auto_retry_count, 0) >= ?1
+                 ORDER BY COALESCE(last_enrichment_at, created_at) DESC
+                 LIMIT ?2",
+            )
+            .map_err(|e| format!("Failed to prepare failed-preview query: {e}"))?;
+        let rows = stmt
+            .query_map(params![max_auto_retries, limit as i64], |row| {
+                Ok(FailedEmailPreview {
+                    email_id: row.get(0)?,
+                    subject: row.get(1)?,
+                    sender_email: row.get(2)?,
+                    sender_name: row.get(3)?,
+                    last_enrichment_at: row.get(4)?,
+                    auto_retry_count: row.get(5)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query failed-email previews: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("Failed to read failed-preview row: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    /// DOS-29: User-initiated "Skip" — mark these failed rows resolved so
+    /// they leave the failed-count entirely. The Gmail message stays in
+    /// the inbox; we just stop trying to enrich it and stop surfacing it
+    /// as a failure. Returns rows affected.
+    pub fn skip_failed_emails(&self, email_ids: &[String]) -> Result<usize, String> {
+        if email_ids.is_empty() {
+            return Ok(0);
+        }
+        self.with_transaction(|tx| {
+            let now = Utc::now().to_rfc3339();
+            let placeholders: Vec<String> =
+                (2..=(email_ids.len() + 1)).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "UPDATE emails
+                 SET resolved_at = ?1, updated_at = ?1
+                 WHERE enrichment_state = 'failed'
+                   AND resolved_at IS NULL
+                   AND email_id IN ({})",
+                placeholders.join(", ")
+            );
+            let mut params_vec: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(1 + email_ids.len());
+            params_vec.push(&now);
+            for id in email_ids {
+                params_vec.push(id);
+            }
+            tx.conn
+                .execute(&sql, params_vec.as_slice())
+                .map_err(|e| format!("Failed to skip failed emails: {e}"))
+        })
     }
 
     /// DOS-226 (Codex finding 2): Count rows that are either `failed` or

@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import clsx from "clsx";
 import s from "@/styles/editorial-briefing.module.css";
 import e from "./EmailsPage.module.css";
-import type { EmailBriefingData, EmailSyncStats, EnrichedEmail, TrackedEmailCommitment } from "@/types";
+import type { EmailBriefingData, EmailSyncStats, EnrichedEmail, FailedEmailPreview, TrackedEmailCommitment } from "@/types";
 
 // =============================================================================
 // Self-contained so refreshing-state renders don't bubble to the whole page.
@@ -78,6 +78,12 @@ export default function EmailsPage() {
   const [dismissedSignals, setDismissedSignals] = useState<Set<number>>(new Set());
   const [dismissedQuiet, setDismissedQuiet] = useState<Set<string>>(new Set());
   const [dismissedFailedCount, setDismissedFailedCount] = useState<number | null>(null);
+  // DOS-29: actionable failure UX state. `failurePreviews` populates the
+  // "View details" expansion lazily so we don't pay the IPC round-trip on
+  // every load — only when the user opts in.
+  const [failureDetailsOpen, setFailureDetailsOpen] = useState(false);
+  const [failurePreviews, setFailurePreviews] = useState<FailedEmailPreview[] | null>(null);
+  const [failureActionInFlight, setFailureActionInFlight] = useState(false);
   const [, startTransition] = useTransition();
   const inboxSyncInFlight = useRef(false);
 
@@ -442,19 +448,33 @@ export default function EmailsPage() {
                 {syncStats.enriched}/{syncStats.total} ready
               </span>
             )}
-            {syncStats.failed > 0 && dismissedFailedCount !== syncStats.failed && (
+            {/*
+              DOS-29: Actionable failure UX.
+              We show the user the *permanently-failed* count, not the raw
+              `failed` count. Rows in `failed` that are still under the
+              auto-retry cap will be silently re-attempted on the next
+              refresh (DOS-31) — surfacing those would force the user to
+              respond to a failure the system is already handling.
+              The notice only renders when there's an actual decision to
+              make, and offers three actions:
+              - Retry now: kicks off the rollback-safe retry path (DOS-226)
+              - Skip: marks the rows resolved so they leave the failed count
+              - View details: lazily fetches the per-email preview so the
+                user can see *which* emails are stuck before deciding
+            */}
+            {syncStats.permanentlyFailed > 0
+              && dismissedFailedCount !== syncStats.permanentlyFailed && (
               <span className={e.syncStatusNotice}>
-                Some emails couldn&apos;t be processed
+                {syncStats.permanentlyFailed} email{syncStats.permanentlyFailed === 1 ? "" : "s"}
+                {" "}couldn&apos;t be enriched
                 <button
                   className={e.syncRetryButton}
+                  disabled={failureActionInFlight}
                   onClick={async () => {
-                    // DOS-226: retry is now rollback-safe on the backend —
-                    // if the Gmail refresh fails, rows stay in `failed` and
-                    // this Retry notice reappears on the next stats load.
-                    // Surface the error to the user (instead of only
-                    // logging) and always reload stats so the UI reflects
-                    // the actual post-retry state, whether that's
-                    // "Retry notice cleared" or "still failed, try again".
+                    // DOS-226: retry is rollback-safe on the backend — if
+                    // the Gmail refresh fails, rows stay in `failed` and
+                    // this notice reappears on the next stats load.
+                    setFailureActionInFlight(true);
                     try {
                       const count = await invoke<number>("retry_failed_emails");
                       if (count > 0) {
@@ -467,17 +487,82 @@ export default function EmailsPage() {
                           ? `Retry failed: ${err}`
                           : "Retry failed — emails remain in the failed queue",
                       );
-                      // Reload stats so the Retry notice re-renders with the
-                      // rolled-back state, not the stale in-flight view.
                       loadEmails(true);
+                    } finally {
+                      setFailureActionInFlight(false);
                     }
                   }}
                 >
-                  Retry
+                  Retry now
+                </button>
+                <button
+                  className={e.syncRetryButton}
+                  disabled={failureActionInFlight}
+                  onClick={async () => {
+                    // DOS-29: Skip = mark resolved so they leave the
+                    // failed-count entirely. The Gmail message stays in the
+                    // inbox; we just stop trying to enrich it.
+                    setFailureActionInFlight(true);
+                    try {
+                      const previews = failurePreviews
+                        ?? (await invoke<FailedEmailPreview[]>("list_permanently_failed_emails"));
+                      const ids = previews.map((p) => p.emailId);
+                      if (ids.length === 0) {
+                        setDismissedFailedCount(syncStats.permanentlyFailed);
+                        return;
+                      }
+                      const skipped = await invoke<number>("skip_failed_emails", { emailIds: ids });
+                      toast.success(
+                        skipped === 1
+                          ? "1 email skipped"
+                          : `${skipped} emails skipped`,
+                      );
+                      setFailurePreviews(null);
+                      setFailureDetailsOpen(false);
+                      loadEmails(true);
+                    } catch (err) {
+                      console.error("skip_failed_emails:", err);
+                      toast.error(
+                        typeof err === "string"
+                          ? `Skip failed: ${err}`
+                          : "Couldn't skip — try again",
+                      );
+                    } finally {
+                      setFailureActionInFlight(false);
+                    }
+                  }}
+                >
+                  Skip
+                </button>
+                <button
+                  className={e.syncRetryButton}
+                  disabled={failureActionInFlight}
+                  onClick={async () => {
+                    // DOS-29: lazily load + toggle the per-email preview.
+                    if (failureDetailsOpen) {
+                      setFailureDetailsOpen(false);
+                      return;
+                    }
+                    if (failurePreviews === null) {
+                      try {
+                        const previews = await invoke<FailedEmailPreview[]>(
+                          "list_permanently_failed_emails",
+                        );
+                        setFailurePreviews(previews);
+                      } catch (err) {
+                        console.error("list_permanently_failed_emails:", err);
+                        toast.error("Couldn't load failure details");
+                        return;
+                      }
+                    }
+                    setFailureDetailsOpen(true);
+                  }}
+                >
+                  {failureDetailsOpen ? "Hide details" : "View details"}
                 </button>
                 <button
                   className={e.syncDismissButton}
-                  onClick={() => setDismissedFailedCount(syncStats.failed)}
+                  onClick={() => setDismissedFailedCount(syncStats.permanentlyFailed)}
                   aria-label="Dismiss"
                 >
                   &times;
@@ -492,6 +577,37 @@ export default function EmailsPage() {
               </span>
             )}
           </div>
+        )}
+
+        {/*
+          DOS-29: Per-email "View details" expansion. Renders only after
+          the user clicks View details (preview list is lazy-loaded). Shows
+          subject + sender + last-attempted timestamp so the user can decide
+          whether to retry or skip with context — no enrichment plumbing
+          ("attempts=5/5", "state=failed", "PTY exit 137") leaks through.
+        */}
+        {syncStats
+          && syncStats.permanentlyFailed > 0
+          && dismissedFailedCount !== syncStats.permanentlyFailed
+          && failureDetailsOpen
+          && failurePreviews !== null && (
+          <ul className={e.failureDetailsList}>
+            {failurePreviews.map((p) => (
+              <li key={p.emailId} className={e.failureDetailsRow}>
+                <span className={e.failureDetailsSubject}>
+                  {p.subject || "(no subject)"}
+                </span>
+                <span className={e.failureDetailsSender}>
+                  {p.senderName || p.senderEmail || "unknown sender"}
+                </span>
+                {p.lastEnrichmentAt && (
+                  <span className={e.failureDetailsTimestamp}>
+                    last tried {formatRelativeTime(p.lastEnrichmentAt)}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
