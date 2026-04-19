@@ -77,6 +77,7 @@ import { buildAccountVitals } from "@/components/account/account-detail-utils";
 import { formatShortDate } from "@/lib/utils";
 
 import shared from "@/styles/entity-detail.module.css";
+import healthStyles from "@/components/health/health.module.css";
 import pageStyles from "./AccountDetailPage.module.css";
 
 export default function AccountDetailPage() {
@@ -150,27 +151,15 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        {/* Chapter 4: Outlook — renewal panel + existing rich outlook */}
+        {/* Chapter 4: Outlook — gutter label "Outlook" is the chapter marker,
+            so inside the content column we use a compact mono sub-label
+            ("Outlook: renewal") matching the mockup's .supporting-label,
+            not a 28px h2 that would compete with the gutter. No per-chapter
+            feedback widget: the widget belongs at the card level (if
+            anywhere), not as a standing toolbar on every chapter. */}
         {intelligence && (intelligence.renewalOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
           <MarginSection id="outlook" label="Outlook">
-            <ChapterHeading
-              title="Outlook: renewal"
-              freshness={
-                <ChapterFreshness
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={["Confidence · benchmark · recommended start"]}
-                />
-              }
-              feedbackSlot={
-                page.accountId ? (
-                  <IntelligenceCorrection
-                    entityId={page.accountId}
-                    entityType="account"
-                    field="renewal_outlook"
-                  />
-                ) : null
-              }
-            />
+            <div className={healthStyles.outlookSubLabel}>Outlook: renewal</div>
             <OutlookPanel intelligence={intelligence} />
           </MarginSection>
         ) : null}
