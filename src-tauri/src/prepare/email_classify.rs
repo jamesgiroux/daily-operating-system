@@ -396,23 +396,31 @@ pub fn boost_with_entity_context(
 ///    legitimate 1:1 customer email sent via Salesforce/HubSpot/Outreach
 ///    or Google Groups carries this header. Require corroboration.
 ///
-/// `account_domains` and `person_domains` are lowercase domains pulled from
-/// the `account_domains` table and `person_emails` table respectively.
+/// `account_domains` are lowercase customer domains from `account_domains`
+/// table — domain-level match (any email from a customer's domain is spared).
+/// `person_emails_full` are lowercase EXACT email addresses from
+/// `person_emails` + `people.email`. DOS-248: matching on full address (not
+/// domain) prevents internal-org bulk notifications (e.g.
+/// `no-reply@gainsightapp.com`, `notifications@wordpress.com`) from getting
+/// a free pass just because a colleague's address shares the domain.
 pub fn should_suppress_email(
     sender: &str,
     subject: &str,
     list_unsubscribe: &str,
     account_domains: &HashSet<String>,
-    person_domains: &HashSet<String>,
+    person_emails_full: &HashSet<String>,
 ) -> bool {
     let from_addr = extract_email_address(sender);
     let domain = extract_domain(&from_addr);
 
-    // Customer/known-contact correspondence is never suppressed, even when
-    // the sender uses ESP infrastructure or has an unsubscribe footer.
-    if !domain.is_empty()
-        && (account_domains.contains(&domain) || person_domains.contains(&domain))
-    {
+    // Customer correspondence (domain in account_domains) and known
+    // 1:1 contacts (exact email in person_emails) are never suppressed.
+    // DOS-248: the previous check used domain-only match against
+    // person_emails, which let any noreply@<colleague-domain> through.
+    if !domain.is_empty() && account_domains.contains(&domain) {
+        return false;
+    }
+    if !from_addr.is_empty() && person_emails_full.contains(&from_addr) {
         return false;
     }
 
@@ -430,19 +438,26 @@ pub fn should_suppress_email(
         return true;
     }
 
+    // Rule 2b (DOS-248): noreply local-part is bulk by definition.
+    // Suppress unconditionally — these are never 1:1 correspondence.
+    let local_part = from_addr.split('@').next().unwrap_or("");
+    let local_part_noisy = NOREPLY_LOCAL_PARTS
+        .iter()
+        .any(|pat| local_part.contains(pat));
+    if local_part_noisy {
+        return true;
+    }
+
     // Rule 3 (DOS-247): List-Unsubscribe alone is too broad — modern email
     // including legitimate customer correspondence routinely sets it.
     // Require a second automation marker.
     if !list_unsubscribe.trim().is_empty() {
-        let local_part = from_addr.split('@').next().unwrap_or("");
-        let local_part_noisy = NOREPLY_LOCAL_PARTS
-            .iter()
-            .any(|pat| local_part.contains(pat));
         let sender_lower = sender.to_lowercase();
         let sender_says_newsletter = sender_lower.contains("newsletter")
             || sender_lower.contains("digest")
-            || sender_lower.contains("marketing");
-        if local_part_noisy || sender_says_newsletter {
+            || sender_lower.contains("marketing")
+            || sender_lower.contains("notifications");
+        if sender_says_newsletter {
             return true;
         }
     }
@@ -862,17 +877,70 @@ mod tests {
     }
 
     #[test]
-    fn test_no_suppress_person_domain_bulk_sender_overridden() {
-        // Tracked-person domain protects even bulk-sender domains
-        // (rare, but: a contact at a domain we track shouldn't be suppressed).
+    fn test_no_suppress_person_exact_email_bulk_sender_overridden() {
+        // DOS-248: matching is now exact-email (not domain). A tracked
+        // contact at a bulk-sender domain still gets through.
         let mut persons = HashSet::new();
-        persons.insert("github.com".to_string());
+        persons.insert("alex@github.com".to_string());
         assert!(!should_suppress_email(
             "Alex <alex@github.com>",
             "Re: PR review",
             "",
             &HashSet::new(),
             &persons,
+        ));
+    }
+
+    #[test]
+    fn dos_248_suppress_internal_org_noreply_when_colleague_same_domain() {
+        // Even though a colleague (alice@automattic.com) is tracked,
+        // notifications@automattic.com is NOT spared. Domain-only match
+        // (the pre-DOS-248 behavior) would have let this through.
+        let mut persons = HashSet::new();
+        persons.insert("alice@automattic.com".to_string());
+        assert!(should_suppress_email(
+            "Thursday Updates <noreply@automattic.com>",
+            "[New post] Systems Update",
+            "<https://automattic.com/unsub>",
+            &HashSet::new(),
+            &persons,
+        ));
+    }
+
+    #[test]
+    fn dos_248_suppress_gainsight_noreply() {
+        // Realistic CSP-tool notification — should be suppressed even
+        // though gainsightapp.com isn't on the bulk allow-list.
+        assert!(should_suppress_email(
+            "Gainsight <no-reply@gainsightapp.com>",
+            "Renan Basteris added Activity",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_248_suppress_internal_blog_post_pattern() {
+        // [New post] / [New mention] / [WPVIP] subject patterns should
+        // catch internal-org distribution-list noise.
+        assert!(should_suppress_email(
+            "VIP Accounts Org <notifications@example.org>",
+            "[New post] Customer Contact Lookup",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_248_suppress_registration_confirmation() {
+        assert!(should_suppress_email(
+            "Forrester Events <events@forrester.example>",
+            "Registration Confirmed: B2B Summit North America 2026",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
         ));
     }
 
