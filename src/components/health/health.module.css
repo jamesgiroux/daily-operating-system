@@ -389,6 +389,9 @@
 .dimFill {
   height: 100%;
   border-radius: 2px;
+  /* Data-driven width set by caller via the --dim-fill custom property
+     (e.g. `style={{ "--dim-fill": "72%" }}`). Default to 0 if unset. */
+  width: var(--dim-fill, 0);
 }
 .dimFillGreen { background: var(--color-garden-sage); }
 .dimFillYellow { background: var(--color-spice-turmeric); }
