@@ -144,12 +144,7 @@ export default function AccountDetailPage() {
         ) : (
           <MarginSection id="needs-attention" label={<>Needs<br/>attention</>}>
             {showTriage && (
-              <TriageSection
-                intelligence={intelligence}
-                gleanSignals={glean}
-                entityId={page.accountId}
-                entityType="account"
-              />
+              <TriageSection intelligence={intelligence} gleanSignals={glean} />
             )}
             {showDivergence && <DivergenceSection findings={findings} gleanSignals={glean} />}
           </MarginSection>

@@ -7,18 +7,15 @@
  *     can order by urgency THEN recency and cap at 5.
  *   - Glean cards carry a `Glean` source-tag pill; Local cards carry `Local`.
  *     Cards that triangulate both origins carry both.
- *   - Per-card `IntelligenceCorrection` slot is rendered when `entityId` +
- *     `entityType` are supplied. Field = `triage_item_${id}` so the
- *     Intelligence Loop can attribute feedback per card.
- *
- * Backward-compat note for the layout agent: `entityId` and `entityType` are
- * OPTIONAL. When unset, cards render without the feedback slot (same shape
- * the v1.2.0 callers used). AccountDetailPage should pass them in a follow-
- * up commit.
  *
  * `hasTriageContent()` is the public gate the caller uses to decide between
  * the triage chapter and the "On track" fine state. It must return true for
  * any card that would render — Local or Glean.
+ *
+ * No per-card feedback widget: the canonical mockup does not include one on
+ * triage cards, and the previous IntelligenceCorrection slot widened the
+ * action column enough to compress the card body. Feedback for Intelligence
+ * Loop training lives at the chapter-heading level (see OutlookPanel).
  */
 import type { ReactNode } from "react";
 import type {
@@ -27,7 +24,6 @@ import type {
   IntelRisk,
   IntelWin,
 } from "@/types";
-import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import {
   TriageCard,
   type TriageAction,
@@ -102,6 +98,28 @@ const BUCKET_ORDER: Record<TriageBucket, number> = {
 // Local card builders
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Split a free-text paragraph into a short headline (first sentence) and
+ * evidence (remainder). The AI enrichment emits a single `text` field for
+ * each risk/win that's often a multi-sentence paragraph. The mockup's card
+ * layout expects a punchy 21px serif headline on one line plus separate
+ * sans-serif evidence below — stuffing the full paragraph into the headline
+ * slot reads as a wall of text.
+ *
+ * Splits on the first sentence-ending `.`, `!`, or `?` followed by whitespace.
+ * Falls back to treating the whole string as the headline when no split
+ * point exists.
+ */
+function splitHeadlineEvidence(text: string): { headline: string; evidence?: string } {
+  const trimmed = text.trim();
+  if (!trimmed) return { headline: "" };
+  const match = trimmed.match(/^(.+?[.!?])(\s+)(.+)$/s);
+  if (!match) return { headline: trimmed };
+  const headline = match[1].trim();
+  const evidence = match[3].trim();
+  return { headline, evidence: evidence.length > 0 ? evidence : undefined };
+}
+
 function localRiskCandidate(risk: IntelRisk, i: number): TriageCandidate {
   const label = risk.source ?? risk.itemSource?.source ?? undefined;
   const sourcedAt = risk.itemSource?.sourcedAt ?? "";
@@ -111,13 +129,15 @@ function localRiskCandidate(risk: IntelRisk, i: number): TriageCandidate {
       label: risk.itemSource?.reference ? `${label} · ${risk.itemSource.reference}` : label,
     });
   }
+  const { headline, evidence } = splitHeadlineEvidence(risk.text);
   return {
     id: `local-risk-${i}`,
     bucket: bucketFromUrgency(risk.urgency),
     source: "local",
     sourcedAt,
     kind: kindFromUrgency(risk.urgency),
-    headline: risk.text,
+    headline,
+    evidence,
     sources: [{ origin: "local", label: undefined }],
     citations,
   };
@@ -127,14 +147,18 @@ function localWinCandidate(win: IntelWin, i: number): TriageCandidate {
   const label = win.source ?? win.itemSource?.source ?? undefined;
   const citations: TriageCitation[] = [];
   if (label) citations.push({ label });
+  const { headline, evidence: splitEvidence } = splitHeadlineEvidence(win.text);
+  // Prefer the AI-emitted `impact` field when present; otherwise use the
+  // split remainder. Concatenating both would produce duplicated detail.
+  const evidence = win.impact ?? splitEvidence;
   return {
     id: `local-win-${i}`,
     bucket: "stakeholder",
     source: "local",
     sourcedAt: win.itemSource?.sourcedAt ?? "",
     kind: "Recent win · momentum",
-    headline: win.text,
-    evidence: win.impact ?? undefined,
+    headline,
+    evidence,
     sources: [{ origin: "local" }],
     citations,
   };
@@ -488,14 +512,6 @@ function defaultActionsFor(candidate: TriageCandidate): TriageAction[] {
 interface TriageSectionProps {
   intelligence: EntityIntelligence | null;
   gleanSignals: HealthOutlookSignals | null;
-  /**
-   * Entity receiving per-card feedback. When both `entityId` and `entityType`
-   * are set, each card renders an `IntelligenceCorrection` prompt keyed on
-   * `triage_item_<id>`. OPTIONAL for backward compatibility — callers that
-   * don't pass these get the same card layout without the feedback slot.
-   */
-  entityId?: string;
-  entityType?: "account";
   /** Hard cap on rendered cards. Defaults to 5 per the DOS-249 spec. */
   maxCards?: number;
 }
@@ -503,8 +519,6 @@ interface TriageSectionProps {
 export function TriageSection({
   intelligence,
   gleanSignals,
-  entityId,
-  entityType,
   maxCards = MAX_CARDS,
 }: TriageSectionProps) {
   const allCandidates = buildAllCandidates(intelligence, gleanSignals);
@@ -538,16 +552,6 @@ export function TriageSection({
             sources={c.sources}
             citations={c.citations}
             actions={defaultActionsFor(c)}
-            feedbackSlot={
-              entityId && entityType ? (
-                <IntelligenceCorrection
-                  entityId={entityId}
-                  entityType={entityType}
-                  field={`triage_item_${c.id}`}
-                  prompt="Useful?"
-                />
-              ) : undefined
-            }
           />
         ))}
       </div>

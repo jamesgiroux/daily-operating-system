@@ -305,35 +305,23 @@ describe("TriageSection — DOS-249 cap + ranking + feedback slot", () => {
     expect(screen.getAllByText("Local").length).toBeGreaterThan(0);
   });
 
-  it("renders IntelligenceCorrection slot per card when entityId + entityType are supplied", () => {
+  it("splits a paragraph risk.text into headline + evidence rather than dumping the full string into the headline", () => {
     const intel = emptyIntelligence({
       risks: [
-        { text: "Risk alpha", urgency: "high" },
-        { text: "Risk beta", urgency: "medium" },
+        {
+          text: "Champion James has disengaged from architecture discussions. Jorge has dominated the last three strategy sessions and is pushing a headless-first narrative that diverges from our expansion plan.",
+          urgency: "high",
+        },
       ],
     });
-
-    render(
-      <TriageSection
-        intelligence={intel}
-        gleanSignals={null}
-        entityId="acct-123"
-        entityType="account"
-      />,
-    );
-    // One "Useful?" prompt per card.
-    const prompts = screen.getAllByText(/Useful\?/i);
-    expect(prompts.length).toBe(2);
-  });
-
-  it("omits feedback slot when entityId/entityType are missing (backward compat)", () => {
-    const intel = emptyIntelligence({
-      risks: [{ text: "Risk gamma", urgency: "high" }],
-    });
-
     render(<TriageSection intelligence={intel} gleanSignals={null} />);
-    expect(screen.queryByText(/Useful\?/i)).toBeNull();
-    // But the card still rendered.
-    expect(screen.getByText(/Risk gamma/i)).toBeInTheDocument();
+    // Headline is only the first sentence, visible as a heading element.
+    expect(
+      screen.getByText("Champion James has disengaged from architecture discussions."),
+    ).toBeInTheDocument();
+    // Evidence remainder is also rendered, separately from the headline.
+    expect(
+      screen.getByText(/Jorge has dominated the last three strategy sessions/i),
+    ).toBeInTheDocument();
   });
 });
