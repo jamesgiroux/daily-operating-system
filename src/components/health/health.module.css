@@ -7,35 +7,56 @@
  * Uses existing design tokens from design-tokens.css; no new tokens.
  */
 
-/* ═════════ TRIAGE HEADER ═════════ */
-.triageHeader {
+/* ═════════ BLOCK HEADER ═════════
+   Shared editorial block header — rule + serif title row + right-aligned
+   mono count. Used by both the Needs attention triage block and the
+   Divergences block (design-system parity: same weight, same treatment,
+   colour varies by tone). */
+.blockHeader {
   padding-top: var(--space-4xl, 72px);
   padding-bottom: var(--space-xl, 32px);
 }
-.triageRule {
+.blockHeaderRule {
   border: none;
   border-top: 1px solid var(--color-rule-heavy);
   margin-bottom: var(--space-lg, 24px);
 }
-.triageTitleRow {
+.blockHeaderTitleRow {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-md, 16px);
 }
-.triageTitle {
+.blockHeaderTitle {
   font-family: var(--font-serif);
   font-size: 28px;
   font-weight: 400;
   color: var(--color-text-primary);
   letter-spacing: -0.01em;
 }
-.triageCount {
+.blockHeaderCount {
   font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+.blockHeaderCountTerracotta {
   color: var(--color-spice-terracotta);
+}
+.blockHeaderCountSaffron {
+  color: var(--color-spice-saffron);
+}
+/* Optional italic sub-note rendered below the title row, used for
+   divergence-style blocks where the block's intent benefits from an
+   editorial explainer. */
+.blockHeaderNote {
+  margin-top: var(--space-sm, 8px);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
+  max-width: 620px;
 }
 
 /* ═════════ TRIAGE CARD ═════════ */
@@ -102,7 +123,7 @@
   align-items: center;
 }
 .sourceTagLocal {
-  background: rgba(30, 37, 48, 0.04);
+  background: var(--color-desk-charcoal-4);
   color: var(--color-text-secondary);
   padding: 2px 6px;
   border-radius: 3px;
@@ -112,7 +133,7 @@
   letter-spacing: 0.08em;
 }
 .sourceTagGlean {
-  background: rgba(201, 162, 39, 0.12);
+  background: var(--color-spice-turmeric-12);
   color: var(--color-spice-turmeric);
   padding: 2px 6px;
   border-radius: 3px;
@@ -120,6 +141,14 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+/* Source-origin tag + label cluster — mockup renders the pill and the
+   dated label inline with a small gap. Uses a flow utility rather than
+   inline styles so TriageCard stays CSS-module-only. */
+.sourceTagCluster {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm, 8px);
 }
 
 /* Dated citation link rendered beside source tags (mockup convention). */
@@ -200,31 +229,11 @@
   color: var(--color-text-tertiary);
 }
 
-/* ═════════ DIVERGENCE SUB-HEADER ═════════ */
-.divergenceHeader {
-  padding-top: var(--space-2xl, 48px);
-  padding-bottom: var(--space-md, 16px);
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-md, 16px);
-  border-top: 1px solid var(--color-rule-heavy);
-  margin-top: var(--space-2xl, 48px);
-  flex-wrap: wrap;
-}
-.divergenceLabel {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--color-spice-saffron);
-  font-weight: 600;
-}
-.divergenceNote {
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-style: italic;
-  color: var(--color-text-tertiary);
-}
+/* Divergence sub-header now uses the shared .blockHeader / .blockHeaderRule /
+   .blockHeaderTitle / .blockHeaderCount (with .blockHeaderCountSaffron) +
+   .blockHeaderNote classes — design-system parity with "Needs attention".
+   The old .divergenceHeader / .divergenceLabel / .divergenceNote rules were
+   removed so the two sections can't drift apart. */
 
 /* ═════════ OUTLOOK GRID ═════════ */
 .outlookGrid {

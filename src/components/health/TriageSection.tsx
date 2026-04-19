@@ -27,7 +27,6 @@ import type {
   IntelRisk,
   IntelWin,
 } from "@/types";
-import { ChapterFreshness } from "@/components/editorial/ChapterFreshness";
 import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import {
   TriageCard,
@@ -515,11 +514,11 @@ export function TriageSection({
 
   return (
     <>
-      <section className={styles.triageHeader}>
-        <hr className={styles.triageRule} />
-        <div className={styles.triageTitleRow}>
-          <h2 className={styles.triageTitle}>Needs attention</h2>
-          <span className={styles.triageCount}>
+      <section className={styles.blockHeader}>
+        <hr className={styles.blockHeaderRule} />
+        <div className={styles.blockHeaderTitleRow}>
+          <h2 className={styles.blockHeaderTitle}>Needs attention</h2>
+          <span className={`${styles.blockHeaderCount} ${styles.blockHeaderCountTerracotta}`}>
             {ranked.length} item{ranked.length === 1 ? "" : "s"}
             {allCandidates.length > ranked.length
               ? ` · showing top ${ranked.length} of ${allCandidates.length}`
@@ -527,10 +526,6 @@ export function TriageSection({
             {" · scan 60s"}
           </span>
         </div>
-        <ChapterFreshness
-          enrichedAt={intelligence?.enrichedAt}
-          fragments={[gleanSignals ? "Glean + local signals" : "Local signals"]}
-        />
       </section>
       <div>
         {ranked.map((c) => (

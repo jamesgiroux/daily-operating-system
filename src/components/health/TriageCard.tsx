@@ -95,10 +95,7 @@ export function TriageCard({
         {hasSources ? (
           <div className={styles.triageSources}>
             {sources?.map((s, i) => (
-              <span
-                key={`src-${i}`}
-                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              >
+              <span key={`src-${i}`} className={styles.sourceTagCluster}>
                 <span
                   className={s.origin === "glean" ? styles.sourceTagGlean : styles.sourceTagLocal}
                 >
