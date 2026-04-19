@@ -122,6 +122,22 @@ pub async fn unarchive_email(
     Ok(())
 }
 
+/// DOS-242: rescue an email previously suppressed by the noise filter.
+/// Clears `is_noise = 0`, causing the email to surface in inbox/Records again.
+/// Emits `emails-updated` so all pages refresh.
+#[tauri::command]
+pub async fn unsuppress_email(
+    email_id: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| crate::services::emails::unsuppress_email(db, &email_id))
+        .await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(())
+}
+
 /// Toggle pin on an email. Returns the new pinned state (true = pinned).
 #[tauri::command]
 pub async fn pin_email(

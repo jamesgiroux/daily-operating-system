@@ -69,6 +69,7 @@ fn sample_email(id: &str, thread_id: &str, subject: &str) -> DbEmail {
         pinned_at: None,
         commitments: None,
         questions: None,
+        is_noise: false,
     }
 }
 

@@ -587,6 +587,11 @@ pub struct DbEmail {
     pub commitments: Option<String>,
     /// JSON array of extracted questions (I580).
     pub questions: Option<String>,
+    /// DOS-242: when true, hide this email from inbox / Records / signal
+    /// emission. Set during upsert by `should_suppress_email`. Flip back
+    /// to false via `unsuppress_email` rescue command.
+    #[serde(default)]
+    pub is_noise: bool,
 }
 
 /// Email sync statistics for the frontend sync status indicator (I373).

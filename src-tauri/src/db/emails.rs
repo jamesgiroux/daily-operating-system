@@ -16,10 +16,10 @@ impl ActionDb {
                     priority, is_unread, received_at, enrichment_state, enrichment_attempts,
                     last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
                     contextual_summary, sentiment, urgency, user_is_last_sender,
-                    last_sender_email, message_count, created_at, updated_at
+                    last_sender_email, message_count, created_at, updated_at, is_noise
                  ) VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                    ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25
+                    ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
                  )
                  ON CONFLICT(email_id) DO UPDATE SET
                     thread_id = excluded.thread_id,
@@ -34,7 +34,10 @@ impl ActionDb {
                     user_is_last_sender = excluded.user_is_last_sender,
                     last_sender_email = excluded.last_sender_email,
                     message_count = excluded.message_count,
-                    updated_at = excluded.updated_at",
+                    updated_at = excluded.updated_at,
+                    -- DOS-242: never silently re-noise an email the user has rescued.
+                    -- Once is_noise is cleared (via unsuppress_email), keep it cleared.
+                    is_noise = MIN(emails.is_noise, excluded.is_noise)",
                 params![
                     email.email_id,
                     email.thread_id,
@@ -61,9 +64,24 @@ impl ActionDb {
                     email.message_count,
                     now,
                     now,
+                    email.is_noise as i32,
                 ],
             )
             .map_err(|e| format!("Failed to upsert email {}: {e}", email.email_id))?;
+        Ok(())
+    }
+
+    /// DOS-242 rescue: clear the noise flag on an email so it surfaces again in
+    /// inbox / Records. Used by the user-facing "this isn't noise" affordance
+    /// (DOS-41 will wire the UI). Idempotent.
+    pub fn unsuppress_email(&self, email_id: &str) -> Result<(), String> {
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE emails SET is_noise = 0, updated_at = ?1 WHERE email_id = ?2",
+                params![now, email_id],
+            )
+            .map_err(|e| format!("Failed to unsuppress email {email_id}: {e}"))?;
         Ok(())
     }
 
@@ -128,10 +146,11 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions
+                        pinned_at, commitments, questions, is_noise
                  FROM emails
                  WHERE enrichment_state IN ('pending', 'pending_retry', 'failed')
                    AND enrichment_attempts < 3
+                   AND is_noise = 0
                  ORDER BY created_at
                  LIMIT ?1",
             )
@@ -195,9 +214,10 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions
+                        pinned_at, commitments, questions, is_noise
                  FROM emails
                  WHERE resolved_at IS NULL
+                   AND is_noise = 0
                  ORDER BY received_at DESC",
             )
             .map_err(|e| format!("Failed to prepare active emails query: {e}"))?;
@@ -224,9 +244,9 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions
+                        pinned_at, commitments, questions, is_noise
                  FROM emails
-                 WHERE entity_id = ?1 AND resolved_at IS NULL
+                 WHERE entity_id = ?1 AND resolved_at IS NULL AND is_noise = 0
                  ORDER BY received_at DESC",
             )
             .map_err(|e| format!("Failed to prepare entity emails query: {e}"))?;
@@ -266,10 +286,12 @@ impl ActionDb {
             .query_row("SELECT MAX(last_seen_at) FROM emails", [], |row| row.get(0))
             .map_err(|e| format!("Failed to query last fetch time: {e}"))?;
 
+        // DOS-242: noise emails are hidden from inbox/Records — counts must
+        // reflect what the user sees, not the raw fetch volume.
         let total: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM emails WHERE resolved_at IS NULL",
+                "SELECT COUNT(*) FROM emails WHERE resolved_at IS NULL AND is_noise = 0",
                 [],
                 |row| row.get(0),
             )
@@ -278,7 +300,7 @@ impl ActionDb {
         let enriched: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM emails WHERE resolved_at IS NULL AND enrichment_state = 'enriched'",
+                "SELECT COUNT(*) FROM emails WHERE resolved_at IS NULL AND is_noise = 0 AND enrichment_state = 'enriched'",
                 [],
                 |row| row.get(0),
             )
@@ -287,7 +309,7 @@ impl ActionDb {
         let pending: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM emails WHERE resolved_at IS NULL AND enrichment_state IN ('pending', 'enriching')",
+                "SELECT COUNT(*) FROM emails WHERE resolved_at IS NULL AND is_noise = 0 AND enrichment_state IN ('pending', 'enriching')",
                 [],
                 |row| row.get(0),
             )
@@ -302,7 +324,7 @@ impl ActionDb {
         let failed: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM emails WHERE resolved_at IS NULL AND enrichment_state IN ('failed', 'pending_retry')",
+                "SELECT COUNT(*) FROM emails WHERE resolved_at IS NULL AND is_noise = 0 AND enrichment_state IN ('failed', 'pending_retry')",
                 [],
                 |row| row.get(0),
             )
@@ -609,9 +631,10 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions
+                        pinned_at, commitments, questions, is_noise
                  FROM emails
                  WHERE resolved_at IS NULL
+                   AND is_noise = 0
                    AND relevance_score >= ?1
                  ORDER BY relevance_score DESC
                  LIMIT ?2",
@@ -641,10 +664,11 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions
+                        pinned_at, commitments, questions, is_noise
                  FROM emails
                  WHERE user_is_last_sender = 0
                    AND resolved_at IS NULL
+                   AND is_noise = 0
                  ORDER BY received_at DESC",
             )
             .map_err(|e| format!("Failed to prepare awaiting reply query: {e}"))?;
@@ -851,7 +875,7 @@ pub struct EmailEnrichmentUpdate<'a> {
     pub urgency: Option<&'a str>,
 }
 
-/// Row mapper for emails SELECT queries (30 columns).
+/// Row mapper for emails SELECT queries (31 columns).
 fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
     Ok(DbEmail {
         email_id: row.get(0)?,
@@ -884,5 +908,7 @@ fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
         pinned_at: row.get(27).ok(),
         commitments: row.get(28).ok(),
         questions: row.get(29).ok(),
+        // DOS-242: column added by migration 092. Default false on legacy rows.
+        is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
     })
 }

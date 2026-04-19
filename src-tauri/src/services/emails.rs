@@ -633,6 +633,7 @@ pub fn detect_gone_quiet_accounts(
                 "SELECT received_at, sender_name, sender_email
                  FROM emails
                  WHERE entity_id = ?1 AND entity_type = 'account'
+                   AND is_noise = 0
                  ORDER BY datetime(received_at) DESC, datetime(created_at) DESC
                  LIMIT 1",
                 rusqlite::params![entity_id],
@@ -866,8 +867,8 @@ pub fn get_entity_emails(
                             contextual_summary, sentiment, urgency, user_is_last_sender,
                             last_sender_email, message_count, created_at, updated_at,
                             relevance_score, score_reason,
-                            pinned_at, commitments, questions
-                     FROM emails WHERE sender_email = ?1 AND resolved_at IS NULL ORDER BY received_at DESC",
+                            pinned_at, commitments, questions, is_noise
+                     FROM emails WHERE sender_email = ?1 AND resolved_at IS NULL AND is_noise = 0 ORDER BY received_at DESC",
                 )
                 .map_err(|e| format!("query error: {e}"))?;
             let rows = stmt
@@ -903,6 +904,7 @@ pub fn get_entity_emails(
                         pinned_at: row.get(27).ok(),
                         commitments: row.get(28).ok(),
                         questions: row.get(29).ok(),
+                        is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -940,8 +942,8 @@ pub fn get_entity_emails(
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                            pinned_at, commitments, questions
-                 FROM emails WHERE sender_email IN ({}) AND resolved_at IS NULL ORDER BY received_at DESC",
+                            pinned_at, commitments, questions, is_noise
+                 FROM emails WHERE sender_email IN ({}) AND resolved_at IS NULL AND is_noise = 0 ORDER BY received_at DESC",
                 placeholders.join(",")
             );
             let mut stmt = db
@@ -985,6 +987,7 @@ pub fn get_entity_emails(
                         pinned_at: row.get(27).ok(),
                         commitments: row.get(28).ok(),
                         questions: row.get(29).ok(),
+                        is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -1163,6 +1166,13 @@ async fn unarchive_emails_in_gmail(
     }
 
     Ok(())
+}
+
+/// DOS-242 rescue: clear `is_noise` on an email so it surfaces again in inbox
+/// and Records. Used by the "this isn't noise" affordance (DOS-41 wires UI).
+/// All mutations go through services per CLAUDE.md.
+pub fn unsuppress_email(db: &crate::db::ActionDb, email_id: &str) -> Result<(), String> {
+    db.unsuppress_email(email_id)
 }
 
 /// Toggle pin on an email. Returns the new pinned state.

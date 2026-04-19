@@ -180,11 +180,14 @@ pub fn emit_enriched_email_signals(
 ) -> usize {
     // Get enriched emails with resolved entities
     let mut stmt = match db.conn_ref().prepare(
+        // DOS-242: noise emails (LinkedIn/Slack/etc.) must not emit entity
+        // signals — they were never user-meaningful correspondence.
         "SELECT email_id, entity_id, entity_type, sentiment, urgency, subject, sender_email
          FROM emails
          WHERE enrichment_state = 'enriched'
            AND entity_id IS NOT NULL
            AND entity_type IS NOT NULL
+           AND is_noise = 0
            AND last_enrichment_at >= datetime('now', '-1 hour')
          ORDER BY last_enrichment_at DESC
          LIMIT 50",

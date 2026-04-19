@@ -12,7 +12,7 @@
 | Module | Files | Public Fns | Purpose |
 |--------|-------|-----------|---------|
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment (I228). |
-| `commands/` | 10 | 375 | Tauri IPC command handlers |
+| `commands/` | 10 | 376 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
 | `db/` | 22 | 25 | SQLite database modules |
 | `devtools/` | 1 | 11 | Dev tools for scenario switching and mock data. |
@@ -27,7 +27,7 @@
 | `mcp/` | 1 | 0 | — |
 | `migrations/` | 0 | 0 | SQL schema migrations |
 | `oauth/` | 1 | 11 | Shared OAuth2 primitives used by Google and Glean consent flows. |
-| `prepare/` | 9 | 23 | Phase 1 preparation operations (ADR-0049: Eliminate Python runtime). |
+| `prepare/` | 9 | 24 | Phase 1 preparation operations (ADR-0049: Eliminate Python runtime). |
 | `presets/` | 4 | 6 | — |
 | `proactive/` | 4 | 12 | Proactive surfacing engine (I260). |
 | `processor/` | 11 | 35 | Inbox file processing pipeline. |
@@ -35,7 +35,7 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0 (I397). |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (I406–I410). |
-| `services/` | 22 | 261 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 22 | 262 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 20 | 53 | Universal signal bus for intelligence fusion (I306 / ADR-0080 Phase 2). |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
@@ -55,7 +55,7 @@
 0 | Legacy monolith command handler (being decomposed) |
 | `connectivity.rs` | 151 | 3 | I428: Connectivity tracking and sync freshness. |
 | `db_backup.rs` | 551 | 8 | SQLite backup and rebuild-from-filesystem (I76 / ADR-0048) |
-| `db_service.rs` | 143 | 0
+| `db_service.rs` | 514 | 0
 0 | Async database service using tokio-rusqlite. |
 | `demo.rs` | 994 | 6 | Production demo data for first-run experience (I56). |
 | `embeddings.rs` | 315 | 3 | Local semantic search (nomic-embed-text) |
@@ -74,9 +74,9 @@
 | `intel_queue.rs` | 2857 | 4 | Background intelligence enrichment queue (I132). |
 | `json_loader.rs` | 615 | 3 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
-| `lib.rs` | 882 | 1 | App setup, command registration, plugin init |
+| `lib.rs` | 883 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 982 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 1686 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 1691 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (I51 / ADR-0047). |
