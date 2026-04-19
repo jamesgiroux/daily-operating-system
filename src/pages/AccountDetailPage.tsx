@@ -695,6 +695,12 @@ export default function AccountDetailPage() {
     const hasRecentlyLanded = recentlyLanded.length > 0;
     const hasReports = reports.length > 0;
     const hasNudges = nudges.length > 0;
+    // Shared chapter is gated on structured tracker provenance (DOS-75, v1.2.2).
+    // Forward-compatible — checks for a trackerLink field on any commitment.
+    // Evaluates to false in v1.2.1 since the backend doesn't emit the field yet.
+    const hasSharedData = openCommitments.some(
+      (c) => !!(c as { trackerLink?: { href?: string } }).trackerLink?.href,
+    );
 
     return (
       <>
@@ -792,22 +798,31 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        {/* Chapter 5: Shared with the team — tracker integrations land in v1.2.2 (DOS-75) */}
-        <MarginSection id="shared" label={<>Shared<br/>with<br/>team</>}>
-          <ChapterHeading
-            title="Shared with the team"
-            freshness={
-              <ChapterFreshness
-                enrichedAt={intelligence?.enrichedAt}
-                fragments={["Tracker integrations arrive in v1.2.2"]}
-              />
-            }
-          />
-          <EditorialEmpty
-            title="Nothing is shared to a tracker yet."
-            message="Tracker integrations (Linear, Salesforce, Slack) land in v1.2.2 — DOS-75. Once wired, commitments with a real external link will appear here, with live writeback status."
-          />
-        </MarginSection>
+        {/*
+          Chapter 5: Shared with the team — honest degradation (Wave 0g
+          Finding 2). The chapter (and its nav-island pill) are suppressed
+          entirely until real tracker provenance exists. A commitment is
+          "shared" only when it carries a structured trackerLink payload
+          (system + externalId + href), which lands in v1.2.2 / DOS-75.
+          Rendering an always-empty chapter put a dead pill in the IA.
+        */}
+        {hasSharedData && (
+          <MarginSection id="shared" label={<>Shared<br/>with<br/>team</>}>
+            <ChapterHeading
+              title="Shared with the team"
+              freshness={
+                <ChapterFreshness
+                  enrichedAt={intelligence?.enrichedAt}
+                  fragments={["Tracker writeback · live status"]}
+                />
+              }
+            />
+            <EditorialEmpty
+              title="Nothing is shared to a tracker yet."
+              message="Commitments with a real external link appear here once a tracker is wired."
+            />
+          </MarginSection>
+        )}
 
         {/* Chapter 6: Recently landed — 30-day completion tail */}
         {hasRecentlyLanded && (
