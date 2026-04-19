@@ -76,7 +76,7 @@
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
 | `lib.rs` | 886 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 984 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 1706 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 1722 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (I51 / ADR-0047). |
