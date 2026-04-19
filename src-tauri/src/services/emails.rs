@@ -2054,6 +2054,179 @@ mod tests {
         assert_eq!(snapshots["email_3"].subject, Some("Subject 3".to_string()));
     }
 
+    /// DOS-229 — thread-collapse swap reproducer.
+    ///
+    /// Repro for the user-visible "I changed the customer on this email and on
+    /// next reload it reverted" symptom. The WAL-snapshot hypothesis was
+    /// disproven on `dev` (commit 10b7c143). This test demonstrates the real
+    /// shape: `update_email_entity` writes correctly, but the inbox view is
+    /// thread-collapsed via `collapse_to_latest_thread_emails`, which keeps
+    /// the most recently received message per `thread_id`. When a newer
+    /// message arrives in the same thread (or already exists), its
+    /// auto-classified `entity_id` is what the user sees — not the user's
+    /// edit on the older message.
+    ///
+    /// This test FAILS today: it shows the bug. The fix is for
+    /// `update_email_entity` to either (a) propagate the entity to all rows
+    /// in the thread, or for collapse to prefer rows whose entity_id was
+    /// last touched by a user_correction.
+    #[test]
+    #[ignore = "DOS-229: failing repro — un-ignore when thread-cascade fix lands"]
+    fn dos_229_thread_collapse_reverts_user_entity_edit() {
+        use std::path::PathBuf;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path: PathBuf = dir.path().join("dos229_thread.db");
+        let db = crate::db::ActionDb::open_at_unencrypted(path).expect("open db");
+
+        // Two messages in the same thread. Email B is newer (received later).
+        // Both were auto-classified to acc-old at insertion time.
+        let now = chrono::Utc::now();
+        let earlier = (now - chrono::Duration::minutes(10)).to_rfc3339();
+        let later = now.to_rfc3339();
+
+        let mk = |id: &str, received: &str| crate::db::DbEmail {
+            email_id: id.to_string(),
+            thread_id: Some("thread-shared".to_string()),
+            sender_email: Some("sender@example.com".to_string()),
+            sender_name: Some("Sender".to_string()),
+            subject: Some("Re: Renewal".to_string()),
+            snippet: Some("snip".to_string()),
+            priority: Some("medium".to_string()),
+            is_unread: true,
+            received_at: Some(received.to_string()),
+            enrichment_state: "enriched".to_string(),
+            enrichment_attempts: 1,
+            last_enrichment_at: Some(received.to_string()),
+            enriched_at: Some(received.to_string()),
+            last_seen_at: Some(received.to_string()),
+            resolved_at: None,
+            entity_id: Some("acc-old".to_string()),
+            entity_type: Some("account".to_string()),
+            contextual_summary: Some("ctx".to_string()),
+            sentiment: None,
+            urgency: None,
+            user_is_last_sender: false,
+            last_sender_email: Some("sender@example.com".to_string()),
+            message_count: 1,
+            created_at: received.to_string(),
+            updated_at: received.to_string(),
+            relevance_score: Some(0.5),
+            score_reason: None,
+            pinned_at: None,
+            commitments: None,
+            questions: None,
+            is_noise: false,
+        };
+
+        db.upsert_email(&mk("em-A-older", &earlier)).expect("upsert A");
+        db.upsert_email(&mk("em-B-newer", &later)).expect("upsert B");
+
+        // The inbox renders the LATER row (B) under thread collapse.
+        // Suppose the user clicks the chip on what they see and reassigns it
+        // to acc-new. The chip passes the visible row's email_id, which is B.
+        db.update_email_entity("em-B-newer", Some("acc-new"), Some("account"))
+            .expect("update entity on visible row");
+
+        // Now simulate a silent refresh: a brand-new message C arrives in the
+        // SAME thread (Gmail poll). It carries the auto-classifier's entity_id
+        // (acc-old), and it is the newest received_at.
+        let even_later = (now + chrono::Duration::minutes(5)).to_rfc3339();
+        db.upsert_email(&mk("em-C-newest", &even_later))
+            .expect("upsert C from poll");
+
+        // Re-render the inbox.
+        let all_rows = db.get_all_active_emails().expect("get all");
+        let collapsed = collapse_to_latest_thread_emails(&all_rows);
+
+        // Bug: C wins thread collapse, so the user sees acc-old again.
+        // The user's correction on B is hidden, looking like a revert.
+        assert_eq!(collapsed.len(), 1, "thread collapses to one row");
+        assert_eq!(
+            collapsed[0].entity_id.as_deref(),
+            Some("acc-new"),
+            "DOS-229: user's edit on the visible row should survive a poll \
+             that adds a newer message to the same thread, but currently the \
+             newest row's auto-classified entity_id is what renders"
+        );
+    }
+
+    /// DOS-229 — companion repro showing the same root cause hides a sentiment
+    /// edit. Sentiment is a column on `emails`, not on accounts; the
+    /// "sentiment save" symptom lives at the same surface (account/email
+    /// view that displays the most-recent thread row's sentiment).
+    #[test]
+    #[ignore = "DOS-229: failing repro — un-ignore when thread-cascade fix lands"]
+    fn dos_229_thread_collapse_reverts_sentiment_edit() {
+        use std::path::PathBuf;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path: PathBuf = dir.path().join("dos229_thread_sent.db");
+        let db = crate::db::ActionDb::open_at_unencrypted(path).expect("open db");
+
+        let now = chrono::Utc::now();
+        let earlier = (now - chrono::Duration::minutes(10)).to_rfc3339();
+
+        let mut a = crate::db::DbEmail {
+            email_id: "em-S-A".to_string(),
+            thread_id: Some("thread-S".to_string()),
+            sender_email: Some("sender@example.com".to_string()),
+            sender_name: Some("Sender".to_string()),
+            subject: Some("Re: Renewal".to_string()),
+            snippet: Some("snip".to_string()),
+            priority: Some("medium".to_string()),
+            is_unread: true,
+            received_at: Some(earlier.clone()),
+            enrichment_state: "enriched".to_string(),
+            enrichment_attempts: 1,
+            last_enrichment_at: Some(earlier.clone()),
+            enriched_at: Some(earlier.clone()),
+            last_seen_at: Some(earlier.clone()),
+            resolved_at: None,
+            entity_id: Some("acc-x".to_string()),
+            entity_type: Some("account".to_string()),
+            contextual_summary: Some("ctx".to_string()),
+            sentiment: Some("neutral".to_string()),
+            urgency: None,
+            user_is_last_sender: false,
+            last_sender_email: Some("sender@example.com".to_string()),
+            message_count: 1,
+            created_at: earlier.clone(),
+            updated_at: earlier.clone(),
+            relevance_score: Some(0.5),
+            score_reason: None,
+            pinned_at: None,
+            commitments: None,
+            questions: None,
+            is_noise: false,
+        };
+        db.upsert_email(&a).expect("upsert A");
+
+        // User edits sentiment on the row they currently see (A is the only one).
+        db.conn_ref()
+            .execute(
+                "UPDATE emails SET sentiment = 'positive', updated_at = ?1 WHERE email_id = ?2",
+                rusqlite::params![chrono::Utc::now().to_rfc3339(), "em-S-A"],
+            )
+            .expect("update sentiment");
+
+        // Silent refresh adds a newer message in the same thread; the
+        // enricher tagged it sentiment=neutral.
+        a.email_id = "em-S-B".to_string();
+        a.received_at = Some((now + chrono::Duration::minutes(5)).to_rfc3339());
+        a.sentiment = Some("neutral".to_string());
+        db.upsert_email(&a).expect("upsert B");
+
+        let all = db.get_all_active_emails().expect("get all");
+        let collapsed = collapse_to_latest_thread_emails(&all);
+        assert_eq!(collapsed.len(), 1, "thread collapses to one row");
+        assert_eq!(
+            collapsed[0].sentiment.as_deref(),
+            Some("positive"),
+            "DOS-229: user's sentiment edit should survive the silent refresh \
+             that adds a newer enriched message; today the newer row's \
+             sentiment overwrites what the user sees"
+        );
+    }
+
     #[test]
     fn test_null_fields_default_to_none() {
         let conn = setup_test_db();
