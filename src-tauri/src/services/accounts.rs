@@ -2963,12 +2963,18 @@ fn add_stakeholder_role_inner(
     }
     db.with_transaction(|tx| {
         let now = chrono::Utc::now().to_rfc3339();
+        // Re-adding a role must clear any prior soft-delete tombstone.
+        // Without the `dismissed_at = NULL` in the ON CONFLICT clause,
+        // a user who dismisses then re-adds would see the row written
+        // but still filtered out of reads (because dismissed_at stays
+        // set) — effectively a silent failure.
         tx.conn_ref()
             .execute(
                 "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
                  VALUES (?1, ?2, ?3, 'user', ?4)
                  ON CONFLICT(account_id, person_id, role) DO UPDATE SET
-                    data_source = 'user'",
+                    data_source = 'user',
+                    dismissed_at = NULL",
                 rusqlite::params![account_id, person_id, role, now],
             )
             .map_err(|e| e.to_string())?;
@@ -3017,9 +3023,17 @@ fn remove_stakeholder_role_inner(
     role: &str,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
+        // Soft-delete: tombstone the row with `dismissed_at = now` and
+        // flip provenance to 'user'. The hard-DELETE version let the
+        // next enrichment cycle re-add the same role via intel_queue's
+        // INSERT ON CONFLICT path — user dismissal was forgotten every
+        // time AI re-surfaced the role. With the tombstone, intel_queue's
+        // existence check finds data_source='user' and skips; reads
+        // filter dismissed_at IS NULL so the UI doesn't show the row.
         tx.conn_ref()
             .execute(
-                "DELETE FROM account_stakeholder_roles
+                "UPDATE account_stakeholder_roles
+                 SET dismissed_at = datetime('now'), data_source = 'user'
                  WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
                 rusqlite::params![account_id, person_id, role],
             )
@@ -3525,6 +3539,118 @@ mod tests {
     /// When the user re-pins a role that the AI had previously surfaced,
     /// `set_team_member_role` should flip provenance to 'user' via the
     /// ON CONFLICT promotion clause rather than error or leave it as 'ai'.
+    /// Regression test for the "I removed 'associated' but it came back on
+    /// reload" bug. The old service-layer remove path ran a hard DELETE;
+    /// next enrichment cycle the intel_queue check saw "no row exists"
+    /// and re-INSERTed the role with data_source='ai'. User dismissal was
+    /// forgotten every time AI re-surfaced the role.
+    ///
+    /// Post-fix: remove soft-deletes via UPDATE SET dismissed_at = now
+    /// AND data_source = 'user'. Reads filter dismissed_at IS NULL so the
+    /// UI hides the row; intel_queue's existence check sees either
+    /// data_source='user' or a populated dismissed_at and skips re-insert.
+    ///
+    /// This test exercises the DB-level contract directly (without
+    /// AppState/signals plumbing) so it focuses on the data-integrity
+    /// invariant.
+    #[test]
+    fn test_stakeholder_role_dismissal_tombstone_and_reactivation() {
+        let db = test_db();
+        let account = make_account("acc-dsm", "Dismissal Corp");
+        db.upsert_account(&account).unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES ('p-dsm', 'dsm@x.com', 'DismissP', '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acc-dsm', 'p-dsm', 'user')",
+                [],
+            )
+            .unwrap();
+
+        // Seed a user-pinned role (what `add_stakeholder_role` writes).
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES ('acc-dsm', 'p-dsm', 'associated', 'user')",
+                [],
+            )
+            .unwrap();
+
+        let visible_after_add: Vec<String> = db
+            .get_stakeholder_roles("acc-dsm", "p-dsm")
+            .unwrap()
+            .into_iter()
+            .map(|r| r.role)
+            .collect();
+        assert_eq!(visible_after_add, vec!["associated"]);
+
+        // Simulate the soft-delete write path (UPDATE the row to
+        // tombstone it rather than DELETE).
+        db.conn_ref()
+            .execute(
+                "UPDATE account_stakeholder_roles
+                 SET dismissed_at = datetime('now'), data_source = 'user'
+                 WHERE account_id = 'acc-dsm' AND person_id = 'p-dsm' AND role = 'associated'",
+                [],
+            )
+            .unwrap();
+
+        // Filtered reads don't see the tombstone.
+        let visible_after_remove = db.get_stakeholder_roles("acc-dsm", "p-dsm").unwrap();
+        assert!(
+            visible_after_remove.is_empty(),
+            "soft-deleted role should be hidden from read; got {:?}",
+            visible_after_remove,
+        );
+
+        // Underlying row still exists as a tombstone.
+        let tombstone_exists: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-dsm' AND person_id = 'p-dsm'
+                   AND role = 'associated' AND dismissed_at IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstone_exists, 1, "soft-delete should leave a tombstone row");
+
+        // Simulate the user re-adding the role (`add_stakeholder_role`'s
+        // INSERT ON CONFLICT path). dismissed_at MUST clear on reactivate.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES ('acc-dsm', 'p-dsm', 'associated', 'user')
+                 ON CONFLICT(account_id, person_id, role) DO UPDATE SET
+                    data_source = 'user',
+                    dismissed_at = NULL",
+                [],
+            )
+            .unwrap();
+        let visible_after_readd: Vec<String> = db
+            .get_stakeholder_roles("acc-dsm", "p-dsm")
+            .unwrap()
+            .into_iter()
+            .map(|r| r.role)
+            .collect();
+        assert_eq!(visible_after_readd, vec!["associated"]);
+        let dismissed_cleared: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT dismissed_at FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-dsm' AND person_id = 'p-dsm' AND role = 'associated'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(dismissed_cleared.is_none(), "re-adding should clear dismissed_at");
+    }
+
     #[test]
     fn test_set_team_member_role_promotes_ai_row_to_user() {
         let db = test_db();

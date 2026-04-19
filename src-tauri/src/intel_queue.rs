@@ -1765,22 +1765,37 @@ pub fn write_enrichment_results(
 
                         // Upsert roles: skip user-owned, update/insert AI-owned
                         if let Some(ref role) = insight.role {
-                            let role_ds: Option<String> = db_sh
+                            // Existence check returns data_source AND
+                            // dismissed_at so we can distinguish three
+                            // states: not-present, active-ai-owned,
+                            // active-user-owned, soft-deleted. Soft-
+                            // deleted rows are treated the same as
+                            // user-owned: do not touch. Without this,
+                            // AI would re-UPDATE a dismissed row and
+                            // (via ON CONFLICT) keep writing data_source=
+                            // 'ai' on every enrichment, even though the
+                            // dismissal filter keeps it hidden.
+                            let existing: Option<(Option<String>, Option<String>)> = db_sh
                                 .conn_ref()
                                 .query_row(
-                                    "SELECT data_source FROM account_stakeholder_roles WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
+                                    "SELECT data_source, dismissed_at FROM account_stakeholder_roles
+                                     WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
                                     rusqlite::params![&input.entity_id, pid, role],
-                                    |row| row.get(0),
+                                    |row| Ok((row.get(0)?, row.get(1)?)),
                                 )
                                 .ok();
-                            match role_ds.as_deref() {
-                                Some("user") => { /* User-owned role — do not touch */ }
-                                Some(_) | None => {
-                                    let _ = db_sh.conn_ref().execute(
-                                        "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
-                                        rusqlite::params![&input.entity_id, pid, role],
-                                    );
-                                }
+                            let is_user_owned = matches!(
+                                existing.as_ref().and_then(|(ds, _)| ds.as_deref()),
+                                Some("user")
+                            );
+                            let is_dismissed = existing
+                                .as_ref()
+                                .is_some_and(|(_, d)| d.is_some());
+                            if !is_user_owned && !is_dismissed {
+                                let _ = db_sh.conn_ref().execute(
+                                    "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
+                                    rusqlite::params![&input.entity_id, pid, role],
+                                );
                             }
                         }
                     } else {

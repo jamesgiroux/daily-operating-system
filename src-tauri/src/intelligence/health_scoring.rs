@@ -702,7 +702,7 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
         .prepare(
             "SELECT asr.person_id, p.name FROM account_stakeholder_roles asr \
              JOIN people p ON p.id = asr.person_id \
-             WHERE asr.account_id = ?1 AND asr.role = 'champion'",
+             WHERE asr.account_id = ?1 AND asr.role = 'champion' AND asr.dismissed_at IS NULL",
         )
         .and_then(|mut stmt| {
             stmt.query_map(rusqlite::params![account_id], |row| {

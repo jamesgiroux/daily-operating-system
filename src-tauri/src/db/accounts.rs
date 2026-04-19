@@ -437,7 +437,8 @@ impl ActionDb {
                     COALESCE(
                         (SELECT GROUP_CONCAT(asr.role, ',')
                          FROM account_stakeholder_roles asr
-                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
+                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id
+                           AND asr.dismissed_at IS NULL),
                         ''
                     ) AS roles,
                     as_.created_at
@@ -470,7 +471,8 @@ impl ActionDb {
                     COALESCE(
                         (SELECT GROUP_CONCAT(asr.role, ',')
                          FROM account_stakeholder_roles asr
-                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
+                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id
+                           AND asr.dismissed_at IS NULL),
                         ''
                     ) AS roles,
                     as_.created_at
@@ -505,7 +507,8 @@ impl ActionDb {
                     COALESCE(
                         (SELECT GROUP_CONCAT(asr.role, ',')
                          FROM account_stakeholder_roles asr
-                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
+                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id
+                           AND asr.dismissed_at IS NULL),
                         'associated'
                     ) AS stakeholder_roles,
                     as_.data_source, as_.last_seen_in_glean,
@@ -573,7 +576,7 @@ impl ActionDb {
             "SELECT asr.account_id, a.name AS account_name, asr.role, asr.data_source
              FROM account_stakeholder_roles asr
              JOIN accounts a ON a.id = asr.account_id
-             WHERE asr.person_id = ?1
+             WHERE asr.person_id = ?1 AND asr.dismissed_at IS NULL
              ORDER BY a.name, asr.role",
         )?;
         let rows = stmt.query_map(params![person_id], |row| {
@@ -595,7 +598,7 @@ impl ActionDb {
     ) -> Result<Vec<crate::db::types::StakeholderRole>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT role, data_source FROM account_stakeholder_roles
-             WHERE account_id = ?1 AND person_id = ?2
+             WHERE account_id = ?1 AND person_id = ?2 AND dismissed_at IS NULL
              ORDER BY role",
         )?;
         let rows = stmt.query_map(params![account_id, person_id], |row| {
