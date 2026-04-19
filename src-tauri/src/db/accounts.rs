@@ -848,6 +848,16 @@ impl ActionDb {
     }
 
     /// Get meetings for an account, most recent first.
+    ///
+    /// DOS-232 Codex follow-up: apply the same 0.70 accepted-confidence
+    /// floor used by `get_meetings_for_account_with_prep` and the
+    /// `get_total_meeting_count_for_account` helpers. Without it, the
+    /// account chat LLM context, dossier markdown generation, and email
+    /// prep enrichment all ingested speculative domain-match junctions
+    /// (confidence < 0.70) as if they were real meetings — contaminating
+    /// account reasoning with meetings the classifier never accepted.
+    /// 0.70 matches the classifier promotion threshold
+    /// (google_api/classify.rs).
     pub fn get_meetings_for_account(
         &self,
         account_id: &str,
@@ -860,7 +870,9 @@ impl ActionDb {
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
-             WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+             WHERE me.entity_id = ?1
+               AND me.entity_type = 'account'
+               AND me.confidence >= 0.70
              ORDER BY m.start_time DESC
              LIMIT ?2",
         )?;
