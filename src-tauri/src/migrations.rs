@@ -435,6 +435,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 103,
         sql: include_str!("migrations/102_email_is_noise.sql"),
     },
+    // DOS-31: track stale-failed auto-retry count so we cap automatic
+    // promotions instead of looping forever on rows that fundamentally
+    // can't enrich. DOS-29 reads this column to compute the
+    // `permanently_failed` count surfaced in the failure UX.
+    Migration {
+        version: 104,
+        sql: include_str!("migrations/103_email_auto_retry_count.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

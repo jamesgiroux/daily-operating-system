@@ -607,6 +607,24 @@ pub struct EmailSyncStats {
     pub enriched: i32,
     pub pending: i32,
     pub failed: i32,
+    /// DOS-29: subset of `failed` that has exhausted automatic retry attempts.
+    /// These are the rows the user-facing "couldn't be enriched" UX surfaces;
+    /// rows in `failed` but below the auto-retry cap are silently re-attempted
+    /// by the next refresh and shouldn't bother the user.
+    pub permanently_failed: i32,
+}
+
+/// DOS-29: Lightweight preview of a permanently-failed email for the
+/// "View details" expansion on the EmailsPage failure UX.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FailedEmailPreview {
+    pub email_id: String,
+    pub subject: Option<String>,
+    pub sender_email: Option<String>,
+    pub sender_name: Option<String>,
+    pub last_enrichment_at: Option<String>,
+    pub auto_retry_count: i32,
 }
 
 /// Stakeholder relationship signals computed from meeting history and account data (I43).

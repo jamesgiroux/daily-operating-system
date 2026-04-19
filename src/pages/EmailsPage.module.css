@@ -85,6 +85,47 @@
   color: var(--color-text-secondary);
 }
 
+.syncRetryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* DOS-29: per-email failure details list ("View details" expansion). */
+.failureDetailsList {
+  list-style: none;
+  margin: var(--space-sm) 0 0 0;
+  padding: var(--space-sm) var(--space-md);
+  border-left: 2px solid var(--color-rule-light);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.failureDetailsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.failureDetailsSubject {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.failureDetailsSender {
+  color: var(--color-text-tertiary);
+}
+
+.failureDetailsTimestamp {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  margin-left: auto;
+}
+
 /* -- Section Spacing -------------------------------------------------------- */
 
 .sectionSpacing {

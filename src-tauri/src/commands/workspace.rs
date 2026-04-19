@@ -566,6 +566,39 @@ pub async fn retry_failed_emails(
     crate::services::emails::retry_failed_emails(state.inner(), app_handle).await
 }
 
+/// DOS-29: List the permanently-failed emails (above the auto-retry cap)
+/// for the "View details" affordance on the EmailsPage failure UX. Capped
+/// at 20 rows to keep the payload bounded — if a user has more than 20
+/// permanently-failed emails the right action is to triage in batch, not
+/// scroll the whole list.
+#[tauri::command]
+pub async fn list_permanently_failed_emails(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::FailedEmailPreview>, String> {
+    state
+        .db_read(|db| {
+            db.list_permanently_failed_previews(
+                crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES,
+                20,
+            )
+        })
+        .await
+}
+
+/// DOS-29: User-initiated "Skip" action for the failure UX. Marks the
+/// supplied permanently-failed email IDs as resolved so they leave the
+/// failed-count entirely. The Gmail message stays in the inbox; we just
+/// stop trying to enrich it. Returns the number of rows skipped.
+#[tauri::command]
+pub async fn skip_failed_emails(
+    state: State<'_, Arc<AppState>>,
+    email_ids: Vec<String>,
+) -> Result<usize, String> {
+    state
+        .db_write(move |db| db.skip_failed_emails(&email_ids))
+        .await
+}
+
 /// Set user profile (customer-success or general)
 #[tauri::command]
 pub fn set_profile(profile: String, state: State<'_, Arc<AppState>>) -> Result<Config, String> {

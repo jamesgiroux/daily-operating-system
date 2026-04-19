@@ -1553,6 +1553,18 @@ pub async fn archive_low_priority_emails(state: &AppState) -> Result<usize, Stri
 /// PTY enrichment while still recovering before the user retries again.
 const PENDING_RETRY_STALE_AFTER_SECS: i64 = 600;
 
+/// DOS-31: bound for `auto_retry_stale_failed`. A `failed` row older than
+/// this (measured against `last_enrichment_at`, falling back to
+/// `created_at`) is automatically reset to `pending` on the next refresh
+/// so the user doesn't have to manually click Retry to clear an old
+/// transient failure. 24 hours is intentionally cautious: short enough
+/// that the inbox self-heals overnight, long enough that an in-flight
+/// enrichment failure isn't immediately re-attempted on the very next
+/// refresh (which would just re-fail in the same way).
+const STALE_FAILED_AFTER_SECS: i64 = 24 * 60 * 60;
+// Cumulative auto-retry cap is owned by `db::emails` so the stats query and
+// the retry pass share one threshold — see `STALE_FAILED_MAX_AUTO_RETRIES`.
+
 /// Refresh emails independently without re-running the full /today pipeline (I20).
 ///
 /// DOS-31 / DOS-226: Manual refresh is a user signal that they want previously
@@ -1602,6 +1614,31 @@ pub async fn refresh_emails(
     if recovered > 0 {
         log::warn!(
             "DOS-226: recovered {recovered} stale pending_retry rows (stranded by a prior crashed refresh)"
+        );
+    }
+
+    // Phase 0.5 (DOS-31) — auto-promote stale `failed` rows to `pending` so
+    // the next enrichment pass picks them up without the user clicking
+    // Retry. Failed rows under the cumulative `auto_retry_count` cap and
+    // older than 24h are silently re-attempted; rows at the cap stay in
+    // `failed` and surface in the user-facing "couldn't be enriched" UX
+    // (DOS-29). Runs BEFORE the manual retry batch is stamped so a row
+    // promoted by auto-retry is selectable by `get_pending_enrichment`.
+    // Runs AFTER the pending_retry recovery so we don't double-promote a
+    // row that's just been rolled back from a crashed refresh.
+    let auto_retried = state
+        .db_write(|db| {
+            db.auto_retry_stale_failed(
+                STALE_FAILED_AFTER_SECS,
+                crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES,
+            )
+        })
+        .await
+        .map_err(|e| format!("Failed to auto-retry stale failed emails: {e}"))?;
+    if auto_retried > 0 {
+        log::info!(
+            "DOS-31: auto-promoted {auto_retried} stale failed emails to pending (older than {}s, under cap)",
+            STALE_FAILED_AFTER_SECS
         );
     }
 

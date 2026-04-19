@@ -6562,3 +6562,252 @@ fn test_dos231_update_footprint_field_preserves_existing_open_tickets() {
     assert_eq!(tf.support_tier.as_deref(), Some("premier"));
     assert_eq!(tf.services_stage.as_deref(), Some("live"));
 }
+
+// =============================================================================
+// DOS-31 / DOS-29 / DOS-226 bundle tests
+// =============================================================================
+
+#[test]
+fn test_dos31_auto_retry_promotes_stale_failed() {
+    // DOS-31: a failed row older than the staleness bound and under the
+    // cumulative cap must be promoted back to `pending` with attempts=0
+    // so the next enrichment pass picks it up. This is the core
+    // "inbox self-heals" behaviour — without it, every transient
+    // enrichment failure required the user to manually click Retry.
+    let db = test_db();
+    seed_failed_email(&db, "em-stale");
+
+    // Backdate last_enrichment_at past the staleness bound.
+    db.conn
+        .execute(
+            "UPDATE emails SET last_enrichment_at = '2020-01-01T00:00:00Z' WHERE email_id = 'em-stale'",
+            [],
+        )
+        .expect("backdate");
+
+    let promoted = db
+        .auto_retry_stale_failed(60, crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES)
+        .expect("auto-retry");
+    assert_eq!(promoted, 1, "stale failed row must be promoted");
+
+    let (state, attempts) = read_enrichment_state(&db, "em-stale");
+    assert_eq!(state, "pending");
+    assert_eq!(attempts, 0, "attempts reset so get_pending_enrichment selects the row");
+
+    // auto_retry_count incremented so we track cumulative attempts.
+    let count: i32 = db
+        .conn
+        .query_row(
+            "SELECT COALESCE(auto_retry_count, 0) FROM emails WHERE email_id = 'em-stale'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read count");
+    assert_eq!(count, 1, "auto_retry_count must increment");
+}
+
+#[test]
+fn test_dos31_auto_retry_skips_fresh_failed() {
+    // DOS-31: a failure that just happened (well within the staleness
+    // bound) must NOT be auto-retried — the same enrichment is likely
+    // to fail the same way, and we'd just churn. Only stale failures
+    // are eligible.
+    let db = test_db();
+    seed_failed_email(&db, "em-fresh-fail");
+
+    let promoted = db
+        .auto_retry_stale_failed(
+            24 * 60 * 60,
+            crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES,
+        )
+        .expect("auto-retry");
+    assert_eq!(promoted, 0, "fresh failures must not be auto-retried");
+
+    let (state, _) = read_enrichment_state(&db, "em-fresh-fail");
+    assert_eq!(state, "failed", "row stays failed when fresh");
+}
+
+#[test]
+fn test_dos31_auto_retry_respects_cap() {
+    // DOS-31 / DOS-29: rows that have hit the cumulative auto-retry cap
+    // must stay in `failed` so they surface in the user-facing
+    // "couldn't be enriched" UX. This is the bridge between auto-recovery
+    // (DOS-31) and explicit user triage (DOS-29).
+    let db = test_db();
+    seed_failed_email(&db, "em-capped");
+
+    db.conn
+        .execute(
+            "UPDATE emails
+             SET last_enrichment_at = '2020-01-01T00:00:00Z',
+                 auto_retry_count = ?1
+             WHERE email_id = 'em-capped'",
+            rusqlite::params![crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES],
+        )
+        .expect("seed at cap");
+
+    let promoted = db
+        .auto_retry_stale_failed(60, crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES)
+        .expect("auto-retry");
+    assert_eq!(promoted, 0, "rows at the cap must not be promoted");
+
+    let (state, _) = read_enrichment_state(&db, "em-capped");
+    assert_eq!(state, "failed", "capped row stays failed for user triage");
+}
+
+#[test]
+fn test_dos29_permanently_failed_count_in_sync_stats() {
+    // DOS-29: `get_email_sync_stats.permanently_failed` must count only
+    // rows the system has stopped auto-retrying. A row in `failed` but
+    // below the cap is invisible to the user-facing failure UX (the
+    // next refresh will silently auto-retry it).
+    let db = test_db();
+    seed_failed_email(&db, "em-below-cap");
+    seed_failed_email(&db, "em-at-cap");
+
+    db.conn
+        .execute(
+            "UPDATE emails SET auto_retry_count = ?1 WHERE email_id = 'em-at-cap'",
+            rusqlite::params![crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES],
+        )
+        .expect("seed at cap");
+
+    let stats = db.get_email_sync_stats().expect("stats");
+    assert_eq!(stats.failed, 2, "both rows count toward `failed` (UI plumbing)");
+    assert_eq!(
+        stats.permanently_failed, 1,
+        "only the at-cap row surfaces in the user-facing failure UX"
+    );
+}
+
+#[test]
+fn test_dos29_list_permanently_failed_previews_returns_capped_rows_only() {
+    // DOS-29: the "View details" payload must include only rows above the
+    // cap, with subject + sender so the user can decide to retry or skip
+    // with context (no enrichment plumbing leaks).
+    let db = test_db();
+    seed_failed_email(&db, "em-fresh");
+    seed_failed_email(&db, "em-stuck");
+
+    db.conn
+        .execute(
+            "UPDATE emails SET auto_retry_count = ?1 WHERE email_id = 'em-stuck'",
+            rusqlite::params![crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES],
+        )
+        .expect("seed at cap");
+
+    let previews = db
+        .list_permanently_failed_previews(crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES, 20)
+        .expect("previews");
+    assert_eq!(previews.len(), 1, "only at-cap rows appear");
+    assert_eq!(previews[0].email_id, "em-stuck");
+    assert_eq!(
+        previews[0].auto_retry_count,
+        crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES
+    );
+}
+
+#[test]
+fn test_dos29_skip_failed_emails_marks_resolved() {
+    // DOS-29: Skip = mark resolved so the row leaves the failed-count
+    // entirely. Subsequent stats queries must not surface it.
+    let db = test_db();
+    seed_failed_email(&db, "em-skip-1");
+    seed_failed_email(&db, "em-skip-2");
+
+    let skipped = db
+        .skip_failed_emails(&["em-skip-1".to_string(), "em-skip-2".to_string()])
+        .expect("skip");
+    assert_eq!(skipped, 2);
+
+    let stats = db.get_email_sync_stats().expect("stats");
+    assert_eq!(stats.failed, 0, "skipped rows leave the failed count");
+    assert_eq!(stats.permanently_failed, 0);
+}
+
+#[test]
+fn test_dos226_retry_primitives_are_transactional() {
+    // DOS-226: each retry primitive runs through `with_transaction`. A
+    // single UPDATE is already atomic in SQLite, but the transaction
+    // boundary is the contract future signal-emission additions can
+    // rely on. Smoke test: invoking each primitive via the transactional
+    // wrapper must produce the same observable result as the pre-fix
+    // direct execute path.
+    let db = test_db();
+    seed_failed_email(&db, "em-tx-1");
+
+    // mark -> finalize -> roundtrip back through stale recovery.
+    let marked = db.mark_failed_for_retry("batch-tx").expect("mark");
+    assert_eq!(marked, 1);
+    let promoted = db
+        .finalize_pending_retry_success("batch-tx")
+        .expect("finalize");
+    assert_eq!(promoted, 1);
+
+    let (state, attempts) = read_enrichment_state(&db, "em-tx-1");
+    assert_eq!(state, "pending");
+    assert_eq!(attempts, 0);
+
+    // rollback path on a fresh seed
+    seed_failed_email(&db, "em-tx-2");
+    db.mark_failed_for_retry("batch-tx-2").expect("mark");
+    let rolled = db
+        .rollback_pending_retry("batch-tx-2")
+        .expect("rollback");
+    assert_eq!(rolled, 1);
+    let (state, attempts) = read_enrichment_state(&db, "em-tx-2");
+    assert_eq!(state, "failed");
+    assert_eq!(attempts, 3, "rollback preserves attempts");
+}
+
+#[test]
+fn test_dos31_dos29_end_to_end_self_heal_then_surface() {
+    // End-to-end: a stale failure self-heals on refresh until it hits
+    // the cap, then surfaces in the failure UX. This pins the
+    // DOS-31 → DOS-29 handoff.
+    let db = test_db();
+    seed_failed_email(&db, "em-journey");
+
+    // Simulate STALE_FAILED_MAX_AUTO_RETRIES rounds of "stale → auto-retry → fail again".
+    for round in 1..=crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES {
+        // Backdate so the row counts as stale for this round.
+        db.conn
+            .execute(
+                "UPDATE emails SET last_enrichment_at = '2020-01-01T00:00:00Z' WHERE email_id = 'em-journey'",
+                [],
+            )
+            .expect("backdate");
+
+        let promoted = db
+            .auto_retry_stale_failed(60, crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES)
+            .expect("auto-retry");
+        assert_eq!(promoted, 1, "round {round}: must promote");
+
+        // Simulate enrichment failing again (state -> failed, attempts -> 3).
+        db.conn
+            .execute(
+                "UPDATE emails SET enrichment_state = 'failed', enrichment_attempts = 3 WHERE email_id = 'em-journey'",
+                [],
+            )
+            .expect("simulate fail");
+    }
+
+    // After the cap is reached, the row must surface in the user-facing
+    // failure UX and stop being auto-retried.
+    let stats = db.get_email_sync_stats().expect("stats");
+    assert_eq!(
+        stats.permanently_failed, 1,
+        "row at cap must be visible to the user as permanently failed"
+    );
+
+    db.conn
+        .execute(
+            "UPDATE emails SET last_enrichment_at = '2020-01-01T00:00:00Z' WHERE email_id = 'em-journey'",
+            [],
+        )
+        .expect("backdate again");
+    let promoted = db
+        .auto_retry_stale_failed(60, crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES)
+        .expect("auto-retry");
+    assert_eq!(promoted, 0, "row at cap must NOT be auto-retried again");
+}
