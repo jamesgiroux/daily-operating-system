@@ -8,6 +8,8 @@
  * Preserves scroll + form state + pending fetches on tab switch.
  */
 import { useParams } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { useAccountDetailPage } from "@/hooks/useAccountDetailPage";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
@@ -289,9 +291,25 @@ export default function AccountDetailPage() {
             onAddRole={acct.addStakeholderRole}
             onRemoveRole={acct.removeStakeholderRole}
             onRemoveTeamMember={acct.handleRemoveTeamMember}
-            suggestions={acct.suggestions}
-            onAcceptSuggestion={acct.acceptSuggestion}
-            onDismissSuggestion={acct.dismissSuggestion}
+            onRemoveStakeholder={async (personId, personName) => {
+              // Full delete of the person entity — unlinks from every
+              // account AND removes from the global people list. Use
+              // case: synthetic / bot email addresses that shouldn't
+              // exist anywhere. Permanent; guarded with a native
+              // confirm so an accidental click can't nuke a real
+              // stakeholder.
+              const ok = window.confirm(
+                `Delete ${personName || "this person"} permanently?\n\n` +
+                  `This removes them from this account and from the people list across every account. Use for bot addresses or duplicate entries — not for real stakeholders you just want to hide.`,
+              );
+              if (!ok) return;
+              try {
+                await invoke("delete_person", { personId });
+                await acct.load();
+              } catch (e) {
+                toast.error(`Failed to delete: ${e}`);
+              }
+            }}
           />
         </MarginSection>
 

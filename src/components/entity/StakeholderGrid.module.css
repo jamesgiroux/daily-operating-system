@@ -213,6 +213,16 @@
   background: var(--color-desk-charcoal-8);
   color: var(--color-text-secondary);
 }
+
+/* On an internal-variant card the card itself is charcoal-4, so the
+   charcoal-8 pill barely reads as a chip (4% tonal difference).
+   Flip the pill to a paper-cream fill so it contrasts against the
+   tinted card and actually looks like a clickable role tag. */
+.personCardInternal .rolePillInternal {
+  background: var(--color-paper-cream);
+  color: var(--color-text-primary);
+  border-color: var(--color-rule-light);
+}
 .rolePillGap {
   background: var(--color-spice-saffron-15);
   color: #a6862c;
