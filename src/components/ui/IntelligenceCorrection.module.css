@@ -1,0 +1,148 @@
+/* DOS-41: Consolidated correction prompt for AI assessments on account pages. */
+
+.wrapper {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  gap: var(--space-xs);
+}
+
+.prompt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-tertiary);
+  margin-right: var(--space-xs);
+}
+
+.choices {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.choice {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.choice:hover:not(:disabled) {
+  background: var(--color-rule-light);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
+}
+
+.choice:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 1px;
+}
+
+.choice:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.editor {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-xs);
+  min-width: 280px;
+}
+
+.editorLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-tertiary);
+}
+
+.textarea {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 2px;
+  background: var(--color-surface-card);
+  color: var(--color-text-primary);
+  resize: vertical;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-spice-turmeric);
+}
+
+.editorActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.primaryButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 4px 12px;
+  border: 1px solid var(--color-text-primary);
+  border-radius: 2px;
+  background: var(--color-text-primary);
+  color: var(--color-surface-page);
+  cursor: pointer;
+}
+
+.primaryButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.linkButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.linkButton:hover:not(:disabled) {
+  color: var(--color-text-primary);
+}
+
+.linkButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.done {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-garden-sage);
+}
