@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { CommitmentCard, SuggestionCard, WorkButton } from "./WorkSurface";
+import { CommitmentCard, NudgeLeaveAsIs, NudgeRow, SuggestionCard, WorkButton } from "./WorkSurface";
 
 /**
  * Wave 0e / DOS-13: Work tab CTA wiring regression tests.
@@ -90,5 +90,48 @@ describe("SuggestionCard", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /accepting/i })).toBeDisabled();
+  });
+});
+
+/**
+ * Wave 0g Finding 1 (Option B): "Leave as-is" is rendered as italic
+ * editorial prose, NOT as an interactive button. Doing nothing IS leaving
+ * it as-is — a no-op button would imply action is required and violate
+ * zero-guilt discipline. This test locks in the non-interactive rendering.
+ */
+describe("NudgeLeaveAsIs", () => {
+  it("renders as non-interactive prose, not a button", () => {
+    render(
+      <NudgeRow
+        headline="A commitment has been kept private"
+        body="Dismiss if it's no longer live."
+        actions={
+          <>
+            <WorkButton onClick={() => {}}>Dismiss</WorkButton>
+            <NudgeLeaveAsIs />
+          </>
+        }
+      />,
+    );
+
+    // Dismiss button is a real button.
+    expect(screen.getByRole("button", { name: /dismiss/i })).toBeInTheDocument();
+
+    // "Leave as-is" prose is NOT a button.
+    const leaveAsIs = screen.getByText(/or leave as-is\./i);
+    expect(leaveAsIs.tagName.toLowerCase()).toBe("span");
+    expect(leaveAsIs).not.toHaveAttribute("role", "button");
+
+    // No unnamed / empty-accessible-name buttons (i.e., no stray no-op CTAs).
+    const buttons = screen.getAllByRole("button");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]).toHaveAccessibleName(/dismiss/i);
+  });
+
+  it("accepts custom children while remaining non-interactive", () => {
+    render(<NudgeLeaveAsIs>Or do nothing.</NudgeLeaveAsIs>);
+    const prose = screen.getByText(/or do nothing/i);
+    expect(prose.tagName.toLowerCase()).toBe("span");
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 });
