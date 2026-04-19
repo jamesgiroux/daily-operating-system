@@ -28,7 +28,9 @@ import { AccountDialogs } from "@/components/account/AccountDialogs";
 import { AccountViewSwitcher } from "@/components/account/AccountViewSwitcher";
 // View 1 — Health & Outlook
 import { AccountHealthSection } from "@/components/account/AccountHealthSection";
-import { AccountOutlook } from "@/components/entity/AccountOutlook";
+// AccountOutlook (legacy 3-section component) is no longer rendered on the
+// Health tab — OutlookPanel is the replacement. The component still lives in
+// the codebase for possible Context-tab reuse, but it is not imported here.
 import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import { AccountPortfolioSection } from "@/components/account/AccountPortfolioSection";
 import { AccountProductsSection } from "@/components/account/AccountProductsSection";
@@ -88,17 +90,25 @@ export default function AccountDetailPage() {
   const fb = page.feedback;
 
   // ─── View 1: Health & Outlook ───────────────────────────────────────────
-  // DOS-203: 7-chapter editorial IA matching .docs/mockups/account-health-*.html:
-  //   1. Sentiment hero (reuse)
-  //   2. Needs attention — triage cards (risks/wins + gleanSignals fallback)
-  //   3. Divergences — consistency findings + channel-sentiment divergence
-  //   4. Outlook: Renewal — confidence / benchmark stub / recommended start
-  //   5. Supporting — computed score vs signal trend + dimension bars
-  //   6. About this intelligence — source manifest + freshness meta card
-  //   7. Finis marker
+  // DOS-203: editorial IA matching .docs/mockups/account-health-*.html:
+  //   1. Your Assessment (sentiment hero, id="your-assessment")
+  //   2. Needs attention — triage cards + divergence findings
+  //        (or On Track, id="on-track", in the fine state)
+  //   3. Outlook: renewal — OutlookPanel + IntelligenceCorrection slot
+  //   4. Supporting — computed score vs signal trend + dimension bars
+  //        (id="relationship-health", renders only when intelligence.health)
+  //   5. Portfolio rollup (parents only, id="portfolio")
+  //   6. Products (id="products", only when detail.products.length > 0)
+  //   7. About this intelligence — source manifest + freshness meta card
+  //   8. Finis marker
   //
-  // Fine state: when triage + divergences are both empty, chapters 2-3 collapse
+  // Fine state: when triage + divergences are both empty, chapter 2 collapses
   // into the editorial "On Track" chapter per fine mockup.
+  //
+  // The legacy AccountOutlook 3-section component (renewal confidence / growth
+  // opportunities / contract context) has been removed from this view —
+  // OutlookPanel is the mockup-faithful replacement. AccountOutlook is retained
+  // for potential reuse elsewhere.
   const renderHealthView = () => {
     const findings = intelligence?.consistencyFindings ?? [];
     const glean = acct.gleanSignals;
@@ -115,12 +125,16 @@ export default function AccountDetailPage() {
           job={acct.riskBriefingJob}
           onRetry={acct.retryRiskBriefing}
         />
-        {/* Chapter 1: Sentiment hero */}
-        <SentimentHero
-          view={acct.sentiment}
-          onSetSentiment={acct.setUserHealthSentiment}
-          onAcknowledgeStale={acct.acknowledgeSentimentStale}
-        />
+        {/* Chapter 1: Sentiment hero — "Your Assessment" in the mockup.
+            Wrapped in a section so the chapter-nav anchor (id matches
+            buildHealthChapters → "your-assessment") resolves cleanly. */}
+        <section id="your-assessment">
+          <SentimentHero
+            view={acct.sentiment}
+            onSetSentiment={acct.setUserHealthSentiment}
+            onAcknowledgeStale={acct.acknowledgeSentimentStale}
+          />
+        </section>
 
         {/* Chapters 2-3 (full state) OR On Track chapter (fine state) */}
         {isFineState ? (
@@ -156,7 +170,6 @@ export default function AccountDetailPage() {
               }
             />
             <OutlookPanel intelligence={intelligence} />
-            <AccountOutlook intelligence={intelligence} onUpdateField={page.handleUpdateIntelField} getItemFeedback={fb.get} onItemFeedback={fb.submit} />
           </MarginSection>
         ) : null}
 
@@ -183,8 +196,15 @@ export default function AccountDetailPage() {
           <AccountPortfolioSection children={detail.children} intelligence={intelligence} />
         )}
 
-        <AccountProductsSection accountId={detail.id} products={detail.products ?? []}
-          getFeedback={fb.get} onFeedback={fb.submit} onRefresh={acct.load} silentRefresh={acct.silentRefresh} />
+        {/* Products chapter — rendered only when the account has products, so the
+            nav anchor (buildHealthChapters → "products") and the rendered section
+            stay in lockstep. */}
+        {(detail.products?.length ?? 0) > 0 && (
+          <section id="products">
+            <AccountProductsSection accountId={detail.id} products={detail.products ?? []}
+              getFeedback={fb.get} onFeedback={fb.submit} onRefresh={acct.load} silentRefresh={acct.silentRefresh} />
+          </section>
+        )}
 
         {/* Chapter 6: About this intelligence */}
         <MarginSection id="about-intelligence" label={<>About this<br/>intelligence</>} reveal={false}>

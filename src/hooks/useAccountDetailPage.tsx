@@ -101,10 +101,11 @@ export function useAccountDetailPage(accountId: string | undefined) {
         intel?.expansionSignals?.length ||
         intel?.contractContext
       );
+      const hasProducts = (acct.detail?.products?.length ?? 0) > 0;
       return buildHealthChapters(
         acct.detail?.isParent ?? false,
         !!intel?.health,
-        { fineState, hasOutlook },
+        { fineState, hasOutlook, hasProducts },
       );
     }
     if (activeView === "context") {
@@ -130,6 +131,7 @@ export function useAccountDetailPage(accountId: string | undefined) {
     activeView,
     acct.detail?.isParent,
     acct.detail?.technicalFootprint,
+    acct.detail?.products,
     acct.intelligence,
     acct.gleanSignals,
     acct.files,
