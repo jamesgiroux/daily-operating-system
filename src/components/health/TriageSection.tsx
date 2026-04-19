@@ -1,58 +1,169 @@
 /**
  * TriageSection — "Needs attention" chapter for the Health tab (DOS-203).
  *
- * Source priority:
- *   1. Glean leading signals (when `gleanSignals` is not null) emit dedicated
- *      card types per the Wave-0c spec:
- *        - championRisk → champion-at-risk (spine: urgent/soon)
- *        - commercialSignals.arrDirection → commercial signal (spine: soon)
- *        - channelSentiment.divergenceDetected → deferred to DivergenceSection
- *        - transcriptExtraction.competitorBenchmarks (decision_relevant) → competitive (urgent)
- *        - transcriptExtraction.budgetCycleSignals (locked) → budget (soon)
- *   2. Local intelligence fallback — `intelligence.risks` (urgency-driven)
- *      + `intelligence.recentWins` (always rendered as gap/meta positive tone)
+ * Wave-0g rebuild (DOS-249): unified Local + Glean ranking with a hard cap.
+ *   - Every card is a `TriageCandidate` with `bucket` ("urgent" | "soon" |
+ *     "stakeholder"), `source` ("local" | "glean"), and `sourcedAt` so we
+ *     can order by urgency THEN recency and cap at 5.
+ *   - Glean cards carry a `Glean` source-tag pill; Local cards carry `Local`.
+ *     Cards that triangulate both origins carry both.
+ *   - Per-card `IntelligenceCorrection` slot is rendered when `entityId` +
+ *     `entityType` are supplied. Field = `triage_item_${id}` so the
+ *     Intelligence Loop can attribute feedback per card.
  *
- * Returns `null` when no cards exist so the caller can branch into the fine state.
+ * Backward-compat note for the layout agent: `entityId` and `entityType` are
+ * OPTIONAL. When unset, cards render without the feedback slot (same shape
+ * the v1.2.0 callers used). AccountDetailPage should pass them in a follow-
+ * up commit.
+ *
+ * `hasTriageContent()` is the public gate the caller uses to decide between
+ * the triage chapter and the "On track" fine state. It must return true for
+ * any card that would render — Local or Glean.
  */
 import type { ReactNode } from "react";
-import type { EntityIntelligence, HealthOutlookSignals } from "@/types";
+import type {
+  EntityIntelligence,
+  HealthOutlookSignals,
+  IntelRisk,
+  IntelWin,
+} from "@/types";
 import { ChapterFreshness } from "@/components/editorial/ChapterFreshness";
-import { TriageCard, type TriageTone, type TriageSource } from "./TriageCard";
+import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
+import {
+  TriageCard,
+  type TriageCitation,
+  type TriageSource,
+  type TriageTone,
+} from "./TriageCard";
 import styles from "./health.module.css";
 
-interface BuiltCard {
-  key: string;
-  tone: TriageTone;
+/** Ranking bucket — drives ordering and (via `toneForBucket`) spine colour. */
+export type TriageBucket = "urgent" | "soon" | "stakeholder";
+
+/** A normalised, rank-ready triage row — Local or Glean. */
+export interface TriageCandidate {
+  /** Stable per-card id for feedback attribution. */
+  id: string;
+  /** Ranking bucket. Urgent first, then soon, then stakeholder. */
+  bucket: TriageBucket;
+  /** Primary origin — drives tag colour when `sources` isn't overridden. */
+  source: "local" | "glean";
+  /** ISO timestamp used for recency tie-breaks within a bucket. */
+  sourcedAt: string;
+  /** Short uppercase kind label (mockup convention). */
   kind: string;
+  /** Serif one-liner. */
   headline: string;
+  /** Optional evidence body (accepts ReactNode for <strong> emphasis). */
   evidence?: ReactNode;
+  /** Source-origin pills (Local / Glean). Populated from `source` by default. */
   sources: TriageSource[];
+  /** Dated citation links. */
+  citations: TriageCitation[];
 }
 
-function toneFromUrgency(urgency?: string): TriageTone {
+const MAX_CARDS = 5;
+
+function toneForBucket(bucket: TriageBucket): TriageTone {
+  if (bucket === "urgent") return "urgent";
+  if (bucket === "soon") return "soon";
+  return "gap"; // stakeholder → larkspur spine per mockup
+}
+
+function bucketFromUrgency(urgency?: string): TriageBucket {
   const u = (urgency ?? "").toLowerCase();
   if (u === "high" || u === "urgent" || u === "critical") return "urgent";
-  if (u === "medium" || u === "soon") return "soon";
-  return "gap";
+  if (u === "medium" || u === "soon" || u === "moderate") return "soon";
+  return "stakeholder";
 }
 
 function kindFromUrgency(urgency?: string): string {
-  const tone = toneFromUrgency(urgency);
-  if (tone === "urgent") return "Active friction · unresolved";
-  if (tone === "soon") return "Watchpoint · soon";
-  return "Gap · note";
+  const bucket = bucketFromUrgency(urgency);
+  if (bucket === "urgent") return "Active friction · unresolved";
+  if (bucket === "soon") return "Watchpoint · soon";
+  return "Stakeholder change";
 }
 
-/** Build cards from Glean leading signals when present. */
-function buildGleanCards(glean: HealthOutlookSignals): BuiltCard[] {
-  const cards: BuiltCard[] = [];
+/** Parse an ISO-ish string; return Number.NEGATIVE_INFINITY when unusable so
+ *  dateless items sort last within a bucket (but still render). */
+function parseTime(iso?: string | null): number {
+  if (!iso) return Number.NEGATIVE_INFINITY;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
+}
 
-  // DOS-232 Codex fix: product-usage trend — declining/unknown should surface
-  // as a triage card instead of silently falling into the fine state.
+const BUCKET_ORDER: Record<TriageBucket, number> = {
+  urgent: 0,
+  soon: 1,
+  stakeholder: 2,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Local card builders
+// ─────────────────────────────────────────────────────────────────────────────
+
+function localRiskCandidate(risk: IntelRisk, i: number): TriageCandidate {
+  const label = risk.source ?? risk.itemSource?.source ?? undefined;
+  const sourcedAt = risk.itemSource?.sourcedAt ?? "";
+  const citations: TriageCitation[] = [];
+  if (label) {
+    citations.push({
+      label: risk.itemSource?.reference ? `${label} · ${risk.itemSource.reference}` : label,
+    });
+  }
+  return {
+    id: `local-risk-${i}`,
+    bucket: bucketFromUrgency(risk.urgency),
+    source: "local",
+    sourcedAt,
+    kind: kindFromUrgency(risk.urgency),
+    headline: risk.text,
+    sources: [{ origin: "local", label: undefined }],
+    citations,
+  };
+}
+
+function localWinCandidate(win: IntelWin, i: number): TriageCandidate {
+  const label = win.source ?? win.itemSource?.source ?? undefined;
+  const citations: TriageCitation[] = [];
+  if (label) citations.push({ label });
+  return {
+    id: `local-win-${i}`,
+    bucket: "stakeholder",
+    source: "local",
+    sourcedAt: win.itemSource?.sourcedAt ?? "",
+    kind: "Recent win · momentum",
+    headline: win.text,
+    evidence: win.impact ?? undefined,
+    sources: [{ origin: "local" }],
+    citations,
+  };
+}
+
+function buildLocalCandidates(intel: EntityIntelligence): TriageCandidate[] {
+  const cards: TriageCandidate[] = [];
+  for (const [i, risk] of (intel.risks ?? []).entries()) {
+    cards.push(localRiskCandidate(risk, i));
+  }
+  for (const [i, win] of (intel.recentWins ?? []).entries()) {
+    cards.push(localWinCandidate(win, i));
+  }
+  return cards;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Glean card builders — each returns normalised `TriageCandidate` rows.
+// (Expanded from the prior `buildGleanCards` so every row carries bucket +
+// sourcedAt + unified sources/citations.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
+  const cards: TriageCandidate[] = [];
+
+  // Product-usage trend
   const usage = glean.productUsageTrend;
   const usageTrend = usage?.overallTrend30d;
   if (usageTrend === "declining" || usageTrend === "unknown") {
-    const tone: TriageTone = usageTrend === "declining" ? "urgent" : "gap";
     const underutilizedNames = (usage?.underutilizedFeatures ?? [])
       .map((f) => f.name)
       .filter(Boolean)
@@ -63,8 +174,10 @@ function buildGleanCards(glean: HealthOutlookSignals): BuiltCard[] {
       evidenceParts.push(`Underutilized: ${underutilizedNames.join(", ")}.`);
     }
     cards.push({
-      key: "glean-usage-trend",
-      tone,
+      id: "glean-usage-trend",
+      bucket: usageTrend === "declining" ? "urgent" : "stakeholder",
+      source: "glean",
+      sourcedAt: "",
       kind:
         usageTrend === "declining"
           ? "Product usage · declining trend"
@@ -75,46 +188,51 @@ function buildGleanCards(glean: HealthOutlookSignals): BuiltCard[] {
           : "Product usage trend is unknown — no reliable signal in the last 30 days.",
       evidence: evidenceParts.length ? evidenceParts.join(" ") : undefined,
       sources: [{ origin: "glean", label: "Product usage" }],
+      citations: [],
     });
   }
 
-  // DOS-232 Codex fix: churn-adjacent transcript questions — each question is
-  // direct evidence of elevated risk; do not require another signal family to
-  // be present.
+  // Churn-adjacent transcript questions
   const churnQs = glean.transcriptExtraction?.churnAdjacentQuestions ?? [];
   for (const [i, q] of churnQs.entries()) {
     const evidenceParts: string[] = [];
     if (q.speaker) evidenceParts.push(`${q.speaker} asked.`);
     if (q.riskSignal) evidenceParts.push(q.riskSignal);
+    const citationLabel = q.source ?? q.date ?? "Transcript";
     cards.push({
-      key: `glean-churn-q-${i}`,
-      tone: "urgent",
+      id: `glean-churn-q-${i}`,
+      bucket: "urgent",
+      source: "glean",
+      sourcedAt: q.date ?? "",
       kind: "Transcript · churn-adjacent question",
       headline: q.question,
       evidence: evidenceParts.length ? evidenceParts.join(" ") : undefined,
-      sources: [{ origin: "glean", label: q.source ?? q.date ?? "Transcript" }],
+      sources: [{ origin: "glean" }],
+      citations: [{ label: citationLabel }],
     });
   }
 
-  // DOS-232 Codex fix: decision-maker shifts — changes at the buying table
-  // materially change renewal posture.
+  // Decision-maker shifts — stakeholder bucket (changes at the buying table)
   const shifts = glean.transcriptExtraction?.decisionMakerShifts ?? [];
   for (const [i, s] of shifts.entries()) {
     const evidenceParts: string[] = [];
     if (s.who) evidenceParts.push(s.who);
     if (s.implication) evidenceParts.push(s.implication);
+    const citationLabel = s.source ?? s.date ?? "Transcript";
     cards.push({
-      key: `glean-dm-shift-${i}`,
-      tone: "soon",
+      id: `glean-dm-shift-${i}`,
+      bucket: "stakeholder",
+      source: "glean",
+      sourcedAt: s.date ?? "",
       kind: "Decision-maker shift",
       headline: s.shift,
       evidence: evidenceParts.length ? evidenceParts.join(" ") : undefined,
-      sources: [{ origin: "glean", label: s.source ?? s.date ?? "Transcript" }],
+      sources: [{ origin: "glean" }],
+      citations: [{ label: citationLabel }],
     });
   }
 
-  // DOS-232 Codex fix: advocacy trend cooling — advocacy is a leading loyalty
-  // indicator; cooling advocacy belongs in triage.
+  // Advocacy trend
   const advTrend = glean.advocacyTrack?.advocacyTrend;
   if (advTrend === "cooling") {
     const latestNps = glean.advocacyTrack?.npsHistory?.[0];
@@ -126,24 +244,26 @@ function buildGleanCards(glean: HealthOutlookSignals): BuiltCard[] {
     }
     if (latestNps?.verbatim) evidenceParts.push(`"${latestNps.verbatim}"`);
     cards.push({
-      key: "glean-advocacy-cooling",
-      tone: "soon",
+      id: "glean-advocacy-cooling",
+      bucket: "soon",
+      source: "glean",
+      sourcedAt: latestNps?.surveyDate ?? "",
       kind: "Advocacy · cooling",
       headline: "Advocacy is cooling — reference posture is weakening.",
       evidence: evidenceParts.length ? evidenceParts.join(" ") : undefined,
       sources: [{ origin: "glean", label: "Advocacy track" }],
+      citations: [],
     });
   } else if (advTrend === "strengthening") {
-    // Strengthening advocacy is a capture-the-moment opportunity, not an
-    // urgent risk — render as a low-tone gap so the fine state doesn't
-    // masquerade over a usable expansion window.
     cards.push({
-      key: "glean-advocacy-strengthening",
-      tone: "gap",
+      id: "glean-advocacy-strengthening",
+      bucket: "stakeholder",
+      source: "glean",
+      sourcedAt: "",
       kind: "Advocacy · strengthening",
       headline: "Advocacy is strengthening — capture the reference window.",
-      evidence: undefined,
       sources: [{ origin: "glean", label: "Advocacy track" }],
+      citations: [],
     });
   }
 
@@ -151,7 +271,8 @@ function buildGleanCards(glean: HealthOutlookSignals): BuiltCard[] {
   if (glean.championRisk?.atRisk) {
     const cr = glean.championRisk;
     const level = (cr.riskLevel ?? "moderate").toLowerCase();
-    const tone: TriageTone = level === "high" ? "urgent" : level === "low" ? "gap" : "soon";
+    const bucket: TriageBucket =
+      level === "high" ? "urgent" : level === "low" ? "stakeholder" : "soon";
     const evidenceParts: string[] = [];
     if (cr.riskEvidence?.length) evidenceParts.push(cr.riskEvidence.slice(0, 2).join(" "));
     if (cr.recentRoleChange) evidenceParts.push(cr.recentRoleChange);
@@ -159,112 +280,114 @@ function buildGleanCards(glean: HealthOutlookSignals): BuiltCard[] {
       evidenceParts.push(`Email sentiment ${cr.emailSentimentTrend30d} over 30d.`);
     }
     cards.push({
-      key: "glean-champion",
-      tone,
+      id: "glean-champion",
+      bucket,
+      source: "glean",
+      sourcedAt: "",
       kind: `Champion risk · ${cr.championName ?? "primary contact"}`,
       headline: `${cr.championName ?? "Champion"} shows ${level}-risk signals.`,
       evidence: evidenceParts.length ? evidenceParts.join(" ") : undefined,
       sources: [{ origin: "glean", label: "Champion analysis" }],
+      citations: [],
     });
   }
 
   // Commercial (ARR direction)
   const arrDir = glean.commercialSignals?.arrDirection;
   if (arrDir && arrDir !== "flat") {
-    const tone: TriageTone = arrDir === "shrinking" ? "urgent" : "soon";
+    const bucket: TriageBucket = arrDir === "shrinking" ? "urgent" : "soon";
     const headline =
       arrDir === "shrinking"
         ? "ARR trajectory is shrinking."
         : "ARR trajectory is growing — capture the expansion window.";
-    const evidence = glean.commercialSignals?.paymentEvidence ?? glean.commercialSignals?.paymentBehavior;
+    const evidence =
+      glean.commercialSignals?.paymentEvidence ?? glean.commercialSignals?.paymentBehavior ?? undefined;
     cards.push({
-      key: "glean-commercial",
-      tone,
+      id: "glean-commercial",
+      bucket,
+      source: "glean",
+      sourcedAt: "",
       kind: "Commercial signal · ARR trajectory",
       headline,
-      evidence: evidence ?? undefined,
+      evidence,
       sources: [{ origin: "glean", label: "Commercial signals" }],
+      citations: [],
     });
   }
 
-  // Competitive benchmarks — decision_relevant is urgent; actively_comparing
-  // is a soon-watchpoint. (DOS-232 Codex fix: surface actively_comparing too.)
+  // Competitive benchmarks
   const competitors = (glean.transcriptExtraction?.competitorBenchmarks ?? []).filter(
     (c) => c.threatLevel === "decision_relevant" || c.threatLevel === "actively_comparing",
   );
   for (const [i, c] of competitors.entries()) {
-    const tone: TriageTone = c.threatLevel === "decision_relevant" ? "urgent" : "soon";
-    const kindSuffix = c.threatLevel === "decision_relevant" ? "decision-relevant" : "actively comparing";
+    const bucket: TriageBucket = c.threatLevel === "decision_relevant" ? "urgent" : "soon";
+    const kindSuffix =
+      c.threatLevel === "decision_relevant" ? "decision-relevant" : "actively comparing";
     const headline =
       c.threatLevel === "decision_relevant"
         ? `${c.competitor} surfaced in a decision-relevant context.`
         : `${c.competitor} is being actively compared.`;
+    const citationLabel = c.source ?? c.date ?? "Transcript";
     cards.push({
-      key: `glean-competitor-${i}`,
-      tone,
+      id: `glean-competitor-${i}`,
+      bucket,
+      source: "glean",
+      sourcedAt: c.date ?? "",
       kind: `Competitive pressure · ${kindSuffix}`,
       headline,
       evidence: c.context ?? undefined,
-      sources: [{ origin: "glean", label: c.source ?? c.date ?? "Transcript" }],
+      sources: [{ origin: "glean" }],
+      citations: [{ label: citationLabel }],
     });
   }
 
-  // DOS-203 Wave-0f fix: quoteWall entries must not silently sink into the
-  // fine state. Sentiment branching:
-  //   - negative: render as a triage card (tone: soon — "worth reading",
-  //     non-urgent unless clustered).
-  //   - mixed: render as a triage card (tone: gap — nuanced signal).
-  //   - two-or-more negatives: escalate the first card to urgent so a cluster
-  //     of negative customer voices reads as active friction, not a whisper.
-  //   - positive: render as a low-visibility capture opportunity (tone: gap,
-  //     kind "Quote wall · capture opportunity"). They still prevent the fine
-  //     state, but they do not masquerade as urgent.
-  //   - neutral / unspecified sentiment: render as gap-tone so they count
-  //     toward not-fine-state without claiming a posture.
+  // Quote wall — sentiment branching (DOS-203 Wave-0f preserved)
   const quoteWall = glean.quoteWall ?? [];
   if (quoteWall.length > 0) {
     const negativeCount = quoteWall.filter((q) => q.sentiment === "negative").length;
     let negativesSeen = 0;
     for (const [i, q] of quoteWall.entries()) {
       const sentiment = q.sentiment ?? "neutral";
-      let tone: TriageTone;
+      let bucket: TriageBucket;
       let kind: string;
       let headline: string;
       if (sentiment === "negative") {
         negativesSeen += 1;
-        // Cluster escalation: first negative in a >=2-negative set is urgent.
-        tone = negativeCount >= 2 && negativesSeen === 1 ? "urgent" : "soon";
+        bucket = negativeCount >= 2 && negativesSeen === 1 ? "urgent" : "soon";
         kind = "Quote wall · negative customer voice";
         headline = q.speaker
           ? `${q.speaker}${q.role ? ` (${q.role})` : ""}: "${q.quote}"`
           : `"${q.quote}"`;
       } else if (sentiment === "mixed") {
-        tone = "gap";
+        bucket = "stakeholder";
         kind = "Quote wall · mixed sentiment";
         headline = q.speaker
           ? `${q.speaker}${q.role ? ` (${q.role})` : ""}: "${q.quote}"`
           : `"${q.quote}"`;
       } else if (sentiment === "positive") {
-        tone = "gap";
+        bucket = "stakeholder";
         kind = "Quote wall · capture opportunity";
         headline = q.speaker
           ? `Promote to case study / references — ${q.speaker}${q.role ? ` (${q.role})` : ""}: "${q.quote}"`
           : `Promote to case study / references — "${q.quote}"`;
       } else {
-        // neutral / null
-        tone = "gap";
+        bucket = "stakeholder";
         kind = "Quote wall · customer voice";
         headline = q.speaker
           ? `${q.speaker}${q.role ? ` (${q.role})` : ""}: "${q.quote}"`
           : `"${q.quote}"`;
       }
+      const citationLabel = q.source ?? q.date ?? "Quote wall";
       cards.push({
-        key: `glean-quote-${i}`,
-        tone,
+        id: `glean-quote-${i}`,
+        bucket,
+        source: "glean",
+        sourcedAt: q.date ?? "",
         kind,
         headline,
         evidence: q.whyItMatters ?? undefined,
-        sources: [{ origin: "glean", label: q.source ?? q.date ?? "Quote wall" }],
+        sources: [{ origin: "glean" }],
+        citations: [{ label: citationLabel }],
       });
     }
   }
@@ -272,62 +395,71 @@ function buildGleanCards(glean: HealthOutlookSignals): BuiltCard[] {
   // Budget cycle (locked)
   const budgets = (glean.transcriptExtraction?.budgetCycleSignals ?? []).filter((b) => b.locked);
   for (const [i, b] of budgets.entries()) {
+    const citationLabel = b.source ?? b.date ?? "Transcript";
     cards.push({
-      key: `glean-budget-${i}`,
-      tone: "soon",
+      id: `glean-budget-${i}`,
+      bucket: "soon",
+      source: "glean",
+      sourcedAt: b.date ?? "",
       kind: "Budget cycle · locked",
       headline: b.signal,
       evidence: b.implication ?? undefined,
-      sources: [{ origin: "glean", label: b.source ?? b.date ?? "Transcript" }],
+      sources: [{ origin: "glean" }],
+      citations: [{ label: citationLabel }],
     });
   }
 
   return cards;
 }
 
-/** Fallback: build cards from local `intelligence.risks` + `recentWins`. */
-function buildLocalCards(intel: EntityIntelligence): BuiltCard[] {
-  const cards: BuiltCard[] = [];
+// ─────────────────────────────────────────────────────────────────────────────
+// Ranking + section render
+// ─────────────────────────────────────────────────────────────────────────────
 
-  for (const [i, risk] of (intel.risks ?? []).entries()) {
-    const label = risk.source ?? (risk.itemSource?.source ?? null);
-    cards.push({
-      key: `local-risk-${i}`,
-      tone: toneFromUrgency(risk.urgency),
-      kind: kindFromUrgency(risk.urgency),
-      headline: risk.text,
-      evidence: undefined,
-      sources: [{ origin: "local", label: label ?? undefined }],
-    });
-  }
+/** Ranks candidates by bucket THEN recency (newest first). */
+export function rankTriageCandidates(candidates: TriageCandidate[]): TriageCandidate[] {
+  return [...candidates].sort((a, b) => {
+    const byBucket = BUCKET_ORDER[a.bucket] - BUCKET_ORDER[b.bucket];
+    if (byBucket !== 0) return byBucket;
+    return parseTime(b.sourcedAt) - parseTime(a.sourcedAt);
+  });
+}
 
-  for (const [i, win] of (intel.recentWins ?? []).entries()) {
-    cards.push({
-      key: `local-win-${i}`,
-      tone: "gap",
-      kind: "Recent win · momentum",
-      headline: win.text,
-      evidence: win.impact ?? undefined,
-      sources: [{ origin: "local", label: win.source ?? win.itemSource?.source ?? undefined }],
-    });
-  }
-
-  return cards;
+function buildAllCandidates(
+  intelligence: EntityIntelligence | null,
+  gleanSignals: HealthOutlookSignals | null,
+): TriageCandidate[] {
+  const local = intelligence ? buildLocalCandidates(intelligence) : [];
+  const glean = gleanSignals ? buildGleanCandidates(gleanSignals) : [];
+  return [...glean, ...local];
 }
 
 interface TriageSectionProps {
   intelligence: EntityIntelligence | null;
   gleanSignals: HealthOutlookSignals | null;
+  /**
+   * Entity receiving per-card feedback. When both `entityId` and `entityType`
+   * are set, each card renders an `IntelligenceCorrection` prompt keyed on
+   * `triage_item_<id>`. OPTIONAL for backward compatibility — callers that
+   * don't pass these get the same card layout without the feedback slot.
+   */
+  entityId?: string;
+  entityType?: "account";
+  /** Hard cap on rendered cards. Defaults to 5 per the DOS-249 spec. */
+  maxCards?: number;
 }
 
-export function TriageSection({ intelligence, gleanSignals }: TriageSectionProps) {
-  const gleanCards = gleanSignals ? buildGleanCards(gleanSignals) : [];
-  const localCards = intelligence ? buildLocalCards(intelligence) : [];
-  // Glean-first when available; always union with local fallback so nothing
-  // is silently dropped when Glean is unavailable.
-  const cards = [...gleanCards, ...localCards];
+export function TriageSection({
+  intelligence,
+  gleanSignals,
+  entityId,
+  entityType,
+  maxCards = MAX_CARDS,
+}: TriageSectionProps) {
+  const allCandidates = buildAllCandidates(intelligence, gleanSignals);
+  if (allCandidates.length === 0) return null;
 
-  if (cards.length === 0) return null;
+  const ranked = rankTriageCandidates(allCandidates).slice(0, maxCards);
 
   return (
     <>
@@ -336,7 +468,10 @@ export function TriageSection({ intelligence, gleanSignals }: TriageSectionProps
         <div className={styles.triageTitleRow}>
           <h2 className={styles.triageTitle}>Needs attention</h2>
           <span className={styles.triageCount}>
-            {cards.length} item{cards.length === 1 ? "" : "s"}
+            {ranked.length} item{ranked.length === 1 ? "" : "s"}
+            {allCandidates.length > ranked.length
+              ? ` · showing top ${ranked.length} of ${allCandidates.length}`
+              : ""}
           </span>
         </div>
         <ChapterFreshness
@@ -345,14 +480,25 @@ export function TriageSection({ intelligence, gleanSignals }: TriageSectionProps
         />
       </section>
       <div>
-        {cards.map((c) => (
+        {ranked.map((c) => (
           <TriageCard
-            key={c.key}
-            tone={c.tone}
+            key={c.id}
+            tone={toneForBucket(c.bucket)}
             kind={c.kind}
             headline={c.headline}
             evidence={c.evidence}
             sources={c.sources}
+            citations={c.citations}
+            feedbackSlot={
+              entityId && entityType ? (
+                <IntelligenceCorrection
+                  entityId={entityId}
+                  entityType={entityType}
+                  field={`triage_item_${c.id}`}
+                  prompt="Useful?"
+                />
+              ) : undefined
+            }
           />
         ))}
       </div>
@@ -360,14 +506,15 @@ export function TriageSection({ intelligence, gleanSignals }: TriageSectionProps
   );
 }
 
-/** Exposed for callers that want to know whether triage will render. */
+/** Exposed for callers that want to know whether triage will render.
+ *
+ *  Symmetric with `TriageSection`: returns true when ANY local or Glean card
+ *  would render. This is the gate for the Health-tab fine state — if it
+ *  returns false, the caller renders the "On track" chapter instead.
+ */
 export function hasTriageContent(
   intelligence: EntityIntelligence | null,
   gleanSignals: HealthOutlookSignals | null,
 ): boolean {
-  if (intelligence && ((intelligence.risks?.length ?? 0) > 0 || (intelligence.recentWins?.length ?? 0) > 0)) {
-    return true;
-  }
-  if (gleanSignals && buildGleanCards(gleanSignals).length > 0) return true;
-  return false;
+  return buildAllCandidates(intelligence, gleanSignals).length > 0;
 }

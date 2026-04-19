@@ -1,19 +1,30 @@
 /** @vitest-environment jsdom */
 
 /**
- * DOS-232 Codex fix — TriageSection must not fall into the "On track" fine
- * state when a health-relevant leading signal is present. The original gate
- * checked only risks/recentWins + a narrow Glean slice; an account whose
- * only signal was `productUsageTrend.overallTrend30d = "declining"` was
- * erroneously rendered as fine.
+ * TriageSection tests.
  *
- * These tests seed a single family of `HealthOutlookSignals` at a time and
- * assert (a) `hasTriageContent` returns true and (b) the card renders.
+ * History:
+ *   - DOS-232 (Codex): TriageSection must not fall into the "On track" fine
+ *     state when a health-relevant leading signal is present. Each family of
+ *     `HealthOutlookSignals` below seeds ONE signal and asserts
+ *     `hasTriageContent` + the rendered card.
+ *   - DOS-249 (Wave-0g): hard cap at 5, unified Local + Glean ranking
+ *     (urgent → soon → stakeholder, newest first within bucket), and
+ *     per-card `IntelligenceCorrection` feedback slot.
  */
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TriageSection, hasTriageContent } from "./TriageSection";
-import type { HealthOutlookSignals } from "@/types";
+import type { EntityIntelligence, HealthOutlookSignals } from "@/types";
+
+// Stub the correction hook so feedback slot can mount without a Tauri backend.
+vi.mock("@/hooks/useIntelligenceCorrection", () => ({
+  useIntelligenceCorrection: () => ({
+    submit: vi.fn().mockResolvedValue(true),
+    submitting: false,
+    reset: vi.fn(),
+  }),
+}));
 
 function emptySignals(overrides: Partial<HealthOutlookSignals>): HealthOutlookSignals {
   return {
@@ -24,6 +35,21 @@ function emptySignals(overrides: Partial<HealthOutlookSignals>): HealthOutlookSi
     commercialSignals: null,
     advocacyTrack: null,
     quoteWall: [],
+    ...overrides,
+  };
+}
+
+function emptyIntelligence(overrides: Partial<EntityIntelligence>): EntityIntelligence {
+  return {
+    version: 1,
+    entityId: "acct-test",
+    entityType: "account",
+    enrichedAt: "2026-04-10T00:00:00Z",
+    sourceFileCount: 0,
+    sourceManifest: [],
+    risks: [],
+    recentWins: [],
+    stakeholderInsights: [],
     ...overrides,
   };
 }
@@ -65,9 +91,7 @@ describe("hasTriageContent / TriageSection — Codex DOS-232 gate coverage", () 
         churnAdjacentQuestions: [],
         expansionAdjacentQuestions: [],
         competitorBenchmarks: [],
-        decisionMakerShifts: [
-          { shift: "New CFO joined last month", who: "CFO" },
-        ],
+        decisionMakerShifts: [{ shift: "New CFO joined last month", who: "CFO" }],
         budgetCycleSignals: [],
       },
     });
@@ -79,9 +103,7 @@ describe("hasTriageContent / TriageSection — Codex DOS-232 gate coverage", () 
       transcriptExtraction: {
         churnAdjacentQuestions: [],
         expansionAdjacentQuestions: [],
-        competitorBenchmarks: [
-          { competitor: "Rival Inc", threatLevel: "decision_relevant" },
-        ],
+        competitorBenchmarks: [{ competitor: "Rival Inc", threatLevel: "decision_relevant" }],
         decisionMakerShifts: [],
         budgetCycleSignals: [],
       },
@@ -118,7 +140,6 @@ describe("hasTriageContent / TriageSection — Codex DOS-232 gate coverage", () 
     expect(hasTriageContent(null, glean)).toBe(false);
   });
 
-  // DOS-203 Wave-0f: quoteWall must not silently sink into fine state.
   it("fires on quoteWall with a negative sentiment quote ONLY", () => {
     const glean = emptySignals({
       quoteWall: [
@@ -148,8 +169,6 @@ describe("hasTriageContent / TriageSection — Codex DOS-232 gate coverage", () 
     expect(hasTriageContent(null, glean)).toBe(true);
   });
 
-  // Explicit design choice: positive quotes render as a "capture opportunity"
-  // card rather than being omitted. They must NOT silently sink fine state.
   it("fires on quoteWall with positive quotes ONLY (capture opportunity)", () => {
     const glean = emptySignals({
       quoteWall: [
@@ -179,5 +198,142 @@ describe("hasTriageContent / TriageSection — Codex DOS-232 gate coverage", () 
   it("regression: empty quoteWall + no other signals stays in fine state", () => {
     const glean = emptySignals({ quoteWall: [] });
     expect(hasTriageContent(null, glean)).toBe(false);
+  });
+
+  it("hasTriageContent returns true when only local risks are present", () => {
+    const intel = emptyIntelligence({
+      risks: [{ text: "DORA compliance gap", urgency: "high" }],
+    });
+    expect(hasTriageContent(intel, null)).toBe(true);
+  });
+
+  it("hasTriageContent returns true when only local recentWins are present", () => {
+    const intel = emptyIntelligence({
+      recentWins: [{ text: "Shipped SSO integration" }],
+    });
+    expect(hasTriageContent(intel, null)).toBe(true);
+  });
+});
+
+describe("TriageSection — DOS-249 cap + ranking + feedback slot", () => {
+  it("caps rendered cards at 5 even when more candidates exist", () => {
+    const intel = emptyIntelligence({
+      risks: [
+        { text: "Risk 1 urgent", urgency: "high" },
+        { text: "Risk 2 urgent", urgency: "critical" },
+        { text: "Risk 3 soon", urgency: "medium" },
+        { text: "Risk 4 soon", urgency: "moderate" },
+        { text: "Risk 5 low", urgency: "low" },
+        { text: "Risk 6 low", urgency: "low" },
+        { text: "Risk 7 low", urgency: "low" },
+      ],
+      recentWins: [{ text: "Win one" }, { text: "Win two" }],
+    });
+
+    render(<TriageSection intelligence={intel} gleanSignals={null} />);
+    // Cards carry a serif headline — count by data text.
+    const headlines = screen.queryAllByText(/Risk \d|Win \w+/i);
+    expect(headlines.length).toBe(5);
+    // Count chip in header should announce truncation.
+    expect(screen.getByText(/showing top 5 of 9/i)).toBeInTheDocument();
+  });
+
+  it("orders urgent → soon → stakeholder, newest first within a bucket", () => {
+    const glean = emptySignals({
+      transcriptExtraction: {
+        churnAdjacentQuestions: [
+          { question: "Older urgent Q", date: "2026-01-01" },
+          { question: "Newer urgent Q", date: "2026-04-01" },
+        ],
+        expansionAdjacentQuestions: [],
+        competitorBenchmarks: [],
+        decisionMakerShifts: [{ shift: "CFO changed", date: "2026-03-15" }],
+        budgetCycleSignals: [],
+      },
+      advocacyTrack: {
+        speakingSlots: [],
+        betaProgramsIn: [],
+        referralsMade: [],
+        npsHistory: [{ score: 4, surveyDate: "2026-02-20" }],
+        advocacyTrend: "cooling",
+      },
+    });
+
+    render(<TriageSection intelligence={null} gleanSignals={glean} />);
+    // Serialized text order reflects DOM order; assert urgent (churn Qs)
+    // appear before the soon card (advocacy cooling) appear before the
+    // stakeholder card (decision-maker shift).
+    const body = document.body.textContent ?? "";
+    const idxNewerUrgent = body.indexOf("Newer urgent Q");
+    const idxOlderUrgent = body.indexOf("Older urgent Q");
+    const idxAdvocacy = body.indexOf("Advocacy is cooling");
+    const idxShift = body.indexOf("CFO changed");
+
+    expect(idxNewerUrgent).toBeGreaterThan(-1);
+    expect(idxOlderUrgent).toBeGreaterThan(-1);
+    expect(idxAdvocacy).toBeGreaterThan(-1);
+    expect(idxShift).toBeGreaterThan(-1);
+
+    // Urgent first, newest before older.
+    expect(idxNewerUrgent).toBeLessThan(idxOlderUrgent);
+    // Urgent before soon.
+    expect(idxOlderUrgent).toBeLessThan(idxAdvocacy);
+    // Soon before stakeholder.
+    expect(idxAdvocacy).toBeLessThan(idxShift);
+  });
+
+  it("renders Glean cards alongside Local cards with a Glean source tag", () => {
+    const intel = emptyIntelligence({
+      risks: [{ text: "Local risk A", urgency: "high" }],
+    });
+    const glean = emptySignals({
+      commercialSignals: {
+        arrTrend12mo: [],
+        arrDirection: "shrinking",
+        discountHistory: [],
+      },
+    });
+
+    render(<TriageSection intelligence={intel} gleanSignals={glean} />);
+    // Glean ARR card rendered.
+    expect(screen.getByText(/ARR trajectory is shrinking/i)).toBeInTheDocument();
+    // Local risk also rendered.
+    expect(screen.getByText(/Local risk A/i)).toBeInTheDocument();
+    // Glean tag pill is present.
+    expect(screen.getAllByText("Glean").length).toBeGreaterThan(0);
+    // Local tag pill is present.
+    expect(screen.getAllByText("Local").length).toBeGreaterThan(0);
+  });
+
+  it("renders IntelligenceCorrection slot per card when entityId + entityType are supplied", () => {
+    const intel = emptyIntelligence({
+      risks: [
+        { text: "Risk alpha", urgency: "high" },
+        { text: "Risk beta", urgency: "medium" },
+      ],
+    });
+
+    render(
+      <TriageSection
+        intelligence={intel}
+        gleanSignals={null}
+        entityId="acct-123"
+        entityType="account"
+      />,
+    );
+    // One "Useful?" prompt per card.
+    const prompts = screen.getAllByText(/Useful\?/i);
+    expect(prompts.length).toBe(2);
+  });
+
+  it("omits feedback slot when entityId/entityType are missing (backward compat)", () => {
+    const intel = emptyIntelligence({
+      risks: [{ text: "Risk gamma", urgency: "high" }],
+    });
+
+    render(<TriageSection intelligence={intel} gleanSignals={null} />);
+    expect(screen.queryByText(/Useful\?/i)).toBeNull();
+    // But the card still rendered.
+    expect(screen.getByText(/Risk gamma/i)).toBeInTheDocument();
   });
 });

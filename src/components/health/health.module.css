@@ -122,6 +122,84 @@
   letter-spacing: 0.08em;
 }
 
+/* Dated citation link rendered beside source tags (mockup convention). */
+.triageCitation {
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  padding: 0;
+}
+.triageCitation:hover {
+  color: var(--color-spice-turmeric);
+  border-bottom-color: var(--color-spice-turmeric);
+}
+/* Plain (non-link) citation label — same typography, no dotted underline. */
+.triageCitationPlain {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+/* Action column — primary + secondary pill buttons per mockup. */
+.triageActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-sm, 8px);
+  min-width: 0;
+}
+.triageActionsRow {
+  display: flex;
+  gap: var(--space-sm, 8px);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.triageBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary);
+  padding: 8px 14px;
+  border-radius: 100px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.triageBtn:hover {
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text-primary);
+}
+.triageBtnPrimary {
+  background: var(--color-desk-charcoal);
+  color: var(--color-paper-cream);
+  border-color: var(--color-desk-charcoal);
+}
+.triageBtnPrimary:hover {
+  background: var(--color-desk-ink);
+  border-color: var(--color-desk-ink);
+}
+
+/* Per-card IntelligenceCorrection slot — pinned under the action buttons. */
+.triageFeedback {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
 /* ═════════ DIVERGENCE SUB-HEADER ═════════ */
 .divergenceHeader {
   padding-top: var(--space-2xl, 48px);
