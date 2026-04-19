@@ -254,9 +254,9 @@
   margin-bottom: var(--space-sm, 8px);
   letter-spacing: -0.015em;
 }
-.outlookValueLow { color: var(--color-spice-saffron); }
+.outlookValueLow { color: var(--color-spice-terracotta); }
 .outlookValueHigh { color: var(--color-garden-sage); }
-.outlookValueNeutral { color: var(--color-spice-turmeric); }
+.outlookValueNeutral { color: var(--color-spice-saffron); }
 .outlookBlockDetail {
   font-family: var(--font-sans);
   font-size: 13px;

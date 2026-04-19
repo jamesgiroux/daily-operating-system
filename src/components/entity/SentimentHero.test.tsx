@@ -88,7 +88,10 @@ describe("SentimentHero", () => {
     expect(screen.getByText(/1 note/)).toBeTruthy();
   });
 
-  it("shows the Still accurate? button only when stale", () => {
+  it("renders the Still accurate? button unconditionally in the meta line", () => {
+    // Per the mockup (lines 622 / 467 of .docs/mockups/account-health-*.html),
+    // "Still accurate?" is always present alongside the set-date and note
+    // count — it's a zero-pressure prompt, not a staleness escalation.
     const { rerender } = render(
       <SentimentHero
         view={makeView({ isStale: false })}
@@ -96,7 +99,7 @@ describe("SentimentHero", () => {
         onAcknowledgeStale={vi.fn().mockResolvedValue(undefined)}
       />,
     );
-    expect(screen.queryByText("Still accurate?")).toBeNull();
+    expect(screen.getByText("Still accurate?")).toBeTruthy();
 
     rerender(
       <SentimentHero

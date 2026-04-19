@@ -31,6 +31,7 @@ import { ChapterFreshness } from "@/components/editorial/ChapterFreshness";
 import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import {
   TriageCard,
+  type TriageAction,
   type TriageCitation,
   type TriageSource,
   type TriageTone,
@@ -434,6 +435,57 @@ function buildAllCandidates(
   return [...glean, ...local];
 }
 
+/**
+ * Default actions per bucket — mockup-faithful pill pair on every card.
+ *
+ * TODO(DOS-250): wire to real mutation backends (snooze / resolve / reassign /
+ * map-stakeholder / defer). Today the buttons are visually present with
+ * no-op handlers so the editorial weight matches the mockup. A visibly
+ * dead card (no actions at all) was the prior state — this closes that gap
+ * without fabricating a backend that doesn't exist yet.
+ */
+function defaultActionsFor(candidate: TriageCandidate): TriageAction[] {
+  const noop = () => {
+    /* TODO(DOS-250): wire triage action handlers. */
+  };
+  const kindLower = candidate.kind.toLowerCase();
+
+  if (candidate.bucket === "urgent") {
+    return [
+      { label: "Snooze", onClick: noop },
+      { label: "Confirm resolved", primary: true, onClick: noop },
+    ];
+  }
+
+  if (candidate.bucket === "soon") {
+    // Glean expansion or transcript-question → "Send pricing"; otherwise a
+    // generic "Follow up" primary for risk-leaning soon cards.
+    let primaryLabel = "Address";
+    if (
+      kindLower.includes("expansion") ||
+      kindLower.includes("transcript") ||
+      kindLower.includes("question")
+    ) {
+      primaryLabel = "Send pricing";
+    } else if (
+      kindLower.includes("budget") ||
+      kindLower.includes("competitive")
+    ) {
+      primaryLabel = "Follow up";
+    }
+    return [
+      { label: "Reassign", onClick: noop },
+      { label: primaryLabel, primary: true, onClick: noop },
+    ];
+  }
+
+  // stakeholder
+  return [
+    { label: "Defer", onClick: noop },
+    { label: "Map stakeholder", primary: true, onClick: noop },
+  ];
+}
+
 interface TriageSectionProps {
   intelligence: EntityIntelligence | null;
   gleanSignals: HealthOutlookSignals | null;
@@ -472,6 +524,7 @@ export function TriageSection({
             {allCandidates.length > ranked.length
               ? ` · showing top ${ranked.length} of ${allCandidates.length}`
               : ""}
+            {" · scan 60s"}
           </span>
         </div>
         <ChapterFreshness
@@ -489,6 +542,7 @@ export function TriageSection({
             evidence={c.evidence}
             sources={c.sources}
             citations={c.citations}
+            actions={defaultActionsFor(c)}
             feedbackSlot={
               entityId && entityType ? (
                 <IntelligenceCorrection
