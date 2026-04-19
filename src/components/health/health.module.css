@@ -7,56 +7,55 @@
  * Uses existing design tokens from design-tokens.css; no new tokens.
  */
 
-/* ═════════ BLOCK HEADER ═════════
-   Shared editorial block header — rule + serif title row + right-aligned
-   mono count. Used by both the Needs attention triage block and the
-   Divergences block (design-system parity: same weight, same treatment,
-   colour varies by tone). */
-.blockHeader {
-  padding-top: var(--space-4xl, 72px);
-  padding-bottom: var(--space-xl, 32px);
-}
-.blockHeaderRule {
-  border: none;
-  border-top: 1px solid var(--color-rule-heavy);
-  margin-bottom: var(--space-lg, 24px);
-}
-.blockHeaderTitleRow {
+/* ═════════ TRIAGE COMPACT HEADER ═════════
+   The chapter title "Needs attention" lives in the MarginSection gutter
+   label — no inline 28px h2 here. A compact rule + right-aligned mono
+   count chip is enough visual anchor within the content column. */
+.triageCompactHeader {
+  padding-bottom: var(--space-md, 16px);
+  margin-bottom: var(--space-md, 16px);
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-md, 16px);
+  justify-content: flex-end;
+  border-bottom: 1px solid var(--color-rule-heavy);
 }
-.blockHeaderTitle {
-  font-family: var(--font-serif);
-  font-size: 28px;
-  font-weight: 400;
-  color: var(--color-text-primary);
-  letter-spacing: -0.01em;
-}
-.blockHeaderCount {
+.triageCompactCount {
   font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-}
-.blockHeaderCountTerracotta {
   color: var(--color-spice-terracotta);
 }
-.blockHeaderCountSaffron {
-  color: var(--color-spice-saffron);
+
+/* ═════════ DIVERGENCE SUB-BLOCK HEADER ═════════
+   Divergences is a sub-block *inside* the "Needs attention" chapter —
+   the gutter already carries the chapter name, so the sub-block uses the
+   mockup's compact saffron label + italic note treatment rather than a
+   second 28px serif title competing with the gutter. */
+.divergenceHeader {
+  padding-top: var(--space-2xl, 48px);
+  padding-bottom: var(--space-md, 16px);
+  margin-top: var(--space-2xl, 48px);
+  border-top: 1px solid var(--color-rule-heavy);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md, 16px);
+  flex-wrap: wrap;
 }
-/* Optional italic sub-note rendered below the title row, used for
-   divergence-style blocks where the block's intent benefits from an
-   editorial explainer. */
-.blockHeaderNote {
-  margin-top: var(--space-sm, 8px);
+.divergenceLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-spice-saffron);
+  font-weight: 600;
+}
+.divergenceNote {
   font-family: var(--font-sans);
   font-size: 13px;
   font-style: italic;
   line-height: 1.55;
   color: var(--color-text-tertiary);
-  max-width: 620px;
 }
 
 /* ═════════ TRIAGE CARD ═════════ */
