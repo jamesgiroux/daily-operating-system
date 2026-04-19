@@ -61,7 +61,7 @@ pub fn extract_email_commitments(
                 .with_trigger("email_actions")
                 .with_tier(ModelTier::Extraction),
         )
-        .with_timeout(30)
+        .with_timeout(90)
         .with_nice_priority(10);
 
     let output = match pty.spawn_claude(workspace, &prompt) {
