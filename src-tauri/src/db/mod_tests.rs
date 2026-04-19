@@ -435,6 +435,102 @@ fn test_dos226_rollback_stale_respects_fresh_batches() {
     assert_eq!(state, "pending_retry");
 }
 
+// ---------------------------------------------------------------------------
+// DOS-226 Wave 0g: retry-batched finalize failure must surface, not swallow
+// ---------------------------------------------------------------------------
+//
+// Regression guard for the Wave 0g HIGH finding: the orchestrator promoted
+// `pending_retry` rows to `pending` *before* enrichment via
+// `finalize_pending_retry_success`. If that call erred or returned zero
+// promoted rows for a retry batch, the old code logged and continued — the
+// service-layer's residual finalize after enrichment then returned success
+// while zero retry work had actually happened.
+//
+// The tests below pin the semantic invariants the orchestrator relies on:
+//   (a) Finalizing a non-existent batch_id returns `Ok(0)` — distinct from
+//       success, and the orchestrator must treat this as "batch stuck".
+//   (b) After `rollback_pending_retry`, rows are back in `failed` with their
+//       original attempts preserved, so the user can retry again. This is
+//       what the service-layer wrapper does on orchestrate Err.
+
+#[test]
+fn test_dos226_w0g_finalize_missing_batch_returns_zero_not_err() {
+    // Wave 0g: the orchestrator's new fail-loud branch distinguishes
+    // `Ok(0)` (genuinely stuck batch) from `Err` (SQLite failure). Both
+    // must surface as `Err(ExecutionError)` in the orchestrator so the
+    // service rollback runs. This test pins the DB-level contract that
+    // finalize on a batch with no matching rows returns `Ok(0)` — the
+    // "stuck" signal the orchestrator now acts on.
+    let db = test_db();
+    seed_failed_email(&db, "em-w0g-stuck");
+    // Stamp a batch, but pretend the orchestrator lost track and calls
+    // finalize with a wrong/missing batch_id.
+    db.mark_failed_for_retry("batch-real").expect("mark");
+
+    let promoted = db
+        .finalize_pending_retry_success("batch-phantom")
+        .expect("finalize returns Ok even for missing batch");
+    assert_eq!(
+        promoted, 0,
+        "finalize for a batch with no matching rows is Ok(0); orchestrator treats this as stuck"
+    );
+
+    // The original batch's row is still in pending_retry — the phantom
+    // finalize did not accidentally promote it.
+    let (state, _) = read_enrichment_state(&db, "em-w0g-stuck");
+    assert_eq!(
+        state, "pending_retry",
+        "the real batch's row must not have been promoted by the phantom finalize"
+    );
+}
+
+#[test]
+fn test_dos226_w0g_rollback_after_failed_finalize_restores_retry() {
+    // Wave 0g: when the orchestrator returns Err (our new behavior when
+    // finalize fails or returns 0 for a retry batch), the service layer
+    // takes the `Err` branch and calls `rollback_pending_retry`. This
+    // test pins the end-state the user sees: the rows are back in
+    // `failed` with preserved attempts, not stranded in `pending_retry`
+    // with a dead batch_id. In other words: the "retry succeeded while
+    // zero work ran" bug cannot manifest, because the failure propagates
+    // all the way to a visible rollback.
+    let db = test_db();
+    seed_failed_email(&db, "em-w0g-rb-1");
+    seed_failed_email(&db, "em-w0g-rb-2");
+
+    db.mark_failed_for_retry("batch-w0g-rb").expect("mark");
+    // Simulate the orchestrator having returned Err (finalize failed
+    // mid-run). The service layer's Err branch runs rollback.
+    let rolled = db
+        .rollback_pending_retry("batch-w0g-rb")
+        .expect("rollback");
+    assert_eq!(rolled, 2, "both rows must be returned to failed state");
+
+    for id in ["em-w0g-rb-1", "em-w0g-rb-2"] {
+        let (state, attempts) = read_enrichment_state(&db, id);
+        assert_eq!(state, "failed", "row {id} must be back in failed");
+        assert_eq!(
+            attempts, 3,
+            "row {id} must have its original attempts preserved so user can retry again"
+        );
+    }
+
+    // And the batch's columns are cleared — a fresh retry can adopt them.
+    let (batch_id, started_at): (Option<String>, Option<String>) = db
+        .conn
+        .query_row(
+            "SELECT retry_batch_id, retry_started_at FROM emails WHERE email_id = 'em-w0g-rb-1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read cols");
+    assert!(batch_id.is_none(), "retry_batch_id cleared after rollback");
+    assert!(
+        started_at.is_none(),
+        "retry_started_at cleared after rollback"
+    );
+}
+
 #[test]
 fn test_dos226_pending_retry_eligible_for_enrichment_after_finalize() {
     // Codex finding 1 regression guard: the whole retry loop hinges on
@@ -5550,6 +5646,236 @@ fn test_dos228_w0f_drain_recovers_after_simulated_shutdown() {
     let (ran, cleared) = drain_pending_sync(&db);
     assert_eq!(ran, 1);
     assert_eq!(cleared, 1);
+}
+
+// ---------------------------------------------------------------------------
+// DOS-228 Wave 0g: stakeholder mutations co-commit health_recompute_pending
+// ---------------------------------------------------------------------------
+//
+// Regression for the Wave 0g HIGH finding: stakeholder mutations
+// (engagement/assessment updates, role add/remove, suggestion accept) are
+// inputs to the `stakeholder_coverage` and `champion_health` scoring
+// dimensions, but the pre-fix service path returned refreshed account detail
+// without persisting the durable `health_recompute_pending` marker. A crash
+// between the mutation commit and any future recompute would leave
+// entity_quality stale indefinitely.
+//
+// Each test below exercises the exact SQL body the service function commits
+// inside `db.with_transaction(...)` (including the new
+// `tx.mark_health_recompute_pending(...)` call), and asserts the marker is
+// visible synchronously after the transaction returns. We bypass AppState
+// because `schedule_recompute` requires a Tauri async runtime that isn't
+// available in unit tests; durability is the load-bearing invariant, and it
+// is owned entirely by the transaction — the in-memory debouncer only
+// coalesces timing.
+
+fn seed_w0g_account(db: &ActionDb, id: &str) {
+    let account = DbAccount {
+        id: id.to_string(),
+        name: format!("W0g {id} Co"),
+        lifecycle: Some("steady-state".to_string()),
+        arr: Some(50_000.0),
+        health: Some("green".to_string()),
+        contract_start: Some("2026-01-01".to_string()),
+        contract_end: Some("2027-01-01".to_string()),
+        nps: None,
+        tracker_path: None,
+        parent_id: None,
+        account_type: crate::db::AccountType::Customer,
+        updated_at: Utc::now().to_rfc3339(),
+        archived: false,
+        keywords: None,
+        keywords_extracted_at: None,
+        metadata: None,
+        ..Default::default()
+    };
+    db.upsert_account(&account).expect("seed w0g account");
+}
+
+fn seed_w0g_stakeholder(db: &ActionDb, account_id: &str, person_id: &str) {
+    // Minimal person row (unique email per test via the person_id suffix).
+    db.conn_ref()
+        .execute(
+            "INSERT OR IGNORE INTO people (id, email, name, updated_at)
+             VALUES (?1, ?2, 'W0g Person', '2026-01-01T00:00:00Z')",
+            rusqlite::params![person_id, format!("{person_id}@example.com")],
+        )
+        .expect("seed person");
+    db.conn_ref()
+        .execute(
+            "INSERT OR IGNORE INTO account_stakeholders
+             (account_id, person_id, data_source, created_at)
+             VALUES (?1, ?2, 'user', '2026-01-01T00:00:00Z')",
+            rusqlite::params![account_id, person_id],
+        )
+        .expect("seed stakeholder");
+}
+
+#[test]
+fn test_dos228_w0g_add_champion_role_marks_pending() {
+    let db = test_db();
+    seed_w0g_account(&db, "acct-w0g-add");
+    seed_w0g_stakeholder(&db, "acct-w0g-add", "p-w0g-add");
+
+    // Mirrors `add_stakeholder_role_inner`: INSERT role + mark pending, in one tx.
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles
+                 (account_id, person_id, role, data_source, created_at)
+                 VALUES (?1, ?2, 'champion', 'user', ?3)
+                 ON CONFLICT(account_id, person_id, role) DO UPDATE SET
+                    data_source = 'user'",
+                rusqlite::params!["acct-w0g-add", "p-w0g-add", Utc::now().to_rfc3339()],
+            )
+            .map_err(|e| e.to_string())?;
+        tx.mark_health_recompute_pending("acct-w0g-add")
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .expect("add champion tx");
+
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(
+        pending,
+        vec!["acct-w0g-add".to_string()],
+        "adding a champion role must synchronously persist the recompute marker"
+    );
+}
+
+#[test]
+fn test_dos228_w0g_remove_champion_role_marks_pending() {
+    let db = test_db();
+    seed_w0g_account(&db, "acct-w0g-rm");
+    seed_w0g_stakeholder(&db, "acct-w0g-rm", "p-w0g-rm");
+    // Pre-seed the champion role we're about to remove.
+    db.conn_ref()
+        .execute(
+            "INSERT INTO account_stakeholder_roles
+             (account_id, person_id, role, data_source, created_at)
+             VALUES ('acct-w0g-rm', 'p-w0g-rm', 'champion', 'user', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("seed champion role");
+
+    // Mirrors `remove_stakeholder_role_inner`.
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "DELETE FROM account_stakeholder_roles
+                 WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
+                rusqlite::params!["acct-w0g-rm", "p-w0g-rm", "champion"],
+            )
+            .map_err(|e| e.to_string())?;
+        tx.mark_health_recompute_pending("acct-w0g-rm")
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .expect("remove champion tx");
+
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(
+        pending,
+        vec!["acct-w0g-rm".to_string()],
+        "removing a champion role must synchronously persist the recompute marker"
+    );
+}
+
+#[test]
+fn test_dos228_w0g_update_engagement_marks_pending() {
+    let db = test_db();
+    seed_w0g_account(&db, "acct-w0g-eng");
+    seed_w0g_stakeholder(&db, "acct-w0g-eng", "p-w0g-eng");
+
+    // Mirrors `update_stakeholder_engagement_inner`.
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE account_stakeholders
+                 SET engagement = ?1, data_source_engagement = 'user'
+                 WHERE account_id = ?2 AND person_id = ?3",
+                rusqlite::params!["high", "acct-w0g-eng", "p-w0g-eng"],
+            )
+            .map_err(|e| e.to_string())?;
+        tx.mark_health_recompute_pending("acct-w0g-eng")
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .expect("update engagement tx");
+
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(
+        pending,
+        vec!["acct-w0g-eng".to_string()],
+        "engagement update must synchronously persist the recompute marker"
+    );
+}
+
+#[test]
+fn test_dos228_w0g_update_assessment_marks_pending() {
+    let db = test_db();
+    seed_w0g_account(&db, "acct-w0g-assm");
+    seed_w0g_stakeholder(&db, "acct-w0g-assm", "p-w0g-assm");
+
+    // Mirrors `update_stakeholder_assessment_inner`.
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE account_stakeholders
+                 SET assessment = ?1, data_source_assessment = 'user'
+                 WHERE account_id = ?2 AND person_id = ?3",
+                rusqlite::params![
+                    "Strong advocate — renewed unprompted.",
+                    "acct-w0g-assm",
+                    "p-w0g-assm"
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        tx.mark_health_recompute_pending("acct-w0g-assm")
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .expect("update assessment tx");
+
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(
+        pending,
+        vec!["acct-w0g-assm".to_string()],
+        "assessment update must synchronously persist the recompute marker"
+    );
+}
+
+#[test]
+fn test_dos228_w0g_marker_rolled_back_on_tx_failure() {
+    // The whole point of co-commit is that if the mutation rolls back, the
+    // marker rolls back with it. Seed a mutation that errors AFTER the
+    // mark_health_recompute_pending call and assert the marker is NOT
+    // present post-rollback (no orphan marker, no orphan recompute).
+    let db = test_db();
+    seed_w0g_account(&db, "acct-w0g-rb");
+    seed_w0g_stakeholder(&db, "acct-w0g-rb", "p-w0g-rb");
+
+    let res: Result<(), String> = db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE account_stakeholders
+                 SET engagement = 'high', data_source_engagement = 'user'
+                 WHERE account_id = ?1 AND person_id = ?2",
+                rusqlite::params!["acct-w0g-rb", "p-w0g-rb"],
+            )
+            .map_err(|e| e.to_string())?;
+        tx.mark_health_recompute_pending("acct-w0g-rb")
+            .map_err(|e| e.to_string())?;
+        // Simulate a downstream step failing (e.g., signal emission error).
+        Err("simulated emit failure".to_string())
+    });
+    assert!(res.is_err(), "tx must surface the simulated failure");
+
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert!(
+        pending.is_empty(),
+        "rolled-back mutation must roll back the marker — no orphan recompute"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -2838,18 +2838,18 @@ pub fn backfill_internal_meeting_associations(db: &ActionDb) -> Result<usize, St
 /// Update engagement level for a stakeholder with signal emission.
 pub fn update_stakeholder_engagement(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     engagement: &str,
 ) -> Result<AccountDetailResult, String> {
-    update_stakeholder_engagement_inner(db, engine, account_id, person_id, engagement)?;
+    update_stakeholder_engagement_inner(db, state, account_id, person_id, engagement)?;
     build_account_detail_result(db, account_id)
 }
 
 fn update_stakeholder_engagement_inner(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     engagement: &str,
@@ -2865,7 +2865,7 @@ fn update_stakeholder_engagement_inner(
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             tx,
-            engine,
+            &state.signals.engine,
             "account",
             account_id,
             "stakeholder_engagement_updated",
@@ -2877,25 +2877,33 @@ fn update_stakeholder_engagement_inner(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
+        // DOS-228 Wave 0g: stakeholder engagement feeds the `stakeholder_coverage`
+        // and `champion_health` health dimensions. Persist the durable marker
+        // co-committed with the mutation so a crash between here and the debounce
+        // flush leaves a trail for startup drain. See `update_account_field_inner`.
+        tx.mark_health_recompute_pending(account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
-    })
+    })?;
+    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    Ok(())
 }
 
 /// Update assessment text for a stakeholder with signal emission.
 pub fn update_stakeholder_assessment(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     assessment: &str,
 ) -> Result<AccountDetailResult, String> {
-    update_stakeholder_assessment_inner(db, engine, account_id, person_id, assessment)?;
+    update_stakeholder_assessment_inner(db, state, account_id, person_id, assessment)?;
     build_account_detail_result(db, account_id)
 }
 
 fn update_stakeholder_assessment_inner(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     assessment: &str,
@@ -2911,7 +2919,7 @@ fn update_stakeholder_assessment_inner(
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             tx,
-            engine,
+            &state.signals.engine,
             "account",
             account_id,
             "stakeholder_assessment_updated",
@@ -2920,25 +2928,31 @@ fn update_stakeholder_assessment_inner(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
+        // DOS-228 Wave 0g: assessment edits change champion_health inputs —
+        // co-commit the marker with the mutation, then debounce a recompute.
+        tx.mark_health_recompute_pending(account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
-    })
+    })?;
+    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    Ok(())
 }
 
 /// Add a role to a stakeholder (multi-role — doesn't replace existing roles).
 pub fn add_stakeholder_role(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     role: &str,
 ) -> Result<AccountDetailResult, String> {
-    add_stakeholder_role_inner(db, engine, account_id, person_id, role)?;
+    add_stakeholder_role_inner(db, state, account_id, person_id, role)?;
     build_account_detail_result(db, account_id)
 }
 
 fn add_stakeholder_role_inner(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     role: &str,
@@ -2960,7 +2974,7 @@ fn add_stakeholder_role_inner(
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             tx,
-            engine,
+            &state.signals.engine,
             "account",
             account_id,
             "stakeholder_role_added",
@@ -2972,25 +2986,32 @@ fn add_stakeholder_role_inner(
             0.9,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
+        // DOS-228 Wave 0g: champion_health reads account_stakeholder_roles
+        // directly. Adding a role (especially 'champion') is load-bearing for
+        // the health dimension — co-commit the pending marker.
+        tx.mark_health_recompute_pending(account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
-    })
+    })?;
+    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    Ok(())
 }
 
 /// Remove a specific role from a stakeholder.
 pub fn remove_stakeholder_role(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     role: &str,
 ) -> Result<AccountDetailResult, String> {
-    remove_stakeholder_role_inner(db, engine, account_id, person_id, role)?;
+    remove_stakeholder_role_inner(db, state, account_id, person_id, role)?;
     build_account_detail_result(db, account_id)
 }
 
 fn remove_stakeholder_role_inner(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     role: &str,
@@ -3005,7 +3026,7 @@ fn remove_stakeholder_role_inner(
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             tx,
-            engine,
+            &state.signals.engine,
             "account",
             account_id,
             "stakeholder_role_removed",
@@ -3017,17 +3038,23 @@ fn remove_stakeholder_role_inner(
             0.8,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
+        // DOS-228 Wave 0g: removing a role (e.g. champion) downgrades
+        // champion_health and stakeholder_coverage — co-commit the marker.
+        tx.mark_health_recompute_pending(account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
-    })
+    })?;
+    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    Ok(())
 }
 
 /// Accept a stakeholder suggestion: create person if needed, add to account.
 pub fn accept_stakeholder_suggestion(
     db: &ActionDb,
-    state: &crate::state::AppState,
+    state: &std::sync::Arc<AppState>,
     suggestion_id: i64,
 ) -> Result<(), String> {
-    db.with_transaction(|tx| {
+    let account_id = db.with_transaction(|tx| {
         let suggestion = tx
             .get_stakeholder_suggestion(suggestion_id)
             .map_err(|e| e.to_string())?
@@ -3144,8 +3171,15 @@ pub fn accept_stakeholder_suggestion(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        Ok(())
-    })
+        // DOS-228 Wave 0g: accepting a suggestion inserts stakeholder rows,
+        // optional roles, and optional engagement — all health-scoring inputs.
+        // Co-commit the marker on the same writer before returning.
+        tx.mark_health_recompute_pending(&suggestion.account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
+        Ok(suggestion.account_id.clone())
+    })?;
+    crate::services::health_debouncer::schedule_recompute(state, &account_id);
+    Ok(())
 }
 
 /// Dismiss a stakeholder suggestion.
