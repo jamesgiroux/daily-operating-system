@@ -29,6 +29,7 @@ import { AccountViewSwitcher } from "@/components/account/AccountViewSwitcher";
 // View 1 — Health & Outlook
 import { AccountHealthSection } from "@/components/account/AccountHealthSection";
 import { AccountOutlook } from "@/components/entity/AccountOutlook";
+import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import { AccountPortfolioSection } from "@/components/account/AccountPortfolioSection";
 import { AccountProductsSection } from "@/components/account/AccountProductsSection";
 import { SentimentHero } from "@/components/health/SentimentHero";
@@ -143,6 +144,15 @@ export default function AccountDetailPage() {
                   enrichedAt={intelligence?.enrichedAt}
                   fragments={["Confidence · benchmark · recommended start"]}
                 />
+              }
+              feedbackSlot={
+                page.accountId ? (
+                  <IntelligenceCorrection
+                    entityId={page.accountId}
+                    entityType="account"
+                    field="renewal_outlook"
+                  />
+                ) : null
               }
             />
             <OutlookPanel intelligence={intelligence} />
@@ -306,6 +316,15 @@ export default function AccountDetailPage() {
             <ChapterHeading
               title="What matters to them"
               freshness={<ChapterFreshness enrichedAt={intelligence.enrichedAt} fragments={whatMattersFragments} />}
+              feedbackSlot={
+                page.accountId ? (
+                  <IntelligenceCorrection
+                    entityId={page.accountId}
+                    entityType="account"
+                    field="strategic_priorities"
+                  />
+                ) : null
+              }
             />
             <StrategicLandscape
               intelligence={intelligence}
