@@ -129,6 +129,13 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0110](0110-evaluation-harness-for-abilities.md) | Evaluation harness — fixtures, scoring, regression classification (v1.4.0) | Proposed |
 | [0111](0111-surface-independent-ability-invocation.md) | Surface-independent ability invocation — Tauri/MCP/worker bridges (v1.4.0) | Proposed |
 | [0112](0112-migration-strategy-parallel-run-and-cutover.md) | Migration strategy — parallel run, cutover, substrate migrations (v1.4.0) | Proposed |
+| [0113](0113-human-and-agent-analysis-as-first-class-claim-sources.md) | Human and agent analysis as first-class claim sources (v1.4.0 substrate / v1.5.0 surfaces) | Proposed |
+| [0114](0114-scoring-unification.md) | Scoring unification — shared primitives, per-composer surfaces (v1.4.0) | Proposed |
+| [0115](0115-signal-granularity-audit.md) | Signal granularity, policy registry, and durable invalidation (v1.4.0) | Proposed |
+| [0116](0116-tenant-control-plane-boundary.md) | Tenant control plane boundary — metadata only, content never (v1.4.0 seam / v2.x activation) | Proposed |
+| [0117](0117-publish-boundary-pencil-and-pen.md) | The publish boundary — Pencil and Pen (v1.4.0) | Proposed |
+| [0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md) | DailyOS as an AI harness — principles and residual gaps | Proposed |
+| [0119](0119-runtime-evaluator-pass-for-transform-abilities.md) | Runtime evaluator pass for Transform abilities (resolves [0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md) Gap A) | Proposed |
 
 ---
 
