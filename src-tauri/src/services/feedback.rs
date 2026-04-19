@@ -174,6 +174,31 @@ fn account_column_for_field(field: &str) -> Option<&'static str> {
     }
 }
 
+/// DOS-41 Codex follow-up: the DB layer writes numeric account columns via
+/// `CAST(?1 AS REAL)` / `CAST(?1 AS INTEGER)`. SQLite's CAST silently
+/// converts unparseable strings to `0` — which would overwrite real ARR /
+/// NPS commercial data with zero whenever a correction payload is
+/// malformed. Validate parse-ability in Rust before handing the value to
+/// the DB so malformed corrections are rejected with a clear error
+/// instead of corrupting state.
+///
+/// `arr` is written via `CAST(?1 AS REAL)` — validate as f64.
+/// `nps` is written via `CAST(?1 AS INTEGER)` — validate as i64.
+/// `lifecycle`, `contract_end`, `name`, `health` are TEXT-bound and pass
+///  through (`health` is stored as the raw string value — see
+///  `update_account_field` in db/accounts.rs).
+fn validate_numeric_corrected_value(column: &str, value: &str) -> Result<(), String> {
+    match column {
+        "arr" => value.trim().parse::<f64>().map(|_| ()).map_err(|_| {
+            format!("corrected_value for accounts.arr must be numeric, got '{value}'")
+        }),
+        "nps" => value.trim().parse::<i64>().map(|_| ()).map_err(|_| {
+            format!("corrected_value for accounts.nps must be an integer, got '{value}'")
+        }),
+        _ => Ok(()),
+    }
+}
+
 /// DOS-41: Submit a consolidated intelligence correction.
 ///
 /// Persists the correction into `entity_feedback_events` with one of three
@@ -358,6 +383,17 @@ pub fn submit_intelligence_correction(
             } else {
                 value.to_string()
             };
+
+            // DOS-41 Codex follow-up: `db.update_account_field` writes
+            // numeric columns via `CAST(?1 AS REAL)` / `CAST(?1 AS INTEGER)`
+            // — SQLite silently coerces non-numeric strings to 0, so a
+            // malformed "not-a-number" correction on ARR or NPS would wipe
+            // real commercial data to 0 and then recompute health from the
+            // corrupted value. Validate numerics in Rust BEFORE the DB
+            // call. The IPC-boundary empty-string rejection above is not
+            // sufficient — "abc" passes that check.
+            validate_numeric_corrected_value(column, &normalized)?;
+
             db.update_account_field(entity_id, column, &normalized)
                 .map_err(|e| {
                     format!(
@@ -1024,6 +1060,122 @@ mod correction_tests {
         assert_eq!(
             count, 0,
             "non-health-affecting correction must not write entity_quality"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // DOS-41 Codex follow-up: `db.update_account_field` uses
+    // `CAST(?1 AS REAL)` / `CAST(?1 AS INTEGER)` for `arr` / `nps`. SQLite
+    // silently coerces non-numeric strings to 0, so a malformed
+    // correction would wipe real ARR / NPS commercial data and then
+    // recompute health from the zeroed value. The service layer now
+    // rejects non-numeric corrected_values before the DB call.
+    // -----------------------------------------------------------------
+
+    /// Seed account ARR, submit a non-numeric ARR correction, assert the
+    /// call errors AND the stored ARR is untouched. This is the crucial
+    /// guarantee: rejection must happen BEFORE any mutation.
+    #[test]
+    fn corrected_arr_with_non_numeric_value_is_rejected_and_does_not_mutate_account() {
+        let db = test_db();
+        seed_account(&db, "acct-arr-bad");
+
+        // Sanity check: pre-correction ARR is 100_000.
+        let before = db
+            .get_account("acct-arr-bad")
+            .expect("read")
+            .expect("account exists");
+        assert_eq!(before.arr, Some(100_000.0));
+
+        let err = submit_intelligence_correction(
+            &db,
+            "acct-arr-bad",
+            "account",
+            "arr",
+            CorrectionAction::Corrected,
+            Some("not-a-number"),
+            None,
+        )
+        .expect_err("non-numeric ARR correction must be rejected");
+        assert!(
+            err.contains("accounts.arr") && err.contains("numeric"),
+            "error must cite the column + numeric constraint, got: {err}"
+        );
+
+        // Stored ARR must be unchanged — no silent CAST-to-0.
+        let after = db
+            .get_account("acct-arr-bad")
+            .expect("read")
+            .expect("account still exists");
+        assert_eq!(
+            after.arr,
+            Some(100_000.0),
+            "DOS-41: malformed ARR correction must not mutate accounts.arr"
+        );
+    }
+
+    #[test]
+    fn corrected_nps_with_non_numeric_value_is_rejected() {
+        let db = test_db();
+        seed_account(&db, "acct-nps-bad");
+
+        let before = db
+            .get_account("acct-nps-bad")
+            .expect("read")
+            .expect("account exists");
+        assert_eq!(before.nps, Some(50));
+
+        let err = submit_intelligence_correction(
+            &db,
+            "acct-nps-bad",
+            "account",
+            "nps",
+            CorrectionAction::Corrected,
+            Some("excellent"),
+            None,
+        )
+        .expect_err("non-integer NPS correction must be rejected");
+        assert!(
+            err.contains("accounts.nps") && err.contains("integer"),
+            "error must cite the column + integer constraint, got: {err}"
+        );
+
+        let after = db
+            .get_account("acct-nps-bad")
+            .expect("read")
+            .expect("account still exists");
+        assert_eq!(
+            after.nps,
+            Some(50),
+            "DOS-41: malformed NPS correction must not mutate accounts.nps"
+        );
+    }
+
+    /// Valid numeric corrections must still flow through.
+    #[test]
+    fn corrected_arr_with_valid_numeric_value_is_applied() {
+        let db = test_db();
+        seed_account(&db, "acct-arr-ok");
+
+        submit_intelligence_correction(
+            &db,
+            "acct-arr-ok",
+            "account",
+            "arr",
+            CorrectionAction::Corrected,
+            Some("250000"),
+            None,
+        )
+        .expect("numeric ARR correction must succeed");
+
+        let after = db
+            .get_account("acct-arr-ok")
+            .expect("read")
+            .expect("account exists");
+        assert_eq!(
+            after.arr,
+            Some(250_000.0),
+            "valid ARR correction must land on accounts.arr"
         );
     }
 }
