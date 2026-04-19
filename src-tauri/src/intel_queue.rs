@@ -28,7 +28,8 @@ use crate::types::AiModelConfig;
 /// Debounce window for content-triggered enrichment requests.
 const CONTENT_DEBOUNCE_SECS: u64 = 30;
 const CALENDAR_DEBOUNCE_SECS: u64 = 600;
-const BACKGROUND_ENRICHMENT_TIMEOUT_SECS: u64 = 20;
+/// Background enrichment timeout — raised from 20s to the v1.2.1 floor of 90s.
+const BACKGROUND_ENRICHMENT_TIMEOUT_SECS: u64 = 90;
 
 /// How often the background processor checks for work.
 const POLL_INTERVAL_SECS: u64 = 5;
@@ -1350,7 +1351,7 @@ fn run_parallel_enrichment(
 
             let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_cfg)
                 .with_usage_context(dimension_usage_context)
-                .with_timeout(30)
+                .with_timeout(90)
                 .with_nice_priority(10);
 
             let result = pty
@@ -1550,7 +1551,7 @@ fn run_enrichment_legacy(
 ) -> Result<EnrichmentParseResult, String> {
     let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
         .with_usage_context(usage_context.clone().with_tier(ModelTier::Synthesis))
-        .with_timeout(30)
+        .with_timeout(90)
         .with_nice_priority(10);
     let output = pty
         .spawn_claude(&input.workspace, &input.prompt)
@@ -1635,7 +1636,7 @@ fn run_consistency_repair_retry(
                 .with_trigger("post_write_repair")
                 .with_tier(ModelTier::Extraction),
         )
-        .with_timeout(30)
+        .with_timeout(90)
         .with_nice_priority(10);
     let output = pty
         .spawn_claude(&input.workspace, &prompt)

@@ -26,8 +26,9 @@ use crate::util::{
 use super::enrich::parse_enrichment_response;
 use super::hooks;
 
-/// Per-phase timeout for phased transcript processing (60s each, 3 phases = 180s max)
-const TRANSCRIPT_PHASE_TIMEOUT_SECS: u64 = 60;
+/// Per-phase timeout for phased transcript processing (90s each, 3 phases = 270s max).
+/// Raised from 60s to the v1.2.1 floor of 90s.
+const TRANSCRIPT_PHASE_TIMEOUT_SECS: u64 = 90;
 
 /// Maximum transcript content sent to AI (covers ~75 min calls).
 const TRANSCRIPT_MAX_CHARS: usize = 60_000;
@@ -35,7 +36,8 @@ const TRANSCRIPT_MAX_CHARS: usize = 60_000;
 /// Head portion kept for tail-biased truncation (attendee context, meeting opening).
 const TRANSCRIPT_HEAD_KEEP: usize = 3_000;
 /// Timeout for the post-extraction role-attribution review pass.
-const TRANSCRIPT_ROLE_REVIEW_TIMEOUT_SECS: u64 = 30;
+/// Raised from 30s to the v1.2.1 floor of 90s.
+const TRANSCRIPT_ROLE_REVIEW_TIMEOUT_SECS: u64 = 90;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranscriptContentKind {

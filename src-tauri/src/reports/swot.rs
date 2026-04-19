@@ -253,7 +253,7 @@ pub fn run_parallel_swot_generation(
                         .with_trigger(&section_name)
                         .with_tier(ModelTier::Extraction),
                 )
-                .with_timeout(30)
+                .with_timeout(90)
                 .with_nice_priority(10);
             let result = pty
                 .spawn_claude(&workspace, &prompt)

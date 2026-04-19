@@ -78,7 +78,10 @@ fn probe_claude_binary() -> Option<PathBuf> {
     None
 }
 
-/// Default timeout for AI enrichment phase (5 minutes)
+/// Default timeout for AI enrichment phase (5 minutes).
+/// Per-call overrides cap at 240s under the v1.2.1 floor/ceiling range;
+/// this default stays at 300s to give sessionless PTY spawns a little
+/// extra headroom before surfacing a timeout.
 pub const DEFAULT_CLAUDE_TIMEOUT_SECS: u64 = 300;
 pub const AI_USAGE_DAILY_KEY: &str = "ai_usage_daily";
 pub const AI_USAGE_RECENT_KEY: &str = "ai_usage_recent";
