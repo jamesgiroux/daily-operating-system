@@ -209,6 +209,66 @@ function buildGleanCards(glean: HealthOutlookSignals): BuiltCard[] {
     });
   }
 
+  // DOS-203 Wave-0f fix: quoteWall entries must not silently sink into the
+  // fine state. Sentiment branching:
+  //   - negative: render as a triage card (tone: soon — "worth reading",
+  //     non-urgent unless clustered).
+  //   - mixed: render as a triage card (tone: gap — nuanced signal).
+  //   - two-or-more negatives: escalate the first card to urgent so a cluster
+  //     of negative customer voices reads as active friction, not a whisper.
+  //   - positive: render as a low-visibility capture opportunity (tone: gap,
+  //     kind "Quote wall · capture opportunity"). They still prevent the fine
+  //     state, but they do not masquerade as urgent.
+  //   - neutral / unspecified sentiment: render as gap-tone so they count
+  //     toward not-fine-state without claiming a posture.
+  const quoteWall = glean.quoteWall ?? [];
+  if (quoteWall.length > 0) {
+    const negativeCount = quoteWall.filter((q) => q.sentiment === "negative").length;
+    let negativesSeen = 0;
+    for (const [i, q] of quoteWall.entries()) {
+      const sentiment = q.sentiment ?? "neutral";
+      let tone: TriageTone;
+      let kind: string;
+      let headline: string;
+      if (sentiment === "negative") {
+        negativesSeen += 1;
+        // Cluster escalation: first negative in a >=2-negative set is urgent.
+        tone = negativeCount >= 2 && negativesSeen === 1 ? "urgent" : "soon";
+        kind = "Quote wall · negative customer voice";
+        headline = q.speaker
+          ? `${q.speaker}${q.role ? ` (${q.role})` : ""}: "${q.quote}"`
+          : `"${q.quote}"`;
+      } else if (sentiment === "mixed") {
+        tone = "gap";
+        kind = "Quote wall · mixed sentiment";
+        headline = q.speaker
+          ? `${q.speaker}${q.role ? ` (${q.role})` : ""}: "${q.quote}"`
+          : `"${q.quote}"`;
+      } else if (sentiment === "positive") {
+        tone = "gap";
+        kind = "Quote wall · capture opportunity";
+        headline = q.speaker
+          ? `Promote to case study / references — ${q.speaker}${q.role ? ` (${q.role})` : ""}: "${q.quote}"`
+          : `Promote to case study / references — "${q.quote}"`;
+      } else {
+        // neutral / null
+        tone = "gap";
+        kind = "Quote wall · customer voice";
+        headline = q.speaker
+          ? `${q.speaker}${q.role ? ` (${q.role})` : ""}: "${q.quote}"`
+          : `"${q.quote}"`;
+      }
+      cards.push({
+        key: `glean-quote-${i}`,
+        tone,
+        kind,
+        headline,
+        evidence: q.whyItMatters ?? undefined,
+        sources: [{ origin: "glean", label: q.source ?? q.date ?? "Quote wall" }],
+      });
+    }
+  }
+
   // Budget cycle (locked)
   const budgets = (glean.transcriptExtraction?.budgetCycleSignals ?? []).filter((b) => b.locked);
   for (const [i, b] of budgets.entries()) {
