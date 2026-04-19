@@ -187,6 +187,59 @@ Fixtures can contain PII and source-attributed content. Per [ADR-0098](0098-data
 4. **CI runtime ballooning.** Many fixtures × many abilities = long test time. Mitigation: parallel execution; fixture labels (`@core`, `@regression`, `@edge`) allow selective PR-time subsets with full suite on nightly runs.
 5. **Fixture identity map loss.** `fixture_identity_map.json` lost means purge-on-revocation cannot target specific fixtures. Mitigation: identity map is backed up per-developer; reconstruction from git history plus user-side records is possible but manual.
 
+## Amendment — 2026-04-19 — §9 Harness-Stripping Fixtures (closes [ADR-0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md) Gap B)
+
+Every scaffold in the harness — dimension split, consistency-repair retry budget, PTY concurrency caps, multi-step fan-out — encodes an assumption about what the model can't do alone on current hardware with current prompts. Those assumptions go stale as models improve. This amendment adds a fixture class that periodically tests whether named harness components still earn their keep.
+
+### 9.1 Stripped-harness fixture class
+
+A new optional field on the fixture manifest:
+
+```toml
+[fixture_001]
+strip = ["dimension_split"]   # Disable this harness component during the fixture run
+```
+
+Known strip identifiers (extended as new harness components land):
+
+- `dimension_split` — force monolithic prompt instead of dimension fan-out.
+- `consistency_repair` — disable compact retry on consistency-check failures.
+- `runtime_evaluator` — disable the ADR-0119 evaluator pass.
+- `source_filtering` — feed the ability every signal without revoked/stale filtering.
+- `composition_caching` — disable Read-ability output caching in the ability composition tree.
+
+Multiple strips per fixture are permitted. The harness records the strip set in the run metadata so regressions are attributable to the removed scaffold.
+
+### 9.2 Scoring stripped fixtures
+
+Stripped fixtures are scored by the same rubric as their unstripped counterparts (§5 `quality.toml` thresholds). The harness records both the stripped and unstripped composite scores on a schedule — **quarterly** by default, configurable per ability.
+
+Reports surface a "strip-delta" per component:
+
+- `strip_delta > 0` — the unstripped version wins; the harness component still earns its keep.
+- `strip_delta ≈ 0` — the component may no longer be earning its cost. Candidate for removal or simplification.
+- `strip_delta < 0` — stripped version scored higher. The component is **hurting** quality. High-signal finding.
+
+### 9.3 Strip eval is not a CI gate
+
+Stripped fixtures run on a schedule, not on every PR. Strip deltas are informational — they do not fail builds. A material finding (`strip_delta ≤ 0.02` across three quarterly cycles) opens a follow-on issue tagged `harness-retirement-candidate` for engineering review. Retirement is a conscious decision, not an automatic response.
+
+### 9.4 Schedule
+
+Quarterly runs on a dedicated CI job against the top-N abilities by invocation volume (default N = 5). Cheap enough to run; expensive enough not to run on every PR.
+
+### 9.5 Strip set governance
+
+Adding a new harness component to the strip-eligible set requires:
+
+1. A config entry naming the component.
+2. A stripped-mode implementation of the ability path that bypasses it.
+3. At least one fixture opting into that strip.
+
+This forces the conversation: if a component cannot be conditionally stripped, it is a structural part of the ability rather than a scaffold around it — and the harness-stripping question does not apply.
+
+---
+
 ## References
 
 - [ADR-0102: Abilities as the Runtime Contract](0102-abilities-as-runtime-contract.md) — Phase 3 regression gate depends on this harness.
