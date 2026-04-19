@@ -1,6 +1,0 @@
-interface:
-  display_name: "gstack-autoplan"
-  short_description: "Auto-review pipeline — reads the full CEO, design, eng, and DX review skills from disk and runs them sequentially..."
-  default_prompt: "Use gstack-autoplan for this task."
-policy:
-  allow_implicit_invocation: true
