@@ -1617,7 +1617,17 @@ fn update_account_field_inner(
     // exactly one recompute, reflecting the last committed state. This replaces
     // the previous synchronous recompute, which fired once per edit and could
     // not be trusted (AI agents, chat, and automation bypass the UI debounce).
+    //
+    // DOS-228 Wave 0f: persist the durable `health_recompute_pending` marker
+    // SYNCHRONOUSLY on the same writer connection that just committed the
+    // field edit, BEFORE scheduling the in-memory debounce. The debouncer
+    // only owns timing/coalescing — it must never own marker durability, or
+    // a crash during the 2s sleep window silently loses the committed edit's
+    // health recompute. Marker-write failure is propagated as Err so the
+    // mutation fails loudly rather than swallowing durability loss.
     if is_health_relevant_field(field) {
+        db.mark_health_recompute_pending(account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         crate::services::health_debouncer::schedule_recompute(state, account_id);
     }
 
