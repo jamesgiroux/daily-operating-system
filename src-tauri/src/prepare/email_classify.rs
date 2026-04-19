@@ -390,10 +390,11 @@ pub fn boost_with_entity_context(
 ///    notifications, etc.) — these are noise regardless of List-Unsubscribe.
 /// 2. Subject matches any `NOISE_SUBJECT_PATTERNS` entry — automated
 ///    receipts, digests, verification codes, etc.
-/// 3. `List-Unsubscribe` header is present AND the sender domain is NOT in
-///    `account_domains` AND NOT in any tracked person's email domain.
-///    This catches arbitrary marketing senders not on the bulk allow-list
-///    while never suppressing real customer/contact correspondence.
+/// 3. `List-Unsubscribe` header present AND another automation marker is
+///    also present (noreply local-part, "newsletter" in sender, or noisy
+///    subject pattern). DOS-247: List-Unsubscribe alone over-fires —
+///    legitimate 1:1 customer email sent via Salesforce/HubSpot/Outreach
+///    or Google Groups carries this header. Require corroboration.
 ///
 /// `account_domains` and `person_domains` are lowercase domains pulled from
 /// the `account_domains` table and `person_emails` table respectively.
@@ -422,16 +423,28 @@ pub fn should_suppress_email(
 
     // Rule 2: subject signals automation/transactional/digest mail.
     let subject_lower = subject.to_lowercase();
-    if NOISE_SUBJECT_PATTERNS
+    let subject_noisy = NOISE_SUBJECT_PATTERNS
         .iter()
-        .any(|pat| subject_lower.contains(pat))
-    {
+        .any(|pat| subject_lower.contains(pat));
+    if subject_noisy {
         return true;
     }
 
-    // Rule 3: any List-Unsubscribe header from an untracked domain.
+    // Rule 3 (DOS-247): List-Unsubscribe alone is too broad — modern email
+    // including legitimate customer correspondence routinely sets it.
+    // Require a second automation marker.
     if !list_unsubscribe.trim().is_empty() {
-        return true;
+        let local_part = from_addr.split('@').next().unwrap_or("");
+        let local_part_noisy = NOREPLY_LOCAL_PARTS
+            .iter()
+            .any(|pat| local_part.contains(pat));
+        let sender_lower = sender.to_lowercase();
+        let sender_says_newsletter = sender_lower.contains("newsletter")
+            || sender_lower.contains("digest")
+            || sender_lower.contains("marketing");
+        if local_part_noisy || sender_says_newsletter {
+            return true;
+        }
     }
 
     false
@@ -869,6 +882,46 @@ mod tests {
             "Bob <bob@unknown.example>",
             "Quick question",
             "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_247_no_suppress_real_person_with_list_unsubscribe() {
+        // Real 1:1 customer email sent via Salesforce / HubSpot / Outreach
+        // / Google Groups carries List-Unsubscribe but is not noise.
+        // Untracked domain (no account_domains/person_domains entry) — must
+        // still not be suppressed when the sender looks like a real person.
+        assert!(!should_suppress_email(
+            "Jane Smith <jane.smith@prospect.example>",
+            "Re: pricing question",
+            "<https://prospect.example/unsubscribe?id=abc>",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_247_suppress_noreply_with_list_unsubscribe() {
+        // noreply local-part + List-Unsubscribe = bona fide bulk mail, suppress.
+        assert!(should_suppress_email(
+            "Acme <noreply@acmeapp.example>",
+            "Your weekly summary is ready",
+            "<https://acmeapp.example/unsub>",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_247_no_suppress_internal_distribution_with_list_unsubscribe() {
+        // Google Workspace adds List-Unsubscribe to internal group mail.
+        // Untracked-domain real human sender must not be suppressed.
+        assert!(!should_suppress_email(
+            "Alex Patel <alex@partnercorp.example>",
+            "Q3 planning sync — agenda attached",
+            "<mailto:unsubscribe@partnercorp.example>",
             &HashSet::new(),
             &HashSet::new(),
         ));
