@@ -537,17 +537,17 @@ export default function AccountDetailPage() {
       });
     });
 
-    // If still thin, seed from top programs — orientation as narrative.
-    if (focusItems.length === 0) {
-      programs.slice(0, 3).forEach((p) => {
-        if (!p.name) return;
-        focusItems.push({
-          headline: p.name,
-          paragraph: p.notes || `Standing motion in ${p.status.toLowerCase()} state. Revisit when context shifts.`,
-          citations: [{ label: `Program · ${p.status}` }],
-        });
+    // Programs pad remaining slots up to 4 items alongside commitments +
+    // recommendations. Mockup interleaves programs with commitments rather
+    // than holding them as a last-resort fallback.
+    programs.slice(0, 4 - focusItems.length).forEach((p) => {
+      if (!p.name) return;
+      focusItems.push({
+        headline: p.name,
+        paragraph: p.notes || `Standing motion in ${p.status.toLowerCase()} state. Revisit when context shifts.`,
+        citations: [{ label: `Program · ${p.status}` }],
       });
-    }
+    });
 
     const focusSynthesisFragments: string[] = [];
     if (openCommitments.length) focusSynthesisFragments.push(`${openCommitments.length} commitment${openCommitments.length === 1 ? "" : "s"}`);
@@ -571,12 +571,27 @@ export default function AccountDetailPage() {
     //
     // stillActiveNote is synthesized only when a due date has passed —
     // copy always opens with "Still active?" never "OVERDUE".
+    const AGED_COMMITMENT_THRESHOLD_DAYS = 45;
     const commitmentCards = openCommitments.map((c, idx) => {
       const sourceLower = (c.source ?? "").toLowerCase();
       const isInternal = /internal|^program\b|team/i.test(c.description) || /internal/.test(sourceLower);
 
+      // Structured tracker link (DOS-75) takes precedence over the free-text
+      // source string: when present, the commitment renders as Shared with
+      // the tracker anchor. Backend wiring lands with DOS-75; forward-compatible
+      // today.
+      const trackerLink = (c as { trackerLink?: { system?: string; href?: string; externalId?: string } }).trackerLink;
+      const visibility: "shared" | "private" = trackerLink?.href ? "shared" : "private";
+
       const provenance: { label: string; href?: string }[] = [];
-      if (c.source) provenance.push({ label: c.source });
+      if (trackerLink?.href) {
+        provenance.push({
+          label: trackerLink.system ? `${trackerLink.system}${trackerLink.externalId ? ` · ${trackerLink.externalId}` : ""}` : "Tracker",
+          href: trackerLink.href,
+        });
+      } else if (c.source) {
+        provenance.push({ label: c.source });
+      }
 
       let stillActiveNote: string | undefined;
       if (c.dueDate) {
@@ -584,6 +599,18 @@ export default function AccountDetailPage() {
         const diff = Math.round((Date.now() - due.getTime()) / (1000 * 60 * 60 * 24));
         if (diff > 0) {
           stillActiveNote = `Due date passed ${diff} day${diff === 1 ? "" : "s"} ago. Worth a glance, not a panic.`;
+        }
+      } else {
+        // Aged no-due-date commitments: synthesize a soft "Still active?" note
+        // when the item has been carried for > threshold days. Uses authoritative
+        // sourcedAt; skip when the timestamp is missing (rather than guess).
+        const sourcedAt = c.itemSource?.sourcedAt;
+        const ts = sourcedAt ? new Date(sourcedAt).getTime() : Number.NaN;
+        if (Number.isFinite(ts)) {
+          const ageDays = Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
+          if (ageDays >= AGED_COMMITMENT_THRESHOLD_DAYS) {
+            stillActiveNote = `Carried for ${ageDays} days without a date — still active?`;
+          }
         }
       }
 
@@ -597,7 +624,7 @@ export default function AccountDetailPage() {
           owner={c.owner ?? null}
           due={c.dueDate ? formatShortDate(c.dueDate) : null}
           audience={isInternal ? "internal" : "customer"}
-          visibility="private"
+          visibility={visibility}
           stillActiveNote={stillActiveNote}
           actions={
             <>
@@ -635,20 +662,40 @@ export default function AccountDetailPage() {
     // missing sourcedAt it drops off this surface; it can still be picked
     // up by Context's value-delivered list.
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const recentWinsRows = wins
+    // Wins get a cross-reference to the Context "What we've built" chapter
+    // so the user can trace a landed item back to the value-commitments
+    // record. Non-win events have no xref.
+    const contextValueHref = page.accountId
+      ? `/accounts/${page.accountId}?view=context#value-commitments`
+      : null;
+    type RecentRow = {
+      key: string;
+      date: string;
+      event: string;
+      source: React.ReactNode;
+      ts: number;
+    };
+    const recentWinsRows: RecentRow[] = wins
       .map((w, i) => {
         const sourcedAt = w.itemSource?.sourcedAt;
         const ts = sourcedAt ? new Date(sourcedAt).getTime() : Number.NaN;
+        const origin = w.source ? `Came from ${w.source}` : null;
+        const xref = contextValueHref ? (
+          <>
+            {origin && <>{origin} · </>}
+            <a href={contextValueHref}>See Context value →</a>
+          </>
+        ) : origin;
         return {
           key: `win-${i}`,
           date: sourcedAt ? formatShortDate(sourcedAt).toUpperCase() : "",
           event: w.text,
-          source: w.source ? `Came from ${w.source}` : null,
+          source: xref as React.ReactNode,
           ts,
         };
       })
       .filter((row) => Number.isFinite(row.ts) && row.ts >= thirtyDaysAgo);
-    const recentEventRows = accountEvents
+    const recentEventRows: RecentRow[] = accountEvents
       .filter((e) => {
         const t = new Date(e.eventDate).getTime();
         return !Number.isNaN(t) && t >= thirtyDaysAgo;
@@ -657,7 +704,7 @@ export default function AccountDetailPage() {
         key: `evt-${e.id}`,
         date: formatShortDate(e.eventDate).toUpperCase(),
         event: e.notes || `${e.eventType.replace(/_/g, " ")} recorded`,
-        source: null as string | null,
+        source: null,
         ts: new Date(e.eventDate).getTime(),
       }));
     const recentlyLanded = [...recentWinsRows, ...recentEventRows]
@@ -762,6 +809,7 @@ export default function AccountDetailPage() {
           <MarginSection id="focus" label={<>90-day<br/>focus</>}>
             <ChapterHeading
               title="90-day focus"
+              epigraph="Our active plan · editable"
               freshness={
                 <ChapterFreshness
                   enrichedAt={intelligence?.enrichedAt}
@@ -782,6 +830,7 @@ export default function AccountDetailPage() {
           <MarginSection id="programs" label={<>Programs<br/>&amp; motions</>}>
             <ChapterHeading
               title="Programs & motions"
+              epigraph="Standing motions · not a todo list"
               freshness={
                 <ChapterFreshness
                   enrichedAt={intelligence?.enrichedAt}
@@ -806,6 +855,7 @@ export default function AccountDetailPage() {
           <MarginSection id="commitments" label={<>Commit-<br/>ments</>}>
             <ChapterHeading
               title="Commitments"
+              epigraph="What we've said we'll do"
               freshness={
                 <ChapterFreshness
                   enrichedAt={intelligence?.enrichedAt}
@@ -824,6 +874,7 @@ export default function AccountDetailPage() {
           <MarginSection id="suggestions" label={<>Sugges-<br/>tions</>}>
             <ChapterHeading
               title="Suggestions"
+              epigraph="AI proposals · accept or dismiss"
               freshness={
                 <ChapterFreshness
                   enrichedAt={intelligence?.enrichedAt}
@@ -882,6 +933,7 @@ export default function AccountDetailPage() {
           <MarginSection id="recently-landed" label={<>Recently<br/>landed</>}>
             <ChapterHeading
               title="Recently landed"
+              epigraph="30-day completion tail"
               freshness={
                 <ChapterFreshness
                   enrichedAt={intelligence?.enrichedAt}
@@ -910,6 +962,7 @@ export default function AccountDetailPage() {
           <MarginSection id="outputs" label={<>Out-<br/>puts</>}>
             <ChapterHeading
               title="Outputs"
+              epigraph="Generated reports · open to regenerate"
               freshness={
                 <ChapterFreshness
                   enrichedAt={intelligence?.enrichedAt}
@@ -926,6 +979,7 @@ export default function AccountDetailPage() {
                   generatedAt={intelligence?.enrichedAt ? formatShortDate(intelligence.enrichedAt) : undefined}
                   trigger="on-demand"
                   onOpen={() => navigateToReport(r.reportType)}
+                  onRefresh={() => navigateToReport(r.reportType)}
                 />
               ))}
             </ReportGrid>
@@ -940,6 +994,7 @@ export default function AccountDetailPage() {
           <MarginSection id="nudges" label={<>Nudges</>}>
             <ChapterHeading
               title="Nudges"
+              epigraph="Soft meta · leave as-is is fine"
               freshness={
                 <ChapterFreshness
                   enrichedAt={intelligence?.enrichedAt}
