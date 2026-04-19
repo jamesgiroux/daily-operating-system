@@ -13,6 +13,17 @@ import type { AccountDetail, StrategicProgram } from "@/types";
 
 interface RelationshipFabricProps {
   detail: AccountDetail;
+  /**
+   * Optional verbatim NPS comment. Rendered in a sage highlight next to the
+   * score when present. Backend field is not yet wired; the prop is threaded
+   * so the UI can light up the moment it exists without another diff.
+   */
+  npsQuote?: string;
+  /**
+   * Account name used in the closing editorial copy. Falls back to the
+   * generic phrasing when missing so the surface never breaks.
+   */
+  accountName?: string;
 }
 
 interface FabricRow {
@@ -41,9 +52,58 @@ function formatBetaPrograms(programs: StrategicProgram[] | undefined): React.Rea
   );
 }
 
-export function RelationshipFabric({ detail }: RelationshipFabricProps) {
+export function RelationshipFabric({ detail, npsQuote, accountName }: RelationshipFabricProps) {
   const npsText = detail.nps != null ? String(detail.nps) : null;
   const beta = formatBetaPrograms(detail.strategicPrograms);
+
+  const npsContent: React.ReactNode = npsText ? (
+    <span style={{ display: "inline-flex", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+      <span
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontWeight: 500,
+          fontStyle: "normal",
+          color: "var(--color-garden-rosemary)",
+          fontSize: 18,
+          marginRight: 4,
+        }}
+      >
+        {npsText}
+      </span>
+      {npsQuote && (
+        <span
+          style={{
+            background: "var(--color-garden-sage-15, rgba(126,170,123,0.15))",
+            padding: "6px 12px",
+            borderRadius: "var(--radius-sm, 4px)",
+            fontFamily: "var(--font-serif)",
+            fontSize: 14,
+            fontStyle: "italic",
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {npsQuote}
+        </span>
+      )}
+      <a
+        href="#their-voice"
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 9,
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          color: "var(--color-spice-turmeric)",
+          borderBottom: "1px dotted var(--color-spice-turmeric)",
+          textDecoration: "none",
+          marginLeft: 4,
+        }}
+      >
+        See quote wall →
+      </a>
+    </span>
+  ) : (
+    "— not captured"
+  );
 
   const rows: FabricRow[] = [
     { label: "Reference customer", content: "Unknown — not captured", gap: true },
@@ -56,19 +116,7 @@ export function RelationshipFabric({ detail }: RelationshipFabricProps) {
     },
     {
       label: "NPS",
-      content: npsText ? (
-        <span
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 20,
-            color: "var(--color-text-primary)",
-          }}
-        >
-          {npsText}
-        </span>
-      ) : (
-        "— not captured"
-      ),
+      content: npsContent,
       gap: !npsText,
     },
     { label: "Speaking slots", content: "None captured", gap: true },
@@ -76,7 +124,8 @@ export function RelationshipFabric({ detail }: RelationshipFabricProps) {
     { label: "Advocacy trend", content: "Unknown — not captured", gap: true },
   ];
 
-  const allGaps = rows.every((r) => r.gap);
+  // Closing editorial copy always renders — the chapter's parting thought sits
+  // beside the list whether fields are captured or not (per mockup).
 
   return (
     <div>
@@ -120,24 +169,32 @@ export function RelationshipFabric({ detail }: RelationshipFabricProps) {
         ))}
       </div>
 
-      {allGaps && (
-        <div
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 14,
-            lineHeight: 1.6,
-            color: "var(--color-text-secondary)",
-            marginTop: 20,
-            paddingTop: 16,
-            borderTop: "1px solid var(--color-rule-light)",
-            fontStyle: "italic",
-          }}
-        >
-          We haven't systematically captured advocacy signal for this account.
-          If the relationship is healthy, this is a likely source of unrealized
-          value.
-        </div>
-      )}
+      {(() => {
+        const subject = accountName && accountName.trim().length > 0 ? accountName : "this account";
+        const npsClause = npsText
+          ? `Given the NPS ${npsText} and healthy relationship, this is`
+          : "If the relationship is healthy, this is";
+        return (
+          <div
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 16,
+              lineHeight: 1.65,
+              color: "var(--color-text-secondary)",
+              marginTop: 32,
+              padding: "24px 32px",
+              background: "var(--color-paper-warm-white)",
+              borderLeft: "2px solid var(--color-text-tertiary)",
+              borderRadius: "0 var(--radius-md, 6px) var(--radius-md, 6px) 0",
+              fontStyle: "italic",
+              maxWidth: 720,
+            }}
+          >
+            We haven&apos;t systematically captured advocacy signal for {subject}.{" "}
+            {npsClause} a likely source of unrealized value.
+          </div>
+        );
+      })()}
     </div>
   );
 }

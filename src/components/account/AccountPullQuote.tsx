@@ -9,9 +9,14 @@ interface AccountPullQuoteProps {
   variant?: "default" | "thesis";
   /** Source count fragments for freshness meta (e.g., "14 meetings · 5 transcripts"). */
   freshnessFragments?: string[];
+  /**
+   * Optional refresh affordance for the thesis variant. When provided, a
+   * turmeric "Refresh" anchor renders aligned to the right of the meta row.
+   */
+  onRefresh?: () => void;
 }
 
-export function AccountPullQuote({ intelligence, variant = "default", freshnessFragments }: AccountPullQuoteProps) {
+export function AccountPullQuote({ intelligence, variant = "default", freshnessFragments, onRefresh }: AccountPullQuoteProps) {
   if (!intelligence.pullQuote && !intelligence.executiveAssessment) return null;
 
   const quote = intelligence.pullQuote
@@ -61,15 +66,15 @@ export function AccountPullQuote({ intelligence, variant = "default", freshnessF
             margin: 0,
           }}
         >
-          <span aria-hidden style={{ color: "var(--color-spice-turmeric)", fontStyle: "normal", fontWeight: 500 }}>
+          <span aria-hidden className={styles.pullquoteMark}>
             &ldquo;
           </span>
           {quote}
-          <span aria-hidden style={{ color: "var(--color-spice-turmeric)", fontStyle: "normal", fontWeight: 500 }}>
+          <span aria-hidden className={styles.pullquoteMark}>
             &rdquo;
           </span>
         </p>
-        {metaParts.length > 0 && (
+        {(metaParts.length > 0 || onRefresh) && (
           <div
             style={{
               fontFamily: "var(--font-mono)",
@@ -78,9 +83,23 @@ export function AccountPullQuote({ intelligence, variant = "default", freshnessF
               letterSpacing: "0.08em",
               color: "var(--color-text-tertiary)",
               marginTop: 32,
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              flexWrap: "wrap",
             }}
           >
-            {metaParts.join(" · ")}
+            {metaParts.length > 0 && <span>{metaParts.join(" · ")}</span>}
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                className={styles.thesisRefresh}
+                aria-label="Refresh thesis"
+              >
+                Refresh
+              </button>
+            )}
           </div>
         )}
       </section>

@@ -56,6 +56,19 @@ interface StakeholderGalleryProps {
   chapterFreshness?: React.ReactNode;
   /** DOS-18: When true, render "Their team" / "Our team" subsection labels per account-context mockup. */
   subsectionLabels?: boolean;
+  /**
+   * DOS-18: When subsectionLabels is true, the italic hints next to the
+   * "Their team" / "Our team" labels show who we're meeting with. Optional —
+   * if omitted we fall back to generic phrasing without the customer name.
+   */
+  accountName?: string;
+  /**
+   * DOS-18: Optional anchor builder — returns the href (e.g. "#dimension-adoption")
+   * to the Health tab chapter that mentions this person. When provided, each
+   * confirmed stakeholder card renders an "Active in Health →" cross-reference
+   * pill. Returning null skips the pill for that person.
+   */
+  healthAnchorFor?: (personId: string) => string | null;
   /** Entity ID for intelligence updates. */
   entityId?: string;
   /** Entity type for intelligence updates. */
@@ -298,6 +311,8 @@ export function StakeholderGallery({
   chapterTitle = "The Room",
   chapterFreshness,
   subsectionLabels = false,
+  accountName,
+  healthAnchorFor,
   entityId,
   entityType,
   onIntelligenceUpdated,
@@ -459,9 +474,26 @@ export function StakeholderGallery({
             color: "var(--color-text-secondary)",
             marginBottom: 16,
             marginTop: 8,
+            display: "flex",
+            alignItems: "baseline",
+            gap: 12,
+            flexWrap: "wrap",
           }}
         >
           Their team
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 12,
+              fontWeight: 400,
+              color: "var(--color-text-tertiary)",
+              textTransform: "none",
+              letterSpacing: 0,
+              fontStyle: "italic",
+            }}
+          >
+            who we&apos;re meeting with{accountName ? ` — ${accountName}` : ""}
+          </span>
         </div>
       )}
 
@@ -568,8 +600,42 @@ export function StakeholderGallery({
                   </span>
                 )}
 
-                {/* Assessment from DB (I652) */}
-                {s.assessment && <TruncatedAssessment text={s.assessment} />}
+                {/* Assessment from DB (I652) or gap-state placeholder per mockup */}
+                {s.assessment ? (
+                  <TruncatedAssessment text={s.assessment} />
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-serif)",
+                        fontStyle: "italic",
+                        fontSize: 13,
+                        lineHeight: 1.55,
+                        color: "var(--color-text-tertiary)",
+                        background: "var(--color-spice-saffron-10, rgba(196,147,53,0.10))",
+                        borderLeft: "2px solid var(--color-spice-saffron)",
+                        borderRadius: "0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0",
+                        padding: "8px 12px",
+                        marginTop: 4,
+                      }}
+                    >
+                      {s.meetingCount != null && s.meetingCount > 0
+                        ? `Assessment pending — attended ${s.meetingCount} meeting${s.meetingCount === 1 ? "" : "s"} but never characterized.`
+                        : "Assessment pending — never characterized."}
+                    </div>
+                    <span
+                      className={css.engagementBadge}
+                      style={{
+                        background: "var(--color-spice-saffron-15, rgba(196,147,53,0.15))",
+                        color: "#a6862c",
+                        alignSelf: "flex-start",
+                        marginTop: 6,
+                      }}
+                    >
+                      Needs assessment
+                    </span>
+                  </>
+                )}
 
                 {/* Meeting count + last seen from DB */}
                 {(s.meetingCount != null && s.meetingCount > 0) && (
@@ -583,6 +649,30 @@ export function StakeholderGallery({
                     Last seen {formatRelativeDate(s.lastSeen)}
                   </div>
                 )}
+
+                {/* Cross-reference to Health tab — rendered when host provides an anchor. */}
+                {(() => {
+                  const anchor = healthAnchorFor?.(s.personId);
+                  if (!anchor) return null;
+                  return (
+                    <a
+                      href={anchor}
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 9,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
+                        color: "var(--color-spice-turmeric)",
+                        borderBottom: "1px dotted var(--color-spice-turmeric)",
+                        textDecoration: "none",
+                        alignSelf: "flex-start",
+                        marginTop: 6,
+                      }}
+                    >
+                      Active in Health →
+                    </a>
+                  );
+                })()}
               </div>
             );
           })}
@@ -829,6 +919,21 @@ export function StakeholderGallery({
         <div className={css.teamChipsSection}>
           <div className={css.teamHeader}>
             <span className={css.teamLabel}>{subsectionLabels ? "Our team" : "Your Team"}</span>
+            {subsectionLabels && (
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 12,
+                  fontWeight: 400,
+                  color: "var(--color-text-tertiary)",
+                  textTransform: "none",
+                  letterSpacing: 0,
+                  fontStyle: "italic",
+                }}
+              >
+                who we bring into{accountName ? ` ${accountName}` : " these"} conversations — Automattic
+              </span>
+            )}
           </div>
           <div className={css.teamChips}>
             {teamMembers.map((member) => (

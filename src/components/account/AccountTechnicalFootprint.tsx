@@ -4,7 +4,12 @@ import type { AccountTechnicalFootprint as TechnicalFootprintData } from "@/type
 import styles from "@/pages/AccountDetailEditorial.module.css";
 
 interface AccountTechnicalFootprintProps {
-  footprint: TechnicalFootprintData;
+  /**
+   * DOS-18: chapter variant accepts null so the chapter can always render
+   * with all-gap rows when the account has no captured technical footprint.
+   * Inline variant still requires a populated footprint (guarded below).
+   */
+  footprint: TechnicalFootprintData | null;
   /** DOS-18: render as a full chapter surface — ref-grid with gap rows + feature list. */
   variant?: "inline" | "chapter";
   /** DOS-18: feature list from productAdoption.featureAdoption (chapter variant only). */
@@ -32,13 +37,16 @@ export function AccountTechnicalFootprint({ footprint, variant = "inline", featu
 
   if (variant === "chapter") {
     const rows: RefRow[] = [
-      { label: "Usage tier", field: "usage_tier", value: tf.usageTier ?? "— not captured", gap: !tf.usageTier },
-      { label: "Active users", field: "active_users", value: tf.activeUsers != null && tf.activeUsers > 0 ? tf.activeUsers.toLocaleString() : "— not captured", gap: !(tf.activeUsers && tf.activeUsers > 0) },
-      { label: "Services stage", field: "services_stage", value: tf.servicesStage ?? "— not captured", gap: !tf.servicesStage },
-      { label: "Support tier", field: "support_tier", value: tf.supportTier ?? "— not captured", gap: !tf.supportTier },
-      { label: "Open tickets", field: "open_tickets", value: tf.openTickets != null ? String(tf.openTickets) : "— not captured", gap: tf.openTickets == null },
-      { label: "CSAT", field: "csat_score", value: tf.csatScore != null && tf.csatScore > 0 ? `${tf.csatScore.toFixed(1)}/5` : "— not captured", gap: !(tf.csatScore && tf.csatScore > 0) },
-      { label: "Adoption score", field: "adoption_score", value: tf.adoptionScore != null && tf.adoptionScore > 0 ? `${Math.round(tf.adoptionScore * 100)}%` : "— not computed", gap: !(tf.adoptionScore && tf.adoptionScore > 0) },
+      { label: "Usage tier", field: "usage_tier", value: tf?.usageTier ?? "— not captured", gap: !tf?.usageTier },
+      { label: "Active users", field: "active_users", value: tf?.activeUsers != null && tf.activeUsers > 0 ? tf.activeUsers.toLocaleString() : "— not captured", gap: !(tf?.activeUsers && tf.activeUsers > 0) },
+      { label: "Services stage", field: "services_stage", value: tf?.servicesStage ?? "— not captured", gap: !tf?.servicesStage },
+      { label: "Support tier", field: "support_tier", value: tf?.supportTier ?? "— not captured", gap: !tf?.supportTier },
+      { label: "Open tickets", field: "open_tickets", value: tf?.openTickets != null ? String(tf.openTickets) : "— not captured", gap: tf?.openTickets == null },
+      { label: "CSAT", field: "csat_score", value: tf?.csatScore != null && tf.csatScore > 0 ? `${tf.csatScore.toFixed(1)}/5` : "— not captured", gap: !(tf?.csatScore && tf.csatScore > 0) },
+      { label: "Adoption score", field: "adoption_score", value: tf?.adoptionScore != null && tf.adoptionScore > 0 ? `${Math.round(tf.adoptionScore * 100)}%` : "— not computed", gap: !(tf?.adoptionScore && tf.adoptionScore > 0) },
+      // Integrations is a gap row only — no backing column exists today.
+      // Mockup calls for "— not captured" sentinel in the reference grid.
+      { label: "Integrations", field: "integrations", value: "— not captured", gap: true },
     ];
     const gapCount = rows.filter((r) => r.gap).length;
 
@@ -91,7 +99,7 @@ export function AccountTechnicalFootprint({ footprint, variant = "inline", featu
                 </div>
               ))}
             </div>
-            {tf.sourcedAt && (
+            {tf?.sourcedAt && (
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)", marginTop: 12 }}>
                 All {featureAdoption.length} features active as of {formatShortDate(tf.sourcedAt)}
                 {tf.source ? ` (${tf.source})` : ""}
@@ -101,13 +109,16 @@ export function AccountTechnicalFootprint({ footprint, variant = "inline", featu
         )}
 
         {gapCount > 0 && (
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-spice-saffron)", marginTop: 20, padding: "8px 12px", background: "var(--color-spice-saffron-8, rgba(196,147,53,0.06))", border: "1px dashed var(--color-spice-saffron)" }}>
-            {gapCount} of {rows.length} technical fields unfilled · Last enrichment {formatShortDate(tf.sourcedAt)}
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-spice-saffron)", marginTop: 20, padding: "8px 16px", background: "var(--color-spice-saffron-10, rgba(196,147,53,0.10))", borderLeft: "2px solid var(--color-spice-saffron)", borderRadius: "0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0" }}>
+            {gapCount} of {rows.length} technical fields unfilled{tf?.sourcedAt ? ` · Last enrichment ${formatShortDate(tf.sourcedAt)}` : ""}
           </div>
         )}
       </div>
     );
   }
+
+  // Inline variant bails out when the account has no footprint at all.
+  if (!tf) return null;
 
   const items: { label: string; value: string }[] = [];
   if (tf.supportTier) items.push({ label: "Support", value: tf.supportTier });

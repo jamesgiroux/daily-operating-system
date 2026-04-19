@@ -311,6 +311,7 @@ export default function AccountDetailPage() {
             sectionId=""
             chapterTitle="The Room"
             subsectionLabels
+            accountName={detail.name ?? undefined}
             chapterFreshness={
               <ChapterFreshness
                 enrichedAt={intelligence?.enrichedAt}
@@ -385,7 +386,7 @@ export default function AccountDetailPage() {
             freshness={
               <ChapterFreshness
                 enrichedAt={intelligence?.enrichedAt}
-                fragments={["Quote wall · coming in DOS-205"]}
+                fragments={["Pull-quote wall in progress"]}
               />
             }
           />
@@ -409,33 +410,32 @@ export default function AccountDetailPage() {
           <CommercialShape detail={detail} onUpdateField={page.saveAccountField} />
         </MarginSection>
 
-        {/* Chapter 7: Technical shape — promoted footprint + feature list (reference weight) */}
-        {detail.technicalFootprint && (
-          <MarginSection id="technical-shape" label={<>Technical<br/>shape</>}>
-            <ChapterHeading
-              title="Technical shape"
-              variant="reference"
-              freshness={
-                <ChapterFreshness
-                  at={detail.technicalFootprint.sourcedAt ?? intelligence?.enrichedAt}
-                  fragments={technicalFragments}
-                />
-              }
-            />
-            <AccountTechnicalFootprint
-              footprint={detail.technicalFootprint}
-              variant="chapter"
-              featureAdoption={featureAdoption}
-              // DOS-231: gap rows expose a "Capture now" affordance. Until
-              // the structured editor lands with DOS-207, we prompt inline
-              // for the value, persist through
-              // `update_technical_footprint_field`, and refresh. This gives
-              // the Intelligence Loop a real signal + updated footprint
-              // immediately instead of a silent console log.
-              onCaptureGap={(field) => { void page.captureTechnicalFootprintField(field); }}
-            />
-          </MarginSection>
-        )}
+        {/* Chapter 7: Technical shape — promoted footprint + feature list (reference weight). */}
+        {/* Always renders: when footprint is null, AccountTechnicalFootprint emits gap rows. */}
+        <MarginSection id="technical-shape" label={<>Technical<br/>shape</>}>
+          <ChapterHeading
+            title="Technical shape"
+            variant="reference"
+            freshness={
+              <ChapterFreshness
+                at={detail.technicalFootprint?.sourcedAt ?? intelligence?.enrichedAt}
+                fragments={technicalFragments}
+              />
+            }
+          />
+          <AccountTechnicalFootprint
+            footprint={detail.technicalFootprint ?? null}
+            variant="chapter"
+            featureAdoption={featureAdoption}
+            // DOS-231: gap rows expose a "Capture now" affordance. Until
+            // the structured editor lands with DOS-207, we prompt inline
+            // for the value, persist through
+            // `update_technical_footprint_field`, and refresh. This gives
+            // the Intelligence Loop a real signal + updated footprint
+            // immediately instead of a silent console log.
+            onCaptureGap={(field) => { void page.captureTechnicalFootprintField(field); }}
+          />
+        </MarginSection>
 
         {/* Chapter 8: Relationship fabric — advocacy, beta, NPS history */}
         <MarginSection id="relationship-fabric" label={<>Relationship<br/>fabric</>}>
@@ -450,7 +450,7 @@ export default function AccountDetailPage() {
               />
             }
           />
-          <RelationshipFabric detail={detail} />
+          <RelationshipFabric detail={detail} accountName={detail.name ?? undefined} />
         </MarginSection>
 
         {/* The record — timeline continuity (preserved to avoid regression). */}
@@ -480,6 +480,13 @@ export default function AccountDetailPage() {
             intelligence={intelligence}
             meetingCount={meetingCount}
             transcriptCount={transcriptCount}
+            uncharacterizedStakeholders={(detail.stakeholdersFull ?? [])
+              .filter((s) => {
+                const count = s.meetingCount ?? 0;
+                const hasAssessment = Boolean(s.assessment && s.assessment.trim().length > 0);
+                return count > 0 && !hasAssessment;
+              })
+              .map((s) => ({ personName: s.personName, meetingCount: s.meetingCount ?? null }))}
           />
         </MarginSection>
 
