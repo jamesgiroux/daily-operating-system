@@ -90,33 +90,20 @@ impl HealthRecomputeDebouncer {
 /// `recompute_entity_health` synchronously. The function returns immediately;
 /// the recompute is executed on the Tauri async runtime after the debounce
 /// window closes, and only if no newer edit has landed in the meantime.
+///
+/// DOS-228 Wave 0f: this function is **timing/coalescing only**. The durable
+/// `health_recompute_pending` marker MUST be written by the caller on the
+/// same writer connection that committed the triggering mutation, BEFORE
+/// calling this function. If we owned marker persistence here — even
+/// synchronously via `db_write().await` — a crash or runtime shutdown
+/// between the mutation's commit and the debouncer's marker write would
+/// silently lose the pending recompute. The startup `drain_pending` is the
+/// backstop, so the marker must be committed in the same transaction
+/// boundary as the edit that triggered it.
 pub fn schedule_recompute(state: &Arc<AppState>, account_id: &str) {
     let captured = state.health_recompute_debouncer.record(account_id);
     let state_clone = state.clone();
     let account_id = account_id.to_string();
-
-    // DOS-228 Wave 0e Fix 3: persist a durable marker BEFORE spawning the
-    // sleep task. If the app crashes or exits during the 2s window, the
-    // committed field edit's recompute is no longer lost — `drain_pending`
-    // at startup picks it up. The marker is cleared only when the
-    // recompute succeeds; failures leave the marker so the next startup
-    // will retry.
-    let marker_state = state.clone();
-    let marker_id = account_id.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = marker_state
-            .db_write(move |db| {
-                db.mark_health_recompute_pending(&marker_id)
-                    .map_err(|e| e.to_string())
-            })
-            .await
-        {
-            log::warn!(
-                "DOS-228: failed to persist health_recompute_pending marker: {}",
-                e
-            );
-        }
-    });
 
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(HEALTH_RECOMPUTE_DEBOUNCE_MS)).await;
@@ -293,5 +280,19 @@ mod tests {
         let b = d.record("b");
         assert!(d.try_claim("a", a));
         assert!(d.try_claim("b", b));
+    }
+
+    /// DOS-228 Wave 0f: the debouncer is timing-only. `record` must not touch
+    /// the database — all persistence now lives in the calling mutation's
+    /// writer closure. This test codifies that separation of concerns: a bare
+    /// `HealthRecomputeDebouncer` is fully usable with no DB handle at all.
+    #[test]
+    fn record_is_timing_only_no_db_dependency() {
+        let d = HealthRecomputeDebouncer::new();
+        // No AppState, no ActionDb, no connection — just an in-memory map.
+        let ts = d.record("acct-w0f");
+        assert_eq!(d.pending_count(), 1);
+        assert!(d.try_claim("acct-w0f", ts));
+        assert_eq!(d.pending_count(), 0);
     }
 }
