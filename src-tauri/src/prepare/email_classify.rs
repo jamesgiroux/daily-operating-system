@@ -6,7 +6,8 @@
 use std::collections::HashSet;
 
 use super::constants::{
-    BULK_SENDER_DOMAINS, HIGH_PRIORITY_SUBJECT_KEYWORDS, LOW_PRIORITY_SIGNALS, NOREPLY_LOCAL_PARTS,
+    BULK_SENDER_DOMAINS, HIGH_PRIORITY_SUBJECT_KEYWORDS, LOW_PRIORITY_SIGNALS,
+    NOISE_SUBJECT_PATTERNS, NOREPLY_LOCAL_PARTS,
 };
 
 /// Extract bare email from a "From" header like "Name <email@example.com>".
@@ -378,6 +379,65 @@ pub fn boost_with_entity_context(
 }
 
 // ============================================================================
+// DOS-242: Hard-drop noise suppression
+// ============================================================================
+
+/// Decide whether an inbound email should be suppressed entirely
+/// (hidden from inbox, account Records, signal emission).
+///
+/// Suppress when ANY of the following hold:
+/// 1. Sender domain is in `BULK_SENDER_DOMAINS` (LinkedIn, Slack, GitHub
+///    notifications, etc.) — these are noise regardless of List-Unsubscribe.
+/// 2. Subject matches any `NOISE_SUBJECT_PATTERNS` entry — automated
+///    receipts, digests, verification codes, etc.
+/// 3. `List-Unsubscribe` header is present AND the sender domain is NOT in
+///    `account_domains` AND NOT in any tracked person's email domain.
+///    This catches arbitrary marketing senders not on the bulk allow-list
+///    while never suppressing real customer/contact correspondence.
+///
+/// `account_domains` and `person_domains` are lowercase domains pulled from
+/// the `account_domains` table and `person_emails` table respectively.
+pub fn should_suppress_email(
+    sender: &str,
+    subject: &str,
+    list_unsubscribe: &str,
+    account_domains: &HashSet<String>,
+    person_domains: &HashSet<String>,
+) -> bool {
+    let from_addr = extract_email_address(sender);
+    let domain = extract_domain(&from_addr);
+
+    // Customer/known-contact correspondence is never suppressed, even when
+    // the sender uses ESP infrastructure or has an unsubscribe footer.
+    if !domain.is_empty()
+        && (account_domains.contains(&domain) || person_domains.contains(&domain))
+    {
+        return false;
+    }
+
+    // Rule 1: bulk/SaaS-notification sender domain → suppress.
+    if !domain.is_empty() && BULK_SENDER_DOMAINS.contains(&domain.as_str()) {
+        return true;
+    }
+
+    // Rule 2: subject signals automation/transactional/digest mail.
+    let subject_lower = subject.to_lowercase();
+    if NOISE_SUBJECT_PATTERNS
+        .iter()
+        .any(|pat| subject_lower.contains(pat))
+    {
+        return true;
+    }
+
+    // Rule 3: any List-Unsubscribe header from an untracked domain.
+    if !list_unsubscribe.trim().is_empty() {
+        return true;
+    }
+
+    false
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -736,6 +796,82 @@ mod tests {
             ),
             "medium"
         );
+    }
+
+    // --- DOS-242: should_suppress_email tests ---
+
+    #[test]
+    fn test_suppress_bulk_sender_linkedin() {
+        assert!(should_suppress_email(
+            "LinkedIn <invitations@linkedin.com>",
+            "You have a new connection",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn test_suppress_subject_pattern_receipt() {
+        assert!(should_suppress_email(
+            "billing@somesaas.example",
+            "Your receipt from SomeSaaS",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn test_suppress_list_unsubscribe_untracked_domain() {
+        assert!(should_suppress_email(
+            "marketing@randomvendor.example",
+            "New product launch",
+            "<https://example.com/unsub>",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn test_no_suppress_account_domain_even_with_unsubscribe() {
+        // Real customer correspondence with an inadvertent unsubscribe footer
+        // (e.g. routed through a corporate ESP) must NOT be suppressed.
+        let mut accounts = HashSet::new();
+        accounts.insert("subsidiary.com".to_string());
+        assert!(!should_suppress_email(
+            "Jane <jane@subsidiary.com>",
+            "Re: contract review",
+            "<https://corp.example/unsub>",
+            &accounts,
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn test_no_suppress_person_domain_bulk_sender_overridden() {
+        // Tracked-person domain protects even bulk-sender domains
+        // (rare, but: a contact at a domain we track shouldn't be suppressed).
+        let mut persons = HashSet::new();
+        persons.insert("github.com".to_string());
+        assert!(!should_suppress_email(
+            "Alex <alex@github.com>",
+            "Re: PR review",
+            "",
+            &HashSet::new(),
+            &persons,
+        ));
+    }
+
+    #[test]
+    fn test_no_suppress_normal_external_email() {
+        assert!(!should_suppress_email(
+            "Bob <bob@unknown.example>",
+            "Quick question",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
     }
 
     #[test]

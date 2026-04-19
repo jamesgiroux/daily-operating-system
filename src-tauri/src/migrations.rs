@@ -430,6 +430,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 102,
         sql: include_str!("migrations/101_risk_briefing_attempt_and_recompute_pending.sql"),
     },
+    // DOS-242: emails.is_noise column for hard-drop bulk/marketing filter.
+    Migration {
+        version: 103,
+        sql: include_str!("migrations/102_email_is_noise.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
