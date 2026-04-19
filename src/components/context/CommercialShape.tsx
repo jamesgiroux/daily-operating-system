@@ -21,6 +21,12 @@ interface CommercialShapeProps {
   detail: AccountDetail;
   /** Thin wrapper over update_account_field (useAccountFieldSave). */
   onUpdateField?: (field: string, value: string) => Promise<void> | void;
+  /**
+   * Optional callback the gap-summary bar uses for its "Capture now →" link.
+   * When provided, the link renders aligned to the right of the bar. The host
+   * is responsible for routing into the structured commercial editor.
+   */
+  onCaptureAll?: () => void;
 }
 
 interface ShapeRow {
@@ -51,11 +57,10 @@ function formatDate(date?: string | null): string {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-export function CommercialShape({ detail, onUpdateField }: CommercialShapeProps) {
+export function CommercialShape({ detail, onUpdateField, onCaptureAll }: CommercialShapeProps) {
   const arrText = formatArr(detail.arr);
   const renewalText = formatDate(detail.renewalDate);
   const contractStartText = formatDate(detail.contractStart);
-  const npsText = detail.nps != null ? String(detail.nps) : "";
 
   const rows: ShapeRow[] = [
     {
@@ -65,6 +70,9 @@ export function CommercialShape({ detail, onUpdateField }: CommercialShapeProps)
       editableField: "arr",
       editableValue: detail.arr != null ? String(detail.arr) : "",
     },
+    // 12-month trend sparkline — no backing data today, render as a gap row.
+    // TODO(DOS-X): wire to monthly ARR trend once the timeseries read model lands.
+    { label: "12-month trend", value: "— not yet available", gap: true },
     {
       label: "Contract type",
       value: contractStartText && renewalText ? "Annual" : "— not captured",
@@ -77,20 +85,7 @@ export function CommercialShape({ detail, onUpdateField }: CommercialShapeProps)
       editableField: "contract_end",
       editableValue: detail.renewalDate ?? "",
     },
-    {
-      label: "Contract start",
-      value: contractStartText || "— not captured",
-      gap: !contractStartText,
-      editableField: "contract_start",
-      editableValue: detail.contractStart ?? "",
-    },
-    {
-      label: "NPS",
-      value: npsText || "— not captured",
-      gap: !npsText,
-      editableField: "nps",
-      editableValue: npsText,
-    },
+    // NPS and Contract start moved to Relationship fabric per mockup.
     // DOS-231: remaining rows are gap sentinels — no column exists on accounts.
     // Structured capture (procurement, discount history) lands with the
     // Context schema work in v1.2.2 (DOS-207). Simple string gap rows stay
@@ -180,13 +175,45 @@ export function CommercialShape({ detail, onUpdateField }: CommercialShapeProps)
             letterSpacing: "0.08em",
             color: "var(--color-spice-saffron)",
             marginTop: 20,
-            padding: "8px 12px",
+            padding: "8px 16px",
             background:
-              "var(--color-spice-saffron-8, rgba(196,147,53,0.06))",
-            border: "1px dashed var(--color-spice-saffron)",
+              "var(--color-spice-saffron-10, rgba(196,147,53,0.10))",
+            borderLeft: "2px solid var(--color-spice-saffron)",
+            borderRadius: "0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0",
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            flexWrap: "wrap",
           }}
         >
-          {gapCount} of {rows.length} commercial fields unfilled
+          <span>
+            {gapCount} of {rows.length} commercial fields unfilled
+          </span>
+          {onCaptureAll && (
+            <button
+              type="button"
+              onClick={onCaptureAll}
+              style={{
+                marginLeft: "auto",
+                color: "var(--color-spice-turmeric)",
+                borderBottom: "1px dotted var(--color-spice-turmeric)",
+                background: "transparent",
+                border: "none",
+                borderBottomStyle: "dotted",
+                borderBottomWidth: 1,
+                borderBottomColor: "var(--color-spice-turmeric)",
+                padding: 0,
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                cursor: "pointer",
+              }}
+              aria-label="Capture commercial fields"
+            >
+              Capture now →
+            </button>
+          )}
         </div>
       )}
     </div>

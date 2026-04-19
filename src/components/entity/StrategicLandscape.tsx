@@ -275,10 +275,10 @@ export function StrategicLandscape({
         </div>
       )}
 
-      {/* ── Organizational Changes ── */}
+      {/* ── Regulatory & market context (wraps org changes per mockup) ── */}
       {hasOrgChanges && (
         <div className={css.subsection}>
-          <h3 className={css.subsectionLabel}>Organizational Changes</h3>
+          <h3 className={css.subsectionLabel}>Regulatory &amp; market context</h3>
           {orgChanges.map((change, i) => {
             const path = `organizationalChanges[${i}].person`;
             const transition = [change.from, change.to].filter(Boolean);
