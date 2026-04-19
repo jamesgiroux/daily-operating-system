@@ -435,6 +435,102 @@ fn test_dos226_rollback_stale_respects_fresh_batches() {
     assert_eq!(state, "pending_retry");
 }
 
+// ---------------------------------------------------------------------------
+// DOS-226 Wave 0g: retry-batched finalize failure must surface, not swallow
+// ---------------------------------------------------------------------------
+//
+// Regression guard for the Wave 0g HIGH finding: the orchestrator promoted
+// `pending_retry` rows to `pending` *before* enrichment via
+// `finalize_pending_retry_success`. If that call erred or returned zero
+// promoted rows for a retry batch, the old code logged and continued — the
+// service-layer's residual finalize after enrichment then returned success
+// while zero retry work had actually happened.
+//
+// The tests below pin the semantic invariants the orchestrator relies on:
+//   (a) Finalizing a non-existent batch_id returns `Ok(0)` — distinct from
+//       success, and the orchestrator must treat this as "batch stuck".
+//   (b) After `rollback_pending_retry`, rows are back in `failed` with their
+//       original attempts preserved, so the user can retry again. This is
+//       what the service-layer wrapper does on orchestrate Err.
+
+#[test]
+fn test_dos226_w0g_finalize_missing_batch_returns_zero_not_err() {
+    // Wave 0g: the orchestrator's new fail-loud branch distinguishes
+    // `Ok(0)` (genuinely stuck batch) from `Err` (SQLite failure). Both
+    // must surface as `Err(ExecutionError)` in the orchestrator so the
+    // service rollback runs. This test pins the DB-level contract that
+    // finalize on a batch with no matching rows returns `Ok(0)` — the
+    // "stuck" signal the orchestrator now acts on.
+    let db = test_db();
+    seed_failed_email(&db, "em-w0g-stuck");
+    // Stamp a batch, but pretend the orchestrator lost track and calls
+    // finalize with a wrong/missing batch_id.
+    db.mark_failed_for_retry("batch-real").expect("mark");
+
+    let promoted = db
+        .finalize_pending_retry_success("batch-phantom")
+        .expect("finalize returns Ok even for missing batch");
+    assert_eq!(
+        promoted, 0,
+        "finalize for a batch with no matching rows is Ok(0); orchestrator treats this as stuck"
+    );
+
+    // The original batch's row is still in pending_retry — the phantom
+    // finalize did not accidentally promote it.
+    let (state, _) = read_enrichment_state(&db, "em-w0g-stuck");
+    assert_eq!(
+        state, "pending_retry",
+        "the real batch's row must not have been promoted by the phantom finalize"
+    );
+}
+
+#[test]
+fn test_dos226_w0g_rollback_after_failed_finalize_restores_retry() {
+    // Wave 0g: when the orchestrator returns Err (our new behavior when
+    // finalize fails or returns 0 for a retry batch), the service layer
+    // takes the `Err` branch and calls `rollback_pending_retry`. This
+    // test pins the end-state the user sees: the rows are back in
+    // `failed` with preserved attempts, not stranded in `pending_retry`
+    // with a dead batch_id. In other words: the "retry succeeded while
+    // zero work ran" bug cannot manifest, because the failure propagates
+    // all the way to a visible rollback.
+    let db = test_db();
+    seed_failed_email(&db, "em-w0g-rb-1");
+    seed_failed_email(&db, "em-w0g-rb-2");
+
+    db.mark_failed_for_retry("batch-w0g-rb").expect("mark");
+    // Simulate the orchestrator having returned Err (finalize failed
+    // mid-run). The service layer's Err branch runs rollback.
+    let rolled = db
+        .rollback_pending_retry("batch-w0g-rb")
+        .expect("rollback");
+    assert_eq!(rolled, 2, "both rows must be returned to failed state");
+
+    for id in ["em-w0g-rb-1", "em-w0g-rb-2"] {
+        let (state, attempts) = read_enrichment_state(&db, id);
+        assert_eq!(state, "failed", "row {id} must be back in failed");
+        assert_eq!(
+            attempts, 3,
+            "row {id} must have its original attempts preserved so user can retry again"
+        );
+    }
+
+    // And the batch's columns are cleared — a fresh retry can adopt them.
+    let (batch_id, started_at): (Option<String>, Option<String>) = db
+        .conn
+        .query_row(
+            "SELECT retry_batch_id, retry_started_at FROM emails WHERE email_id = 'em-w0g-rb-1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read cols");
+    assert!(batch_id.is_none(), "retry_batch_id cleared after rollback");
+    assert!(
+        started_at.is_none(),
+        "retry_started_at cleared after rollback"
+    );
+}
+
 #[test]
 fn test_dos226_pending_retry_eligible_for_enrichment_after_finalize() {
     // Codex finding 1 regression guard: the whole retry loop hinges on
