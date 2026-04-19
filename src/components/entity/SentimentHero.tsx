@@ -172,6 +172,28 @@ function sparkHeightClass(score: number): string {
   return css.sparkBarH4;
 }
 
+/**
+ * Derive a trend summary from the sparkline — compares the most recent
+ * window's mean to the prior window to infer direction + delta. Matches the
+ * mockup's divergence copy ("Green +12 and trending up") without needing a
+ * new backend field. Returns null when we don't have enough history.
+ */
+function computeTrend(
+  points: HealthSparklinePoint[],
+): { direction: "up" | "down" | "steady"; delta: number } | null {
+  if (!points.length) return null;
+  const tail = points.slice(-28);
+  if (tail.length < 10) return null;
+  const half = Math.floor(tail.length / 2);
+  const recent = tail.slice(-half);
+  const prior = tail.slice(0, half);
+  const mean = (arr: HealthSparklinePoint[]) =>
+    arr.reduce((sum, p) => sum + (p.score ?? 0), 0) / arr.length;
+  const delta = Math.round(mean(recent) - mean(prior));
+  if (Math.abs(delta) < 3) return { direction: "steady", delta };
+  return { direction: delta > 0 ? "up" : "down", delta };
+}
+
 export function SentimentHero({
   view,
   onSetSentiment,
@@ -330,26 +352,42 @@ export function SentimentHero({
         </blockquote>
       )}
 
-      {view.divergence && !editing && (
-        <div className={css.divergenceFlag}>
-          <strong>Updates currently disagree</strong>
-          Computed health is{" "}
-          <span className={css.divergenceComputed}>
-            {capitalize(view.divergence.computedBand)}
-          </span>{" "}
-          and your read is {currentLabel.toLowerCase()} &mdash; a{" "}
-          {view.divergence.severity} divergence ({view.divergence.delta} band
-          {view.divergence.delta === 1 ? "" : "s"} apart). The note you add
-          next is the signal that trains the system.{" "}
-          <button
-            type="button"
-            className={css.divergenceAction}
-            onClick={openEditor}
-          >
-            Add more detail &rarr;
-          </button>
-        </div>
-      )}
+      {view.divergence && !editing && (() => {
+        const trend = computeTrend(view.sparkline);
+        const trendClause =
+          trend?.direction === "up"
+            ? ` and trending up`
+            : trend?.direction === "down"
+              ? ` and trending down`
+              : trend
+                ? ` and holding steady`
+                : "";
+        const deltaClause =
+          trend && trend.delta !== 0
+            ? ` ${trend.delta > 0 ? "+" : ""}${trend.delta}`
+            : "";
+        return (
+          <div className={css.divergenceFlag}>
+            <strong>Updates currently disagree</strong>
+            Computed health is{" "}
+            <span className={css.divergenceComputed}>
+              {capitalize(view.divergence.computedBand)}
+              {deltaClause}
+            </span>
+            {trendClause}. Your read is {currentLabel.toLowerCase()} &mdash; a{" "}
+            {view.divergence.severity} divergence ({view.divergence.delta} band
+            {view.divergence.delta === 1 ? "" : "s"} apart). The note you add
+            next is the signal that trains the system.{" "}
+            <button
+              type="button"
+              className={css.divergenceAction}
+              onClick={openEditor}
+            >
+              Add more detail &rarr;
+            </button>
+          </div>
+        );
+      })()}
 
       {editing && (
         <SentimentEditor
