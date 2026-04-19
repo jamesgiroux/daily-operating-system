@@ -72,7 +72,12 @@ pub const LOW_PRIORITY_SIGNALS: &[&str] = &[
 ];
 
 /// Bulk/marketing sender domains (I21: FYI classification expansion).
+///
+/// DOS-242: Expanded with SaaS notification senders (LinkedIn, Slack, GitHub,
+/// Notion, AWS, etc.) that should be hard-suppressed from inbox/Records,
+/// not merely demoted to priority='low'.
 pub const BULK_SENDER_DOMAINS: &[&str] = &[
+    // ESP / marketing platforms (I21 baseline)
     "mailchimp.com",
     "sendgrid.net",
     "mandrillapp.com",
@@ -84,6 +89,36 @@ pub const BULK_SENDER_DOMAINS: &[&str] = &[
     "mailgun.org",
     "postmarkapp.com",
     "amazonses.com",
+    // SaaS notification senders (DOS-242)
+    "linkedin.com",
+    "slack.com",
+    "github.com",
+    "notifications.github.com",
+    "notion.so",
+    "stripe.com",
+    "amazonaws.com",
+    "datadoghq.com",
+    "atlassian.com",
+    "calendly.com",
+    "zoom.us",
+    "loom.com",
+    "docusign.net",
+    "dropbox.com",
+    "figma.com",
+];
+
+/// Subject substrings that signal automated/transactional/digest mail (DOS-242).
+/// Matched case-insensitively against the email subject.
+pub const NOISE_SUBJECT_PATTERNS: &[&str] = &[
+    "your receipt",
+    "your order",
+    "weekly digest",
+    "security alert",
+    "verification code",
+    "[slack]",
+    "[github]",
+    "shipped",
+    "confirmation #",
 ];
 
 /// Noreply local-part patterns (I21).

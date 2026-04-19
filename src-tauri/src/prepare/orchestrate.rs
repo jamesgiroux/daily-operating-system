@@ -202,10 +202,23 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // I365: Persist fetched emails to DB (after classification + boosting)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
+            // DOS-242: load tracked domains once for the noise filter.
+            let (account_domains_for_noise, person_domains_for_noise) = load_tracked_domains(&db);
             let mut persisted = 0usize;
+            let mut suppressed = 0usize;
             for raw in &email_result.raw_emails {
                 let sender_email = email_classify::extract_email_address(&raw.from);
                 let sender_name = extract_display_name(&raw.from);
+                let is_noise = email_classify::should_suppress_email(
+                    &raw.from,
+                    &raw.subject,
+                    &raw.list_unsubscribe,
+                    &account_domains_for_noise,
+                    &person_domains_for_noise,
+                );
+                if is_noise {
+                    suppressed += 1;
+                }
                 // Use boosted priority from all array if available
                 let priority = email_result
                     .all
@@ -250,6 +263,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     pinned_at: None,
                     commitments: None,
                     questions: None,
+                    is_noise,
                 };
                 if let Err(e) = db.upsert_email(&db_email) {
                     log::warn!("Failed to persist email {}: {}", raw.id, e);
@@ -258,7 +272,11 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 }
             }
             if persisted > 0 {
-                log::info!("prepare_today: persisted {} emails to DB", persisted);
+                log::info!(
+                    "prepare_today: persisted {} emails to DB ({} suppressed as noise)",
+                    persisted,
+                    suppressed
+                );
             }
 
             // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
@@ -1503,7 +1521,10 @@ pub async fn refresh_emails_with_retry_batch(
 
     // I365: Persist fetched emails to DB
     if let Ok(db) = crate::db::ActionDb::open() {
+        // DOS-242: load tracked domains once for the noise filter.
+        let (account_domains_for_noise, person_domains_for_noise) = load_tracked_domains(&db);
         let mut persisted = 0usize;
+        let mut suppressed = 0usize;
         for raw in &email_result.raw_emails {
             let sender_email = email_classify::extract_email_address(&raw.from);
             let sender_name = extract_display_name(&raw.from);
@@ -1512,6 +1533,16 @@ pub async fn refresh_emails_with_retry_batch(
                 .get(&raw.id)
                 .map(|s| s.as_str())
                 .unwrap_or("medium");
+            let is_noise = email_classify::should_suppress_email(
+                &raw.from,
+                &raw.subject,
+                &raw.list_unsubscribe,
+                &account_domains_for_noise,
+                &person_domains_for_noise,
+            );
+            if is_noise {
+                suppressed += 1;
+            }
             let db_email = crate::db::DbEmail {
                 email_id: raw.id.clone(),
                 thread_id: Some(raw.thread_id.clone()),
@@ -1543,6 +1574,7 @@ pub async fn refresh_emails_with_retry_batch(
                 pinned_at: None,
                 commitments: None,
                 questions: None,
+                is_noise,
             };
             if let Err(e) = db.upsert_email(&db_email) {
                 log::warn!("Failed to persist email {}: {}", raw.id, e);
@@ -1551,7 +1583,11 @@ pub async fn refresh_emails_with_retry_batch(
             }
         }
         if persisted > 0 {
-            log::info!("I365: Persisted {} emails to DB", persisted);
+            log::info!(
+                "I365: Persisted {} emails to DB ({} suppressed as noise)",
+                persisted,
+                suppressed
+            );
         }
 
         // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
@@ -2195,6 +2231,45 @@ async fn fetch_and_classify_week(
         time_status,
         Value::Object(events_by_day),
     )
+}
+
+/// DOS-242: collect every domain we treat as "tracked correspondence" so the
+/// noise filter never suppresses real customer or contact email. Sourced from
+/// `account_domains` (every account, not just today's meeting attendees) and
+/// `person_emails` (all tracked-person addresses). Returned as
+/// `(account_domains, person_domains)` lowercase sets.
+fn load_tracked_domains(db: &crate::db::ActionDb) -> (HashSet<String>, HashSet<String>) {
+    let mut account_domains: HashSet<String> = HashSet::new();
+    if let Ok(mut stmt) = db.conn_ref().prepare("SELECT DISTINCT domain FROM account_domains") {
+        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+            for d in rows.flatten() {
+                let d = d.trim().to_lowercase();
+                if !d.is_empty() {
+                    account_domains.insert(d);
+                }
+            }
+        }
+    }
+
+    let mut person_domains: HashSet<String> = HashSet::new();
+    if let Ok(mut stmt) = db.conn_ref().prepare(
+        "SELECT DISTINCT email FROM person_emails
+         UNION
+         SELECT DISTINCT email FROM people WHERE email IS NOT NULL",
+    ) {
+        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+            for email in rows.flatten() {
+                if let Some(at_pos) = email.rfind('@') {
+                    let d = email[at_pos + 1..].trim().to_lowercase();
+                    if !d.is_empty() {
+                        person_domains.insert(d);
+                    }
+                }
+            }
+        }
+    }
+
+    (account_domains, person_domains)
 }
 
 /// Fetch and classify emails (async, uses google_api).

@@ -475,6 +475,7 @@ pub fn run() {
             commands::dismiss_gone_quiet,
             commands::archive_email,
             commands::unarchive_email,
+            commands::unsuppress_email,
             commands::pin_email,
             commands::promote_commitment_to_action,
             commands::dismiss_email_item,
