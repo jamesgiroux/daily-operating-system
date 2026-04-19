@@ -32,6 +32,8 @@ import {
   Info,
   DollarSign,
   HeartHandshake,
+  NotebookPen,
+  Package,
 } from "lucide-react";
 
 /* ── Vitals assembly ── */
@@ -151,12 +153,21 @@ export function buildChapters(isParent: boolean, hasHealth: boolean) {
 export function buildHealthChapters(
   isParent: boolean,
   hasHealth: boolean,
-  opts: { fineState?: boolean; hasOutlook?: boolean } = {},
+  opts: { fineState?: boolean; hasOutlook?: boolean; hasProducts?: boolean } = {},
 ) {
-  // DOS-203: Health tab IA matches renderHealthView section ids.
-  // Order mirrors rendering: sentiment hero is headline-only (no margin id).
-  // Chapters with matching MarginSection ids are surfaced in the nav.
-  const chapters: { id: string; label: string; icon: React.ReactNode }[] = [];
+  // DOS-203: Health tab IA matches renderHealthView section ids. Chapter
+  // order mirrors the mockup (.docs/mockups/account-health-outlook-globex.html):
+  //   your-assessment → needs-attention | on-track → outlook →
+  //   relationship-health → [portfolio] → [products] → about-intelligence
+  // Every id here MUST correspond to a rendered <section>/<MarginSection>
+  // in AccountDetailPage.renderHealthView or the nav anchor dead-links.
+  const chapters: { id: string; label: string; icon: React.ReactNode }[] = [
+    {
+      id: "your-assessment",
+      label: "Your Assessment",
+      icon: React.createElement(NotebookPen, { size: 18, strokeWidth: 1.5 }),
+    },
+  ];
   if (opts.fineState) {
     chapters.push({
       id: "on-track",
@@ -182,6 +193,15 @@ export function buildHealthChapters(
   }
   if (isParent) {
     chapters.push(PORTFOLIO_CHAPTER);
+  }
+  // Products only appears in the nav when the page actually renders the
+  // chapter (detail.products?.length > 0 in renderHealthView).
+  if (opts.hasProducts) {
+    chapters.push({
+      id: "products",
+      label: "Products",
+      icon: React.createElement(Package, { size: 18, strokeWidth: 1.5 }),
+    });
   }
   chapters.push({
     id: "about-intelligence",
