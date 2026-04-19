@@ -43,7 +43,18 @@ export function useAccountDetailPage(accountId: string | undefined) {
   const navigate = useNavigate();
   const acct = useAccountDetail(accountId);
   const preset = useActivePreset();
-  useRevealObserver(!acct.loading && !!acct.detail);
+
+  // View state — driven by ?view= URL param, synced back on change.
+  // Declared first so useRevealObserver below can take it as a revision
+  // key and re-observe reveals when the active tab changes.
+  const [activeView, setActiveView] = useState<AccountView>(() => readViewFromUrl());
+
+  // Re-observe on view switch. The page renders all three tab contents
+  // into the DOM and toggles `display: none` — IntersectionObserver can
+  // not fire on non-laid-out subtrees, so reveals on the hidden tabs
+  // stay at opacity: 0 until we tear down + re-query. The activeView
+  // revision does exactly that.
+  useRevealObserver(!acct.loading && !!acct.detail, activeView);
 
   // Intelligence field mutations
   const { updateField: handleUpdateIntelField, saveStatus, setSaveStatus: setFolioSaveStatus,
@@ -57,9 +68,6 @@ export function useAccountDetailPage(accountId: string | undefined) {
   // Feedback + entity context (used by view sections)
   const feedback = useIntelligenceFeedback(accountId, "account");
   const entityCtx = useEntityContextEntries("account", accountId ?? null);
-
-  // View state — driven by ?view= URL param, synced back on change
-  const [activeView, setActiveView] = useState<AccountView>(() => readViewFromUrl());
 
   // Sync view → URL (replaceState, no navigation, no re-render)
   useEffect(() => {
