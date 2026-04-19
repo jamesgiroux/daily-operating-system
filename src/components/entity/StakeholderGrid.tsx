@@ -45,6 +45,14 @@ interface StakeholderGridProps {
   onAddTeamMember?: () => void;
   onRemoveTeamMember?: (personId: string, role: string) => void;
 
+  /**
+   * External-stakeholder remove affordance. Called with the person's id
+   * and name so the parent can decide between unlink-from-account vs
+   * full person delete (the latter unblocks "that Gong bot email
+   * shouldn't exist anywhere" cleanup).
+   */
+  onRemoveStakeholder?: (personId: string, personName: string) => void;
+
   /** AI-proposed stakeholder overrides awaiting human review (Phase 3). */
   suggestions?: StakeholderSuggestion[];
   onAcceptSuggestion?: (suggestionId: number) => void;
@@ -61,6 +69,7 @@ export function StakeholderGrid({
   onRemoveRole,
   onAddTeamMember,
   onRemoveTeamMember,
+  onRemoveStakeholder,
   suggestions,
   onAcceptSuggestion,
   onDismissSuggestion,
@@ -108,6 +117,7 @@ export function StakeholderGrid({
                 roleCatalog={EXTERNAL_ROLE_CATALOG}
                 onAddRole={onAddRole}
                 onRemoveRole={onRemoveRole}
+                onRemoveStakeholder={onRemoveStakeholder}
               />
             ))}
             {secondaryRendered.map((p) => (
@@ -118,6 +128,7 @@ export function StakeholderGrid({
                 roleCatalog={EXTERNAL_ROLE_CATALOG}
                 onAddRole={onAddRole}
                 onRemoveRole={onRemoveRole}
+                onRemoveStakeholder={onRemoveStakeholder}
               />
             ))}
           </div>
@@ -127,6 +138,8 @@ export function StakeholderGrid({
 
       <SuggestionsQueue
         suggestions={suggestions}
+        existingExternal={external}
+        existingInternal={internal}
         onAccept={onAcceptSuggestion}
         onDismiss={onDismissSuggestion}
       />
@@ -260,14 +273,46 @@ function isTier2(s: StakeholderFull): boolean {
  */
 function SuggestionsQueue({
   suggestions,
+  existingExternal,
+  existingInternal,
   onAccept,
   onDismiss,
 }: {
   suggestions?: StakeholderSuggestion[];
+  /** People already surfaced as cards in "Their team" — suggestions for
+   *  these are already-captured intelligence and shouldn't duplicate. */
+  existingExternal: StakeholderFull[];
+  /** Same for internal team members (account-team table uses the same
+   *  backing person records). */
+  existingInternal: AccountTeamMember[];
   onAccept?: (suggestionId: number) => void;
   onDismiss?: (suggestionId: number) => void;
 }) {
-  const pending = (suggestions ?? []).filter((s) => s.status === "pending");
+  // Build lookup sets of people we already have cards for. Suggestions
+  // that match any (email / name / person_id) are filtered out so the
+  // queue only shows genuinely NEW proposals, not a mirror of the team.
+  const confirmedEmails = new Set<string>();
+  const confirmedNames = new Set<string>();
+  const confirmedPersonIds = new Set<string>();
+  for (const s of existingExternal) {
+    if (s.personEmail) confirmedEmails.add(s.personEmail.toLowerCase());
+    if (s.personName) confirmedNames.add(s.personName.toLowerCase());
+    if (s.personId) confirmedPersonIds.add(s.personId);
+  }
+  for (const m of existingInternal) {
+    if (m.personEmail) confirmedEmails.add(m.personEmail.toLowerCase());
+    if (m.personName) confirmedNames.add(m.personName.toLowerCase());
+    if (m.personId) confirmedPersonIds.add(m.personId);
+  }
+
+  const pending = (suggestions ?? [])
+    .filter((s) => s.status === "pending")
+    .filter((s) => {
+      if (s.personId && confirmedPersonIds.has(s.personId)) return false;
+      if (s.suggestedEmail && confirmedEmails.has(s.suggestedEmail.toLowerCase())) return false;
+      if (s.suggestedName && confirmedNames.has(s.suggestedName.toLowerCase())) return false;
+      return true;
+    });
   if (pending.length === 0) return null;
 
   return (

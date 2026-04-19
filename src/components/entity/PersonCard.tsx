@@ -105,6 +105,14 @@ interface PersonCardProps {
   onRemoveRole?: (personId: string, role: string) => void;
   /** Optional remove-from-team affordance (internal variant only). */
   onRemoveMember?: (personId: string, primaryRole: string) => void;
+  /**
+   * Permanent remove for external stakeholders. When provided, a small
+   * "×" sits at the top-right of the card header. The parent decides
+   * whether this unlinks from just this account or deletes the person
+   * entirely (e.g. when a bot email got auto-created as a person and
+   * needs to go).
+   */
+  onRemoveStakeholder?: (personId: string, personName: string) => void;
 }
 
 export function PersonCard({
@@ -114,6 +122,7 @@ export function PersonCard({
   onAddRole,
   onRemoveRole,
   onRemoveMember,
+  onRemoveStakeholder,
 }: PersonCardProps) {
   const cardClasses = [css.personCard];
   if (variant === "primary") cardClasses.push(css.personCardPrimary);
@@ -162,6 +171,17 @@ export function PersonCard({
                 person.roles[0]?.role ?? "associated",
               )
             }
+          >
+            ×
+          </button>
+        ) : null}
+        {onRemoveStakeholder && variant !== "internal" ? (
+          <button
+            type="button"
+            className={css.rolePillRemove}
+            aria-label={`Remove ${person.personName}`}
+            title="Remove from account"
+            onClick={() => onRemoveStakeholder(person.personId, person.personName)}
           >
             ×
           </button>
