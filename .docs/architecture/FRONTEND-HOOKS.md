@@ -3,7 +3,7 @@
 > Registry of all React hooks in `src/hooks/`.
 > **Auto-generated:** 2026-04-19 by `.docs/generators/gen-frontend-hooks.sh`
 
-**42** hook files | **5337** total lines
+**42** hook files | **5339** total lines
 
 ---
 
@@ -13,7 +13,7 @@
 |------|------|-------|---------------|-----------------|
 | `useIsMobile` | `use-mobile.ts` | 19 | — | — |
 | `useAccountDetail` | `useAccountDetail.ts` | 722 | archive_account, create_action, create_child_account, dismiss_intelligence_item, dismiss_recommendation, enrich_account, get_account_detail, get_account_events, get_entity_files, index_entity_files, mark_commitment_done, record_account_event, retry_risk_briefing, set_user_health_sentiment, track_recommendation, update_account_programs | — |
-| `useAccountDetailPage` | `useAccountDetailPage.tsx` | 272 | get_account_ancestors, get_entity_metadata, update_technical_footprint_field | — |
+| `useAccountDetailPage` | `useAccountDetailPage.tsx` | 274 | get_account_ancestors, get_entity_metadata, update_technical_footprint_field | — |
 | `useAccountFieldSave` | `useAccountFieldSave.ts` | 127 | accept_account_field_conflict, dismiss_account_field_conflict, update_account_field, update_entity_metadata | — |
 | `useAccountFields` | `useAccountFields.ts` | 137 | update_account_field | — |
 | `useActions` | `useActions.ts` | 223 | complete_action, create_action, get_actions_from_db, reopen_action | — |
