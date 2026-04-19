@@ -1611,15 +1611,28 @@ pub async fn refresh_emails(
     let state_clone = state.clone();
     let workspace_path = config.workspace_path.clone();
     let batch_id_for_exec = batch_id.clone();
+    // Only thread the retry batch into the executor when we actually
+    // have rows to retry. Wave 0g's fail-closed branch treats a batch
+    // with zero promoted rows as a stuck retry batch and errors out —
+    // which is correct for real retry batches, but would turn every
+    // healthy refresh (no failed rows, marked == 0) into an error
+    // (regression flagged by Codex final verification 2026-04-18).
+    let retry_batch_for_exec: Option<String> = if marked > 0 {
+        Some(batch_id_for_exec)
+    } else {
+        None
+    };
 
-    // Phase 2 — run the refresh. The orchestrator will finalize our batch
-    // mid-run (after Gmail fetch succeeds, before enrichment) so the
-    // retried rows are eligible for the enrichment pass that just started.
+    // Phase 2 — run the refresh. When a retry batch is active, the
+    // orchestrator will finalize our batch mid-run (after Gmail fetch
+    // succeeds, before enrichment) so the retried rows are eligible
+    // for the enrichment pass that just started. For zero-retry
+    // refreshes the orchestrator skips the finalize branch entirely.
     let refresh_outcome: Result<(), String> = tauri::async_runtime::spawn(async move {
         let workspace = std::path::Path::new(&workspace_path);
         let executor = crate::executor::Executor::new(state_clone, app_handle);
         executor
-            .execute_email_refresh_with_retry_batch(workspace, Some(&batch_id_for_exec))
+            .execute_email_refresh_with_retry_batch(workspace, retry_batch_for_exec.as_deref())
             .await
     })
     .await
