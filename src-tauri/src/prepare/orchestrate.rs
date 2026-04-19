@@ -1573,6 +1573,16 @@ pub async fn refresh_emails_with_retry_batch(
         // finalize lived in `services::emails::refresh_emails` and fired
         // *after* orchestrate returned — which is why the UI reported
         // "retrying, cleared" while zero enrichment work happened.
+        //
+        // DOS-226 Wave 0g: for retry-batched refreshes (`retry_batch_id`
+        // is Some), finalize failure is LOAD-BEARING. If the promotion
+        // errors or unexpectedly promotes zero rows, the enrichment pass
+        // below will skip the retried rows and the service layer's
+        // residual finalize will report success — the "retry succeeded
+        // while zero retry work ran" regression. Surface the failure as
+        // an `ExecutionError` so the service caller rolls back the
+        // batch. For non-retry refreshes (`retry_batch_id` is None) this
+        // whole block is skipped.
         if let Some(batch_id) = retry_batch_id {
             match db.finalize_pending_retry_success(batch_id) {
                 Ok(promoted) if promoted > 0 => {
@@ -1582,19 +1592,37 @@ pub async fn refresh_emails_with_retry_batch(
                         batch_id
                     );
                 }
-                Ok(_) => {}
+                Ok(_) => {
+                    // `retry_batch_id` is Some — the service layer only
+                    // threads it when it stamped `marked > 0` rows into
+                    // `pending_retry` under this batch. Zero rows
+                    // promoted therefore means the batch is genuinely
+                    // stuck (rows evaporated, schema drift, stale UUID
+                    // reuse). Surfacing an Err prevents the refresh
+                    // from reporting success while the retry was a no-op.
+                    log::error!(
+                        "DOS-226: finalize_pending_retry_success promoted 0 rows for batch {} — retry batch stuck",
+                        batch_id
+                    );
+                    return Err(ExecutionError::ScriptFailed {
+                        code: 1,
+                        stderr: format!(
+                            "Email retry batch {batch_id} promoted 0 rows — batch is stuck, enrichment would skip it"
+                        ),
+                    });
+                }
                 Err(e) => {
-                    // Non-fatal to the fetch itself (the data is still
-                    // refreshed), but user retry expectations are violated.
-                    // Log and continue — the service-layer caller sees
-                    // the refresh as "succeeded" and therefore won't roll
-                    // back; the stale-recovery pass on the next refresh
-                    // will clean up anything left behind.
                     log::error!(
                         "DOS-226: finalize_pending_retry_success failed for batch {}: {}",
                         batch_id,
                         e
                     );
+                    return Err(ExecutionError::ScriptFailed {
+                        code: 1,
+                        stderr: format!(
+                            "Email retry batch {batch_id} finalize failed: {e}"
+                        ),
+                    });
                 }
             }
         }
