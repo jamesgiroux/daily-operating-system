@@ -38,7 +38,7 @@ import { SentimentHero } from "@/components/health/SentimentHero";
 // DOS-203: Health-tab chapter components.
 import { TriageSection, hasTriageContent } from "@/components/health/TriageSection";
 import { DivergenceSection, hasDivergenceContent } from "@/components/health/DivergenceSection";
-import { OutlookPanel } from "@/components/health/OutlookPanel";
+import { OutlookPanel, renewalCallVerdict } from "@/components/health/OutlookPanel";
 import { SupportingTension } from "@/components/health/SupportingTension";
 import { AboutIntelligence } from "@/components/health/AboutIntelligence";
 import { OnTrackChapter } from "@/components/health/OnTrackChapter";
@@ -150,14 +150,13 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        {/* Chapter 4: Outlook — 28px serif h2 inline (chapter title);
-            the gutter "Outlook" is the small-mono orientation marker
-            alongside. No chapter-level feedback widget or freshness strip
-            — those weren't in the mockup and duplicated signal already
-            carried by the panel cells. */}
+        {/* Chapter 4: Outlook — the chapter title IS the verdict
+            ("The Call: Renewal" / "Churn risk" / "Expansion"), computed
+            from renewalOutlook.confidence + expansionPotential. The gutter
+            "Outlook" stays as the orientation marker. */}
         {intelligence && (intelligence.renewalOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
           <MarginSection id="outlook" label="Outlook">
-            <ChapterHeading title="Outlook: renewal" />
+            <ChapterHeading title={`The Call: ${renewalCallVerdict(intelligence.renewalOutlook)}`} />
             <OutlookPanel intelligence={intelligence} />
           </MarginSection>
         ) : null}
