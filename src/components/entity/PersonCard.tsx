@@ -1,0 +1,340 @@
+/**
+ * PersonCard — single stakeholder card for the Context / The Room chapter.
+ *
+ * Three variants share the same shape but differ in density:
+ *   - "primary"  — span 2 cols, full detail (avatar 56, serif 16 name, assessment)
+ *   - "compact"  — 1 col, condensed
+ *   - "internal" — 1 col, charcoal-tinted (for "Our team" members)
+ *
+ * Multi-role pills wire to atomic add/remove mutations via
+ * `onAddRole` / `onRemoveRole`. Pills carry per-role provenance — AI-surfaced
+ * roles render with a dashed outline so the user can see what hasn't been
+ * human-pinned yet. The role chip editor is the v1.2.1 replacement for the
+ * old single-value dropdown that silently wiped AI-surfaced rows.
+ */
+import { useEffect, useRef, useState } from "react";
+import type { StakeholderFull } from "@/types";
+import css from "./StakeholderGrid.module.css";
+
+export type PersonCardVariant = "primary" | "compact" | "internal";
+
+export interface RoleOption {
+  /** Stored value (lowercase, snake-case): "champion", "technical", etc. */
+  value: string;
+  /** Display label. */
+  label: string;
+  /** Which tone class to apply (maps to .rolePillChampion / .rolePillTechnical / …). */
+  tone: "champion" | "technical" | "economic" | "internal" | "gap" | "default";
+}
+
+/** Canonical role catalog for external stakeholders (Their team). */
+export const EXTERNAL_ROLE_CATALOG: RoleOption[] = [
+  { value: "champion", label: "Champion", tone: "champion" },
+  { value: "executive_sponsor", label: "Exec Sponsor", tone: "champion" },
+  { value: "decision_maker", label: "Decision Maker", tone: "economic" },
+  { value: "economic_buyer", label: "Economic Buyer", tone: "economic" },
+  { value: "primary_contact", label: "Primary Contact", tone: "technical" },
+  { value: "technical_contact", label: "Technical Contact", tone: "technical" },
+  { value: "technical", label: "Technical", tone: "technical" },
+  { value: "power_user", label: "Power User", tone: "technical" },
+  { value: "end_user", label: "End User", tone: "default" },
+];
+
+/** Canonical role catalog for internal team members (Our team). */
+export const INTERNAL_ROLE_CATALOG: RoleOption[] = [
+  { value: "csm", label: "CSM", tone: "internal" },
+  { value: "am", label: "Account Manager", tone: "internal" },
+  { value: "ae", label: "Account Executive", tone: "internal" },
+  { value: "se", label: "Sales Engineer", tone: "internal" },
+  { value: "rm", label: "Relationship Manager", tone: "internal" },
+  { value: "support", label: "Support", tone: "internal" },
+  { value: "associated", label: "Associated", tone: "internal" },
+];
+
+function toneClass(tone: RoleOption["tone"]): string {
+  switch (tone) {
+    case "champion":
+      return css.rolePillChampion;
+    case "technical":
+      return css.rolePillTechnical;
+    case "economic":
+      return css.rolePillEconomic;
+    case "internal":
+      return css.rolePillInternal;
+    case "gap":
+      return css.rolePillGap;
+    default:
+      return css.rolePillDefault;
+  }
+}
+
+function findRoleOption(catalog: RoleOption[], value: string): RoleOption {
+  const found = catalog.find((r) => r.value === value.toLowerCase());
+  if (found) return found;
+  // Unknown role — render as default tone with humanised label.
+  return {
+    value,
+    label: value
+      .split(/[_\s]+/)
+      .map((w) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1) : ""))
+      .join(" "),
+    tone: "default",
+  };
+}
+
+interface PersonCardProps {
+  person: StakeholderFull;
+  variant: PersonCardVariant;
+  /** Role catalog this card should show in the add-role picker. */
+  roleCatalog: RoleOption[];
+  /** Pin / add a role (atomic — doesn't disturb other roles). */
+  onAddRole?: (personId: string, role: string) => void;
+  /** Unpin a role (removes a single role row). */
+  onRemoveRole?: (personId: string, role: string) => void;
+  /** Optional remove-from-team affordance (internal variant only). */
+  onRemoveMember?: (personId: string, primaryRole: string) => void;
+}
+
+export function PersonCard({
+  person,
+  variant,
+  roleCatalog,
+  onAddRole,
+  onRemoveRole,
+  onRemoveMember,
+}: PersonCardProps) {
+  const cardClasses = [css.personCard];
+  if (variant === "primary") cardClasses.push(css.personCardPrimary);
+  if (variant === "internal") cardClasses.push(css.personCardInternal);
+
+  const initials = buildInitials(person.personName);
+  const title = person.personRole ?? person.organization ?? null;
+  const location = deriveLocation(person);
+  const meetingCount = person.meetingCount ?? null;
+  const lastSeen = formatLastSeen(person.lastSeen);
+  const canEditRoles = !!(onAddRole && onRemoveRole);
+  const hasAssessment = !!(person.assessment && person.assessment.trim().length > 0);
+  const showGapState = !hasAssessment && (meetingCount ?? 0) > 0;
+
+  return (
+    <article className={cardClasses.join(" ")}>
+      <div className={css.personHeader}>
+        <div className={css.avatar}>
+          {person.photoUrl ? (
+            <img src={person.photoUrl} alt={person.personName} className={css.avatarImage} />
+          ) : (
+            initials
+          )}
+        </div>
+        <div className={css.personIdentity}>
+          <div className={css.personName}>{person.personName}</div>
+          {title ? <div className={css.personTitle}>{title}</div> : null}
+          {location ? <div className={css.personLocation}>{location}</div> : null}
+          <RolePills
+            person={person}
+            catalog={roleCatalog}
+            canEdit={canEditRoles}
+            onAddRole={onAddRole}
+            onRemoveRole={onRemoveRole}
+          />
+        </div>
+        {onRemoveMember && variant === "internal" ? (
+          <button
+            type="button"
+            className={css.rolePillRemove}
+            aria-label="Remove from team"
+            title="Remove from team"
+            onClick={() =>
+              onRemoveMember(
+                person.personId,
+                person.roles[0]?.role ?? "associated",
+              )
+            }
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
+
+      {/* Assessment prose — only on primary + internal, not compact (to keep
+          secondary cards scan-fast per the mockup). */}
+      {variant !== "compact" && hasAssessment ? (
+        <p className={css.assessment}>{person.assessment}</p>
+      ) : null}
+
+      {/* Gap-state: show when the person has been in meetings but no one has
+          characterised them yet. Primary + compact render this; internal
+          skips it because internal team members don't get the same
+          AI-assessment pipeline. */}
+      {variant !== "internal" && showGapState ? (
+        <p className={css.assessmentGap}>
+          Assessment pending — attended
+          {" "}
+          {meetingCount}
+          {" "}
+          meeting{meetingCount === 1 ? "" : "s"} but never characterized.
+        </p>
+      ) : null}
+
+      {/* Footer — compact meta. Skip on compact variant to save vertical
+          space (compact cards render next to primaries). */}
+      {variant !== "compact" ? (
+        <MetaFooter meetingCount={meetingCount} lastSeen={lastSeen} emailCount={null} />
+      ) : null}
+    </article>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+
+interface RolePillsProps {
+  person: StakeholderFull;
+  catalog: RoleOption[];
+  canEdit: boolean;
+  onAddRole?: (personId: string, role: string) => void;
+  onRemoveRole?: (personId: string, role: string) => void;
+}
+
+function RolePills({ person, catalog, canEdit, onAddRole, onRemoveRole }: RolePillsProps) {
+  const [picking, setPicking] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Click-outside to dismiss the role picker.
+  useEffect(() => {
+    if (!picking) return;
+    function onClick(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPicking(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [picking]);
+
+  const roles = person.roles ?? [];
+  const assigned = new Set(roles.map((r) => r.role.toLowerCase()));
+  const available = catalog.filter((r) => !assigned.has(r.value));
+
+  // Gap pill: no roles at all, treat as "Needs verification".
+  const showGapPill = roles.length === 0;
+
+  if (roles.length === 0 && !canEdit) {
+    // No roles and no edit affordance — render nothing for a truly empty state.
+    return null;
+  }
+
+  return (
+    <div className={css.rolePills}>
+      {roles.map((r) => {
+        const option = findRoleOption(catalog, r.role);
+        const pillClasses = [css.rolePill, toneClass(option.tone)];
+        if (r.dataSource !== "user") pillClasses.push(css.rolePillProvenanceAi);
+        return (
+          <span key={r.role} className={pillClasses.join(" ")}>
+            {option.label}
+            {canEdit && onRemoveRole ? (
+              <button
+                type="button"
+                className={css.rolePillRemove}
+                aria-label={`Remove ${option.label} role`}
+                title={`Remove ${option.label}`}
+                onClick={() => onRemoveRole(person.personId, r.role)}
+              >
+                ×
+              </button>
+            ) : null}
+          </span>
+        );
+      })}
+      {showGapPill ? (
+        <span className={`${css.rolePill} ${css.rolePillGap}`}>Needs verification</span>
+      ) : null}
+      {canEdit && onAddRole && available.length > 0 ? (
+        <div className={css.rolePickerWrap} ref={pickerRef}>
+          <button
+            type="button"
+            className={css.rolePillAdd}
+            onClick={() => setPicking((p) => !p)}
+          >
+            + role
+          </button>
+          {picking ? (
+            <div className={css.rolePickerMenu}>
+              {available.map((r) => (
+                <button
+                  key={r.value}
+                  type="button"
+                  className={css.rolePickerItem}
+                  onClick={() => {
+                    onAddRole(person.personId, r.value);
+                    setPicking(false);
+                  }}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+
+function MetaFooter({
+  meetingCount,
+  lastSeen,
+  emailCount,
+}: {
+  meetingCount: number | null;
+  lastSeen: string | null;
+  emailCount: number | null;
+}) {
+  const bits: string[] = [];
+  if (lastSeen) bits.push(`Last in meeting · ${lastSeen}`);
+  if (meetingCount !== null && meetingCount > 0) {
+    bits.push(`${meetingCount} meeting${meetingCount === 1 ? "" : "s"}`);
+  }
+  if (emailCount !== null && emailCount > 0) {
+    bits.push(`${emailCount} emails`);
+  }
+  if (bits.length === 0) return null;
+  return (
+    <div className={css.personFooter}>
+      {bits.map((b, i) => (
+        <span key={i}>{b}</span>
+      ))}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+
+function buildInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0][0]?.toUpperCase() ?? "?";
+  return (parts[0][0] ?? "").toUpperCase() + (parts[parts.length - 1][0] ?? "").toUpperCase();
+}
+
+function deriveLocation(person: StakeholderFull): string | null {
+  // If we have a specific city/location field later, read it here. For now
+  // the mockup shows "New York · external" — we don't have city, but we
+  // can still show the internal/external marker when the org differs.
+  // Return null to skip; an explicit schema field lives in DOS-249.
+  void person;
+  return null;
+}
+
+function formatLastSeen(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } catch {
+    return null;
+  }
+}

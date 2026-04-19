@@ -1,0 +1,435 @@
+/*
+ * StakeholderGrid — Context tab "The Room" chapter (v1.2.1 rebuild).
+ *
+ * Spec: .docs/mockups/account-context-globex.html lines 877-1063.
+ *
+ * Replaces the v1.0 StakeholderGallery which was a 1038-line single-shape
+ * card stack. The mockup distinguishes:
+ *   - Primary cards (span 2 cols, rich detail — top 4 by signal)
+ *   - Secondary cards (1 col, compact)
+ *   - "+N more associated" tier-2 ellipsis row
+ *   - Internal team grid (dashed top border, charcoal-4 bg, smaller fonts)
+ *
+ * All styles use design tokens. Widths are 1fr/1fr grids — no fixed widths.
+ */
+
+@import '../../styles/design-tokens.css';
+
+/* ═════════ SECTION + SUBSECTIONS ═════════ */
+
+.section {
+  /* The gutter label + ChapterHeading handle top framing. */
+}
+
+.subsectionLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-3xl);
+  margin-bottom: var(--space-lg);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+/* First subsection sits closer to the chapter heading. */
+.subsectionLabel:first-of-type {
+  margin-top: var(--space-lg);
+}
+
+.subsectionHint {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+}
+
+/* ═════════ EXTERNAL GRID (Their team) ═════════ */
+
+.roomGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-xl);
+}
+
+/* ═════════ INTERNAL GRID (Our team) ═════════ */
+
+.roomGridInternal {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-lg);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-2xl);
+  border-top: 1px dashed var(--color-rule-light);
+}
+
+/* ═════════ PERSON CARD — base ═════════ */
+
+.personCard {
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* Primary variant — spans both columns, full detail. */
+.personCardPrimary {
+  grid-column: span 2;
+}
+
+/* Internal variant — charcoal tint, smaller padding/fonts. */
+.personCardInternal {
+  background: var(--color-desk-charcoal-4);
+  border-color: transparent;
+  padding: var(--space-md);
+}
+
+/* ═════════ CARD HEADER (avatar + identity + actions) ═════════ */
+
+.personHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+}
+
+.avatar {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--color-paper-linen);
+  color: var(--color-desk-charcoal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.personCardInternal .avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
+  background: var(--color-paper-cream);
+}
+
+/* When the avatar holds a profile photo, let the image fill the circle
+   frame instead of rendering initials. */
+.avatarImage {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.personIdentity {
+  flex: 1;
+  min-width: 0;
+}
+
+.personName {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.personCardInternal .personName {
+  font-size: 14px;
+}
+
+.personTitle {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.personCardInternal .personTitle {
+  font-size: 12px;
+}
+
+.personLocation {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-top: 3px;
+}
+
+/* ═════════ ROLE PILLS ═════════ */
+
+.rolePills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: var(--space-sm);
+  align-items: center;
+}
+
+.rolePill {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 5px 14px;
+  border-radius: 100px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+}
+
+/* Tone modifiers — match mockup palette. */
+.rolePillChampion {
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-rosemary);
+}
+.rolePillTechnical {
+  background: var(--color-garden-larkspur-15);
+  color: #4a6186;
+}
+.rolePillEconomic {
+  background: var(--color-spice-turmeric-15);
+  color: var(--color-spice-turmeric);
+}
+.rolePillInternal {
+  background: var(--color-desk-charcoal-8);
+  color: var(--color-text-secondary);
+}
+.rolePillGap {
+  background: var(--color-spice-saffron-15);
+  color: #a6862c;
+}
+.rolePillDefault {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-secondary);
+}
+
+/* Provenance: AI-owned pill gets a dashed outline so the user sees it
+   as an AI suggestion they haven't pinned yet. User-owned stays solid. */
+.rolePillProvenanceAi {
+  border-style: dashed;
+  border-color: var(--color-text-tertiary);
+  opacity: 0.85;
+}
+
+.rolePillRemove {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  opacity: 0.5;
+  font-size: 13px;
+  line-height: 1;
+}
+.rolePillRemove:hover {
+  opacity: 1;
+}
+
+/* Add role chip — turmeric ghost, opens menu. */
+.rolePillAdd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: 100px;
+  background: transparent;
+  border: 1px dashed var(--color-spice-turmeric);
+  color: var(--color-spice-turmeric);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.rolePillAdd:hover {
+  background: var(--color-spice-turmeric-12);
+}
+
+/* ═════════ ENGAGEMENT DOT (deferred — not wired in v1.2.1 per user) ═════════
+   Classes retained so if we flip the flag on later the styles are ready. */
+
+/* ═════════ ASSESSMENT ═════════ */
+
+.assessment {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  padding-top: var(--space-md);
+  margin: 0;
+}
+
+.personCardInternal .assessment {
+  font-size: 13px;
+  padding-top: var(--space-xs);
+}
+
+/* Gap state — saffron-banded note when we have meetings but no
+   assessment. Same tone as the triage divergence block. */
+.assessmentGap {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-tertiary);
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: var(--space-sm) var(--space-md);
+  margin: 0;
+}
+
+/* ═════════ CARD FOOTER (meeting/email counts, dates) ═════════ */
+
+.personFooter {
+  display: flex;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  padding-top: var(--space-md);
+  margin-top: var(--space-sm);
+  border-top: 1px dashed var(--color-rule-light);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+}
+
+/* ═════════ "+N MORE ASSOCIATED" ROW ═════════ */
+
+.moreAssociated {
+  margin-top: var(--space-xl);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-desk-charcoal-4);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  letter-spacing: 0.04em;
+  flex-wrap: wrap;
+}
+
+.moreAssociatedCount {
+  background: var(--color-desk-charcoal);
+  color: var(--color-paper-cream);
+  padding: 3px 8px;
+  border-radius: 100px;
+  font-weight: 600;
+}
+
+/* ═════════ ADD MEMBER AFFORDANCE (internal team) ═════════ */
+
+.internalAddRow {
+  grid-column: span 2;
+  padding: var(--space-md) var(--space-lg);
+  border: 1px dashed var(--color-rule-light);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  background: transparent;
+  cursor: pointer;
+  justify-content: center;
+}
+.internalAddRow:hover {
+  border-color: var(--color-spice-turmeric);
+  color: var(--color-spice-turmeric);
+}
+
+/* ═════════ EMPTY STATE ═════════ */
+
+.empty {
+  padding: var(--space-xl);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  background: var(--color-paper-warm-white);
+  border: 1px dashed var(--color-rule-light);
+  border-radius: var(--radius-md);
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+/* ═════════ ROLE PICKER DROPDOWN ═════════ */
+
+.rolePickerWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.rolePickerMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+  min-width: 160px;
+  padding: 4px 0;
+}
+
+.rolePickerItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.rolePickerItem:hover {
+  background: var(--color-desk-charcoal-4);
+}
+
+/* ═════════ RESPONSIVE ═════════ */
+
+@media (max-width: 860px) {
+  .roomGrid,
+  .roomGridInternal {
+    grid-template-columns: 1fr;
+  }
+  .personCardPrimary {
+    grid-column: span 1;
+  }
+  .internalAddRow {
+    grid-column: span 1;
+  }
+}

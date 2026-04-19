@@ -46,7 +46,7 @@ import { RiskBriefingStatus } from "@/components/health/RiskBriefingStatus";
 import { AccountPullQuote } from "@/components/account/AccountPullQuote";
 import { AccountTechnicalFootprint } from "@/components/account/AccountTechnicalFootprint";
 import { StrategicLandscape } from "@/components/entity/StrategicLandscape";
-import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
+import { StakeholderGrid } from "@/components/entity/StakeholderGrid";
 import { ValueCommitments } from "@/components/entity/ValueCommitments";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { AddToRecord } from "@/components/entity/AddToRecord";
@@ -271,40 +271,24 @@ export default function AccountDetailPage() {
           </section>
         )}
 
-        {/* Chapter 2: The Room — stakeholder layout split + "Active in Health →" pills */}
+        {/* Chapter 2: The Room — v1.2.1 rebuild matching the Context mockup:
+            primary/secondary grid, multi-role chip editor wired to atomic
+            add/remove, "+N more associated" tier-2 row, internal team grid. */}
         <MarginSection id="the-room" label={<>The<br/>Room</>}>
-          <StakeholderGallery
-            intelligence={intelligence}
-            linkedPeople={detail.linkedPeople}
+          <StakeholderGrid
+            stakeholders={detail.stakeholdersFull}
             accountTeam={detail.accountTeam}
-            stakeholdersFull={detail.stakeholdersFull}
-            sectionId=""
-            chapterTitle="The Room"
-            subsectionLabels
             accountName={detail.name ?? undefined}
+            chapterTitle="The Room"
             chapterFreshness={
               <ChapterFreshness
                 enrichedAt={intelligence?.enrichedAt}
                 fragments={roomFragments}
               />
             }
-            entityId={page.accountId}
-            entityType="account"
-            onIntelligenceUpdated={acct.silentRefresh}
-            onRemoveTeamMember={acct.handleRemoveTeamMember}
-            onChangeTeamRole={acct.changeTeamMemberRole}
-            onAddTeamMember={acct.addTeamMemberDirect}
-            onCreateTeamMember={acct.createTeamMemberDirect}
-            teamSearchQuery={acct.teamSearchQuery}
-            onTeamSearchQueryChange={acct.setTeamSearchQuery}
-            teamSearchResults={acct.teamSearchResults}
-            suggestions={acct.suggestions}
-            onAcceptSuggestion={acct.acceptSuggestion}
-            onDismissSuggestion={acct.dismissSuggestion}
-            onUpdateEngagement={acct.updateStakeholderEngagement}
-            onUpdateAssessment={acct.updateStakeholderAssessment}
             onAddRole={acct.addStakeholderRole}
             onRemoveRole={acct.removeStakeholderRole}
+            onRemoveTeamMember={acct.handleRemoveTeamMember}
           />
         </MarginSection>
 
