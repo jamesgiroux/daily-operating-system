@@ -194,15 +194,9 @@ export function buildHealthChapters(
   if (isParent) {
     chapters.push(PORTFOLIO_CHAPTER);
   }
-  // Products only appears in the nav when the page actually renders the
-  // chapter (detail.products?.length > 0 in renderHealthView).
-  if (opts.hasProducts) {
-    chapters.push({
-      id: "products",
-      label: "Products",
-      icon: React.createElement(Package, { size: 18, strokeWidth: 1.5 }),
-    });
-  }
+  // Products lives on the Context tab now (near Technical shape).
+  // Flag retained so the caller can pass it through without breaking,
+  // but nothing on Health points to "products" anymore.
   chapters.push({
     id: "about-intelligence",
     label: "About intelligence",
@@ -212,7 +206,13 @@ export function buildHealthChapters(
 }
 
 export function buildContextChapters(
-  opts: { hasWhatMatters?: boolean; hasBuilt?: boolean; hasTechnical?: boolean; hasFiles?: boolean } = {},
+  opts: {
+    hasWhatMatters?: boolean;
+    hasBuilt?: boolean;
+    hasTechnical?: boolean;
+    hasProducts?: boolean;
+    hasFiles?: boolean;
+  } = {},
 ) {
   // DOS-18: IA matches renderContextView section order. Conditional chapters
   // are included only when the page renders them — otherwise the nav dead-links.
@@ -232,6 +232,9 @@ export function buildContextChapters(
   );
   if (opts.hasTechnical !== false) {
     chapters.push({ id: "technical-shape", label: "Technical shape", icon: React.createElement(Cpu, { size: 18, strokeWidth: 1.5 }) });
+  }
+  if (opts.hasProducts) {
+    chapters.push({ id: "products", label: "Products", icon: React.createElement(Package, { size: 18, strokeWidth: 1.5 }) });
   }
   chapters.push(
     { id: "relationship-fabric", label: "Relationship fabric", icon: React.createElement(HeartHandshake, { size: 18, strokeWidth: 1.5 }) },

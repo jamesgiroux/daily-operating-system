@@ -174,20 +174,14 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        {/* Portfolio rollup (parent accounts only) + Products stay as continuity chapters */}
+        {/* Portfolio rollup (parent accounts only) — continuity chapter. */}
         {detail.isParent && detail.children.length > 0 && (
           <AccountPortfolioSection children={detail.children} intelligence={intelligence} />
         )}
 
-        {/* Products chapter — rendered only when the account has products, so the
-            nav anchor (buildHealthChapters → "products") and the rendered section
-            stay in lockstep. */}
-        {(detail.products?.length ?? 0) > 0 && (
-          <section id="products">
-            <AccountProductsSection accountId={detail.id} products={detail.products ?? []}
-              getFeedback={fb.get} onFeedback={fb.submit} onRefresh={acct.load} silentRefresh={acct.silentRefresh} />
-          </section>
-        )}
+        {/* Products previously rendered here — moved to the Context tab where
+            it sits alongside Technical shape / Commercial shape. Products are
+            a contractual/technical surface, not a health signal. */}
 
         {/* Chapter 6: About this intelligence */}
         <MarginSection id="about-intelligence" label={<>About this<br/>intelligence</>} reveal={false}>
@@ -412,6 +406,21 @@ export default function AccountDetailPage() {
             onCaptureGap={(field) => { void page.captureTechnicalFootprintField(field); }}
           />
         </MarginSection>
+
+        {/* Products — moved here from the Health tab. Technical/commercial
+            surface of the account; belongs alongside Technical shape. */}
+        {(detail.products?.length ?? 0) > 0 && (
+          <MarginSection id="products" label="Products">
+            <AccountProductsSection
+              accountId={detail.id}
+              products={detail.products ?? []}
+              getFeedback={fb.get}
+              onFeedback={fb.submit}
+              onRefresh={acct.load}
+              silentRefresh={acct.silentRefresh}
+            />
+          </MarginSection>
+        )}
 
         {/* Chapter 8: Relationship fabric — advocacy, beta, NPS history */}
         <MarginSection id="relationship-fabric" label={<>Relationship<br/>fabric</>}>
