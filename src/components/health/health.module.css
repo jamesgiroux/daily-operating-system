@@ -7,23 +7,42 @@
  * Uses existing design tokens from design-tokens.css; no new tokens.
  */
 
-/* ═════════ TRIAGE COMPACT HEADER ═════════
-   The chapter title "Needs attention" lives in the MarginSection gutter
-   label — no inline 28px h2 here. A compact rule + right-aligned mono
-   count chip is enough visual anchor within the content column. */
-.triageCompactHeader {
-  padding-bottom: var(--space-md, 16px);
-  margin-bottom: var(--space-md, 16px);
+/* ═════════ BLOCK HEADER ═════════
+   Editorial chapter header inside the content column: horizontal rule
+   + 28px serif h2 + right-aligned mono count chip. Visually distinct
+   from the MarginSection gutter label (small mono, tertiary) — the
+   gutter is the orientation marker, this is the chapter title. */
+.blockHeader {
+  padding-bottom: var(--space-lg, 24px);
+  margin-bottom: var(--space-lg, 24px);
+}
+.blockHeaderRule {
+  border: none;
+  border-top: 1px solid var(--color-rule-heavy);
+  margin: 0 0 var(--space-md, 16px);
+}
+.blockHeaderTitleRow {
   display: flex;
   align-items: baseline;
-  justify-content: flex-end;
-  border-bottom: 1px solid var(--color-rule-heavy);
+  justify-content: space-between;
+  gap: var(--space-md, 16px);
 }
-.triageCompactCount {
+.blockHeaderTitle {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.blockHeaderCount {
   font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+.blockHeaderCountTerracotta {
   color: var(--color-spice-terracotta);
 }
 
@@ -235,17 +254,10 @@
    removed so the two sections can't drift apart. */
 
 /* ═════════ OUTLOOK CHAPTER ═════════
-   The gutter already carries "Outlook" — inside the content column we use
-   the mockup's .supporting-label treatment (small mono uppercase) as the
-   sub-title rather than a competing 28px h2. */
-.outlookSubLabel {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--color-text-tertiary);
-  margin-bottom: var(--space-lg, 24px);
-}
+   Chapter heading rendered by the shared ChapterHeading component (28px
+   serif h2 + rule) — the gutter label "Outlook" is small mono uppercase
+   via MarginSection. Together they read as title + orientation marker,
+   not two competing labels. */
 
 .outlookGrid {
   display: grid;
