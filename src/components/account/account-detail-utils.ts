@@ -28,6 +28,10 @@ import {
   Share2,
   PackageCheck,
   Bell,
+  AlertTriangle,
+  Info,
+  DollarSign,
+  HeartHandshake,
 } from "lucide-react";
 
 /* ── Vitals assembly ── */
@@ -144,37 +148,80 @@ export function buildChapters(isParent: boolean, hasHealth: boolean) {
 
 /* ── Per-view chapter builders (DOS-112) ── */
 
-export function buildHealthChapters(isParent: boolean, hasHealth: boolean) {
+export function buildHealthChapters(
+  isParent: boolean,
+  hasHealth: boolean,
+  opts: { fineState?: boolean; hasOutlook?: boolean } = {},
+) {
+  // DOS-203: Health tab IA matches renderHealthView section ids.
+  // Order mirrors rendering: sentiment hero is headline-only (no margin id).
+  // Chapters with matching MarginSection ids are surfaced in the nav.
   const chapters: { id: string; label: string; icon: React.ReactNode }[] = [];
+  if (opts.fineState) {
+    chapters.push({
+      id: "on-track",
+      label: "On Track",
+      icon: React.createElement(HeartHandshake, { size: 18, strokeWidth: 1.5 }),
+    });
+  } else {
+    chapters.push({
+      id: "needs-attention",
+      label: "Needs attention",
+      icon: React.createElement(AlertTriangle, { size: 18, strokeWidth: 1.5 }),
+    });
+  }
+  if (opts.hasOutlook !== false) {
+    chapters.push({
+      id: "outlook",
+      label: "Outlook",
+      icon: React.createElement(Telescope, { size: 18, strokeWidth: 1.5 }),
+    });
+  }
   if (hasHealth) {
     chapters.push(HEALTH_CHAPTER);
   }
-  chapters.push(
-    { id: "outlook", label: "Outlook", icon: React.createElement(Telescope, { size: 18, strokeWidth: 1.5 }) },
-  );
   if (isParent) {
     chapters.push(PORTFOLIO_CHAPTER);
   }
-  chapters.push(
-    { id: "products", label: "Products", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) },
-  );
+  chapters.push({
+    id: "about-intelligence",
+    label: "About intelligence",
+    icon: React.createElement(Info, { size: 18, strokeWidth: 1.5 }),
+  });
   return chapters;
 }
 
-export function buildContextChapters() {
-  // DOS-18: 7-chapter IA matches account-context-globex.html mockup.
-  // The Record + Files kept as continuity chapters below the dossier.
-  return [
+export function buildContextChapters(
+  opts: { hasWhatMatters?: boolean; hasBuilt?: boolean; hasTechnical?: boolean; hasFiles?: boolean } = {},
+) {
+  // DOS-18: IA matches renderContextView section order. Conditional chapters
+  // are included only when the page renders them — otherwise the nav dead-links.
+  const chapters: { id: string; label: string; icon: React.ReactNode }[] = [
     { id: "thesis", label: "Thesis", icon: React.createElement(Quote, { size: 18, strokeWidth: 1.5 }) },
     { id: "the-room", label: "The Room", icon: React.createElement(Users, { size: 18, strokeWidth: 1.5 }) },
-    { id: "what-matters", label: "What matters", icon: React.createElement(Compass, { size: 18, strokeWidth: 1.5 }) },
-    { id: "value-commitments", label: "What we've built", icon: React.createElement(Award, { size: 18, strokeWidth: 1.5 }) },
-    { id: "their-voice", label: "Their voice", icon: React.createElement(MessageSquareQuote, { size: 18, strokeWidth: 1.5 }) },
-    { id: "technical-shape", label: "Technical shape", icon: React.createElement(Cpu, { size: 18, strokeWidth: 1.5 }) },
-    { id: "about-dossier", label: "About this dossier", icon: React.createElement(BookOpen, { size: 18, strokeWidth: 1.5 }) },
-    { id: "the-record", label: "The Record", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) },
-    { id: "files", label: "Files", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) },
   ];
+  if (opts.hasWhatMatters !== false) {
+    chapters.push({ id: "what-matters", label: "What matters", icon: React.createElement(Compass, { size: 18, strokeWidth: 1.5 }) });
+  }
+  if (opts.hasBuilt !== false) {
+    chapters.push({ id: "value-commitments", label: "What we've built", icon: React.createElement(Award, { size: 18, strokeWidth: 1.5 }) });
+  }
+  chapters.push(
+    { id: "their-voice", label: "Their voice", icon: React.createElement(MessageSquareQuote, { size: 18, strokeWidth: 1.5 }) },
+    { id: "commercial-shape", label: "Commercial shape", icon: React.createElement(DollarSign, { size: 18, strokeWidth: 1.5 }) },
+  );
+  if (opts.hasTechnical !== false) {
+    chapters.push({ id: "technical-shape", label: "Technical shape", icon: React.createElement(Cpu, { size: 18, strokeWidth: 1.5 }) });
+  }
+  chapters.push(
+    { id: "relationship-fabric", label: "Relationship fabric", icon: React.createElement(HeartHandshake, { size: 18, strokeWidth: 1.5 }) },
+    { id: "the-record", label: "The Record", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) },
+  );
+  if (opts.hasFiles) {
+    chapters.push({ id: "files", label: "Files", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) });
+  }
+  chapters.push({ id: "about-dossier", label: "About the dossier", icon: React.createElement(BookOpen, { size: 18, strokeWidth: 1.5 }) });
+  return chapters;
 }
 
 /**
