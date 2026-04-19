@@ -117,4 +117,67 @@ describe("hasTriageContent / TriageSection — Codex DOS-232 gate coverage", () 
     const glean = emptySignals({});
     expect(hasTriageContent(null, glean)).toBe(false);
   });
+
+  // DOS-203 Wave-0f: quoteWall must not silently sink into fine state.
+  it("fires on quoteWall with a negative sentiment quote ONLY", () => {
+    const glean = emptySignals({
+      quoteWall: [
+        {
+          quote: "Rollout has been painful and we are considering alternatives.",
+          speaker: "VP Ops",
+          sentiment: "negative",
+        },
+      ],
+    });
+    expect(hasTriageContent(null, glean)).toBe(true);
+
+    render(<TriageSection intelligence={null} gleanSignals={glean} />);
+    expect(screen.getAllByText(/Quote wall/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/painful/i).length).toBeGreaterThan(0);
+  });
+
+  it("fires on quoteWall with a mixed sentiment quote ONLY", () => {
+    const glean = emptySignals({
+      quoteWall: [
+        {
+          quote: "The new dashboards are great but onboarding is still rough.",
+          sentiment: "mixed",
+        },
+      ],
+    });
+    expect(hasTriageContent(null, glean)).toBe(true);
+  });
+
+  // Explicit design choice: positive quotes render as a "capture opportunity"
+  // card rather than being omitted. They must NOT silently sink fine state.
+  it("fires on quoteWall with positive quotes ONLY (capture opportunity)", () => {
+    const glean = emptySignals({
+      quoteWall: [
+        {
+          quote: "Best vendor relationship we've had in years.",
+          speaker: "Buyer",
+          sentiment: "positive",
+        },
+      ],
+    });
+    expect(hasTriageContent(null, glean)).toBe(true);
+
+    render(<TriageSection intelligence={null} gleanSignals={glean} />);
+    expect(screen.getAllByText(/capture opportunity/i).length).toBeGreaterThan(0);
+  });
+
+  it("escalates the first negative to urgent when two or more negatives cluster", () => {
+    const glean = emptySignals({
+      quoteWall: [
+        { quote: "Support response times have collapsed.", sentiment: "negative" },
+        { quote: "Our users keep complaining about reliability.", sentiment: "negative" },
+      ],
+    });
+    expect(hasTriageContent(null, glean)).toBe(true);
+  });
+
+  it("regression: empty quoteWall + no other signals stays in fine state", () => {
+    const glean = emptySignals({ quoteWall: [] });
+    expect(hasTriageContent(null, glean)).toBe(false);
+  });
 });
