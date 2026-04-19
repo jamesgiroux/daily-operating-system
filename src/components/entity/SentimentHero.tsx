@@ -1,13 +1,16 @@
 /**
  * SentimentHero — DOS-27 journal-entry sentiment treatment for Health view.
  *
- * Renders the current sentiment value, a 90-day computed-health sparkline,
- * the latest journal note, a "Still accurate?" prompt after 30 days of
- * inactivity, and a divergence flag when user sentiment and computed health
- * disagree.
+ * Renders the current sentiment value, a 90-day computed-health sparkline
+ * (bucketed to 7 bars to match the editorial mockup), the latest journal
+ * pull quote, a "Still accurate?" prompt after 30 days of inactivity, and a
+ * divergence flag when user sentiment and computed health disagree.
+ *
+ * Canonical design: .docs/mockups/account-health-outlook-globex.html
+ * lines 599-635.
  */
 import { useState } from "react";
-import type { SentimentValue } from "@/types";
+import type { SentimentValue, HealthSparklinePoint } from "@/types";
 import type { SentimentView } from "@/hooks/useAccountDetail";
 import { DEFAULT_SENTIMENT_LABELS } from "@/hooks/useAccountDetail";
 import css from "./SentimentHero.module.css";
@@ -28,19 +31,29 @@ const SENTIMENT_ORDER: SentimentValue[] = [
   "critical",
 ];
 
+/** Number of bars in the sparkline — fixed by the editorial mockup. */
+const SPARKLINE_BUCKETS = 7;
+
 function valueClass(value: SentimentValue): string {
   switch (value) {
-    case "strong": return css.valueStrong;
-    case "on_track": return css.valueOnTrack;
-    case "concerning": return css.valueConcerning;
-    case "at_risk": return css.valueAtRisk;
-    case "critical": return css.valueCritical;
+    case "strong":
+      return css.valueStrong;
+    case "on_track":
+      return css.valueOnTrack;
+    case "concerning":
+      return css.valueConcerning;
+    case "at_risk":
+      return css.valueAtRisk;
+    case "critical":
+      return css.valueCritical;
   }
 }
 
 function relativeDays(iso: string | null): string {
   if (!iso) return "";
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / (24 * 60 * 60 * 1000));
+  const days = Math.floor(
+    (Date.now() - new Date(iso).getTime()) / (24 * 60 * 60 * 1000),
+  );
   if (days <= 0) return "today";
   if (days === 1) return "1 day ago";
   return `${days} days ago`;
@@ -57,19 +70,106 @@ function formatNoteDate(iso: string): string {
   }
 }
 
-function sparkBarClass(band: string): string {
-  switch (band.toLowerCase()) {
-    case "green": return css.sparkGood;
-    case "yellow": return css.sparkMid;
-    case "red": return css.sparkWarn;
-    default: return css.sparkMid;
+/**
+ * Maps a sentiment value to the band used for tinting the sparkline bar that
+ * sits beside the sentiment pill. The raw band from a computed sparkline
+ * point wins when present; this is the fallback tier when we only have the
+ * sentiment value.
+ */
+function sentimentBand(value: SentimentValue): "good" | "mid" | "bad" {
+  switch (value) {
+    case "strong":
+    case "on_track":
+      return "good";
+    case "concerning":
+      return "mid";
+    case "at_risk":
+    case "critical":
+      return "bad";
   }
 }
 
-function sparkHeight(score: number): number {
-  // 100 → 20px, 0 → 5px
+function sparkBarClass(band: string): string {
+  switch (band.toLowerCase()) {
+    case "green":
+    case "good":
+      return css.sparkGood;
+    case "yellow":
+    case "mid":
+      return css.sparkMid;
+    case "red":
+    case "bad":
+    case "warn":
+      return css.sparkWarn;
+    default:
+      return css.sparkMid;
+  }
+}
+
+interface SparkBar {
+  score: number;
+  band: string;
+}
+
+/**
+ * Bucket up to ~90 days of points into exactly 7 bars (matching the mockup).
+ * Each bucket averages the underlying scores and picks the worst band in the
+ * window, so a single bad day still colors the bar. Returns an empty array
+ * when no data is available.
+ */
+function bucketSparkline(points: HealthSparklinePoint[]): SparkBar[] {
+  if (!points.length) return [];
+  const window = points.slice(-90);
+  const bucketSize = window.length / SPARKLINE_BUCKETS;
+  const bars: SparkBar[] = [];
+  for (let i = 0; i < SPARKLINE_BUCKETS; i++) {
+    const start = Math.floor(i * bucketSize);
+    const end = Math.max(start + 1, Math.floor((i + 1) * bucketSize));
+    const slice = window.slice(start, end);
+    if (!slice.length) continue;
+    const avg =
+      slice.reduce((sum, p) => sum + (p.score ?? 0), 0) / slice.length;
+    const band = worstBand(slice.map((p) => p.band));
+    bars.push({ score: avg, band });
+  }
+  return bars;
+}
+
+/** Pick the worst (red > yellow > green) band in a window. */
+function worstBand(bands: string[]): string {
+  const order: Record<string, number> = {
+    red: 3,
+    bad: 3,
+    warn: 3,
+    yellow: 2,
+    mid: 2,
+    green: 1,
+    good: 1,
+  };
+  let worst = "green";
+  let worstRank = 0;
+  for (const b of bands) {
+    const rank = order[b.toLowerCase()] ?? 0;
+    if (rank > worstRank) {
+      worstRank = rank;
+      worst = b;
+    }
+  }
+  return worst;
+}
+
+/**
+ * Map a 0-100 score to one of the mockup's discrete heights. The mockup uses
+ * h4/h8/h12/h16/h20, and we mirror that quantization so the bars feel
+ * deliberate rather than jittery.
+ */
+function sparkHeightClass(score: number): string {
   const clamped = Math.max(0, Math.min(100, score));
-  return Math.round(5 + (clamped / 100) * 15);
+  if (clamped >= 80) return css.sparkBarH20;
+  if (clamped >= 60) return css.sparkBarH16;
+  if (clamped >= 40) return css.sparkBarH12;
+  if (clamped >= 20) return css.sparkBarH8;
+  return css.sparkBarH4;
 }
 
 export function SentimentHero({
@@ -84,7 +184,9 @@ export function SentimentHero({
     ...(labelOverrides ?? {}),
   };
   const [editing, setEditing] = useState(false);
-  const [draftValue, setDraftValue] = useState<SentimentValue | null>(view.current);
+  const [draftValue, setDraftValue] = useState<SentimentValue | null>(
+    view.current,
+  );
   const [draftNote, setDraftNote] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -143,8 +245,12 @@ export function SentimentHero({
     );
   }
 
-  // Sparkline uses up to the last 24 daily points so it fits the hero line.
-  const sparkPoints = view.sparkline.slice(-24);
+  const sparkBars = bucketSparkline(view.sparkline);
+  const noteCount = view.history.length;
+  const latestEntry = view.history[0];
+  const latestNoteDate = latestEntry?.setAt ?? view.setAt ?? null;
+  const currentLabel = labels[view.current];
+  const currentBandFallback = sentimentBand(view.current);
 
   return (
     <section className={css.hero}>
@@ -152,25 +258,29 @@ export function SentimentHero({
 
       <div className={css.setRow}>
         <span className={`${css.value} ${valueClass(view.current)}`}>
-          {labels[view.current]}
+          {currentLabel}
         </span>
 
-        {sparkPoints.length > 0 && (
+        {sparkBars.length > 0 ? (
           <>
             <div
               className={css.sparkline}
               aria-label="Computed health over last 90 days"
             >
-              {sparkPoints.map((p, i) => (
+              {sparkBars.map((bar, i) => (
                 <div
                   key={i}
-                  className={`${css.sparkBar} ${sparkBarClass(p.band)}`}
-                  style={{ height: `${sparkHeight(p.score)}px` }}
+                  className={`${css.sparkBar} ${sparkBarClass(bar.band || currentBandFallback)} ${sparkHeightClass(bar.score)}`}
                 />
               ))}
             </div>
             <span className={css.sparklineLabel}>90d</span>
           </>
+        ) : (
+          // TODO(DOS-27): Empty-state sparkline placeholder when no computed
+          // history is available yet — reserves the layout slot without
+          // fabricating data.
+          <span className={css.sparklineEmpty} aria-hidden="true" />
         )}
 
         <button
@@ -185,8 +295,11 @@ export function SentimentHero({
       {view.setAt && (
         <div className={css.meta}>
           Set {relativeDays(view.setAt)}
-          {view.history.length > 0 && (
-            <> · {view.history.length} note{view.history.length === 1 ? "" : "s"}</>
+          {noteCount > 0 && (
+            <>
+              {" · "}
+              {noteCount} note{noteCount === 1 ? "" : "s"}
+            </>
           )}
           {view.isStale && (
             <>
@@ -205,36 +318,35 @@ export function SentimentHero({
       )}
 
       {view.note && !editing && (
-        <blockquote className={css.note}>
-          “{view.note}”
-          {view.history[0]?.setAt && (
-            <div className={css.noteDate}>
-              — Your note, {formatNoteDate(view.history[0].setAt)}
-            </div>
+        <blockquote className={css.pullquote}>
+          &ldquo;{view.note}&rdquo;
+          {latestNoteDate && (
+            <span className={css.pullquoteAttr}>
+              &mdash; Your note, {formatNoteDate(latestNoteDate)}
+            </span>
           )}
         </blockquote>
       )}
 
       {view.divergence && !editing && (
-        <button
-          type="button"
-          className={css.divergenceFlag}
-          onClick={() => {
-            // Click surfaces detail; feedback is captured on the next sentiment
-            // update (Bayesian signal is the act of adding more detail).
-            openEditor();
-          }}
-        >
+        <div className={css.divergenceFlag}>
           <strong>Updates currently disagree</strong>
           Computed health is{" "}
-          <span style={{ textTransform: "capitalize" }}>
-            {view.divergence.computedBand}
+          <span className={css.divergenceComputed}>
+            {capitalize(view.divergence.computedBand)}
           </span>{" "}
-          and your read is {labels[view.current].toLowerCase()} — a{" "}
-          {view.divergence.severity}{" "}
-          divergence ({view.divergence.delta} band{view.divergence.delta === 1 ? "" : "s"}{" "}
-          apart). The note you add next is the signal that trains the system.
-        </button>
+          and your read is {currentLabel.toLowerCase()} &mdash; a{" "}
+          {view.divergence.severity} divergence ({view.divergence.delta} band
+          {view.divergence.delta === 1 ? "" : "s"} apart). The note you add
+          next is the signal that trains the system.{" "}
+          <button
+            type="button"
+            className={css.divergenceAction}
+            onClick={openEditor}
+          >
+            Add more detail &rarr;
+          </button>
+        </div>
       )}
 
       {editing && (
@@ -251,6 +363,11 @@ export function SentimentHero({
       )}
     </section>
   );
+}
+
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 interface SentimentEditorProps {
