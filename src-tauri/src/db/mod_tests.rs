@@ -6143,3 +6143,95 @@ fn test_dos231_update_technical_footprint_field_rejects_bad_numeric() {
         "bad integer must be rejected, got: {msg}"
     );
 }
+
+/// DOS-232 Codex follow-up: `get_meetings_for_account` (used by account
+/// chat LLM context, dossier markdown, email prep enrichment) previously
+/// had no confidence predicate and contaminated chat/prep context with
+/// speculative junctions. The 0.70 floor — already applied to the Record
+/// query and to the COUNT helpers — must apply here too.
+#[test]
+fn test_dos232_get_meetings_for_account_applies_confidence_floor() {
+    let db = test_db();
+    let a = sample_account("acct-floor", "Floor Account");
+    db.upsert_account(&a).expect("upsert");
+    setup_meeting(&db, "m_weak_floor", "Weak Link");
+    setup_meeting(&db, "m_strong_floor", "Strong Link");
+
+    db.link_meeting_entity_with_confidence(
+        "m_weak_floor",
+        "acct-floor",
+        "account",
+        0.50,
+        false,
+    )
+    .expect("link weak");
+    db.link_meeting_entity_with_confidence(
+        "m_strong_floor",
+        "acct-floor",
+        "account",
+        0.95,
+        true,
+    )
+    .expect("link strong");
+
+    let rows = db
+        .get_meetings_for_account("acct-floor", 10)
+        .expect("query");
+    let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
+    assert!(
+        ids.contains(&"m_strong_floor"),
+        "high-confidence meeting must be returned"
+    );
+    assert!(
+        !ids.contains(&"m_weak_floor"),
+        "DOS-232: sub-0.70 meeting must NOT surface in account chat/prep context"
+    );
+}
+
+/// DOS-231 Codex follow-up: editing `usage_tier` (or any non-`open_tickets`
+/// gap field) via `update_technical_footprint_field` must NOT reset an
+/// existing `open_tickets` value. The bootstrap path previously called the
+/// full-row upsert with a sentinel `0`, and the upsert's UPDATE branch
+/// unconditionally wrote `open_tickets = excluded.open_tickets` — so a misclick
+/// on any other field silently wiped real support-ticket data to 0.
+#[test]
+fn test_dos231_update_footprint_field_preserves_existing_open_tickets() {
+    let db = test_db();
+    let a = sample_account("acct-tf-preserve", "Preserve TF Account");
+    db.upsert_account(&a).expect("upsert");
+
+    // Seed a realistic footprint with open_tickets = 7 (Clay enrichment).
+    db.upsert_account_technical_footprint(
+        "acct-tf-preserve",
+        None,
+        Some("enterprise"),
+        Some(0.72),
+        Some(850),
+        Some("premier"),
+        Some(4.1),
+        7,
+        Some("live"),
+        "clay_enrichment",
+    )
+    .expect("seed footprint");
+
+    // Now a user edits usage_tier via the single-field capture-now path.
+    db.update_technical_footprint_field("acct-tf-preserve", "usage_tier", "growth")
+        .expect("update usage_tier");
+
+    let tf = db
+        .get_account_technical_footprint("acct-tf-preserve")
+        .expect("query")
+        .expect("row exists");
+    assert_eq!(tf.usage_tier.as_deref(), Some("growth"));
+    assert_eq!(
+        tf.open_tickets, 7,
+        "DOS-231: editing usage_tier must not clobber existing open_tickets"
+    );
+    // Other pre-existing gap fields must also survive.
+    assert_eq!(tf.active_users, Some(850));
+    assert!((tf.csat_score.unwrap() - 4.1).abs() < 1e-6);
+    assert!((tf.adoption_score.unwrap() - 0.72).abs() < 1e-6);
+    assert_eq!(tf.support_tier.as_deref(), Some("premier"));
+    assert_eq!(tf.services_stage.as_deref(), Some("live"));
+}
