@@ -443,12 +443,20 @@ const MIGRATIONS: &[Migration] = &[
         version: 104,
         sql: include_str!("migrations/103_email_auto_retry_count.sql"),
     },
+    // DOS-247: Defensive re-add of `is_noise` column. Tolerated as
+    // "duplicate column name" by the framework if the column already
+    // exists (normal upgrade); a real fix for users whose v103
+    // schema_version was recorded without the ALTER actually applying.
+    Migration {
+        version: 105,
+        sql: include_str!("migrations/104_email_is_noise_defensive.sql"),
+    },
     // DOS-247: Recover emails over-suppressed by DOS-242 Rule 3
     // (List-Unsubscribe alone). Rule is tightened in code; this
     // migration restores is_noise=0 for rows outside the bulk allow-list.
     Migration {
-        version: 105,
-        sql: include_str!("migrations/104_email_noise_recovery.sql"),
+        version: 106,
+        sql: include_str!("migrations/105_email_noise_recovery.sql"),
     },
 ];
 
