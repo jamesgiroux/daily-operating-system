@@ -528,6 +528,9 @@ pub fn run() {
             // I144: Archive low-priority emails
             commands::archive_low_priority_emails,
             commands::retry_failed_emails,
+            // DOS-29: actionable failure UX
+            commands::list_permanently_failed_emails,
+            commands::skip_failed_emails,
             // Onboarding / Demo / App State (I56/I57)
             commands::install_demo_data,
             commands::clear_demo_data,

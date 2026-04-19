@@ -285,6 +285,24 @@ export interface EmailSyncStats {
   enriched: number;
   pending: number;
   failed: number;
+  /**
+   * DOS-29: Subset of `failed` that has exhausted automatic retries. Rows
+   * still under the auto-retry cap will be silently re-attempted by the
+   * next refresh (DOS-31) and shouldn't bother the user. The failure UX
+   * shows `permanentlyFailed`, not `failed`.
+   */
+  permanentlyFailed: number;
+}
+
+/** DOS-29: Lightweight preview of a permanently-failed email for the
+ *  "View details" expansion on the EmailsPage failure UX. */
+export interface FailedEmailPreview {
+  emailId: string;
+  subject: string | null;
+  senderEmail: string | null;
+  senderName: string | null;
+  lastEnrichmentAt: string | null;
+  autoRetryCount: number;
 }
 
 export interface Email {

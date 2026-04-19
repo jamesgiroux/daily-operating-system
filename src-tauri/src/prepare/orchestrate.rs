@@ -1597,8 +1597,21 @@ pub async fn refresh_emails_with_retry_batch(
         // downstream enrichment succeeds below). This is the canonical "fetch
         // is healthy" timestamp surfaced in the sync status UI, as opposed to
         // `last_seen_at` which only moves when individual rows are upserted.
+        //
+        // DOS-226: a write failure here is propagated, not swallowed. Pre-fix
+        // this was log-only — meaning a corrupted `email_sync_meta` row, a
+        // schema-drift drop of the table, or a disk-full ENOSPC would leave
+        // the sync_status UI stuck at "never fetched" forever while every
+        // refresh appeared to succeed. Surfacing the error makes the failure
+        // visible to the service-layer caller, which then triggers the retry
+        // batch rollback (so retried rows return to `failed` instead of being
+        // promoted by the finalize block below into a misleading "pending"
+        // state on top of a broken sync_meta).
         if let Err(e) = db.set_last_successful_fetch_at() {
-            log::warn!("DOS-31: failed to record last_successful_fetch_at: {}", e);
+            log::error!("DOS-226: set_last_successful_fetch_at failed: {}", e);
+            return Err(ExecutionError::IoError(format!(
+                "Failed to record last_successful_fetch_at: {e}"
+            )));
         }
 
         // DOS-226 (Codex finding 1): promote this retry batch's rows
