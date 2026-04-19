@@ -317,6 +317,58 @@
   .supportingTension { grid-template-columns: 1fr; }
 }
 
+/* ═════════ SUPPORTING: dimension bars ═════════ */
+.dimensions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg, 24px) var(--space-xl, 32px);
+  padding-top: var(--space-2xl, 48px);
+}
+.dim {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dimName {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  display: flex;
+  justify-content: space-between;
+}
+.dimScore {
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+}
+.dimBar {
+  height: 4px;
+  background: var(--color-rule-light);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.dimFill {
+  height: 100%;
+  border-radius: 2px;
+}
+.dimFillGreen { background: var(--color-garden-sage); }
+.dimFillYellow { background: var(--color-spice-turmeric); }
+.dimFillRed { background: var(--color-spice-terracotta); }
+.dimEvidence {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+@media (max-width: 900px) {
+  .dimensions { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .dimensions { grid-template-columns: 1fr; }
+}
+
 /* ═════════ META: About this intelligence ═════════ */
 .metaCard {
   background: rgba(30, 37, 48, 0.04);
@@ -347,6 +399,20 @@
   line-height: 1.65;
   color: var(--color-text-secondary);
   max-width: 680px;
+}
+.metaCardSubsection {
+  margin-top: var(--space-md, 16px);
+  padding-top: var(--space-md, 16px);
+  border-top: 1px solid var(--color-rule-light);
+}
+.metaCardSubLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-spice-turmeric);
+  margin-bottom: var(--space-xs, 4px);
+  font-weight: 600;
 }
 
 /* ═════════ ON-TRACK (fine state) ═════════ */
