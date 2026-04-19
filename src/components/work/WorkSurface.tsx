@@ -470,3 +470,13 @@ export function NudgeRow({ headline, body, actions }: NudgeRowProps) {
 export function NudgeList({ children }: { children: ReactNode }) {
   return <div className={s.nudgeList}>{children}</div>;
 }
+
+/**
+ * NudgeLeaveAsIs — the zero-guilt exit rendered as italic editorial prose,
+ * not a button. Doing nothing IS "leave as-is"; rendering it as an
+ * interactive CTA would imply action is required. See DOS-13 Wave 0g
+ * Finding 1 (Option B).
+ */
+export function NudgeLeaveAsIs({ children = "Or leave as-is." }: { children?: ReactNode }) {
+  return <span className={s.nudgeLeaveAsIs}>{children}</span>;
+}

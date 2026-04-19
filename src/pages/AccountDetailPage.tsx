@@ -65,6 +65,7 @@ import {
   ReportFooterNote,
   NudgeList,
   NudgeRow,
+  NudgeLeaveAsIs,
   WorkButton,
   type FocusItem,
 } from "@/components/work/WorkSurface";
@@ -669,7 +670,15 @@ export default function AccountDetailPage() {
             >
               {dismissBusy ? "Dismissing…" : "Dismiss"}
             </WorkButton>
-            <WorkButton kind="muted">Leave as-is</WorkButton>
+            {/*
+              Option B (Wave 0g Finding 1): "Leave as-is" is the zero-guilt
+              default, not a separate action. Rendering it as italic prose
+              rather than a no-op button keeps the editorial voice honest —
+              doing nothing IS leaving it as-is. A real snooze mechanism
+              would need a per-nudge-type backend surface (nudge_snoozes
+              table + service + IL wiring); disproportionate for one button.
+            */}
+            <NudgeLeaveAsIs />
           </>
         ),
       });
