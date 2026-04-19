@@ -289,6 +289,10 @@ impl ActionDb {
         enrichment: EmailEnrichmentUpdate<'_>,
     ) -> Result<(), String> {
         let now = Utc::now().to_rfc3339();
+        // DOS-249: is_noise gets COALESCE-style "only update if AI gave a
+        // verdict" semantics via a CASE expression — Some(bool) -> 0/1,
+        // None -> keep existing column value.
+        let is_noise_param: Option<i32> = enrichment.is_noise.map(|b| if b { 1 } else { 0 });
         self.conn
             .execute(
                 "UPDATE emails SET
@@ -300,8 +304,9 @@ impl ActionDb {
                     entity_type = COALESCE(?5, entity_type),
                     sentiment = COALESCE(?6, sentiment),
                     urgency = COALESCE(?7, urgency),
+                    is_noise = COALESCE(?8, is_noise),
                     updated_at = ?2
-                 WHERE email_id = ?8",
+                 WHERE email_id = ?9",
                 params![
                     state,
                     now,
@@ -310,6 +315,7 @@ impl ActionDb {
                     enrichment.entity_type,
                     enrichment.sentiment,
                     enrichment.urgency,
+                    is_noise_param,
                     email_id,
                 ],
             )
@@ -1306,6 +1312,10 @@ pub struct EmailEnrichmentUpdate<'a> {
     pub entity_type: Option<&'a str>,
     pub sentiment: Option<&'a str>,
     pub urgency: Option<&'a str>,
+    /// DOS-249: LLM-determined noise verdict. None = no opinion (don't
+    /// change the deterministic value); Some(true) = AI says noise;
+    /// Some(false) = AI says signal (overrides any prior is_noise=1).
+    pub is_noise: Option<bool>,
 }
 
 /// Row mapper for emails SELECT queries (31 columns).

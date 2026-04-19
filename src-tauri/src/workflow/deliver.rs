@@ -3076,6 +3076,7 @@ pub fn enrich_emails(
                 entity_type: None,
                 sentiment: sentiment_str,
                 urgency: urgency_str,
+                is_noise: None,
             };
 
             // DIRECT_DB_ALLOWED: internal workflow pipeline — enrichment writes are background processing, not user-facing mutations
