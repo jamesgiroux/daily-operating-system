@@ -616,6 +616,14 @@
 .nudgeActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
   padding-top: 4px;
+}
+.nudgeLeaveAsIs {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
 }

@@ -73,7 +73,16 @@ export function useAccountDetailPage(accountId: string | undefined) {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [activeView]);
 
-  // Per-view chapter arrays
+  // Per-view chapter arrays.
+  // Work tab: the "shared" pill only appears when a commitment carries real
+  // tracker provenance (DOS-75, v1.2.2). Until then the pill is suppressed
+  // to avoid a dead-link nav anchor (Wave 0g Finding 2).
+  const hasSharedData = useMemo(
+    () => (acct.intelligence?.openCommitments ?? []).some(
+      (c) => !!(c as { trackerLink?: { href?: string } }).trackerLink?.href,
+    ),
+    [acct.intelligence?.openCommitments],
+  );
   const chapters = useMemo(() => {
     if (activeView === "health") {
       return buildHealthChapters(
@@ -82,8 +91,8 @@ export function useAccountDetailPage(accountId: string | undefined) {
       );
     }
     if (activeView === "context") return buildContextChapters();
-    return buildWorkChapters();
-  }, [activeView, acct.detail?.isParent, acct.intelligence?.health]);
+    return buildWorkChapters(hasSharedData);
+  }, [activeView, acct.detail?.isParent, acct.intelligence?.health, hasSharedData]);
 
   // Magazine shell registration
   const shellConfig = useMemo(() => ({
