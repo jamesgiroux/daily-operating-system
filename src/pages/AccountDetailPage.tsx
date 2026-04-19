@@ -77,7 +77,6 @@ import { buildAccountVitals } from "@/components/account/account-detail-utils";
 import { formatShortDate } from "@/lib/utils";
 
 import shared from "@/styles/entity-detail.module.css";
-import healthStyles from "@/components/health/health.module.css";
 import pageStyles from "./AccountDetailPage.module.css";
 
 export default function AccountDetailPage() {
@@ -151,15 +150,14 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        {/* Chapter 4: Outlook — gutter label "Outlook" is the chapter marker,
-            so inside the content column we use a compact mono sub-label
-            ("Outlook: renewal") matching the mockup's .supporting-label,
-            not a 28px h2 that would compete with the gutter. No per-chapter
-            feedback widget: the widget belongs at the card level (if
-            anywhere), not as a standing toolbar on every chapter. */}
+        {/* Chapter 4: Outlook — 28px serif h2 inline (chapter title);
+            the gutter "Outlook" is the small-mono orientation marker
+            alongside. No chapter-level feedback widget or freshness strip
+            — those weren't in the mockup and duplicated signal already
+            carried by the panel cells. */}
         {intelligence && (intelligence.renewalOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
           <MarginSection id="outlook" label="Outlook">
-            <div className={healthStyles.outlookSubLabel}>Outlook: renewal</div>
+            <ChapterHeading title="Outlook: renewal" />
             <OutlookPanel intelligence={intelligence} />
           </MarginSection>
         ) : null}
