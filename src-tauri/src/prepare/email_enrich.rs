@@ -28,6 +28,9 @@ pub struct EnrichmentResult {
     pub contextual_summary: Option<String>,
     pub sentiment: Option<String>,
     pub urgency: Option<String>,
+    /// DOS-249: AI's noise verdict. None = AI didn't return a value
+    /// (treat as "no opinion"); Some(true) = noise; Some(false) = signal.
+    pub is_noise: Option<bool>,
 }
 
 /// Convert an `EnrichmentResult` into the DB update struct.
@@ -39,6 +42,7 @@ impl EnrichmentResult {
             entity_type: self.entity_type.as_deref(),
             sentiment: self.sentiment.as_deref(),
             urgency: self.urgency.as_deref(),
+            is_noise: self.is_noise,
         }
     }
 }
@@ -109,7 +113,9 @@ fn build_enrichment_prompt(
         "\nReturn ONLY a JSON object with these fields:\n\
          - contextual_summary: string (1-2 sentence chief-of-staff analysis connecting this email to what's known about the relationship. Reference specific meetings or signals when relevant.)\n\
          - sentiment: \"positive\" | \"neutral\" | \"negative\" | \"mixed\"\n\
-         - urgency: \"high\" | \"medium\" | \"low\"\n\n\
+         - urgency: \"high\" | \"medium\" | \"low\"\n\
+         - is_noise: boolean (true if this email is noise that should NOT appear in a Customer Success exec's inbox: marketing, newsletters, automated transactional/system notifications, internal-org distribution-list posts, registration confirmations, calendar/tool notifications, social-network alerts. false if it's signal: 1:1 correspondence, customer/prospect outreach, internal team discussion, anything requiring the user's attention or context. When uncertain, prefer false — false negatives are recoverable via user dismissal, false positives hide real work.)\n\
+         - noise_reason: string (one short phrase explaining the is_noise verdict, e.g. \"customer reply re renewal\" or \"automated registration confirmation\")\n\n\
          Do not include any text outside the JSON object.",
     );
 
@@ -189,22 +195,24 @@ fn build_relationship_context(
 /// Parse AI enrichment response, extracting JSON fields.
 ///
 /// Tolerates surrounding text by finding the first `{` and last `}`.
-fn parse_enrichment_response(output: &str) -> (Option<String>, Option<String>, Option<String>) {
+fn parse_enrichment_response(
+    output: &str,
+) -> (Option<String>, Option<String>, Option<String>, Option<bool>) {
     let trimmed = output.trim();
     if trimmed.is_empty() {
-        return (None, None, None);
+        return (None, None, None, None);
     }
 
     let start = match trimmed.find('{') {
         Some(i) => i,
-        None => return (None, None, None),
+        None => return (None, None, None, None),
     };
     let end = match trimmed.rfind('}') {
         Some(i) => i,
-        None => return (None, None, None),
+        None => return (None, None, None, None),
     };
     if end <= start {
-        return (None, None, None);
+        return (None, None, None, None);
     }
 
     let json_str = &trimmed[start..=end];
@@ -212,14 +220,14 @@ fn parse_enrichment_response(output: &str) -> (Option<String>, Option<String>, O
     // I470: Validate structure and run anomaly detection
     if let Err(e) = crate::intelligence::validation::validate_email_enrichment_response(json_str) {
         log::debug!("email_enrich: validation failed: {e}");
-        return (None, None, None);
+        return (None, None, None, None);
     }
 
     let parsed: serde_json::Value = match serde_json::from_str(json_str) {
         Ok(v) => v,
         Err(e) => {
             log::debug!("email_enrich: JSON parse failed: {e}");
-            return (None, None, None);
+            return (None, None, None, None);
         }
     };
 
@@ -237,8 +245,13 @@ fn parse_enrichment_response(output: &str) -> (Option<String>, Option<String>, O
         .and_then(|v| v.as_str())
         .filter(|s| matches!(*s, "high" | "medium" | "low"))
         .map(|s| s.to_string());
+    // DOS-249: AI noise verdict. Optional — older responses won't have it.
+    let is_noise = parsed.get("is_noise").and_then(|v| v.as_bool());
+    if let Some(reason) = parsed.get("noise_reason").and_then(|v| v.as_str()) {
+        log::debug!("email_enrich: AI is_noise={is_noise:?} reason={reason}");
+    }
 
-    (summary, sentiment, urgency)
+    (summary, sentiment, urgency, is_noise)
 }
 
 /// Collect pending emails from DB (short lock), enrich via AI (no lock),
@@ -321,13 +334,15 @@ pub fn enrich_pending_emails_two_phase(
 
         let ai_result = match pty.spawn_claude(workspace, &prompt) {
             Ok(output) => {
-                let (summary, sentiment, urgency) = parse_enrichment_response(&output.stdout);
+                let (summary, sentiment, urgency, is_noise) =
+                    parse_enrichment_response(&output.stdout);
                 Ok(EnrichmentResult {
                     entity_id: entity_id.clone(),
                     entity_type: entity_type.clone(),
                     contextual_summary: summary,
                     sentiment,
                     urgency,
+                    is_noise,
                 })
             }
             Err(e) => Err(format!("AI enrichment failed for {}: {e}", email.email_id)),
@@ -366,6 +381,7 @@ pub fn enrich_pending_emails_two_phase(
                         entity_type: None,
                         sentiment: None,
                         urgency: None,
+                        is_noise: None,
                     };
                     let _ = db.set_enrichment_state(&email.email_id, "failed", empty);
                     if let Some(app_handle) = state.app_handle() {
@@ -413,16 +429,17 @@ mod tests {
     #[test]
     fn test_parse_enrichment_clean_json() {
         let output = r#"{"contextual_summary":"Important renewal discussion","sentiment":"positive","urgency":"high"}"#;
-        let (summary, sentiment, urgency) = parse_enrichment_response(output);
+        let (summary, sentiment, urgency, is_noise) = parse_enrichment_response(output);
         assert_eq!(summary.as_deref(), Some("Important renewal discussion"));
         assert_eq!(sentiment.as_deref(), Some("positive"));
         assert_eq!(urgency.as_deref(), Some("high"));
+        assert_eq!(is_noise, None); // older response shape: AI didn't return is_noise
     }
 
     #[test]
     fn test_parse_enrichment_wrapped_output() {
         let output = "Here is my analysis:\n{\"contextual_summary\":\"FYI email\",\"sentiment\":\"neutral\",\"urgency\":\"low\"}\nDone.";
-        let (summary, sentiment, urgency) = parse_enrichment_response(output);
+        let (summary, sentiment, urgency, _) = parse_enrichment_response(output);
         assert_eq!(summary.as_deref(), Some("FYI email"));
         assert_eq!(sentiment.as_deref(), Some("neutral"));
         assert_eq!(urgency.as_deref(), Some("low"));
@@ -431,7 +448,7 @@ mod tests {
     #[test]
     fn test_parse_enrichment_invalid_sentiment() {
         let output = r#"{"contextual_summary":"Test","sentiment":"angry","urgency":"high"}"#;
-        let (summary, sentiment, urgency) = parse_enrichment_response(output);
+        let (summary, sentiment, urgency, _) = parse_enrichment_response(output);
         assert_eq!(summary.as_deref(), Some("Test"));
         assert!(sentiment.is_none()); // "angry" is not a valid sentiment
         assert_eq!(urgency.as_deref(), Some("high"));
@@ -439,17 +456,36 @@ mod tests {
 
     #[test]
     fn test_parse_enrichment_empty() {
-        let (s, se, u) = parse_enrichment_response("");
+        let (s, se, u, n) = parse_enrichment_response("");
         assert!(s.is_none());
         assert!(se.is_none());
         assert!(u.is_none());
+        assert!(n.is_none());
+    }
+
+    /// DOS-249: AI emits is_noise=true for marketing/automation.
+    #[test]
+    fn dos_249_parse_is_noise_true() {
+        let output = r#"{"contextual_summary":"Marketing email","sentiment":"neutral","urgency":"low","is_noise":true,"noise_reason":"product newsletter"}"#;
+        let (_, _, _, is_noise) = parse_enrichment_response(output);
+        assert_eq!(is_noise, Some(true));
+    }
+
+    /// DOS-249: AI emits is_noise=false for genuine 1:1 correspondence,
+    /// even when deterministic rules might have flagged it.
+    #[test]
+    fn dos_249_parse_is_noise_false() {
+        let output = r#"{"contextual_summary":"Customer reply re renewal","sentiment":"positive","urgency":"medium","is_noise":false,"noise_reason":"customer 1:1 reply"}"#;
+        let (_, _, _, is_noise) = parse_enrichment_response(output);
+        assert_eq!(is_noise, Some(false));
     }
 
     #[test]
     fn test_parse_enrichment_no_json() {
-        let (s, se, u) = parse_enrichment_response("No JSON here");
+        let (s, se, u, n) = parse_enrichment_response("No JSON here");
         assert!(s.is_none());
         assert!(se.is_none());
         assert!(u.is_none());
+        assert!(n.is_none());
     }
 }

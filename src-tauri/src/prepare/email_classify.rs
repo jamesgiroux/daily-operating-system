@@ -448,19 +448,14 @@ pub fn should_suppress_email(
         return true;
     }
 
-    // Rule 3 (DOS-247): List-Unsubscribe alone is too broad — modern email
-    // including legitimate customer correspondence routinely sets it.
-    // Require a second automation marker.
-    if !list_unsubscribe.trim().is_empty() {
-        let sender_lower = sender.to_lowercase();
-        let sender_says_newsletter = sender_lower.contains("newsletter")
-            || sender_lower.contains("digest")
-            || sender_lower.contains("marketing")
-            || sender_lower.contains("notifications");
-        if sender_says_newsletter {
-            return true;
-        }
-    }
+    // DOS-249: List-Unsubscribe heuristic is intentionally dropped.
+    // The AI enrichment pass (`prepare/email_enrich.rs`) judges noise
+    // for everything that survives the deterministic rules above. The
+    // LLM has the full body context and can distinguish a genuine
+    // customer reply (List-Unsubscribe present, but real 1:1) from a
+    // marketing blast much more reliably than substring matching on
+    // the sender header.
+    let _ = list_unsubscribe;
 
     false
 }
@@ -851,9 +846,13 @@ mod tests {
     }
 
     #[test]
-    fn test_suppress_list_unsubscribe_untracked_domain() {
-        assert!(should_suppress_email(
-            "marketing@randomvendor.example",
+    fn dos_249_no_deterministic_suppress_for_list_unsubscribe_alone() {
+        // DOS-249: List-Unsubscribe heuristic dropped from the
+        // deterministic pre-filter — LLM enrichment now classifies
+        // these. should_suppress_email returns false; the email
+        // enters the enrichment pipeline where Claude judges noise.
+        assert!(!should_suppress_email(
+            "Contact <hello@randomvendor.example>",
             "New product launch",
             "<https://example.com/unsub>",
             &HashSet::new(),
