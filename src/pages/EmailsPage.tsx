@@ -10,6 +10,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
+import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import { EntityPicker } from "@/components/ui/entity-picker";
@@ -70,6 +71,7 @@ function formatLastEmailDate(value?: string) {
 export default function EmailsPage() {
   const navigate = useNavigate();
   const { personality } = usePersonality();
+  const { status: googleAuth } = useGoogleAuth();
   const [data, setData] = useState<EmailBriefingData | null>(null);
   const [syncStats, setSyncStats] = useState<EmailSyncStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -613,15 +615,26 @@ export default function EmailsPage() {
 
       <div className={s.sectionRule} />
 
-      {/* EMPTY STATE */}
+      {/* EMPTY STATE — DOS-246: distinguish "Gmail disconnected" from "connected but no emails yet" */}
       {isEmpty && (() => {
-        const copy = getPersonalityCopy("emails-empty", personality);
+        const reallyDisconnected =
+          googleAuth.status === "notconfigured" || googleAuth.status === "tokenexpired";
+        if (reallyDisconnected) {
+          const copy = getPersonalityCopy("emails-empty", personality);
+          return (
+            <EmptyState
+              headline={copy.title}
+              explanation={copy.explanation ?? copy.message ?? ""}
+              benefit={copy.benefit}
+              action={{ label: "Connect Gmail", onClick: () => navigate({ to: "/settings", search: { tab: "connectors" } }) }}
+            />
+          );
+        }
         return (
           <EmptyState
-            headline={copy.title}
-            explanation={copy.explanation ?? copy.message ?? ""}
-            benefit={copy.benefit}
-            action={{ label: "Connect Gmail", onClick: () => navigate({ to: "/settings", search: { tab: "connectors" } }) }}
+            headline="No emails yet"
+            explanation="Gmail is connected. Emails will appear after the next sync."
+            action={{ label: "Sync now", onClick: () => invoke("refresh_emails").catch((err) => toast.error(String(err))) }}
           />
         );
       })()}

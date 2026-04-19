@@ -19,6 +19,8 @@ import { toast } from "sonner";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { FolioReportsDropdown } from "@/components/folio/FolioReportsDropdown";
 import { FolioToolsDropdown } from "@/components/folio/FolioToolsDropdown";
+import { hasTriageContent } from "@/components/health/TriageSection";
+import { hasDivergenceContent } from "@/components/health/DivergenceSection";
 import {
   buildHealthChapters,
   buildContextChapters,
@@ -84,15 +86,55 @@ export function useAccountDetailPage(accountId: string | undefined) {
     [acct.intelligence?.openCommitments],
   );
   const chapters = useMemo(() => {
+    const intel = acct.intelligence;
     if (activeView === "health") {
+      // Mirror renderHealthView's conditional chapter logic so the nav reflects
+      // only chapters the page actually renders. Use the same guard helpers
+      // the page uses so the two stay in lockstep.
+      const findings = intel?.consistencyFindings ?? [];
+      const glean = acct.gleanSignals;
+      const showTriage = hasTriageContent(intel, glean);
+      const showDivergence = hasDivergenceContent(findings, glean);
+      const fineState = !!intel && !showTriage && !showDivergence;
+      const hasOutlook = !!(
+        intel?.renewalOutlook ||
+        intel?.expansionSignals?.length ||
+        intel?.contractContext
+      );
       return buildHealthChapters(
         acct.detail?.isParent ?? false,
-        !!acct.intelligence?.health,
+        !!intel?.health,
+        { fineState, hasOutlook },
       );
     }
-    if (activeView === "context") return buildContextChapters();
+    if (activeView === "context") {
+      const priorityCount = intel?.strategicPriorities?.length ?? 0;
+      const competitorCount = intel?.competitiveContext?.length ?? 0;
+      const hasWhatMatters = !!(
+        priorityCount ||
+        competitorCount ||
+        intel?.organizationalChanges?.length ||
+        intel?.blockers?.length
+      );
+      const hasBuilt = !!(
+        intel?.valueDelivered?.length ||
+        intel?.successMetrics ||
+        intel?.openCommitments?.length
+      );
+      const hasTechnical = !!acct.detail?.technicalFootprint;
+      const hasFiles = (acct.files?.length ?? 0) > 0;
+      return buildContextChapters({ hasWhatMatters, hasBuilt, hasTechnical, hasFiles });
+    }
     return buildWorkChapters(hasSharedData);
-  }, [activeView, acct.detail?.isParent, acct.intelligence?.health, hasSharedData]);
+  }, [
+    activeView,
+    acct.detail?.isParent,
+    acct.detail?.technicalFootprint,
+    acct.intelligence,
+    acct.gleanSignals,
+    acct.files,
+    hasSharedData,
+  ]);
 
   // Magazine shell registration
   const shellConfig = useMemo(() => ({
