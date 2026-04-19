@@ -316,7 +316,7 @@ pub fn enrich_pending_emails_two_phase(
                     .with_trigger("batch_refresh")
                     .with_tier(ModelTier::Extraction),
             )
-            .with_timeout(30)
+            .with_timeout(90)
             .with_nice_priority(10);
 
         let ai_result = match pty.spawn_claude(workspace, &prompt) {
