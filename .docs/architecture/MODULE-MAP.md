@@ -1,7 +1,7 @@
 # Module Map
 
 > Rust backend module inventory (`src-tauri/src/`).
-> **Auto-generated:** 2026-04-18 by `.docs/generators/gen-module-map.sh`
+> **Auto-generated:** 2026-04-19 by `.docs/generators/gen-module-map.sh`
 
 **240** Rust files across **29** module directories and **44** standalone modules.
 
@@ -71,18 +71,18 @@
 | `focus_prioritization.rs` | 397 | 1 | — |
 | `google.rs` | 1728 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 492 | 12 | — |
-| `intel_queue.rs` | 2857 | 4 | Background intelligence enrichment queue (I132). |
+| `intel_queue.rs` | 2858 | 4 | Background intelligence enrichment queue (I132). |
 | `json_loader.rs` | 615 | 3 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
 | `lib.rs` | 886 | 1 | App setup, command registration, plugin init |
-| `meeting_prep_queue.rs` | 982 | 7 | Background meeting prep queue. |
+| `meeting_prep_queue.rs` | 984 | 7 | Background meeting prep queue. |
 | `migrations.rs` | 1699 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (I51 / ADR-0047). |
 | `privacy.rs` | 97 | 2 | I430: Privacy controls — data summary, clear intelligence, delete all. |
 | `projects.rs` | 857 | 9 | Project workspace file I/O (I50 / ADR-0047). |
-| `pty.rs` | 991 | 2 | PTY Manager for Claude Code subprocess management |
+| `pty.rs` | 994 | 2 | PTY Manager for Claude Code subprocess management |
 | `risk_briefing.rs` | 596 | 5 | Risk Briefing generation for at-risk accounts. |
 | `scheduler.rs` | 748 | 2 | Scheduler for cron-based workflow execution |
 | `state.rs` | 1414 | 12 | AppState — DB, PTY, config |
