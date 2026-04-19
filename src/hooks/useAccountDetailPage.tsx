@@ -101,11 +101,10 @@ export function useAccountDetailPage(accountId: string | undefined) {
         intel?.expansionSignals?.length ||
         intel?.contractContext
       );
-      const hasProducts = (acct.detail?.products?.length ?? 0) > 0;
       return buildHealthChapters(
         acct.detail?.isParent ?? false,
         !!intel?.health,
-        { fineState, hasOutlook, hasProducts },
+        { fineState, hasOutlook },
       );
     }
     if (activeView === "context") {
@@ -123,8 +122,9 @@ export function useAccountDetailPage(accountId: string | undefined) {
         intel?.openCommitments?.length
       );
       const hasTechnical = !!acct.detail?.technicalFootprint;
+      const hasProducts = (acct.detail?.products?.length ?? 0) > 0;
       const hasFiles = (acct.files?.length ?? 0) > 0;
-      return buildContextChapters({ hasWhatMatters, hasBuilt, hasTechnical, hasFiles });
+      return buildContextChapters({ hasWhatMatters, hasBuilt, hasTechnical, hasProducts, hasFiles });
     }
     return buildWorkChapters(hasSharedData);
   }, [
