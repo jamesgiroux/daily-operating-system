@@ -55,7 +55,7 @@
 0 | Legacy monolith command handler (being decomposed) |
 | `connectivity.rs` | 151 | 3 | I428: Connectivity tracking and sync freshness. |
 | `db_backup.rs` | 551 | 8 | SQLite backup and rebuild-from-filesystem (I76 / ADR-0048) |
-| `db_service.rs` | 514 | 0
+| `db_service.rs` | 515 | 0
 0 | Async database service using tokio-rusqlite. |
 | `demo.rs` | 994 | 6 | Production demo data for first-run experience (I56). |
 | `embeddings.rs` | 315 | 3 | Local semantic search (nomic-embed-text) |
