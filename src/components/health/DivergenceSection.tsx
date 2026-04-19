@@ -80,22 +80,18 @@ export function DivergenceSection({ findings, gleanSignals }: DivergenceSectionP
 
   if (realFindings.length === 0 && !channelCard) return null;
 
-  const cardCount = (channelCard ? 1 : 0) + realFindings.length;
-
   return (
     <>
-      <section className={styles.blockHeader}>
-        <hr className={styles.blockHeaderRule} />
-        <div className={styles.blockHeaderTitleRow}>
-          <h2 className={styles.blockHeaderTitle}>Divergences</h2>
-          <span className={`${styles.blockHeaderCount} ${styles.blockHeaderCountSaffron}`}>
-            {cardCount} mismatch{cardCount === 1 ? "" : "es"}
-          </span>
-        </div>
-        <p className={styles.blockHeaderNote}>
+      {/* Sub-block header inside the "Needs attention" chapter — the
+          gutter already carries the chapter title, so the sub-block uses
+          the mockup's compact saffron label + italic note rather than a
+          competing 28px serif title. */}
+      <div className={styles.divergenceHeader}>
+        <span className={styles.divergenceLabel}>Divergences · data/narrative mismatches</span>
+        <span className={styles.divergenceNote}>
           The story doesn't match the data &mdash; usually the highest-signal thing on the page.
-        </p>
-      </section>
+        </span>
+      </div>
 
       <div>
         {channelCard && (

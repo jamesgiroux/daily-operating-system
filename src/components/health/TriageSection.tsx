@@ -528,19 +528,18 @@ export function TriageSection({
 
   return (
     <>
-      <section className={styles.blockHeader}>
-        <hr className={styles.blockHeaderRule} />
-        <div className={styles.blockHeaderTitleRow}>
-          <h2 className={styles.blockHeaderTitle}>Needs attention</h2>
-          <span className={`${styles.blockHeaderCount} ${styles.blockHeaderCountTerracotta}`}>
-            {ranked.length} item{ranked.length === 1 ? "" : "s"}
-            {allCandidates.length > ranked.length
-              ? ` · showing top ${ranked.length} of ${allCandidates.length}`
-              : ""}
-            {" · scan 60s"}
-          </span>
-        </div>
-      </section>
+      {/* Compact header: the chapter title "Needs attention" lives in the
+          MarginSection gutter label, so this strip carries only the count
+          chip + horizontal rule. No inline 28px h2 duplicating the gutter. */}
+      <div className={styles.triageCompactHeader}>
+        <span className={styles.triageCompactCount}>
+          {ranked.length} item{ranked.length === 1 ? "" : "s"}
+          {allCandidates.length > ranked.length
+            ? ` · showing top ${ranked.length} of ${allCandidates.length}`
+            : ""}
+          {" · scan 60s"}
+        </span>
+      </div>
       <div>
         {ranked.map((c) => (
           <TriageCard

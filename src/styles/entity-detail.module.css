@@ -368,9 +368,9 @@
 
 .marginLabelSection {
   display: grid;
-  grid-template-columns: 110px 1fr;
-  gap: 0 40px;
-  padding-top: 140px;
+  grid-template-columns: 88px 1fr;
+  gap: 0 var(--space-xl, 32px);
+  padding-top: var(--space-4xl, 72px);
   scroll-margin-top: 60px;
 }
 
