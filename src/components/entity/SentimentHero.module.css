@@ -2,7 +2,7 @@
    .docs/mockups/account-health-outlook-globex.html lines 599-635. */
 
 .hero {
-  padding-top: var(--space-2xl, 48px);
+  padding-top: var(--space-md, 16px);
   padding-bottom: var(--space-2xl, 48px);
 }
 
