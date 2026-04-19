@@ -34,7 +34,12 @@ export function AccountPullQuote({ intelligence, variant = "default", freshnessF
     if (intelligence.enrichedAt) metaParts.push(`Updated ${formatRelativeDate(intelligence.enrichedAt)}`);
 
     return (
-      <section className={`editorial-reveal-slow ${styles.thesisSection}`}>
+      // No `editorial-reveal-slow`: the page is split into display:none
+      // view wrappers; IntersectionObserver can't fire on a hidden view,
+      // so a reveal class leaves the section stuck at opacity: 0 after a
+      // tab switch. The thesis is the first chapter of the Context tab —
+      // render it visible immediately.
+      <section className={styles.thesisSection}>
         <div className={styles.thesisLabel}>The thesis</div>
         <p className={styles.thesisQuote}>
           <span aria-hidden className={styles.pullquoteMark}>
