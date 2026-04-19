@@ -1,12 +1,17 @@
 /**
  * TriageCard — single "Needs attention" row (DOS-203).
  *
- * Layout per `.docs/mockups/account-health-outlook-globex.html`:
- *   [spine] [body: kind · headline · evidence · sources] [actions]
+ * Layout per `.docs/mockups/account-health-outlook-globex.html` lines 649-671:
+ *   [spine] [body: kind · headline · evidence · sources] [actions + feedback]
  *
- * Spine colour + kind label drive the emotional register. Sources render as
- * discrete tags (Local vs Glean). Evidence accepts a string with `<strong>`
- * passthrough via ReactNode so callers can emphasise dates/figures.
+ * The spine colour and kind label drive the emotional register; the action
+ * column carries primary + optional secondary CTAs; the feedback slot sits
+ * beneath the actions so every card can be thumbed-up / annotated / corrected
+ * individually — Intelligence Loop per-card signal attribution.
+ *
+ * `evidence` accepts `ReactNode` so callers can emphasise dates/figures via
+ * `<strong>`. `citations` render as discrete dated links (or plain labels)
+ * next to the coloured source tag (Local vs Glean).
  */
 import type { ReactNode } from "react";
 import styles from "./health.module.css";
@@ -21,14 +26,35 @@ export interface TriageSource {
   label?: string;
 }
 
+export interface TriageCitation {
+  /** Dated link label (e.g. "Transcript · Feb 17"). */
+  label: string;
+  /** Optional href. When omitted, renders as plain text (no underline). */
+  href?: string;
+}
+
+export interface TriageAction {
+  /** Button label. */
+  label: string;
+  /** Primary action gets filled/dark styling (only one per card). */
+  primary?: boolean;
+  /** Optional click handler. */
+  onClick?: () => void;
+}
+
 export interface TriageCardProps {
   tone: TriageTone;
   kind: string;
   headline: string;
   evidence?: ReactNode;
+  /** Source-origin pills (Local / Glean) shown first. */
   sources?: TriageSource[];
-  /** Optional action row; omit for read-only cards. */
-  actions?: ReactNode;
+  /** Dated citation links or plain labels, rendered alongside source tags. */
+  citations?: TriageCitation[];
+  /** Optional primary + secondary pill buttons. */
+  actions?: TriageAction[];
+  /** Optional per-card feedback slot (IntelligenceCorrection). */
+  feedbackSlot?: ReactNode;
 }
 
 const spineClass: Record<TriageTone, string> = {
@@ -46,7 +72,19 @@ const kindClass: Record<TriageTone, string> = {
   meta: styles.kindMeta,
 };
 
-export function TriageCard({ tone, kind, headline, evidence, sources, actions }: TriageCardProps) {
+export function TriageCard({
+  tone,
+  kind,
+  headline,
+  evidence,
+  sources,
+  citations,
+  actions,
+  feedbackSlot,
+}: TriageCardProps) {
+  const hasSources = (sources && sources.length > 0) || (citations && citations.length > 0);
+  const hasActionColumn = (actions && actions.length > 0) || !!feedbackSlot;
+
   return (
     <article className={styles.triageCard}>
       <div className={`${styles.triageSpine} ${spineClass[tone]}`} />
@@ -54,10 +92,13 @@ export function TriageCard({ tone, kind, headline, evidence, sources, actions }:
         <span className={`${styles.triageKind} ${kindClass[tone]}`}>{kind}</span>
         <div className={styles.triageHeadline}>{headline}</div>
         {evidence ? <div className={styles.triageEvidence}>{evidence}</div> : null}
-        {sources && sources.length > 0 ? (
+        {hasSources ? (
           <div className={styles.triageSources}>
-            {sources.map((s, i) => (
-              <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            {sources?.map((s, i) => (
+              <span
+                key={`src-${i}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
                 <span
                   className={s.origin === "glean" ? styles.sourceTagGlean : styles.sourceTagLocal}
                 >
@@ -66,10 +107,41 @@ export function TriageCard({ tone, kind, headline, evidence, sources, actions }:
                 {s.label ? <span>{s.label}</span> : null}
               </span>
             ))}
+            {citations?.map((c, i) =>
+              c.href ? (
+                <a key={`cite-${i}`} className={styles.triageCitation} href={c.href}>
+                  {c.label}
+                </a>
+              ) : (
+                <span key={`cite-${i}`} className={styles.triageCitationPlain}>
+                  {c.label}
+                </span>
+              ),
+            )}
           </div>
         ) : null}
       </div>
-      {actions ? <div>{actions}</div> : <div />}
+      {hasActionColumn ? (
+        <div className={styles.triageActions}>
+          {actions && actions.length > 0 ? (
+            <div className={styles.triageActionsRow}>
+              {actions.map((a, i) => (
+                <button
+                  key={`act-${i}`}
+                  type="button"
+                  className={`${styles.triageBtn} ${a.primary ? styles.triageBtnPrimary : ""}`}
+                  onClick={a.onClick}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {feedbackSlot ? <div className={styles.triageFeedback}>{feedbackSlot}</div> : null}
+        </div>
+      ) : (
+        <div />
+      )}
     </article>
   );
 }
