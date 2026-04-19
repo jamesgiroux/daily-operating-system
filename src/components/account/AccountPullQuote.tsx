@@ -34,38 +34,9 @@ export function AccountPullQuote({ intelligence, variant = "default", freshnessF
     if (intelligence.enrichedAt) metaParts.push(`Updated ${formatRelativeDate(intelligence.enrichedAt)}`);
 
     return (
-      <section
-        className="editorial-reveal-slow"
-        style={{
-          padding: "64px 0 48px",
-          borderBottom: "1px solid var(--color-rule-light)",
-        }}
-      >
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            textTransform: "uppercase",
-            letterSpacing: "0.14em",
-            color: "var(--color-text-tertiary)",
-            marginBottom: 28,
-          }}
-        >
-          The thesis
-        </div>
-        <p
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 40,
-            fontWeight: 400,
-            fontStyle: "italic",
-            lineHeight: 1.25,
-            letterSpacing: "-0.01em",
-            color: "var(--color-text-primary)",
-            maxWidth: 820,
-            margin: 0,
-          }}
-        >
+      <section className={`editorial-reveal-slow ${styles.thesisSection}`}>
+        <div className={styles.thesisLabel}>The thesis</div>
+        <p className={styles.thesisQuote}>
           <span aria-hidden className={styles.pullquoteMark}>
             &ldquo;
           </span>
@@ -75,20 +46,7 @@ export function AccountPullQuote({ intelligence, variant = "default", freshnessF
           </span>
         </p>
         {(metaParts.length > 0 || onRefresh) && (
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              color: "var(--color-text-tertiary)",
-              marginTop: 32,
-              display: "flex",
-              alignItems: "center",
-              gap: 16,
-              flexWrap: "wrap",
-            }}
-          >
+          <div className={styles.thesisMeta}>
             {metaParts.length > 0 && <span>{metaParts.join(" · ")}</span>}
             {onRefresh && (
               <button
