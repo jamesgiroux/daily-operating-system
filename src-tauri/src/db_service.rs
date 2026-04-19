@@ -239,6 +239,7 @@ mod tests {
             pinned_at: None,
             commitments: None,
             questions: None,
+            is_noise: false,
         }
     }
 
