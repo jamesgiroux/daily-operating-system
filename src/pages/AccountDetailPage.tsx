@@ -289,6 +289,9 @@ export default function AccountDetailPage() {
             onAddRole={acct.addStakeholderRole}
             onRemoveRole={acct.removeStakeholderRole}
             onRemoveTeamMember={acct.handleRemoveTeamMember}
+            suggestions={acct.suggestions}
+            onAcceptSuggestion={acct.acceptSuggestion}
+            onDismissSuggestion={acct.dismissSuggestion}
           />
         </MarginSection>
 
