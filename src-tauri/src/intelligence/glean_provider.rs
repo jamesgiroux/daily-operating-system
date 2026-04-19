@@ -1233,7 +1233,12 @@ pub fn reconcile_enrichment(
     // Skip reconciliation for fields with user edits — preserve_user_edits
     // handles those after this function returns.
 
-    if !has_user_edits("risks") {
+    // Non-destructive-empty guard (DOS Blackstone regression): when a dimension
+    // times out, its fields arrive empty. Reconciling an empty new_items array
+    // against existing pty_synthesis items would wipe them all. Reconcile only
+    // when the new output actually has data, or when existing is also empty
+    // (nothing to preserve).
+    if !has_user_edits("risks") && (!new_output.risks.is_empty() || existing.risks.is_empty()) {
         result.risks = reconcile_vec_items(
             &existing.risks,
             &new_output.risks,
@@ -1244,7 +1249,9 @@ pub fn reconcile_enrichment(
         );
     }
 
-    if !has_user_edits("recentWins") {
+    if !has_user_edits("recentWins")
+        && (!new_output.recent_wins.is_empty() || existing.recent_wins.is_empty())
+    {
         result.recent_wins = reconcile_vec_items(
             &existing.recent_wins,
             &new_output.recent_wins,
@@ -1261,7 +1268,9 @@ pub fn reconcile_enrichment(
     // insights to DB columns or stakeholder_suggestions table.
     result.stakeholder_insights = new_output.stakeholder_insights;
 
-    if !has_user_edits("valueDelivered") {
+    if !has_user_edits("valueDelivered")
+        && (!new_output.value_delivered.is_empty() || existing.value_delivered.is_empty())
+    {
         result.value_delivered = reconcile_vec_items(
             &existing.value_delivered,
             &new_output.value_delivered,
@@ -1272,7 +1281,9 @@ pub fn reconcile_enrichment(
         );
     }
 
-    if !has_user_edits("competitiveContext") {
+    if !has_user_edits("competitiveContext")
+        && (!new_output.competitive_context.is_empty() || existing.competitive_context.is_empty())
+    {
         result.competitive_context = reconcile_vec_items(
             &existing.competitive_context,
             &new_output.competitive_context,
@@ -1283,7 +1294,10 @@ pub fn reconcile_enrichment(
         );
     }
 
-    if !has_user_edits("organizationalChanges") {
+    if !has_user_edits("organizationalChanges")
+        && (!new_output.organizational_changes.is_empty()
+            || existing.organizational_changes.is_empty())
+    {
         result.organizational_changes = reconcile_vec_items(
             &existing.organizational_changes,
             &new_output.organizational_changes,
@@ -1294,7 +1308,9 @@ pub fn reconcile_enrichment(
         );
     }
 
-    if !has_user_edits("expansionSignals") {
+    if !has_user_edits("expansionSignals")
+        && (!new_output.expansion_signals.is_empty() || existing.expansion_signals.is_empty())
+    {
         result.expansion_signals = reconcile_vec_items(
             &existing.expansion_signals,
             &new_output.expansion_signals,
@@ -1310,15 +1326,18 @@ pub fn reconcile_enrichment(
         if let (Some(existing_oc), Some(new_oc)) =
             (&existing.open_commitments, &new_output.open_commitments)
         {
-            let reconciled = reconcile_vec_items(
-                existing_oc,
-                new_oc,
-                refreshed_sources,
-                dismissed,
-                "openCommitments",
-                |c| &c.description,
-            );
-            result.open_commitments = Some(reconciled);
+            // Non-destructive-empty: if new dimension returned empty, keep existing.
+            if !new_oc.is_empty() || existing_oc.is_empty() {
+                let reconciled = reconcile_vec_items(
+                    existing_oc,
+                    new_oc,
+                    refreshed_sources,
+                    dismissed,
+                    "openCommitments",
+                    |c| &c.description,
+                );
+                result.open_commitments = Some(reconciled);
+            }
         } else if new_output.open_commitments.is_some() {
             result.open_commitments = new_output.open_commitments;
         }
@@ -1363,6 +1382,8 @@ pub fn reconcile_enrichment(
     reconcile_option!(success_plan_signals, "successPlanSignals");
 
     // Non-source-attributed vecs: strategic_priorities, internal_team, blockers, gong_call_summaries
+    // These already use an "only-overwrite-if-non-empty" guard via the is_empty checks below,
+    // which preserves existing values when the dimension returns nothing.
     if !new_output.strategic_priorities.is_empty() {
         result.strategic_priorities = new_output.strategic_priorities;
     }
