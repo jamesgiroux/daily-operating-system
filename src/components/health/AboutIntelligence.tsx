@@ -23,9 +23,26 @@ interface AboutIntelligenceProps {
   fine?: boolean;
 }
 
-/** Did enrichment actually run? enrichedAt may be the empty string on fresh DBs. */
-function didEnrich(enrichedAt?: string | null): boolean {
-  return !!(enrichedAt && enrichedAt.trim().length > 0);
+/** Did enrichment actually run?
+ *
+ * Primary signal: `enrichedAt` is a non-empty timestamp.
+ *
+ * Fallback: any substantive intelligence field is populated. This catches
+ * the case where the backend wrote dimensions_json + risks / health / etc.
+ * but failed to stamp the `enriched_at` column — the enrichment DID run,
+ * the stamp is just missing. We'd rather render the intelligence we have
+ * than falsely claim enrichment never ran.
+ */
+function didEnrich(intelligence: EntityIntelligence): boolean {
+  const stamp = intelligence.enrichedAt;
+  if (stamp && stamp.trim().length > 0) return true;
+  if (intelligence.health) return true;
+  if (intelligence.currentState) return true;
+  if (intelligence.executiveAssessment && intelligence.executiveAssessment.trim().length > 0) return true;
+  if (intelligence.renewalOutlook) return true;
+  if ((intelligence.risks?.length ?? 0) > 0) return true;
+  if ((intelligence.recentWins?.length ?? 0) > 0) return true;
+  return false;
 }
 
 /** Pretty "N transcripts · M emails · K pdfs" string from a manifest. */
@@ -57,7 +74,7 @@ function summariseGlean(g: HealthOutlookSignals): string {
 export function AboutIntelligence({ intelligence, gleanSignals, fine = false }: AboutIntelligenceProps) {
   if (!intelligence) return null;
 
-  const hasEnriched = didEnrich(intelligence.enrichedAt);
+  const hasEnriched = didEnrich(intelligence);
 
   if (!hasEnriched) {
     return (
@@ -72,13 +89,20 @@ export function AboutIntelligence({ intelligence, gleanSignals, fine = false }: 
 
   const manifest = intelligence.sourceManifest ?? [];
   const formats = formatManifestCounts(manifest);
-  const freshness = `Last enrichment ran ${formatRelativeDate(intelligence.enrichedAt)}.`;
+  // Freshness: honour enrichedAt when set; stay silent otherwise so we
+  // don't render "Last enrichment ran on the empty string" when the
+  // backend failed to stamp the column.
+  const stamp = intelligence.enrichedAt;
+  const freshness =
+    stamp && stamp.trim().length > 0
+      ? `Last enrichment ran ${formatRelativeDate(stamp)}.`
+      : "";
 
   if (fine) {
     return (
       <div className={styles.metaCard}>
         <div className={styles.metaCardProse}>
-          {freshness} No new signals triggered triage. The system is watching —
+          {freshness ? `${freshness} ` : ""}No new signals triggered triage. The system is watching —
           it will surface changes as they emerge.
           {formats ? ` Sources: ${formats}.` : ""}
         </div>
@@ -99,13 +123,21 @@ export function AboutIntelligence({ intelligence, gleanSignals, fine = false }: 
       ? `Manifest shows ${manifest.length} of ${intelligence.sourceFileCount} total files.`
       : "";
 
+  const bodyParts = [freshness, manifestBlurb, shortfall].filter(
+    (s) => s.trim().length > 0,
+  );
+  const body = bodyParts.join(" ");
+
   return (
     <div className={styles.metaCard}>
-      <div className={styles.metaCardLabel}>Data capture</div>
+      {/* Label matches mockup line 979 — "Our data capture gap" is the
+          fixed label for this meta card, whether populated or empty.
+          The prior "Data capture" alt label was inconsistent drift. */}
+      <div className={styles.metaCardLabel}>Our data capture gap</div>
       <div className={styles.metaCardText}>
-        {freshness}
-        {manifestBlurb ? ` ${manifestBlurb}` : ""}
-        {shortfall ? ` ${shortfall}` : ""}
+        {body.length > 0
+          ? body
+          : "Enrichment has run, but the source manifest wasn't recorded."}
       </div>
       {gleanSignals ? (
         <div className={styles.metaCardSubsection}>
