@@ -458,6 +458,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 106,
         sql: include_str!("migrations/105_email_noise_recovery.sql"),
     },
+    // DOS-248: After DOS-247's coarse recovery, re-suppress noreply
+    // senders and bracket-prefix internal-org notifications that the
+    // tightened rules now catch. Brings existing data in line with
+    // the fixed code without requiring a fresh sync.
+    Migration {
+        version: 107,
+        sql: include_str!("migrations/106_email_resuppress_noreply.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

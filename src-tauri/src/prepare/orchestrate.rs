@@ -2264,7 +2264,11 @@ fn load_tracked_domains(db: &crate::db::ActionDb) -> (HashSet<String>, HashSet<S
         }
     }
 
-    let mut person_domains: HashSet<String> = HashSet::new();
+    // DOS-248: return full email addresses (not just domains). Domain-only
+    // matching let internal-org bulk notifications (e.g.
+    // no-reply@gainsightapp.com, notifications@wordpress.com) escape
+    // suppression because a colleague at the same domain was tracked.
+    let mut person_emails_full: HashSet<String> = HashSet::new();
     if let Ok(mut stmt) = db.conn_ref().prepare(
         "SELECT DISTINCT email FROM person_emails
          UNION
@@ -2272,17 +2276,15 @@ fn load_tracked_domains(db: &crate::db::ActionDb) -> (HashSet<String>, HashSet<S
     ) {
         if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
             for email in rows.flatten() {
-                if let Some(at_pos) = email.rfind('@') {
-                    let d = email[at_pos + 1..].trim().to_lowercase();
-                    if !d.is_empty() {
-                        person_domains.insert(d);
-                    }
+                let e = email.trim().to_lowercase();
+                if !e.is_empty() {
+                    person_emails_full.insert(e);
                 }
             }
         }
     }
 
-    (account_domains, person_domains)
+    (account_domains, person_emails_full)
 }
 
 /// Fetch and classify emails (async, uses google_api).
