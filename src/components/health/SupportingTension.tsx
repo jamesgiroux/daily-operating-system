@@ -12,6 +12,7 @@
  * No rename needed; if `intelligence.health` is null at runtime the
  * AccountHealth blob failed to deserialize or was absent in health_json.
  */
+import type { CSSProperties } from "react";
 import type {
   EntityIntelligence,
   DimensionScore,
@@ -53,11 +54,11 @@ function bandForScore(score: number): "green" | "yellow" | "red" {
 
 const DIMENSION_LABELS: Array<{ key: keyof RelationshipDimensions; label: string }> = [
   { key: "meetingCadence", label: "Meeting Cadence" },
-  { key: "emailEngagement", label: "Email Engagement" },
+  { key: "emailEngagement", label: "Engagement" },
   { key: "stakeholderCoverage", label: "Stakeholder Coverage" },
   { key: "championHealth", label: "Champion Health" },
   { key: "financialProximity", label: "Financial Proximity" },
-  { key: "signalMomentum", label: "Signal Momentum" },
+  { key: "signalMomentum", label: "Update Momentum" },
 ];
 
 interface SupportingTensionProps {
@@ -70,6 +71,18 @@ interface SupportingTensionProps {
   gleanSignals?: HealthOutlookSignals | null;
 }
 
+/**
+ * Short delta string for the Computed score meta line. `"▲ +12"` / `"▼ -8"`
+ * / `""` when delta is missing or zero. Renders the arrow that matches
+ * the direction rather than the sign of the number.
+ */
+function formatScoreDelta(delta: number | null | undefined): string {
+  if (delta == null || delta === 0) return "";
+  const arrow = delta > 0 ? "▲" : "▼";
+  const magnitude = Math.abs(Math.round(delta));
+  return `${arrow} ${delta > 0 ? "+" : "-"}${magnitude}`;
+}
+
 export function SupportingTension({ intelligence, gleanSignals }: SupportingTensionProps) {
   const health = intelligence?.health;
   if (!health) return null;
@@ -79,10 +92,34 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
   const bandLabel = health.band ? health.band[0].toUpperCase() + health.band.slice(1) : "Unknown";
   const dir = health.trend?.direction;
   const timeframe = health.trend?.timeframe ?? "";
+  // `health.trend.delta` isn't in the typed surface today; reach via a
+  // permissive cast so we can render the "▲ +12" meta when backend emits it,
+  // and render nothing when it doesn't — no fabrication.
+  const delta = (health.trend as { delta?: number | null } | undefined)?.delta ?? null;
+  const deltaStr = formatScoreDelta(delta);
   const rationale =
-    (health.trend?.rationale && health.trend.rationale.trim().length > 0
+    health.trend?.rationale && health.trend.rationale.trim().length > 0
       ? health.trend.rationale
-      : null) ?? null;
+      : null;
+
+  // Computed-score meta: "Green · ▲ +12 in 30d · 'improving'"
+  const scoreMetaParts: string[] = [];
+  if (sufficient) {
+    scoreMetaParts.push(bandLabel);
+    if (deltaStr) {
+      scoreMetaParts.push(timeframe ? `${deltaStr} in ${timeframe}` : deltaStr);
+    } else if (timeframe) {
+      scoreMetaParts.push(timeframe);
+    }
+    if (dir) scoreMetaParts.push(`'${dir}'`);
+  }
+  const scoreMeta = sufficient ? scoreMetaParts.join(" · ") : "Insufficient data";
+
+  // Trend meta: stays empty when we only have prose rationale — prose
+  // renders as the tension note below, not duplicated into the meta line.
+  // If the backend ever emits a structured short-tag list (mockup style:
+  // "Infra drift ▲ · Defensive Mode unsettled · …"), render it here.
+  const trendMeta = "";
 
   const dims = health.dimensions;
 
@@ -94,11 +131,7 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
           <div className={`${styles.tensionBlockValue} ${scoreColorClass(health.band)}`}>
             {scoreDisplay}
           </div>
-          <div className={styles.tensionBlockMeta}>
-            {sufficient
-              ? `${bandLabel} · ${dir ?? "stable"}${timeframe ? ` · ${timeframe}` : ""}`
-              : "Insufficient data"}
-          </div>
+          <div className={styles.tensionBlockMeta}>{scoreMeta}</div>
         </div>
         <div>
           <div className={styles.tensionBlockLabel}>
@@ -107,15 +140,16 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
           <div className={`${styles.tensionBlockValue} ${trendColorClass(dir)}`}>
             {trendLabel(dir)}
           </div>
-          <div className={styles.tensionBlockMeta}>
-            {rationale ? rationale : "Trend derived from dimension momentum."}
-          </div>
+          {trendMeta ? (
+            <div className={styles.tensionBlockMeta}>{trendMeta}</div>
+          ) : null}
         </div>
       </div>
 
-      {rationale ? (
-        <p className={styles.tensionNote}>{rationale}</p>
-      ) : null}
+      {/* Tension note: rationale prose lives here only, never duplicated
+          into the trend block's meta. When no rationale is emitted, no
+          note — don't fabricate an explainer. */}
+      {rationale ? <p className={styles.tensionNote}>{rationale}</p> : null}
 
       {dims ? (
         <div className={styles.dimensions}>
@@ -135,6 +169,11 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
               d.evidence && d.evidence.length > 0
                 ? d.evidence.filter((e) => !!e && e.trim().length > 0).join(" · ")
                 : null;
+            // Dim-bar fill is data-driven — width is an instance value,
+            // not a design-system value. Delivered via a CSS custom
+            // property so the actual CSS rule stays in the module
+            // (see .dimFill `width: var(--dim-fill)` in health.module.css).
+            const fillStyle = { "--dim-fill": `${clamped}%` } as CSSProperties;
             return (
               <div key={key} className={styles.dim}>
                 <div className={styles.dimName}>
@@ -142,7 +181,7 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
                   <span className={styles.dimScore}>{raw}</span>
                 </div>
                 <div className={styles.dimBar}>
-                  <div className={`${styles.dimFill} ${fillClass}`} style={{ width: `${clamped}%` }} />
+                  <div className={`${styles.dimFill} ${fillClass}`} style={fillStyle} />
                 </div>
                 {evidence ? <div className={styles.dimEvidence}>{evidence}</div> : null}
               </div>
