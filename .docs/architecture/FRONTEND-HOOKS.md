@@ -3,7 +3,7 @@
 > Registry of all React hooks in `src/hooks/`.
 > **Auto-generated:** 2026-04-19 by `.docs/generators/gen-frontend-hooks.sh`
 
-**42** hook files | **5339** total lines
+**42** hook files | **5359** total lines
 
 ---
 
@@ -13,7 +13,7 @@
 |------|------|-------|---------------|-----------------|
 | `useIsMobile` | `use-mobile.ts` | 19 | — | — |
 | `useAccountDetail` | `useAccountDetail.ts` | 722 | archive_account, create_action, create_child_account, dismiss_intelligence_item, dismiss_recommendation, enrich_account, get_account_detail, get_account_events, get_entity_files, index_entity_files, mark_commitment_done, record_account_event, retry_risk_briefing, set_user_health_sentiment, track_recommendation, update_account_programs | — |
-| `useAccountDetailPage` | `useAccountDetailPage.tsx` | 274 | get_account_ancestors, get_entity_metadata, update_technical_footprint_field | — |
+| `useAccountDetailPage` | `useAccountDetailPage.tsx` | 282 | get_account_ancestors, get_entity_metadata, update_technical_footprint_field | — |
 | `useAccountFieldSave` | `useAccountFieldSave.ts` | 127 | accept_account_field_conflict, dismiss_account_field_conflict, update_account_field, update_entity_metadata | — |
 | `useAccountFields` | `useAccountFields.ts` | 137 | update_account_field | — |
 | `useActions` | `useActions.ts` | 223 | complete_action, create_action, get_actions_from_db, reopen_action | — |
@@ -48,7 +48,7 @@
 | `usePersonality` | `usePersonality.tsx` | 66 | get_config | — |
 | `usePostMeetingCapture` | `usePostMeetingCapture.ts` | 111 | capture_meeting_outcome, dismiss_meeting_prompt | — |
 | `useProjectDetail` | `useProjectDetail.ts` | 287 | archive_project, create_action, create_project, enrich_project, get_entity_files, get_project_detail, index_entity_files, update_project_field | intelligence-updated |
-| `useRevealObserver` | `useRevealObserver.ts` | 42 | — | — |
+| `useRevealObserver` | `useRevealObserver.ts` | 54 | — | — |
 | `useSuggestedActions` | `useSuggestedActions.ts` | 69 | accept_suggested_action, get_suggested_actions, reject_suggested_action | intelligence-updated, transcript-processed |
 | `useTauriEvent` | `useTauriEvent.ts` | 26 | — | — |
 | `useTeamManagement` | `useTeamManagement.ts` | 310 | accept_stakeholder_suggestion, add_account_team_member, add_stakeholder_role, create_person, dismiss_stakeholder_suggestion, get_stakeholder_suggestions, remove_account_team_member, remove_stakeholder_role, search_people, set_team_member_role, update_stakeholder_assessment, update_stakeholder_engagement | — |
