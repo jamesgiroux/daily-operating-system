@@ -12,7 +12,8 @@
  * human-pinned yet. The role chip editor is the v1.2.1 replacement for the
  * old single-value dropdown that silently wiped AI-surfaced rows.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { StakeholderFull } from "@/types";
 import css from "./StakeholderGrid.module.css";
 
@@ -276,19 +277,44 @@ interface RolePillsProps {
 
 function RolePills({ person, catalog, canEdit, onAddRole, onRemoveRole }: RolePillsProps) {
   const [picking, setPicking] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // Click-outside to dismiss the role picker.
+  // Recompute the menu's viewport-relative position — called when opening
+  // and on scroll while open. Using position: fixed at document.body level
+  // (via portal) puts the menu above every other stacking context, so a
+  // charcoal-tinted parent card can no longer bleed through.
+  const updatePosition = useCallback(() => {
+    const btn = buttonRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    setPos({ top: rect.bottom + 4, left: rect.left });
+  }, []);
+
   useEffect(() => {
     if (!picking) return;
-    function onClick(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPicking(false);
-      }
+    updatePosition();
+    // Close on outside click (covers both the trigger area and the
+    // portaled menu since both refs are checked).
+    function onMouseDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (buttonRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setPicking(false);
     }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [picking]);
+    // Reposition on scroll so the menu follows the trigger — same
+    // behaviour the existing TeamRoleSelector uses.
+    function onScroll() {
+      updatePosition();
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [picking, updatePosition]);
 
   const roles = person.roles ?? [];
   const assigned = new Set(roles.map((r) => r.role.toLowerCase()));
@@ -329,32 +355,46 @@ function RolePills({ person, catalog, canEdit, onAddRole, onRemoveRole }: RolePi
         <span className={`${css.rolePill} ${css.rolePillGap}`}>Needs verification</span>
       ) : null}
       {canEdit && onAddRole && available.length > 0 ? (
-        <div className={css.rolePickerWrap} ref={pickerRef}>
+        <>
           <button
+            ref={buttonRef}
             type="button"
             className={css.rolePillAdd}
-            onClick={() => setPicking((p) => !p)}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setPicking((p) => !p);
+            }}
           >
             + role
           </button>
-          {picking ? (
-            <div className={css.rolePickerMenu}>
-              {available.map((r) => (
-                <button
-                  key={r.value}
-                  type="button"
-                  className={css.rolePickerItem}
-                  onClick={() => {
-                    onAddRole(person.personId, r.value);
-                    setPicking(false);
-                  }}
+          {picking
+            ? createPortal(
+                <div
+                  ref={menuRef}
+                  className={css.rolePickerMenu}
+                  style={{ top: pos.top, left: pos.left }}
                 >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+                  {available.map((r) => (
+                    <button
+                      key={r.value}
+                      type="button"
+                      className={css.rolePickerItem}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onAddRole(person.personId, r.value);
+                        setPicking(false);
+                      }}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>,
+                document.body,
+              )
+            : null}
+        </>
       ) : null}
     </div>
   );
