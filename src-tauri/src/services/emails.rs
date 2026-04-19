@@ -2071,7 +2071,6 @@ mod tests {
     /// in the thread, or for collapse to prefer rows whose entity_id was
     /// last touched by a user_correction.
     #[test]
-    #[ignore = "DOS-229: failing repro — un-ignore when thread-cascade fix lands"]
     fn dos_229_thread_collapse_reverts_user_entity_edit() {
         use std::path::PathBuf;
         let dir = tempfile::tempdir().expect("tempdir");
@@ -2155,7 +2154,6 @@ mod tests {
     /// "sentiment save" symptom lives at the same surface (account/email
     /// view that displays the most-recent thread row's sentiment).
     #[test]
-    #[ignore = "DOS-229: failing repro — un-ignore when thread-cascade fix lands"]
     fn dos_229_thread_collapse_reverts_sentiment_edit() {
         use std::path::PathBuf;
         let dir = tempfile::tempdir().expect("tempdir");
@@ -2201,11 +2199,10 @@ mod tests {
         db.upsert_email(&a).expect("upsert A");
 
         // User edits sentiment on the row they currently see (A is the only one).
-        db.conn_ref()
-            .execute(
-                "UPDATE emails SET sentiment = 'positive', updated_at = ?1 WHERE email_id = ?2",
-                rusqlite::params![chrono::Utc::now().to_rfc3339(), "em-S-A"],
-            )
+        // DOS-229 fix: route the edit through `update_email_sentiment` which
+        // cascades the new value to every unresolved row in the thread, so the
+        // edit survives newer siblings arriving from a silent Gmail poll.
+        db.update_email_sentiment("em-S-A", Some("positive"))
             .expect("update sentiment");
 
         // Silent refresh adds a newer message in the same thread; the
@@ -2224,6 +2221,168 @@ mod tests {
             "DOS-229: user's sentiment edit should survive the silent refresh \
              that adds a newer enriched message; today the newer row's \
              sentiment overwrites what the user sees"
+        );
+    }
+
+    /// DOS-229 — the cascade must be bounded by `thread_id`. Editing one
+    /// thread's entity must NOT touch any row in a different thread, even if
+    /// other threads share the same prior entity. This is the safety bound
+    /// that keeps `update_email_entity` from becoming a global rewrite.
+    #[test]
+    fn dos_229_entity_cascade_is_bounded_by_thread_id() {
+        use std::path::PathBuf;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path: PathBuf = dir.path().join("dos229_bounded_thread.db");
+        let db = crate::db::ActionDb::open_at_unencrypted(path).expect("open db");
+
+        let now = chrono::Utc::now();
+        let earlier = (now - chrono::Duration::minutes(10)).to_rfc3339();
+        let later = now.to_rfc3339();
+
+        let mk = |id: &str, thread: &str, received: &str| crate::db::DbEmail {
+            email_id: id.to_string(),
+            thread_id: Some(thread.to_string()),
+            sender_email: Some("sender@example.com".to_string()),
+            sender_name: Some("Sender".to_string()),
+            subject: Some("Subj".to_string()),
+            snippet: Some("snip".to_string()),
+            priority: Some("medium".to_string()),
+            is_unread: true,
+            received_at: Some(received.to_string()),
+            enrichment_state: "enriched".to_string(),
+            enrichment_attempts: 1,
+            last_enrichment_at: Some(received.to_string()),
+            enriched_at: Some(received.to_string()),
+            last_seen_at: Some(received.to_string()),
+            resolved_at: None,
+            entity_id: Some("acc-old".to_string()),
+            entity_type: Some("account".to_string()),
+            contextual_summary: Some("ctx".to_string()),
+            sentiment: None,
+            urgency: None,
+            user_is_last_sender: false,
+            last_sender_email: Some("sender@example.com".to_string()),
+            message_count: 1,
+            created_at: received.to_string(),
+            updated_at: received.to_string(),
+            relevance_score: Some(0.5),
+            score_reason: None,
+            pinned_at: None,
+            commitments: None,
+            questions: None,
+            is_noise: false,
+        };
+
+        // Thread 1 has two siblings. Thread 2 has one row, both currently
+        // pointing at acc-old.
+        db.upsert_email(&mk("t1-A", "thread-1", &earlier))
+            .expect("upsert t1-A");
+        db.upsert_email(&mk("t1-B", "thread-1", &later))
+            .expect("upsert t1-B");
+        db.upsert_email(&mk("t2-X", "thread-2", &later))
+            .expect("upsert t2-X");
+
+        // User reassigns thread 1 to acc-new.
+        db.update_email_entity("t1-B", Some("acc-new"), Some("account"))
+            .expect("update entity on thread-1 row");
+
+        let row_entity = |email_id: &str| -> Option<String> {
+            db.conn_ref()
+                .query_row(
+                    "SELECT entity_id FROM emails WHERE email_id = ?1",
+                    rusqlite::params![email_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .expect("read entity")
+        };
+
+        // Both thread-1 rows must move to acc-new.
+        assert_eq!(row_entity("t1-A").as_deref(), Some("acc-new"));
+        assert_eq!(row_entity("t1-B").as_deref(), Some("acc-new"));
+        // The thread-2 row must be untouched.
+        assert_eq!(
+            row_entity("t2-X").as_deref(),
+            Some("acc-old"),
+            "DOS-229: cascade must be bounded by thread_id; editing one \
+             thread should not bleed into other threads"
+        );
+    }
+
+    /// DOS-229 — the cascade must be bounded by `resolved_at IS NULL`.
+    /// Archived rows in the same thread keep their historical entity so that
+    /// the past correctly reflects what was true when the user archived them.
+    #[test]
+    fn dos_229_entity_cascade_skips_resolved_rows() {
+        use std::path::PathBuf;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path: PathBuf = dir.path().join("dos229_bounded_resolved.db");
+        let db = crate::db::ActionDb::open_at_unencrypted(path).expect("open db");
+
+        let now = chrono::Utc::now();
+        let earlier = (now - chrono::Duration::minutes(10)).to_rfc3339();
+        let later = now.to_rfc3339();
+
+        let mk = |id: &str, received: &str, resolved: Option<&str>| crate::db::DbEmail {
+            email_id: id.to_string(),
+            thread_id: Some("thread-mixed".to_string()),
+            sender_email: Some("sender@example.com".to_string()),
+            sender_name: Some("Sender".to_string()),
+            subject: Some("Subj".to_string()),
+            snippet: Some("snip".to_string()),
+            priority: Some("medium".to_string()),
+            is_unread: true,
+            received_at: Some(received.to_string()),
+            enrichment_state: "enriched".to_string(),
+            enrichment_attempts: 1,
+            last_enrichment_at: Some(received.to_string()),
+            enriched_at: Some(received.to_string()),
+            last_seen_at: Some(received.to_string()),
+            resolved_at: resolved.map(|s| s.to_string()),
+            entity_id: Some("acc-old".to_string()),
+            entity_type: Some("account".to_string()),
+            contextual_summary: Some("ctx".to_string()),
+            sentiment: None,
+            urgency: None,
+            user_is_last_sender: false,
+            last_sender_email: Some("sender@example.com".to_string()),
+            message_count: 1,
+            created_at: received.to_string(),
+            updated_at: received.to_string(),
+            relevance_score: Some(0.5),
+            score_reason: None,
+            pinned_at: None,
+            commitments: None,
+            questions: None,
+            is_noise: false,
+        };
+
+        // Resolved historical row + active row in the same thread.
+        let resolved_at = (now - chrono::Duration::minutes(5)).to_rfc3339();
+        db.upsert_email(&mk("archived", &earlier, Some(&resolved_at)))
+            .expect("upsert archived");
+        db.upsert_email(&mk("active", &later, None))
+            .expect("upsert active");
+
+        // User reassigns the active row.
+        db.update_email_entity("active", Some("acc-new"), Some("account"))
+            .expect("update entity on active row");
+
+        let row_entity = |email_id: &str| -> Option<String> {
+            db.conn_ref()
+                .query_row(
+                    "SELECT entity_id FROM emails WHERE email_id = ?1",
+                    rusqlite::params![email_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .expect("read entity")
+        };
+
+        assert_eq!(row_entity("active").as_deref(), Some("acc-new"));
+        assert_eq!(
+            row_entity("archived").as_deref(),
+            Some("acc-old"),
+            "DOS-229: archived rows in the same thread must keep their \
+             historical entity_id; cascade is bounded by resolved_at IS NULL"
         );
     }
 
