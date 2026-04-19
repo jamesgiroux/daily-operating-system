@@ -15,68 +15,174 @@ impl ActionDb {
 
     /// Insert or update an email record. Sets `last_seen_at` to now on every upsert.
     /// Preserves existing `enriched_at` timestamp if present, does not overwrite.
+    ///
+    /// DOS-229: After the per-row INSERT/UPDATE, this method also syncs the
+    /// row's `entity_id` / `entity_type` / `sentiment` to whatever any other
+    /// unresolved sibling in the same `thread_id` already has. The inbox is
+    /// thread-collapsed by `received_at`, so a brand-new sibling carrying the
+    /// auto-classifier's defaults would otherwise overwrite (visually) the
+    /// user's prior correction on an older sibling. Forward propagation
+    /// (correction-time cascade) lives in `update_email_entity` /
+    /// `update_email_sentiment`; this is the backward propagation that catches
+    /// the new arrival.
+    ///
+    /// Bounded by `resolved_at IS NULL` so archived siblings never participate
+    /// — their entity/sentiment is historical and should not influence
+    /// classification of newly arrived rows.
+    ///
+    /// Wrapped in `with_transaction` so the per-row write + sibling sync
+    /// commit atomically; a partial commit would leave the new row with stale
+    /// auto-classifier values that the user would then see as a revert.
     pub fn upsert_email(&self, email: &DbEmail) -> Result<(), String> {
-        let now = Utc::now().to_rfc3339();
-        self.conn
-            .execute(
-                "INSERT INTO emails (
-                    email_id, thread_id, sender_email, sender_name, subject, snippet,
-                    priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                    last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
-                    contextual_summary, sentiment, urgency, user_is_last_sender,
-                    last_sender_email, message_count, created_at, updated_at, is_noise
-                 ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                    ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
-                 )
-                 ON CONFLICT(email_id) DO UPDATE SET
-                    thread_id = excluded.thread_id,
-                    sender_email = excluded.sender_email,
-                    sender_name = excluded.sender_name,
-                    subject = excluded.subject,
-                    snippet = excluded.snippet,
-                    priority = excluded.priority,
-                    is_unread = excluded.is_unread,
-                    received_at = excluded.received_at,
-                    last_seen_at = excluded.last_seen_at,
-                    user_is_last_sender = excluded.user_is_last_sender,
-                    last_sender_email = excluded.last_sender_email,
-                    message_count = excluded.message_count,
-                    updated_at = excluded.updated_at,
-                    -- DOS-242: never silently re-noise an email the user has rescued.
-                    -- Once is_noise is cleared (via unsuppress_email), keep it cleared.
-                    is_noise = MIN(emails.is_noise, excluded.is_noise)",
-                params![
-                    email.email_id,
-                    email.thread_id,
-                    email.sender_email,
-                    email.sender_name,
-                    email.subject,
-                    email.snippet,
-                    email.priority,
-                    email.is_unread as i32,
-                    email.received_at,
-                    email.enrichment_state,
-                    email.enrichment_attempts,
-                    email.last_enrichment_at,
-                    email.enriched_at,
-                    now,
-                    email.resolved_at,
-                    email.entity_id,
-                    email.entity_type,
-                    email.contextual_summary,
-                    email.sentiment,
-                    email.urgency,
-                    email.user_is_last_sender as i32,
-                    email.last_sender_email,
-                    email.message_count,
-                    now,
-                    now,
-                    email.is_noise as i32,
-                ],
-            )
-            .map_err(|e| format!("Failed to upsert email {}: {e}", email.email_id))?;
-        Ok(())
+        self.with_transaction(|tx| {
+            let now = Utc::now().to_rfc3339();
+            tx.conn
+                .execute(
+                    "INSERT INTO emails (
+                        email_id, thread_id, sender_email, sender_name, subject, snippet,
+                        priority, is_unread, received_at, enrichment_state, enrichment_attempts,
+                        last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
+                        contextual_summary, sentiment, urgency, user_is_last_sender,
+                        last_sender_email, message_count, created_at, updated_at, is_noise
+                     ) VALUES (
+                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+                        ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
+                     )
+                     ON CONFLICT(email_id) DO UPDATE SET
+                        thread_id = excluded.thread_id,
+                        sender_email = excluded.sender_email,
+                        sender_name = excluded.sender_name,
+                        subject = excluded.subject,
+                        snippet = excluded.snippet,
+                        priority = excluded.priority,
+                        is_unread = excluded.is_unread,
+                        received_at = excluded.received_at,
+                        last_seen_at = excluded.last_seen_at,
+                        user_is_last_sender = excluded.user_is_last_sender,
+                        last_sender_email = excluded.last_sender_email,
+                        message_count = excluded.message_count,
+                        updated_at = excluded.updated_at,
+                        -- DOS-242: never silently re-noise an email the user has rescued.
+                        -- Once is_noise is cleared (via unsuppress_email), keep it cleared.
+                        is_noise = MIN(emails.is_noise, excluded.is_noise)",
+                    params![
+                        email.email_id,
+                        email.thread_id,
+                        email.sender_email,
+                        email.sender_name,
+                        email.subject,
+                        email.snippet,
+                        email.priority,
+                        email.is_unread as i32,
+                        email.received_at,
+                        email.enrichment_state,
+                        email.enrichment_attempts,
+                        email.last_enrichment_at,
+                        email.enriched_at,
+                        now,
+                        email.resolved_at,
+                        email.entity_id,
+                        email.entity_type,
+                        email.contextual_summary,
+                        email.sentiment,
+                        email.urgency,
+                        email.user_is_last_sender as i32,
+                        email.last_sender_email,
+                        email.message_count,
+                        now,
+                        now,
+                        email.is_noise as i32,
+                    ],
+                )
+                .map_err(|e| format!("Failed to upsert email {}: {e}", email.email_id))?;
+
+            // DOS-229: backward thread-cascade. If any other unresolved sibling
+            // in the same thread differs on entity_id / entity_type / sentiment,
+            // adopt the sibling's most-recently-updated value. This is what
+            // catches a freshly polled message that arrived AFTER a user
+            // correction on an older sibling.
+            //
+            // Skipped when this row itself is resolved (archived) — a row
+            // arriving already-resolved should not be retroactively
+            // re-classified — and when the row has no thread_id (singleton).
+            if email.resolved_at.is_none() {
+                if let Some(thread_id) = email.thread_id.as_deref().filter(|t| !t.trim().is_empty()) {
+                    // Pick the most-recently-updated unresolved sibling that
+                    // has a non-null entity_id (preferring user corrections,
+                    // which always bump updated_at).
+                    let sibling_entity: Option<(Option<String>, Option<String>)> = tx
+                        .conn
+                        .query_row(
+                            "SELECT entity_id, entity_type FROM emails
+                             WHERE thread_id = ?1
+                               AND email_id != ?2
+                               AND resolved_at IS NULL
+                               AND entity_id IS NOT NULL
+                             ORDER BY updated_at DESC
+                             LIMIT 1",
+                            params![thread_id, email.email_id],
+                            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
+                        )
+                        .ok();
+
+                    if let Some((sib_entity_id, sib_entity_type)) = sibling_entity {
+                        tx.conn
+                            .execute(
+                                "UPDATE emails SET entity_id = ?1, entity_type = ?2, updated_at = ?3
+                                 WHERE email_id = ?4
+                                   AND resolved_at IS NULL
+                                   AND (entity_id IS NOT ?1 OR entity_type IS NOT ?2)",
+                                params![sib_entity_id, sib_entity_type, now, email.email_id],
+                            )
+                            .map_err(|e| {
+                                format!(
+                                    "Failed to inherit thread entity for {}: {e}",
+                                    email.email_id
+                                )
+                            })?;
+                    }
+
+                    // Same backward cascade for sentiment. Distinct from entity
+                    // because sentiment can legitimately be NULL on a row
+                    // (un-enriched), and we only want to inherit a non-null
+                    // sibling value.
+                    let sibling_sentiment: Option<String> = tx
+                        .conn
+                        .query_row(
+                            "SELECT sentiment FROM emails
+                             WHERE thread_id = ?1
+                               AND email_id != ?2
+                               AND resolved_at IS NULL
+                               AND sentiment IS NOT NULL
+                             ORDER BY updated_at DESC
+                             LIMIT 1",
+                            params![thread_id, email.email_id],
+                            |row| row.get::<_, Option<String>>(0),
+                        )
+                        .ok()
+                        .flatten();
+
+                    if let Some(sib_sentiment) = sibling_sentiment {
+                        tx.conn
+                            .execute(
+                                "UPDATE emails SET sentiment = ?1, updated_at = ?2
+                                 WHERE email_id = ?3
+                                   AND resolved_at IS NULL
+                                   AND sentiment IS NOT ?1",
+                                params![sib_sentiment, now, email.email_id],
+                            )
+                            .map_err(|e| {
+                                format!(
+                                    "Failed to inherit thread sentiment for {}: {e}",
+                                    email.email_id
+                                )
+                            })?;
+                    }
+                }
+            }
+
+            Ok(())
+        })
     }
 
     /// DOS-242 rescue: clear the noise flag on an email so it surfaces again in
@@ -425,56 +531,193 @@ impl ActionDb {
     /// Update the entity assignment for an email (I395 — user correction).
     /// Also cascades the change to `email_signals`: moves signals to the new entity,
     /// or deactivates them if entity_id is cleared.
+    ///
+    /// DOS-229: Cascades the entity assignment to every UNRESOLVED row in the
+    /// same `thread_id`. The inbox UI is thread-collapsed (see
+    /// `services::emails::collapse_to_latest_thread_emails`) and picks the row
+    /// with the newest `received_at` as the visible representative. Without
+    /// this cascade, a user-correction on the visible row was hidden as soon
+    /// as a newer sibling arrived (silent Gmail poll) — the auto-classified
+    /// `entity_id` on the new row would win the collapse and look like the
+    /// edit had reverted. Mirrors `archive_email`'s thread-wide approach.
+    ///
+    /// Resolved (archived) rows are intentionally left alone so they keep
+    /// the entity that was correct at the time they were archived.
+    ///
+    /// All writes (per-row entity update + per-row signal cascade) run in a
+    /// single transaction so a partial cascade can't leave the thread in
+    /// inconsistent state.
     pub fn update_email_entity(
         &self,
         email_id: &str,
         entity_id: Option<&str>,
         entity_type: Option<&str>,
     ) -> Result<(), String> {
-        let now = chrono::Utc::now().to_rfc3339();
-        self.conn
-            .execute(
-                "UPDATE emails SET entity_id = ?1, entity_type = ?2, updated_at = ?3 WHERE email_id = ?4",
-                rusqlite::params![entity_id, entity_type, now, email_id],
-            )
-            .map_err(|e| format!("Failed to update email entity for {email_id}: {e}"))?;
+        self.with_transaction(|tx| {
+            let now = chrono::Utc::now().to_rfc3339();
 
-        // Cascade to email_signals
-        match entity_id {
-            Some(new_entity_id) => {
-                // Move signals to the new entity. UPDATE OR IGNORE skips rows that
-                // would violate the unique constraint (email_id, entity_id, signal_type).
-                self.conn
+            // Collect the full set of rows to update: the email itself plus
+            // every other unresolved row sharing its thread_id. We resolve
+            // this up front so the signal cascade below can iterate the same
+            // set without reading from a half-mutated table.
+            let thread_id: Option<String> = tx
+                .conn
+                .query_row(
+                    "SELECT thread_id FROM emails WHERE email_id = ?1",
+                    rusqlite::params![email_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| format!("Failed to load thread for {email_id}: {e}"))?;
+
+            let cascade_ids: Vec<String> = match thread_id
+                .as_deref()
+                .filter(|id| !id.trim().is_empty())
+            {
+                Some(tid) => {
+                    let mut stmt = tx
+                        .conn
+                        .prepare(
+                            "SELECT email_id FROM emails
+                             WHERE (email_id = ?1 OR thread_id = ?2)
+                               AND resolved_at IS NULL",
+                        )
+                        .map_err(|e| {
+                            format!("Failed to prepare thread cascade query for {email_id}: {e}")
+                        })?;
+                    let rows = stmt
+                        .query_map(rusqlite::params![email_id, tid], |row| {
+                            row.get::<_, String>(0)
+                        })
+                        .map_err(|e| {
+                            format!("Failed to query thread cascade ids for {email_id}: {e}")
+                        })?;
+                    let mut ids = Vec::new();
+                    for r in rows {
+                        ids.push(r.map_err(|e| {
+                            format!("Failed to read cascade id row for {email_id}: {e}")
+                        })?);
+                    }
+                    if ids.is_empty() {
+                        vec![email_id.to_string()]
+                    } else {
+                        ids
+                    }
+                }
+                None => vec![email_id.to_string()],
+            };
+
+            // DOS-229: cascade the entity assignment to every unresolved row in
+            // the thread. Bounded by `resolved_at IS NULL` so archived rows
+            // keep their historical entity.
+            tx.conn
+                .execute(
+                    "UPDATE emails SET entity_id = ?1, entity_type = ?2, updated_at = ?3
+                     WHERE email_id = ?4 AND resolved_at IS NULL",
+                    rusqlite::params![entity_id, entity_type, now, email_id],
+                )
+                .map_err(|e| format!("Failed to update email entity for {email_id}: {e}"))?;
+
+            for sibling_id in cascade_ids.iter().filter(|id| id.as_str() != email_id) {
+                tx.conn
                     .execute(
-                        "UPDATE OR IGNORE email_signals SET entity_id = ?1, entity_type = COALESCE(?2, entity_type)
-                         WHERE email_id = ?3 AND entity_id != ?1 AND deactivated_at IS NULL",
-                        rusqlite::params![new_entity_id, entity_type, email_id],
-                    )
-                    .map_err(|e| format!("Failed to move email signals for {email_id}: {e}"))?;
-                // Delete any constraint-blocked duplicates that couldn't move
-                self.conn
-                    .execute(
-                        "DELETE FROM email_signals
-                         WHERE email_id = ?1 AND entity_id != ?2 AND deactivated_at IS NULL",
-                        rusqlite::params![email_id, new_entity_id],
+                        "UPDATE emails SET entity_id = ?1, entity_type = ?2, updated_at = ?3
+                         WHERE email_id = ?4 AND resolved_at IS NULL",
+                        rusqlite::params![entity_id, entity_type, now, sibling_id],
                     )
                     .map_err(|e| {
-                        format!("Failed to clean duplicate signals for {email_id}: {e}")
+                        format!("Failed to cascade email entity to thread sibling {sibling_id}: {e}")
                     })?;
             }
-            None => {
-                // Entity cleared — deactivate signals instead of deleting
-                self.conn
-                    .execute(
-                        "UPDATE email_signals SET deactivated_at = ?1
-                         WHERE email_id = ?2 AND deactivated_at IS NULL",
-                        rusqlite::params![now, email_id],
-                    )
-                    .map_err(|e| format!("Failed to deactivate signals for {email_id}: {e}"))?;
-            }
-        }
 
-        Ok(())
+            // Cascade to email_signals for every row in the thread set so the
+            // signal store agrees with the new entity assignment everywhere.
+            for cascade_email_id in &cascade_ids {
+                match entity_id {
+                    Some(new_entity_id) => {
+                        // Move signals to the new entity. UPDATE OR IGNORE skips
+                        // rows that would violate the unique constraint
+                        // (email_id, entity_id, signal_type).
+                        tx.conn
+                            .execute(
+                                "UPDATE OR IGNORE email_signals SET entity_id = ?1, entity_type = COALESCE(?2, entity_type)
+                                 WHERE email_id = ?3 AND entity_id != ?1 AND deactivated_at IS NULL",
+                                rusqlite::params![new_entity_id, entity_type, cascade_email_id],
+                            )
+                            .map_err(|e| format!("Failed to move email signals for {cascade_email_id}: {e}"))?;
+                        // Delete any constraint-blocked duplicates that couldn't move
+                        tx.conn
+                            .execute(
+                                "DELETE FROM email_signals
+                                 WHERE email_id = ?1 AND entity_id != ?2 AND deactivated_at IS NULL",
+                                rusqlite::params![cascade_email_id, new_entity_id],
+                            )
+                            .map_err(|e| {
+                                format!("Failed to clean duplicate signals for {cascade_email_id}: {e}")
+                            })?;
+                    }
+                    None => {
+                        // Entity cleared — deactivate signals instead of deleting
+                        tx.conn
+                            .execute(
+                                "UPDATE email_signals SET deactivated_at = ?1
+                                 WHERE email_id = ?2 AND deactivated_at IS NULL",
+                                rusqlite::params![now, cascade_email_id],
+                            )
+                            .map_err(|e| format!("Failed to deactivate signals for {cascade_email_id}: {e}"))?;
+                    }
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    /// DOS-229: Update the sentiment of an email and cascade the same value to
+    /// every unresolved row in the thread. See `update_email_entity` for the
+    /// thread-collapse rationale — the same reversion pattern applies to
+    /// sentiment, which is also a per-row column read through the
+    /// thread-collapsed inbox view.
+    pub fn update_email_sentiment(
+        &self,
+        email_id: &str,
+        sentiment: Option<&str>,
+    ) -> Result<(), String> {
+        self.with_transaction(|tx| {
+            let now = chrono::Utc::now().to_rfc3339();
+
+            let thread_id: Option<String> = tx
+                .conn
+                .query_row(
+                    "SELECT thread_id FROM emails WHERE email_id = ?1",
+                    rusqlite::params![email_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| format!("Failed to load thread for {email_id}: {e}"))?;
+
+            match thread_id.as_deref().filter(|id| !id.trim().is_empty()) {
+                Some(tid) => {
+                    tx.conn
+                        .execute(
+                            "UPDATE emails SET sentiment = ?1, updated_at = ?2
+                             WHERE (email_id = ?3 OR thread_id = ?4)
+                               AND resolved_at IS NULL",
+                            rusqlite::params![sentiment, now, email_id, tid],
+                        )
+                        .map_err(|e| format!("Failed to cascade sentiment for {email_id}: {e}"))?;
+                }
+                None => {
+                    tx.conn
+                        .execute(
+                            "UPDATE emails SET sentiment = ?1, updated_at = ?2
+                             WHERE email_id = ?3 AND resolved_at IS NULL",
+                            rusqlite::params![sentiment, now, email_id],
+                        )
+                        .map_err(|e| format!("Failed to update sentiment for {email_id}: {e}"))?;
+                }
+            }
+
+            Ok(())
+        })
     }
 
     /// Mark an email as replied to by the user (I577 reply debt).
