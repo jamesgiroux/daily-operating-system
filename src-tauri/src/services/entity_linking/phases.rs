@@ -2,7 +2,7 @@
 
 use crate::db::ActionDb;
 
-use super::types::{LinkRole, LinkingContext, LinkOutcome, LinkTier, RuleOutcome};
+use super::types::{LinkRole, LinkingContext, LinkOutcome, LinkTier, RuleOutcome, Trigger};
 use super::{cascade, evidence, rules};
 
 pub trait Rule: Send + Sync {
@@ -17,45 +17,69 @@ pub trait Rule: Send + Sync {
 const BROADCAST_ATTENDEE_THRESHOLD: usize = 50;
 const BROADCAST_RECIPIENT_THRESHOLD: usize = 20;
 
-enum Suppression {
-    None,
-    /// S1: declined / suppressed. No facts written.
-    S1Declined,
-    /// S2: broadcast / all-hands. Facts written, no primary.
-    S2Broadcast,
-}
+/// Check Phase 1 suppression conditions.
+///
+/// Returns `Ok(Some(outcome))` if the owner is suppressed and evaluation must
+/// stop. Returns `Ok(None)` to continue to Phase 2+. This is called by
+/// `evaluate()` BEFORE Phase 2 (person-stub creation) so that declined/self
+/// meetings don't generate person rows.
+pub fn phase1_suppress(
+    ctx: &LinkingContext,
+    db: &ActionDb,
+    trigger: Trigger,
+) -> Result<Option<LinkOutcome>, String> {
+    // S1: self-meeting (single attendee) — no facts, no primary.
+    let s1 = ctx.attendee_count <= 1 && ctx.participants.len() <= 1;
 
-fn phase1(ctx: &LinkingContext) -> Suppression {
-    // S1: self-meeting (1 attendee) treated as suppressed.
-    if ctx.attendee_count <= 1 && ctx.participants.len() <= 1 {
-        return Suppression::S1Declined;
-    }
-    // S2: large all-hands or broadcast email
-    if ctx.attendee_count >= BROADCAST_ATTENDEE_THRESHOLD {
-        return Suppression::S2Broadcast;
-    }
-    // Broadcast email: many recipients, all To/CC (no personalized direct recipient)
-    if ctx.owner.owner_type == super::types::OwnerType::Email
-        && ctx.attendee_count >= BROADCAST_RECIPIENT_THRESHOLD
-    {
-        return Suppression::S2Broadcast;
-    }
-    Suppression::None
+    // S2: all-hands / broadcast — facts still written in Phase 2 by caller,
+    // but no primary. Caller decides whether to run Phase 2 after this check.
+    let s2 = ctx.attendee_count >= BROADCAST_ATTENDEE_THRESHOLD
+        || (ctx.owner.owner_type == super::types::OwnerType::Email
+            && ctx.attendee_count >= BROADCAST_RECIPIENT_THRESHOLD);
+
+    let (rule_id, tier) = if s1 {
+        ("S1", LinkTier::Skip)
+    } else if s2 {
+        ("S2", LinkTier::Skip)
+    } else {
+        return Ok(None);
+    };
+
+    let ev = evidence::suppress_evidence(ctx, rule_id);
+    let _ = db.insert_linking_evaluation(&crate::db::entity_linking::LinkingEvaluationWrite {
+        owner_type: ctx.owner.owner_type.as_str(),
+        owner_id: &ctx.owner.owner_id,
+        trigger: trigger.as_str(),
+        rule_id: Some(rule_id),
+        entity_id: None,
+        entity_type: None,
+        role: None,
+        graph_version: ctx.graph_version,
+        evidence_json: &ev.to_string(),
+    });
+
+    Ok(Some(LinkOutcome {
+        owner: ctx.owner.clone(),
+        primary: None,
+        related: vec![],
+        tier,
+        applied_rule: Some(rule_id.to_string()),
+    }))
 }
 
 // ---------------------------------------------------------------------------
 // Phase 2 — Record facts (person stub creation)
 // ---------------------------------------------------------------------------
 
-/// Create person stubs for all participants that don't have person_id set yet.
-/// This runs BEFORE the write transaction so find_or_create_person can acquire
-/// its own transaction without deadlocking.
+/// Create person stubs for participants that don't yet have person_id set.
+///
+/// Each call to find_or_create_person uses its own internal transaction.
+/// This runs BEFORE the phase-3 write transaction.
 pub fn phase2_record_facts(ctx: &mut LinkingContext, db: &ActionDb, user_domains: &[String]) {
     for p in &mut ctx.participants {
         if p.person_id.is_some() {
             continue;
         }
-        // Determine relationship: internal people are peers, external are contacts.
         let is_internal = user_domains
             .iter()
             .any(|ud| p.email.to_lowercase().ends_with(&format!("@{}", ud.to_lowercase())));
@@ -95,16 +119,14 @@ struct Phase3Result {
 }
 
 fn phase3(ctx: &LinkingContext, db: &ActionDb) -> Phase3Result {
-    // First pass: detect if any P4 domain rule fires (needed for P5 context).
     let p4_entity_id = run_p4_probe(ctx, db);
-
     let rule_list = rules::ordered_rules(p4_entity_id);
     let mut related: Vec<super::types::Candidate> = Vec::new();
 
     for rule in &rule_list {
         match rule.evaluate(ctx, db) {
             RuleOutcome::Matched(candidate) => {
-                // P8/P11 sentinels (empty entity_id) mean "no primary" explicitly.
+                // P8/P11 sentinels (empty entity_id) → explicit no-primary.
                 if rules::is_no_primary_sentinel(&candidate) {
                     return Phase3Result {
                         primary_candidate: None,
@@ -112,11 +134,21 @@ fn phase3(ctx: &LinkingContext, db: &ActionDb) -> Phase3Result {
                         applied_rule: Some(candidate.rule_id),
                     };
                 }
+
+                // P10 returns AutoSuggested — write as related chip, not primary.
+                // Continue to next rule so a real primary can still be found.
+                if candidate.role == LinkRole::AutoSuggested {
+                    related.push(candidate);
+                    continue;
+                }
+
                 // P5 may return role=Related when blocked by domain conflict.
                 if candidate.role == LinkRole::Related {
                     related.push(candidate);
                     continue;
                 }
+
+                // First Matched with role=Primary terminates Phase 3.
                 return Phase3Result {
                     primary_candidate: Some(candidate),
                     related_candidates: related,
@@ -134,10 +166,11 @@ fn phase3(ctx: &LinkingContext, db: &ActionDb) -> Phase3Result {
     }
 }
 
-/// Run only the P4 rules to detect a domain-evidence entity for P5's context.
-/// Returns the entity_id if a P4 rule fires, otherwise None.
 fn run_p4_probe(ctx: &LinkingContext, db: &ActionDb) -> Option<String> {
-    use rules::{p4a_one_on_one::P4aOneOnOne, p4b_group_shared::P4bGroupShared, p4c_sender_domain::P4cSenderDomain};
+    use rules::{
+        p4a_one_on_one::P4aOneOnOne, p4b_group_shared::P4bGroupShared,
+        p4c_sender_domain::P4cSenderDomain,
+    };
     for rule in [
         &P4aOneOnOne as &dyn Rule,
         &P4bGroupShared,
@@ -153,87 +186,36 @@ fn run_p4_probe(ctx: &LinkingContext, db: &ActionDb) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Full four-phase runner
+// Full phase-3 + phase-4 runner
 // ---------------------------------------------------------------------------
 
-/// Run all four phases and return the link outcome.
+/// Run phases 3 and 4 inside the write transaction.
 ///
 /// Phase 2 person-stub creation must already have been done by the caller
-/// (via `phase2_record_facts`) so that `ctx.participants[*].person_id` is
-/// populated before we enter the write transaction.
+/// before entering this function.
 pub fn run_phases(ctx: &LinkingContext, db: &ActionDb) -> Result<LinkOutcome, String> {
-    // --- Phase 1 ---
-    let suppression = phase1(ctx);
-    match suppression {
-        Suppression::S1Declined => {
-            let ev = evidence::suppress_evidence(ctx, "S1_declined");
-            let _ = db.insert_linking_evaluation(&crate::db::entity_linking::LinkingEvaluationWrite {
-                owner_type: ctx.owner.owner_type.as_str(),
-                owner_id: &ctx.owner.owner_id,
-                trigger: "suppress",
-                rule_id: Some("S1"),
-                entity_id: None,
-                entity_type: None,
-                role: None,
-                graph_version: ctx.graph_version,
-                evidence_json: &ev.to_string(),
-            });
-            return Ok(LinkOutcome {
-                owner: ctx.owner.clone(),
-                primary: None,
-                related: vec![],
-                tier: LinkTier::Skip,
-                applied_rule: Some("S1".to_string()),
-            });
-        }
-        Suppression::S2Broadcast => {
-            // Phase 2 still runs for broadcasts (facts written), but no primary.
-            // (Phase 2 already ran before this call.)
-            let ev = evidence::suppress_evidence(ctx, "S2_broadcast");
-            let _ = db.insert_linking_evaluation(&crate::db::entity_linking::LinkingEvaluationWrite {
-                owner_type: ctx.owner.owner_type.as_str(),
-                owner_id: &ctx.owner.owner_id,
-                trigger: "suppress",
-                rule_id: Some("S2"),
-                entity_id: None,
-                entity_type: None,
-                role: None,
-                graph_version: ctx.graph_version,
-                evidence_json: &ev.to_string(),
-            });
-            return Ok(LinkOutcome {
-                owner: ctx.owner.clone(),
-                primary: None,
-                related: vec![],
-                tier: LinkTier::Skip,
-                applied_rule: Some("S2".to_string()),
-            });
-        }
-        Suppression::None => {}
-    }
-
-    // --- Phase 3 (inside write transaction) ---
-    let phase3_result = db.with_transaction(|_conn| {
-        // Re-read graph version inside transaction to detect stale context.
-        // (A full retry loop is a TODO; for now we proceed with a warning.)
+    let phase3_result = db.with_transaction(|_| {
+        // Re-read graph version inside the transaction. Log a warning if it
+        // changed since ctx was built; proceed rather than retry for now
+        // (TODO: implement the single-retry loop specified in DOS-258).
         if let Ok(current_version) = db.get_entity_graph_version() {
             if current_version != ctx.graph_version {
                 log::warn!(
                     "entity_linking: graph version changed during evaluation \
-                     ({} → {}); proceeding with stale context",
-                    ctx.graph_version, current_version
+                     ({} → {}); proceeding with stale context (retry TODO)",
+                    ctx.graph_version,
+                    current_version
                 );
             }
         }
 
-        // Read dismissals.
         let dismissals = db
             .get_linking_dismissals(ctx.owner.owner_type.as_str(), &ctx.owner.owner_id)
-            .unwrap_or_default();
+            .map_err(|e| format!("get_linking_dismissals: {e}"))?;
 
         let mut p3 = phase3(ctx, db);
 
-        // Suppress primary if it was dismissed by the user.
+        // Suppress primary if user has dismissed it.
         if let Some(ref primary) = p3.primary_candidate {
             let dismissed = dismissals.iter().any(|(eid, etype)| {
                 eid == &primary.entity.entity_id && etype == &primary.entity.entity_type
@@ -243,16 +225,15 @@ pub fn run_phases(ctx: &LinkingContext, db: &ActionDb) -> Result<LinkOutcome, St
             }
         }
 
-        // --- Delete old auto links for this owner ---
-        let _ = db.delete_auto_links_for_owner(
-            ctx.owner.owner_type.as_str(),
-            &ctx.owner.owner_id,
-        );
+        // Delete old auto-resolution rows. Preserves source='user' and
+        // source='user_dismissed' so user overrides and dismissals survive.
+        db.delete_auto_links_for_owner(ctx.owner.owner_type.as_str(), &ctx.owner.owner_id)
+            .map_err(|e| format!("delete_auto_links: {e}"))?;
 
-        // --- Write primary ---
+        // Write primary.
         if let Some(ref primary) = p3.primary_candidate {
             let source = format!("rule:{}", primary.rule_id);
-            let _ = db.upsert_linked_entity_raw(&crate::db::entity_linking::LinkedEntityRawWrite {
+            db.upsert_linked_entity_raw(&crate::db::entity_linking::LinkedEntityRawWrite {
                 owner_type: ctx.owner.owner_type.as_str().to_string(),
                 owner_id: ctx.owner.owner_id.clone(),
                 entity_id: primary.entity.entity_id.clone(),
@@ -263,13 +244,14 @@ pub fn run_phases(ctx: &LinkingContext, db: &ActionDb) -> Result<LinkOutcome, St
                 confidence: Some(primary.confidence),
                 evidence_json: Some(primary.evidence.to_string()),
                 graph_version: ctx.graph_version,
-            });
+            })
+            .map_err(|e| format!("upsert primary: {e}"))?;
         }
 
-        // --- Write related chips ---
+        // Write related chips.
         for related in &p3.related_candidates {
             let source = format!("rule:{}", related.rule_id);
-            let _ = db.upsert_linked_entity_raw(&crate::db::entity_linking::LinkedEntityRawWrite {
+            db.upsert_linked_entity_raw(&crate::db::entity_linking::LinkedEntityRawWrite {
                 owner_type: ctx.owner.owner_type.as_str().to_string(),
                 owner_id: ctx.owner.owner_id.clone(),
                 entity_id: related.entity.entity_id.clone(),
@@ -280,10 +262,11 @@ pub fn run_phases(ctx: &LinkingContext, db: &ActionDb) -> Result<LinkOutcome, St
                 confidence: Some(related.confidence),
                 evidence_json: Some(related.evidence.to_string()),
                 graph_version: ctx.graph_version,
-            });
+            })
+            .map_err(|e| format!("upsert related: {e}"))?;
         }
 
-        // --- Append evaluation record ---
+        // Append evaluation record.
         let primary_ref = p3.primary_candidate.as_ref();
         let rule_id = p3
             .applied_rule
@@ -292,7 +275,7 @@ pub fn run_phases(ctx: &LinkingContext, db: &ActionDb) -> Result<LinkOutcome, St
         let ev_json = primary_ref
             .map(|c| c.evidence.to_string())
             .unwrap_or_else(|| "{}".to_string());
-        let _ = db.insert_linking_evaluation(&crate::db::entity_linking::LinkingEvaluationWrite {
+        db.insert_linking_evaluation(&crate::db::entity_linking::LinkingEvaluationWrite {
             owner_type: ctx.owner.owner_type.as_str(),
             owner_id: &ctx.owner.owner_id,
             trigger: "evaluate",
@@ -302,13 +285,17 @@ pub fn run_phases(ctx: &LinkingContext, db: &ActionDb) -> Result<LinkOutcome, St
             role: primary_ref.map(|c| c.role.as_str()),
             graph_version: ctx.graph_version,
             evidence_json: &ev_json,
-        });
+        })
+        .map_err(|e| format!("insert_linking_evaluation: {e}"))?;
 
         Ok(p3)
     })?;
 
-    // --- Phase 4 (cascade, runs after transaction commits) ---
-    let outcome = cascade::run_cascade(ctx, &phase3_result.primary_candidate, &phase3_result.related_candidates, db)?;
-
-    Ok(outcome)
+    // Phase 4 (cascade) runs after the write transaction commits.
+    cascade::run_cascade(
+        ctx,
+        &phase3_result.primary_candidate,
+        &phase3_result.related_candidates,
+        db,
+    )
 }

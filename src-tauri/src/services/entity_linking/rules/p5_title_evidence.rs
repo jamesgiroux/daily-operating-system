@@ -25,6 +25,12 @@ impl super::super::phases::Rule for P5TitleEvidence {
     fn id(&self) -> &'static str { "P5" }
 
     fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
+        // AC#1: P5 must not fire for 1:1 internal × internal meetings.
+        // P6 handles that shape; P5 title evidence would steal the account match.
+        if ctx.is_one_on_one() && ctx.internal_participants().count() == 2 {
+            return RuleOutcome::Skip;
+        }
+
         let title = match &ctx.title {
             Some(t) if !t.is_empty() => t.to_lowercase(),
             _ => return RuleOutcome::Skip,
