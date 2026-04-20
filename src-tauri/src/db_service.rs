@@ -5,96 +5,183 @@
 //! that caused WAL races under SQLCipher: two connections reading the same
 //! mid-commit WAL frame would trigger HMAC verification failures ("file is
 //! not a database") because each fresh `rusqlite::Connection::open()` gets
-//! its own OS-level handle with no awareness of the pool writer's
-//! in-progress frame.
+//! its own OS-level handle with no awareness of the pool writer's in-progress
+//! commit stream.
 //!
 //! Architecture (ADR followup, not yet numbered):
-//! - 1 writer connection, wrapped in `Arc<parking_lot::Mutex<Connection>>`
-//! - N reader connections, each wrapped in its own `Arc<Mutex<Connection>>`
-//! - Both sync and async APIs share the same underlying connection:
-//!     - `.call(|conn| ...).await` — matches prior tokio_rusqlite signature,
-//!       runs via `spawn_blocking` so the Tokio runtime is never blocked.
-//!     - `.call_sync(|conn| ...)` — locks the mutex on the calling thread,
-//!       for sync paths like `ActionDb::open()` in background tasks.
+//! - 1 writer connection and N readers, each owning a dedicated OS thread.
+//! - `.call(|conn| ...).await` and `.call_sync(|conn| ...)` submit closures to
+//!   the dedicated thread and await completion over channels.
 //! - A process-wide `GLOBAL` singleton lets `ActionDb::open()` route through
 //!   the pool instead of opening a fresh handle. If the pool is not yet
 //!   initialized (startup, tests) `ActionDb::open()` falls back to the
 //!   legacy fresh-open path.
+//! - Fresh opens can also be serialized through `open_fresh_serialized` to avoid
+//!   SQLCipher WAL read-verify races on `Connection::open()` verification.
 
+use std::any::Any;
 use std::path::PathBuf;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, Mutex as StdMutex};
+use std::thread;
 
-use parking_lot::Mutex;
 use rusqlite::Connection;
+use tokio::sync::oneshot;
 
 use crate::db::DbError;
 
 /// Number of read connections in the pool.
 const NUM_READERS: usize = 2;
 
-/// Shared handle type: Arc<Mutex<Connection>>.
-pub type ConnArc = Arc<Mutex<Connection>>;
+type CallResult = Result<Box<dyn Any + Send>, PooledCallError>;
+type WorkerTask =
+    Box<dyn FnOnce(&mut Connection) -> rusqlite::Result<Box<dyn Any + Send>> + Send + 'static>;
 
-/// Error type for pool calls. Mirrors the shape callers expected from
-/// `tokio_rusqlite::Error` (Rusqlite variant + generic other).
+enum CallMessage {
+    Async {
+        task: WorkerTask,
+        respond_to: oneshot::Sender<CallResult>,
+    },
+    Sync {
+        task: WorkerTask,
+        respond_to: mpsc::Sender<CallResult>,
+    },
+    Shutdown,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum PooledCallError {
     #[error("{0}")]
     Rusqlite(#[from] rusqlite::Error),
-    #[error("spawn_blocking join error: {0}")]
-    Join(String),
+    #[error("pooled call result type mismatch")]
+    TypeMismatch,
+    #[error("pooled connection unavailable")]
+    Closed,
+    #[error("pooled call panicked: {0}")]
+    Panic(String),
+}
+
+/// Shared worker internals.
+struct PooledConnectionInner {
+    sender: mpsc::Sender<CallMessage>,
+    handle: StdMutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+impl PooledConnectionInner {
+    fn shutdown(&self) {
+        let _ = self.sender.send(CallMessage::Shutdown);
+        let mut handle = self.handle.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(handle) = handle.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 /// A pooled connection handle. Clone-cheap (it's just an Arc under the hood).
 #[derive(Clone)]
 pub struct PooledConnection {
-    inner: ConnArc,
+    inner: Arc<PooledConnectionInner>,
+}
+
+fn panic_to_string(payload: Box<dyn Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "pooled call panicked".to_string()
+    }
+}
+
+fn run_task(task: WorkerTask, conn: &mut Connection) -> CallResult {
+    match panic::catch_unwind(AssertUnwindSafe(|| task(conn))) {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(PooledCallError::Rusqlite(error)),
+        Err(payload) => Err(PooledCallError::Panic(panic_to_string(payload))),
+    }
 }
 
 impl PooledConnection {
-    fn new(conn: Connection) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(conn)),
-        }
+    fn new(conn: Connection) -> Result<Self, DbError> {
+        let (sender, receiver) = mpsc::channel();
+        let handle = thread::Builder::new()
+            .name("dailyos-db-connection".to_string())
+            .spawn(move || {
+                let mut conn = conn;
+                while let Ok(message) = receiver.recv() {
+                    match message {
+                        CallMessage::Async { task, respond_to } => {
+                            let _ = respond_to.send(run_task(task, &mut conn));
+                        }
+                        CallMessage::Sync { task, respond_to } => {
+                            let _ = respond_to.send(run_task(task, &mut conn));
+                        }
+                        CallMessage::Shutdown => {
+                            break;
+                        }
+                    }
+                }
+            })
+            .map_err(|e| DbError::Migration(format!("failed to start DB worker thread: {e}")))?;
+
+        Ok(Self {
+            inner: Arc::new(PooledConnectionInner {
+                sender,
+                handle: StdMutex::new(Some(handle)),
+            }),
+        })
     }
 
-    /// Expose the underlying `Arc<Mutex<Connection>>` for callers that need
-    /// to lock directly (e.g. `ActionDb::open()` pooled checkout via
-    /// `lock_arc()` → `ArcMutexGuard`).
-    pub fn arc(&self) -> ConnArc {
-        Arc::clone(&self.inner)
+    fn split_payload<T: Send + 'static>(
+        payload: CallResult,
+    ) -> Result<T, PooledCallError> {
+        let payload = payload?;
+        payload
+            .downcast::<T>()
+            .map(|value| *value)
+            .map_err(|_| PooledCallError::TypeMismatch)
     }
 
-    /// Async call — locks the mutex on a dedicated blocking thread.
-    /// Signature matches the prior `tokio_rusqlite::Connection::call` so
-    /// existing `.call(move |conn| { ... }).await` call sites compile
-    /// unchanged.
+    /// Async call — submits closure to the dedicated thread.
     pub async fn call<F, T>(&self, f: F) -> Result<T, PooledCallError>
     where
         F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        let arc = Arc::clone(&self.inner);
-        tokio::task::spawn_blocking(move || {
-            let mut guard = arc.lock();
-            f(&mut guard)
-        })
-        .await
-        .map_err(|e| PooledCallError::Join(e.to_string()))?
-        .map_err(PooledCallError::Rusqlite)
+        let (tx, rx) = oneshot::channel();
+        let task: WorkerTask = Box::new(move |conn| f(conn).map(|value| Box::new(value) as Box<_>));
+        self.inner
+            .sender
+            .send(CallMessage::Async {
+                task,
+                respond_to: tx,
+            })
+            .map_err(|_| PooledCallError::Closed)?;
+        Self::split_payload(rx.await.map_err(|_| PooledCallError::Closed)?)
     }
 
-    /// Sync call — locks the mutex on the calling thread. Intended for
-    /// callers not in an async context (startup, background worker threads).
-    /// Never call this from within a Tokio runtime — it blocks the runtime
-    /// thread. Use `.call(...).await` from async code.
-    pub fn call_sync<F, T>(&self, f: F) -> rusqlite::Result<T>
+    /// Sync call — submits closure to the dedicated thread and blocks on the
+    /// response channel. Intended for sync startup/background paths.
+    pub fn call_sync<F, T>(&self, f: F) -> Result<T, PooledCallError>
     where
-        F: FnOnce(&mut Connection) -> rusqlite::Result<T>,
+        F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
+        T: Send + 'static,
     {
-        let mut guard = self.inner.lock();
-        f(&mut guard)
+        let (tx, rx) = mpsc::channel();
+        let task: WorkerTask = Box::new(move |conn| f(conn).map(|value| Box::new(value) as Box<_>));
+        self.inner
+            .sender
+            .send(CallMessage::Sync {
+                task,
+                respond_to: tx,
+            })
+            .map_err(|_| PooledCallError::Closed)?;
+        Self::split_payload(rx.recv().map_err(|_| PooledCallError::Closed)?)
+    }
+
+    pub(crate) fn shutdown(&self) {
+        self.inner.shutdown();
     }
 }
 
@@ -114,6 +201,18 @@ fn apply_pragmas(
         conn.execute_batch("PRAGMA query_only = ON;")?;
     }
     Ok(())
+}
+
+/// Open a fresh encrypted connection on the same validation semantics as
+/// `ActionDb::open` (key, verification query, WAL/busy/sync setup).
+fn open_encrypted_fresh(path: &str, hex_key: &str, read_only: bool) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.execute_batch(&crate::db::encryption::key_to_pragma(hex_key))?;
+    conn.query_row("SELECT count(*) FROM sqlite_master LIMIT 1", [], |row| {
+        row.get::<_, i64>(0)
+    })?;
+    apply_pragmas(&conn, read_only, hex_key)?;
+    Ok(conn)
 }
 
 /// The service itself. Hold as `Arc<DbService>` and share freely.
@@ -151,7 +250,7 @@ impl DbService {
         let path_for_readers = path_str.clone();
         let key_for_readers = hex_key.clone();
 
-        // Build the writer on a blocking thread so the open + migrations
+        // Build the writer on a blocking thread so open + migrations
         // don't stall the Tokio runtime.
         let writer = tokio::task::spawn_blocking(move || -> Result<Connection, DbError> {
             let conn = Connection::open(&path_str)?;
@@ -174,11 +273,11 @@ impl DbService {
             })
             .await
             .map_err(|e| DbError::Migration(format!("reader spawn join: {e}")))??;
-            readers.push(PooledConnection::new(r));
+            readers.push(PooledConnection::new(r)?);
         }
 
         Ok(Arc::new(Self {
-            writer: PooledConnection::new(writer),
+            writer: PooledConnection::new(writer)?,
             readers,
             read_idx: AtomicUsize::new(0),
         }))
@@ -221,14 +320,40 @@ impl DbService {
             })
             .await
             .map_err(|e| DbError::Migration(format!("reader spawn join: {e}")))??;
-            readers.push(PooledConnection::new(r));
+            readers.push(PooledConnection::new(r)?);
         }
 
         Ok(Arc::new(Self {
-            writer: PooledConnection::new(writer),
+            writer: PooledConnection::new(writer)?,
             readers,
             read_idx: AtomicUsize::new(0),
         }))
+    }
+
+    /// Open a fresh encrypted connection through the writer thread so SQLCipher
+    /// verification executes in series with WAL writes.
+    pub fn open_fresh_serialized(
+        &self,
+        path: PathBuf,
+        hex_key: String,
+    ) -> Result<Connection, DbError> {
+        let path = path.to_string_lossy().to_string();
+        let result = self.writer.call_sync(move |_| open_encrypted_fresh(&path, &hex_key, false));
+        match result {
+            Ok(conn) => Ok(conn),
+            Err(PooledCallError::Rusqlite(error)) => Err(DbError::Sqlite(error)),
+            Err(PooledCallError::Closed) => {
+                Err(DbError::Migration("pooled writer thread not available".to_string()))
+            }
+            Err(PooledCallError::Panic(message)) => {
+                Err(DbError::Migration(format!("open_fresh_serialized panic: {message}")))
+            }
+            Err(PooledCallError::TypeMismatch) => {
+                Err(DbError::Migration(
+                    "open_fresh_serialized result type mismatch".to_string(),
+                ))
+            }
+        }
     }
 
     /// Writer connection. Serialized: one write at a time.
@@ -240,6 +365,15 @@ impl DbService {
     pub fn reader(&self) -> &PooledConnection {
         let idx = self.read_idx.fetch_add(1, Ordering::Relaxed) % self.readers.len();
         &self.readers[idx]
+    }
+}
+
+impl Drop for DbService {
+    fn drop(&mut self) {
+        self.writer.shutdown();
+        for reader in &self.readers {
+            reader.shutdown();
+        }
     }
 }
 
@@ -405,5 +539,63 @@ mod tests {
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].entity_id.as_deref(), Some("acc-1"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn dos_229_sqlcipher_open_fresh_serialized_no_notadb() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("fresh_open_fallback.db");
+
+        let svc = DbService::open_at(path.clone())
+            .await
+            .expect("open svc");
+        let hex_key = crate::db::encryption::get_or_create_db_key(&path)
+            .expect("db key");
+
+        let writer = svc.clone();
+        let writer_task = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            for i in 0..500 {
+                let email = sample_email(&format!("em-race-{i}"), "acc-race");
+                writer
+                    .writer()
+                    .call_sync(move |conn| {
+                        let db = ActionDb::from_conn(conn);
+                        db.upsert_email(&email).expect("upsert");
+                        Ok(())
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        });
+
+        let mut open_tasks = Vec::with_capacity(200);
+        for _ in 0..200 {
+            let svc = svc.clone();
+            let key = hex_key.clone();
+            let path = path.clone();
+            open_tasks.push(tokio::spawn(async move {
+                svc.open_fresh_serialized(path.clone(), key).map_err(|e| e.to_string())
+            }));
+        }
+
+        let mut notadb_errors = 0usize;
+        for join in open_tasks {
+            let opened = join.await.expect("join");
+            if let Err(error) = opened {
+                if error.contains("not a database") || error.contains("SQLITE_NOTADB") {
+                    notadb_errors += 1;
+                } else {
+                    panic!("unexpected open error: {error}");
+                }
+            }
+        }
+
+        assert_eq!(
+            notadb_errors, 0,
+            "SQLCipher fresh-open race produced SQLITE_NOTADB"
+        );
+
+        writer_task.await.expect("writer task").expect("writer task error");
     }
 }
