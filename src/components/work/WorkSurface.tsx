@@ -14,7 +14,8 @@
  *   - Nudges always offer "Leave as-is" as a first-class exit.
  *   - Nudge chapter hides entirely when the list is empty.
  */
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { EditableText } from "@/components/ui/EditableText";
 import s from "./WorkSurface.module.css";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -192,6 +193,71 @@ export function ProgramPillRow({ children }: { children: ReactNode }) {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
+ * InlineDateField — click-to-edit ISO date input used by CommitmentCard.
+ * Keeps the saffron-border inline-edit aesthetic but uses the browser's
+ * native date picker so users don't type dates manually.
+ * ──────────────────────────────────────────────────────────────────────── */
+function InlineDateField({
+  value,
+  display,
+  onChange,
+}: {
+  value: string;
+  display: string;
+  onChange: (v: string) => void | Promise<unknown>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  if (editing) {
+    return (
+      <input
+        type="date"
+        value={draft}
+        autoFocus
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={async () => {
+          setEditing(false);
+          if (draft !== value) {
+            try {
+              await onChange(draft);
+            } catch {
+              setDraft(value);
+            }
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+        style={{
+          font: "inherit",
+          color: "inherit",
+          background: "transparent",
+          border: "none",
+          borderBottom: "2px solid var(--color-spice-terracotta)",
+          outline: "none",
+          padding: 0,
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      className={s.inlineEditable}
+      onClick={() => {
+        setDraft(value);
+        setEditing(true);
+      }}
+      title="Click to edit due date"
+    >
+      {display}
+    </span>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
  * CommitmentCard — Chapter 3 "Commitments".
  * Provenance + Owner + Due (neutral) + Audience pill + Visibility pill,
  * optional soft "Still active?" nudge, and equal-valid exits.
@@ -219,6 +285,21 @@ export interface CommitmentCardProps {
    * "big three or four" reading order without demoting the rest.
    */
   emphasis?: boolean;
+  /**
+   * Inline-edit handlers (v1.2.1 bug fix). When provided, the headline,
+   * owner, and due date become click-to-edit. Absent handlers fall back to
+   * static rendering (back-compat for callers that don't pass them).
+   */
+  onEditHeadline?: (value: string) => void | Promise<unknown>;
+  onEditOwner?: (value: string) => void | Promise<unknown>;
+  /** ISO-8601 date string or empty to clear. */
+  onEditDueDate?: (value: string) => void | Promise<unknown>;
+  /**
+   * Raw ISO due date (YYYY-MM-DD) used by the inline date picker. The
+   * display string (`due`) may be pre-formatted for humans; the editor
+   * needs the raw value.
+   */
+  dueDateRaw?: string | null;
 }
 
 export function CommitmentCard({
@@ -233,13 +314,27 @@ export function CommitmentCard({
   stillActiveNote,
   actions,
   emphasis,
+  onEditHeadline,
+  onEditOwner,
+  onEditDueDate,
+  dueDateRaw,
 }: CommitmentCardProps) {
   const headlineClass = emphasis
     ? `${s.commitmentHeadline} ${s.commitmentHeadlineEmphasis}`
     : s.commitmentHeadline;
   return (
     <article className={s.commitmentCard}>
-      <h3 className={headlineClass}>{headline}</h3>
+      {onEditHeadline ? (
+        <EditableText
+          as="h3"
+          value={headline}
+          onChange={onEditHeadline}
+          multiline={false}
+          className={headlineClass}
+        />
+      ) : (
+        <h3 className={headlineClass}>{headline}</h3>
+      )}
 
       {provenance && provenance.length > 0 && (
         <div className={s.commitmentMetaRow}>
@@ -255,11 +350,31 @@ export function CommitmentCard({
 
       <div className={s.commitmentOwnerRow}>
         <span>
-          <strong>Owner:</strong> {owner ?? "Unassigned"}
+          <strong>Owner:</strong>{" "}
+          {onEditOwner ? (
+            <EditableText
+              as="span"
+              value={owner ?? ""}
+              onChange={onEditOwner}
+              multiline={false}
+              placeholder="Unassigned"
+            />
+          ) : (
+            (owner ?? "Unassigned")
+          )}
         </span>
         <span aria-hidden>·</span>
         <span>
-          <strong>Due:</strong> {due ?? "no date set"}
+          <strong>Due:</strong>{" "}
+          {onEditDueDate ? (
+            <InlineDateField
+              value={dueDateRaw ?? ""}
+              display={due ?? "no date set"}
+              onChange={onEditDueDate}
+            />
+          ) : (
+            (due ?? "no date set")
+          )}
         </span>
       </div>
 
