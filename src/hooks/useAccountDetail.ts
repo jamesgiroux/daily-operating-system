@@ -503,6 +503,23 @@ export function useAccountDetail(accountId: string | undefined) {
     setPrograms(result.strategicPrograms);
   }
 
+  /**
+   * DOS-269: "Add more detail" — update the note on the existing journal
+   * entry rather than creating a new one. Backs the SentimentHero
+   * `onUpdateNote` prop. Falls back to a fresh insert when no journal row
+   * exists for the current sentiment value yet.
+   */
+  async function updateSentimentNote(note: string) {
+    if (!accountId) return;
+    const cleaned = note.trim().length > 0 ? note.trim() : null;
+    const result = await invoke<AccountDetail>("update_latest_sentiment_note", {
+      accountId,
+      note: cleaned,
+    });
+    setDetail(result);
+    setPrograms(result.strategicPrograms);
+  }
+
   /** Re-stamp sentiment_set_at so the "Still accurate?" prompt resets for 30 days. */
   async function acknowledgeSentimentStale() {
     if (!accountId || !detail?.userHealthSentiment) return;
@@ -627,6 +644,7 @@ export function useAccountDetail(accountId: string | undefined) {
     sentiment,
     setUserHealthSentiment,
     acknowledgeSentimentStale,
+    updateSentimentNote,
 
     // DOS-228 Wave 0e Fix 4: risk briefing status + retry
     riskBriefingJob,
