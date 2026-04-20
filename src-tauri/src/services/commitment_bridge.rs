@@ -7,7 +7,7 @@
 //! See migration 108 for the bridge table shape.  See ADR-0101 for the
 //! service-boundary rule (no direct DB writes from commands).
 
-use crate::action_status::{KIND_COMMITMENT, OPEN_STATUSES, UNSTARTED};
+use crate::action_status::{BACKLOG, KIND_COMMITMENT, OPEN_STATUSES, UNSTARTED};
 use crate::db::{ActionDb, DbAction};
 use crate::intelligence::io::OpenCommitment;
 
@@ -70,14 +70,19 @@ pub fn sync_ai_commitments(
                 touch_bridge_row(db, commitment_id, &now).map_err(|e| e.to_string())?;
             }
             Some(row) => {
-                // Existing non-tombstoned row. If the associated Action exists
-                // and is non-terminal, update metadata that changed.
+                // Existing non-tombstoned row. Only update Action metadata
+                // while the Action is still `backlog` (AI-proposed, unaccepted).
+                // Once the user accepts (backlog → unstarted) the row is
+                // USER-OWNED — a user edit to the title must not be
+                // overwritten by the next enrichment pass. For accepted rows
+                // we only refresh `last_seen_at` on the bridge so the LLM's
+                // continued emission remains observable.
                 if let Some(action_id) = row.action_id.as_deref() {
                     let action_opt = db
                         .get_action_by_id(action_id)
                         .map_err(|e| e.to_string())?;
                     if let Some(mut action) = action_opt {
-                        if OPEN_STATUSES.contains(&action.status.as_str()) {
+                        if action.status.as_str() == BACKLOG {
                             let mut dirty = false;
 
                             if action.title != commitment.description {
@@ -105,6 +110,12 @@ pub fn sync_ai_commitments(
                                 summary.updated += 1;
                             }
                         }
+                        // User-accepted (unstarted/started) → skip metadata
+                        // update. Terminal statuses are already excluded by
+                        // bridge tombstoning, but defensively we no-op here
+                        // as well if the action somehow landed in a non-open
+                        // non-backlog state.
+                        let _ = OPEN_STATUSES;
                     }
                 }
                 touch_bridge_row(db, commitment_id, &now).map_err(|e| e.to_string())?;
@@ -477,6 +488,79 @@ mod tests {
             )
             .unwrap();
         assert_eq!(title, "Updated description");
+    }
+
+    #[test]
+    fn test_user_edit_preserved_across_sync_when_accepted() {
+        // Regression guard: after user accepts a backlog commitment
+        // (backlog → unstarted) and edits the title, a subsequent sync pass
+        // must NOT overwrite the user's title. The bridge only updates
+        // metadata while the row is still backlog (AI-owned). Once accepted,
+        // the row is USER-OWNED and only last_seen_at gets refreshed.
+        let db = test_db();
+        let original = vec![make_commitment(Some("c:user-owned"), "AI phrasing")];
+        sync_ai_commitments(&db, "account", "acct-1", &original).expect("initial sync");
+
+        let action_id: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT action_id FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                rusqlite::params!["c:user-owned"],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        // User accepts → backlog transitions to unstarted.
+        db.accept_suggested_action(&action_id).expect("accept");
+        // User edits the title inline.
+        db.conn_ref()
+            .execute(
+                "UPDATE actions SET title = ?1, updated_at = datetime('now') WHERE id = ?2",
+                rusqlite::params!["User-edited title", action_id],
+            )
+            .expect("user edit");
+
+        // Next enrichment pass emits the SAME commitment_id with the
+        // original AI phrasing — this must NOT clobber the user's edit.
+        let summary = sync_ai_commitments(&db, "account", "acct-1", &original).expect("resync");
+        assert_eq!(summary.created, 0);
+        assert_eq!(summary.updated, 0, "user-owned title must not be overwritten");
+
+        let title: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT title FROM actions WHERE id = ?1",
+                rusqlite::params![action_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(title, "User-edited title");
+    }
+
+    #[test]
+    fn test_backlog_metadata_still_updates_before_acceptance() {
+        // Regression guard for the inverse: while a commitment is still
+        // backlog (unaccepted), the AI is the owner and enrichment MUST keep
+        // metadata up to date — otherwise we'd freeze bad early phrasing.
+        let db = test_db();
+        let v1 = vec![make_commitment(Some("c:ai-owned"), "Early phrasing")];
+        let v2 = vec![make_commitment(Some("c:ai-owned"), "Refined phrasing")];
+
+        sync_ai_commitments(&db, "account", "acct-1", &v1).expect("initial sync");
+        let summary = sync_ai_commitments(&db, "account", "acct-1", &v2).expect("resync");
+        assert_eq!(summary.updated, 1, "backlog rows still track AI updates");
+
+        let title: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT a.title FROM actions a
+                 JOIN ai_commitment_bridge b ON b.action_id = a.id
+                 WHERE b.commitment_id = ?1",
+                rusqlite::params!["c:ai-owned"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(title, "Refined phrasing");
     }
 
     #[test]
