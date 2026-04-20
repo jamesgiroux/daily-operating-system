@@ -3,7 +3,7 @@
 > Rust backend module inventory (`src-tauri/src/`).
 > **Auto-generated:** 2026-04-19 by `.docs/generators/gen-module-map.sh`
 
-**240** Rust files across **29** module directories and **44** standalone modules.
+**241** Rust files across **29** module directories and **44** standalone modules.
 
 ---
 
@@ -35,7 +35,7 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0 (I397). |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (I406–I410). |
-| `services/` | 22 | 262 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 23 | 267 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 20 | 53 | Universal signal bus for intelligence fusion (I306 / ADR-0080 Phase 2). |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
@@ -44,7 +44,7 @@
 | Module | Lines | Public Fns | Purpose |
 |--------|-------|-----------|---------|
 | `accounts.rs` | 1868 | 11 | Account workspace file I/O (I72 / ADR-0047). |
-| `action_status.rs` | 85 | 2 | — |
+| `action_status.rs` | 96 | 2 | — |
 | `activity.rs` | 187 | 3 | User activity monitoring for background task throttling. |
 | `audit.rs` | 150 | 2 | Audit trail for AI-generated data (I297). |
 | `audit_log.rs` | 453 | 4 | Tamper-evident audit log for enterprise observability (I471, ADR-0094). |
@@ -68,7 +68,7 @@
 | `executor.rs` | 1458 | 1 | Workflow execution engine |
 | `export.rs` | 300 | 1 | I429: User data export — ZIP file with human-readable JSON per domain. |
 | `focus_capacity.rs` | 423 | 1 | — |
-| `focus_prioritization.rs` | 397 | 1 | — |
+| `focus_prioritization.rs` | 398 | 1 | — |
 | `google.rs` | 1728 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 492 | 12 | — |
 | `intel_queue.rs` | 2878 | 4 | Background intelligence enrichment queue (I132). |
@@ -76,7 +76,7 @@
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
 | `lib.rs` | 886 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 984 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 1729 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 1737 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (I51 / ADR-0047). |
@@ -96,7 +96,7 @@
 | Module | Depends On |
 |--------|-----------|
 | `commands/` |                     intel_queue,         intel_queue,     context_provider,     db,     glean,     intelligence,     processor, services, types |
-| `services/` |         intelligence,     db,     google_api,     intel_queue,     intelligence,     reports,     signals,     state, commands, db, embeddings, json_loader, linear, parser, pty, reports, signals, state, types |
+| `services/` |         intelligence,     db,     google_api,     intel_queue,     intelligence,     reports,     signals,     state, action_status, commands, db, embeddings, intelligence, json_loader, linear, parser, pty, reports, signals, state, types |
 | `signals/` |             db,     db,     entity,     google_api,     prepare, db, embeddings, entity, helpers, prepare, state, types |
 | `intelligence/` |         intel_queue,     db,     signals,     types, accounts, context_provider, db, embeddings, error, helpers, signals, state, types, util |
 | `prepare/` |     db,     entity, db, embeddings, entity, error, google_api, helpers, pty, signals, state, types |
