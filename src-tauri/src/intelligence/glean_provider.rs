@@ -703,7 +703,7 @@ impl GleanIntelligenceProvider {
         let client = GleanMcpClient::new(&self.endpoint);
 
         let response_text =
-            tokio::time::timeout(Duration::from_secs(45), client.chat(&prompt, None))
+            tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt, None))
                 .await
                 .map_err(|_| {
                     format!("Glean leading-signals chat timed out for {}", entity_name)
