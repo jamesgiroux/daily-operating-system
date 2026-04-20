@@ -131,6 +131,45 @@ pub struct LinkingContext {
     /// Snapshot of entity_graph_version.version read at the start of evaluate().
     /// Stored in entity_linking_evaluations for staleness detection.
     pub graph_version: i64,
+    /// User's own domains (from app config). Used by rules to classify
+    /// participants as internal or external.
+    pub user_domains: Vec<String>,
+}
+
+impl LinkingContext {
+    /// True if the email address belongs to the user's own organisation.
+    pub fn is_internal_email(&self, email: &str) -> bool {
+        let Some(domain) = email.rsplit_once('@').map(|(_, d)| d) else {
+            return false;
+        };
+        self.user_domains
+            .iter()
+            .any(|ud| ud.eq_ignore_ascii_case(domain))
+    }
+
+    pub fn internal_participants(&self) -> impl Iterator<Item = &Participant> {
+        self.participants
+            .iter()
+            .filter(|p| self.is_internal_email(&p.email))
+    }
+
+    pub fn external_participants(&self) -> impl Iterator<Item = &Participant> {
+        self.participants
+            .iter()
+            .filter(|p| !self.is_internal_email(&p.email))
+    }
+
+    /// The From-role participant (email surface only).
+    pub fn from_participant(&self) -> Option<&Participant> {
+        self.participants
+            .iter()
+            .find(|p| p.role == ParticipantRole::From)
+    }
+
+    /// True when there are exactly 2 participants (1:1 shape).
+    pub fn is_one_on_one(&self) -> bool {
+        self.participants.len() == 2
+    }
 }
 
 // ---------------------------------------------------------------------------
