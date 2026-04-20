@@ -3025,6 +3025,124 @@ impl ActionDb {
         }
     }
 
+    /// DOS-269: Update the note on the newest sentiment journal row whose
+    /// `sentiment` matches the account's current `user_health_sentiment`.
+    /// This is the "Add more detail" path — user is augmenting the existing
+    /// journal entry rather than creating a new one. Returns `true` if a row
+    /// was updated, `false` when there is no matching history row (caller
+    /// should fall back to a fresh `insert_sentiment_journal_entry`).
+    pub fn update_latest_sentiment_note(
+        &self,
+        account_id: &str,
+        note: Option<&str>,
+    ) -> Result<bool, DbError> {
+        let current_sentiment: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT user_health_sentiment FROM accounts WHERE id = ?1",
+                params![account_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        let Some(sentiment) = current_sentiment else {
+            return Ok(false);
+        };
+        let latest_rowid: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT rowid FROM user_sentiment_history
+                 WHERE account_id = ?1 AND sentiment = ?2
+                 ORDER BY set_at DESC LIMIT 1",
+                params![account_id, sentiment],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        let Some(rowid) = latest_rowid else {
+            return Ok(false);
+        };
+        let note_clean = note.and_then(|n| {
+            let trimmed = n.trim();
+            if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+        });
+        self.conn.execute(
+            "UPDATE user_sentiment_history SET note = ?1 WHERE rowid = ?2",
+            params![note_clean, rowid],
+        )?;
+        Ok(true)
+    }
+
+    // =========================================================================
+    // DOS-269: triage_snoozes — per-card dismissal persistence for Health tab
+    // Snooze / Confirm-resolved actions. Keyed on (entity, triage_key).
+    // =========================================================================
+
+    /// Upsert a snooze for a triage card. `snoozed_until` is an ISO-8601 UTC
+    /// timestamp; rendering-time filter hides cards whose snoozed_until is
+    /// still in the future.
+    pub fn snooze_triage_item(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+        triage_key: &str,
+        snoozed_until: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO triage_snoozes (entity_type, entity_id, triage_key, snoozed_until, updated_at)
+             VALUES (?1, ?2, ?3, ?4, datetime('now'))
+             ON CONFLICT(entity_type, entity_id, triage_key) DO UPDATE SET
+                snoozed_until = excluded.snoozed_until,
+                resolved_at   = NULL,
+                updated_at    = datetime('now')",
+            params![entity_type, entity_id, triage_key, snoozed_until],
+        )?;
+        Ok(())
+    }
+
+    /// Mark a triage card resolved. Resolution is permanent for the lifetime
+    /// of the card key (stable until re-enrichment emits a new one).
+    pub fn resolve_triage_item(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+        triage_key: &str,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO triage_snoozes (entity_type, entity_id, triage_key, resolved_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, datetime('now'))
+             ON CONFLICT(entity_type, entity_id, triage_key) DO UPDATE SET
+                resolved_at = excluded.resolved_at,
+                updated_at  = datetime('now')",
+            params![entity_type, entity_id, triage_key, now],
+        )?;
+        Ok(())
+    }
+
+    /// List active triage suppressions for an entity — returns (triage_key,
+    /// snoozed_until, resolved_at) tuples so the frontend can decide
+    /// card-by-card whether to hide. Returns all rows; callers filter by
+    /// expiration so a snooze that's aged out becomes visible again.
+    pub fn list_triage_snoozes(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+    ) -> Result<Vec<(String, Option<String>, Option<String>)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT triage_key, snoozed_until, resolved_at
+             FROM triage_snoozes
+             WHERE entity_type = ?1 AND entity_id = ?2",
+        )?;
+        let rows = stmt.query_map(params![entity_type, entity_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Return the daily-bucketed computed health scores for an account over
     /// the last N days, for sparkline rendering.
     /// Newest-last so the sparkline reads left-to-right chronologically.
