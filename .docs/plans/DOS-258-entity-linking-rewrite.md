@@ -90,7 +90,7 @@ Before any code lands, capture a snapshot of the current resolver's output so we
 ```bash
 # From repo root, after pulling latest dev:
 cargo run --bin baseline-entity-linking -- \
-  --db ~/Library/Application\ Support/com.dailyos.app/dailyos.db \
+  --db ~/.dailyos/dailyos.db \
   --days-meetings 90 --days-emails 30 \
   --output .docs/migrations/entity-linking-baseline.json
 ```

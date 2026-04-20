@@ -747,12 +747,15 @@ fn create_backup_via_sqlcipher_export(
     backup_path: &Path,
     hex_key: &str,
 ) -> Result<(), String> {
+    // sqlcipher_export must run inside BEGIN IMMEDIATE so that WAL frames are
+    // included in the snapshot. Without the transaction, SQLCipher copies only
+    // the base page state and produces an 8KB hollow file (DOS-273).
     let backup_path_s = backup_path.to_string_lossy().replace('\'', "''");
     conn.execute_batch(&format!(
         "ATTACH DATABASE '{backup_path_s}' AS premigration KEY \"x'{hex_key}'\";"
     ))
     .map_err(|e| format!("Failed to attach fallback pre-migration backup DB: {e}"))?;
-    conn.execute_batch("SELECT sqlcipher_export('premigration');")
+    conn.execute_batch("BEGIN IMMEDIATE; SELECT sqlcipher_export('premigration'); COMMIT;")
         .map_err(|e| format!("Fallback pre-migration backup export failed: {e}"))?;
     conn.execute_batch("DETACH DATABASE premigration;")
         .map_err(|e| format!("Failed to detach fallback pre-migration backup DB: {e}"))?;
@@ -826,24 +829,25 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
         None
     };
 
-    // SQLCipher does not support SQLite's online backup API — it silently
-    // produces 0-byte files and returns opaque "not an error" messages. For
-    // encrypted DBs we MUST use `sqlcipher_export`. The API path is kept for
-    // plaintext DBs only (tests / pre-migration legacy).
+    // For encrypted DBs: use the Backup API with the key applied to the
+    // destination — the same pattern backup_database() uses successfully.
+    // Both sides use the same key so encrypted pages copy verbatim.
+    //
+    // The previous sqlcipher_export-first approach produced 8KB hollow files
+    // because sqlcipher_export without a transaction only copies base pages,
+    // not the WAL. The Backup API reads through the WAL correctly (DOS-273).
     let backup_result = if encrypted {
         let key = encryption_key
             .as_deref()
-            .ok_or_else(|| "Missing encryption key for fallback backup".to_string())?;
-        create_backup_via_sqlcipher_export(conn, &backup_path, key)
+            .ok_or_else(|| "Missing encryption key for backup".to_string())?;
+        create_backup_via_api(conn, &backup_path, Some(key))
     } else {
         create_backup_via_api(conn, &backup_path, None)
     };
     if let Err(err) = backup_result {
-        // If the sqlcipher_export path also failed, remove the 0-byte/partial
-        // file so recovery UI doesn't list unusable backups.
         let _ = std::fs::remove_file(&backup_path);
-        // Keep the legacy fallback hook for plaintext edge cases that somehow
-        // report encrypted-incompatibility strings.
+        // Last resort: sqlcipher_export (now transaction-wrapped). Only reached
+        // if the Backup API itself reports an encryption incompatibility.
         if should_try_encrypted_backup_fallback(encrypted, &err) {
             let key = encryption_key
                 .as_deref()
@@ -854,10 +858,25 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
         }
     }
 
+    // Sanity-check: a real backup of a multi-MB database must be more than a
+    // page or two. A hollow backup (< 64KB from a > 128KB source) is worse
+    // than no backup — it creates false confidence. Fail loudly so the user
+    // knows migrations did not run with a real safety net.
+    let source_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+    let backup_size = std::fs::metadata(&backup_path).map(|m| m.len()).unwrap_or(0);
+    if source_size > 128 * 1024 && backup_size < 64 * 1024 {
+        let _ = std::fs::remove_file(&backup_path);
+        return Err(format!(
+            "Pre-migration backup is suspiciously small ({backup_size} bytes) for a \
+             {source_size}-byte source database. The backup is likely hollow. \
+             Refusing to apply migrations without a valid safety copy (DOS-273)."
+        ));
+    }
+
     crate::db::hardening::set_file_permissions(&backup_path);
     prune_old_migration_backups(&db_path, 10)?;
     log::info!(
-        "Pre-migration backup created at {}",
+        "Pre-migration backup created at {} ({backup_size} bytes)",
         backup_path.to_string_lossy()
     );
     Ok(backup_path)
