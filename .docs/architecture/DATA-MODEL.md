@@ -3,7 +3,7 @@
 **Auto-generated:** 2026-04-19 by `.docs/generators/gen-data-model.sh`
 
 **Database:** SQLite (SQLCipher-encrypted, WAL mode)
-**Migrations:** 108 files (`001_baseline.sql` through `107_stakeholder_role_dismissals.sql`)
+**Migrations:** 109 files (`001_baseline.sql` through `108_work_tab_actions.sql`)
 **DB modules:** `src-tauri/src/db/`
 
 ---
@@ -16,6 +16,7 @@
 | `account_domains_new` | `010_foreign_keys` | — |
 | `account_events` | `001_baseline` | — |
 | `account_events_new` | `069_account_events_expand` | — |
+| `account_focus_pins` | `108_work_tab_actions` | — |
 | `account_milestones` | `068_success_plans` | 075_v110_lifecycle_products_provenance |
 | `account_milestones_new` | `069_account_events_expand` | — |
 | `account_objectives` | `068_success_plans` | 086_objective_evidence |
@@ -33,9 +34,10 @@
 | `accounts_new` | `003_account_team` | — |
 | `action_linear_links` | `085_action_linear_links` | — |
 | `action_objective_links` | `068_success_plans` | — |
-| `actions` | `001_baseline` | 022_rejection_signals, 053_app_state_demo, 086_decision_columns |
+| `actions` | `001_baseline` | 022_rejection_signals, 053_app_state_demo, 086_decision_columns, 108_work_tab_actions |
 | `actions_backup` | `011_proposed_actions` | — |
 | `actions_new` | `010_foreign_keys` | — |
+| `ai_commitment_bridge` | `108_work_tab_actions` | — |
 | `app_state` | `053_app_state_demo` | — |
 | `app_state_kv` | `057_intelligence_db_columns` | — |
 | `attendee_display_names` | `026_attendee_display_names` | — |
@@ -97,6 +99,7 @@
 | `meetings` | `055_schema_decomposition` | 031_intelligence_lifecycle |
 | `meetings_history` | `001_baseline` | 031_intelligence_lifecycle |
 | `meetings_history_new` | `023_drop_meeting_account_id` | — |
+| `nudge_dismissals` | `108_work_tab_actions` | — |
 | `people` | `001_baseline` | 016_clay_enrichment, 053_app_state_demo |
 | `person_emails` | `012_person_emails` | — |
 | `person_relationships` | `038_person_relationships` | 059_person_relationships_rationale |
@@ -197,6 +200,19 @@
 | `arr_impact` | REAL |
 | `notes` | TEXT |
 | `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `account_focus_pins`
+
+**Created in:** `108_work_tab_actions`
+
+| Column | Definition |
+|--------|-----------|
+| `account_id` | TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE |
+| `action_id` |  TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE |
+| `rank` |       INTEGER NOT NULL |
+| `pinned_at` |  TEXT NOT NULL |
 
 ---
 
@@ -670,8 +686,9 @@
 - `is_demo` *(added in 053_app_state_demo)*
 - `decision_owner` *(added in 086_decision_columns)*
 - `decision_stakes` *(added in 086_decision_columns)*
+- `action_kind` *(added in 108_work_tab_actions)*
 
-**Indexes:** idx_actions_account, idx_actions_due_date, idx_actions_rejected, idx_actions_status, idx_actions_status_due_date, idx_actions_title_lower
+**Indexes:** idx_actions_account, idx_actions_due_date, idx_actions_kind, idx_actions_rejected, idx_actions_status, idx_actions_status_due_date, idx_actions_title_lower
 
 ---
 
@@ -747,6 +764,22 @@
 | `updated_at` | TEXT NOT NULL |
 | `person_id` | TEXT REFERENCES people(id) ON DELETE SET NULL |
 | `needs_decision` | INTEGER DEFAULT 0 |
+
+---
+
+### `ai_commitment_bridge`
+
+**Created in:** `108_work_tab_actions`
+
+| Column | Definition |
+|--------|-----------|
+| `commitment_id` | TEXT PRIMARY KEY |
+| `entity_type` |   TEXT NOT NULL |
+| `entity_id` |     TEXT NOT NULL |
+| `action_id` |     TEXT REFERENCES actions(id) ON DELETE SET NULL |
+| `first_seen_at` | TEXT NOT NULL |
+| `last_seen_at` |  TEXT NOT NULL |
+| `tombstoned` |    INTEGER NOT NULL DEFAULT 0 |
 
 ---
 
@@ -1716,157 +1749,3 @@
 |--------|-----------|
 | `task_name` | TEXT PRIMARY KEY |
 | `completed_at` | TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP |
-
-**Indexes:** idx_init_tasks_completed_at
-
----
-
-### `intelligence_feedback`
-
-**Created in:** `062_intelligence_feedback`
-
-| Column | Definition |
-|--------|-----------|
-| `id` | TEXT PRIMARY KEY |
-| `entity_id` | TEXT NOT NULL |
-| `entity_type` | TEXT NOT NULL |
-| `field` | TEXT NOT NULL |
-| `feedback_type` | TEXT NOT NULL CHECK(feedback_type IN ('positive', 'negative', 'replaced')) |
-| `previous_value` | TEXT |
-| `context` | TEXT |
-| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
-| `id` | TEXT PRIMARY KEY |
-| `entity_id` | TEXT NOT NULL |
-| `entity_type` | TEXT NOT NULL |
-| `field` | TEXT NOT NULL |
-| `feedback_type` | TEXT NOT NULL CHECK(feedback_type IN ('positive', 'negative', 'replaced')) |
-| `previous_value` | TEXT |
-| `context` | TEXT |
-| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
-
-**Indexes:** idx_intelligence_feedback_entity
-
----
-
-### `intelligence_feedback_new`
-
-**Created in:** `067_feedback_unique_constraint`
-
-| Column | Definition |
-|--------|-----------|
-| `id` | TEXT PRIMARY KEY |
-| `entity_id` | TEXT NOT NULL |
-| `entity_type` | TEXT NOT NULL |
-| `field` | TEXT NOT NULL |
-| `feedback_type` | TEXT NOT NULL CHECK(feedback_type IN ('positive', 'negative', 'replaced')) |
-| `previous_value` | TEXT |
-| `context` | TEXT |
-| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
-
----
-
-### `lifecycle_changes`
-
-**Created in:** `075_v110_lifecycle_products_provenance`
-
-| Column | Definition |
-|--------|-----------|
-| `id` | INTEGER PRIMARY KEY AUTOINCREMENT |
-| `account_id` | TEXT NOT NULL REFERENCES accounts(id) |
-| `previous_lifecycle` | TEXT |
-| `new_lifecycle` | TEXT NOT NULL |
-| `previous_stage` | TEXT |
-| `new_stage` | TEXT |
-| `previous_contract_end` | TEXT |
-| `new_contract_end` | TEXT |
-| `source` | TEXT NOT NULL |
-| `confidence` | REAL NOT NULL |
-| `evidence` | TEXT |
-| `health_score_before` | REAL |
-| `health_score_after` | REAL |
-| `user_response` | TEXT NOT NULL DEFAULT 'pending' |
-| `response_notes` | TEXT |
-| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
-| `reviewed_at` | TEXT |
-
----
-
-### `linear_entity_links`
-
-**Created in:** `041_linear_entity_links`
-
-| Column | Definition |
-|--------|-----------|
-| `id` | TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))) |
-| `linear_project_id` | TEXT NOT NULL |
-| `entity_id` | TEXT NOT NULL |
-| `entity_type` | TEXT NOT NULL CHECK (entity_type IN ('account', 'project', 'person')) |
-| `confirmed` | INTEGER NOT NULL DEFAULT 0 |
-| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
-
----
-
-### `linear_issues`
-
-**Created in:** `024_linear_sync`
-
-| Column | Definition |
-|--------|-----------|
-| `id` | TEXT PRIMARY KEY |
-| `identifier` | TEXT NOT NULL |
-| `title` | TEXT NOT NULL |
-| `state_name` | TEXT |
-| `state_type` | TEXT |
-| `priority` | INTEGER |
-| `priority_label` | TEXT |
-| `project_id` | TEXT |
-| `project_name` | TEXT |
-| `due_date` | TEXT |
-| `url` | TEXT |
-| `synced_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
-
-**Indexes:** idx_linear_issues_project, idx_linear_issues_state
-
----
-
-### `linear_projects`
-
-**Created in:** `024_linear_sync`
-
-| Column | Definition |
-|--------|-----------|
-| `id` | TEXT PRIMARY KEY |
-| `name` | TEXT NOT NULL |
-| `state` | TEXT |
-| `url` | TEXT |
-| `synced_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
-
----
-
-### `meeting_attendees`
-
-**Created in:** `001_baseline`
-
-| Column | Definition |
-|--------|-----------|
-| `meeting_id` | TEXT NOT NULL |
-| `person_id` | TEXT NOT NULL |
-| `meeting_id` | TEXT NOT NULL REFERENCES meetings_history(id) ON DELETE CASCADE |
-| `person_id` |  TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE |
-| `meeting_id` | TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE |
-| `person_id` |  TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE |
-
-**Indexes:** idx_attendees_person
-
----
-
-### `meeting_attendees_new`
-
-**Created in:** `032_junction_fks_and_expr_indexes`
-
-| Column | Definition |
-|--------|-----------|
-| `meeting_id` | TEXT NOT NULL REFERENCES meetings_history(id) ON DELETE CASCADE |
-| `person_id` |  TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE |
-| `meeting_id` | TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE |
-| `person_id` |  TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE |
