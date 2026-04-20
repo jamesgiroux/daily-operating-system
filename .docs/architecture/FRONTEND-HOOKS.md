@@ -1,9 +1,9 @@
 # Frontend Hooks Reference
 
 > Registry of all React hooks in `src/hooks/`.
-> **Auto-generated:** 2026-04-19 by `.docs/generators/gen-frontend-hooks.sh`
+> **Auto-generated:** 2026-04-20 by `.docs/generators/gen-frontend-hooks.sh`
 
-**43** hook files | **5554** total lines
+**43** hook files | **5572** total lines
 
 ---
 
@@ -12,7 +12,7 @@
 | Hook | File | Lines | Tauri Commands | Events Listened |
 |------|------|-------|---------------|-----------------|
 | `useIsMobile` | `use-mobile.ts` | 19 | — | — |
-| `useAccountDetail` | `useAccountDetail.ts` | 635 | archive_account, create_action, create_child_account, enrich_account, get_account_detail, get_account_events, get_entity_files, index_entity_files, record_account_event, retry_risk_briefing, set_user_health_sentiment, update_account_programs | — |
+| `useAccountDetail` | `useAccountDetail.ts` | 653 | archive_account, create_action, create_child_account, enrich_account, get_account_detail, get_account_events, get_entity_files, index_entity_files, record_account_event, retry_risk_briefing, set_user_health_sentiment, update_account_programs, update_latest_sentiment_note | — |
 | `useAccountDetailPage` | `useAccountDetailPage.tsx` | 281 | get_account_ancestors, get_entity_metadata, update_technical_footprint_field | — |
 | `useAccountFieldSave` | `useAccountFieldSave.ts` | 127 | accept_account_field_conflict, dismiss_account_field_conflict, update_account_field, update_entity_metadata | — |
 | `useAccountFields` | `useAccountFields.ts` | 137 | update_account_field | — |
@@ -87,6 +87,7 @@ All Tauri commands invoked from hooks:
 - `update_stakeholder_engagement` (1 hooks)
 - `update_stakeholder_assessment` (1 hooks)
 - `update_person` (1 hooks)
+- `update_latest_sentiment_note` (1 hooks)
 - `update_intelligence_field` (1 hooks)
 - `update_entity_metadata` (1 hooks)
 - `update_entity_context_entry` (1 hooks)
