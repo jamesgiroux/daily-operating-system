@@ -144,18 +144,30 @@ impl ActionDb {
 
     /// Open (or create) the database at `~/.dailyos/dailyos.db` and apply the schema.
     ///
-    /// Every call creates a fresh `rusqlite::Connection`. This was briefly
-    /// routed through the DbService writer pool to eliminate a WAL/HMAC
-    /// race under SQLCipher, but that implementation held a shared
-    /// `parking_lot::Mutex` guard for the lifetime of the returned
-    /// `ActionDb` — any caller that awaited while the guard was live
-    /// blocked every other caller, and sync callers on Tokio worker
-    /// threads blocked the runtime itself. The proper fix is a
-    /// dedicated-thread channel model (tracked separately). Until then
-    /// we go back to fresh opens; the WAL race is rare and surfaces as
-    /// a retryable "file is not a database" error.
+    /// Every call creates a fresh `rusqlite::Connection` via direct open. When
+    /// a global `DbService` is installed, the fresh-open path is executed on
+    /// the writer's dedicated thread to avoid SQLCipher WAL key-verification races
+    /// (SQLITE_NOTADB) while preserving a non-shared ownership contract.
     pub fn open() -> Result<Self, DbError> {
         let path = Self::db_path()?;
+        if let Some(svc) = crate::db_service::try_global() {
+            let hex_key = encryption::get_or_create_db_key(&path).map_err(|e| {
+                if e.starts_with("KEY_MISSING:") {
+                    DbError::KeyMissing {
+                        db_path: e.trim_start_matches("KEY_MISSING:").to_string(),
+                    }
+                } else {
+                    DbError::Encryption(e)
+                }
+            })?;
+            let conn = svc.open_fresh_serialized(path.clone(), hex_key)?;
+            let db = Self {
+                conn: ConnHandle::Owned(conn),
+            };
+            let _ = db.run_guarded_init_backfill_account_domains();
+            return Ok(db);
+        }
+
         Self::open_at(path)
     }
 
