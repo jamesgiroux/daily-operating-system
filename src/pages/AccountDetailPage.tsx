@@ -48,6 +48,8 @@ import { AccountPullQuote } from "@/components/account/AccountPullQuote";
 import { AccountTechnicalFootprint } from "@/components/account/AccountTechnicalFootprint";
 import { StrategicLandscape } from "@/components/entity/StrategicLandscape";
 import { StakeholderGrid } from "@/components/entity/StakeholderGrid";
+import { PendingStakeholderQueue } from "@/components/entity/PendingStakeholderQueue";
+import { usePendingStakeholders } from "@/hooks/usePendingStakeholders";
 import { ValueCommitments } from "@/components/entity/ValueCommitments";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { AddToRecord } from "@/components/entity/AddToRecord";
@@ -86,6 +88,9 @@ export default function AccountDetailPage() {
       .then((s) => setLinearConfigured(s.enabled && s.apiKeySet))
       .catch(() => setLinearConfigured(false));
   }, []);
+
+  // DOS-258 Lane F: pending stakeholder review queue for the Context tab.
+  const pendingStakeholders = usePendingStakeholders(accountId);
 
   if (page.loading) return <EditorialLoading />;
   if (page.error || !page.detail) return <EditorialError message={page.error ?? "Account not found"} onRetry={page.acct.load} />;
@@ -327,6 +332,11 @@ export default function AccountDetailPage() {
               }
             }}
           />
+          {/* DOS-258 Lane F: pending_review rows from account_stakeholders.
+              Rendered immediately after the confirmed-stakeholder grid so the
+              user sees "what we know" then "what needs review" in one scan.
+              Hidden when the queue is empty — no placeholder clutter. */}
+          <PendingStakeholderQueue queue={pendingStakeholders} />
         </MarginSection>
 
         {/* Chapter 3: What matters to them */}

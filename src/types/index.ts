@@ -1499,6 +1499,17 @@ export interface StakeholderSuggestion {
   resolvedAt?: string | null;
 }
 
+/** DOS-258 Lane F: a pending_review row from account_stakeholders + people join. */
+export interface PendingStakeholderSuggestion {
+  personId: string;
+  name: string | null;
+  email: string | null;
+  /** 0.0–1.0 confidence score from the auto-suggest engine, null for legacy rows. */
+  confidence: number | null;
+  /** 'meeting_attendance' | 'email_correspondence' | etc. */
+  dataSource: string | null;
+}
+
 export interface AccountTeamImportNote {
   id: number;
   accountId: string;
