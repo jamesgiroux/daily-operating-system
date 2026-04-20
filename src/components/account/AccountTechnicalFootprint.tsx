@@ -1,7 +1,8 @@
 import { formatShortDate } from "@/lib/utils";
-import type { AccountTechnicalFootprint as TechnicalFootprintData } from "@/types";
+import type { AccountProduct, AccountTechnicalFootprint as TechnicalFootprintData } from "@/types";
 
-import styles from "@/pages/AccountDetailEditorial.module.css";
+import inlineStyles from "@/pages/AccountDetailEditorial.module.css";
+import refCss from "@/components/context/ReferenceGrid.module.css";
 
 interface AccountTechnicalFootprintProps {
   /**
@@ -15,14 +16,31 @@ interface AccountTechnicalFootprintProps {
   /** DOS-18: feature list from productAdoption.featureAdoption (chapter variant only). */
   featureAdoption?: string[];
   /**
-   * DOS-231: when provided, gap rows expose a "Capture now →" affordance that
-   * routes to the structured technical-footprint editor. This is a frontend
-   * link only; writing to `account_technical_footprint` lands with the
-   * Context schema work in v1.2.2 (DOS-207). Until that exists the link
-   * surfaces the absence of the capture path rather than silently accepting
-   * text that the backend can't persist.
+   * Products owned by the account, rendered as a dotted list alongside
+   * Feature adoption. Dot color reflects status (active / trial / churned).
+   * Chapter variant only. Full edit UX (status dropdown, product-level
+   * Bayesian feedback) is tracked in DOS-251 for v1.2.2.
+   */
+  products?: AccountProduct[];
+  /**
+   * DOS-231: reserved for structured capture flow; full wiring lands in
+   * DOS-251 (v1.2.2). Currently unused on the chapter variant — gap rows
+   * render as read-only saffron sentinels.
    */
   onCaptureGap?: (field: string) => void;
+}
+
+function productDotClass(status: string): string {
+  switch (status.toLowerCase()) {
+    case "active":
+      return refCss.featureDot;
+    case "trial":
+      return `${refCss.featureDot} ${refCss.featureDotTrial}`;
+    case "churned":
+      return `${refCss.featureDot} ${refCss.featureDotChurned}`;
+    default:
+      return refCss.featureDot;
+  }
 }
 
 interface RefRow {
@@ -32,7 +50,7 @@ interface RefRow {
   gap?: boolean;
 }
 
-export function AccountTechnicalFootprint({ footprint, variant = "inline", featureAdoption, onCaptureGap }: AccountTechnicalFootprintProps) {
+export function AccountTechnicalFootprint({ footprint, variant = "inline", featureAdoption, products }: AccountTechnicalFootprintProps) {
   const tf = footprint;
 
   if (variant === "chapter") {
@@ -44,63 +62,53 @@ export function AccountTechnicalFootprint({ footprint, variant = "inline", featu
       { label: "Open tickets", field: "open_tickets", value: tf?.openTickets != null ? String(tf.openTickets) : "— not captured", gap: tf?.openTickets == null },
       { label: "CSAT", field: "csat_score", value: tf?.csatScore != null && tf.csatScore > 0 ? `${tf.csatScore.toFixed(1)}/5` : "— not captured", gap: !(tf?.csatScore && tf.csatScore > 0) },
       { label: "Adoption score", field: "adoption_score", value: tf?.adoptionScore != null && tf.adoptionScore > 0 ? `${Math.round(tf.adoptionScore * 100)}%` : "— not computed", gap: !(tf?.adoptionScore && tf.adoptionScore > 0) },
-      // Integrations is a gap row only — no backing column exists today.
-      // Mockup calls for "— not captured" sentinel in the reference grid.
       { label: "Integrations", field: "integrations", value: "— not captured", gap: true },
     ];
-    const gapCount = rows.filter((r) => r.gap).length;
 
     return (
       <div>
-        <div className={styles.technicalFootprintGrid} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", rowGap: 8, columnGap: 32 }}>
+        <div className={refCss.grid}>
           {rows.map((row) => (
-            <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--color-rule-light)" }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)" }}>
-                {row.label}
+            <div key={row.label} className={refCss.row}>
+              <span className={refCss.label}>{row.label}</span>
+              <span className={row.gap ? `${refCss.value} ${refCss.valueGap}` : refCss.value}>
+                {row.value}
               </span>
-              {row.gap && onCaptureGap ? (
-                <button
-                  type="button"
-                  onClick={() => onCaptureGap(row.field)}
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 13,
-                    color: "var(--color-spice-saffron)",
-                    background: "transparent",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                    textAlign: "right",
-                    fontStyle: "italic",
-                  }}
-                  aria-label={`Capture ${row.label.toLowerCase()}`}
-                >
-                  {row.value} · Capture now →
-                </button>
-              ) : (
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: row.gap ? "var(--color-text-tertiary)" : "var(--color-text-primary)", fontStyle: row.gap ? "italic" : "normal", textAlign: "right" }}>
-                  {row.value}
-                </span>
-              )}
             </div>
           ))}
         </div>
 
+        {products && products.length > 0 && (
+          <>
+            <div className={refCss.featureHeading}>
+              Products · {products.length}
+            </div>
+            <div className={refCss.featureList}>
+              {products.map((product) => (
+                <div key={`${product.id}-${product.name}`} className={refCss.featureItem}>
+                  <span aria-hidden className={productDotClass(product.status)} />
+                  {product.name}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
         {featureAdoption && featureAdoption.length > 0 && (
           <>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-text-tertiary)", margin: "24px 0 12px" }}>
+            <div className={refCss.featureHeading}>
               Feature adoption · {featureAdoption.length} active
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px 16px" }}>
+            <div className={refCss.featureList}>
               {featureAdoption.map((feature) => (
-                <div key={feature} style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span aria-hidden style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-garden-sage)", flexShrink: 0 }} />
+                <div key={feature} className={refCss.featureItem}>
+                  <span aria-hidden className={refCss.featureDot} />
                   {feature}
                 </div>
               ))}
             </div>
             {tf?.sourcedAt && (
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-text-tertiary)", marginTop: 12 }}>
+              <div className={refCss.featureSource}>
                 All {featureAdoption.length} features active as of {formatShortDate(tf.sourcedAt)}
                 {tf.source ? ` (${tf.source})` : ""}
               </div>
@@ -108,11 +116,9 @@ export function AccountTechnicalFootprint({ footprint, variant = "inline", featu
           </>
         )}
 
-        {gapCount > 0 && (
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-spice-saffron)", marginTop: 20, padding: "8px 16px", background: "var(--color-spice-saffron-10, rgba(196,147,53,0.10))", borderLeft: "2px solid var(--color-spice-saffron)", borderRadius: "0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0" }}>
-            {gapCount} of {rows.length} technical fields unfilled{tf?.sourcedAt ? ` · Last enrichment ${formatShortDate(tf.sourcedAt)}` : ""}
-          </div>
-        )}
+        <div className={refCss.caveat}>
+          Full field capture coming in the next release of DailyOS
+        </div>
       </div>
     );
   }
@@ -132,17 +138,17 @@ export function AccountTechnicalFootprint({ footprint, variant = "inline", featu
   if (items.length === 0) return null;
 
   return (
-    <div className={styles.technicalFootprint}>
-      <div className={styles.technicalFootprintLabel}>Technical Footprint</div>
-      <div className={styles.technicalFootprintGrid}>
+    <div className={inlineStyles.technicalFootprint}>
+      <div className={inlineStyles.technicalFootprintLabel}>Technical Footprint</div>
+      <div className={inlineStyles.technicalFootprintGrid}>
         {items.map((item) => (
-          <div key={item.label} className={styles.technicalFootprintItem}>
-            <span className={styles.technicalFootprintItemLabel}>{item.label}</span>
-            <span className={styles.technicalFootprintItemValue}>{item.value}</span>
+          <div key={item.label} className={inlineStyles.technicalFootprintItem}>
+            <span className={inlineStyles.technicalFootprintItemLabel}>{item.label}</span>
+            <span className={inlineStyles.technicalFootprintItemValue}>{item.value}</span>
           </div>
         ))}
       </div>
-      <div className={styles.technicalFootprintSource}>
+      <div className={inlineStyles.technicalFootprintSource}>
         Source: {tf.source} &middot; {formatShortDate(tf.sourcedAt)}
       </div>
     </div>

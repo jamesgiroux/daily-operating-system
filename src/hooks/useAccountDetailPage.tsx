@@ -130,11 +130,10 @@ export function useAccountDetailPage(accountId: string | undefined) {
         intel?.openCommitments?.length
       );
       const hasTechnical = !!acct.detail?.technicalFootprint;
-      const hasProducts = (acct.detail?.products?.length ?? 0) > 0;
-      const hasFiles = (acct.files?.length ?? 0) > 0;
-      return buildContextChapters({ hasWhatMatters, hasBuilt, hasTechnical, hasProducts, hasFiles });
+      return buildContextChapters({ hasWhatMatters, hasBuilt, hasTechnical });
     }
-    return buildWorkChapters(hasSharedData);
+    const hasFiles = (acct.files?.length ?? 0) > 0;
+    return buildWorkChapters(hasSharedData, hasFiles);
   }, [
     activeView,
     acct.detail?.isParent,

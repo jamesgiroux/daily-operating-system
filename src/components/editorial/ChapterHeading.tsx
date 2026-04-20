@@ -17,12 +17,14 @@ interface ChapterHeadingProps {
   freshness?: ReactNode;
   /** DOS-18: Render title in compact monospace uppercase ("reference weight") per mockup. */
   variant?: "primary" | "reference";
+  /** Suppress the chapter-break HR rule — use on the first chapter of a view. */
+  noRule?: boolean;
 }
 
-export function ChapterHeading({ title, epigraph, feedbackSlot, freshness, variant = "primary" }: ChapterHeadingProps) {
+export function ChapterHeading({ title, epigraph, feedbackSlot, freshness, variant = "primary", noRule = false }: ChapterHeadingProps) {
   return (
     <div className={styles.heading}>
-      <hr className={styles.rule} />
+      {!noRule && <hr className={styles.rule} />}
       <div className={styles.titleRow}>
         {variant === "reference" ? (
           <div

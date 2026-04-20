@@ -1,166 +1,115 @@
 /* =============================================================================
-   VALUE COMMITMENTS — Ledger Style
-   Data-forward. Financial report meets editorial magazine.
+   VALUE COMMITMENTS — Chapter 4 "What we've built together"
+   Ref: .docs/mockups/account-context-globex.html (Chapter 4)
    ============================================================================= */
 
 .section {
   scroll-margin-top: 60px;
 }
 
-/* -- Subsection headings -- */
-
-.subsection {
-  margin-bottom: var(--space-2xl);
-}
-
-.subsection:last-child {
-  margin-bottom: 0;
-}
-
 .subsectionLabel {
   font-family: var(--font-mono);
   font-size: 10px;
-  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
   color: var(--color-text-tertiary);
-  margin: 0 0 16px;
+  margin-top: var(--space-3xl);
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px dashed var(--color-rule-light);
 }
 
-/* -- Value Delivered -- large date timeline -- */
+.subsectionLabel:first-child {
+  margin-top: 0;
+}
 
-.valueList {
+/* -- Value delivered — 3-col card grid ------------------------------------ */
+
+.valueGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-lg);
+}
+
+.valueCard {
+  position: relative;
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
+  gap: var(--space-md);
 }
 
-.valueRow {
-  display: grid;
-  grid-template-columns: 100px 1fr auto;
-  gap: 20px;
-  padding: 28px 0;
-  border-bottom: 1px solid var(--color-rule-light);
-  align-items: start;
-  position: relative;
-}
-
-.valueRow:last-child {
-  border-bottom: none;
-}
-
-.dateBlock {
-  text-align: right;
-}
-
-.dateMonth {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--color-text-tertiary);
-}
-
-.dateDay {
-  font-family: var(--font-serif);
-  font-size: 36px;
-  font-weight: 300;
-  line-height: 0.9;
-  color: var(--color-spice-turmeric);
-  letter-spacing: -0.02em;
-}
-
-.dateFallback {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.02em;
-}
-
-.valueBody {
-  min-width: 0;
-}
-
-.valueStatement {
-  font-family: var(--font-serif);
-  font-size: 17px;
-  line-height: 1.55;
-  color: var(--color-text-primary);
-}
-
-.valueImpact {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.impactText {
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--color-text-tertiary);
-  font-style: italic;
-}
-
-/* DOS-18: Impact tag pills — revenue|cost|risk|speed enum */
 .impactTag {
-  display: inline-flex;
-  align-items: center;
+  align-self: flex-start;
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+  font-weight: 600;
   padding: 3px 8px;
   border-radius: 3px;
   flex-shrink: 0;
 }
 
 .impactTagRevenue {
-  background: var(--color-garden-sage-14);
-  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-15, rgba(136, 159, 120, 0.15));
+  color: var(--color-garden-rosemary, #4f6a3f);
 }
 
 .impactTagCost {
-  background: var(--color-spice-turmeric-14, var(--color-spice-turmeric-12));
+  background: var(--color-spice-turmeric-15, rgba(224, 175, 65, 0.15));
   color: var(--color-spice-turmeric);
 }
 
 .impactTagRisk {
-  background: var(--color-spice-terracotta-14, var(--color-spice-terracotta-12));
+  background: var(--color-spice-terracotta-12, rgba(192, 108, 84, 0.12));
   color: var(--color-spice-terracotta);
 }
 
 .impactTagSpeed {
-  background: var(--color-garden-larkspur-14);
-  color: var(--color-garden-larkspur);
+  background: var(--color-garden-larkspur-15, rgba(110, 137, 168, 0.15));
+  color: #4a6186;
 }
 
 .impactTagDefault {
-  background: var(--color-desk-charcoal-8);
+  background: var(--color-desk-charcoal-4, rgba(60, 55, 48, 0.04));
   color: var(--color-text-tertiary);
 }
 
-/* -- Success Metrics -- dashboard strip -- */
+.valueHeadline {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--color-text-primary);
+}
 
-.metricsStrip {
+.valueSource {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: auto;
+}
+
+/* -- Success metrics — 3-col card grid ------------------------------------ */
+
+.metricRow {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0;
-  margin-top: 40px;
-  border-top: 2px solid var(--color-desk-charcoal);
-  border-bottom: 1px solid var(--color-rule-heavy);
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg);
 }
 
-.metricCell {
-  padding: 24px 20px;
-  border-right: 1px solid var(--color-rule-light);
+.metricCard {
   position: relative;
-}
-
-.metricCell:last-child {
-  border-right: none;
+  padding: var(--space-lg);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
 }
 
 .metricName {
@@ -169,216 +118,84 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-tertiary);
-  margin-bottom: 12px;
 }
 
-.metricValue {
+.metricValues {
   font-family: var(--font-serif);
-  font-size: 28px;
-  font-weight: 300;
-  letter-spacing: -0.02em;
-  margin-bottom: 4px;
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin-top: var(--space-xs);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
 }
 
-/* When the AI returns narrative text instead of a short value,
-   drop to body font size so the card doesn't blow out. */
-.metricValueLong {
-  font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 400;
-  letter-spacing: 0;
-  line-height: 1.5;
-  margin-bottom: 4px;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.metricCurrent {
+  color: var(--color-garden-rosemary, #4f6a3f);
+  font-weight: 500;
 }
 
 .metricTarget {
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 13px;
   color: var(--color-text-tertiary);
-  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
 }
 
-.metricBar {
-  height: 3px;
-  background: var(--color-rule-light);
-  border-radius: 2px;
-  margin-top: 12px;
-  overflow: hidden;
-}
-
-.metricFill {
-  height: 100%;
-  border-radius: 2px;
-  width: var(--progress-width, 0%);
-}
-
-.metricFillSage {
-  background: var(--color-garden-sage);
-}
-
-.metricFillTurmeric {
-  background: var(--color-spice-turmeric);
-}
-
-.metricFillTerracotta {
-  background: var(--color-spice-terracotta);
-}
-
-.metricFeedback {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.metricCell:hover .metricFeedback,
-.metricFeedback:focus-within {
-  opacity: 1;
-}
-
-/* -- Open Commitments -- dossier-style vertical cards -- */
-
-.commitmentList {
+.metricFooter {
+  margin-top: var(--space-sm);
   display: flex;
-  flex-direction: column;
-}
-
-.commitmentItem {
-  display: flex;
-  align-items: start;
-  gap: 12px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--color-rule-light);
-  position: relative;
-}
-
-.commitmentItem:last-child {
-  border-bottom: none;
-}
-
-.commitmentDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-top: 7px;
-}
-
-.commitmentDotOpen {
-  background: var(--color-spice-turmeric);
-}
-
-.commitmentDotOverdue {
-  background: var(--color-spice-terracotta);
-}
-
-.commitmentBody {
-  flex: 1;
-  min-width: 0;
-}
-
-.commitmentDesc {
-  font-family: var(--font-serif);
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--color-text-primary);
-}
-
-.commitmentMeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  margin-top: 6px;
-}
-
-.commitmentOwner {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.commitmentDue {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.04em;
-}
-
-.commitmentDueOverdue {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--color-spice-terracotta);
-  letter-spacing: 0.04em;
-  font-weight: 500;
-}
-
-.commitmentSource {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.04em;
-}
-
-/* -- Status badges -- */
-
-.statusBadge {
+  justify-content: space-between;
+  gap: var(--space-sm);
   font-family: var(--font-mono);
   font-size: 9px;
-  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  padding: 2px 8px;
-  border-radius: 3px;
-  white-space: nowrap;
-  flex-shrink: 0;
+  color: var(--color-text-tertiary);
 }
 
-.badgeSage {
-  background: var(--color-garden-sage-12);
-  color: var(--color-garden-sage);
+.metricOwner {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
 }
 
-.badgeTurmeric {
-  background: var(--color-spice-turmeric-12);
+.metricStatus {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.statusAchieved {
+  color: var(--color-garden-rosemary, #4f6a3f);
+}
+
+.statusOnTrack {
   color: var(--color-spice-turmeric);
 }
 
-.badgeTerracotta {
-  background: var(--color-spice-terracotta-12);
+.statusAtRisk {
   color: var(--color-spice-terracotta);
 }
 
-.badgeNeutral {
-  background: var(--color-desk-charcoal-4);
+.statusBehind {
+  color: var(--color-spice-terracotta);
+}
+
+.statusNeutral {
   color: var(--color-text-tertiary);
 }
 
-/* -- Hover-reveal item actions -- */
-
-.itemActions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.valueRow:hover .itemActions,
-.commitmentItem:hover .itemActions,
-.itemActions:focus-within {
-  opacity: 1;
-}
+/* -- Dismiss (hover-reveal, feeds negative feedback) ---------------------- */
 
 .dismissButton {
+  position: absolute;
+  top: 6px;
+  right: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -390,61 +207,17 @@
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.valueCard:hover .dismissButton,
+.metricCard:hover .dismissButton,
+.dismissButton:focus-visible {
+  opacity: 1;
 }
 
 .dismissButton:hover {
   color: var(--color-spice-terracotta);
-}
-
-/* -- Provenance row with confirmed badge -- */
-
-.provenanceRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.confirmedBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-garden-sage);
-  white-space: nowrap;
-}
-
-/* -- Responsive -- */
-
-@media (max-width: 700px) {
-  .metricsStrip {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .metricCell:nth-child(2) {
-    border-right: none;
-  }
-
-  .metricCell:nth-child(1),
-  .metricCell:nth-child(2) {
-    border-bottom: 1px solid var(--color-rule-light);
-  }
-
-  .commitmentRow {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
-
-  .valueRow {
-    grid-template-columns: 60px 1fr auto;
-    gap: 12px;
-  }
-
-  .dateDay {
-    font-size: 28px;
-  }
+  background: var(--color-desk-charcoal-4, rgba(60, 55, 48, 0.04));
 }
