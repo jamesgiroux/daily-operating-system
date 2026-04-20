@@ -77,10 +77,17 @@ export function StakeholderGrid({
   const external = stakeholders ?? [];
   const internal = accountTeam ?? [];
 
-  // Ranking: engagement weight + multi-role weight + meeting-count log scale.
-  // Highest-signal at the top. Deterministic — no AI call, just a rank based
-  // on what the DB already carries.
-  const ranked = [...external].sort(signalDescending);
+  // Ranking: role TIER first, then signal score within tier. Tiering was
+  // added after QA found AI-inferred "associated" people outranking the
+  // user-designated primary contact because signal alone treated a chatty
+  // calendar attendee the same as a human-verified role assignment.
+  //
+  // Tier order (lower number = higher in the grid):
+  //   1 · Primary contact   — any role == 'primary_contact' from dataSource 'user'
+  //   2 · Verified roles    — at least one role with dataSource 'user'
+  //   3 · AI-inferred only  — roles exist but none are user-verified
+  //   4 · Associated only   — no roles at all (dotted-underline treatment)
+  const ranked = [...external].sort(stakeholderHierarchy);
   const primary = ranked.slice(0, PRIMARY_COUNT);
   const secondary = ranked.slice(PRIMARY_COUNT);
 
@@ -221,8 +228,29 @@ function MoreAssociatedRow({ people }: { people: StakeholderFull[] }) {
 
 /* ─────────────────────────────────────────────────────────────────────── */
 
-function signalDescending(a: StakeholderFull, b: StakeholderFull): number {
-  return signalScore(b) - signalScore(a);
+/**
+ * Composite comparator: role tier first, then signal score, then name as
+ * a stable tiebreaker so the same inputs always render in the same order.
+ */
+function stakeholderHierarchy(a: StakeholderFull, b: StakeholderFull): number {
+  const tierDelta = roleTier(a) - roleTier(b);
+  if (tierDelta !== 0) return tierDelta;
+  const signalDelta = signalScore(b) - signalScore(a);
+  if (signalDelta !== 0) return signalDelta;
+  return (a.personName ?? "").localeCompare(b.personName ?? "");
+}
+
+/** 1 = primary contact, 2 = user-verified role, 3 = AI-only role, 4 = no role. */
+export function roleTier(s: StakeholderFull): number {
+  const roles = s.roles ?? [];
+  if (roles.length === 0) return 4;
+  const hasUserPrimary = roles.some(
+    (r) => r.role.toLowerCase() === "primary_contact" && r.dataSource === "user",
+  );
+  if (hasUserPrimary) return 1;
+  const hasUserRole = roles.some((r) => r.dataSource === "user");
+  if (hasUserRole) return 2;
+  return 3;
 }
 
 function signalScore(s: StakeholderFull): number {
