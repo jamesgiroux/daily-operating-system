@@ -473,6 +473,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 108,
         sql: include_str!("migrations/107_stakeholder_role_dismissals.sql"),
     },
+    // Work-tab foundation: action_kind column + ai_commitment_bridge +
+    // account_focus_pins + nudge_dismissals. Enables commitments-as-Actions,
+    // focus pin overlay, and nudge dismissal memory. See migration file
+    // header for rationale.
+    Migration {
+        version: 109,
+        sql: include_str!("migrations/108_work_tab_actions.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

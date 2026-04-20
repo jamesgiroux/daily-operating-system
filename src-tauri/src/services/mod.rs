@@ -4,6 +4,7 @@ use crate::state::AppState;
 
 pub mod accounts;
 pub mod actions;
+pub mod commitment_bridge;
 pub mod dashboard;
 pub mod emails;
 pub mod entities;

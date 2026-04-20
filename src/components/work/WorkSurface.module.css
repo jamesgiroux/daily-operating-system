@@ -161,6 +161,14 @@
   color: var(--color-text-primary);
   margin: 0;
 }
+/* DOS Work-tab Phase 3: top-4 emphasis for Commitments chapter.
+   Heavier serif weight + slight size bump lifts the first few cards so the
+   list reads as "big three or four, then the rest" without hiding items 5+. */
+.commitmentHeadlineEmphasis {
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.3;
+}
 .commitmentMetaRow {
   display: flex;
   flex-wrap: wrap;

@@ -1847,6 +1847,7 @@ fn extract_transcript_actions(
             source_type: Some("transcript".to_string()),
             source_id: Some(meeting_id.to_string()),
             source_label: Some(meeting_title.to_string()),
+            action_kind: crate::action_status::KIND_TASK.to_string(),
             context: meta.context,
             waiting_on: if meta.is_waiting {
                 Some("true".to_string())

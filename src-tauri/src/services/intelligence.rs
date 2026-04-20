@@ -483,6 +483,32 @@ pub fn upsert_assessment_from_enrichment(
         }
     }
 
+    // DOS Work-tab: Best-effort bridge of AI-inferred commitments → Actions.
+    // Enrichment write is the source of truth; bridge errors must not fail it.
+    if entity_type == "account" {
+        if let Some(ref commitments) = intel.open_commitments {
+            match crate::services::commitment_bridge::sync_ai_commitments(
+                db,
+                entity_type,
+                entity_id,
+                commitments,
+            ) {
+                Ok(summary) => log::info!(
+                    "commitment_bridge: {} created, {} updated, {} tombstoned-skip, {} missing-id ({}:{})",
+                    summary.created,
+                    summary.updated,
+                    summary.skipped_tombstoned,
+                    summary.skipped_missing_id,
+                    entity_type,
+                    entity_id
+                ),
+                Err(e) => log::warn!(
+                    "commitment_bridge sync failed for {entity_type}:{entity_id} (non-fatal): {e}"
+                ),
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1340,6 +1366,7 @@ pub async fn track_recommendation(
                 source_type: Some("intelligence".to_string()),
                 source_id: Some(entity_id.clone()),
                 source_label: Some("Based on account intelligence".to_string()),
+                action_kind: crate::action_status::KIND_TASK.to_string(),
                 context: Some(rec.rationale.clone()),
                 waiting_on: None,
                 updated_at: now,

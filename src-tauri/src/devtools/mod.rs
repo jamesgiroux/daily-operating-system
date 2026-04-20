@@ -4774,9 +4774,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             SuccessMetric { name: "Platform Adoption".into(), target: Some("80%+".into()), current: Some("85%".into()), status: Some("on_track".into()), owner: None },
         ]),
         open_commitments: Some(vec![
-            OpenCommitment { description: "Finalize Phase 2 SOW with legal".into(), owner: Some("Legal / us".into()), due_date: Some(date_only(7)), source: Some("meeting".into()), status: Some("blocked".into()), item_source: None, discrepancy: None },
-            OpenCommitment { description: "Complete Alex Torres knowledge transfer".into(), owner: Some("Alex Torres + team".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
-            OpenCommitment { description: "Address NPS detractor concerns".into(), owner: Some("CS team".into()), due_date: Some(date_only(21)), source: Some("NPS survey".into()), status: Some("in_progress".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Finalize Phase 2 SOW with legal".into(), owner: Some("Legal / us".into()), due_date: Some(date_only(7)), source: Some("meeting".into()), status: Some("blocked".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Complete Alex Torres knowledge transfer".into(), owner: Some("Alex Torres + team".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Address NPS detractor concerns".into(), owner: Some("CS team".into()), due_date: Some(date_only(21)), source: Some("NPS survey".into()), status: Some("in_progress".into()), item_source: None, discrepancy: None },
         ]),
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("strong".into()),
@@ -4789,8 +4789,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             CompetitiveInsight { competitor: "Contoso Platform".into(), threat_level: Some("mentioned".into()), context: Some("Pat Kim mentioned evaluating Contoso for APAC deployment".into()), source: Some("meeting".into()), detected_at: Some(days_ago_rfc(14)), item_source: None, discrepancy: None },
         ],
         strategic_priorities: vec![
-            StrategicPriority { priority: "Phase 2 Expansion".into(), status: Some("active".into()), owner: Some("Sarah Chen".into()), source: Some("meeting".into()), timeline: Some("Q2 2026".into()) },
-            StrategicPriority { priority: "APAC Pilot (Singapore)".into(), status: Some("paused".into()), owner: Some("Pat Kim".into()), source: Some("meeting".into()), timeline: Some("H2 2026".into()) },
+            StrategicPriority { priority: "Phase 2 Expansion".into(), status: Some("active".into()), owner: Some("Sarah Chen".into()), source: Some("meeting".into()), timeline: Some("Q2 2026".into()), context: None },
+            StrategicPriority { priority: "APAC Pilot (Singapore)".into(), status: Some("paused".into()), owner: Some("Pat Kim".into()), source: Some("meeting".into()), timeline: Some("H2 2026".into()), context: None },
         ],
         // Dimension 2: Relationship Health
         coverage_assessment: Some(CoverageAssessment {
@@ -4991,9 +4991,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             SuccessMetric { name: "Team B Usage".into(), target: Some("stable".into()), current: Some("-20% MoM".into()), status: Some("critical".into()), owner: None },
         ]),
         open_commitments: Some(vec![
-            OpenCommitment { description: "Address Team B usage decline before QBR".into(), owner: Some("CS + Product".into()), due_date: Some(date_only(5)), source: Some("meeting".into()), status: Some("in_progress".into()), item_source: None, discrepancy: None },
-            OpenCommitment { description: "Secure renewal commitment".into(), owner: Some("Account team".into()), due_date: Some(date_only(45)), source: Some("renewal".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
-            OpenCommitment { description: "Identify Pat Reynolds' successor".into(), owner: Some("Account team".into()), due_date: Some(date_only(30)), source: Some("meeting".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Address Team B usage decline before QBR".into(), owner: Some("CS + Product".into()), due_date: Some(date_only(5)), source: Some("meeting".into()), status: Some("in_progress".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Secure renewal commitment".into(), owner: Some("Account team".into()), due_date: Some(date_only(45)), source: Some("renewal".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Identify Pat Reynolds' successor".into(), owner: Some("Account team".into()), due_date: Some(date_only(30)), source: Some("meeting".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
         ]),
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("moderate".into()),
@@ -5005,8 +5005,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             CompetitiveInsight { competitor: "Contoso Platform".into(), threat_level: Some("evaluation".into()), context: Some("Casey Lee actively evaluating Contoso for Team B replacement".into()), source: Some("email".into()), detected_at: Some(days_ago_rfc(7)), item_source: None, discrepancy: None },
         ],
         strategic_priorities: vec![
-            StrategicPriority { priority: "Renewal Commitment".into(), status: Some("at_risk".into()), owner: Some("Account team".into()), source: Some("renewal cycle".into()), timeline: Some(date_only(45)) },
-            StrategicPriority { priority: "Team B Recovery".into(), status: Some("active".into()), owner: Some("CS team".into()), source: Some("usage data".into()), timeline: Some("Before QBR".into()) },
+            StrategicPriority { priority: "Renewal Commitment".into(), status: Some("at_risk".into()), owner: Some("Account team".into()), source: Some("renewal cycle".into()), timeline: Some(date_only(45)), context: None },
+            StrategicPriority { priority: "Team B Recovery".into(), status: Some("active".into()), owner: Some("CS team".into()), source: Some("usage data".into()), timeline: Some("Before QBR".into()), context: None },
         ],
         coverage_assessment: Some(CoverageAssessment {
             role_fill_rate: Some(0.5),
@@ -5194,8 +5194,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             SuccessMetric { name: "Phase 1 Completion".into(), target: Some("100%".into()), current: Some("100%".into()), status: Some("on_track".into()), owner: None },
         ]),
         open_commitments: Some(vec![
-            OpenCommitment { description: "Get Phase 2 budget approved".into(), owner: Some("Dana Patel / Finance".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("blocked".into()), item_source: None, discrepancy: None },
-            OpenCommitment { description: "Schedule Phase 2 kickoff".into(), owner: Some("Account team".into()), due_date: None, source: Some("meeting".into()), status: Some("waiting".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Get Phase 2 budget approved".into(), owner: Some("Dana Patel / Finance".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("blocked".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Schedule Phase 2 kickoff".into(), owner: Some("Account team".into()), due_date: None, source: Some("meeting".into()), status: Some("waiting".into()), item_source: None, discrepancy: None },
         ]),
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("developing".into()),
@@ -5205,7 +5205,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         }),
         competitive_context: vec![],
         strategic_priorities: vec![
-            StrategicPriority { priority: "Phase 2 Expansion".into(), status: Some("paused".into()), owner: Some("Dana Patel".into()), source: Some("meeting".into()), timeline: Some("Pending budget".into()) },
+            StrategicPriority { priority: "Phase 2 Expansion".into(), status: Some("paused".into()), owner: Some("Dana Patel".into()), source: Some("meeting".into()), timeline: Some("Pending budget".into()), context: None },
         ],
         coverage_assessment: Some(CoverageAssessment {
             role_fill_rate: Some(0.5),

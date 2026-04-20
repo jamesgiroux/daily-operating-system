@@ -404,7 +404,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE project_id = ?1

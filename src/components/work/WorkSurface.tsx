@@ -213,6 +213,12 @@ export interface CommitmentCardProps {
   stillActiveNote?: string;
   /** Equal-valid exits: Mark done / Push to tracker / Dismiss / Leave-as-is. */
   actions: ReactNode;
+  /**
+   * DOS Work-tab Phase 3: top-N visual weight. When true, the headline
+   * renders at a heavier serif weight to give the first ~4 commitments a
+   * "big three or four" reading order without demoting the rest.
+   */
+  emphasis?: boolean;
 }
 
 export function CommitmentCard({
@@ -226,10 +232,14 @@ export function CommitmentCard({
   linearStatus,
   stillActiveNote,
   actions,
+  emphasis,
 }: CommitmentCardProps) {
+  const headlineClass = emphasis
+    ? `${s.commitmentHeadline} ${s.commitmentHeadlineEmphasis}`
+    : s.commitmentHeadline;
   return (
     <article className={s.commitmentCard}>
-      <h3 className={s.commitmentHeadline}>{headline}</h3>
+      <h3 className={headlineClass}>{headline}</h3>
 
       {provenance && provenance.length > 0 && (
         <div className={s.commitmentMetaRow}>

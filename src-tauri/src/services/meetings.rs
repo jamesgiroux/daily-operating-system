@@ -1014,6 +1014,7 @@ pub async fn capture_meeting_outcome(
                     source_type: Some("post_meeting".to_string()),
                     source_id: Some(outcome_clone.meeting_id.clone()),
                     source_label: Some(outcome_clone.meeting_title.clone()),
+                    action_kind: crate::action_status::KIND_TASK.to_string(),
                     context: action.owner.clone(),
                     waiting_on: None,
                     updated_at: now,

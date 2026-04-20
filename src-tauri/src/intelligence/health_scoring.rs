@@ -440,6 +440,9 @@ fn compute_meeting_cadence(db: &ActionDb, account_id: &str) -> DimensionScore {
 }
 
 fn compute_email_engagement(db: &ActionDb, account_id: &str) -> DimensionScore {
+    // TODO(v1.2.2): commitment completion rate → behavioral input for engagement dim.
+    // When the AI commitment bridge has enough signal volume, weight the engagement
+    // score by the delivered:rejected ratio over a rolling 90-day window.
     let signals = db
         .list_recent_email_signals_for_entity(account_id, 50)
         .unwrap_or_default();

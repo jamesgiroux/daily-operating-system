@@ -483,6 +483,10 @@ pub fn run() {
             commands::reset_email_preferences,
             commands::resolve_decision,
             commands::get_suggested_actions,
+            // DOS Work-tab Phase 3: per-account Work chapter reads
+            commands::get_account_commitments,
+            commands::get_account_suggestions,
+            commands::get_account_recently_landed,
             commands::get_meeting_history,
             commands::get_meeting_history_detail,
             commands::search_meetings,

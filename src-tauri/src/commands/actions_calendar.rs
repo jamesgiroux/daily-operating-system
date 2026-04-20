@@ -280,6 +280,51 @@ pub async fn get_suggested_actions(
         .await
 }
 
+/// DOS Work-tab Phase 3: open commitments for the Work tab Commitments chapter.
+///
+/// Returns rows with `action_kind = 'commitment'` AND status in
+/// (backlog, unstarted, started). Sort: status ASC (backlog first), then
+/// `created_at DESC`.
+#[tauri::command]
+pub async fn get_account_commitments(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    state
+        .db_read(move |db| crate::services::actions::get_account_commitments(db, &account_id))
+        .await
+}
+
+/// DOS Work-tab Phase 3: backlog suggestions for the Work tab Suggestions chapter.
+///
+/// Returns `status = 'backlog'` rows for the account (any `action_kind`).
+/// Backlog commitments and backlog tasks both surface as suggestions until
+/// accepted (backlog → unstarted) or rejected (→ archived).
+#[tauri::command]
+pub async fn get_account_suggestions(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    state
+        .db_read(move |db| crate::services::actions::get_account_suggestions(db, &account_id))
+        .await
+}
+
+/// DOS Work-tab Phase 3: recently landed (completed) actions for the Work
+/// tab Recently landed chapter.
+///
+/// Returns `status = 'completed'` rows with `completed_at >= now - 30 days`
+/// for the account. Sort: `completed_at DESC`. Cap 20.
+#[tauri::command]
+pub async fn get_account_recently_landed(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    state
+        .db_read(move |db| crate::services::actions::get_account_recently_landed(db, &account_id))
+        .await
+}
+
 /// Get recent meeting history for an account from the SQLite database.
 ///
 /// Returns meetings within `lookback_days` (default 30), limited to `limit` results (default 3).
@@ -809,6 +854,10 @@ pub struct CreateActionRequest {
     pub person_id: Option<String>,
     pub context: Option<String>,
     pub source_label: Option<String>,
+    /// DOS Work-tab Phase 1: discriminator between generic tasks and AI-inferred
+    /// commitments. Defaults to `task` when absent.
+    #[serde(default)]
+    pub action_kind: Option<String>,
 }
 
 #[tauri::command]

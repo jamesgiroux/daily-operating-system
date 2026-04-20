@@ -10,25 +10,26 @@ import { buildWorkChapters } from "./account-detail-utils";
  * Wave 0g Finding 2: "shared" is conditional on hasSharedData (real
  * tracker provenance, arrives in v1.2.2 / DOS-75).
  */
+// Phase 2a chapter order: Commitments is the opener, Programs sits
+// between Suggestions and the optional Shared pill, The Record is the
+// terminal timeline. Nudges + Focus chapters were removed.
 const EXPECTED_WORK_SECTION_IDS_NO_SHARED = [
-  "focus",
-  "programs",
   "commitments",
   "suggestions",
+  "programs",
   "recently-landed",
   "outputs",
-  "nudges",
+  "the-record",
 ];
 
 const EXPECTED_WORK_SECTION_IDS_WITH_SHARED = [
-  "focus",
-  "programs",
   "commitments",
   "suggestions",
+  "programs",
   "shared",
   "recently-landed",
   "outputs",
-  "nudges",
+  "the-record",
 ];
 
 describe("buildWorkChapters", () => {

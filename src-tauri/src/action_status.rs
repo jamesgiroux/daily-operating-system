@@ -72,6 +72,17 @@ pub fn migrate_priority(old: &str) -> i32 {
     }
 }
 
+// ── Action kind values ─────────────────────────────────────────────
+
+/// Generic task (default for all existing Actions).
+pub const KIND_TASK: &str = "task";
+
+/// AI-inferred commitment bridged from IntelligenceJson.open_commitments.
+pub const KIND_COMMITMENT: &str = "commitment";
+
+/// All valid action kinds for CHECK constraints and validation.
+pub const ALL_KINDS: &[&str] = &[KIND_TASK, KIND_COMMITMENT];
+
 /// Human-readable label for a priority integer.
 pub fn priority_label(priority: i32) -> &'static str {
     match priority {

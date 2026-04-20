@@ -8,6 +8,10 @@ fn default_email_signal_source() -> String {
     "email_enrichment".to_string()
 }
 
+fn default_action_kind() -> String {
+    crate::action_status::KIND_TASK.to_string()
+}
+
 /// Errors specific to database operations.
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -46,6 +50,9 @@ pub struct DbAction {
     pub source_type: Option<String>,
     pub source_id: Option<String>,
     pub source_label: Option<String>,
+    /// Discriminator between generic tasks and AI-inferred commitments (DOS Work-tab).
+    #[serde(default = "default_action_kind")]
+    pub action_kind: String,
     pub context: Option<String>,
     pub waiting_on: Option<String>,
     pub updated_at: String,
