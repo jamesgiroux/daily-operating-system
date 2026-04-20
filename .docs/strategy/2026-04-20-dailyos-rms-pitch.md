@@ -1,40 +1,55 @@
-# DailyOS: a trusted daily briefing for the mess of a CS day
+# DailyOS: what if your AI chief of staff just knew?
 
 **Date:** 2026-04-20. **Author:** James Giroux. **For:** Automattic Radical Speed Month.
 
-DailyOS is a project I've been building that I believe aligns with the RMS — a native macOS app that gives a Customer Success Manager a single daily briefing they actually trust. Looking for one or two partners for the month.
+Looking for one or two partners for the month.
 
-## The Problem
+## The problem
 
-Every CSM I know rebuilds the same mental model every morning. Who did we last talk to at Acme. What did we commit to. What's trending. What might I be missing before this 10am call. That model gets reconstructed by hand daily, stored nowhere, evaporates on context switch.
+Everyone's trying to get AI into their workday in a way that actually helps. Schedule agents. Meeting prep agents. "Who's waiting on me" agents. The longer you're in a role, the more institutional knowledge you hold, and the more context has to be re-assembled before every meeting, every project, every decision.
 
-Salesforce shows you fields. Gmail shows you threads. Glean finds documents. Otter has the transcript. None of them sit together as one thing you reach for before a call. The AI layer everyone's bolting on top tends to hallucinate confidently — opaque outputs, no provenance, user corrections that silently revert.
+The tools we use to manage all that were built for a different era — one where the human did the work. You marked the task complete. You moved it through the status columns. You wrote the meeting summary. You published the report. You were the integration layer between the ten apps that held your life.
 
-## Goal
+AI is making the busy work faster. But not always better. Single-session. Missing context. Half right. It's good at telling you what you've already done. What you actually want is help figuring out what comes next.
 
-Turn a CSM's calendars, emails, transcripts, CRM, and Glean search into a **believable daily briefing**. Every claim links back to the source it came from. Every claim carries a trust score. User corrections are durable — when you say "Alice isn't the champion anymore," the next enrichment cycle cannot quietly put it back.
+And all of it is prompt-driven. Every morning, you type context back in. Who you are. What project. What account. Which meeting. The AI starts from zero. You're the one stitching together the world it needs.
 
-*v1.3.x shipping, I'm the daily driver, v1.4.0 substrate design just landed — persona-reviewed, red-team hardened, founder-signed.*
+**What if it just knew?**
+
+## The category exists — mostly
+
+You've probably heard of second brains — Notion, Obsidian, Garry Tan's GBrain. Tools to help you master the mess. Your AI chief of staff that tells you where to be, what's important, and what could be coming.
+
+Most of them are a terminal and a folder of markdown files. Not bad — we're all adults, we can read hashes. But it could be better. It could be proactive. It could be doing things before you ask. OpenClaw and Hermes gesture at that version.
+
+We're Automattic. Pioneers and flag-bearers of open source and privacy. Avid builders. Could we not have something like this, shaped for our teams?
 
 ## Where I think it gets interesting
 
-- **Provenance.** Click any claim, see the transcript or email it came from and when. No opaque model output.
-- **Trust as a visible band.** Six factors compile into `likely_current` / `use_with_caution` / `needs_verification`. The user sees what to rely on, not just what was generated.
-- **Corrections stick.** Tombstones + append-only claims + pre-gate on re-enrichment make ghost-resurrection structurally impossible. This is the single bug that kills every AI assistant I've tried.
-- **Role-adjacent substrate.** Tuned for CS (renewals, health, stakeholder coverage), but the same pattern works for any role where mental-model reconstruction is the bottleneck.
-- **Privacy posture is the moat.** Content stays on the laptop. BYO-key LLM. Metadata-only server boundary. What makes the tool enterprise-thinkable.
-- **MCP-ready.** Curated slices of trusted intelligence served to other agents without leaking raw content.
+DailyOS is a native macOS app I've been building. It takes the raw stream of your work day — calendar, email, transcripts, CRM, Glean search — and turns it into a briefing you can actually trust. No prompt to start. No context to paste in. It was already paying attention.
+
+- **Prepared, not empty.** Open the app and your day is already there. No dashboards to configure. No statuses to move. Skip a day, nothing breaks.
+- **Every claim is provenanced.** Click it, see the transcript or email it came from and when. No opaque model output.
+- **Every claim has a visible trust score.** Six factors compile into `likely_current` / `use_with_caution` / `needs_verification`. You see what to rely on, not just what was generated.
+- **Corrections stick.** Tombstones + append-only claims make ghost-resurrection structurally impossible. This is the single bug that kills every AI assistant I've tried.
+- **Individual context, not organisational.** Glean knows what the company knows. DailyOS knows what *you* know. Different layer, complementary.
+- **Open by default, safe by design.** Content stays on your laptop. BYO-key LLM. Metadata-only at the server boundary. Markdown output, consumable by any AI tool in the ecosystem. The archive isn't the moat — the self-maintaining system is.
+
+*v1.3.x shipping today. I'm the daily driver. v1.4.0 substrate design just landed — persona-reviewed, red-team hardened, founder-signed.*
 
 ## The month
 
-Ship the v1.4.0 substrate end-to-end on two real abilities (`get_entity_context`, `prepare_meeting`). Use it as the daily driver. Measure whether it holds up. Publish what I learn.
+Get DailyOS to a place where folks are willing to give it a try — stable enough to deliver real value, safely leveraging Automattic's internal knowledge, and see what happens.
+
+Concretely: ship the v1.4.0 substrate end-to-end on two real abilities (`get_entity_context`, `prepare_meeting`) so trust and provenance are load-bearing on real work. Harden the install + onboarding path so a curious Automattician can pick it up without me hand-holding. Then invite them in.
 
 ## Metrics
 
-- **Daily-driver stickiness.** Do I reach for it every morning? Do I notice when it's broken?
-- **Trust calibration.** On sampled claims, does the band correlate with "this is right"?
-- **Ghost-resurrection count.** Zero target.
+- **Do people try it, and do they keep using it?** The honest first signal.
+- **Trust calibration.** On sampled claims, does the band correlate with "this is right"? Strong correlation in `likely_current` is the bar — no silent errors in the high-trust zone.
+- **Ghost-resurrection count.** Zero target. The substrate is designed to make it structural.
+- **Safe leverage of internal knowledge.** Zero content-boundary surprises — content stays local, Glean stays the user's own relationship, no hidden exfil paths. This is table stakes at Automattic.
 
 ## Who I'm looking for
 
-Comfort with Rust/Tauri (substrate lanes are explicitly parallelizable), or a designer who wants to work on trust-and-provenance UX, or a CSM willing to be the second daily driver. Any one of those makes the month materially better.
+Comfort with Rust/Tauri (substrate lanes are explicitly parallelizable). A designer who wants to work on trust-and-provenance UX. Someone willing to be one of the first curious users and help shape what good looks like. Any one of those makes the month materially better.
