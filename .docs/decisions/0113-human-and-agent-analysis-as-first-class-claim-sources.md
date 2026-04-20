@@ -111,9 +111,17 @@ A tombstone is a claim with:
 
 Tombstones participate in supersede semantics: when a user removes a field value, a tombstone claim is written and supersedes any prior committed claim at the same `(entity_id, claim_type, field_path)`.
 
-**Writers must consult tombstones before proposing.** The commit policy gate for agent claims includes a hard check: if the most recent committed claim at the target `field_path` is a tombstone authored within the tombstone window (default 30 days, configurable), the agent claim is rejected — it does not even enter the `proposed` state. An agent wishing to override a tombstone must produce a higher-threshold corroboration (e.g., three independent sources within 7 days) and surface the override as a contradiction (§7) rather than a silent commit.
+**Writers must consult tombstones before proposing — PRE-GATE CHECK (clarified 2026-04-20 per outside voice finding #3).** The tombstone check is **not** part of the commit policy gate. It is a **hard pre-gate rejection** that runs inside `services::claims::propose_claim` before any commit policy evaluation. Order of operations:
 
-This closes the ghost-resurrection bug documented in [ADR-0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md) Gap D.
+1. Tombstone check (this §5) — reject any actor targeting a tombstoned `field_path` within the tombstone window, regardless of commit policy config.
+2. Dedup check (§8) — match existing claim; increment corroboration if yes.
+3. Commit policy gate (§3) — if actor is `agent` and policy is `gated`, run trust + corroboration logic; otherwise `immediate`.
+
+This order matters because it means **the ghost-resurrection fix is live in v1.4.0 even when the commit policy config is `immediate` for all actor classes** (which R1.9 specifies for v1.4.0). The tombstone protection does not depend on the gate activating; it's a structural pre-check. When v1.4.1 flips agent policy to `gated`, the tombstone check still runs first.
+
+An agent wishing to override a tombstone must produce a higher-threshold corroboration (e.g., three independent sources within 7 days) and surface the override as a contradiction (§7) rather than a silent commit.
+
+This closes the ghost-resurrection bug documented in [ADR-0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md) Gap D **in v1.4.0**, not deferred to v1.4.1.
 
 ### 6. Agent trust ledger
 
@@ -142,6 +150,18 @@ Updates:
 `posterior_score` is the Beta(α, β) mean, recomputed on update. Agents with `posterior_score` below a configurable floor (default 0.45) have all claims auto-routed to the Analysis Inbox regardless of trust-and-corroboration gate outcome, until their score recovers.
 
 Version bumps reset the ledger: `agent:prepare_meeting:1.3` and `agent:prepare_meeting:1.4` are different actors. Rationale: a prompt or logic change can materially change behavior; we don't inherit credit or blame across versions.
+
+**Clarification — 2026-04-20 (outside voice finding #4):** `agent_version` in the ledger key must capture behavioral identity including prompt changes. The [VERSIONING.md](../architecture/VERSIONING.md) guide says prompt edits bump `prompt_template_version`, not `ability_version` — which would mean a prompt-only change inherits trust from the prior version under a naive reading of this section.
+
+The ledger's `agent_version` column is therefore a **composite identity**, not a direct reference to `ability_version` alone. Its value is:
+
+```
+agent_version = f"{ability_version}-p{prompt_template_version}"
+```
+
+e.g., `agent:prepare_meeting:1.3-p2.1`. A prompt edit bumps `prompt_template_version`, which changes the composite ledger key, which triggers trust warming on the new key per R1.4. This preserves the intent that prompt changes reset trust without abusing `ability_version` semantics.
+
+For abilities whose behavior depends on multiple prompt templates (rare; future extensibility), the composite extends: `agent_version = f"{ability_version}-p{hash_of_all_template_versions}"`. Behavior-affecting model changes (via `IntelligenceProvider` model swap) also bump the composite — because the `PromptFingerprint` includes model name per [ADR-0106](0106-prompt-fingerprinting-and-provider-interface.md) §1. In practice, `agent_version` in the ledger is best understood as "the fingerprint-equivalent identity of the agent."
 
 ### 7. Contradiction handling
 
