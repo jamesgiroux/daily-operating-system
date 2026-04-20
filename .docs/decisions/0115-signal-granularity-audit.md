@@ -336,3 +336,46 @@ This ADR's Phase 0 is blocked on the `AbilityOutput` + `Provenance` types landin
 - Phase 3: Load test gate.
 
 Phase 0 is a hard prerequisite for the others. Acknowledged as larger scope than original.
+
+---
+
+## Revision R2 — 2026-04-20 — `PropagateSync { await_completion }` variant
+
+Addresses persona-review finding A3 (event flow is one-way, no request/response at signal layer).
+
+R1 established signal bus as fire-and-forget after `emit_signal`. For most flows this is correct — eventual consistency is the right model for an intelligence synthesis app. For **some** flows, it breaks the user-visible behavior. Specifically: a user corrects a claim, clicks "save," and expects the very next briefing to reflect that correction. If the invalidation that would re-render the briefing runs async after `commit_claim` returns, the UI may read stale state on the immediate subsequent render.
+
+**Revised `PropagationPolicy::PropagateSync`:**
+
+```rust
+pub enum PropagationPolicy {
+    Local,
+    PropagateSync { await_completion: bool },
+    PropagateAsync { coalesce: Option<CoalesceKey> },
+    PropagateAndHeal,
+}
+```
+
+- `PropagateSync { await_completion: false }` — emit the signal inline, write the invalidation job inline, return immediately. The job executes when the worker picks it up. **This is the current R1 behavior.** Used when downstream correctness must hold before the current transaction commits, but the caller doesn't need to render the post-propagation state.
+
+- `PropagateSync { await_completion: true }` — emit the signal inline, write the invalidation job inline, **and wait for the invalidation job to complete** before returning from `emit_signal`. Used when the caller intends to render state that depends on the propagation having finished — the user-correction → next-briefing path is the canonical case.
+
+**Bounded wait:** `await_completion: true` has a default timeout (500 ms). If the invalidation doesn't complete within the window, `emit_signal` returns `Err(SignalError::PropagationTimeout)` and the caller decides: render stale state with a warning marker, or surface the timeout to the user. Not a silent fail.
+
+**Registry implication:** per-`SignalType` policy can now specify `await_completion`:
+
+```rust
+const fn policy_for(signal: &SignalType) -> PropagationPolicy {
+    match signal {
+        SignalType::UserCorrectionSubmitted => PropagationPolicy::PropagateSync { await_completion: true },
+        SignalType::ClaimRetracted           => PropagationPolicy::PropagateSync { await_completion: false },
+        // ...
+    }
+}
+```
+
+**Caveat:** `await_completion: true` should be rare. Most downstream work is eventually-consistency-safe. Signals that require it are user-perceived correctness paths. Mark them explicitly in the registry comment.
+
+**Under `Evaluate` mode:** `await_completion: true` behaves the same as `false` because fixtures test intent, not timing. A fixture that asserts "after commit, briefing reflects correction" drives the invalidation explicitly via the test helper introduced in R1.7.
+
+**Test case:** integration test that commits a user correction with `PropagateSync { await_completion: true }` and immediately reads the affected briefing; assert the briefing reflects the correction without any explicit wait in test code.
