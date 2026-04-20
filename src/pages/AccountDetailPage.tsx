@@ -7,6 +7,7 @@
  * Step 5: All 3 views rendered, inactive hidden via display:none.
  * Preserves scroll + form state + pending fetches on tab switch.
  */
+import { useEffect, useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -77,6 +78,15 @@ export default function AccountDetailPage() {
   const { accountId } = useParams({ strict: false });
   const page = useAccountDetailPage(accountId);
 
+  // v1.2.1 QA fix: gate the "Push to Linear" button on actual Linear
+  // configuration so users don't land on a dead picker.
+  const [linearConfigured, setLinearConfigured] = useState(false);
+  useEffect(() => {
+    invoke<{ enabled: boolean; apiKeySet: boolean }>("get_linear_status")
+      .then((s) => setLinearConfigured(s.enabled && s.apiKeySet))
+      .catch(() => setLinearConfigured(false));
+  }, []);
+
   if (page.loading) return <EditorialLoading />;
   if (page.error || !page.detail) return <EditorialError message={page.error ?? "Account not found"} onRetry={page.acct.load} />;
 
@@ -127,6 +137,7 @@ export default function AccountDetailPage() {
             view={acct.sentiment}
             onSetSentiment={acct.setUserHealthSentiment}
             onAcknowledgeStale={acct.acknowledgeSentimentStale}
+            onUpdateNote={acct.updateSentimentNote}
           />
         </section>
 
@@ -138,9 +149,19 @@ export default function AccountDetailPage() {
         ) : (
           <MarginSection id="needs-attention" label={<>Needs<br/>attention</>}>
             {showTriage && (
-              <TriageSection intelligence={intelligence} gleanSignals={glean} />
+              <TriageSection
+                intelligence={intelligence}
+                gleanSignals={glean}
+                accountId={detail.id}
+              />
             )}
-            {showDivergence && <DivergenceSection findings={findings} gleanSignals={glean} />}
+            {showDivergence && (
+              <DivergenceSection
+                findings={findings}
+                gleanSignals={glean}
+                accountId={detail.id}
+              />
+            )}
           </MarginSection>
         )}
 
@@ -513,18 +534,30 @@ export default function AccountDetailPage() {
       const doneBusy = work.commitmentDoneInFlight.has(c.id);
       const dismissBusy = work.commitmentDismissInFlight.has(c.id);
       const isEmphasized = idx < 4;
+      // Owner is stashed in action.context as "owner: <name>" by the
+      // commitment_bridge service until DbAction grows its own owner column.
+      const ownerMatch = /^owner:\s*(.+)$/i.exec(c.context ?? "");
+      const ownerValue = ownerMatch?.[1]?.trim() ?? null;
       return (
         <CommitmentCard
           key={c.id}
           emphasis={isEmphasized}
           headline={c.title}
           provenance={provenance.length > 0 ? provenance : undefined}
-          owner={null}
+          owner={ownerValue}
           due={c.dueDate ? formatShortDate(c.dueDate) : null}
+          dueDateRaw={c.dueDate ?? null}
           audience={isInternal ? "internal" : "customer"}
           visibility={visibility}
           sharedRef={linearHref && c.linearIdentifier ? { label: c.linearIdentifier, href: linearHref } : undefined}
           stillActiveNote={stillActiveNote}
+          onEditHeadline={(title) => work.handleUpdateCommitment(c.id, { title })}
+          onEditOwner={(owner) =>
+            work.handleUpdateCommitment(c.id, {
+              context: owner.trim().length > 0 ? `owner: ${owner.trim()}` : "",
+            })
+          }
+          onEditDueDate={(dueDate) => work.handleUpdateCommitment(c.id, { dueDate })}
           actions={
             <>
               <WorkButton
@@ -541,7 +574,7 @@ export default function AccountDetailPage() {
               >
                 {dismissBusy ? "Dismissing…" : "Dismiss"}
               </WorkButton>
-              {!linearHref && (
+              {!linearHref && linearConfigured && (
                 <WorkButton kind="muted" onClick={() => work.handlePushToLinear(c.id)}>
                   Push to Linear
                 </WorkButton>
