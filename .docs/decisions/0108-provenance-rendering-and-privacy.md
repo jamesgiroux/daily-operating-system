@@ -172,3 +172,27 @@ The test: if the output is a *composed* or *synthesized* artifact the user will 
 - [ADR-0093: Prompt Injection Hardening](0093-prompt-injection-hardening.md) — Explanation sanitizer aligns with ADR-0093's untrusted-content rules.
 - [ADR-0103: Maintenance Ability Safety Constraints](0103-maintenance-ability-safety-constraints.md) — `MaintenanceAuditRecord` carries `ProvenanceOrMasked` per this ADR's §4.
 - **ADR-0111 (forthcoming): Surface-Independent Ability Invocation** — Consumes the per-surface rendering rules specified here.
+
+---
+
+## Amendment — 2026-04-20 — Enforce 64 KB provenance size cap
+
+Addresses persona-review finding S3 (size budgets named but not enforced).
+
+§6 originally introduced size budgets as a soft guideline. In practice a deeply-composed ability (meeting prep composing context which composes claims which compose trajectories) can construct a provenance envelope of several hundred KB. Tauri IPC has serialization limits; this will hit them. Persona review flagged: named limits without enforcement become silent bloat.
+
+**Hard cap: 64 KB serialized provenance per ability output.**
+
+- The cap applies to the full `Provenance` envelope after JSON serialization, before any surface rendering.
+- Abilities that would exceed the cap return `Err(AbilityError::ProvenanceTooLarge { size_bytes, cap_bytes })`. No silent truncation.
+- The cap is enforced at `AbilityOutput<T>` construction time. The error surfaces to the caller as a hard error (per [ADR-0102](0102-abilities-as-runtime-contract.md) error-handling amendment).
+
+**Forces one of three redesigns when hit:**
+
+1. **Provenance summarization** — collapse deep composition trees into summary nodes marked `ProvenanceWarning::DepthElided`. [ADR-0105](0105-provenance-as-first-class-output.md) §1 already declares this warning class; this amendment activates it.
+2. **Shallower composition** — refactor the ability to compose fewer children or to use an alternative data source.
+3. **Conscious cap increase** — via ADR amendment, after measuring real production composition shapes. Not an automatic bump.
+
+**Starting value of 64 KB is conservative.** Measure during the first end-to-end slice (strategy doc § Path forward action 1). If real meeting-prep provenance is larger than 64 KB on representative entities, raise the cap via amendment with the measurement as justification. Do not raise silently.
+
+**Rendering budget (original §6) vs serialization budget (this amendment):** different concerns. The rendering budget limits what the renderer emits for a given surface; this cap limits what the envelope itself can carry regardless of surface. Both exist independently; rendering truncation does not fix a too-large envelope because the envelope is already over-cap before the renderer sees it.
