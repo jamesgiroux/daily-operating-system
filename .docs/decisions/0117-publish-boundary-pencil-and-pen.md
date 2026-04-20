@@ -242,7 +242,9 @@ Founder decision (D2, recorded in [ADR-0116](0116-tenant-control-plane-boundary.
 
 The reasoning: enterprise buyers will ask for "leadership visibility into team activity." The architectural answer is not to soften [ADR-0116](0116-tenant-control-plane-boundary.md)'s metadata-only control-plane boundary. The architectural answer is that **publish is the channel** — a user-initiated push (or user-scheduled push) to an enterprise storage destination the customer controls. DailyOS does not reach into the customer's storage; the user publishes to it. Enterprise gets visibility into what their users choose to publish, in the format (human- or machine-readable) the destination expects, on the cadence the user sets. The control plane sees zero of it.
 
-This elevates the publish framework from "a P2 posting capability" to "the primary commercial interface between DailyOS and any external destination, including future enterprise storage."
+This elevates the publish framework from "a P2 posting capability" to "a commercial interface between DailyOS and any external destination the user configures — including enterprise storage for reporting purposes."
+
+**Scope correction — 2026-04-20 (outside voice finding #1):** Publish is **reporting/export**, not **team intelligence**. The earlier framing of this section implied publish was the complete answer to "enterprise wants leadership views." It isn't. Publish solves: "user creates a snapshot of their work, pushes it to a customer-controlled destination on a cadence they set." That is reporting. It does NOT solve: "a team sees the same live operational state about an account" — that is team intelligence and is a separate architectural question tracked in [ADR-0121](0121-team-intelligence-architecture.md) (Open). The publish framework remains the right channel for the reporting case; team intelligence is unsolved and explicitly acknowledged as such in [ADR-0116](0116-tenant-control-plane-boundary.md) "Update — 2026-04-20" section.
 
 **Implications for this ADR:**
 

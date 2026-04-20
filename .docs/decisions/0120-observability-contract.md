@@ -168,11 +168,60 @@ The debug trace surface consumes:
 
 Both are necessary. Log records are the ephemeral stream; the DB tables are the durable record. Together they answer "what happened" at any granularity.
 
-### 10. Telemetry is not required in v1.4.0
+### 10. Telemetry — local always, aggregate only opt-in
 
-This ADR deliberately does not mandate metrics aggregation (Prometheus-style counters, histograms, etc.). Metrics are a valuable second-step that builds on this contract; v1.4.0 establishes the foundation.
+This ADR distinguishes two tiers of telemetry:
 
-The strategy doc's metrics dashboard (§ metrics section) is satisfied by SQL queries over the database tables this ADR makes coherent. If counters become necessary later, they can be derived from invocation records — no additional instrumentation required at that time.
+**Local-only (always on, shipped in v1.4.0).** Invocation records per §1–§4 are emitted to stderr as NDJSON on the user's device. SQL queries over `evaluation_traces`, `signal_events`, `intelligence_claims` answer per-user observability needs. The strategy doc's metrics dashboard is satisfied by these queries for single-user diagnosis.
+
+**Opt-in aggregate telemetry (new category, 2026-04-20 per outside voice finding #5).** Population-level metrics required to validate the harness bet ([ADR-0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md) Bet 1) — correction rates across users, evaluator composite distributions, Glean availability, ghost-resurrection incident counts — cannot be assembled from per-user SQLite alone. Per [ADR-0116](0116-tenant-control-plane-boundary.md)'s amended §3 metadata taxonomy (2026-04-20), an opt-in aggregate telemetry class is permitted:
+
+**Shape of the aggregate emission:**
+
+```rust
+pub struct AggregateMetric {
+    pub anon_install_id: AnonInstallId,        // Random UUID at first boot; not tied to user identity
+    pub metric_name: &'static str,              // Enumerated; not free-text
+    pub metric_value: MetricValue,              // Count | Duration | Percentile | Boolean
+    pub ability_name: Option<&'static str>,     // For per-ability metrics
+    pub ability_version: Option<&'static str>,
+    pub signal_type: Option<SignalType>,        // For signal-class metrics
+    pub outcome: Option<Outcome>,
+    pub bucket_start: DateTime<Utc>,            // Hourly bucket
+    pub build_version: &'static str,
+}
+```
+
+**Strict rules for aggregate emissions:**
+
+- **Counts, durations, percentiles, booleans only.** No free-text fields. No hashes of content.
+- **No entity references.** `entity_id`, `actor`, `claim_text`, `field_path`, `prompt_template_id` — all forbidden in aggregate.
+- **No invocation_id.** Local-only correlation; aggregation doesn't need it.
+- **Hourly bucketing.** Rapid-fire metrics aggregate locally before emission; sampling rate is one roll-up per hour per `metric_name`.
+- **Anonymized install ID.** Generated at first boot as a random UUID, stored locally, never reset automatically. Used to count distinct installs reporting. Cannot be tied to user identity because DailyOS never asks the user to log in to a server with this ID.
+- **Enumerated metric names.** A `const` list of permitted metric names in `observability::aggregate_metric_catalog`. New metrics require the same code review pressure as a new ADR amendment — can't slip in.
+
+**Opt-in flow:**
+
+1. User's first launch shows a one-time splash: "Help improve DailyOS by sending anonymous usage statistics? (Counts and timings only; no account data, no claim content, no identity.)"
+2. Default choice is OFF.
+3. User can toggle via Settings → Privacy at any time; disabling stops all emission immediately.
+4. When ON, a persistent small indicator in the app footer shows telemetry is active. Click → takes the user to the same settings page.
+5. The first time telemetry is enabled, show a sample of what would be sent in the last 24 hours, so the user can verify content. Transparency beats reassurance.
+
+**Destination:**
+
+An HTTPS POST to a DailyOS-operated collection endpoint. The endpoint's contract: accept JSON, respond 200, never echo. Responses do not drive behavior in the client. Network failure → local buffer (capped at 24 hours; oldest dropped). TLS required; no exceptions.
+
+**Not in v1.4.0:**
+
+The opt-in surface + aggregate collector ships in v1.4.1 or v1.5.0 (depending on what prompts it — earliest is when the runtime evaluator rolls out per [ADR-0119](0119-runtime-evaluator-pass-for-transform-abilities.md) and the harness-bet-validation metrics become relevant). v1.4.0 ships local-only telemetry + the ADR amendment defining the shape of what opt-in will look like. A separate Linear issue tracks the opt-in implementation.
+
+**Rationale:**
+
+Strategy doc's harness bet (Bet 1) cannot be empirically validated from local-only data. Population-level signals are required. [ADR-0116](0116-tenant-control-plane-boundary.md)'s firm metadata-only boundary stands — opt-in anonymous aggregate telemetry fits the existing "metadata about user actions" permitted class when bounded precisely as above.
+
+If users overwhelmingly opt out, the harness bet becomes unverifiable and Bet 1 rewrites as a craft/taste commitment rather than an empirical one. That's acceptable — the architecture preserves user agency over whether to contribute data.
 
 ## Consequences
 
