@@ -19,6 +19,14 @@ interface SentimentHeroProps {
   view: SentimentView;
   onSetSentiment: (value: SentimentValue, note?: string) => Promise<void>;
   onAcknowledgeStale: () => Promise<void>;
+  /**
+   * DOS-269: Update the note on the CURRENT (latest) journal entry rather
+   * than creating a new one. Used by the "Add more detail" affordance on
+   * the divergence flag — the user is augmenting context, not changing
+   * their sentiment. When absent, "Add more detail" falls back to
+   * `onSetSentiment` (legacy create-new behaviour).
+   */
+  onUpdateNote?: (note: string) => Promise<void>;
   /** Optional override for preset-specific labels. */
   labels?: Partial<Record<SentimentValue, string>>;
 }
@@ -198,6 +206,7 @@ export function SentimentHero({
   view,
   onSetSentiment,
   onAcknowledgeStale,
+  onUpdateNote,
   labels: labelOverrides,
 }: SentimentHeroProps) {
   const labels: Record<SentimentValue, string> = {
@@ -211,25 +220,48 @@ export function SentimentHero({
   );
   const [draftNote, setDraftNote] = useState("");
   const [saving, setSaving] = useState(false);
+  /** DOS-269: when true, Save calls `onUpdateNote` instead of `onSetSentiment`
+   *  so we amend the latest journal entry instead of creating a new one. */
+  const [addDetailMode, setAddDetailMode] = useState(false);
 
   function openEditor() {
     setDraftValue(view.current);
     setDraftNote("");
+    setAddDetailMode(false);
+    setEditing(true);
+  }
+
+  /** DOS-269: Open the editor pre-populated with the existing note so the
+   *  user can extend rather than replace it. */
+  function openAddDetailEditor() {
+    setDraftValue(view.current);
+    setDraftNote(view.note ?? "");
+    setAddDetailMode(true);
     setEditing(true);
   }
 
   function cancelEditor() {
     setEditing(false);
     setDraftNote("");
+    setAddDetailMode(false);
   }
 
   async function saveEditor() {
     if (!draftValue) return;
     setSaving(true);
     try {
-      await onSetSentiment(draftValue, draftNote);
+      // DOS-269: "Add more detail" path updates the existing entry iff the
+      // user didn't also change the sentiment value. If they did, fall
+      // through to a fresh entry so the value transition is recorded.
+      const valueUnchanged = draftValue === view.current;
+      if (addDetailMode && valueUnchanged && onUpdateNote) {
+        await onUpdateNote(draftNote);
+      } else {
+        await onSetSentiment(draftValue, draftNote);
+      }
       setEditing(false);
       setDraftNote("");
+      setAddDetailMode(false);
     } finally {
       setSaving(false);
     }
@@ -381,7 +413,7 @@ export function SentimentHero({
             <button
               type="button"
               className={css.divergenceAction}
-              onClick={openEditor}
+              onClick={openAddDetailEditor}
             >
               Add more detail &rarr;
             </button>

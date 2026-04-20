@@ -225,7 +225,12 @@
   cursor: pointer;
   white-space: nowrap;
 }
-.triageBtn:hover {
+/* DOS-269 CSS de-conflict: scope the default hover to non-primary buttons so
+   it doesn't fight the primary hover rule below (previously the generic
+   `color: var(--color-text-primary)` override was winning for primary buttons
+   and painting the label black on hover). Specificity now matches; primary
+   hover stays cream-on-ink, secondary hover stays dark-on-cream. */
+.triageBtn:not(.triageBtnPrimary):hover {
   border-color: var(--color-text-tertiary);
   color: var(--color-text-primary);
 }
@@ -237,6 +242,37 @@
 .triageBtnPrimary:hover {
   background: var(--color-desk-ink);
   border-color: var(--color-desk-ink);
+  color: var(--color-paper-cream);
+}
+
+/* DOS-269: "Still accurate?" confirm-feedback link on triage / divergence
+   cards. Mono uppercase matches the mockup's per-card feedback row. */
+.triageConfirmLink {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.triageConfirmLink:hover:not(:disabled) {
+  color: var(--color-text-secondary);
+}
+.triageConfirmLink:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+.triageConfirmed {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-health-good, var(--color-text-secondary));
 }
 
 /* Per-card IntelligenceCorrection slot — pinned under the action buttons. */

@@ -17,13 +17,16 @@
  * action column enough to compress the card body. Feedback for Intelligence
  * Loop training lives at the chapter-heading level (see OutlookPanel).
  */
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import type {
   EntityIntelligence,
   HealthOutlookSignals,
   IntelRisk,
   IntelWin,
 } from "@/types";
+import { useIntelligenceCorrection } from "@/hooks/useIntelligenceCorrection";
 import {
   TriageCard,
   type TriageAction,
@@ -32,6 +35,13 @@ import {
   type TriageTone,
 } from "./TriageCard";
 import styles from "./health.module.css";
+
+/** DOS-269: snooze/resolve persistence row returned by list_triage_snoozes. */
+interface TriageSnoozeRow {
+  triageKey: string;
+  snoozedUntil: string | null;
+  resolvedAt: string | null;
+}
 
 /** Ranking bucket — drives ordering and (via `toneForBucket`) spine colour. */
 export type TriageBucket = "urgent" | "soon" | "stakeholder";
@@ -459,30 +469,35 @@ function buildAllCandidates(
 }
 
 /**
- * Default actions per bucket — mockup-faithful pill pair on every card.
+ * DOS-269: Per-card action handlers. Snooze → persisted to `triage_snoozes`
+ * (card removed on next render; reappears after the snooze window).
+ * Confirm resolved → persisted resolution tombstone + DOS-41 "corrected"
+ * correction event so the Intelligence Loop sees the user acted.
  *
- * TODO(DOS-250): wire to real mutation backends (snooze / resolve / reassign /
- * map-stakeholder / defer). Today the buttons are visually present with
- * no-op handlers so the editorial weight matches the mockup. A visibly
- * dead card (no actions at all) was the prior state — this closes that gap
- * without fabricating a backend that doesn't exist yet.
+ * The action copy still reflects the mockup's bucket-specific secondary
+ * label (Reassign / Defer). Those remain no-ops in this wave; only the
+ * editorial-critical primaries and the shared Snooze are wired.
  */
-function defaultActionsFor(candidate: TriageCandidate): TriageAction[] {
-  const noop = () => {
-    /* TODO(DOS-250): wire triage action handlers. */
-  };
+interface ActionHandlers {
+  onSnooze: (candidate: TriageCandidate) => Promise<void>;
+  onResolve: (candidate: TriageCandidate) => Promise<void>;
+}
+
+function actionsFor(candidate: TriageCandidate, handlers: ActionHandlers): TriageAction[] {
   const kindLower = candidate.kind.toLowerCase();
 
   if (candidate.bucket === "urgent") {
     return [
-      { label: "Snooze", onClick: noop },
-      { label: "Confirm resolved", primary: true, onClick: noop },
+      { label: "Snooze", onClick: () => void handlers.onSnooze(candidate) },
+      {
+        label: "Confirm resolved",
+        primary: true,
+        onClick: () => void handlers.onResolve(candidate),
+      },
     ];
   }
 
   if (candidate.bucket === "soon") {
-    // Glean expansion or transcript-question → "Send pricing"; otherwise a
-    // generic "Follow up" primary for risk-leaning soon cards.
     let primaryLabel = "Address";
     if (
       kindLower.includes("expansion") ||
@@ -490,41 +505,157 @@ function defaultActionsFor(candidate: TriageCandidate): TriageAction[] {
       kindLower.includes("question")
     ) {
       primaryLabel = "Send pricing";
-    } else if (
-      kindLower.includes("budget") ||
-      kindLower.includes("competitive")
-    ) {
+    } else if (kindLower.includes("budget") || kindLower.includes("competitive")) {
       primaryLabel = "Follow up";
     }
     return [
-      { label: "Reassign", onClick: noop },
-      { label: primaryLabel, primary: true, onClick: noop },
+      { label: "Snooze", onClick: () => void handlers.onSnooze(candidate) },
+      {
+        label: primaryLabel,
+        primary: true,
+        onClick: () => void handlers.onResolve(candidate),
+      },
     ];
   }
 
   // stakeholder
   return [
-    { label: "Defer", onClick: noop },
-    { label: "Map stakeholder", primary: true, onClick: noop },
+    { label: "Snooze", onClick: () => void handlers.onSnooze(candidate) },
+    {
+      label: "Map stakeholder",
+      primary: true,
+      onClick: () => void handlers.onResolve(candidate),
+    },
   ];
 }
 
 interface TriageSectionProps {
   intelligence: EntityIntelligence | null;
   gleanSignals: HealthOutlookSignals | null;
+  /** DOS-269: Account id is required to persist snooze/resolve state. When
+   *  absent (tests, previews), actions render but are no-ops. */
+  accountId?: string;
   /** Hard cap on rendered cards. Defaults to 5 per the DOS-249 spec. */
   maxCards?: number;
+}
+
+/** DOS-269: Is a snooze row still active (suppresses the card)? */
+function isSuppressed(row: TriageSnoozeRow, now: number): boolean {
+  if (row.resolvedAt) return true;
+  if (!row.snoozedUntil) return false;
+  const until = Date.parse(row.snoozedUntil);
+  return Number.isFinite(until) && until > now;
 }
 
 export function TriageSection({
   intelligence,
   gleanSignals,
+  accountId,
   maxCards = MAX_CARDS,
 }: TriageSectionProps) {
+  const [snoozes, setSnoozes] = useState<TriageSnoozeRow[]>([]);
+  const [optimisticallyHidden, setOptimisticallyHidden] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const correction = useIntelligenceCorrection();
+
+  const refreshSnoozes = useCallback(async () => {
+    if (!accountId) return;
+    try {
+      const rows = await invoke<TriageSnoozeRow[]>("list_triage_snoozes", {
+        entityType: "account",
+        entityId: accountId,
+      });
+      setSnoozes(rows);
+    } catch (e) {
+      console.warn("list_triage_snoozes failed:", e);
+    }
+  }, [accountId]);
+
+  useEffect(() => {
+    void refreshSnoozes();
+  }, [refreshSnoozes]);
+
+  const handleSnooze = useCallback(
+    async (candidate: TriageCandidate) => {
+      if (!accountId) return;
+      setOptimisticallyHidden((prev) => new Set(prev).add(candidate.id));
+      try {
+        await invoke("snooze_triage_item", {
+          entityType: "account",
+          entityId: accountId,
+          triageKey: candidate.id,
+          days: 14,
+        });
+        await refreshSnoozes();
+        toast.success("Snoozed for 14 days");
+      } catch (e) {
+        setOptimisticallyHidden((prev) => {
+          const next = new Set(prev);
+          next.delete(candidate.id);
+          return next;
+        });
+        toast.error("Could not snooze");
+        console.error("snooze_triage_item failed:", e);
+      }
+    },
+    [accountId, refreshSnoozes],
+  );
+
+  const handleResolve = useCallback(
+    async (candidate: TriageCandidate) => {
+      if (!accountId) return;
+      setOptimisticallyHidden((prev) => new Set(prev).add(candidate.id));
+      try {
+        await invoke("resolve_triage_item", {
+          entityType: "account",
+          entityId: accountId,
+          triageKey: candidate.id,
+        });
+        await refreshSnoozes();
+      } catch (e) {
+        setOptimisticallyHidden((prev) => {
+          const next = new Set(prev);
+          next.delete(candidate.id);
+          return next;
+        });
+        toast.error("Could not mark resolved");
+        console.error("resolve_triage_item failed:", e);
+      }
+    },
+    [accountId, refreshSnoozes],
+  );
+
+  const handleConfirmAccurate = useCallback(
+    async (candidate: TriageCandidate) => {
+      if (!accountId) return;
+      // Fires the DOS-41 confirm-feedback event. Field is the stable triage
+      // card id so per-card Bayesian attribution is preserved.
+      await correction.submit({
+        entityId: accountId,
+        entityType: "account",
+        field: `triage:${candidate.id}`,
+        action: "confirmed",
+      });
+    },
+    [accountId, correction],
+  );
+
   const allCandidates = buildAllCandidates(intelligence, gleanSignals);
   if (allCandidates.length === 0) return null;
 
-  const ranked = rankTriageCandidates(allCandidates).slice(0, maxCards);
+  // DOS-269: hide snoozed/resolved cards. `optimisticallyHidden` covers the
+  // gap between click and the backend round-trip for `list_triage_snoozes`.
+  const now = Date.now();
+  const suppressedKeys = new Set<string>(optimisticallyHidden);
+  for (const row of snoozes) {
+    if (isSuppressed(row, now)) suppressedKeys.add(row.triageKey);
+  }
+  const visible = allCandidates.filter((c) => !suppressedKeys.has(c.id));
+  if (visible.length === 0) return null;
+
+  const ranked = rankTriageCandidates(visible).slice(0, maxCards);
+  const handlers: ActionHandlers = { onSnooze: handleSnooze, onResolve: handleResolve };
 
   return (
     <>
@@ -538,8 +669,8 @@ export function TriageSection({
           <h2 className={styles.blockHeaderTitle}>Needs attention</h2>
           <span className={`${styles.blockHeaderCount} ${styles.blockHeaderCountTerracotta}`}>
             {ranked.length} item{ranked.length === 1 ? "" : "s"}
-            {allCandidates.length > ranked.length
-              ? ` · showing top ${ranked.length} of ${allCandidates.length}`
+            {visible.length > ranked.length
+              ? ` · showing top ${ranked.length} of ${visible.length}`
               : ""}
             {" · scan 60s"}
           </span>
@@ -555,7 +686,10 @@ export function TriageSection({
             evidence={c.evidence}
             sources={c.sources}
             citations={c.citations}
-            actions={defaultActionsFor(c)}
+            actions={actionsFor(c, handlers)}
+            onConfirmAccurate={
+              accountId ? () => handleConfirmAccurate(c) : undefined
+            }
           />
         ))}
       </div>

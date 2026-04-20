@@ -325,3 +325,153 @@ describe("TriageSection — DOS-249 cap + ranking + feedback slot", () => {
     ).toBeInTheDocument();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOS-269: Action wiring — Snooze, Confirm resolved, Still accurate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { fireEvent, waitFor } from "@testing-library/react";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+}));
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
+describe("TriageSection — DOS-269 action wiring", () => {
+  it("invokes snooze_triage_item and optimistically hides the card", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (invoke as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (cmd: string) => {
+        if (cmd === "list_triage_snoozes") return Promise.resolve([]);
+        if (cmd === "snooze_triage_item") return Promise.resolve();
+        return Promise.resolve();
+      },
+    );
+
+    const intel = emptyIntelligence({
+      risks: [{ text: "Critical churn risk in progress.", urgency: "high" }],
+    });
+    render(
+      <TriageSection
+        intelligence={intel}
+        gleanSignals={null}
+        accountId="acct-1"
+      />,
+    );
+
+    const snoozeBtn = await screen.findByRole("button", { name: /snooze/i });
+    fireEvent.click(snoozeBtn);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("snooze_triage_item", {
+        entityType: "account",
+        entityId: "acct-1",
+        triageKey: "local-risk-0",
+        days: 14,
+      });
+    });
+
+    // Card optimistically removed.
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/Critical churn risk in progress/i),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("invokes resolve_triage_item when Confirm resolved is clicked", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (invoke as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (cmd: string) => {
+        if (cmd === "list_triage_snoozes") return Promise.resolve([]);
+        return Promise.resolve();
+      },
+    );
+
+    const intel = emptyIntelligence({
+      risks: [{ text: "Urgent issue", urgency: "high" }],
+    });
+    render(
+      <TriageSection
+        intelligence={intel}
+        gleanSignals={null}
+        accountId="acct-2"
+      />,
+    );
+
+    const resolveBtn = await screen.findByRole("button", {
+      name: /confirm resolved/i,
+    });
+    fireEvent.click(resolveBtn);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("resolve_triage_item", {
+        entityType: "account",
+        entityId: "acct-2",
+        triageKey: "local-risk-0",
+      });
+    });
+  });
+
+  it("hides cards returned by list_triage_snoozes whose snoozed_until is in the future", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as unknown as ReturnType<typeof vi.fn>).mockReset();
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    (invoke as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (cmd: string) => {
+        if (cmd === "list_triage_snoozes") {
+          return Promise.resolve([
+            {
+              triageKey: "local-risk-0",
+              snoozedUntil: future,
+              resolvedAt: null,
+            },
+          ]);
+        }
+        return Promise.resolve();
+      },
+    );
+
+    const intel = emptyIntelligence({
+      risks: [{ text: "Already snoozed item.", urgency: "high" }],
+    });
+    render(
+      <TriageSection
+        intelligence={intel}
+        gleanSignals={null}
+        accountId="acct-3"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/Already snoozed item/i),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it('renders "Still accurate?" affordance when accountId is provided', async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (invoke as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const intel = emptyIntelligence({
+      risks: [{ text: "A thing to confirm", urgency: "high" }],
+    });
+    render(
+      <TriageSection
+        intelligence={intel}
+        gleanSignals={null}
+        accountId="acct-4"
+      />,
+    );
+    expect(
+      await screen.findByRole("button", { name: /still accurate/i }),
+    ).toBeInTheDocument();
+  });
+});

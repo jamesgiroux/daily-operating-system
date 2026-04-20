@@ -13,7 +13,7 @@
  * `<strong>`. `citations` render as discrete dated links (or plain labels)
  * next to the coloured source tag (Local vs Glean).
  */
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import styles from "./health.module.css";
 
 export type TriageTone = "urgent" | "soon" | "gap" | "divergence" | "meta";
@@ -55,6 +55,14 @@ export interface TriageCardProps {
   actions?: TriageAction[];
   /** Optional per-card feedback slot (IntelligenceCorrection). */
   feedbackSlot?: ReactNode;
+  /**
+   * DOS-269: Optional "Still accurate?" confirm-feedback affordance. Fires a
+   * DOS-41 confirmed correction. Shows a transient "✓ Confirmed" badge
+   * after successful submit rather than dismissing the card (the card
+   * headline still reflects a real state of play; confirming is a signal,
+   * not a dismiss).
+   */
+  onConfirmAccurate?: () => Promise<void> | void;
 }
 
 const spineClass: Record<TriageTone, string> = {
@@ -81,9 +89,23 @@ export function TriageCard({
   citations,
   actions,
   feedbackSlot,
+  onConfirmAccurate,
 }: TriageCardProps) {
   const hasSources = (sources && sources.length > 0) || (citations && citations.length > 0);
-  const hasActionColumn = (actions && actions.length > 0) || !!feedbackSlot;
+  const [confirmState, setConfirmState] = useState<"idle" | "pending" | "confirmed">("idle");
+  const hasActionColumn =
+    (actions && actions.length > 0) || !!feedbackSlot || !!onConfirmAccurate;
+
+  async function handleConfirm() {
+    if (!onConfirmAccurate || confirmState !== "idle") return;
+    setConfirmState("pending");
+    try {
+      await onConfirmAccurate();
+      setConfirmState("confirmed");
+    } catch {
+      setConfirmState("idle");
+    }
+  }
 
   return (
     <article className={styles.triageCard}>
@@ -132,6 +154,22 @@ export function TriageCard({
                   {a.label}
                 </button>
               ))}
+            </div>
+          ) : null}
+          {onConfirmAccurate ? (
+            <div className={styles.triageFeedback}>
+              {confirmState === "confirmed" ? (
+                <span className={styles.triageConfirmed}>✓ Confirmed</span>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.triageConfirmLink}
+                  onClick={handleConfirm}
+                  disabled={confirmState === "pending"}
+                >
+                  {confirmState === "pending" ? "Confirming…" : "Still accurate?"}
+                </button>
+              )}
             </div>
           ) : null}
           {feedbackSlot ? <div className={styles.triageFeedback}>{feedbackSlot}</div> : null}
