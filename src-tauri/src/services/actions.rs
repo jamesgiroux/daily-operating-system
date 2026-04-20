@@ -630,11 +630,13 @@ pub fn get_suggested_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, 
     db.get_suggested_actions().map_err(|e| e.to_string())
 }
 
-/// DOS Work-tab Phase 3: open commitments for an account.
+/// DOS Work-tab Phase 3: open, user-accepted commitments for an account.
 ///
 /// Thin wrapper over `ActionDb::get_account_commitments` that surfaces
-/// `action_kind='commitment'` rows in (backlog, unstarted, started) — the
-/// read side of the Commitments chapter.
+/// `action_kind='commitment'` rows in (unstarted, started) — the read side
+/// of the Commitments chapter. Backlog commitments are unaccepted
+/// suggestions and live in `get_account_suggestions` until the user
+/// promotes them.
 pub fn get_account_commitments(
     db: &ActionDb,
     account_id: &str,
