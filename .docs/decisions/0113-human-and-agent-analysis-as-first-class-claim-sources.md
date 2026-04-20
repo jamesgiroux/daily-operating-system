@@ -355,3 +355,47 @@ Ships in v1.4.1 (enrichment refactor):
 - Analysis Inbox surface ships.
 - Shadow sampling (R1.4) activated.
 - Trust warming on version bump (R1.4) activated.
+
+---
+
+## Revision R2 — 2026-04-20 — Pessimistic row-lock on `commit_claim`
+
+Addresses persona-review finding S6 (concurrency primitives).
+
+R1.2 established that supersede vs contradiction is routed by actor identity at read time in `commit_claim`. Persona review flagged that actor-based routing decided at read time + a concurrent second writer produces a race: both writers read "no existing claim at this field_path," both route to supersede, both insert, both hit the unique constraint on `(entity_id, claim_type, field_path, claim_sequence)`, both retry. SQLite's serializable isolation prevents corruption but produces churn and potentially wrong routing decisions.
+
+**Revised semantics:** `commit_claim` acquires a **pessimistic row-lock** on the target `(entity_id, claim_type, field_path)` key for the duration of the routing decision + insert. Conceptually:
+
+```rust
+async fn commit_claim(
+    ctx: &ServiceContext,
+    proposal: ClaimProposal,
+) -> Result<CommittedClaim, ClaimError> {
+    ctx.check_mutation_allowed()?;
+
+    let lock_key = (proposal.entity_id, proposal.claim_type.clone(), proposal.field_path.clone());
+
+    // Acquire exclusive lock on this field_path for the duration of this function.
+    // SQLite: either via a dedicated `claim_commit_locks` table with INSERT-RETURNING semantics,
+    // or via an in-memory Mutex<HashMap<LockKey, ()>> if we decide app-level locking is enough.
+    let _lock = ctx.services.claim_locks.acquire(&lock_key).await?;
+
+    // Now-uncontested read + routing decision + insert.
+    let latest = ctx.services.db.read_latest_claim(&lock_key)?;
+    let route = route_for(&proposal, &latest);                // supersede | contradiction | fresh
+    apply_route(ctx, route, proposal).await?;
+    // _lock drops at function end, releasing the row for other writers.
+}
+```
+
+**Lock implementation choices (to decide at DOS-7 design review):**
+
+- **App-level `Mutex<HashMap<LockKey, ()>>`.** Fast, simple, lives in `services::claims` module. Sufficient for single-process single-user DailyOS. Does not survive a crash — but no lock held across a crash is meaningful anyway. **Recommended default.**
+- **Dedicated `claim_commit_locks` table with uniqueness constraint.** DB-backed; survives crashes; higher overhead per commit. Overkill for single-user; potentially useful if multi-process access ever becomes relevant.
+- **SQLite `BEGIN EXCLUSIVE` transaction.** Locks the entire DB, not just this field_path. Too coarse.
+
+The app-level mutex map is the default. If the multi-process scenario emerges (daemon process + Tauri main process both committing claims), revisit.
+
+**Fairness and starvation:** an active hot field (user rapidly correcting a value) + concurrent agent attempting commits could theoretically queue agent commits indefinitely. Mitigate with a commit-attempt timeout (default 500 ms) returning `Err(ClaimError::LockTimeout)` — caller retries or gives up. User-initiated commits always proceed (locked for short duration); agent commits may time out and be rescheduled.
+
+**Test case:** property test — N=100 concurrent commit_claim calls against the same field_path from a mix of agent + user actors. Assert: exactly one claim exists at `claim_state = committed`; all others resolved as supersede or contradiction per R1.2 rules.

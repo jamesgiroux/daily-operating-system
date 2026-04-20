@@ -356,3 +356,32 @@ The design locks in the right contract, but several implementation details are d
 - [ADR-0080: Signal Intelligence Architecture](0080-signal-intelligence-architecture.md) — `PropagationEngine::emit` becomes mode-aware per §3.
 - [ADR-0091: IntelligenceProvider Abstraction](0091-intelligence-provider-abstraction.md) — Evaluate mode requires a replay variant of `IntelligenceProvider` supplied by the fixture.
 - **ADR-0107 (forthcoming): Evaluation Harness for Abilities** — Consumes `ExecutionMode::Evaluate` and specifies fixture structure, replay semantics, and snapshot-diff scoring.
+
+---
+
+## Amendment — 2026-04-20 — Phase 0 acknowledgment: `ServiceContext` does not yet exist
+
+Code-reality check (2026-04-20) confirmed that `ServiceContext` does not exist in the codebase. Services currently receive raw `ActionDb` + individual context objects. The ADR originally read as if `ServiceContext` was a minor amendment to an existing type; in fact the struct must be introduced from scratch.
+
+This amendment makes Phase 0 explicit: landing the struct and wiring the happy path is a prerequisite before any mutation guard, any mode-aware external client, any `with_transaction_async`, or any ability entry point can function.
+
+**Phase 0 deliverable (prerequisite to everything else in this ADR and every downstream ADR):**
+
+- `pub struct ServiceContext<'a>` defined at `src-tauri/src/services/context.rs` (or equivalent module).
+- Fields: `mode: ExecutionMode`, `clock: &'a dyn Clock`, `rng: &'a dyn SeededRng`, `external: &'a ExternalClients`, `tx: Option<TxHandle<'a>>`, `db: &'a ActionDb`.
+- `Clock` trait with `fn now(&self) -> DateTime<Utc>` + `SeededRng` trait with the RNG surface services use today.
+- Explicit constructors `ServiceContext::new_live(...)`, `::new_simulate(...)`, `::new_evaluate(...)`. No `Default` or zero-arg.
+- `check_mutation_allowed(&self) -> Result<(), WriteBlockedByMode>` method returning error outside `Live`.
+- `with_transaction_async` primitive lands in this same Phase 0 (may require HRTB design iteration; spike signature early).
+
+**What changes in Phase 1 (per original §8):**
+
+- Every mutation function in `services/` (~60 call sites) migrates to take `&ServiceContext` and call `ctx.check_mutation_allowed()?` as first line.
+- Direct `Utc::now()` and `rand::thread_rng()` calls replaced with `ctx.clock.now()` and `ctx.rng.*` throughout services and abilities.
+- CI lint against direct clock/RNG use in ability code.
+
+**Tracking:** [DOS-209](https://linear.app/a8c/issue/DOS-209) (Substrate: ExecutionMode and Mode-Aware Services) has been amended 2026-04-20 to name `ServiceContext` explicitly as the Phase 0 deliverable. Everything downstream (ADR-0102, 0103, 0105, 0110, 0113, 0115, 0116, 0117, 0119) waits on DOS-209 Phase 0.
+
+### Brownfield-as-greenfield note
+
+Per founder guidance (2026-04-20), backward compatibility with existing zero-arg `ActionDb::open()` callers is not required. Every call site is migrated to construct a `ServiceContext::new_live(...)` explicitly. A temporary `ServiceContext::test_live()` helper under `#[cfg(test)]` exists during migration only; it is guarded by a `compile_error!` check if referenced from non-test code.

@@ -452,3 +452,49 @@ Services per [ADR-0101](0101-service-boundary-enforcement.md) are untouched exce
 - **ADR-0107 (forthcoming): Evaluation Harness for Abilities** — Defines how abilities are scored, gated, and regressed. Co-dependency per Risk #5.
 - **ADR-0108 (forthcoming): Surface-Independent Ability Invocation** — Specifies MCP and Tauri binding rules concretely (which follows from §7.3).
 - **ADR-0109 (forthcoming): Migration Strategy — Parallel Run and Cutover** — Specifies the per-capability migration process, parallel-run validation, and cutover criteria.
+
+---
+
+## Amendment — 2026-04-20 — Error-handling contract + experimental ability flag
+
+Two amendments addressing persona-review findings S2 (error handling contract) and A5 (evolution pattern friction).
+
+### A. Error, warning, and soft-degradation contract (addresses S2)
+
+The original ADR defines `AbilityResult<T> = Result<AbilityOutput<T>, AbilityError>` but does not specify how abilities handle partial failure, composition failure, or soft degradation. The distinction matters because surfaces render different things based on outcome class.
+
+**Three outcome paths. Every ability uses exactly one per invocation:**
+
+1. **Hard error** — ability returns `Err(AbilityError::...)`. Caller sees no output. Surface decides user-visible message per [ADR-0108](0108-provenance-rendering-and-privacy.md). No partial data leaks.
+
+2. **Soft degradation** — ability returns `Ok(AbilityOutput<T>)` with `Provenance::warnings` populated. Output is usable; warnings tell the surface that parts were degraded. Examples: child Read timed out so context is thin; a stale source was included flagged as stale; LLM output anomaly was detected but the output itself still validated.
+
+3. **Hard success** — ability returns `Ok(AbilityOutput<T>)` with `warnings` empty (or only informational markers). Full output, no caveats.
+
+**Forbidden:** an ability silently logs an anomaly and returns "normal" output. Every anomaly is either hard-error-surfaced, warning-surfaced, or not worth recording. The log-and-proceed path that [ADR-0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md)'s critique flagged is explicitly prohibited.
+
+**Composition failure semantics:**
+
+When a composed ability (Transform composing a Read composing another Read) has a failure at any depth:
+
+- **Default:** propagate as hard error upward. The composing Transform sees `Err` from the Read and returns `Err` itself.
+- **Opt-in soft degradation:** a Transform can declare a composed Read as `optional` in its composition tree; a failure there is captured as a warning, not an error. Composition is declared explicitly; this is not the default for any composition.
+
+The `warnings[]` field on Provenance is the canonical record of "what went soft." Surfaces render it per [ADR-0108](0108-provenance-rendering-and-privacy.md).
+
+### B. `experimental = true` registry flag (addresses A5)
+
+The ADR contract is designed for shipping abilities. It is heavy for prototyping. At AI-native velocity, trying a new ability shape should be hours, not days-of-ADR.
+
+**Add:** a boolean `experimental` flag in the ability registry entry. When `experimental = true`:
+
+- Provenance envelope requirement: minimal. A bare `Provenance::experimental()` constructor is permitted with only `invocation_id` + `produced_at` populated.
+- Fixture requirement: waived. No eval harness fixture required to register.
+- Category enforcement: waived. Call-graph-based category classification is still logged for observability but does not block registration.
+- Surface exposure: experimental abilities are registered and invokable only when a feature flag is active. Not exposed through MCP. Not exposed through Tauri commands unless the dev-mode flag is set.
+- Lifespan: one cycle maximum. An `experimental` ability either graduates to non-experimental (full contract compliance) within one v1.x.y release or is removed from the registry.
+- Trust score: forced to zero. Claims produced by an experimental ability have `TrustAssessment::experimental = true`; downstream consumers know not to treat them as authoritative.
+
+Rationale: exploration needs a fast path. Discipline comes from graduation (promotion requires full ADR compliance), not from blocking experimentation entirely. The one-cycle lifespan prevents "experimental" from becoming a permanent escape hatch.
+
+**Tracking:** a registry query `experimental_abilities()` returns currently experimental abilities and their registration date. Anything older than one cycle is flagged for graduation-or-removal review.
