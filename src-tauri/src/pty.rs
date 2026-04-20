@@ -723,6 +723,23 @@ impl PtyManager {
             cmd.env_remove(key);
         }
 
+        // Explicitly forward Anthropic API auth env vars so the CLI can
+        // authenticate without relying on the Keychain. PTY-spawned children
+        // inherit the parent env by default, so this is technically
+        // redundant — but macOS Keychain ACLs silently block non-interactive
+        // children from reading Claude Code's stored credentials under
+        // API-key mode, so an explicit env-var path is the only reliable
+        // source. If the parent DailyOS process has these set (launched
+        // from a shell that exports them), the CLI will pick the env
+        // credential first and skip the Keychain lookup entirely.
+        for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
+            if let Ok(value) = std::env::var(key) {
+                if !value.is_empty() {
+                    cmd.env(key, value);
+                }
+            }
+        }
+
         // Spawn the child process
         let _child = pair
             .slave
