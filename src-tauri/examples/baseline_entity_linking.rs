@@ -5,7 +5,7 @@
 //!
 //! Run:
 //!   cargo run --example baseline_entity_linking -- \
-//!     --db ~/Library/Application\ Support/com.dailyos.app/dailyos.db \
+//!     --db ~/.dailyos/dailyos.db \
 //!     --days-meetings 90 --days-emails 30 \
 //!     --output .docs/migrations/entity-linking-baseline.json
 //!
@@ -119,7 +119,7 @@ fn main() {
         parse_arg(&args, "--db")
             .unwrap_or_else(|| {
                 let home = std::env::var("HOME").unwrap_or_default();
-                format!("{home}/Library/Application Support/com.dailyos.app/dailyos.db")
+                format!("{home}/.dailyos/dailyos.db")
             }),
     );
     let days_meetings: u32 = parse_arg(&args, "--days-meetings")
