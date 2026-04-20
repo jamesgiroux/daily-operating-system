@@ -345,7 +345,14 @@ impl ActionDb {
             .map_err(|e| format!("upsert_linked_entity_raw: {e}"))
     }
 
-    /// Delete all auto-resolution rows for an owner (keeps source='user' rows).
+    /// Delete auto-resolution rows for an owner.
+    ///
+    /// Preserves:
+    ///   - source='user'           — explicit user overrides (P1)
+    ///   - source='user_dismissed' — dismissal tombstones (dismissal-wins-race)
+    ///
+    /// Without preserving user_dismissed, a concurrent recompute could delete
+    /// the tombstone and then re-insert the dismissed entity on its next pass.
     pub fn delete_auto_links_for_owner(
         &self,
         owner_type: &str,
@@ -354,7 +361,8 @@ impl ActionDb {
         self.conn_ref()
             .execute(
                 "DELETE FROM linked_entities_raw \
-                 WHERE owner_type = ?1 AND owner_id = ?2 AND source != 'user'",
+                 WHERE owner_type = ?1 AND owner_id = ?2 \
+                   AND source NOT IN ('user', 'user_dismissed')",
                 params![owner_type, owner_id],
             )
             .map(|_| ())
