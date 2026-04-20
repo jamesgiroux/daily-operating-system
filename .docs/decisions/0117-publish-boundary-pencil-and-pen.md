@@ -236,6 +236,25 @@ Out of scope:
 
 ---
 
+## Strategic elevation — 2026-04-20
+
+Founder decision (D2, recorded in [ADR-0116](0116-tenant-control-plane-boundary.md) "Founder commitment" section) makes the publish framework strategically load-bearing for DailyOS's enterprise commercial story.
+
+The reasoning: enterprise buyers will ask for "leadership visibility into team activity." The architectural answer is not to soften [ADR-0116](0116-tenant-control-plane-boundary.md)'s metadata-only control-plane boundary. The architectural answer is that **publish is the channel** — a user-initiated push (or user-scheduled push) to an enterprise storage destination the customer controls. DailyOS does not reach into the customer's storage; the user publishes to it. Enterprise gets visibility into what their users choose to publish, in the format (human- or machine-readable) the destination expects, on the cadence the user sets. The control plane sees zero of it.
+
+This elevates the publish framework from "a P2 posting capability" to "the primary commercial interface between DailyOS and any external destination, including future enterprise storage."
+
+**Implications for this ADR:**
+
+- The `PublishDestination` enum (§5) needs extensibility. S3, SharePoint, Confluence, and generic Webhook variants are plausible v1.4.2–v1.5.0 additions alongside P2. None of them should require an [ADR-0117](0117-publish-boundary-pencil-and-pen.md) amendment — the protocol is stable; destinations are extensions.
+- Both human-readable (Markdown/PDF briefing export) and machine-readable (structured JSON with provenance) payload formats must be first-class. The `PublishPayload` shape (§1) supports both; formalize as required in v1.4.1.
+- Scheduled publishes (user-set cron) are a legitimate Pencil/Pen variant: the schedule is the user's confirmation, with subsequent emissions requiring the Pencil/Pen contract but using a pre-configured `PolicySource::PrePolicy` token (§2). R1.6 said v1.4.0 hard-rejects `PrePolicy`; that stays true for v1.4.0–v1.4.1. Schedule-based publishes land with enterprise destinations in v1.5.0+ with appropriate authority-grant design.
+- Retraction is honest per destination. Enterprise destinations typically do not support retraction (once pushed to S3, it's there). `RetractionSupport::None` applies; the user is told clearly before push.
+
+**Non-goal:** This does not mean DailyOS builds every enterprise integration. It means the *protocol* supports user-driven push to any destination the user configures, and new destinations are a matter of writing a `DestinationClient` implementation — hours of work at AI velocity.
+
+---
+
 ## Revision R1 — 2026-04-19 — Reality Check
 
 Adversarial review + reference pass found the ADR's foundational claim — that `publish_to_p2` already exists — is false. The ADR is therefore not wrapping an existing capability; it is inventing the entire subsystem. Retarget accordingly.
