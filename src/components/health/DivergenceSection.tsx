@@ -11,13 +11,17 @@
  * `claimText` are skipped. A Glean channel-sentiment card only renders when
  * we can build a concrete headline from the readings or a divergenceSummary.
  */
+import { useCallback } from "react";
 import type { ConsistencyFinding, HealthOutlookSignals, ChannelSentimentSignal, ChannelReading } from "@/types";
+import { useIntelligenceCorrection } from "@/hooks/useIntelligenceCorrection";
 import { TriageCard } from "./TriageCard";
 import styles from "./health.module.css";
 
 interface DivergenceSectionProps {
   findings: ConsistencyFinding[];
   gleanSignals: HealthOutlookSignals | null;
+  /** DOS-269: account id for DOS-41 confirm-feedback attribution. */
+  accountId?: string;
 }
 
 function kindForFinding(f: ConsistencyFinding): string {
@@ -73,10 +77,26 @@ function buildChannelCard(
   return null;
 }
 
-export function DivergenceSection({ findings, gleanSignals }: DivergenceSectionProps) {
+export function DivergenceSection({ findings, gleanSignals, accountId }: DivergenceSectionProps) {
   const channel = gleanSignals?.channelSentiment ?? null;
   const channelCard = channel?.divergenceDetected ? buildChannelCard(channel) : null;
   const realFindings = findings.filter(findingHasContent);
+  const correction = useIntelligenceCorrection();
+
+  const makeConfirmHandler = useCallback(
+    (triageKey: string) => {
+      if (!accountId) return undefined;
+      return async () => {
+        await correction.submit({
+          entityId: accountId,
+          entityType: "account",
+          field: `triage:${triageKey}`,
+          action: "confirmed",
+        });
+      };
+    },
+    [accountId, correction],
+  );
 
   if (realFindings.length === 0 && !channelCard) return null;
 
@@ -102,21 +122,26 @@ export function DivergenceSection({ findings, gleanSignals }: DivergenceSectionP
             headline={channelCard.headline}
             evidence={channelCard.evidence}
             sources={[{ origin: "glean", label: "Channel sentiment" }]}
+            onConfirmAccurate={makeConfirmHandler("glean-channel-divergence")}
           />
         )}
 
-        {realFindings.map((f, i) => (
-          <TriageCard
-            key={`finding-${i}-${f.code}`}
-            tone="divergence"
-            kind={kindForFinding(f)}
-            headline={f.claimText}
-            evidence={
-              f.evidenceText && f.evidenceText.trim().length > 0 ? f.evidenceText : undefined
-            }
-            sources={[{ origin: "local", label: f.fieldPath || f.code }]}
-          />
-        ))}
+        {realFindings.map((f, i) => {
+          const key = `finding-${i}-${f.code}`;
+          return (
+            <TriageCard
+              key={key}
+              tone="divergence"
+              kind={kindForFinding(f)}
+              headline={f.claimText}
+              evidence={
+                f.evidenceText && f.evidenceText.trim().length > 0 ? f.evidenceText : undefined
+              }
+              sources={[{ origin: "local", label: f.fieldPath || f.code }]}
+              onConfirmAccurate={makeConfirmHandler(key)}
+            />
+          );
+        })}
       </div>
     </>
   );
