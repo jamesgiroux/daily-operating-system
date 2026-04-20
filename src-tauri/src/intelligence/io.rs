@@ -399,6 +399,12 @@ pub struct SuccessMetric {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenCommitment {
+    /// Stable identity emitted by the LLM for bridging to the Actions entity.
+    /// Format: `{source_type}:{source_id}:{n}` e.g. `meeting:abc123:2`. When
+    /// absent (legacy or non-commitment-aware flow), the bridge skips the item
+    /// rather than creating an un-bridgeable Action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commitment_id: Option<String>,
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
@@ -470,8 +476,53 @@ pub struct StrategicPriority {
     pub owner: Option<String>,
     /// Source: "meeting" | "qbr" | "glean" | "user"
     pub source: Option<String>,
-    /// Expected timeline or deadline.
+    /// Expected timeline or deadline. Short phrase only: "Ongoing", "Q2 2026",
+    /// "Beta March 2026". NOT a rationale — that belongs in `context`.
     pub timeline: Option<String>,
+    /// One sentence of rationale (≤180 chars) explaining why this matters or
+    /// how it's evolving. Renders as italic paragraph under the meta line.
+    #[serde(default)]
+    pub context: Option<String>,
+}
+
+/// Regulatory / market context that shapes an account's decisions.
+///
+/// This is a first-class content type — NOT recycled organisational
+/// changes. The canonical Context-tab mockup (lines 1143-1152 of
+/// `.docs/mockups/account-context-globex.html`) renders a
+/// `reg-card` with a serif title + narrative body describing
+/// compliance regimes (e.g. DORA + SOC 2 Type II), market forces,
+/// or geopolitical pressure that constrains what the customer can
+/// agree to or deploy. The AI synthesises these from transcript
+/// evidence and account context during the `strategic_context`
+/// enrichment dimension.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketContextItem {
+    /// Short serif title for the card. Example: "DORA compliance +
+    /// SOC 2 Type II reporting". Keep under ~80 chars.
+    pub title: String,
+    /// Narrative paragraph explaining the context and why it
+    /// matters to this account's buying / renewal / usage
+    /// decisions. Rendered as reg-body in the mockup.
+    pub body: String,
+    /// Optional bucket for cross-cutting faceting:
+    /// "regulatory" | "market" | "geopolitical" | "compliance"
+    /// | "industry" | "other". Free-text; UI uses a fallback for
+    /// unknown values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// Optional ISO date when this context became relevant (e.g.
+    /// the date DORA was signed, or the date the account first
+    /// raised the requirement).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_date: Option<String>,
+    /// I576: structured source attribution + confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: true if multiple sources disagree on the framing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
 }
 
 // -- Dimension 2: Relationship Health --
@@ -860,6 +911,12 @@ pub struct IntelligenceJson {
     pub competitive_context: Vec<CompetitiveInsight>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub strategic_priorities: Vec<StrategicPriority>,
+    /// Regulatory / market / compliance context shaping this account's
+    /// decisions. First-class field — do NOT recycle organizational
+    /// changes into this slot (the Wave-0g Context rebuild mistakenly
+    /// did that; this field replaces the hijack).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub market_context: Vec<MarketContextItem>,
 
     // Dimension 2: Relationship Health
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -939,6 +996,8 @@ pub(crate) struct DimensionsBlob {
     pub competitive_context: Vec<CompetitiveInsight>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub strategic_priorities: Vec<StrategicPriority>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub market_context: Vec<MarketContextItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coverage_assessment: Option<CoverageAssessment>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -980,6 +1039,7 @@ impl IntelligenceJson {
             pull_quote: self.pull_quote.clone(),
             competitive_context: self.competitive_context.clone(),
             strategic_priorities: self.strategic_priorities.clone(),
+            market_context: self.market_context.clone(),
             coverage_assessment: self.coverage_assessment.clone(),
             organizational_changes: self.organizational_changes.clone(),
             internal_team: self.internal_team.clone(),
@@ -1003,6 +1063,7 @@ impl IntelligenceJson {
         self.pull_quote = blob.pull_quote.clone();
         self.competitive_context = blob.competitive_context.clone();
         self.strategic_priorities = blob.strategic_priorities.clone();
+        self.market_context = blob.market_context.clone();
         self.coverage_assessment = blob.coverage_assessment.clone();
         self.organizational_changes = blob.organizational_changes.clone();
         self.internal_team = blob.internal_team.clone();
@@ -1083,6 +1144,12 @@ impl HasSource for OpenCommitment {
 }
 
 impl HasSource for ExpansionSignal {
+    fn item_source(&self) -> Option<&ItemSource> {
+        self.item_source.as_ref()
+    }
+}
+
+impl HasSource for MarketContextItem {
     fn item_source(&self) -> Option<&ItemSource> {
         self.item_source.as_ref()
     }
@@ -3032,6 +3099,7 @@ mod tests {
             owner: Some("VP Sales".to_string()),
             source: Some("strategy-deck.pdf".to_string()),
             timeline: Some("Q2 2026".to_string()),
+            context: None,
         }];
         intel.coverage_assessment = Some(CoverageAssessment {
             role_fill_rate: Some(0.75),

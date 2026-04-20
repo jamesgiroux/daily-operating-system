@@ -223,6 +223,8 @@ export interface DbAction {
   sourceType?: string;
   sourceId?: string;
   sourceLabel?: string;
+  /** DOS Work-tab Phase 1: `task` (default) or `commitment` (AI-inferred). */
+  actionKind?: string;
   context?: string;
   waitingOn?: string;
   updatedAt: string;
@@ -2102,6 +2104,17 @@ export interface StrategicPriority {
   owner?: string;
   source?: string;
   timeline?: string;
+  /** Optional one-sentence rationale. Renders as italic paragraph below meta. */
+  context?: string;
+}
+
+export interface MarketContextItem {
+  title: string;
+  body: string;
+  category?: string;
+  effectiveDate?: string;
+  itemSource?: ItemSource;
+  discrepancy?: boolean;
 }
 
 // -- Dimension 2: Relationship Health --
@@ -2252,7 +2265,7 @@ export interface EntityIntelligence {
   /** I396: Success metrics / KPIs tracked for this entity. */
   successMetrics?: Array<{ name: string; target?: string; current?: string; status?: string; owner?: string }> | null;
   /** I396: Open commitments (promises made to/from the account). */
-  openCommitments?: Array<{ description: string; owner?: string; dueDate?: string; source?: string; status?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
+  openCommitments?: Array<{ commitmentId?: string; description: string; owner?: string; dueDate?: string; source?: string; status?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
   /** I396: Relationship depth assessment. */
   relationshipDepth?: { championStrength?: string; executiveAccess?: string; stakeholderCoverage?: string; coverageGaps?: string[] } | null;
   /** I527: Deterministic consistency status. */
@@ -2268,6 +2281,8 @@ export interface EntityIntelligence {
   competitiveContext?: CompetitiveInsight[];
   /** Dimension 1: Strategic priorities. */
   strategicPriorities?: StrategicPriority[];
+  /** Dimension 1: Market / regulatory context items. */
+  marketContext?: MarketContextItem[];
 
   /** Dimension 2: Stakeholder coverage assessment. */
   coverageAssessment?: CoverageAssessment | null;

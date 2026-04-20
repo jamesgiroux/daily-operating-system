@@ -8,7 +8,7 @@
  * The public return type is unchanged — page components destructure
  * one flat object, sub-hooks are an internal concern.
  */
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useNavigate } from "@tanstack/react-router";
@@ -23,6 +23,7 @@ import type {
   StrategicProgram,
 } from "@/types";
 import { useAccountFields } from "./useAccountFields";
+import { useAccountWorkData } from "./useAccountWorkData";
 import { useEnrichmentProgress } from "./useEnrichmentProgress";
 import { useTeamManagement } from "./useTeamManagement";
 
@@ -457,97 +458,14 @@ export function useAccountDetail(accountId: string | undefined) {
     }
   }
 
-  // ─── Wave 0e: Work tab CTA mutations (DOS-13) ─────────────────────────
-  // Keyed sets hold the in-flight index for per-card loading state. The
-  // card at that index renders "Saving…" while the invoke is live.
-  const [commitmentDoneInFlight, setCommitmentDoneInFlight] = useState<Set<number>>(new Set());
-  const [commitmentDismissInFlight, setCommitmentDismissInFlight] = useState<Set<number>>(new Set());
-  const [suggestionAcceptInFlight, setSuggestionAcceptInFlight] = useState<Set<number>>(new Set());
-  const [suggestionDismissInFlight, setSuggestionDismissInFlight] = useState<Set<number>>(new Set());
-
-  const toggleInFlight = (
-    setter: React.Dispatch<React.SetStateAction<Set<number>>>,
-    index: number,
-    on: boolean,
-  ) => {
-    setter((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(index);
-      else next.delete(index);
-      return next;
-    });
-  };
-
-  async function handleMarkCommitmentDone(index: number) {
-    if (!accountId) return;
-    toggleInFlight(setCommitmentDoneInFlight, index, true);
-    try {
-      await invoke("mark_commitment_done", {
-        entityId: accountId,
-        entityType: "account",
-        index,
-      });
-      await silentRefresh();
-      toast.success("Commitment marked done");
-    } catch (e) {
-      toast.error(`Could not mark done: ${String(e)}`);
-    } finally {
-      toggleInFlight(setCommitmentDoneInFlight, index, false);
-    }
-  }
-
-  async function handleDismissCommitment(index: number, itemText: string) {
-    if (!accountId) return;
-    toggleInFlight(setCommitmentDismissInFlight, index, true);
-    try {
-      await invoke("dismiss_intelligence_item", {
-        entityId: accountId,
-        entityType: "account",
-        field: "openCommitments",
-        itemText,
-      });
-      await silentRefresh();
-    } catch (e) {
-      toast.error(`Could not dismiss: ${String(e)}`);
-    } finally {
-      toggleInFlight(setCommitmentDismissInFlight, index, false);
-    }
-  }
-
-  async function handleAcceptSuggestion(index: number) {
-    if (!accountId) return;
-    toggleInFlight(setSuggestionAcceptInFlight, index, true);
-    try {
-      await invoke("track_recommendation", {
-        entityId: accountId,
-        entityType: "account",
-        index,
-      });
-      await silentRefresh();
-      toast.success("Added to your actions");
-    } catch (e) {
-      toast.error(`Could not accept: ${String(e)}`);
-    } finally {
-      toggleInFlight(setSuggestionAcceptInFlight, index, false);
-    }
-  }
-
-  async function handleDismissSuggestion(index: number) {
-    if (!accountId) return;
-    toggleInFlight(setSuggestionDismissInFlight, index, true);
-    try {
-      await invoke("dismiss_recommendation", {
-        entityId: accountId,
-        entityType: "account",
-        index,
-      });
-      await silentRefresh();
-    } catch (e) {
-      toast.error(`Could not dismiss: ${String(e)}`);
-    } finally {
-      toggleInFlight(setSuggestionDismissInFlight, index, false);
-    }
-  }
+  // ─── DOS Work-tab Phase 3: Commitments / Suggestions / Recently landed ──
+  // Action-table-backed surfaces, id-based dispatch. Replaces the previous
+  // index-based IntelligenceJson handlers (Phase 2 made Commitments and
+  // Suggestions read from actions directly; the old `mark_commitment_done`
+  // / `dismiss_intelligence_item` / `track_recommendation` /
+  // `dismiss_recommendation` commands are no longer called from the Work
+  // tab UI).
+  const work = useAccountWorkData(accountId);
 
   async function handleCreateAction() {
     if (!detail || !newActionTitle.trim()) return;
@@ -700,15 +618,10 @@ export function useAccountDetail(accountId: string | undefined) {
     handleImportNoteCreateAndAdd: team.handleImportNoteCreateAndAdd,
     handleCreateAction,
 
-    // Wave 0e (DOS-13): Work tab CTAs
-    handleMarkCommitmentDone,
-    handleDismissCommitment,
-    handleAcceptSuggestion,
-    handleDismissSuggestion,
-    commitmentDoneInFlight,
-    commitmentDismissInFlight,
-    suggestionAcceptInFlight,
-    suggestionDismissInFlight,
+    // DOS Work-tab Phase 3: Action-table-backed Work surfaces
+    // `work.commitments`, `work.suggestions`, `work.recentlyLanded`, plus
+    // id-based handlers + in-flight Sets. See useAccountWorkData.
+    work,
 
     // DOS-27: sentiment journal
     sentiment,

@@ -32,9 +32,7 @@ import { AccountViewSwitcher } from "@/components/account/AccountViewSwitcher";
 // AccountOutlook (legacy 3-section component) is no longer rendered on the
 // Health tab — OutlookPanel is the replacement. The component still lives in
 // the codebase for possible Context-tab reuse, but it is not imported here.
-import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import { AccountPortfolioSection } from "@/components/account/AccountPortfolioSection";
-import { AccountProductsSection } from "@/components/account/AccountProductsSection";
 import { SentimentHero } from "@/components/health/SentimentHero";
 // DOS-203: Health-tab chapter components.
 import { TriageSection, hasTriageContent } from "@/components/health/TriageSection";
@@ -57,7 +55,6 @@ import { CommercialShape } from "@/components/context/CommercialShape";
 import { RelationshipFabric } from "@/components/context/RelationshipFabric";
 // View 3 — The Work (DOS-13: workbench, not todo list)
 import {
-  NumberedFocusList,
   ProgramPill,
   ProgramPillRow,
   CommitmentCard,
@@ -67,11 +64,7 @@ import {
   ReportCard,
   ReportGrid,
   ReportFooterNote,
-  NudgeList,
-  NudgeRow,
-  NudgeLeaveAsIs,
   WorkButton,
-  type FocusItem,
 } from "@/components/work/WorkSurface";
 import { getAccountReports } from "@/lib/report-config";
 import { buildAccountVitals } from "@/components/account/account-detail-utils";
@@ -321,20 +314,10 @@ export default function AccountDetailPage() {
             <ChapterHeading
               title="What matters to them"
               freshness={<ChapterFreshness enrichedAt={intelligence.enrichedAt} fragments={whatMattersFragments} />}
-              feedbackSlot={
-                page.accountId ? (
-                  <IntelligenceCorrection
-                    entityId={page.accountId}
-                    entityType="account"
-                    field="strategic_priorities"
-                  />
-                ) : null
-              }
             />
             <StrategicLandscape
               intelligence={intelligence}
               onUpdateField={page.handleUpdateIntelField}
-              getItemFeedback={fb.get}
               onItemFeedback={fb.submit}
             />
           </MarginSection>
@@ -350,7 +333,6 @@ export default function AccountDetailPage() {
             <ValueCommitments
               intelligence={intelligence}
               onUpdateField={page.handleUpdateIntelField}
-              getItemFeedback={fb.get}
               onItemFeedback={fb.submit}
             />
           </MarginSection>
@@ -374,7 +356,6 @@ export default function AccountDetailPage() {
         <MarginSection id="commercial-shape" label={<>Commercial<br/>shape</>}>
           <ChapterHeading
             title="Commercial shape"
-            variant="reference"
             freshness={
               <ChapterFreshness
                 enrichedAt={intelligence?.enrichedAt}
@@ -392,7 +373,6 @@ export default function AccountDetailPage() {
         <MarginSection id="technical-shape" label={<>Technical<br/>shape</>}>
           <ChapterHeading
             title="Technical shape"
-            variant="reference"
             freshness={
               <ChapterFreshness
                 at={detail.technicalFootprint?.sourcedAt ?? intelligence?.enrichedAt}
@@ -404,30 +384,12 @@ export default function AccountDetailPage() {
             footprint={detail.technicalFootprint ?? null}
             variant="chapter"
             featureAdoption={featureAdoption}
-            // DOS-231: gap rows expose a "Capture now" affordance. Until
-            // the structured editor lands with DOS-207, we prompt inline
-            // for the value, persist through
-            // `update_technical_footprint_field`, and refresh. This gives
-            // the Intelligence Loop a real signal + updated footprint
-            // immediately instead of a silent console log.
-            onCaptureGap={(field) => { void page.captureTechnicalFootprintField(field); }}
+            products={detail.products ?? []}
           />
         </MarginSection>
 
-        {/* Products — moved here from the Health tab. Technical/commercial
-            surface of the account; belongs alongside Technical shape. */}
-        {(detail.products?.length ?? 0) > 0 && (
-          <MarginSection id="products" label="Products">
-            <AccountProductsSection
-              accountId={detail.id}
-              products={detail.products ?? []}
-              getFeedback={fb.get}
-              onFeedback={fb.submit}
-              onRefresh={acct.load}
-              silentRefresh={acct.silentRefresh}
-            />
-          </MarginSection>
-        )}
+        {/* Products folded into Technical shape as a dotted list (DOS-251
+            tracks full edit UX + Services subsection for v1.2.2). */}
 
         {/* Chapter 8: Relationship fabric — advocacy, beta, NPS history */}
         <MarginSection id="relationship-fabric" label={<>Relationship<br/>fabric</>}>
@@ -445,26 +407,8 @@ export default function AccountDetailPage() {
           <RelationshipFabric detail={detail} accountName={detail.name ?? undefined} />
         </MarginSection>
 
-        {/* The record — timeline continuity (preserved to avoid regression). */}
-        <MarginSection id="the-record" label={<>The<br/>Record</>}>
-          <UnifiedTimeline
-            data={{
-              ...detail,
-              accountEvents: acct.events,
-              lifecycleChanges: detail.lifecycleChanges,
-              autoCompletedMilestones: detail.autoCompletedMilestones,
-              contextEntries: page.entityCtx.entries,
-            }}
-            sectionId=""
-            actionSlot={<AddToRecord onAdd={(title, content) => page.entityCtx.createEntry(title, content)} />}
-          />
-        </MarginSection>
-
-        {acct.files.length > 0 && (
-          <MarginSection id="files" label="Files" reveal={false}>
-            <FileListSection files={acct.files} />
-          </MarginSection>
-        )}
+        {/* The Record + Files moved to the Work tab where they belong —
+            they're operational/workbench surfaces, not narrative context. */}
 
         {/* Chapter 9: About this dossier — always renders; our own data-quality story */}
         <MarginSection id="about-dossier" label={<>About the<br/>dossier</>} reveal={false}>
@@ -494,146 +438,114 @@ export default function AccountDetailPage() {
   // Suggestions carry "Dismiss (teaches system)", Nudges always offer "Leave as-is"
   // and the chapter hides entirely when the list is empty.
   const renderWorkView = () => {
-    const recommendedActions = intelligence?.recommendedActions ?? [];
-    const openCommitments = intelligence?.openCommitments ?? [];
-    const wins = intelligence?.recentWins ?? [];
     const programs = acct.programs ?? [];
-    const accountEvents = acct.events ?? [];
+    const work = acct.work;
 
-    // ── Chapter 1: 90-day focus ─────────────────────────────────────────
-    // Editorial synthesis of the 3–4 most important threads over the next 90
-    // days. Drafted from commitments + recommendations + programs (no new
-    // schema — read-only projection). Falls back to a graceful empty when the
-    // underlying sources are thin.
-    const focusItems: FocusItem[] = [];
-
-    openCommitments.slice(0, 2).forEach((c) => {
-      const citations: FocusItem["citations"] = [];
-      if (c.source) citations.push({ label: c.source });
-      citations.push({ label: "Commitment" });
-      focusItems.push({
-        headline: c.description,
-        paragraph: [
-          c.owner ? `Owner: ${c.owner}.` : null,
-          c.dueDate ? `Due ${formatShortDate(c.dueDate)}.` : "No date set — carry forward until it closes.",
-        ].filter(Boolean).join(" "),
-        citations,
-      });
-    });
-
-    recommendedActions.slice(0, 4 - focusItems.length).forEach((r) => {
-      focusItems.push({
-        headline: r.title,
-        paragraph: r.rationale,
-        citations: [{ label: "Recommendation" }],
-      });
-    });
-
-    // Programs pad remaining slots up to 4 items alongside commitments +
-    // recommendations. Mockup interleaves programs with commitments rather
-    // than holding them as a last-resort fallback.
-    programs.slice(0, 4 - focusItems.length).forEach((p) => {
-      if (!p.name) return;
-      focusItems.push({
-        headline: p.name,
-        paragraph: p.notes || `Standing motion in ${p.status.toLowerCase()} state. Revisit when context shifts.`,
-        citations: [{ label: `Program · ${p.status}` }],
-      });
-    });
-
-    const focusSynthesisFragments: string[] = [];
-    if (openCommitments.length) focusSynthesisFragments.push(`${openCommitments.length} commitment${openCommitments.length === 1 ? "" : "s"}`);
-    if (recommendedActions.length) focusSynthesisFragments.push(`${recommendedActions.length} suggestion${recommendedActions.length === 1 ? "" : "s"}`);
-    if (programs.length) focusSynthesisFragments.push(`${programs.length} program${programs.length === 1 ? "" : "s"}`);
-
-    // ── Chapter 2: Programs & motions ────────────────────────────────────
+    // ── Programs & motions ──────────────────────────────────────────────
     // Standing states only — no due dates, not todos.
     const activePrograms = programs.filter((p) => p.name);
 
-    // ── Chapter 3: Commitments ───────────────────────────────────────────
-    // v1.2.1 scope: real tracker provenance (structured trackerLink with
-    // system/externalId/href) lands in DOS-75 (v1.2.2). Until then we render
-    // every commitment as Private. Regex-sniffing the free-text `source`
-    // string for "Linear"/"Salesforce"/etc. generated false Shared labels
-    // with no authoritative link to back them up, so we stop guessing.
+    // ── Chapter 1: Commitments ───────────────────────────────────────────
+    // DOS Work-tab Phase 3: sourced from the `actions` table via
+    // `useAccountWorkData` (action_kind='commitment', status in backlog /
+    // unstarted / started). Dispatch by stable action.id — no index-based
+    // handlers.
     //
-    // Audience classification similarly waits for structured data — we
-    // default to customer-facing unless the description or source string
-    // explicitly says "internal".
+    // Top-4 visual weight: the first four cards carry `.emphasis` (heavier
+    // serif headline). Items 5+ render at the default weight. This gives a
+    // "big three or four" reading order without turning the rest of the
+    // list into second-class citizens.
     //
-    // stillActiveNote is synthesized only when a due date has passed —
-    // copy always opens with "Still active?" never "OVERDUE".
+    // Soft "Still active?" rules:
+    //   status='started' + due_date past       → "Due date passed N days ago."
+    //   status='backlog' + age > 45d            → "Carried for N days — still active?"
+    //   status='unstarted' + no due + age > 45d → "Carried for N days without a date — still active?"
     const AGED_COMMITMENT_THRESHOLD_DAYS = 45;
-    const commitmentCards = openCommitments.map((c, idx) => {
-      const sourceLower = (c.source ?? "").toLowerCase();
-      const isInternal = /internal|^program\b|team/i.test(c.description) || /internal/.test(sourceLower);
+    const commitmentCards = work.commitments.map((c, idx) => {
+      const contextLower = (c.context ?? "").toLowerCase();
+      const isInternal = /internal|^program\b|\bteam\b/i.test(c.title) || /internal/.test(contextLower);
 
-      // Structured tracker link (DOS-75) takes precedence over the free-text
-      // source string: when present, the commitment renders as Shared with
-      // the tracker anchor. Backend wiring lands with DOS-75; forward-compatible
-      // today.
-      const trackerLink = (c as { trackerLink?: { system?: string; href?: string; externalId?: string } }).trackerLink;
-      const visibility: "shared" | "private" = trackerLink?.href ? "shared" : "private";
+      // Linear link on the action row = shared with the team. Only the
+      // linear_identifier + linear_url flavour is wired today; Salesforce
+      // / Slack writeback lands later.
+      const linearHref = c.linearUrl;
+      const visibility: "shared" | "private" = linearHref ? "shared" : "private";
 
       const provenance: { label: string; href?: string }[] = [];
-      if (trackerLink?.href) {
+      if (c.linearIdentifier && linearHref) {
         provenance.push({
-          label: trackerLink.system ? `${trackerLink.system}${trackerLink.externalId ? ` · ${trackerLink.externalId}` : ""}` : "Tracker",
-          href: trackerLink.href,
+          label: `Linear · ${c.linearIdentifier}`,
+          href: linearHref,
         });
-      } else if (c.source) {
-        provenance.push({ label: c.source });
+      } else if (c.sourceLabel) {
+        provenance.push({ label: c.sourceLabel });
+      } else if (c.sourceType) {
+        provenance.push({ label: c.sourceType });
       }
 
+      // Soft-nudge copy table. At most one rule fires — due-date-past wins
+      // when present; aged fallback only runs for dateless commitments or
+      // backlog items.
       let stillActiveNote: string | undefined;
-      if (c.dueDate) {
-        const due = new Date(c.dueDate);
-        const diff = Math.round((Date.now() - due.getTime()) / (1000 * 60 * 60 * 24));
-        if (diff > 0) {
+      const now = Date.now();
+      const createdAt = c.createdAt ? new Date(c.createdAt).getTime() : Number.NaN;
+      const ageDays = Number.isFinite(createdAt)
+        ? Math.floor((now - createdAt) / (1000 * 60 * 60 * 24))
+        : null;
+
+      if (c.status === "started" && c.dueDate) {
+        const due = new Date(c.dueDate).getTime();
+        if (!Number.isNaN(due) && due < now) {
+          const diff = Math.round((now - due) / (1000 * 60 * 60 * 24));
           stillActiveNote = `Due date passed ${diff} day${diff === 1 ? "" : "s"} ago. Worth a glance, not a panic.`;
         }
-      } else {
-        // Aged no-due-date commitments: synthesize a soft "Still active?" note
-        // when the item has been carried for > threshold days. Uses authoritative
-        // sourcedAt; skip when the timestamp is missing (rather than guess).
-        const sourcedAt = c.itemSource?.sourcedAt;
-        const ts = sourcedAt ? new Date(sourcedAt).getTime() : Number.NaN;
-        if (Number.isFinite(ts)) {
-          const ageDays = Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
-          if (ageDays >= AGED_COMMITMENT_THRESHOLD_DAYS) {
-            stillActiveNote = `Carried for ${ageDays} days without a date — still active?`;
-          }
-        }
+      } else if (c.status === "backlog" && ageDays !== null && ageDays > AGED_COMMITMENT_THRESHOLD_DAYS) {
+        stillActiveNote = `Carried for ${ageDays} days — still active?`;
+      } else if (
+        c.status === "unstarted" &&
+        !c.dueDate &&
+        ageDays !== null &&
+        ageDays > AGED_COMMITMENT_THRESHOLD_DAYS
+      ) {
+        stillActiveNote = `Carried for ${ageDays} days without a date — still active?`;
       }
 
-      const doneBusy = acct.commitmentDoneInFlight.has(idx);
-      const dismissBusy = acct.commitmentDismissInFlight.has(idx);
+      const doneBusy = work.commitmentDoneInFlight.has(c.id);
+      const dismissBusy = work.commitmentDismissInFlight.has(c.id);
+      const isEmphasized = idx < 4;
       return (
         <CommitmentCard
-          key={idx}
-          headline={c.description}
+          key={c.id}
+          emphasis={isEmphasized}
+          headline={c.title}
           provenance={provenance.length > 0 ? provenance : undefined}
-          owner={c.owner ?? null}
+          owner={null}
           due={c.dueDate ? formatShortDate(c.dueDate) : null}
           audience={isInternal ? "internal" : "customer"}
           visibility={visibility}
+          sharedRef={linearHref && c.linearIdentifier ? { label: c.linearIdentifier, href: linearHref } : undefined}
           stillActiveNote={stillActiveNote}
           actions={
             <>
               <WorkButton
                 kind="primary"
                 disabled={doneBusy || dismissBusy}
-                onClick={() => acct.handleMarkCommitmentDone(idx)}
+                onClick={() => work.handleMarkCommitmentDone(c.id)}
               >
                 {doneBusy ? "Marking done…" : "Mark done"}
               </WorkButton>
               <WorkButton
                 kind="muted"
                 disabled={doneBusy || dismissBusy}
-                onClick={() => acct.handleDismissCommitment(idx, c.description)}
+                onClick={() => work.handleDismissCommitment(c.id)}
               >
                 {dismissBusy ? "Dismissing…" : "Dismiss"}
               </WorkButton>
+              {!linearHref && (
+                <WorkButton kind="muted" onClick={() => work.handlePushToLinear(c.id)}>
+                  Push to Linear
+                </WorkButton>
+              )}
             </>
           }
         />
@@ -641,67 +553,38 @@ export default function AccountDetailPage() {
     });
 
     const commitmentFragments: string[] = [];
-    if (openCommitments.length) {
-      commitmentFragments.push(`${openCommitments.length} open · all private in v1.2.1`);
+    if (work.commitments.length) {
+      commitmentFragments.push(`${work.commitments.length} open · sourced from actions`);
     }
 
     // ── Chapter 6: Recently landed ───────────────────────────────────────
-    // 30-day tail from wins + lifecycle events.
-    //
-    // Contract: only items with a real timestamp inside the 30-day window
-    // render here. Undated wins are excluded outright — rendering them as
-    // "Delivered" under a 30-day tail label is a false claim. If a win is
-    // missing sourcedAt it drops off this surface; it can still be picked
-    // up by Context's value-delivered list.
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    // Wins get a cross-reference to the Context "What we've built" chapter
-    // so the user can trace a landed item back to the value-commitments
-    // record. Non-win events have no xref.
+    // DOS Work-tab Phase 3: sourced from actions with status='completed'
+    // AND completed_at >= now - 30d (cap 20). Cross-reference to Context
+    // "Value delivered" anchors so a landed item can be traced back to the
+    // value-commitments record.
     const contextValueHref = page.accountId
       ? `/accounts/${page.accountId}?view=context#value-commitments`
       : null;
-    type RecentRow = {
-      key: string;
-      date: string;
-      event: string;
-      source: React.ReactNode;
-      ts: number;
-    };
-    const recentWinsRows: RecentRow[] = wins
-      .map((w, i) => {
-        const sourcedAt = w.itemSource?.sourcedAt;
-        const ts = sourcedAt ? new Date(sourcedAt).getTime() : Number.NaN;
-        const origin = w.source ? `Came from ${w.source}` : null;
-        const xref = contextValueHref ? (
-          <>
-            {origin && <>{origin} · </>}
-            <a href={contextValueHref}>See Context value →</a>
-          </>
-        ) : origin;
-        return {
-          key: `win-${i}`,
-          date: sourcedAt ? formatShortDate(sourcedAt).toUpperCase() : "",
-          event: w.text,
-          source: xref as React.ReactNode,
-          ts,
-        };
-      })
-      .filter((row) => Number.isFinite(row.ts) && row.ts >= thirtyDaysAgo);
-    const recentEventRows: RecentRow[] = accountEvents
-      .filter((e) => {
-        const t = new Date(e.eventDate).getTime();
-        return !Number.isNaN(t) && t >= thirtyDaysAgo;
-      })
-      .map((e) => ({
-        key: `evt-${e.id}`,
-        date: formatShortDate(e.eventDate).toUpperCase(),
-        event: e.notes || `${e.eventType.replace(/_/g, " ")} recorded`,
-        source: null,
-        ts: new Date(e.eventDate).getTime(),
-      }));
-    const recentlyLanded = [...recentWinsRows, ...recentEventRows]
-      .sort((a, b) => b.ts - a.ts)
-      .slice(0, 8);
+    const recentlyLanded = work.recentlyLanded.map((a) => {
+      const completedAt = a.completedAt;
+      const origin = a.sourceLabel
+        ? `Came from ${a.sourceLabel}`
+        : a.sourceType
+          ? `Came from ${a.sourceType}`
+          : null;
+      const xref = contextValueHref ? (
+        <>
+          {origin && <>{origin} · </>}
+          <a href={contextValueHref}>See Context value →</a>
+        </>
+      ) : origin;
+      return {
+        id: a.id,
+        date: completedAt ? formatShortDate(completedAt).toUpperCase() : "",
+        event: a.title,
+        source: xref as React.ReactNode,
+      };
+    });
 
     // ── Chapter 7: Outputs ───────────────────────────────────────────────
     // Generated reports. Links out to the Report Engine. Full-plan export is
@@ -721,103 +604,96 @@ export default function AccountDetailPage() {
       }
     };
 
-    // ── Chapter 8: Nudges ────────────────────────────────────────────────
-    // Hidden when empty. Every nudge must offer "Leave as-is".
-    type Nudge = { headline: string; body: string; actions: React.ReactNode };
-    const nudges: Nudge[] = [];
+    // Nudges chapter removed — aged-private soft-nudge renders inline on
+    // Commitments cards via stillActiveNote. Integration-status nudges
+    // (writeback stalled, etc.) surface at the folio level, not as a chapter.
 
-    // Private-for-too-long nudge: private commitment with no due date that
-    // has sat untouched for at least PRIVATE_NUDGE_THRESHOLD_DAYS. Age is
-    // computed from authoritative itemSource.sourcedAt — a brand-new private
-    // commitment is NOT nagged. If sourcedAt is missing we skip the nudge
-    // entirely rather than guess.
-    const PRIVATE_NUDGE_THRESHOLD_DAYS = 45;
-    const MS_PER_DAY = 24 * 60 * 60 * 1000;
-    const nowMs = Date.now();
-    const agedPrivate = openCommitments
-      .map((c, originalIndex) => {
-        if (c.dueDate) return null;
-        const sourcedAt = c.itemSource?.sourcedAt;
-        const ts = sourcedAt ? new Date(sourcedAt).getTime() : Number.NaN;
-        const ageDays = Number.isFinite(ts)
-          ? Math.floor((nowMs - ts) / MS_PER_DAY)
-          : Number.NaN;
-        return { c, ageDays, originalIndex };
-      })
-      .filter((x): x is { c: typeof openCommitments[number]; ageDays: number; originalIndex: number } =>
-        x !== null && Number.isFinite(x.ageDays) && x.ageDays >= PRIVATE_NUDGE_THRESHOLD_DAYS,
-      )
-      .sort((a, b) => b.ageDays - a.ageDays)[0];
-    if (agedPrivate) {
-      const { c: oldestPrivate, ageDays, originalIndex } = agedPrivate;
-      const dismissBusy = acct.commitmentDismissInFlight.has(originalIndex);
-      nudges.push({
-        headline: "A commitment has been kept private",
-        body: `"${oldestPrivate.description}"${oldestPrivate.owner ? ` (owner: ${oldestPrivate.owner})` : ""} has been kept private for ${ageDays} day${ageDays === 1 ? "" : "s"} with no due date — leave as-is, or dismiss if it's no longer live.`,
-        actions: (
-          <>
-            <WorkButton
-              disabled={dismissBusy}
-              onClick={() => acct.handleDismissCommitment(originalIndex, oldestPrivate.description)}
-            >
-              {dismissBusy ? "Dismissing…" : "Dismiss"}
-            </WorkButton>
-            {/*
-              Option B (Wave 0g Finding 1): "Leave as-is" is the zero-guilt
-              default, not a separate action. Rendering it as italic prose
-              rather than a no-op button keeps the editorial voice honest —
-              doing nothing IS leaving it as-is. A real snooze mechanism
-              would need a per-nudge-type backend surface (nudge_snoozes
-              table + service + IL wiring); disproportionate for one button.
-            */}
-            <NudgeLeaveAsIs />
-          </>
-        ),
-      });
-    }
-
-    // Stale-shared-writeback nudge removed in v1.2.1: it was synthesized from
-    // regex-inferred Shared state with no authoritative tracker link. Real
-    // writeback-freshness nudges return with DOS-75's trackerLink schema.
-
-    const hasFocus = focusItems.length > 0;
     const hasPrograms = activePrograms.length > 0;
-    const hasCommitments = openCommitments.length > 0;
-    const hasSuggestions = recommendedActions.length > 0;
+    const hasCommitments = work.commitments.length > 0;
+    const hasSuggestions = work.suggestions.length > 0;
     const hasRecentlyLanded = recentlyLanded.length > 0;
     const hasReports = reports.length > 0;
-    const hasNudges = nudges.length > 0;
-    // Shared chapter is gated on structured tracker provenance (DOS-75, v1.2.2).
-    // Forward-compatible — checks for a trackerLink field on any commitment.
-    // Evaluates to false in v1.2.1 since the backend doesn't emit the field yet.
-    const hasSharedData = openCommitments.some(
-      (c) => !!(c as { trackerLink?: { href?: string } }).trackerLink?.href,
-    );
+    // Shared chapter: any open commitment with a Linear link present on the
+    // action row surfaces the "Shared with the team" chapter. Salesforce /
+    // Slack writeback sources will extend this check when wired.
+    const hasSharedData = work.commitments.some((c) => !!c.linearUrl);
 
     return (
       <>
-        {/* Chapter 1: 90-day focus — editorial numbered list */}
-        {hasFocus && (
-          <MarginSection id="focus" label={<>90-day<br/>focus</>}>
+        {/* 90-day Focus chapter dropped — its editorial roll-up duplicated
+            Commitments + Suggestions + Programs. Commitments is now the
+            opener; top-N visual weighting lives on that chapter instead.
+            Narrative focus synthesis may return in v1.2.2 if AI writes it
+            well. */}
+
+        {/* Chapter 1: Commitments — what we've said we'll do.
+            Opener chapter: plain section + noRule ChapterHeading so the
+            chapter flows from the hero rather than reading as a mid-page
+            chapter break. Matches Context "Thesis" + Health "Your
+            Assessment" first-chapter treatment. */}
+        {hasCommitments && (
+          <section id="commitments" className="editorial-reveal">
             <ChapterHeading
-              title="90-day focus"
-              epigraph="Our active plan · editable"
+              title="Commitments"
+              epigraph="What we've said we'll do"
+              noRule
               freshness={
                 <ChapterFreshness
                   enrichedAt={intelligence?.enrichedAt}
-                  fragments={
-                    focusSynthesisFragments.length
-                      ? [`Drafted from ${focusSynthesisFragments.join(" + ")}`]
-                      : ["Our active plan · editable"]
-                  }
+                  fragments={[...commitmentFragments, "Natural sort by recency"]}
                 />
               }
             />
-            <NumberedFocusList items={focusItems} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+              {commitmentCards}
+            </div>
+          </section>
+        )}
+
+        {/* Chapter 2: Suggestions — AI proposals, saffron background.
+            DOS Work-tab Phase 3: backed by actions with status='backlog'.
+            Accepting promotes to 'unstarted' (and surfaces in Commitments
+            when action_kind='commitment'); dismissing archives + tombstones
+            the commitment bridge when applicable. */}
+        {hasSuggestions && (
+          <MarginSection id="suggestions" label={<>Sugges-<br/>tions</>}>
+            <ChapterHeading
+              title="Suggestions"
+              epigraph="AI proposals · accept or dismiss"
+              freshness={
+                <ChapterFreshness
+                  enrichedAt={intelligence?.enrichedAt}
+                  fragments={[
+                    `${work.suggestions.length} suggestion${work.suggestions.length === 1 ? "" : "s"}`,
+                    "Accept or dismiss — dismissals teach the system",
+                  ]}
+                />
+              }
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+              {work.suggestions.map((r) => {
+                const provenance: { label: string; href?: string }[] = [];
+                if (r.sourceLabel) provenance.push({ label: r.sourceLabel });
+                else if (r.sourceType) provenance.push({ label: r.sourceType });
+                else provenance.push({ label: "Account intelligence" });
+                return (
+                  <SuggestionCard
+                    key={r.id}
+                    headline={r.title}
+                    rationale={r.context ?? ""}
+                    provenance={provenance}
+                    accepting={work.suggestionAcceptInFlight.has(r.id)}
+                    dismissing={work.suggestionDismissInFlight.has(r.id)}
+                    onAccept={() => work.handleAcceptSuggestion(r.id)}
+                    onDismiss={() => work.handleDismissSuggestion(r.id)}
+                  />
+                );
+              })}
+            </div>
           </MarginSection>
         )}
 
-        {/* Chapter 2: Programs & motions — standing states, not to-dos */}
+        {/* Chapter 3: Programs & motions — standing states, not to-dos */}
         {hasPrograms && (
           <MarginSection id="programs" label={<>Programs<br/>&amp; motions</>}>
             <ChapterHeading
@@ -839,58 +715,6 @@ export default function AccountDetailPage() {
                 />
               ))}
             </ProgramPillRow>
-          </MarginSection>
-        )}
-
-        {/* Chapter 3: Commitments — what we've said we'll do */}
-        {hasCommitments && (
-          <MarginSection id="commitments" label={<>Commit-<br/>ments</>}>
-            <ChapterHeading
-              title="Commitments"
-              epigraph="What we've said we'll do"
-              freshness={
-                <ChapterFreshness
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={[...commitmentFragments, "Natural sort by recency"]}
-                />
-              }
-            />
-            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-              {commitmentCards}
-            </div>
-          </MarginSection>
-        )}
-
-        {/* Chapter 4: Suggestions — AI proposals, saffron background */}
-        {hasSuggestions && (
-          <MarginSection id="suggestions" label={<>Sugges-<br/>tions</>}>
-            <ChapterHeading
-              title="Suggestions"
-              epigraph="AI proposals · accept or dismiss"
-              freshness={
-                <ChapterFreshness
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={[
-                    `${recommendedActions.length} suggestion${recommendedActions.length === 1 ? "" : "s"}`,
-                    "Accept or dismiss — dismissals teach the system",
-                  ]}
-                />
-              }
-            />
-            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-              {recommendedActions.map((r, i) => (
-                <SuggestionCard
-                  key={i}
-                  headline={r.title}
-                  rationale={r.rationale}
-                  provenance={[{ label: "Account intelligence" }]}
-                  accepting={acct.suggestionAcceptInFlight.has(i)}
-                  dismissing={acct.suggestionDismissInFlight.has(i)}
-                  onAccept={() => acct.handleAcceptSuggestion(i)}
-                  onDismiss={() => acct.handleDismissSuggestion(i)}
-                />
-              ))}
-            </div>
           </MarginSection>
         )}
 
@@ -939,7 +763,7 @@ export default function AccountDetailPage() {
             <RecentlyLandedList>
               {recentlyLanded.map((row) => (
                 <RecentlyLandedRow
-                  key={row.key}
+                  key={row.id}
                   date={row.date}
                   event={row.event}
                   source={row.source}
@@ -981,27 +805,30 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        {/* Chapter 8: Nudges — soft meta, hidden when empty */}
-        {hasNudges && (
-          <MarginSection id="nudges" label={<>Nudges</>}>
-            <ChapterHeading
-              title="Nudges"
-              epigraph="Soft meta · leave as-is is fine"
-              freshness={
-                <ChapterFreshness
-                  enrichedAt={intelligence?.enrichedAt}
-                  fragments={[
-                    `${nudges.length} soft surface${nudges.length === 1 ? "" : "s"}`,
-                    "Zero-guilt · leave anything as-is",
-                  ]}
-                />
-              }
-            />
-            <NudgeList>
-              {nudges.map((n, i) => (
-                <NudgeRow key={i} headline={n.headline} body={n.body} actions={n.actions} />
-              ))}
-            </NudgeList>
+        {/* Nudges chapter dropped — redundant with soft "Still active?"
+            rendered inline on Commitments cards. Integration-level cross-
+            cutting nudges (writeback stalled, etc.) surface at the folio
+            level, not as a chapter. */}
+
+        {/* The Record — timeline continuity. Migrated from the Context tab.
+            Design refresh tracked separately; here we preserve the live surface. */}
+        <MarginSection id="the-record" label={<>The<br/>Record</>}>
+          <UnifiedTimeline
+            data={{
+              ...detail,
+              accountEvents: acct.events,
+              lifecycleChanges: detail.lifecycleChanges,
+              autoCompletedMilestones: detail.autoCompletedMilestones,
+              contextEntries: page.entityCtx.entries,
+            }}
+            sectionId=""
+            actionSlot={<AddToRecord onAdd={(title, content) => page.entityCtx.createEntry(title, content)} />}
+          />
+        </MarginSection>
+
+        {acct.files.length > 0 && (
+          <MarginSection id="files" label="Files" reveal={false}>
+            <FileListSection files={acct.files} />
           </MarginSection>
         )}
 
