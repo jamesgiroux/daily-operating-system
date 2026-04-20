@@ -2677,8 +2677,13 @@ pub fn get_context_mode(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
 
 /// Set the context mode and hot-swap the provider immediately.
 /// In Glean mode, Clay and Gravatar enrichment are automatically disabled.
+///
+/// Uses the async `db_read` / `db_write` helpers (DbService pool) rather than
+/// the sync `with_db_read` / `with_db_write` helpers, which open a fresh
+/// `ActionDb` connection and can fail key verification under DbService's
+/// held-writer contention (v1.2.1 post-migration-108 regression).
 #[tauri::command]
-pub fn set_context_mode(
+pub async fn set_context_mode(
     mode: serde_json::Value,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
@@ -2687,10 +2692,14 @@ pub fn set_context_mode(
 
     // Read current mode before writing so we can log from/to
     let previous_mode = state
-        .with_db_read(|db| Ok(crate::context_provider::read_context_mode(db)))
+        .db_read(|db| Ok(crate::context_provider::read_context_mode(db)))
+        .await
         .unwrap_or_default();
 
-    state.with_db_write(|db| crate::context_provider::save_context_mode(db, &parsed))?;
+    let parsed_for_write = parsed.clone();
+    state
+        .db_write(move |db| crate::context_provider::save_context_mode(db, &parsed_for_write))
+        .await?;
 
     // Log the mode change with from/to
     let mode_name = |m: &crate::context_provider::ContextMode| -> &str {
@@ -2715,18 +2724,21 @@ pub fn set_context_mode(
     let new_provider = state.build_context_provider(&parsed);
     state.swap_context_provider(new_provider);
 
-    if let Ok(targets) = state.with_db_read(|db| {
-        let stale = db
-            .get_stale_entity_intelligence(0)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|(id, typ, _)| (id, typ))
-            .collect::<Vec<_>>();
-        let missing = db.get_entities_without_intelligence().unwrap_or_default();
-        let mut targets = stale;
-        targets.extend(missing);
-        Ok::<_, String>(targets)
-    }) {
+    if let Ok(targets) = state
+        .db_read(|db| {
+            let stale = db
+                .get_stale_entity_intelligence(0)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(id, typ, _)| (id, typ))
+                .collect::<Vec<_>>();
+            let missing = db.get_entities_without_intelligence().unwrap_or_default();
+            let mut targets = stale;
+            targets.extend(missing);
+            Ok::<_, String>(targets)
+        })
+        .await
+    {
         use crate::intel_queue::{IntelPriority, IntelRequest};
         for (id, typ) in &targets {
             state.intel_queue.enqueue(IntelRequest::new(
@@ -2779,8 +2791,12 @@ pub async fn start_glean_auth(
             let glean_mode = crate::context_provider::ContextMode::Glean {
                 endpoint: endpoint.clone(),
             };
+            let glean_mode_for_write = glean_mode.clone();
             if let Err(e) = state
-                .with_db_write(|db| crate::context_provider::save_context_mode(db, &glean_mode))
+                .db_write(move |db| {
+                    crate::context_provider::save_context_mode(db, &glean_mode_for_write)
+                })
+                .await
             {
                 log::error!("Failed to save Glean context mode: {}", e);
             }
@@ -2855,17 +2871,26 @@ pub fn get_glean_auth_status() -> crate::glean::GleanAuthStatus {
 }
 
 /// Disconnect Glean — delete OAuth token from Keychain.
+///
+/// Uses async `db_write` (DbService pool) rather than sync `with_db_write`
+/// for the same reason as `set_context_mode` — fresh-open path fails key
+/// verification under DbService contention.
 #[tauri::command]
-pub fn disconnect_glean(
+pub async fn disconnect_glean(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     crate::glean::token_store::delete_token().map_err(|e| format!("{}", e))?;
 
-    let purge_report = state.with_db_write(|db| {
-        crate::db::data_lifecycle::purge_source(db, crate::db::data_lifecycle::DataSource::Glean)
+    let purge_report = state
+        .db_write(|db| {
+            crate::db::data_lifecycle::purge_source(
+                db,
+                crate::db::data_lifecycle::DataSource::Glean,
+            )
             .map_err(|e| e.to_string())
-    })?;
+        })
+        .await?;
 
     // Audit: oauth_revoked
     {
@@ -2879,8 +2904,10 @@ pub fn disconnect_glean(
 
     // Revert context mode to Local and hot-swap provider.
     let local_mode = crate::context_provider::ContextMode::Local;
-    if let Err(e) =
-        state.with_db_write(|db| crate::context_provider::save_context_mode(db, &local_mode))
+    let local_mode_for_write = local_mode.clone();
+    if let Err(e) = state
+        .db_write(move |db| crate::context_provider::save_context_mode(db, &local_mode_for_write))
+        .await
     {
         log::error!("Failed to save Local context mode on disconnect: {}", e);
     }
