@@ -1271,6 +1271,7 @@ pub fn promote_commitment_to_action(
         source_type: Some("email_commitment".to_string()),
         source_id: Some(email_id.to_string()),
         source_label: Some("Email commitment".to_string()),
+        action_kind: crate::action_status::KIND_TASK.to_string(),
         context: Some(build_email_commitment_context(
             owner.as_deref(),
             commitment_text,

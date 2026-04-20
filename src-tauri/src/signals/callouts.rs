@@ -71,6 +71,11 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "sentiment_divergence",
     "competitor_decision_relevant",
     "budget_cycle_locked",
+    // DOS Work-tab: Commitment lifecycle
+    "commitment_accepted",
+    "commitment_delivered",
+    "commitment_rejected",
+    "commitment_overdue",
 ];
 
 // ---------------------------------------------------------------------------
@@ -601,6 +606,51 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
             (
                 format!("Linear issue overdue: {}", identifier),
                 title.to_string(),
+            )
+        }
+        // DOS Work-tab: Commitment lifecycle callout text
+        "commitment_accepted" => {
+            let title = parsed
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Commitment");
+            (
+                "Commitment accepted".to_string(),
+                format!("You accepted: {}", title),
+            )
+        }
+        "commitment_delivered" => {
+            let title = parsed
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Commitment");
+            (
+                "Commitment delivered".to_string(),
+                format!("Completed: {}", title),
+            )
+        }
+        "commitment_rejected" => {
+            let title = parsed
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Commitment");
+            (
+                "Commitment rejected".to_string(),
+                format!("Dismissed: {}", title),
+            )
+        }
+        "commitment_overdue" => {
+            let title = parsed
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Commitment");
+            let days = parsed
+                .get("days_overdue")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            (
+                "Commitment overdue".to_string(),
+                format!("{} — {} days past due", title, days),
             )
         }
         _ => (

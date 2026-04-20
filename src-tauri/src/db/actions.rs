@@ -14,6 +14,7 @@ impl ActionDb {
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
                     (SELECT m.title FROM meeting_entities me
                      JOIN meetings m ON me.meeting_id = m.id
                      WHERE me.entity_id = actions.account_id
@@ -45,14 +46,14 @@ impl ActionDb {
         let days_param = format!("+{days_ahead}");
         let rows = stmt.query_map(params![days_param], |row| {
             let mut action = Self::map_action_row(row)?;
-            action.next_meeting_title = row.get(17)?;
-            action.next_meeting_start = row.get(18)?;
-            let nd: i32 = row.get(19)?;
+            action.next_meeting_title = row.get(18)?;
+            action.next_meeting_start = row.get(19)?;
+            let nd: i32 = row.get(20)?;
             action.needs_decision = nd != 0;
-            action.decision_owner = row.get(20)?;
-            action.decision_stakes = row.get(21)?;
-            action.linear_identifier = row.get(22)?;
-            action.linear_url = row.get(23)?;
+            action.decision_owner = row.get(21)?;
+            action.decision_stakes = row.get(22)?;
+            action.linear_identifier = row.get(23)?;
+            action.linear_url = row.get(24)?;
             Ok(action)
         })?;
 
@@ -71,7 +72,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status IN ('unstarted', 'started')
@@ -102,7 +104,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE account_id = ?1
@@ -111,6 +114,122 @@ impl ActionDb {
         )?;
 
         let rows = stmt.query_map(params![account_id], Self::map_action_row)?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// DOS Work-tab Phase 3: open commitments for the Commitments chapter.
+    ///
+    /// Returns rows where `action_kind = 'commitment'` AND status is one of
+    /// (backlog, unstarted, started). Sort: status ASC (backlog first by
+    /// lexical ordering), then `created_at DESC` so the most recently
+    /// emitted commitments lead each bucket. Includes Linear link fields.
+    pub fn get_account_commitments(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
+                    all_links.linear_identifier, all_links.linear_url
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
+             WHERE actions.account_id = ?1
+               AND actions.action_kind = 'commitment'
+               AND actions.status IN ('backlog', 'unstarted', 'started')
+             ORDER BY
+               CASE actions.status
+                 WHEN 'backlog' THEN 0
+                 WHEN 'unstarted' THEN 1
+                 WHEN 'started' THEN 2
+                 ELSE 3
+               END,
+               actions.created_at DESC",
+        )?;
+
+        let rows = stmt.query_map(params![account_id], |row| {
+            let mut action = Self::map_action_row(row)?;
+            action.linear_identifier = row.get(18)?;
+            action.linear_url = row.get(19)?;
+            Ok(action)
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// DOS Work-tab Phase 3: backlog suggestions for the Suggestions chapter.
+    ///
+    /// Returns rows with `status = 'backlog'` for the account, regardless of
+    /// `action_kind`. Backlog commitments AND backlog tasks both show as
+    /// suggestions until the user accepts (backlog → unstarted) or rejects.
+    pub fn get_account_suggestions(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
+                    all_links.linear_identifier, all_links.linear_url
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
+             WHERE actions.account_id = ?1
+               AND actions.status = 'backlog'
+             ORDER BY priority, actions.created_at DESC",
+        )?;
+
+        let rows = stmt.query_map(params![account_id], |row| {
+            let mut action = Self::map_action_row(row)?;
+            action.linear_identifier = row.get(18)?;
+            action.linear_url = row.get(19)?;
+            Ok(action)
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// DOS Work-tab Phase 3: recently completed actions for the Recently
+    /// landed chapter.
+    ///
+    /// Returns rows with `status = 'completed'` AND `completed_at >= now - 30
+    /// days` for the account. Sort: `completed_at DESC`. Capped at 20 rows.
+    pub fn get_account_recently_landed(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
+                    all_links.linear_identifier, all_links.linear_url
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
+             WHERE actions.account_id = ?1
+               AND actions.status = 'completed'
+               AND actions.completed_at >= datetime('now', '-30 days')
+             ORDER BY actions.completed_at DESC
+             LIMIT 20",
+        )?;
+
+        let rows = stmt.query_map(params![account_id], |row| {
+            let mut action = Self::map_action_row(row)?;
+            action.linear_identifier = row.get(18)?;
+            action.linear_url = row.get(19)?;
+            Ok(action)
+        })?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -130,7 +249,7 @@ impl ActionDb {
             "SELECT DISTINCT a.id, a.title, a.priority, a.status, a.created_at, a.due_date,
                     a.completed_at, a.account_id, a.project_id, a.source_type, a.source_id,
                     a.source_label, a.context, a.waiting_on, a.updated_at, a.person_id,
-                    acc.name AS account_name
+                    acc.name AS account_name, a.action_kind
              FROM actions a
              LEFT JOIN accounts acc ON a.account_id = acc.id
              WHERE a.status IN ('unstarted', 'completed')
@@ -251,6 +370,7 @@ impl ActionDb {
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
                     actions.needs_decision, actions.decision_owner, actions.decision_stakes,
                     all_links.linear_identifier, all_links.linear_url
              FROM actions
@@ -261,12 +381,12 @@ impl ActionDb {
 
         let mut rows = stmt.query_map(params![id], |row| {
             let mut action = Self::map_action_row(row)?;
-            let nd: i32 = row.get(17)?;
+            let nd: i32 = row.get(18)?;
             action.needs_decision = nd != 0;
-            action.decision_owner = row.get(18)?;
-            action.decision_stakes = row.get(19)?;
-            action.linear_identifier = row.get(20)?;
-            action.linear_url = row.get(21)?;
+            action.decision_owner = row.get(19)?;
+            action.decision_stakes = row.get(20)?;
+            action.linear_identifier = row.get(21)?;
+            action.linear_url = row.get(22)?;
             Ok(action)
         })?;
 
@@ -282,6 +402,7 @@ impl ActionDb {
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
                     all_links.linear_identifier, all_links.linear_url
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
@@ -294,8 +415,8 @@ impl ActionDb {
         let hours_param = format!("-{} hours", since_hours);
         let rows = stmt.query_map(params![hours_param], |row| {
             let mut action = Self::map_action_row(row)?;
-            action.linear_identifier = row.get(17)?;
-            action.linear_url = row.get(18)?;
+            action.linear_identifier = row.get(18)?;
+            action.linear_url = row.get(19)?;
             Ok(action)
         })?;
 
@@ -312,7 +433,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'completed'
@@ -433,8 +555,8 @@ impl ActionDb {
             "INSERT INTO actions (
                 id, title, priority, status, created_at, due_date, completed_at,
                 account_id, project_id, source_type, source_id, source_label,
-                context, waiting_on, updated_at, person_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                context, waiting_on, updated_at, person_id, action_kind
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 priority = excluded.priority,
@@ -449,7 +571,8 @@ impl ActionDb {
                 context = excluded.context,
                 waiting_on = excluded.waiting_on,
                 updated_at = excluded.updated_at,
-                person_id = excluded.person_id",
+                person_id = excluded.person_id,
+                action_kind = excluded.action_kind",
             params![
                 action.id,
                 action.title,
@@ -467,6 +590,7 @@ impl ActionDb {
                 action.waiting_on,
                 action.updated_at,
                 action.person_id,
+                action.action_kind,
             ],
         )?;
         Ok(())
@@ -481,7 +605,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'unstarted'
@@ -559,7 +684,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'backlog'
@@ -668,7 +794,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE source_id = ?1
@@ -701,7 +828,8 @@ impl ActionDb {
         let sql = format!(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE actions.source_type = ?1
@@ -748,7 +876,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'unstarted'
@@ -775,7 +904,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE needs_decision = 1
@@ -929,6 +1059,7 @@ impl ActionDb {
             updated_at: row.get(14)?,
             person_id: row.get(15)?,
             account_name: row.get(16)?,
+            action_kind: row.get(17)?,
             next_meeting_title: None,
             next_meeting_start: None,
             needs_decision: false,
@@ -1314,6 +1445,7 @@ mod tests {
             source_type: Some("briefing".into()),
             source_id: None,
             source_label: None,
+            action_kind: crate::action_status::KIND_TASK.to_string(),
             context: None,
             waiting_on: None,
             updated_at: Utc::now().to_rfc3339(),

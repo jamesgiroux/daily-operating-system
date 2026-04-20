@@ -22,18 +22,15 @@ import {
   MessageSquareQuote,
   Cpu,
   BookOpen,
-  Target,
   Flag,
   Sparkles,
   Share2,
   PackageCheck,
-  Bell,
   AlertTriangle,
   Info,
   DollarSign,
   HeartHandshake,
   NotebookPen,
-  Package,
 } from "lucide-react";
 
 /* ── Vitals assembly ── */
@@ -153,12 +150,12 @@ export function buildChapters(isParent: boolean, hasHealth: boolean) {
 export function buildHealthChapters(
   isParent: boolean,
   hasHealth: boolean,
-  opts: { fineState?: boolean; hasOutlook?: boolean; hasProducts?: boolean } = {},
+  opts: { fineState?: boolean; hasOutlook?: boolean } = {},
 ) {
   // DOS-203: Health tab IA matches renderHealthView section ids. Chapter
   // order mirrors the mockup (.docs/mockups/account-health-outlook-globex.html):
   //   your-assessment → needs-attention | on-track → outlook →
-  //   relationship-health → [portfolio] → [products] → about-intelligence
+  //   relationship-health → [portfolio] → about-intelligence
   // Every id here MUST correspond to a rendered <section>/<MarginSection>
   // in AccountDetailPage.renderHealthView or the nav anchor dead-links.
   const chapters: { id: string; label: string; icon: React.ReactNode }[] = [
@@ -194,9 +191,6 @@ export function buildHealthChapters(
   if (isParent) {
     chapters.push(PORTFOLIO_CHAPTER);
   }
-  // Products lives on the Context tab now (near Technical shape).
-  // Flag retained so the caller can pass it through without breaking,
-  // but nothing on Health points to "products" anymore.
   chapters.push({
     id: "about-intelligence",
     label: "About intelligence",
@@ -210,8 +204,6 @@ export function buildContextChapters(
     hasWhatMatters?: boolean;
     hasBuilt?: boolean;
     hasTechnical?: boolean;
-    hasProducts?: boolean;
-    hasFiles?: boolean;
   } = {},
 ) {
   // DOS-18: IA matches renderContextView section order. Conditional chapters
@@ -233,17 +225,10 @@ export function buildContextChapters(
   if (opts.hasTechnical !== false) {
     chapters.push({ id: "technical-shape", label: "Technical shape", icon: React.createElement(Cpu, { size: 18, strokeWidth: 1.5 }) });
   }
-  if (opts.hasProducts) {
-    chapters.push({ id: "products", label: "Products", icon: React.createElement(Package, { size: 18, strokeWidth: 1.5 }) });
-  }
   chapters.push(
     { id: "relationship-fabric", label: "Relationship fabric", icon: React.createElement(HeartHandshake, { size: 18, strokeWidth: 1.5 }) },
-    { id: "the-record", label: "The Record", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) },
+    { id: "about-dossier", label: "About the dossier", icon: React.createElement(BookOpen, { size: 18, strokeWidth: 1.5 }) },
   );
-  if (opts.hasFiles) {
-    chapters.push({ id: "files", label: "Files", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) });
-  }
-  chapters.push({ id: "about-dossier", label: "About the dossier", icon: React.createElement(BookOpen, { size: 18, strokeWidth: 1.5 }) });
   return chapters;
 }
 
@@ -261,12 +246,11 @@ export function buildContextChapters(
  * suppresses the chapter — the pill would dead-link. Tracker provenance
  * lands in v1.2.2 (DOS-75); until then hasSharedData is always false.
  */
-export function buildWorkChapters(hasSharedData: boolean = false) {
+export function buildWorkChapters(hasSharedData: boolean = false, hasFiles: boolean = false) {
   const chapters = [
-    { id: "focus", label: "90-day focus", icon: React.createElement(Target, { size: 18, strokeWidth: 1.5 }) },
-    { id: "programs", label: "Programs & motions", icon: React.createElement(Flag, { size: 18, strokeWidth: 1.5 }) },
     { id: "commitments", label: "Commitments", icon: React.createElement(CheckSquare2, { size: 18, strokeWidth: 1.5 }) },
     { id: "suggestions", label: "Suggestions", icon: React.createElement(Sparkles, { size: 18, strokeWidth: 1.5 }) },
+    { id: "programs", label: "Programs & motions", icon: React.createElement(Flag, { size: 18, strokeWidth: 1.5 }) },
   ];
   if (hasSharedData) {
     chapters.push({ id: "shared", label: "Shared with team", icon: React.createElement(Share2, { size: 18, strokeWidth: 1.5 }) });
@@ -274,8 +258,11 @@ export function buildWorkChapters(hasSharedData: boolean = false) {
   chapters.push(
     { id: "recently-landed", label: "Recently landed", icon: React.createElement(PackageCheck, { size: 18, strokeWidth: 1.5 }) },
     { id: "outputs", label: "Outputs", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) },
-    { id: "nudges", label: "Nudges", icon: React.createElement(Bell, { size: 18, strokeWidth: 1.5 }) },
+    { id: "the-record", label: "The Record", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) },
   );
+  if (hasFiles) {
+    chapters.push({ id: "files", label: "Files", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) });
+  }
   return chapters;
 }
 
