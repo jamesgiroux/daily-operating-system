@@ -169,6 +169,25 @@ The v1.4.0 shipment is the trait seam and nothing else. The boundary (§1) is a 
 
 ---
 
+## Founder commitment — 2026-04-20
+
+The founder commits to the "metadata only, content never" rule as a firm boundary. Softening requires founder approval plus a named compensating control. The boundary is treated as load-bearing for the DailyOS strategy.
+
+**Commercial corollary — how enterprise visibility gets served.** The anticipated enterprise objection ("leadership wants to see team activity") is answered structurally by the **publish framework** ([ADR-0117](0117-publish-boundary-pencil-and-pen.md)), not by softening this boundary. The publish flow is a **user-initiated manual push** to an enterprise storage layer (human-readable or machine-readable), configured by the user per destination. The push or sync setup is performed by the user; it is not the control plane reading user data. Enterprise storage is the user's sink, not DailyOS's outbound channel.
+
+This means [ADR-0117](0117-publish-boundary-pencil-and-pen.md) is now strategically load-bearing for DailyOS's enterprise commercial story. It must support:
+
+- User-configured enterprise destinations (S3, SharePoint, Confluence, custom webhook, etc.).
+- Both human-readable (briefing Markdown / PDF) and machine-readable (structured JSON with provenance) output formats.
+- Scheduled publishes as well as on-demand (scheduled remains user-initiated — the user sets the schedule).
+- Clear visibility to the user that a publish is about to happen (Pencil/Pen protocol covers this).
+
+A follow-on decision before the first enterprise conversation: what destinations ship in v1.4.2's first publish ability beyond P2. The publish framework in [ADR-0117](0117-publish-boundary-pencil-and-pen.md) R1.11 already supports this extension; enterprise destination set is a scope question, not an architectural one.
+
+This commitment is not revisable by routine PR — amendment requires founder approval.
+
+---
+
 ## Revision R1 — 2026-04-19 — Reality Check
 
 Adversarial review + reference pass confirmed the boundary principle is sound but flagged that the trait seam's "zero-impact" claim is wrong, the signature in the ADR doesn't match current code, and revocation is hand-waved for long-running desktop sessions.
