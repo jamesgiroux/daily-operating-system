@@ -1,0 +1,116 @@
+/* =============================================================================
+   RELATIONSHIP FABRIC — Chapter 8 of the Context tab
+   Ref: .docs/mockups/account-context-globex.html (.fabric-list / .fabric-row)
+   ============================================================================= */
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.content {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+
+.contentGap {
+  color: var(--color-spice-saffron);
+  font-style: italic;
+}
+
+/* -- NPS row -------------------------------------------------------------- */
+
+.npsBlock {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.npsScore {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-style: normal;
+  color: var(--color-garden-rosemary, #4f6a3f);
+  font-size: 18px;
+  margin-right: var(--space-xs);
+}
+
+.npsQuote {
+  background: var(--color-garden-sage-15, rgba(136, 159, 120, 0.15));
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm, 4px);
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--color-text-primary);
+}
+
+.xrefPill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 100px;
+  background: var(--color-desk-charcoal-4, rgba(60, 55, 48, 0.04));
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  text-decoration: none;
+  margin-left: var(--space-sm);
+}
+
+.xrefPill:hover {
+  color: var(--color-text-primary);
+}
+
+/* -- Editorial close ------------------------------------------------------ */
+
+.editorialClose {
+  margin-top: var(--space-2xl);
+  padding: var(--space-xl) var(--space-2xl);
+  background: var(--color-paper-warm-white);
+  border-left: 2px solid var(--color-text-tertiary);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 720px;
+}
+
+/* -- Caveat banner ("coming in next release") ----------------------------- */
+
+.caveat {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-spice-saffron);
+  margin-top: var(--space-2xl);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-spice-saffron-10, rgba(196, 147, 53, 0.1));
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+}
