@@ -272,9 +272,17 @@ Reference pass found three pre-existing tombstone-like mechanisms that the origi
 - `DismissedItem` struct in `src-tauri/src/intelligence/io.rs:65` — stored inside `intelligence.json` for per-item dismissal.
 - `account_stakeholder_roles.dismissed_at` column (migration `107_stakeholder_role_dismissals.sql`) — soft-delete with `data_source='user'` used by `intel_queue` to refuse re-insertion.
 
-The v1.4.1 migration path is **consolidation**, not parallel creation. `intelligence_claims` tombstones subsume all three. The migration writes a `tombstoned` claim for every live row in those tables with matching `field_path`, then reads switch to the claims table. Old tables are kept read-only for one release as fallback, then dropped.
+**Consolidation timing — 2026-04-20 update:** Per plan-eng-review AskUserQuestion #1 and the brownfield-as-greenfield founder commitment (D1), consolidation ships in v1.4.0 as a destructive migration alongside the `intelligence_claims` table creation. Original R1.3 deferred consolidation to v1.4.1 out of migration caution; that deferral is retracted. Rationale: at AI velocity + minimal user base, keeping three parallel tombstone mechanisms alive through v1.4.0 creates interop cost that exceeds consolidation cost. The interop is what's expensive; one-table-to-rule-them-all is cleaner.
 
-This also means the ghost-resurrection fix already works at the row level for stakeholder roles (per migration 107's comment). The original ADR's tombstone primitive is not a new capability — it is the generalization of an existing fix into a uniform model.
+**v1.4.0 consolidation migration:**
+
+- Write a `tombstoned` claim for every live row in `suppression_tombstones` (preserve `dismissed_at` as `created_at`; preserve `field_path` as `field_path`).
+- Write a `tombstoned` claim for every `DismissedItem` found in `intelligence.json` blobs during the one-time backfill.
+- Write a `tombstoned` claim for every `account_stakeholder_roles` row with `dismissed_at IS NOT NULL` and `data_source='user'`.
+- Reads switch to `intelligence_claims` for all tombstone queries.
+- Old tables / columns kept read-only for a short window (~1 release) for fallback parity testing, then dropped in v1.4.1 cleanup migration.
+
+The ghost-resurrection fix becomes structural, not row-by-row. Consistency across stakeholder roles, dismissed intelligence items, and generic suppression tombstones is one code path, not three.
 
 ### R1.4 Trust ratchet — shadow sampling prevents permanent quarantine
 
@@ -337,7 +345,7 @@ Original §3 described a gated commit policy; §11 (Non-goals) said agents run `
 - No abilities runtime code exists yet. ADR-0102 is also still doc-only. v1.4.0 project work creates both; this ADR's implementation cannot precede ADR-0102's skeleton landing.
 - Agent trust ledger as a separate table is fine; the per-claim-type fan-out (max ~10 agents × ~20 claim types = 200 rows) is trivial storage.
 
-### R1.9 Scope for v1.4.0 — revised
+### R1.9 Scope for v1.4.0 — revised (updated 2026-04-20)
 
 Ships in v1.4.0:
 
@@ -346,12 +354,13 @@ Ships in v1.4.0:
 - `claim_contradictions` table (§7).
 - `agent_trust_ledger` table.
 - `propose_claim` and `commit_claim` service functions with gate logic implemented but config set to `immediate` for all classes.
-- Consolidation migrations stubbed but not active — tombstones continue via existing tables for one release.
+- **Consolidation migrations active** (updated 2026-04-20 per plan-eng-review AskUserQuestion #1): `suppression_tombstones`, `DismissedItem` in-blob entries, and `account_stakeholder_roles.dismissed_at` values all backfilled into `intelligence_claims` as `tombstoned` rows. Reads switch to `intelligence_claims` for tombstone queries. Old tables kept read-only for parity testing.
+- Ghost-resurrection regression test on stakeholder role removal under the consolidated model.
 
 Ships in v1.4.1 (enrichment refactor):
 
 - Agent commit policy flips to `gated`.
-- Consolidation migrations run; reads switch to `intelligence_claims` for tombstones.
+- Cleanup migration drops the old `suppression_tombstones` table, old `DismissedItem` JSON-blob entries, and the `account_stakeholder_roles.dismissed_at` column.
 - Analysis Inbox surface ships.
 - Shadow sampling (R1.4) activated.
 - Trust warming on version bump (R1.4) activated.

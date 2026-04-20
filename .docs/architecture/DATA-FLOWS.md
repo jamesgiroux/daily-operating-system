@@ -580,3 +580,287 @@ The scheduler (`scheduler.rs`) is the heartbeat that ties these flows together. 
 | Proposed action archive | Auto-archive stale proposed actions | Periodic |
 
 The scheduler respects dev mode isolation: when the dev sandbox is active (`is_dev_db_mode()`), all background processing is paused to prevent interference with development data.
+
+---
+
+## v1.4.0 Substrate Data Flows
+
+The flows above describe DailyOS as of 2026-03-02. v1.4.0 Abilities Runtime adds the following flows. These do not yet exist in code; they describe the shape substrate implementation will produce.
+
+### 1. Propose → commit claim flow
+
+The core write path for AI- and user-generated assertions. Every claim enters as a proposal, passes a policy gate, and either commits or lands in the Analysis Inbox (v1.5.0+ surface).
+
+```
+  Actor (user / agent / human / system / external)
+    |
+    v
+  Transform ability produces ClaimProposal
+    {entity_id, claim_type, field_path, claim_text, actor, source_ref}
+    |
+    v
+  services::claims::propose_claim(ctx, proposal)
+    |
+    v
+  Tombstone check — is most recent claim at field_path a user tombstone
+  within tombstone window (default 30 days)?
+    |
+    +-- Yes --> REJECT (does not enter `proposed` state)
+    |           unless agent provides corroboration_threshold independent
+    |           sources within 7 days
+    |
+    +-- No --> Continue
+    |
+    v
+  Dedup check — hash(entity_id, claim_type, field_path, normalized_text)
+  matches existing claim within dedup window (default 7 days)?
+    |
+    +-- Yes --> INSERT claim_corroborations row; increment corroboration_count;
+    |           update trust_computed_at; emit ClaimCorroborated signal.
+    |
+    +-- No --> New claim row inserted with claim_state = 'proposed'.
+    |
+    v
+  Commit gate (policy per actor class from config/claims.toml):
+    - user | user_removal | human | system | external → 'immediate' → 'committed'
+    - agent → 'gated' (v1.4.1+; v1.4.0 ships as 'immediate'):
+        * trust >= threshold AND posterior_score >= floor → commit
+        * OR corroboration_threshold independent sources → commit
+        * OR shadow_sample 10% below-threshold → Analysis Inbox
+        * OTHERWISE → claim_state = 'proposed' (Analysis Inbox only)
+    |
+    v
+  Trust Compiler computes trust_score (see flow 4).
+    |
+    v
+  Emit ClaimAsserted (PropagateAsync, coalesce EntityAndField)
+    OR ClaimProposed (PropagateAsync, coalesce EntityId)
+    |
+    v
+  Surfaces invalidate per ADR-0115 invalidation job model.
+```
+
+Governing: [ADR-0113](../decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md), [ADR-0114](../decisions/0114-scoring-unification.md), [ADR-0115](../decisions/0115-signal-granularity-audit.md), [DOS-5](https://linear.app/a8c/issue/DOS-5).
+
+### 2. Supersede flow (same actor re-asserting)
+
+Same actor + version asserts a different value at the same field_path. Per ADR-0113 R1.2, this is self-correction, not contradiction.
+
+```
+  Agent asserts "champion: Bob" at t1 (previously "champion: Alice" at t0)
+    |
+    v
+  commit_claim acquires pessimistic row-lock on (entity_id, claim_type,
+  field_path) per ADR-0113 R2 (timeout 500ms → Err(LockTimeout))
+    |
+    v
+  Read latest committed: claim-001 {actor: agent:detect_champion:2.1,
+    text: "Alice", state: committed}
+    |
+    v
+  Same actor + version → SUPERSEDE route
+    |
+    v
+  INSERT claim-002 {actor: agent:detect_champion:2.1, text: "Bob",
+    state: committed, claim_sequence: 2, previous_claim_id: claim-001}
+    |
+    v
+  UPDATE claim-001: superseded_at = now(), superseded_by = claim-002,
+    state = 'superseded'
+    |
+    v
+  Emit ClaimSuperseded. Release lock.
+```
+
+### 3. Contradiction flow (different actors disagree)
+
+Different actors assert different values at the same field_path. Never auto-resolve.
+
+```
+  Agent A: "renewal: 2026-06-04"
+  Agent B: "renewal: 2026-07-15" (independent)
+    |
+    v
+  Agent B's commit_claim: different actors → CONTRADICTION route
+    |
+    v
+  INSERT claim_contradictions row {field_path_ref, claim_a_id, claim_b_id,
+    detected_at, resolved_at: NULL}
+    |
+    v
+  Both claims stay claim_state = 'committed'; neither superseded.
+    |
+    v
+  Emit ClaimContradiction (PropagateAndHeal, rate-limited 3/hour per entity
+  per signal type)
+    |
+    v
+  Default reads return BOTH with contradiction flag.
+  User resolves via Analysis Inbox → superseding claim written;
+  agent_trust_ledger updates (accepted: α += 1; rejected: β += 1).
+```
+
+### 4. Trust computation chain
+
+Pure function of observed inputs. Deterministic under fixed clock.
+
+```
+  services::claims::score_claim(claim_id, ctx)
+    |
+    v
+  Extractor gathers inputs (DB reads + ctx.clock):
+    - source_reliability_posterior (Beta α, β from signal_weights)
+    - age_days (ctx.clock.now() - claim.created_at)
+    - FreshnessContext (upcoming_renewal_days, claim_type) per DOS-10
+    - independent_source_count (from claim_corroborations)
+    - ContradictionSet (from claim_contradictions)
+    - Optional UserFeedback (from intelligence_feedback)
+    - MeetingRelevanceInputs (if meeting context present)
+    |
+    v
+  scoring::factors::* (pure functions, ADR-0114):
+    source_reliability(α, β), freshness_weight(source, age, ctx),
+    corroboration_weight(count), contradiction_penalty(flags),
+    user_feedback_weight(feedback), meeting_relevance_weight(...)
+  Each returns [0.05, 1.0].
+    |
+    v
+  Weighted geometric mean:
+    trust_score = exp(Σ w_i × log(factor_i))    (weights sum to 1.0)
+    |
+    v
+  Band: likely_current ≥ 0.70 | use_with_caution 0.35-0.70 | needs_verification < 0.35
+    |
+    v
+  UPDATE intelligence_claims: trust_score, trust_computed_at, trust_version++
+    |
+    v
+  Emit ClaimTrustChanged ONLY on band-boundary crossing
+  (decimal drift within band does NOT emit — ADR-0115 §6 suppression).
+```
+
+Governing: [ADR-0114](../decisions/0114-scoring-unification.md), [ADR-0115 §6](../decisions/0115-signal-granularity-audit.md), [DOS-5](https://linear.app/a8c/issue/DOS-5).
+
+### 5. Runtime evaluator retry loop
+
+Optional post-Transform evaluator pass. Low scores trigger single retry with critique. See ADR-0119.
+
+```
+  Transform ability returns AbilityOutput<T> {output, Provenance(TrustAssessment)}
+    |
+    v
+  should_evaluate(ability, ctx)?
+    sample_rate (default 0.2) OR failure_suspicion_trigger fired
+      (consistency_low_severity | validation_anomaly | trust_near_band_boundary)
+    |
+    +-- No → annotate SkipReason::Sampled; return primary.
+    |
+    +-- Yes → Judge invocation (cheap tier):
+            prompt = quality.toml rubric + inputs + primary output
+            response = {scores: {specificity, groundedness, actionability,
+                                  non_repetition}, critique}
+            composite = weighted_sum(scores) / max
+            |
+            v
+            Write evaluation_traces row with all scores + critique.
+            |
+            v
+            composite >= threshold?
+              |
+              +-- Yes → annotate output_quality_score; return primary.
+              |
+              +-- No → invoke_with_critique(ctx, input, critique):
+                        Retry ability with critique appended to prompt input.
+                        Fingerprint differs from initial (canonical hash changes).
+                        Re-score retry once (no recursion).
+                        Write retry_invocation_id + retry_composite to same trace.
+                        Return retry output (annotated with both scores).
+  |
+  v
+  Evaluator failure (timeout, judge error): SkipReason::Error, return primary.
+  Never blocks primary output.
+```
+
+Governing: [ADR-0119](../decisions/0119-runtime-evaluator-pass-for-transform-abilities.md).
+
+### 6. Pencil / Pen publish flow
+
+Two-phase: Pencil (reviewable draft) → Pen (irreversible outbox commit).
+
+```
+  Publish ability invoked (e.g., publish_to_p2)
+    |
+    v
+  PENCIL: INSERT publish_drafts {ability, destination, payload, provenance,
+    state: 'Open', draft_version: 0, expires_at: now+24h, created_by: actor}
+    |
+    v
+  User reviews; may edit (bumps draft_version); may withdraw (state: 'Withdrawn').
+  TTL auto → 'Expired'.
+    |
+    v
+  User clicks Send → ConfirmationBroker issues single-use token:
+    INSERT confirmation_tokens {draft_id, draft_version (current!),
+      confirmed_by: actor, policy_source: UserAction, token_nonce,
+      expires_at: now+5min}
+    |
+    v
+  PEN: services::publish::commit_publish(draft_id, token, ctx)
+    Validate: nonce matches, not consumed, draft_version current (stale-draft
+    check per R1.4). Invalid → Err(InvalidToken | StaleToken).
+    |
+    v
+  INSERT publish_outbox {draft_id, confirmation_token_id, destination,
+    payload_hash, status: 'Pending', attempt_count: 0}
+  Atomically: token.consumed_at = now, draft.state = 'Committed'.
+    |
+    v
+  Return PublishAccepted receipt (NOT PublishedRecord; destination_ref
+  doesn't exist until delivery completes per R1.2).
+    |
+    v
+  Outbox worker picks up Pending → DestinationClient::deliver(payload, idem_key)
+    idem_key = hash(ability_name, draft_id, draft_version, payload_hash)
+    |
+    +-- Success → destination_ref returned (e.g., P2 post ID).
+    |             UPDATE: status='Delivered', delivered_at, destination_ref.
+    |
+    +-- FailedRetryable → exponential backoff (1,4,16,64,256s) up to 5 attempts.
+    |                      After 5 → 'FailedPermanent'.
+    |
+    +-- FailedPermanent → emit PublishFailed; surface to user.
+    |
+    v
+  Retraction (if DestinationClient::retraction_support() permits):
+    User triggers retract → DestinationClient::retract(destination_ref)
+    → status = 'Retracted' or 'RetractionFailed'.
+    Email: RetractionSupport::None — never offered.
+    P2: Full. Slack: TimeBounded (retention).
+```
+
+Governing: [ADR-0117](../decisions/0117-publish-boundary-pencil-and-pen.md).
+
+### 7. Observability correlation
+
+Every invocation threads invocation_id through logs, signals, claims, evaluation traces.
+
+```
+  #[ability] macro expansion opens root tracing span with invocation_id.
+  All nested spans (service fns, provider calls, signal emits) inherit parent.
+  All log lines within span inherit invocation_id.
+    |
+    v
+  AbilityOutput.Provenance.invocation_id = span's ID.
+    |
+    v
+  Any signal: signal_events.caused_by_invocation_id = this ID.
+  Any claim commit: intelligence_claims.caused_by_invocation_id = this ID.
+  Any evaluator run: evaluation_traces.primary_invocation_id = this ID.
+    |
+    v
+  Debug query (via DOS-250 surface, v1.5.0+):
+    SELECT * FROM signal_events WHERE caused_by_invocation_id = X;
+    UNION ALL claims, evaluations — full timeline in one SQL.
+```
+
+Governing: [ADR-0120](../decisions/0120-observability-contract.md).
