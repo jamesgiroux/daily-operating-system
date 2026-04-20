@@ -144,23 +144,17 @@ impl ActionDb {
 
     /// Open (or create) the database at `~/.dailyos/dailyos.db` and apply the schema.
     ///
-    /// When the unified `DbService` pool is installed (the usual case after
-    /// startup), this returns an `ActionDb` that holds a writer-pool
-    /// checkout instead of opening a fresh `rusqlite::Connection`. That
-    /// eliminates the WAL/HMAC race between fresh handles and the pool
-    /// writer mid-commit — the failure mode that surfaced to users as
-    /// "SQLite error: file is not a database" toasts during enrichment.
-    ///
-    /// When no pool is installed (startup before init, tests, MCP binary),
-    /// falls back to the legacy fresh-open path that runs migrations and
-    /// returns an owned `Connection`.
+    /// Every call creates a fresh `rusqlite::Connection`. This was briefly
+    /// routed through the DbService writer pool to eliminate a WAL/HMAC
+    /// race under SQLCipher, but that implementation held a shared
+    /// `parking_lot::Mutex` guard for the lifetime of the returned
+    /// `ActionDb` — any caller that awaited while the guard was live
+    /// blocked every other caller, and sync callers on Tokio worker
+    /// threads blocked the runtime itself. The proper fix is a
+    /// dedicated-thread channel model (tracked separately). Until then
+    /// we go back to fresh opens; the WAL race is rare and surfaces as
+    /// a retryable "file is not a database" error.
     pub fn open() -> Result<Self, DbError> {
-        if let Some(svc) = crate::db_service::try_global() {
-            let guard = svc.writer().arc().lock_arc();
-            return Ok(Self {
-                conn: ConnHandle::Pooled(guard),
-            });
-        }
         let path = Self::db_path()?;
         Self::open_at(path)
     }
