@@ -651,3 +651,220 @@ Entity re-enriched if trigger score > 0.7
 ```
 
 This cascade is the core intelligence loop: data arrives at a person, propagates to accounts, invalidates cached meeting prep and reports, and triggers fresh enrichment -- all driven by the signal bus.
+
+---
+
+## v1.4.0 Substrate Lifecycles
+
+The lifecycles above describe DailyOS as of 2026-03-02. v1.4.0 Abilities Runtime adds the following state machines. These do not yet exist in code; they describe the shape substrate implementation will produce.
+
+### Claim lifecycle
+
+Every claim in `intelligence_claims` passes through this state machine.
+
+```
+                       ┌─────────────┐
+                       │  proposed   │  Created by propose_claim.
+                       └──────┬──────┘  Visible only in Analysis Inbox.
+                              │
+              ┌───────────────┼───────────────┐
+              │               │               │
+       user accepts     gate passes      user rejects
+       (Inbox)          (commit gate)    (Inbox)
+              │               │               │
+              ▼               ▼               ▼
+                       ┌─────────────┐    ┌───────────┐
+                       │  committed  │    │ withdrawn │
+                       └──────┬──────┘    └───────────┘
+                              │
+              ┌───────────────┼────────────────┐
+              │               │                │
+       same actor          different         user removes
+       re-asserts          actor asserts      value (UI)
+       (different text)    (conflict)
+              │               │                │
+              ▼               ▼                ▼
+       ┌─────────────┐   contradiction     ┌─────────────┐
+       │ superseded  │   row written;      │ tombstoned  │
+       │ (history)   │   BOTH stay         │ (authoritative
+       └─────────────┘   committed         │  negative)  │
+                         until resolution  └─────────────┘
+```
+
+Transitions are append-only (new row per supersede/tombstone with `previous_claim_id` pointer; `claim_sequence` monotonic per field_path). Trust annotation (`trust_score`, `trust_version`) mutates in place on the committed row — trust is deterministic + recomputable, so history is not load-bearing for it.
+
+**State read semantics:**
+
+- Default: `claim_state IN ('committed', 'tombstoned') AND superseded_at IS NULL`. Tombstones are authoritative negative assertions, included.
+- Analysis Inbox: `claim_state = 'proposed'`.
+- History: drop all filters.
+
+Governing: [ADR-0113](../decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md) §2, R1.1, R1.2.
+
+### Agent trust ledger lifecycle
+
+Per `(agent_name, agent_version, claim_type)` trio. Beta distribution tracks reliability.
+
+```
+  New agent version registers (first claim)
+    |
+    v
+  INSERT agent_trust_ledger row {α: warmed, β: warmed,
+    posterior_score: Beta(α, β).mean(), last_updated}
+    |
+    v
+  Version-bump warming: α_new = prior.α × 0.5, β_new = prior.β × 0.5
+  (halves prior evidence; start not cold)
+    |
+    v
+  Steady state — updates on claim outcomes:
+    +-- User/human accepts claim → α += 1
+    +-- Independent corroboration → α += 0.5
+    +-- User/human rejects → β += 1
+    +-- Independent contradiction → β += 0.5
+    |
+    v
+  Recompute posterior_score after each update.
+    |
+    +-- posterior_score < floor (default 0.45) → QUARANTINE:
+    |     subsequent claims auto-route to Analysis Inbox.
+    |
+    +-- Shadow sampling (R1.4): 10% of below-threshold claims surfaced
+    |   to Inbox anyway → prevents ratchet.
+    |
+    +-- Updates keep flowing → score recovers → exit quarantine.
+    |
+    v
+  Agent version deprecated → rows remain for audit; no new updates.
+```
+
+Governing: [ADR-0113 §6, R1.4](../decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md).
+
+### Publish draft lifecycle
+
+Every `publish_drafts` row.
+
+```
+          User (or ability) creates draft
+                     │
+                     ▼
+              ┌─────────────┐
+              │    Open     │   Reviewable, editable, revocable. TTL 24h.
+              └──────┬──────┘
+                     │
+      ┌──────────────┼──────────────┐
+      │              │              │
+  user edits     user confirms   user withdraws
+  (bumps         (issues token)  (cancel)
+   draft_version)      │              │
+      │               ▼              ▼
+      │        ┌─────────────┐  ┌─────────────┐
+      │        │  Committed  │  │  Withdrawn  │
+      │        └──────┬──────┘  │ (frozen;    │
+      │               │         │  payload    │
+      │        (draft lifecycle │  null-masked)│
+      │         ends here;      └─────────────┘
+      │         outbox worker
+      │         takes over)
+      │
+      └── TTL expires before commit → Expired
+          (payload null-masked after 7 days per R1.8)
+```
+
+Governing: [ADR-0117 §1, R1.8](../decisions/0117-publish-boundary-pencil-and-pen.md).
+
+### Publish outbox lifecycle
+
+Every `publish_outbox` row (Pen phase). Independent of draft lifecycle.
+
+```
+            commit_publish writes row
+                     │
+                     ▼
+              ┌─────────────┐
+              │   Pending   │   Worker picks up in FIFO order within chain.
+              └──────┬──────┘
+                     │
+              DestinationClient::deliver(payload, idem_key)
+                     │
+    ┌──────────┬─────┼─────┬──────────┬──────────┐
+    │          │     │     │          │          │
+ success   transient perm  timeout  worker crash
+    │      (5xx etc)  (4xx)  (retry)   (restart)
+    │          │      │      │        (stays
+    ▼          ▼      ▼      ▼         Pending,
+┌───────────┐┌──────────────┐┌───────────────┐ resumed
+│ Delivered ││FailedRetryable││FailedPermanent│ on boot)
+│ + dest_ref││ (backoff 5x) ││               │
+└─────┬─────┘└──────┬───────┘└───────────────┘
+      │             │
+  (optional)   After 5 retries
+  retract      → FailedPermanent
+      │
+      ▼
+┌───────────┐
+│ Retracted │  or RetractionFailed
+└───────────┘  (per RetractionSupport)
+```
+
+Idempotency: `idem_key = hash(ability_name, draft_id, draft_version, payload_hash)`. Retries don't duplicate.
+
+Governing: [ADR-0117 §3, R1.2, R1.4, R1.5](../decisions/0117-publish-boundary-pencil-and-pen.md).
+
+### Invalidation job lifecycle
+
+Every `invalidation_jobs` row. Durable queue per ADR-0115.
+
+```
+                Signal emit triggers enqueue
+                (same transaction as event log — R1.4)
+                             │
+                             ▼
+                      ┌─────────────┐
+                      │   Pending   │   FIFO within chain_id.
+                      └──────┬──────┘
+                             │
+                       Worker picks up
+                             │
+                             ▼
+                      ┌─────────────┐
+                      │   Running   │   Recomputing affected_output_ids.
+                      └──────┬──────┘
+                             │
+        ┌─────────┬──────────┴─────────┬────────────────┐
+        │         │                    │                │
+     success  transient            cycle detected   depth cap
+     (outputs failure              (ancestry         exceeded
+      recom-  (remains              intersect)      (default 16)
+      puted)  Pending,
+             retry backoff)
+        │         │                    │                │
+        ▼         ▼                    ▼                ▼
+ ┌──────────┐ (up to 5x →       ┌──────────────────┐ ┌────────────────┐
+ │Completed │  FailedPermanent  │ CycleDetected    │ │DeadLettered    │
+ │          │  or DeadLettered) │ (affected        │ │(retry          │
+ │          │                   │  marked stale)   │ │ exhausted,     │
+ │          │                   │                  │ │ marked stale)  │
+ └──────────┘                   └──────────────────┘ └────────────────┘
+```
+
+**Outputs never silently dropped.** Cycle / depth / dead-letter all mark affected outputs with `last_known_good_as_of`. Surfaces render staleness explicitly.
+
+Governing: [ADR-0115 §5, R1.4, R1.6](../decisions/0115-signal-granularity-audit.md).
+
+### Actor taxonomy (reference)
+
+Not a lifecycle per se — the enumeration every claim's `actor` column serializes.
+
+| Variant | String | Example |
+|---|---|---|
+| User direct action | `user` | — |
+| User tombstone | `user_removal` | — |
+| Human analyst | `human:<role>:<id>` | `human:cs:james@a8c.com` |
+| Agent (AI ability) | `agent:<name>:<version>` | `agent:detect_champion:2.1` |
+| System (deterministic) | `system:<component>` | `system:scheduler` |
+| External source | `external:<source>` | `external:salesforce` |
+
+Actor and `DataSource` are orthogonal. An agent claim has `actor = 'agent:...'` AND `source_ref` pointing to the `DataSource`(s) the agent consumed.
+
+Governing: [ADR-0113 §1, R1.5](../decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md).
