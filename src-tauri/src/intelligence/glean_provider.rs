@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::dimension_prompts::{self, DIMENSION_NAMES};
 use super::io::{IntelligenceJson, SourceManifestEntry};
@@ -188,8 +188,17 @@ impl GleanIntelligenceProvider {
                 let start = Instant::now();
                 let client = GleanMcpClient::new(&ep);
 
+                // 240s budget: Glean chat is agentic (runs internal search
+                // tool-calls before generating the answer). For well-indexed
+                // accounts with lots of docs/transcripts the response can
+                // take minutes. The original 30s cap fired before the inner
+                // reqwest timeout, killing every dimension and falling back
+                // silently to PTY — resulting in items tagged with local
+                // source enum (transcript|local_file|pty_synthesis) instead
+                // of glean_*. 240s matches GLEAN_CHAT_TIMEOUT so slow-but-
+                // valid responses complete before either timeout fires.
                 let response_result =
-                    tokio::time::timeout(Duration::from_secs(30), client.chat(&prompt, None)).await;
+                    tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt, None)).await;
 
                 let elapsed_ms = start.elapsed().as_millis();
 
@@ -365,6 +374,54 @@ impl GleanIntelligenceProvider {
                     wall_clock_ms: total_ms as u64,
                 },
             );
+        }
+
+        // Surface any Glean dimension failures loudly. Without this,
+        // timeouts / errors on dimension fan-out fall through silently to
+        // legacy enrichment → PTY fallback, leaving users staring at
+        // local-sourced items with no signal that Glean couldn't finish.
+        //
+        // Emits:
+        //   - Audit event "glean_enrichment_degraded" (partial) or
+        //     "glean_enrichment_all_failed" (full miss) with failed
+        //     dimensions + wall-clock ms. grep-able from ~/.dailyos/audit.log.
+        //   - Tauri event "enrichment-glean-degraded" so the frontend can
+        //     surface a toast/banner when Glean came back partial/empty.
+        if !failed_dims.is_empty() {
+            if let Some(handle) = app_handle {
+                {
+                    let state = handle.state::<std::sync::Arc<crate::state::AppState>>();
+                    let mut audit = state.audit_log.lock();
+                    let _ = audit.append(
+                        "data_access",
+                        if succeeded == 0 {
+                            "glean_enrichment_all_failed"
+                        } else {
+                            "glean_enrichment_degraded"
+                        },
+                        serde_json::json!({
+                            "entity_id": entity_id,
+                            "entity_type": entity_type,
+                            "succeeded": succeeded,
+                            "failed": failed_dims.len(),
+                            "failed_dimensions": failed_dims,
+                            "wall_clock_ms": total_ms,
+                        }),
+                    );
+                }
+                let _ = handle.emit(
+                    "enrichment-glean-degraded",
+                    serde_json::json!({
+                        "entity_id": entity_id,
+                        "entity_type": entity_type,
+                        "succeeded": succeeded,
+                        "failed": failed_dims.len(),
+                        "failed_dimensions": failed_dims.clone(),
+                        "wall_clock_ms": total_ms,
+                        "will_fall_back": succeeded == 0,
+                    }),
+                );
+            }
         }
 
         if succeeded == 0 {

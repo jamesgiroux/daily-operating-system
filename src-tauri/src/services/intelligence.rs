@@ -256,6 +256,33 @@ pub async fn enrich_entity(
                         input.entity_name,
                         e
                     );
+                    // Surface the fallback loudly — otherwise users see
+                    // local-sourced items on a Glean-mode account with no
+                    // signal that Glean enrichment couldn't complete.
+                    {
+                        let mut audit = state.audit_log.lock();
+                        let _ = audit.append(
+                            "data_access",
+                            "glean_enrichment_fellback_to_pty",
+                            serde_json::json!({
+                                "entity_id": input.entity_id,
+                                "entity_type": input.entity_type,
+                                "entity_name": input.entity_name,
+                                "reason": e.to_string(),
+                            }),
+                        );
+                    }
+                    if let Some(handle) = app_handle {
+                        let _ = handle.emit(
+                            "enrichment-glean-fallback",
+                            serde_json::json!({
+                                "entity_id": input.entity_id,
+                                "entity_type": input.entity_type,
+                                "entity_name": input.entity_name,
+                                "reason": e.to_string(),
+                            }),
+                        );
+                    }
                 }
             }
         }
