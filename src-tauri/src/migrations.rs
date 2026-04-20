@@ -481,6 +481,51 @@ const MIGRATIONS: &[Migration] = &[
         version: 109,
         sql: include_str!("migrations/108_work_tab_actions.sql"),
     },
+    // DOS-269: Persist Health-tab triage card Snooze + Confirm-resolved
+    // state so dismissals survive refresh. Keyed on (entity_type,
+    // entity_id, triage_key).
+    Migration {
+        version: 110,
+        sql: include_str!("migrations/109_triage_snoozes.sql"),
+    },
+    // DOS-258 Lane A: entity linking schema foundation. linked_entities_raw
+    // (write surface), linking_dismissals (cross-surface dismissal store),
+    // entity_linking_evaluations (append-only provenance audit),
+    // entity_graph_version singleton counter, account_stakeholders
+    // status/confidence columns + review-queue index, backfill of existing
+    // meeting_entity_dismissals into linking_dismissals.
+    Migration {
+        version: 111,
+        sql: include_str!("migrations/110_linked_entities_raw.sql"),
+    },
+    Migration {
+        version: 112,
+        sql: include_str!("migrations/111_linking_dismissals.sql"),
+    },
+    Migration {
+        version: 113,
+        sql: include_str!("migrations/112_entity_linking_evaluations.sql"),
+    },
+    Migration {
+        version: 114,
+        sql: include_str!("migrations/113_entity_graph_version.sql"),
+    },
+    Migration {
+        version: 115,
+        sql: include_str!("migrations/114_account_stakeholders_review_queue_idx.sql"),
+    },
+    Migration {
+        version: 116,
+        sql: include_str!("migrations/115_migrate_meeting_entity_dismissals.sql"),
+    },
+    // DOS-258 Lane C: pending_thread_inheritance queue for P2 out-of-order
+    // email delivery. When a child email arrives before its parent, P2
+    // enqueues it here; the queue is drained when the parent is later
+    // evaluated.
+    Migration {
+        version: 117,
+        sql: include_str!("migrations/116_pending_thread_inheritance.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
