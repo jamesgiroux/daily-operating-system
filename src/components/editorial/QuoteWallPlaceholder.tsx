@@ -11,8 +11,8 @@ import { EditorialEmpty } from "./EditorialEmpty";
 export function QuoteWallPlaceholder() {
   return (
     <EditorialEmpty
-      title="A wall of their own words is coming."
-      message="Verbatim quotes pulled from transcripts — filterable by speaker, topic, and sentiment — will live here. Not yet captured."
+      title="Coming in the next release of DailyOS"
+      message="A wall of their own words — verbatim quotes pulled from transcripts, surveys, and emails, filterable by speaker, topic, and sentiment."
     />
   );
 }

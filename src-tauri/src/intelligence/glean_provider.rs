@@ -1294,6 +1294,23 @@ pub fn reconcile_enrichment(
         );
     }
 
+    // MarketContext reconciliation — same non-destructive-empty guard as
+    // the other vec fields. Prevents a sparse enrichment from wiping
+    // prior regulatory/market items that user corrections or earlier
+    // enrichments accumulated.
+    if !has_user_edits("marketContext")
+        && (!new_output.market_context.is_empty() || existing.market_context.is_empty())
+    {
+        result.market_context = reconcile_vec_items(
+            &existing.market_context,
+            &new_output.market_context,
+            refreshed_sources,
+            dismissed,
+            "marketContext",
+            |m| &m.title,
+        );
+    }
+
     if !has_user_edits("organizationalChanges")
         && (!new_output.organizational_changes.is_empty()
             || existing.organizational_changes.is_empty())

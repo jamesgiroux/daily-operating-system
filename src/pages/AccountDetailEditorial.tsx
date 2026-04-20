@@ -206,14 +206,14 @@ export default function AccountDetailEditorial() {
       {intelligence && (intelligence.valueDelivered?.length || intelligence.successMetrics?.length || intelligence.openCommitments?.length) ? (
         <MarginSection id="value-commitments" label={<>Value &amp;<br/>Commitments</>}>
           <ChapterHeading title="Value & Commitments" />
-          <ValueCommitments intelligence={intelligence} onUpdateField={handleUpdateIntelField} getItemFeedback={fb.get} onItemFeedback={fb.submit} />
+          <ValueCommitments intelligence={intelligence} onUpdateField={handleUpdateIntelField} onItemFeedback={fb.submit} />
         </MarginSection>
       ) : null}
 
-      {intelligence && (intelligence.strategicPriorities?.length || intelligence.competitiveContext?.length || intelligence.organizationalChanges?.length || intelligence.blockers?.length) ? (
+      {intelligence && (intelligence.strategicPriorities?.length || intelligence.competitiveContext?.length || intelligence.marketContext?.length) ? (
         <MarginSection id="strategic-landscape" label={<>Competitive &amp;<br/>Strategic</>}>
           <ChapterHeading title="Competitive & Strategic" />
-          <StrategicLandscape intelligence={intelligence} onUpdateField={handleUpdateIntelField} getItemFeedback={fb.get} onItemFeedback={fb.submit} />
+          <StrategicLandscape intelligence={intelligence} onUpdateField={handleUpdateIntelField} onItemFeedback={fb.submit} />
         </MarginSection>
       ) : null}
 
