@@ -301,8 +301,8 @@ describe("TriageSection — DOS-249 cap + ranking + feedback slot", () => {
     expect(screen.getByText(/Local risk A/i)).toBeInTheDocument();
     // Glean tag pill is present.
     expect(screen.getAllByText("Glean").length).toBeGreaterThan(0);
-    // Local tag pill is present.
-    expect(screen.getAllByText("Local").length).toBeGreaterThan(0);
+    // Activity tag pill is present (product vocab — see ADR-0083).
+    expect(screen.getAllByText("Activity").length).toBeGreaterThan(0);
   });
 
   it("splits a paragraph risk.text into headline + evidence rather than dumping the full string into the headline", () => {

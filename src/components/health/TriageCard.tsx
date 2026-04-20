@@ -11,7 +11,10 @@
  *
  * `evidence` accepts `ReactNode` so callers can emphasise dates/figures via
  * `<strong>`. `citations` render as discrete dated links (or plain labels)
- * next to the coloured source tag (Local vs Glean).
+ * next to the coloured source tag (Activity vs Glean). The `origin` code
+ * identifier stays `"local" | "glean"` per ADR-0083 — only the user-visible
+ * label renders as "Activity" (warm, specific, self-evident — the data came
+ * from the user's own emails/meetings/renewals, not from Glean).
  */
 import { useState, type ReactNode } from "react";
 import styles from "./health.module.css";
@@ -121,7 +124,7 @@ export function TriageCard({
                 <span
                   className={s.origin === "glean" ? styles.sourceTagGlean : styles.sourceTagLocal}
                 >
-                  {s.origin === "glean" ? "Glean" : "Local"}
+                  {s.origin === "glean" ? "Glean" : "Activity"}
                 </span>
                 {s.label ? <span>{s.label}</span> : null}
               </span>
