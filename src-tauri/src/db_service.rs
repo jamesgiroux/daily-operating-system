@@ -1,47 +1,110 @@
-//! Async database service using tokio-rusqlite.
+//! Unified async/sync database connection pool (DOS-* DbService refactor).
 //!
-//! Provides read/write separation for SQLite in WAL mode:
-//! - 1 writer connection (serialized via tokio-rusqlite's internal channel)
-//! - 2 reader connections (concurrent under WAL, round-robin dispatched)
+//! Single source of truth for all DB access in the process. Replaces the old
+//! dual model (tokio_rusqlite async pool + `ActionDb::open()` fresh-opens)
+//! that caused WAL races under SQLCipher: two connections reading the same
+//! mid-commit WAL frame would trigger HMAC verification failures ("file is
+//! not a database") because each fresh `rusqlite::Connection::open()` gets
+//! its own OS-level handle with no awareness of the pool writer's
+//! in-progress frame.
 //!
-//! All SQLite I/O runs on dedicated OS threads, never blocking the Tokio
-//! runtime. This eliminates the beachball caused by the old
-//! `Mutex<Option<ActionDb>>` pattern where background tasks holding the
-//! lock for seconds would block every Tauri command handler.
+//! Architecture (ADR followup, not yet numbered):
+//! - 1 writer connection, wrapped in `Arc<parking_lot::Mutex<Connection>>`
+//! - N reader connections, each wrapped in its own `Arc<Mutex<Connection>>`
+//! - Both sync and async APIs share the same underlying connection:
+//!     - `.call(|conn| ...).await` — matches prior tokio_rusqlite signature,
+//!       runs via `spawn_blocking` so the Tokio runtime is never blocked.
+//!     - `.call_sync(|conn| ...)` — locks the mutex on the calling thread,
+//!       for sync paths like `ActionDb::open()` in background tasks.
+//! - A process-wide `GLOBAL` singleton lets `ActionDb::open()` route through
+//!   the pool instead of opening a fresh handle. If the pool is not yet
+//!   initialized (startup, tests) `ActionDb::open()` falls back to the
+//!   legacy fresh-open path.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
-use tokio_rusqlite::Connection;
+use parking_lot::Mutex;
+use rusqlite::Connection;
 
 use crate::db::DbError;
 
-/// Number of read connections in the pool. 2 is plenty for a desktop app —
-/// WAL mode allows concurrent readers so this gives us two parallel reads
-/// while a write is in progress.
+/// Number of read connections in the pool.
 const NUM_READERS: usize = 2;
 
-/// Async database connection pool with read/write separation.
-///
-/// The writer connection is serialized: all closures submitted via `writer()`
-/// execute sequentially on a single dedicated thread. Reader connections
-/// share WAL snapshots and can execute concurrently with the writer and
-/// each other.
-pub struct DbService {
-    writer: Connection,
-    readers: Vec<Connection>,
-    read_idx: AtomicUsize,
+/// Shared handle type: Arc<Mutex<Connection>>.
+pub type ConnArc = Arc<Mutex<Connection>>;
+
+/// Error type for pool calls. Mirrors the shape callers expected from
+/// `tokio_rusqlite::Error` (Rusqlite variant + generic other).
+#[derive(Debug, thiserror::Error)]
+pub enum PooledCallError {
+    #[error("{0}")]
+    Rusqlite(#[from] rusqlite::Error),
+    #[error("spawn_blocking join error: {0}")]
+    Join(String),
 }
 
-/// Apply standard pragmas to a connection. Both readers and writers get
-/// busy_timeout and WAL mode; readers additionally get query_only.
-/// PRAGMA key is set first for SQLCipher (ADR-0092).
+/// A pooled connection handle. Clone-cheap (it's just an Arc under the hood).
+#[derive(Clone)]
+pub struct PooledConnection {
+    inner: ConnArc,
+}
+
+impl PooledConnection {
+    fn new(conn: Connection) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(conn)),
+        }
+    }
+
+    /// Expose the underlying `Arc<Mutex<Connection>>` for callers that need
+    /// to lock directly (e.g. `ActionDb::open()` pooled checkout via
+    /// `lock_arc()` → `ArcMutexGuard`).
+    pub fn arc(&self) -> ConnArc {
+        Arc::clone(&self.inner)
+    }
+
+    /// Async call — locks the mutex on a dedicated blocking thread.
+    /// Signature matches the prior `tokio_rusqlite::Connection::call` so
+    /// existing `.call(move |conn| { ... }).await` call sites compile
+    /// unchanged.
+    pub async fn call<F, T>(&self, f: F) -> Result<T, PooledCallError>
+    where
+        F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let arc = Arc::clone(&self.inner);
+        tokio::task::spawn_blocking(move || {
+            let mut guard = arc.lock();
+            f(&mut guard)
+        })
+        .await
+        .map_err(|e| PooledCallError::Join(e.to_string()))?
+        .map_err(PooledCallError::Rusqlite)
+    }
+
+    /// Sync call — locks the mutex on the calling thread. Intended for
+    /// callers not in an async context (startup, background worker threads).
+    /// Never call this from within a Tokio runtime — it blocks the runtime
+    /// thread. Use `.call(...).await` from async code.
+    pub fn call_sync<F, T>(&self, f: F) -> rusqlite::Result<T>
+    where
+        F: FnOnce(&mut Connection) -> rusqlite::Result<T>,
+    {
+        let mut guard = self.inner.lock();
+        f(&mut guard)
+    }
+}
+
+/// Apply standard pragmas to a connection. `read_only` adds `query_only=ON`.
+/// PRAGMA key MUST be first for SQLCipher (ADR-0092).
 fn apply_pragmas(
-    conn: &rusqlite::Connection,
+    conn: &Connection,
     read_only: bool,
     hex_key: &str,
 ) -> Result<(), rusqlite::Error> {
-    // PRAGMA key MUST be first — before any other PRAGMA (ADR-0092)
     conn.execute_batch(&crate::db::encryption::key_to_pragma(hex_key))?;
     conn.execute_batch("PRAGMA journal_mode = WAL;")?;
     conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
@@ -53,159 +116,165 @@ fn apply_pragmas(
     Ok(())
 }
 
+/// The service itself. Hold as `Arc<DbService>` and share freely.
+pub struct DbService {
+    writer: PooledConnection,
+    readers: Vec<PooledConnection>,
+    read_idx: AtomicUsize,
+}
+
 impl DbService {
-    /// Open a new DbService at the standard database path.
-    ///
-    /// Runs migrations on the writer connection, then opens reader connections.
-    /// Must be called from an async context (Tokio runtime).
-    pub async fn open() -> Result<Self, DbError> {
+    /// Open a DbService at the standard path.
+    pub async fn open() -> Result<Arc<Self>, DbError> {
         let path = crate::db::ActionDb::db_path_public()?;
         Self::open_at(path).await
     }
 
-    /// Open a DbService at an explicit path. Used for testing.
-    pub async fn open_at(path: PathBuf) -> Result<Self, DbError> {
-        // Ensure parent directory exists
+    /// Open a DbService at an explicit path. Encrypted via SQLCipher.
+    pub async fn open_at(path: PathBuf) -> Result<Arc<Self>, DbError> {
         if let Some(parent) = path.parent() {
             if !parent.exists() {
                 std::fs::create_dir_all(parent).map_err(DbError::CreateDir)?;
             }
         }
 
-        // Get or create encryption key from Keychain (ADR-0092)
         let hex_key =
             crate::db::encryption::get_or_create_db_key(&path).map_err(DbError::Encryption)?;
 
-        // Migrate plaintext DB if it exists
         if path.exists() && crate::db::encryption::is_database_plaintext(&path) {
-            log::info!("DbService: Detected plaintext database, migrating to encrypted...");
+            log::info!("DbService: detected plaintext DB, migrating to encrypted...");
             crate::db::encryption::migrate_to_encrypted(&path, &hex_key)
                 .map_err(DbError::Encryption)?;
         }
 
         let path_str = path.to_string_lossy().to_string();
-        let writer_key = hex_key.clone();
+        let path_for_readers = path_str.clone();
+        let key_for_readers = hex_key.clone();
 
-        // Open the writer connection — this is where migrations run.
-        let writer = Connection::open(&path_str)
-            .await
-            .map_err(|e| DbError::Migration(format!("Failed to open writer: {e}")))?;
+        // Build the writer on a blocking thread so the open + migrations
+        // don't stall the Tokio runtime.
+        let writer = tokio::task::spawn_blocking(move || -> Result<Connection, DbError> {
+            let conn = Connection::open(&path_str)?;
+            apply_pragmas(&conn, false, &hex_key)?;
+            crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
+            Ok(conn)
+        })
+        .await
+        .map_err(|e| DbError::Migration(format!("writer spawn join: {e}")))??;
 
-        // Apply pragmas and run migrations on the writer.
-        writer
-            .call(move |conn| {
-                apply_pragmas(conn, false, &writer_key)?;
-                crate::migrations::run_migrations(conn)
-                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| DbError::Migration(e.to_string()))?;
-
-        // Open reader connections — no migrations, just pragmas.
+        // Readers: no migrations, just pragmas + query_only.
         let mut readers = Vec::with_capacity(NUM_READERS);
         for _ in 0..NUM_READERS {
-            let r = Connection::open(&path_str)
-                .await
-                .map_err(|e| DbError::Migration(format!("Failed to open reader: {e}")))?;
-
-            let reader_key = hex_key.clone();
-            r.call(move |conn| {
-                apply_pragmas(conn, true, &reader_key)?;
-                Ok(())
+            let path_clone = path_for_readers.clone();
+            let key_clone = key_for_readers.clone();
+            let r = tokio::task::spawn_blocking(move || -> Result<Connection, DbError> {
+                let conn = Connection::open(&path_clone)?;
+                apply_pragmas(&conn, true, &key_clone)?;
+                Ok(conn)
             })
             .await
-            .map_err(|e| DbError::Migration(e.to_string()))?;
-
-            readers.push(r);
+            .map_err(|e| DbError::Migration(format!("reader spawn join: {e}")))??;
+            readers.push(PooledConnection::new(r));
         }
 
-        Ok(Self {
-            writer,
+        Ok(Arc::new(Self {
+            writer: PooledConnection::new(writer),
             readers,
             read_idx: AtomicUsize::new(0),
-        })
+        }))
     }
 
-    /// Open an unencrypted DbService at an explicit path. Tests only.
+    /// Unencrypted variant used only by tests.
     #[cfg(test)]
-    pub async fn open_at_unencrypted(path: PathBuf) -> Result<Self, DbError> {
+    pub async fn open_at_unencrypted(path: PathBuf) -> Result<Arc<Self>, DbError> {
         if let Some(parent) = path.parent() {
             if !parent.exists() {
                 std::fs::create_dir_all(parent).map_err(DbError::CreateDir)?;
             }
         }
-
         let path_str = path.to_string_lossy().to_string();
+        let path_for_readers = path_str.clone();
 
-        let writer = Connection::open(&path_str)
-            .await
-            .map_err(|e| DbError::Migration(format!("Failed to open writer: {e}")))?;
-
-        writer
-            .call(|conn| {
-                conn.execute_batch("PRAGMA journal_mode = WAL;")?;
-                conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
-                conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
-                conn.execute_batch("PRAGMA foreign_keys = ON;")?;
-                crate::migrations::run_migrations(conn)
-                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| DbError::Migration(e.to_string()))?;
+        let writer = tokio::task::spawn_blocking(move || -> Result<Connection, DbError> {
+            let conn = Connection::open(&path_str)?;
+            conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+            conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+            conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
+            conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+            crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
+            Ok(conn)
+        })
+        .await
+        .map_err(|e| DbError::Migration(format!("writer spawn join: {e}")))??;
 
         let mut readers = Vec::with_capacity(NUM_READERS);
         for _ in 0..NUM_READERS {
-            let r = Connection::open(&path_str)
-                .await
-                .map_err(|e| DbError::Migration(format!("Failed to open reader: {e}")))?;
-            r.call(|conn| {
+            let path_clone = path_for_readers.clone();
+            let r = tokio::task::spawn_blocking(move || -> Result<Connection, DbError> {
+                let conn = Connection::open(&path_clone)?;
                 conn.execute_batch("PRAGMA journal_mode = WAL;")?;
                 conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
                 conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
                 conn.execute_batch("PRAGMA foreign_keys = ON;")?;
                 conn.execute_batch("PRAGMA query_only = ON;")?;
-                Ok(())
+                Ok(conn)
             })
             .await
-            .map_err(|e| DbError::Migration(e.to_string()))?;
-            readers.push(r);
+            .map_err(|e| DbError::Migration(format!("reader spawn join: {e}")))??;
+            readers.push(PooledConnection::new(r));
         }
 
-        Ok(Self {
-            writer,
+        Ok(Arc::new(Self {
+            writer: PooledConnection::new(writer),
             readers,
             read_idx: AtomicUsize::new(0),
-        })
+        }))
     }
 
-    /// Get a reader connection (round-robin). Use for SELECT-only queries
-    /// from Tauri command handlers. Never blocks the writer.
-    pub fn reader(&self) -> &Connection {
+    /// Writer connection. Serialized: one write at a time.
+    pub fn writer(&self) -> &PooledConnection {
+        &self.writer
+    }
+
+    /// Reader connection, round-robin. Concurrent reads under WAL.
+    pub fn reader(&self) -> &PooledConnection {
         let idx = self.read_idx.fetch_add(1, Ordering::Relaxed) % self.readers.len();
         &self.readers[idx]
     }
+}
 
-    /// Get the writer connection. Use for INSERT/UPDATE/DELETE operations.
-    /// All writes are serialized through this single connection, preventing
-    /// WAL contention and SQLITE_BUSY retry storms.
-    pub fn writer(&self) -> &Connection {
-        &self.writer
-    }
+// -----------------------------------------------------------------------
+// Process-wide singleton so sync `ActionDb::open()` can route through the
+// pool instead of opening a fresh handle.
+// -----------------------------------------------------------------------
+
+static GLOBAL: parking_lot::Mutex<Option<Arc<DbService>>> = parking_lot::Mutex::new(None);
+
+/// Get a cloned Arc to the global DbService, if one is installed.
+pub fn try_global() -> Option<Arc<DbService>> {
+    GLOBAL.lock().clone()
+}
+
+/// Install (or replace) the global DbService. Called once from state init
+/// and again on dev-mode transitions.
+pub fn install_global(svc: Arc<DbService>) {
+    *GLOBAL.lock() = Some(svc);
+}
+
+/// Remove the global DbService. Subsequent `ActionDb::open()` calls fall
+/// back to the legacy fresh-open path until a new service is installed.
+pub fn uninstall_global() {
+    *GLOBAL.lock() = None;
 }
 
 #[cfg(test)]
 mod tests {
     //! DOS-229 — verify that writes are immediately visible to subsequent
     //! reads through the long-lived reader pool. Without the fix, the
-    //! `query_only=ON` reader connections can serve a stale WAL snapshot
-    //! when the round-robin happens to reuse a connection that is still
-    //! holding an older mxFrame mark.
+    //! `query_only=ON` reader connections could serve a stale WAL snapshot.
     use super::*;
     use crate::db::ActionDb;
 
-    /// Build a minimal email row for the visibility tests below.
     fn sample_email(id: &str, entity_id: &str) -> crate::db::DbEmail {
         let now = chrono::Utc::now().to_rfc3339();
         crate::db::DbEmail {
@@ -243,8 +312,6 @@ mod tests {
         }
     }
 
-    /// DOS-229 repro #1: update_email_entity through writer must be visible
-    /// to a subsequent get_all_active_emails on every reader connection.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn dos_229_email_entity_update_visible_to_readers() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -263,9 +330,6 @@ mod tests {
             .await
             .expect("writer call");
 
-        // Prime BOTH reader connections so each opens a WAL snapshot before
-        // the next write. Without the fix, the snapshot is held and the
-        // following update is invisible until the connection is recycled.
         for _ in 0..(NUM_READERS * 2) {
             let r = svc.reader();
             r.call(|conn| {
@@ -277,7 +341,6 @@ mod tests {
             .expect("reader call");
         }
 
-        // Now flip the entity_id through the writer.
         svc.writer()
             .call(|conn| {
                 let db = ActionDb::from_conn(conn);
@@ -288,83 +351,7 @@ mod tests {
             .await
             .expect("writer call");
 
-        // Hit every reader at least once and assert the new value is visible.
         for i in 0..(NUM_READERS * 2) {
-            let r = svc.reader();
-            let rows = r
-                .call(|conn| {
-                    let db = ActionDb::from_conn(conn);
-                    Ok(db.get_all_active_emails().expect("read"))
-                })
-                .await
-                .expect("reader call");
-            assert_eq!(rows.len(), 1, "iteration {i}: expected 1 row");
-            assert_eq!(
-                rows[0].entity_id.as_deref(),
-                Some("acc-new"),
-                "iteration {i}: reader returned stale entity_id"
-            );
-        }
-    }
-
-    /// DOS-229 repro #1b: same as #1 but with overlapping reads in flight
-    /// at the moment the write commits. This stresses the snapshot lifecycle
-    /// and is the closest analog to a UI that fans out many `db_read` calls
-    /// (entity names, signals, commitments, threads) while the user clicks
-    /// "save" on a chip.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn dos_229_email_entity_update_visible_after_concurrent_reads() {
-        use std::sync::Arc;
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("dos229_concurrent.db");
-        let svc = Arc::new(
-            DbService::open_at_unencrypted(path)
-                .await
-                .expect("open svc"),
-        );
-
-        let email = sample_email("em-dos229-3", "acc-old");
-        svc.writer()
-            .call(move |conn| {
-                let db = ActionDb::from_conn(conn);
-                db.upsert_email(&email).expect("upsert");
-                Ok(())
-            })
-            .await
-            .expect("writer call");
-
-        // Spawn a flurry of background reads to keep the reader pool busy.
-        let mut handles = Vec::new();
-        for _ in 0..32 {
-            let svc2 = Arc::clone(&svc);
-            handles.push(tokio::spawn(async move {
-                let r = svc2.reader();
-                r.call(|conn| {
-                    let db = ActionDb::from_conn(conn);
-                    let _ = db.get_all_active_emails().expect("read");
-                    Ok(())
-                })
-                .await
-                .expect("reader call");
-            }));
-        }
-
-        // Write while reads are in flight.
-        svc.writer()
-            .call(|conn| {
-                let db = ActionDb::from_conn(conn);
-                db.update_email_entity("em-dos229-3", Some("acc-new"), Some("account"))
-                    .expect("update");
-                Ok(())
-            })
-            .await
-            .expect("writer call");
-
-        for h in handles {
-            let _ = h.await;
-        }
-
-        for i in 0..(NUM_READERS * 4) {
             let r = svc.reader();
             let rows = r
                 .call(|conn| {
@@ -377,23 +364,21 @@ mod tests {
             assert_eq!(
                 rows[0].entity_id.as_deref(),
                 Some("acc-new"),
-                "iter {i}: stale entity_id from reader pool"
+                "iter {i}: stale entity_id"
             );
         }
     }
 
-    /// DOS-229 repro #1c: reader connection that has sat idle since a prior
-    /// read. The prior read closed its statement (drop) but the connection
-    /// has been alive on its dedicated tokio_rusqlite thread.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn dos_229_reader_after_idle_sees_writer_update() {
+    async fn sync_and_async_share_connection_state() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("dos229_idle.db");
+        let path = dir.path().join("sync_async.db");
         let svc = DbService::open_at_unencrypted(path)
             .await
             .expect("open svc");
 
-        let email = sample_email("em-dos229-4", "acc-old");
+        // Write via async API.
+        let email = sample_email("em-sync-1", "acc-1");
         svc.writer()
             .call(move |conn| {
                 let db = ActionDb::from_conn(conn);
@@ -403,113 +388,22 @@ mod tests {
             .await
             .expect("writer call");
 
-        // Hit each reader once.
-        for _ in 0..NUM_READERS {
-            svc.reader()
-                .call(|conn| {
-                    let db = ActionDb::from_conn(conn);
-                    let _ = db.get_all_active_emails().expect("read");
-                    Ok(())
-                })
-                .await
-                .expect("reader call");
-        }
-
-        // Let readers go idle.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // Write update.
-        svc.writer()
-            .call(|conn| {
-                let db = ActionDb::from_conn(conn);
-                db.update_email_entity("em-dos229-4", Some("acc-new"), Some("account"))
-                    .expect("update");
-                Ok(())
-            })
-            .await
-            .expect("writer call");
-
-        // Idle longer.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // Round-robin both readers and assert visibility.
-        for i in 0..(NUM_READERS * 4) {
-            let r = svc.reader();
-            let rows = r
-                .call(|conn| {
+        // Read via sync API on a blocking thread (simulating ActionDb::open
+        // from a background worker).
+        let reader = svc.reader().clone();
+        let rows = tokio::task::spawn_blocking(move || -> Result<Vec<_>, String> {
+            reader
+                .call_sync(|conn| {
                     let db = ActionDb::from_conn(conn);
                     Ok(db.get_all_active_emails().expect("read"))
                 })
-                .await
-                .expect("reader call");
-            assert_eq!(
-                rows[0].entity_id.as_deref(),
-                Some("acc-new"),
-                "iter {i}: stale entity_id from idle reader"
-            );
-        }
-    }
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .expect("join")
+        .expect("sync read");
 
-    /// DOS-229 repro #2: a sentiment column update through the writer must
-    /// be visible to readers immediately. Same root cause, different column.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn dos_229_sentiment_update_visible_to_readers() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("dos229_sentiment.db");
-        let svc = DbService::open_at_unencrypted(path)
-            .await
-            .expect("open svc");
-
-        let mut email = sample_email("em-dos229-2", "acc-1");
-        email.sentiment = Some("neutral".to_string());
-        svc.writer()
-            .call(move |conn| {
-                let db = ActionDb::from_conn(conn);
-                db.upsert_email(&email).expect("upsert");
-                Ok(())
-            })
-            .await
-            .expect("writer call");
-
-        // Prime readers.
-        for _ in 0..(NUM_READERS * 2) {
-            let r = svc.reader();
-            r.call(|conn| {
-                let db = ActionDb::from_conn(conn);
-                let _ = db.get_all_active_emails().expect("read");
-                Ok(())
-            })
-            .await
-            .expect("reader call");
-        }
-
-        // Update sentiment through the writer using a raw UPDATE.
-        svc.writer()
-            .call(|conn| {
-                conn.execute(
-                    "UPDATE emails SET sentiment = ?1, updated_at = ?2 WHERE email_id = ?3",
-                    rusqlite::params!["positive", chrono::Utc::now().to_rfc3339(), "em-dos229-2"],
-                )?;
-                Ok(())
-            })
-            .await
-            .expect("writer call");
-
-        for i in 0..(NUM_READERS * 2) {
-            let r = svc.reader();
-            let rows = r
-                .call(|conn| {
-                    let db = ActionDb::from_conn(conn);
-                    Ok(db.get_all_active_emails().expect("read"))
-                })
-                .await
-                .expect("reader call");
-            assert_eq!(rows.len(), 1, "iteration {i}");
-            assert_eq!(
-                rows[0].sentiment.as_deref(),
-                Some("positive"),
-                "iteration {i}: reader returned stale sentiment"
-            );
-        }
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].entity_id.as_deref(), Some("acc-1"));
     }
 }

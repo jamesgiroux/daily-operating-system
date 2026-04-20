@@ -1911,7 +1911,7 @@ mod tests {
     fn test_empty_email_ids() {
         let _conn = setup_test_db();
         let db = crate::db::ActionDb::from_conn(&_conn);
-        let result = get_email_snapshots_for_content_check(db, "account_123", &[]);
+        let result = get_email_snapshots_for_content_check(&db, "account_123", &[]);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
         assert!(snapshots.is_empty());
@@ -1935,7 +1935,7 @@ mod tests {
 
         let db = crate::db::ActionDb::from_conn(&conn);
         let result =
-            get_email_snapshots_for_content_check(db, "account_123", &["email_1".to_string()]);
+            get_email_snapshots_for_content_check(&db, "account_123", &["email_1".to_string()]);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 
@@ -1971,7 +1971,7 @@ mod tests {
             "email_3".to_string(),
         ];
         let db = crate::db::ActionDb::from_conn(&conn);
-        let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
+        let result = get_email_snapshots_for_content_check(&db, "account_123", &email_ids);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 
@@ -2004,7 +2004,7 @@ mod tests {
         // Request two emails, only one exists
         let email_ids = vec!["email_1".to_string(), "email_missing".to_string()];
         let db = crate::db::ActionDb::from_conn(&conn);
-        let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
+        let result = get_email_snapshots_for_content_check(&db, "account_123", &email_ids);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 
@@ -2039,7 +2039,7 @@ mod tests {
             "email_2".to_string(),
         ];
         let db = crate::db::ActionDb::from_conn(&conn);
-        let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
+        let result = get_email_snapshots_for_content_check(&db, "account_123", &email_ids);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 
@@ -2400,7 +2400,7 @@ mod tests {
 
         let db = crate::db::ActionDb::from_conn(&conn);
         let result =
-            get_email_snapshots_for_content_check(db, "account_123", &["email_1".to_string()]);
+            get_email_snapshots_for_content_check(&db, "account_123", &["email_1".to_string()]);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 

@@ -228,7 +228,7 @@ pub struct AppState {
     ///
     /// `RwLock<Option<>>` instead of `OnceCell` so dev mode can reinitialize
     /// the service to point at `dailyos-dev.db`.
-    pub db_service: tokio::sync::RwLock<Option<crate::db_service::DbService>>,
+    pub db_service: tokio::sync::RwLock<Option<std::sync::Arc<crate::db_service::DbService>>>,
     /// User activity monitor for throttling background work (I426).
     pub activity: Arc<crate::activity::ActivityMonitor>,
     /// Calendar subsystem state (I404).
@@ -756,11 +756,16 @@ impl AppState {
     // Async DbService helpers — use these for new/migrated command handlers.
     // -------------------------------------------------------------------------
 
-    /// Initialize the async DbService. Called from Tauri setup and on dev mode transitions.
+    /// Initialize the unified DbService pool. Called from Tauri setup and on
+    /// dev-mode transitions. Also installs the pool as the process-wide
+    /// singleton so sync `ActionDb::open()` routes through it instead of
+    /// opening a fresh `rusqlite::Connection` (which races the pool writer
+    /// mid-commit under SQLCipher).
     pub async fn init_db_service(&self) -> Result<(), String> {
         let svc = crate::db_service::DbService::open()
             .await
             .map_err(|e| format!("Failed to open DbService: {e}"))?;
+        crate::db_service::install_global(svc.clone());
         let mut guard = self.db_service.write().await;
         *guard = Some(svc);
         Ok(())
@@ -769,7 +774,8 @@ impl AppState {
     /// Reinitialize the DbService at the current DB path (live or dev).
     /// Called during dev mode enter/exit to switch the async connection pool.
     pub async fn reinit_db_service(&self) -> Result<(), String> {
-        // Drop the old service first
+        // Drop the old service first — both from state and the global.
+        crate::db_service::uninstall_global();
         {
             let mut guard = self.db_service.write().await;
             *guard = None;
@@ -804,7 +810,7 @@ impl AppState {
                     .reader()
                     .call(move |conn| {
                         let db = crate::db::ActionDb::from_conn(conn);
-                        Ok(f(db))
+                        Ok(f(&db))
                     })
                     .await
                     .map_err(|e| format!("DB read error: {e}"))?;
@@ -842,7 +848,7 @@ impl AppState {
                     .writer()
                     .call(move |conn| {
                         let db = crate::db::ActionDb::from_conn(conn);
-                        Ok(f(db))
+                        Ok(f(&db))
                     })
                     .await
                     .map_err(|e| format!("DB write error: {e}"))?;

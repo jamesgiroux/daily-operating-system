@@ -72,7 +72,7 @@ strsim = "0.11"
 dashmap = "6"
 
 # Non-poisoning Mutex/RwLock — prevents cascade crashes when a task panics while holding a lock
-parking_lot = "0.12"
+parking_lot = { version = "0.12", features = ["arc_lock"] }
 tempfile = "3"
 
 # MCP Server (ADR-0075) + Quill MCP client
