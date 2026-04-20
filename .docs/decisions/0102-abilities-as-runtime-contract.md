@@ -497,4 +497,17 @@ The ADR contract is designed for shipping abilities. It is heavy for prototyping
 
 Rationale: exploration needs a fast path. Discipline comes from graduation (promotion requires full ADR compliance), not from blocking experimentation entirely. The one-cycle lifespan prevents "experimental" from becoming a permanent escape hatch.
 
-**Tracking:** a registry query `experimental_abilities()` returns currently experimental abilities and their registration date. Anything older than one cycle is flagged for graduation-or-removal review.
+**Tracking and hard enforcement (updated 2026-04-20 per outside voice finding #7):** a registry query `experimental_abilities()` returns currently experimental abilities and their `registered_at` date. **The one-cycle lifespan is enforced by CI, not by review.** Specifically:
+
+- Every experimental ability's `#[ability(experimental = true, registered_at = "2026-04-20")]` attribute requires a `registered_at` ISO-8601 date string.
+- A CI check (`cargo test --test experimental_expiry`) reads all `experimental = true` attributes, parses `registered_at`, and fails the build if the date is older than 90 days (one release cycle, configurable).
+- The failure message names the ability and recommends two actions: promote to non-experimental (full contract compliance), or remove from the registry.
+- Experimental abilities also fail these additional CI checks:
+  - **No production registration:** the ability is registered to the registry only under `#[cfg(feature = "experimental")]`. Release builds without this feature flag don't see experimental abilities.
+  - **No claim writes:** experimental abilities that call `commit_claim` with `actor = 'agent:...'` fail the build. They may write only to test/sandbox paths.
+  - **No publish:** experimental abilities with `may_publish = true` fail the build.
+  - **No MCP exposure:** experimental abilities are not enumerated by `registry.iter_for(Actor::Agent)` or MCP bridge output.
+
+The combined effect: an experimental ability that hasn't been graduated or removed within one cycle **breaks the build**. There's no quiet persistence. Codex adversarial review correctly flagged the original "flagged for graduation-or-removal review" language as soft — this amendment makes it hard.
+
+**Override for genuinely long-running experiments:** a `registered_at` bump (re-registering with today's date) gives another cycle. Bumping requires a PR that explicitly justifies the extension in the commit message. Audit trail exists in git.
