@@ -1443,11 +1443,11 @@ mod tests {
             "idx_one_primary should reject a second primary for the same (owner_type, owner_id)"
         );
 
-        // linked_entities view filters user_dismissed rows
+        // linked_entities view filters user_dismissed rows (different entity than the primary above)
         conn.execute(
             "INSERT INTO linked_entities_raw
              (owner_type, owner_id, entity_id, entity_type, role, source, graph_version, created_at)
-             VALUES ('meeting', 'm1', 'a1', 'account', 'related', 'user_dismissed', 0, '2026-01-01')",
+             VALUES ('meeting', 'm1', 'p1', 'person', 'related', 'user_dismissed', 0, '2026-01-01')",
             [],
         )
         .expect("linked_entities_raw should store user_dismissed rows");
