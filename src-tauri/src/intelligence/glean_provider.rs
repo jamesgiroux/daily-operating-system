@@ -430,6 +430,15 @@ impl GleanIntelligenceProvider {
 
         // Set metadata on combined result
         combined.enriched_at = chrono::Utc::now().to_rfc3339();
+        // Surface the count of indexed source files we had to work with —
+        // the manifest below records "glean_chat" as the synthesis channel,
+        // but the UI's "About this intelligence" block expects
+        // source_file_count to reflect how many real files backed the
+        // enrichment (content_index rows passed through the 90-day cutoff).
+        // Without this, the About panel shows "1 of 0 total files" because
+        // IntelligenceJson::default() zeroes the field and merge_dimension_into
+        // doesn't propagate per-dimension counts.
+        combined.source_file_count = ctx.file_manifest.len();
         // Build source manifest with a single glean_chat entry
         if combined.source_manifest.is_empty() {
             combined.source_manifest.push(SourceManifestEntry {
