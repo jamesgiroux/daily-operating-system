@@ -267,6 +267,42 @@ fn usage_context_for_priority(priority: IntelPriority) -> AiUsageContext {
         .with_background(background)
 }
 
+/// DOS-15: surface a failed leading-signals enrichment pass to the audit log
+/// and the frontend. Mirrors the main-enrichment degraded/fallback pattern so
+/// users see *why* Health triage cards are activity-sourced instead of
+/// Glean-sourced on accounts where Glean is configured.
+fn emit_leading_signals_failed(
+    state: &AppState,
+    app: &AppHandle,
+    entity_id: &str,
+    entity_type: &str,
+    reason: &str,
+    wall_clock_ms: u64,
+) {
+    {
+        let mut audit = state.audit_log.lock();
+        let _ = audit.append(
+            "data_access",
+            "glean_leading_signals_failed",
+            serde_json::json!({
+                "entity_id": entity_id,
+                "entity_type": entity_type,
+                "reason": reason,
+                "wall_clock_ms": wall_clock_ms,
+            }),
+        );
+    }
+    let _ = app.emit(
+        "enrichment-glean-leading-signals-failed",
+        serde_json::json!({
+            "entity_id": entity_id,
+            "entity_type": entity_type,
+            "reason": reason,
+            "wall_clock_ms": wall_clock_ms,
+        }),
+    );
+}
+
 #[cfg(test)]
 mod queue_policy_tests {
     use super::{
@@ -722,9 +758,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             }
 
             // DOS-15: Supplemental leading-signals enrichment for Health & Outlook.
-            // Runs only for accounts and only when Glean is configured. Silent
-            // fallback: any error (chat failure, timeout, parse) is logged and
-            // ignored — users without Glean never see this surface.
+            // Runs only for accounts and only when Glean is configured. Failures
+            // are isolated (the main dimension enrichment already landed) but
+            // no longer silent — we emit an audit event + Tauri event so the
+            // frontend can surface a toast and we can see why Health triage
+            // fell back to activity-sourced cards.
             if state.context_provider().is_remote() && request.entity_type == "account" {
                 let endpoint = state
                     .context_provider()
@@ -735,8 +773,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     let entity_id = request.entity_id.clone();
                     let entity_type = request.entity_type.clone();
                     let engine = std::sync::Arc::clone(&state.signals.engine);
+                    let state_for_spawn = std::sync::Arc::clone(&state);
+                    let app_for_spawn = app.clone();
                     tauri::async_runtime::spawn(async move {
                         let provider = crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
+                        let ls_start = std::time::Instant::now();
                         match provider.enrich_leading_signals(&entity_name).await {
                             Ok(signals) => {
                                 if let Ok(db) = crate::db::ActionDb::open() {
@@ -754,6 +795,16 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                                             entity_id,
                                             e
                                         );
+                                        // Persist failure visible in audit + toast
+                                        let reason = format!("persistence failed: {e}");
+                                        emit_leading_signals_failed(
+                                            &state_for_spawn,
+                                            &app_for_spawn,
+                                            &entity_id,
+                                            &entity_type,
+                                            &reason,
+                                            ls_start.elapsed().as_millis() as u64,
+                                        );
                                     } else {
                                         log::info!(
                                             "[DOS-15] Leading signals persisted for {}",
@@ -763,10 +814,18 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                                 }
                             }
                             Err(e) => {
-                                log::info!(
-                                    "[DOS-15] Leading-signals enrichment skipped for {}: {}",
+                                log::warn!(
+                                    "[DOS-15] Leading-signals enrichment failed for {}: {}",
                                     entity_id,
                                     e
+                                );
+                                emit_leading_signals_failed(
+                                    &state_for_spawn,
+                                    &app_for_spawn,
+                                    &entity_id,
+                                    &entity_type,
+                                    &e,
+                                    ls_start.elapsed().as_millis() as u64,
                                 );
                             }
                         }
