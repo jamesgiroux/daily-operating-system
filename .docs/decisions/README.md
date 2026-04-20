@@ -136,6 +136,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0117](0117-publish-boundary-pencil-and-pen.md) | The publish boundary — Pencil and Pen (v1.4.0) | Proposed |
 | [0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md) | DailyOS as an AI harness — principles and residual gaps | Proposed |
 | [0119](0119-runtime-evaluator-pass-for-transform-abilities.md) | Runtime evaluator pass for Transform abilities (resolves [0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md) Gap A) | Proposed |
+| [0120](0120-observability-contract.md) | Observability contract — invocation records, correlation, NDJSON (resolves persona-review S1/S9/A7) | Proposed |
 
 ---
 

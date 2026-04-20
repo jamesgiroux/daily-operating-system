@@ -1749,3 +1749,214 @@
 |--------|-----------|
 | `task_name` | TEXT PRIMARY KEY |
 | `completed_at` | TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP |
+
+---
+
+## v1.4.0 Substrate Tables
+
+The following tables land as part of v1.4.0 Abilities Runtime substrate. They do not yet exist in code; migrations for them ship across the v1.4.0–v1.4.1 cycle per the DOS-7, DOS-215, DOS-216, DOS-234, DOS-235, DOS-236, DOS-238, DOS-259 issue cluster. Schema specifications from the owning ADRs.
+
+### `intelligence_claims`
+
+First-class claim table replacing inline JSON-blob assertions on `entity_assessment`. Append-only for assertion changes; trust annotation mutates in place.
+
+Source of truth: [ADR-0113](../decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md) + [DOS-7](https://linear.app/a8c/issue/DOS-7).
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `entity_id` | TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE |
+| `claim_type` | TEXT NOT NULL |
+| `field_path` | TEXT NOT NULL |
+| `claim_text` | TEXT (NULL for tombstones) |
+| `actor` | TEXT NOT NULL (serialized ClaimActor: user / user_removal / human:role:id / agent:name:version / system:component / external:source) |
+| `claim_state` | TEXT NOT NULL (proposed / committed / tombstoned / superseded / withdrawn) |
+| `retraction_reason` | TEXT (required when tombstoned or withdrawn) |
+| `dedup_key` | TEXT NOT NULL (hash of entity_id, claim_type, field_path, normalized claim_text) |
+| `claim_sequence` | INTEGER NOT NULL (monotonic per entity_id + claim_type + field_path) |
+| `previous_claim_id` | TEXT REFERENCES intelligence_claims(id) |
+| `superseded_at` | TIMESTAMP |
+| `superseded_by` | TEXT REFERENCES intelligence_claims(id) |
+| `corroboration_count` | INTEGER NOT NULL DEFAULT 0 (cached from claim_corroborations) |
+| `caused_by_invocation_id` | TEXT (observability correlation per ADR-0120) |
+| `trust_score` | REAL |
+| `trust_computed_at` | TIMESTAMP |
+| `trust_version` | INTEGER NOT NULL DEFAULT 1 (monotonic on recomputation) |
+| `pruned_at` | TIMESTAMP (soft-prune null-masks claim_text) |
+| `created_at` | TIMESTAMP NOT NULL |
+| `updated_at` | TIMESTAMP NOT NULL |
+
+**Indexes:** `(entity_id, claim_type, field_path) WHERE superseded_at IS NULL` (default read), `(entity_id, claim_type, field_path, claim_sequence DESC)` (history), `(actor, created_at DESC)` (per-actor audits). `UNIQUE(entity_id, claim_type, field_path, claim_sequence)`.
+
+**Read semantics:** default filter `claim_state IN ('committed', 'tombstoned') AND superseded_at IS NULL`. Tombstones are authoritative negative assertions.
+
+### `claim_corroborations`
+
+Per-asserter child table; preserves corroboration history without mutating claim rows.
+
+Source: [ADR-0113 R1.6](../decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md#r16-dedup-semantics--preserve-per-asserter-history).
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `claim_id` | TEXT NOT NULL REFERENCES intelligence_claims(id) ON DELETE CASCADE |
+| `corroborating_actor` | TEXT NOT NULL |
+| `corroborating_source_ref` | TEXT |
+| `asserted_at` | TIMESTAMP NOT NULL |
+
+**Unique:** `(claim_id, corroborating_actor)`.
+
+### `claim_contradictions`
+
+Never auto-resolved. Both claims remain `committed`; surfaced explicitly.
+
+Source: [ADR-0113 §7](../decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md).
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `field_path_ref` | TEXT NOT NULL |
+| `claim_a_id` | TEXT NOT NULL REFERENCES intelligence_claims(id) |
+| `claim_b_id` | TEXT NOT NULL REFERENCES intelligence_claims(id) |
+| `detected_at` | TIMESTAMP NOT NULL |
+| `resolved_at` | TIMESTAMP |
+| `resolution` | TEXT (accept_a / accept_b / both_wrong / both_right_merge) |
+| `resolved_by` | TEXT |
+
+### `agent_trust_ledger`
+
+Per-agent-per-version-per-claim-type Bayesian reliability.
+
+Source: [ADR-0113 §6](../decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md).
+
+| Column | Definition |
+|--------|-----------|
+| `agent_name` | TEXT NOT NULL |
+| `agent_version` | TEXT NOT NULL |
+| `claim_type` | TEXT NOT NULL |
+| `alpha` | REAL NOT NULL DEFAULT 1.0 |
+| `beta` | REAL NOT NULL DEFAULT 1.0 |
+| `posterior_score` | REAL NOT NULL DEFAULT 0.5 |
+| `last_updated` | TIMESTAMP NOT NULL |
+
+**Primary key:** `(agent_name, agent_version, claim_type)`. Version-bump warming halves prior α/β per [ADR-0113 R1.4](../decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md#r14-trust-ratchet--shadow-sampling-prevents-permanent-quarantine).
+
+### `evaluation_traces`
+
+Runtime evaluator trace per Transform invocation.
+
+Source: [ADR-0119 §6](../decisions/0119-runtime-evaluator-pass-for-transform-abilities.md).
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `ability_name` | TEXT NOT NULL |
+| `ability_version` | TEXT NOT NULL |
+| `primary_invocation_id` | TEXT NOT NULL |
+| `primary_output_hash` | TEXT NOT NULL |
+| `judge_model` | TEXT NOT NULL |
+| `judge_prompt_version` | TEXT NOT NULL |
+| `scores_json` | TEXT NOT NULL |
+| `composite` | REAL NOT NULL |
+| `critique` | TEXT |
+| `threshold` | REAL NOT NULL |
+| `passed` | INTEGER NOT NULL |
+| `retry_invocation_id` | TEXT |
+| `retry_composite` | REAL |
+| `caused_by_invocation_id` | TEXT |
+| `evaluated_at` | TIMESTAMP NOT NULL |
+| `duration_ms` | INTEGER NOT NULL |
+
+**Retention:** 90 days.
+
+### `invalidation_jobs`
+
+Durable queue replacing depth-limited-drop invalidation.
+
+Source: [ADR-0115 §5](../decisions/0115-signal-granularity-audit.md).
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `chain_id` | TEXT NOT NULL |
+| `origin_signal_id` | TEXT NOT NULL |
+| `depth` | INTEGER NOT NULL |
+| `affected_output_ids` | TEXT NOT NULL (JSON array) |
+| `chain_ancestry` | TEXT NOT NULL (JSON array for cycle detection) |
+| `enqueued_at` | TIMESTAMP NOT NULL |
+| `status` | TEXT NOT NULL (Pending / Running / Completed / Failed / DeadLettered / CycleDetected) |
+| `attempt_count` | INTEGER NOT NULL DEFAULT 0 |
+| `last_error` | TEXT |
+
+### `publish_drafts`, `publish_outbox`, `confirmation_tokens`
+
+Pencil/Pen protocol. Types in v1.4.0, tables in v1.4.1.
+
+Sources: [ADR-0117 R1.11](../decisions/0117-publish-boundary-pencil-and-pen.md#r111-scope-for-v140--revised-minimal), R1.4, R1.9. Schema shapes per each table's section in ADR-0117.
+
+### `db_key_metadata` (v2.x)
+
+Metadata about the DB encryption key (never the key material itself).
+
+Source: [ADR-0116 R1.5](../decisions/0116-tenant-control-plane-boundary.md#r15-metadata-storage--acknowledge-the-schema-cost).
+
+| Column | Definition |
+|--------|-----------|
+| `key_id` | TEXT PRIMARY KEY |
+| `provider_type` | TEXT NOT NULL |
+| `wrapping_key_ref` | TEXT |
+| `version` | INTEGER NOT NULL |
+| `rotated_at` | TIMESTAMP NOT NULL |
+| `rekey_in_progress` | BOOLEAN NOT NULL DEFAULT 0 |
+
+### Amendment to `signal_events`
+
+[ADR-0115 Phase 0](../decisions/0115-signal-granularity-audit.md#r11-signaltype-enum-is-a-prerequisite-not-a-feature-of-this-adr) adds a Rust `SignalType` enum. Column stays `TEXT`; serialization is what changes. Plus a nullable `caused_by_invocation_id` column for observability correlation ([ADR-0120](../decisions/0120-observability-contract.md)).
+
+## Append-only claim pattern — worked example
+
+Scenario: AI proposes "champion: Alice" at t0; AI asserts "champion: Bob" at t1; user tombstones at t2.
+
+**t0 — AI proposes "champion: Alice"**
+
+- `claim-001`: `actor=agent:detect_champion:2.1`, `state=proposed`, `sequence=1`, `text="Alice Chen"`, `trust_score=0.62` (below 0.80 threshold).
+
+Gate outcome: stays `proposed`; visible in Analysis Inbox only.
+
+**t1 — same agent asserts "champion: Bob" (same actor version → supersede, not contradiction)**
+
+- `claim-002`: `actor=agent:detect_champion:2.1`, `state=proposed`, `sequence=2`, `text="Bob Smith"`, `previous_claim_id=claim-001`.
+- `claim-001` update: `superseded_at=t1`, `superseded_by=claim-002`, `state=superseded`.
+
+**t2 — user tombstones the field**
+
+- `claim-003`: `actor=user`, `state=tombstoned`, `sequence=3`, `text=NULL`, `retraction_reason="user_removal"`, `previous_claim_id=claim-002`.
+- `claim-002` update: `superseded_at=t2`, `superseded_by=claim-003`, `state=superseded`.
+
+**Default read at t2:** returns claim-003 (authoritative assertion of absence). Surface renders "no champion" with user-removal provenance.
+
+**Future agent assertion attempt:** blocked by tombstone window check per [ADR-0113 R1.1](../decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md). Only 3+ independent corroborations within 7 days override.
+
+**History read:** returns all three with supersede chain intact.
+
+## Relationships
+
+| From | To | Cardinality |
+|---|---|---|
+| `intelligence_claims.entity_id` | `entities.id` | N:1 |
+| `claim_corroborations.claim_id` | `intelligence_claims.id` | N:1 |
+| `claim_contradictions.claim_a_id` / `.claim_b_id` | `intelligence_claims.id` | N:1 each |
+| `intelligence_claims.previous_claim_id` / `.superseded_by` | `intelligence_claims.id` | N:1 each |
+| `invalidation_jobs.origin_signal_id` | `signal_events.id` | N:1 |
+| `publish_outbox.draft_id` | `publish_drafts.id` | N:1 |
+| `publish_outbox.confirmation_token_id` | `confirmation_tokens.id` | N:1 |
+| `confirmation_tokens.draft_id` | `publish_drafts.id` | N:1 |
+
+## Migration landing order
+
+- **Phase 0** (substrate prerequisites): `ExecutionMode` (code-only), `IntelligenceProvider` trait (code-only), `signal_events` + `caused_by_invocation_id` column.
+- **Phase 1 (v1.4.0):** `intelligence_claims`, `claim_corroborations`, `claim_contradictions`, `agent_trust_ledger`, `invalidation_jobs`.
+- **Phase 2 (v1.4.1):** `evaluation_traces`, `publish_drafts`, `publish_outbox`, `confirmation_tokens`.
+- **Phase 3 (v2.x, gated on enterprise demand):** `db_key_metadata`.
+
+Brownfield-as-greenfield per founder D1 (2026-04-20): backward-compat paths for the 27 JSON-blob columns on `entity_assessment` are not required. Consolidation into `intelligence_claims` can be destructive. Old tombstone mechanisms (`suppression_tombstones`, `DismissedItem`, `account_stakeholder_roles.dismissed_at`) are replaced by claim-level tombstones; retirement ships in v1.4.1 alongside the enrichment refactor.
