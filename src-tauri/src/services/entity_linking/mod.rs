@@ -18,89 +18,171 @@ use std::sync::Arc;
 use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
-// Public evaluate — synchronous, called from calendar and email pipelines
+// evaluate — four-phase engine entry point (sync)
 // ---------------------------------------------------------------------------
 
-/// Run the four-phase linking engine for a single owner.
-///
-/// Reads from DB only; all writes (linked_entities_raw, linking_dismissals,
-/// entity_linking_evaluations, account_stakeholders) happen inside this call
-/// in a single transaction per the concurrency contract in DOS-258.
 pub fn evaluate(
-    _state: Arc<AppState>,
-    _ctx: LinkingContext,
+    state: Arc<AppState>,
+    mut ctx: LinkingContext,
     _trigger: Trigger,
 ) -> Result<LinkOutcome, String> {
-    // TODO(Lane-C): implement — delegate to phases::run_phases
-    unimplemented!("Lane C: evaluate")
+    state.with_db_write(|db| {
+        let user_domains = ctx.user_domains.clone();
+        phases::phase2_record_facts(&mut ctx, db, &user_domains);
+        phases::run_phases(&ctx, db)
+    })
 }
 
 // ---------------------------------------------------------------------------
-// Manual overrides — async because they may emit signals or update queues
+// Manual overrides (async — may trigger background queue updates)
 // ---------------------------------------------------------------------------
 
-/// User explicitly sets (or clears) the primary entity for an owner.
 pub async fn manual_set_primary(
-    _state: Arc<AppState>,
-    _owner_type: OwnerType,
-    _owner_id: &str,
-    _entity: Option<EntityRef>,
+    state: Arc<AppState>,
+    owner_type: OwnerType,
+    owner_id: String,
+    entity: Option<EntityRef>,
 ) -> Result<LinkOutcome, String> {
-    // TODO(Lane-C): write source='user' row + trigger re-evaluate
-    unimplemented!("Lane C: manual_set_primary")
+    state
+        .db_read(move |db| {
+            db.with_transaction(|_| {
+                db.conn_ref()
+                    .execute(
+                        "DELETE FROM linked_entities_raw \
+                         WHERE owner_type = ?1 AND owner_id = ?2 AND source = 'user'",
+                        rusqlite::params![owner_type.as_str(), owner_id],
+                    )
+                    .map_err(|e| format!("manual_set_primary clear: {e}"))?;
+
+                if let Some(ref ent) = entity {
+                    let now = chrono::Utc::now().to_rfc3339();
+                    let version = db.get_entity_graph_version().unwrap_or(0);
+                    db.conn_ref()
+                        .execute(
+                            "INSERT OR REPLACE INTO linked_entities_raw \
+                             (owner_type, owner_id, entity_id, entity_type, role, source, \
+                              rule_id, confidence, graph_version, created_at) \
+                             VALUES (?1, ?2, ?3, ?4, 'primary', 'user', 'P1', 1.0, ?5, ?6)",
+                            rusqlite::params![
+                                owner_type.as_str(),
+                                owner_id,
+                                ent.entity_id,
+                                ent.entity_type,
+                                version,
+                                now,
+                            ],
+                        )
+                        .map_err(|e| format!("manual_set_primary insert: {e}"))?;
+                }
+                Ok(())
+            })?;
+
+            let graph_version = db.get_entity_graph_version().unwrap_or(0);
+            let ctx = LinkingContext {
+                owner: OwnerRef { owner_type, owner_id },
+                participants: vec![],
+                title: None,
+                attendee_count: 0,
+                thread_id: None,
+                series_id: None,
+                graph_version,
+                user_domains: vec![],
+            };
+            phases::run_phases(&ctx, db)
+        })
+        .await
 }
 
-/// User dismisses a suggested entity link for an owner.
-///
-/// Writes a linking_dismissals row AND sets source='user_dismissed' on the
-/// linked_entities_raw row in the same transaction (dismissal-wins-race).
 pub async fn manual_dismiss(
-    _state: Arc<AppState>,
-    _owner_type: OwnerType,
-    _owner_id: &str,
-    _entity: EntityRef,
+    state: Arc<AppState>,
+    owner_type: OwnerType,
+    owner_id: String,
+    entity: EntityRef,
 ) -> Result<LinkOutcome, String> {
-    // TODO(Lane-C): transactional dismiss + re-evaluate
-    unimplemented!("Lane C: manual_dismiss")
+    state
+        .db_read(move |db| {
+            db.with_transaction(|_| {
+                db.upsert_linking_dismissal(
+                    owner_type.as_str(),
+                    &owner_id,
+                    &entity.entity_id,
+                    &entity.entity_type,
+                    None,
+                )?;
+                db.set_link_user_dismissed(
+                    owner_type.as_str(),
+                    &owner_id,
+                    &entity.entity_id,
+                    &entity.entity_type,
+                )
+            })?;
+
+            let graph_version = db.get_entity_graph_version().unwrap_or(0);
+            let ctx = LinkingContext {
+                owner: OwnerRef { owner_type, owner_id },
+                participants: vec![],
+                title: None,
+                attendee_count: 0,
+                thread_id: None,
+                series_id: None,
+                graph_version,
+                user_domains: vec![],
+            };
+            phases::run_phases(&ctx, db)
+        })
+        .await
 }
 
-/// Undo a previous dismissal, removing the linking_dismissals row.
 pub async fn manual_undismiss(
-    _state: Arc<AppState>,
-    _owner_type: OwnerType,
-    _owner_id: &str,
-    _entity: EntityRef,
+    state: Arc<AppState>,
+    owner_type: OwnerType,
+    owner_id: String,
+    entity: EntityRef,
 ) -> Result<LinkOutcome, String> {
-    // TODO(Lane-C): delete linking_dismissals row + re-evaluate
-    unimplemented!("Lane C: manual_undismiss")
+    state
+        .db_read(move |db| {
+            db.delete_linking_dismissal(
+                owner_type.as_str(),
+                &owner_id,
+                &entity.entity_id,
+                &entity.entity_type,
+            )?;
+            let graph_version = db.get_entity_graph_version().unwrap_or(0);
+            let ctx = LinkingContext {
+                owner: OwnerRef { owner_type, owner_id },
+                participants: vec![],
+                title: None,
+                attendee_count: 0,
+                thread_id: None,
+                series_id: None,
+                graph_version,
+                user_domains: vec![],
+            };
+            phases::run_phases(&ctx, db)
+        })
+        .await
 }
 
 // ---------------------------------------------------------------------------
-// Stakeholder queue — sole post-migration writers to account_stakeholders (C2)
+// Stakeholder queue
 // ---------------------------------------------------------------------------
 
-/// Promote a pending_review stakeholder suggestion to status='active'.
-///
-/// This is the ONLY function that confirms a stakeholder after auto-suggestion.
-/// No other code may set account_stakeholders.status = 'active' from 'pending_review'.
 pub async fn confirm_stakeholder_suggestion(
-    _state: Arc<AppState>,
-    _account_id: &str,
-    _person_id: &str,
+    state: Arc<AppState>,
+    account_id: String,
+    person_id: String,
 ) -> Result<(), String> {
-    // TODO(Lane-C): UPDATE account_stakeholders SET status='active' WHERE ...
-    unimplemented!("Lane C: confirm_stakeholder_suggestion")
+    state
+        .db_read(move |db| db.confirm_stakeholder(&account_id, &person_id))
+        .await
 }
 
-/// Dismiss a pending_review stakeholder suggestion, hiding it from the queue.
-///
-/// Sets status='dismissed' and blocks future re-surfacing of this person
-/// on this account.
 pub async fn dismiss_stakeholder_suggestion(
-    _state: Arc<AppState>,
-    _account_id: &str,
-    _person_id: &str,
+    state: Arc<AppState>,
+    account_id: String,
+    person_id: String,
 ) -> Result<(), String> {
-    // TODO(Lane-C): UPDATE account_stakeholders SET status='dismissed' WHERE ...
-    unimplemented!("Lane C: dismiss_stakeholder_suggestion")
+    state
+        .db_read(move |db| db.dismiss_stakeholder_suggestion(&account_id, &person_id))
+        .await
 }

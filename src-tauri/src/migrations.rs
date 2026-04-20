@@ -520,6 +520,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 116,
         sql: include_str!("migrations/115_migrate_meeting_entity_dismissals.sql"),
     },
+    // DOS-258 Lane C: pending_thread_inheritance queue for P2 out-of-order
+    // email delivery. When a child email arrives before its parent, P2 enqueues
+    // it here; the queue is drained when the parent is later evaluated.
+    Migration {
+        version: 117,
+        sql: include_str!("migrations/116_pending_thread_inheritance.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
