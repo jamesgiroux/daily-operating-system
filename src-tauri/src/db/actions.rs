@@ -125,9 +125,15 @@ impl ActionDb {
     /// DOS Work-tab Phase 3: open commitments for the Commitments chapter.
     ///
     /// Returns rows where `action_kind = 'commitment'` AND status is one of
-    /// (backlog, unstarted, started). Sort: status ASC (backlog first by
-    /// lexical ordering), then `created_at DESC` so the most recently
-    /// emitted commitments lead each bucket. Includes Linear link fields.
+    /// (unstarted, started) — i.e. ACCEPTED only. Backlog commitments are
+    /// AI-inferred suggestions that the user has not yet accepted, and live
+    /// in the Suggestions chapter via `get_account_suggestions`. Accepting a
+    /// suggested commitment promotes backlog → unstarted and moves the row
+    /// into this chapter.
+    ///
+    /// Sort: status ASC (unstarted before started), then `created_at DESC` so
+    /// the most recently emitted commitments lead each bucket. Includes
+    /// Linear link fields.
     pub fn get_account_commitments(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
@@ -140,13 +146,12 @@ impl ActionDb {
              LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
              WHERE actions.account_id = ?1
                AND actions.action_kind = 'commitment'
-               AND actions.status IN ('backlog', 'unstarted', 'started')
+               AND actions.status IN ('unstarted', 'started')
              ORDER BY
                CASE actions.status
-                 WHEN 'backlog' THEN 0
-                 WHEN 'unstarted' THEN 1
-                 WHEN 'started' THEN 2
-                 ELSE 3
+                 WHEN 'unstarted' THEN 0
+                 WHEN 'started' THEN 1
+                 ELSE 2
                END,
                actions.created_at DESC",
         )?;
