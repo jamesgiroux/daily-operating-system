@@ -12,8 +12,77 @@ use crate::state::AppState;
 use crate::types::{
     Action, CalendarEvent, DailyFocus, DashboardBriefingCallout, DashboardData,
     DashboardLifecycleUpdate, DayOverview, DayStats, EmailSyncStage, EmailSyncState,
-    EmailSyncStatus, GoogleAuthStatus, Meeting, MeetingType, OverlayStatus, Priority, WeekOverview,
+    EmailSyncStatus, GoogleAuthStatus, Meeting, MeetingPrep, MeetingType, OverlayStatus, Priority,
+    WeekOverview,
 };
+
+/// Extract a dashboard-facing `MeetingPrep` from the `prep_context_json` DB column.
+///
+/// Handles two storage formats:
+/// 1. `FullMeetingPrep` JSON (camelCase, from pipeline reconcile)
+/// 2. AI-schema JSON with `ai_intelligence` key (from meeting_prep_queue)
+fn extract_dashboard_prep(prep_json: &str) -> Option<MeetingPrep> {
+    // Format 1: direct FullMeetingPrep deserialization
+    if let Ok(full) = serde_json::from_str::<crate::types::FullMeetingPrep>(prep_json) {
+        let prep = MeetingPrep {
+            context: full.meeting_context.or(full.intelligence_summary),
+            risks: full.risks,
+            wins: full.recent_wins,
+            actions: full.talking_points,
+            stakeholders: full.attendees,
+            questions: full.questions,
+            ..Default::default()
+        };
+        let has_content = prep.context.is_some()
+            || prep.risks.as_ref().is_some_and(|v| !v.is_empty())
+            || prep.wins.as_ref().is_some_and(|v| !v.is_empty())
+            || prep.actions.as_ref().is_some_and(|v| !v.is_empty())
+            || prep.stakeholders.as_ref().is_some_and(|v| !v.is_empty())
+            || prep.questions.as_ref().is_some_and(|v| !v.is_empty());
+        if has_content {
+            return Some(prep);
+        }
+    }
+
+    // Format 2: AI-schema with top-level ai_intelligence key
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(prep_json) {
+        if let Some(ai) = val.get("ai_intelligence") {
+            let context = ai
+                .get("narrative")
+                .or_else(|| ai.get("meetingContext"))
+                .or_else(|| ai.get("meeting_context"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let risks = ai.get("risks").and_then(|v| v.as_array()).map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            });
+            let actions = ai
+                .get("talkingPoints")
+                .or_else(|| ai.get("talking_points"))
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>()
+                });
+            let has_content = context.is_some()
+                || risks.as_ref().is_some_and(|v| !v.is_empty())
+                || actions.as_ref().is_some_and(|v| !v.is_empty());
+            if has_content {
+                return Some(MeetingPrep {
+                    context,
+                    risks,
+                    actions,
+                    ..Default::default()
+                });
+            }
+        }
+    }
+
+    None
+}
 
 /// Result type for dashboard data loading
 #[derive(Debug, serde::Serialize)]
@@ -304,6 +373,12 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
             let linked_entities = snap.entity_map.get(&dbm.id).cloned();
             let intelligence_quality = snap.intelligence_qualities.get(&dbm.id).cloned();
 
+            let prep = dbm
+                .prep_context_json
+                .as_deref()
+                .and_then(extract_dashboard_prep);
+            let calendar_description = dbm.description.clone();
+
             Meeting {
                 id: dbm.id,
                 calendar_event_id: dbm.calendar_event_id,
@@ -312,7 +387,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
                 start_iso: Some(dbm.start_time),
                 title: dbm.title,
                 meeting_type,
-                prep: None,
+                prep,
                 is_current: None,
                 prep_file: None,
                 has_prep,
@@ -322,7 +397,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
                 suggested_unarchive_account_id: None,
                 intelligence_quality,
                 calendar_attendees: None,
-                calendar_description: None,
+                calendar_description,
             }
         })
         .collect();
@@ -632,6 +707,12 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             let time = format_meeting_time(&dbm.start_time);
             let end_time = dbm.end_time.as_ref().map(|et| format_meeting_time(et));
 
+            let prep = dbm
+                .prep_context_json
+                .as_deref()
+                .and_then(extract_dashboard_prep);
+            let calendar_description = dbm.description.clone();
+
             Meeting {
                 id: dbm.id,
                 calendar_event_id: dbm.calendar_event_id,
@@ -640,7 +721,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                 start_iso: Some(dbm.start_time),
                 title: dbm.title,
                 meeting_type,
-                prep: None,
+                prep,
                 is_current: None,
                 prep_file: None,
                 has_prep,
@@ -650,7 +731,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                 suggested_unarchive_account_id: None,
                 intelligence_quality: None,
                 calendar_attendees: None,
-                calendar_description: None,
+                calendar_description,
             }
         })
         .collect();
