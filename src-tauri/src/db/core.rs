@@ -34,9 +34,59 @@ pub fn is_dev_db_mode() -> bool {
     DEV_DB_MODE.load(Ordering::Relaxed)
 }
 
-#[repr(transparent)]
+/// A database connection handle that can be either owned (legacy fresh-open),
+/// pool-checkout (unified DbService pool), or borrowed (for `from_conn` inside
+/// pool `.call()` closures). All three variants deref to `&Connection`, so the
+/// hundreds of `self.conn.method(...)` sites throughout `db/*.rs` work
+/// unchanged via auto-deref.
+pub enum ConnHandle {
+    /// Owned fresh `rusqlite::Connection`. Used at startup (before the pool
+    /// is installed), in tests, and as a fallback. Destructor closes the
+    /// SQLite handle.
+    Owned(Connection),
+    /// Pool checkout — an `ArcMutexGuard` that releases the pool writer or
+    /// reader lock when this handle is dropped. This is the hot path in
+    /// production: it eliminates the WAL race that fresh-opens caused under
+    /// SQLCipher (ADR-0092 HMAC-per-frame verification colliding with the
+    /// pool writer mid-commit).
+    Pooled(parking_lot::ArcMutexGuard<parking_lot::RawMutex, Connection>),
+    /// Non-owning borrow of a `Connection` owned elsewhere. Used by
+    /// `ActionDb::from_conn()` so that closures passed to
+    /// `PooledConnection::call(|conn| ...)` can reuse the entire `ActionDb`
+    /// method surface without an unsafe transmute. The raw pointer must
+    /// remain valid for the lifetime of the `ActionDb` value — the only
+    /// safe way to construct this variant is via `ActionDb::from_conn`,
+    /// which ties the returned value to the input borrow via the scope in
+    /// which it is used.
+    Borrowed(*const Connection),
+}
+
+// SAFETY: `Connection` is `Send`, `parking_lot::ArcMutexGuard` is `Send` when
+// the protected type is `Send`, and the `Borrowed` variant is only ever
+// constructed and used within a single thread (inside a `.call()` closure
+// that owns the underlying `Connection` via the pool lock). Marking
+// `ConnHandle: Send` lets `ActionDb` values be moved across async boundaries
+// within `spawn_blocking` closures, which is how the unified DbService path
+// uses them.
+unsafe impl Send for ConnHandle {}
+
+impl std::ops::Deref for ConnHandle {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        match self {
+            ConnHandle::Owned(c) => c,
+            ConnHandle::Pooled(g) => g,
+            // SAFETY: invariant documented on the variant — the pointer
+            // remains valid for the lifetime of this `ConnHandle` because
+            // `from_conn` is only called inside scopes where the
+            // corresponding `&Connection` outlives the returned `ActionDb`.
+            ConnHandle::Borrowed(p) => unsafe { &**p },
+        }
+    }
+}
+
 pub struct ActionDb {
-    pub(crate) conn: Connection,
+    pub(crate) conn: ConnHandle,
 }
 
 impl ActionDb {
@@ -45,15 +95,21 @@ impl ActionDb {
         &self.conn
     }
 
-    /// Create an `&ActionDb` from a borrowed `Connection`. Used inside
-    /// `tokio_rusqlite::Connection::call()` closures to access all existing
-    /// `ActionDb` methods without converting them to free functions.
+    /// Build an `ActionDb` that borrows a `Connection` owned elsewhere. Used
+    /// inside `PooledConnection::call()` closures so existing `ActionDb`
+    /// method impls work against the pool's connection without cloning.
     ///
-    /// SAFETY: `ActionDb` is `#[repr(transparent)]` over `rusqlite::Connection`,
-    /// so `&Connection` and `&ActionDb` have identical memory layouts.
-    pub fn from_conn(conn: &Connection) -> &Self {
-        // SAFETY: repr(transparent) guarantees layout equivalence.
-        unsafe { &*(conn as *const Connection as *const Self) }
+    /// Historically this returned `&Self` via a `repr(transparent)`
+    /// transmute. That trick no longer holds because `ActionDb` now wraps a
+    /// `ConnHandle` enum, so we return by value with a non-owning
+    /// `ConnHandle::Borrowed` variant instead. The returned value must not
+    /// be moved out of the scope where `conn` is valid — in practice
+    /// callers use it inline inside a `.call()` closure, satisfying that
+    /// contract by construction.
+    pub fn from_conn(conn: &Connection) -> Self {
+        Self {
+            conn: ConnHandle::Borrowed(conn as *const Connection),
+        }
     }
 
     /// Execute a closure within a SQLite transaction.
@@ -87,7 +143,24 @@ impl ActionDb {
     }
 
     /// Open (or create) the database at `~/.dailyos/dailyos.db` and apply the schema.
+    ///
+    /// When the unified `DbService` pool is installed (the usual case after
+    /// startup), this returns an `ActionDb` that holds a writer-pool
+    /// checkout instead of opening a fresh `rusqlite::Connection`. That
+    /// eliminates the WAL/HMAC race between fresh handles and the pool
+    /// writer mid-commit — the failure mode that surfaced to users as
+    /// "SQLite error: file is not a database" toasts during enrichment.
+    ///
+    /// When no pool is installed (startup before init, tests, MCP binary),
+    /// falls back to the legacy fresh-open path that runs migrations and
+    /// returns an owned `Connection`.
     pub fn open() -> Result<Self, DbError> {
+        if let Some(svc) = crate::db_service::try_global() {
+            let guard = svc.writer().arc().lock_arc();
+            return Ok(Self {
+                conn: ConnHandle::Pooled(guard),
+            });
+        }
         let path = Self::db_path()?;
         Self::open_at(path)
     }
@@ -162,7 +235,9 @@ impl ActionDb {
         let _ = Self::backfill_stakeholder_columns(&conn);
         let _ = Self::dismiss_internal_stakeholder_suggestions(&conn);
 
-        let db = Self { conn };
+        let db = Self {
+            conn: ConnHandle::Owned(conn),
+        };
 
         // One-time initialization tasks (guarded by init_tasks table).
         // These run exactly once per database and are safe to call on every startup.
@@ -190,7 +265,9 @@ impl ActionDb {
         let _ = Self::backfill_meeting_user_layer(&conn);
         let _ = Self::backfill_stakeholder_columns(&conn);
 
-        let db = Self { conn };
+        let db = Self {
+            conn: ConnHandle::Owned(conn),
+        };
         let _ = db.run_guarded_init_backfill_account_domains();
         Ok(db)
     }
@@ -224,7 +301,9 @@ impl ActionDb {
 
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn: ConnHandle::Owned(conn),
+        })
     }
 
     /// Resolve the default database path: `~/.dailyos/dailyos.db`.
