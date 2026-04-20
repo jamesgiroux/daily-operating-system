@@ -964,6 +964,109 @@ pub async fn dismiss_stakeholder_suggestion(
 }
 
 // =============================================================================
+// DOS-258 Lane F: Pending stakeholder review queue
+// =============================================================================
+
+/// Row returned by get_pending_stakeholder_suggestions.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct PendingStakeholderRow {
+    pub person_id: String,
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub confidence: Option<f64>,
+    pub data_source: Option<String>,
+}
+
+/// Get pending stakeholder suggestions (status='pending_review') for an account.
+///
+/// Returns rows ordered by confidence DESC (highest-confidence first) then
+/// by created_at DESC so the most actionable items are at the top of the queue.
+#[tauri::command]
+pub async fn get_pending_stakeholder_suggestions(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<PendingStakeholderRow>, String> {
+    state
+        .db_read(move |db| {
+            let mut stmt = db.conn.prepare(
+                "SELECT as_.person_id, p.name, p.email, as_.confidence, as_.data_source
+                 FROM account_stakeholders as_
+                 JOIN people p ON p.id = as_.person_id
+                 WHERE as_.account_id = ?1 AND as_.status = 'pending_review'
+                 ORDER BY as_.confidence DESC NULLS LAST, as_.created_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(rusqlite::params![account_id], |row| {
+                    Ok(PendingStakeholderRow {
+                        person_id: row.get(0)?,
+                        name: row.get(1)?,
+                        email: row.get(2)?,
+                        confidence: row.get(3)?,
+                        data_source: row.get(4)?,
+                    })
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(rows)
+        })
+        .await
+}
+
+/// Confirm a pending_review stakeholder: promotes status to 'active'.
+///
+/// TODO(Lane-C): replace this inline SQL with a call to
+/// services::entity_linking::confirm_stakeholder_suggestion once that
+/// service stub is implemented.
+#[tauri::command]
+pub async fn confirm_pending_stakeholder(
+    account_id: String,
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| {
+            db.conn
+                .execute(
+                    "UPDATE account_stakeholders
+                     SET status = 'active'
+                     WHERE account_id = ?1 AND person_id = ?2 AND status = 'pending_review'",
+                    rusqlite::params![account_id, person_id],
+                )
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        })
+        .await
+}
+
+/// Dismiss a pending_review stakeholder: sets status to 'dismissed'.
+///
+/// TODO(Lane-C): replace this inline SQL with a call to
+/// services::entity_linking::dismiss_stakeholder_suggestion once that
+/// service stub is implemented.
+#[tauri::command]
+pub async fn dismiss_pending_stakeholder(
+    account_id: String,
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| {
+            db.conn
+                .execute(
+                    "UPDATE account_stakeholders
+                     SET status = 'dismissed'
+                     WHERE account_id = ?1 AND person_id = ?2 AND status = 'pending_review'",
+                    rusqlite::params![account_id, person_id],
+                )
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        })
+        .await
+}
+
+// =============================================================================
 // I124: Content Index
 // =============================================================================
 
