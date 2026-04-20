@@ -9,7 +9,17 @@
 
 ## Context
 
-DailyOS today is a single-user native macOS app. Every user's SQLite database is encrypted at rest with a key held in the macOS Keychain ([ADR-0092](0092-data-security-at-rest-and-operational-hardening.md)). There is no server-side component holding user content. This is a strong posture — it is what lets us tell a prospective customer "your content stays on your laptop" without asterisks.
+DailyOS today is a single-user native macOS app. Every user's SQLite database is encrypted at rest with a key held in the macOS Keychain ([ADR-0092](0092-data-security-at-rest-and-operational-hardening.md)). There is no server-side component holding user content. This is a strong posture — it lets us tell a prospective customer "your content stays on your laptop" as a precise claim about *DailyOS's own server-side components* (which are none, in v1.4.0).
+
+**Precise wording required — 2026-04-20 update (outside voice finding #2).** "Stays on your laptop" is not accurate without qualification when Glean is the intelligence provider (per [ADR-0100](0100-glean-first-intelligence-architecture.md)). Glean's MCP chat tool receives prompts, returns completions, and sees the user's Glean-connected source data (Salesforce, Zendesk, Gong, Slack) in the Glean infrastructure the customer has already contracted with. That is not DailyOS control-plane — it is the user's pre-existing relationship with Glean — but it's also not "on the laptop."
+
+The precise claims that survive enterprise security review:
+
+- **DailyOS's own server-side components** see no user content (not now; never without ADR amendment).
+- **DailyOS's local app** stores all user content encrypted on the user's device ([ADR-0092](0092-data-security-at-rest-and-operational-hardening.md)).
+- **Third-party intelligence providers** (Glean today, Anthropic/OpenAI/Ollama potentially via [ADR-0091](0091-intelligence-provider-abstraction.md)) see whatever the user's session sends them — prompts, partial context, completions. The user contracts with these providers independently. DailyOS routes to whichever provider the user has configured; DailyOS itself never stores the provider's responses beyond what lives locally.
+
+Sales conversations should use the precise claim ("DailyOS never sees your content server-side; your content is stored encrypted on your device; intelligence computation runs through providers you already trust"), not the shorter claim that was imprecise about Glean's role.
 
 Two forces are now pushing on that posture simultaneously:
 
@@ -49,6 +59,25 @@ The control plane — whatever server component DailyOS eventually operates for 
 The rule is binary. A feature that needs a content-side operation performs that operation locally on the user's device; the result stays local. The control plane may be told "user completed task X" with no payload; it may not be told "user's task X produced output Y."
 
 The one permitted aggregate crossing the line is operational telemetry — how many abilities invoked today, approximate token counts, error rates. These are counts with no entity references. Rendering decisions, content previews, "recent activity" feeds — none of these live on the control plane.
+
+**Permitted: user-opted-in anonymous aggregate telemetry (new category, 2026-04-20).** Per the outside voice finding that population-level metrics are needed to validate the harness bet, this ADR permits a specific additional class: telemetry the user explicitly opts into, containing only counts and category flags (never entity references, never content, never claim text), keyed on a non-reversible anonymized install ID. Examples of permitted metrics in this class:
+
+- Per-ability invocation count, duration p50/p95, outcome distribution (success/error/warn).
+- Runtime evaluator composite score distribution per ability (no critique text, no output hashes).
+- Per-signal-type emission counts.
+- Glean path availability and p95 latency.
+- Ghost-resurrection incident count (just the count; no context).
+- Anonymized install ID (a random UUID generated once at first boot, stored locally; never tied to user identity).
+
+Opt-in is off by default. Users must explicitly enable via a settings UI that explains what's sent and what isn't. Enabling triggers a visible indicator. Disabling is always available and takes effect immediately.
+
+**Forbidden even in opt-in mode:**
+
+- Anything content-derived beyond counts (e.g., "claim body lengths" is forbidden even if anonymized; only "claim count" is permitted).
+- Anything that could reverse-engineer entity identity (e.g., "unique account name count" is OK; "hash of account names" is not).
+- Anything tied to user identity, email, or stable non-anonymous ID.
+
+Classification rationale: this is metadata about *product usage*, not metadata about *user entities*. The distinction in §3 already separated metadata about user actions (permitted) from metadata about entities (local-only). Opt-in aggregate telemetry falls into the former — it's about user actions in aggregate, not about the entities they act on.
 
 ### 2. Why this boundary holds under future pressure
 
@@ -185,6 +214,26 @@ This means [ADR-0117](0117-publish-boundary-pencil-and-pen.md) is now strategica
 A follow-on decision before the first enterprise conversation: what destinations ship in v1.4.2's first publish ability beyond P2. The publish framework in [ADR-0117](0117-publish-boundary-pencil-and-pen.md) R1.11 already supports this extension; enterprise destination set is a scope question, not an architectural one.
 
 This commitment is not revisable by routine PR — amendment requires founder approval.
+
+### Update — 2026-04-20 — Publish is reporting, not team intelligence (outside voice)
+
+The codex outside voice on the aggregate v1.4.0 plan surfaced a sharper challenge: **publish is reporting, not team intelligence.** If DailyOS's substrate succeeds and produces trusted, provenanced, per-user customer intelligence, the enterprise demand will not be "let me export a snapshot" — it will be "let our team see the same account state." Publish (user-initiated, per-user, snapshot-based) does not solve that. Per-user SQLite forever (D1) + publish-as-export forecloses the shared-operational-truth path structurally.
+
+The commitment to the metadata-only boundary stands. What changes: the **story about how enterprise visibility gets served** is acknowledged as incomplete. Publish is one path (reporting, exports, scheduled snapshots). A second path is needed for shared team operational truth — one that respects the boundary (content never leaves the device without user intent) but enables team-level composition of per-user state.
+
+That second path is open architecture. Filed as [ADR-0121](0121-team-intelligence-architecture.md) (Open) as a forward-looking placeholder with the problem framing and option space. Implementation deferred; decision deferred. Acknowledged as strategic risk in the v1.4.0 strategy doc signature block.
+
+**What does NOT change:**
+
+- D1 (per-user SQLite forever) remains the v1.4.0/1.5.0 posture. Team intelligence architecture, if/when it ships, will not violate it without founder approval + compensating control.
+- D2 (firm metadata-only commitment) remains.
+- Publish framework ([ADR-0117](0117-publish-boundary-pencil-and-pen.md)) remains as the reporting/export channel.
+
+**What does change:**
+
+- ADR-0117's "Strategic Elevation" section is corrected to remove the overclaim that publish answers the full enterprise question (separate amendment to ADR-0117).
+- Strategy doc records team intelligence as an open strategic tension, not a solved one.
+- The next commercial touchpoint asking for team intelligence triggers [ADR-0121](0121-team-intelligence-architecture.md) work, not an ADR-0116 softening.
 
 ---
 
