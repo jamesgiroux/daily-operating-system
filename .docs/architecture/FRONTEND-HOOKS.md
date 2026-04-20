@@ -3,7 +3,7 @@
 > Registry of all React hooks in `src/hooks/`.
 > **Auto-generated:** 2026-04-19 by `.docs/generators/gen-frontend-hooks.sh`
 
-**42** hook files | **5359** total lines
+**43** hook files | **5554** total lines
 
 ---
 
@@ -12,10 +12,11 @@
 | Hook | File | Lines | Tauri Commands | Events Listened |
 |------|------|-------|---------------|-----------------|
 | `useIsMobile` | `use-mobile.ts` | 19 | — | — |
-| `useAccountDetail` | `useAccountDetail.ts` | 722 | archive_account, create_action, create_child_account, dismiss_intelligence_item, dismiss_recommendation, enrich_account, get_account_detail, get_account_events, get_entity_files, index_entity_files, mark_commitment_done, record_account_event, retry_risk_briefing, set_user_health_sentiment, track_recommendation, update_account_programs | — |
-| `useAccountDetailPage` | `useAccountDetailPage.tsx` | 282 | get_account_ancestors, get_entity_metadata, update_technical_footprint_field | — |
+| `useAccountDetail` | `useAccountDetail.ts` | 635 | archive_account, create_action, create_child_account, enrich_account, get_account_detail, get_account_events, get_entity_files, index_entity_files, record_account_event, retry_risk_briefing, set_user_health_sentiment, update_account_programs | — |
+| `useAccountDetailPage` | `useAccountDetailPage.tsx` | 281 | get_account_ancestors, get_entity_metadata, update_technical_footprint_field | — |
 | `useAccountFieldSave` | `useAccountFieldSave.ts` | 127 | accept_account_field_conflict, dismiss_account_field_conflict, update_account_field, update_entity_metadata | — |
 | `useAccountFields` | `useAccountFields.ts` | 137 | update_account_field | — |
+| `useAccountWorkData` | `useAccountWorkData.ts` | 283 | accept_suggested_action, complete_action, get_account_commitments, get_account_recently_landed, get_account_suggestions, reject_suggested_action, update_action | — |
 | `useActions` | `useActions.ts` | 223 | complete_action, create_action, get_actions_from_db, reopen_action | — |
 | `useActivePreset` | `useActivePreset.ts` | 23 | get_active_preset | — |
 | `useActivePreset` | `useActivePreset.tsx` | 53 | get_active_preset | preset-changed |
@@ -61,11 +62,13 @@
 All Tauri commands invoked from hooks:
 
 - `get_entity_files` (5 hooks)
+- `reject_suggested_action` (4 hooks)
 - `create_action` (4 hooks)
 - `update_account_field` (3 hooks)
 - `index_entity_files` (3 hooks)
 - `get_stakeholder_suggestions` (3 hooks)
 - `get_active_preset` (3 hooks)
+- `complete_action` (3 hooks)
 - `add_account_team_member` (3 hooks)
 - `update_project_field` (2 hooks)
 - `signal_window_focus` (2 hooks)
@@ -74,10 +77,10 @@ All Tauri commands invoked from hooks:
 - `get_person_detail` (2 hooks)
 - `get_inbox_files` (2 hooks)
 - `get_calendar_events` (2 hooks)
-- `complete_action` (2 hooks)
 - `archive_project` (2 hooks)
 - `archive_person` (2 hooks)
 - `archive_account` (2 hooks)
+- `accept_suggested_action` (2 hooks)
 - `update_user_entity_field` (1 hooks)
 - `update_user_context_entry` (1 hooks)
 - `update_technical_footprint_field` (1 hooks)
@@ -87,9 +90,9 @@ All Tauri commands invoked from hooks:
 - `update_intelligence_field` (1 hooks)
 - `update_entity_metadata` (1 hooks)
 - `update_entity_context_entry` (1 hooks)
+- `update_action` (1 hooks)
 - `update_account_programs` (1 hooks)
 - `unlink_person_entity` (1 hooks)
-- `track_recommendation` (1 hooks)
 - `submit_intelligence_feedback` (1 hooks)
 - `submit_intelligence_correction` (1 hooks)
 - `start_google_auth` (1 hooks)
@@ -103,11 +106,9 @@ All Tauri commands invoked from hooks:
 - `reopen_action` (1 hooks)
 - `remove_stakeholder_role` (1 hooks)
 - `remove_account_team_member` (1 hooks)
-- `reject_suggested_action` (1 hooks)
 - `refresh_emails` (1 hooks)
 - `record_account_event` (1 hooks)
 - `merge_people` (1 hooks)
-- `mark_commitment_done` (1 hooks)
 - `link_person_entity` (1 hooks)
 - `install_demo_data` (1 hooks)
 - `get_workflow_status` (1 hooks)
@@ -129,16 +130,17 @@ All Tauri commands invoked from hooks:
 - `get_config` (1 hooks)
 - `get_app_state` (1 hooks)
 - `get_actions_from_db` (1 hooks)
+- `get_account_suggestions` (1 hooks)
+- `get_account_recently_landed` (1 hooks)
 - `get_account_events` (1 hooks)
 - `get_account_detail` (1 hooks)
+- `get_account_commitments` (1 hooks)
 - `get_account_ancestors` (1 hooks)
 - `enrich_project` (1 hooks)
 - `enrich_person` (1 hooks)
 - `enrich_account` (1 hooks)
 - `dismiss_stakeholder_suggestion` (1 hooks)
-- `dismiss_recommendation` (1 hooks)
 - `dismiss_meeting_prompt` (1 hooks)
-- `dismiss_intelligence_item` (1 hooks)
 - `dismiss_account_field_conflict` (1 hooks)
 - `disconnect_google` (1 hooks)
 - `disconnect_glean` (1 hooks)
@@ -155,7 +157,6 @@ All Tauri commands invoked from hooks:
 - `check_claude_status` (1 hooks)
 - `capture_meeting_outcome` (1 hooks)
 - `add_stakeholder_role` (1 hooks)
-- `accept_suggested_action` (1 hooks)
 - `accept_stakeholder_suggestion` (1 hooks)
 - `accept_account_field_conflict` (1 hooks)
 
