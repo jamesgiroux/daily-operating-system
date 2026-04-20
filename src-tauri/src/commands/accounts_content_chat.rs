@@ -372,6 +372,92 @@ pub async fn set_user_health_sentiment(
         .await
 }
 
+/// DOS-269: Update the note on the latest sentiment journal row for an
+/// account rather than inserting a new history entry. This is the
+/// "Add more detail" flow — the user is augmenting the existing journal
+/// entry, not creating a new sentiment change. Falls back to insertion
+/// when no matching history row exists.
+#[tauri::command]
+pub async fn update_latest_sentiment_note(
+    account_id: String,
+    note: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<AccountDetailResult, String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_latest_sentiment_note(
+                db,
+                &app_state,
+                &account_id,
+                note.as_deref(),
+            )
+        })
+        .await
+}
+
+/// DOS-269: Persist a triage-card snooze. `triage_key` is the frontend's
+/// stable card id; `days` is the snooze window (default 14 at the call
+/// site). Resolves silently — the UI refreshes after the call.
+#[tauri::command]
+pub async fn snooze_triage_item(
+    entity_type: String,
+    entity_id: String,
+    triage_key: String,
+    days: Option<i64>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| {
+            crate::services::accounts::snooze_triage_item(
+                db,
+                &entity_type,
+                &entity_id,
+                &triage_key,
+                days.unwrap_or(14),
+            )
+        })
+        .await
+}
+
+/// DOS-269: Mark a triage card resolved. Permanent for the lifetime of the
+/// card key — re-enrichment that emits a new key will re-surface.
+#[tauri::command]
+pub async fn resolve_triage_item(
+    entity_type: String,
+    entity_id: String,
+    triage_key: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::resolve_triage_item(
+                db,
+                &app_state,
+                &entity_type,
+                &entity_id,
+                &triage_key,
+            )
+        })
+        .await
+}
+
+/// DOS-269: Return the active snooze/resolution rows for an entity so the
+/// frontend can hide matching triage cards.
+#[tauri::command]
+pub async fn list_triage_snoozes(
+    entity_type: String,
+    entity_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::services::accounts::TriageSnoozeRow>, String> {
+    state
+        .db_read(move |db| {
+            crate::services::accounts::list_triage_snoozes(db, &entity_type, &entity_id)
+        })
+        .await
+}
+
 /// DOS-228 Fix 3: Retry a failed (or re-run a prior) risk-briefing job.
 /// Returns immediately; the user should refetch `get_account_detail` to see
 /// the `risk_briefing_job` row progress through enqueued → running → complete.

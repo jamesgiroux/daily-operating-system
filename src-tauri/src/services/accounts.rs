@@ -1845,6 +1845,150 @@ pub fn set_user_health_sentiment(
     build_account_detail_result(db, account_id)
 }
 
+/// DOS-269: "Add more detail" — update the note on the newest sentiment
+/// history row whose sentiment matches the account's current value. No new
+/// history entry is appended. Falls back to `insert_sentiment_journal_entry`
+/// when there is no matching row yet (first-ever note for this value).
+/// Emits the same `field_updated` signal as `set_user_health_sentiment` so
+/// the Intelligence Loop sees that the user touched this surface.
+pub fn update_latest_sentiment_note(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    note: Option<&str>,
+) -> Result<AccountDetailResult, String> {
+    let current_sentiment: Option<String> = db
+        .get_account(account_id)
+        .map_err(|e| e.to_string())?
+        .and_then(|a| a.user_health_sentiment);
+    let sentiment = current_sentiment.ok_or_else(|| {
+        "Cannot update sentiment note before a sentiment value is set".to_string()
+    })?;
+
+    let updated = db
+        .update_latest_sentiment_note(account_id, note)
+        .map_err(|e| e.to_string())?;
+
+    if !updated {
+        // No prior history row for this sentiment — insert a fresh one so
+        // the note has somewhere to live. Computed-band snapshot mirrors
+        // `set_user_health_sentiment` for divergence parity.
+        let (computed_band, computed_score) = db
+            .get_account(account_id)
+            .map_err(|e| e.to_string())?
+            .map(|acct| {
+                let health = crate::intelligence::health_scoring::compute_account_health(
+                    db, &acct, None,
+                );
+                (Some(health.band), Some(health.score))
+            })
+            .unwrap_or((None, None));
+        db.insert_sentiment_journal_entry(
+            account_id,
+            &sentiment,
+            note,
+            computed_band.as_deref(),
+            computed_score,
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    // Emit annotation-level signal (user augmented their journal entry).
+    crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"field\":\"sentiment_note\",\"value\":\"{}\"}}",
+            sentiment
+        )),
+        0.8,
+        &state.intel_queue,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
+
+    build_account_detail_result(db, account_id)
+}
+
+/// DOS-269: Triage snooze / resolve persistence. Serializable row for the
+/// `list_triage_snoozes` command.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TriageSnoozeRow {
+    pub triage_key: String,
+    pub snoozed_until: Option<String>,
+    pub resolved_at: Option<String>,
+}
+
+/// DOS-269: Snooze a triage card for N days. `days` must be positive; the
+/// frontend default is 14.
+pub fn snooze_triage_item(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    triage_key: &str,
+    days: i64,
+) -> Result<(), String> {
+    let days = days.max(1);
+    let until = Utc::now() + chrono::Duration::days(days);
+    db.snooze_triage_item(entity_type, entity_id, triage_key, &until.to_rfc3339())
+        .map_err(|e| e.to_string())
+}
+
+/// DOS-269: Mark a triage card resolved. Permanent for that card id.
+/// Emits a low-weight field_updated signal so the Intelligence Loop
+/// records that the user acted on this card (parity with DOS-41 confirm).
+pub fn resolve_triage_item(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
+    entity_type: &str,
+    entity_id: &str,
+    triage_key: &str,
+) -> Result<(), String> {
+    db.resolve_triage_item(entity_type, entity_id, triage_key)
+        .map_err(|e| e.to_string())?;
+    // Best-effort signal emit — triage resolution is user-intent evidence
+    // the card was accurate + actioned. Failure should not rollback.
+    let _ = crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        entity_type,
+        entity_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"field\":\"triage_resolved\",\"triage_key\":\"{}\"}}",
+            triage_key
+        )),
+        0.8,
+        &state.intel_queue,
+    );
+    Ok(())
+}
+
+/// DOS-269: Return all snooze/resolve rows for an entity. Rendering-time
+/// filter decides whether a snooze is still active.
+pub fn list_triage_snoozes(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<Vec<TriageSnoozeRow>, String> {
+    let rows = db
+        .list_triage_snoozes(entity_type, entity_id)
+        .map_err(|e| e.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(triage_key, snoozed_until, resolved_at)| TriageSnoozeRow {
+            triage_key,
+            snoozed_until,
+            resolved_at,
+        })
+        .collect())
+}
+
 /// DOS-228 Wave 0e Fix 2: Spawn the SINGLE ordered lifecycle task for a
 /// risk briefing attempt.
 ///
