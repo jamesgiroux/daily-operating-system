@@ -1636,11 +1636,27 @@ pub async fn link_meeting_entity_with_prep_queue(
     let entity_type_s = entity_type.to_string();
     state
         .db_write(move |db| {
+            // Legacy write (meeting_entities table) — kept during cutover window.
             db.link_meeting_entity(&meeting_id_s, &entity_id_s, &entity_type_s)
                 .map_err(|e| e.to_string())?;
             let _ = db.conn_ref().execute(
                 "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
+            );
+            // DOS-258 dual-write: record user override in linked_entities_raw (P1 source).
+            let now = chrono::Utc::now().to_rfc3339();
+            let version = db.get_entity_graph_version().unwrap_or(0);
+            let _ = db.conn_ref().execute(
+                "DELETE FROM linked_entities_raw \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1 AND role = 'primary'",
+                rusqlite::params![meeting_id_s],
+            );
+            let _ = db.conn_ref().execute(
+                "INSERT OR REPLACE INTO linked_entities_raw \
+                 (owner_type, owner_id, entity_id, entity_type, role, source, \
+                  rule_id, confidence, graph_version, created_at) \
+                 VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, ?4, ?5)",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s, version, now],
             );
             Ok(())
         })
@@ -1679,6 +1695,7 @@ pub async fn dismiss_meeting_entity(
     let dismissed_by_s = dismissed_by.map(|s| s.to_string());
     state
         .db_write(move |db| {
+            // Legacy write — kept during cutover window.
             db.record_meeting_entity_dismissal(
                 &meeting_id_s,
                 &entity_id_s,
@@ -1691,6 +1708,20 @@ pub async fn dismiss_meeting_entity(
             let _ = db.conn_ref().execute(
                 "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
+            );
+            // DOS-258 dual-write: tombstone in linking_dismissals + mark raw row.
+            let now = chrono::Utc::now().to_rfc3339();
+            let _ = db.conn_ref().execute(
+                "INSERT OR IGNORE INTO linking_dismissals \
+                 (owner_type, owner_id, entity_id, entity_type, dismissed_by, created_at) \
+                 VALUES ('meeting', ?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s, dismissed_by_s, now],
+            );
+            let _ = db.conn_ref().execute(
+                "UPDATE linked_entities_raw SET source = 'user_dismissed' \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                   AND entity_id = ?2 AND entity_type = ?3",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
             );
             Ok(())
         })
@@ -1725,8 +1756,25 @@ pub async fn restore_meeting_entity(
     let entity_type_s = entity_type.to_string();
     let removed = state
         .db_write(move |db| {
-            db.remove_meeting_entity_dismissal(&meeting_id_s, &entity_id_s, &entity_type_s)
-                .map_err(|e| e.to_string())
+            // Legacy write — kept during cutover window.
+            let r = db
+                .remove_meeting_entity_dismissal(&meeting_id_s, &entity_id_s, &entity_type_s)
+                .map_err(|e| e.to_string())?;
+            // DOS-258 dual-write: remove linking_dismissals tombstone.
+            let _ = db.conn_ref().execute(
+                "DELETE FROM linking_dismissals \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                   AND entity_id = ?2 AND entity_type = ?3",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
+            );
+            let _ = db.conn_ref().execute(
+                "UPDATE linked_entities_raw SET source = 'rule:restored' \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                   AND entity_id = ?2 AND entity_type = ?3 \
+                   AND source = 'user_dismissed'",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
+            );
+            Ok(r)
         })
         .await?;
     log::info!(
@@ -1749,11 +1797,35 @@ pub async fn unlink_meeting_entity_with_prep_queue(
     let entity_id_s = entity_id.to_string();
     state
         .db_write(move |db| {
+            // Legacy write — kept during cutover window.
             db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
                 .map_err(|e| e.to_string())?;
             let _ = db.conn_ref().execute(
                 "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
+            );
+            // DOS-258 dual-write: unlink = dismiss in the new model.
+            // Look up entity_type from meeting_entities first; fall back to 'account'.
+            let entity_type: String = db
+                .conn_ref()
+                .query_row(
+                    "SELECT entity_type FROM meeting_entities \
+                     WHERE meeting_id = ?1 AND entity_id = ?2 LIMIT 1",
+                    rusqlite::params![meeting_id_s, entity_id_s],
+                    |row| row.get(0),
+                )
+                .unwrap_or_else(|_| "account".to_string());
+            let now = chrono::Utc::now().to_rfc3339();
+            let _ = db.conn_ref().execute(
+                "INSERT OR IGNORE INTO linking_dismissals \
+                 (owner_type, owner_id, entity_id, entity_type, created_at) \
+                 VALUES ('meeting', ?1, ?2, ?3, ?4)",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type, now],
+            );
+            let _ = db.conn_ref().execute(
+                "UPDATE linked_entities_raw SET source = 'user_dismissed' \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1 AND entity_id = ?2",
+                rusqlite::params![meeting_id_s, entity_id_s],
             );
             Ok(())
         })
