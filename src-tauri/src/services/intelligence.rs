@@ -224,6 +224,9 @@ pub async fn enrich_entity(
         {
             let provider =
                 crate::intelligence::glean_provider::GleanIntelligenceProvider::new(endpoint);
+            // This path is the services::intelligence manual-refresh entry,
+            // always user-initiated — pass is_background=false so the UI
+            // gets degraded/fallback toasts.
             match provider
                 .enrich_entity(
                     &input.entity_id,
@@ -232,6 +235,7 @@ pub async fn enrich_entity(
                     ctx,
                     input.relationship.as_deref(),
                     app_handle,
+                    false,
                 )
                 .await
             {
