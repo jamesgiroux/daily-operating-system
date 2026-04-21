@@ -1081,44 +1081,24 @@ pub fn accept_account_field_conflict(
     }
 
     if let Some(sig_id) = signal_id {
-        let feedback_id = uuid::Uuid::new_v4().to_string();
-        let feedback_key = account_field_conflict_feedback_key(field, suggested_value);
-        let context = serde_json::json!({
-            "source": source,
-            "signal_id": sig_id,
-            "suggested_value": suggested_value,
-        })
-        .to_string();
-        db.insert_intelligence_feedback(
-            &crate::db::intelligence_feedback::FeedbackInput {
-                id: &feedback_id,
-                entity_id: account_id,
-                entity_type: "account",
-                field: &feedback_key,
-                feedback_type: "positive",
-                previous_value: None,
-                context: Some(&context),
-            },
-        )?;
-
         let accepted_signal_id =
             format!("account-field-conflict-accepted-{}", uuid::Uuid::new_v4());
         let _ = crate::signals::bus::supersede_signal(db, sig_id, &accepted_signal_id);
     }
 
     // I645: Record feedback event for accepted field conflict.
-    let _ = db.record_feedback_event(
-        account_id,
-        "account",
-        field,
-        signal_id,
-        "accept",
-        Some(source),
-        Some("field_conflict"),
-        None,
-        Some(suggested_value),
-        None,
-    );
+    let _ = db.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
+        entity_id: account_id,
+        entity_type: "account",
+        field_key: field,
+        item_key: signal_id,
+        feedback_type: "accept",
+        source_system: Some(source),
+        source_kind: Some("field_conflict"),
+        previous_value: None,
+        corrected_value: Some(suggested_value),
+        reason: None,
+    });
 
     let _ = db.upsert_signal_weight(
         source,
@@ -1162,39 +1142,19 @@ pub fn dismiss_account_field_conflict(
     source: &str,
     suggested_value: Option<&str>,
 ) -> Result<AccountDetailResult, String> {
-    let feedback_id = uuid::Uuid::new_v4().to_string();
-    let feedback_key = account_field_conflict_feedback_key(field, suggested_value.unwrap_or(""));
-    let context = serde_json::json!({
-        "source": source,
-        "signal_id": signal_id,
-        "suggested_value": suggested_value,
-    })
-    .to_string();
-    db.insert_intelligence_feedback(
-        &crate::db::intelligence_feedback::FeedbackInput {
-            id: &feedback_id,
-            entity_id: account_id,
-            entity_type: "account",
-            field: &feedback_key,
-            feedback_type: "negative",
-            previous_value: None,
-            context: Some(&context),
-        },
-    )?;
-
     // I645: Record feedback event + suppression tombstone for rejected field conflict.
-    let _ = db.record_feedback_event(
-        account_id,
-        "account",
-        field,
-        Some(signal_id),
-        "reject",
-        Some(source),
-        Some("field_conflict"),
-        None,
-        suggested_value,
-        None,
-    );
+    let _ = db.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
+        entity_id: account_id,
+        entity_type: "account",
+        field_key: field,
+        item_key: Some(signal_id),
+        feedback_type: "reject",
+        source_system: Some(source),
+        source_kind: Some("field_conflict"),
+        previous_value: None,
+        corrected_value: suggested_value,
+        reason: None,
+    });
     let _ = db.create_suppression_tombstone(
         account_id,
         field,

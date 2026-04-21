@@ -416,9 +416,8 @@ export interface SuggestionCardProps {
   rationale: string;
   provenance?: { label: string; href?: string }[];
   onAccept?: () => void;
-  onDismiss?: () => void;
   accepting?: boolean;
-  dismissing?: boolean;
+  feedbackSlot?: ReactNode;
 }
 
 export function SuggestionCard({
@@ -427,9 +426,8 @@ export function SuggestionCard({
   rationale,
   provenance,
   onAccept,
-  onDismiss,
   accepting,
-  dismissing,
+  feedbackSlot,
 }: SuggestionCardProps) {
   return (
     <article className={s.recCard}>
@@ -450,11 +448,8 @@ export function SuggestionCard({
         <WorkButton kind="accent" onClick={onAccept} disabled={accepting}>
           {accepting ? "Accepting…" : "Accept → create commitment"}
         </WorkButton>
-        <WorkButton kind="muted" onClick={onDismiss} disabled={dismissing}>
-          {dismissing ? "Dismissing…" : "Dismiss (teaches system)"}
-        </WorkButton>
-        <span className={s.recDismissHint}>Dismissals feed Bayesian weights</span>
       </div>
+      {feedbackSlot}
     </article>
   );
 }

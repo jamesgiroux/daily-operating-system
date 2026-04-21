@@ -12,6 +12,7 @@ import { useParams } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useAccountDetailPage } from "@/hooks/useAccountDetailPage";
+import { useEntitySuppressions } from "@/hooks/useEntitySuppressions";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
@@ -21,6 +22,7 @@ import { QuoteWallPlaceholder } from "@/components/editorial/QuoteWallPlaceholde
 import { AboutThisDossier } from "@/components/context/AboutThisDossier";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { MarginSection } from "@/components/editorial/MarginSection";
+import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import { AccountHero } from "@/components/account/AccountHero";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
@@ -97,6 +99,7 @@ export default function AccountDetailPage() {
   if (page.error || !page.detail) return <EditorialError message={page.error ?? "Account not found"} onRetry={page.acct.load} />;
 
   const { detail, intelligence, acct, preset, activeView } = page;
+  const suppressions = useEntitySuppressions(detail.id);
   const fb = page.feedback;
 
   // ─── View 1: Health & Outlook ───────────────────────────────────────────
@@ -122,7 +125,7 @@ export default function AccountDetailPage() {
   const renderHealthView = () => {
     const findings = intelligence?.consistencyFindings ?? [];
     const glean = acct.gleanSignals;
-    const showTriage = hasTriageContent(intelligence, glean);
+    const showTriage = hasTriageContent(intelligence, glean, page.sentiment.current);
     const showDivergence = hasDivergenceContent(findings, glean);
     const isFineState = !!intelligence && !showTriage && !showDivergence;
 
@@ -133,6 +136,7 @@ export default function AccountDetailPage() {
             running/failed states with a retry affordance on failure. */}
         <RiskBriefingStatus
           job={acct.riskBriefingJob}
+          accountId={detail.id}
           onRetry={acct.retryRiskBriefing}
         />
         {/* Chapter 1: Sentiment hero — "Your Assessment" in the mockup.
@@ -140,7 +144,7 @@ export default function AccountDetailPage() {
             buildHealthChapters → "your-assessment") resolves cleanly. */}
         <section id="your-assessment">
           <SentimentHero
-            view={acct.sentiment}
+            view={page.sentiment}
             onSetSentiment={acct.setUserHealthSentiment}
             onAcknowledgeStale={acct.acknowledgeSentimentStale}
             onUpdateNote={acct.updateSentimentNote}
@@ -158,6 +162,7 @@ export default function AccountDetailPage() {
               <TriageSection
                 intelligence={intelligence}
                 gleanSignals={glean}
+                sentiment={page.sentiment.current}
                 accountId={detail.id}
               />
             )}
@@ -472,6 +477,9 @@ export default function AccountDetailPage() {
   const renderWorkView = () => {
     const programs = acct.programs ?? [];
     const work = acct.work;
+    const visibleSuggestions = work.suggestions.filter(
+      (r) => !suppressions.isSuppressed(`work_suggestion:${r.id}`, r.title),
+    );
 
     // ── Programs & motions ──────────────────────────────────────────────
     // Standing states only — no due dates, not todos.
@@ -654,7 +662,7 @@ export default function AccountDetailPage() {
 
     const hasPrograms = activePrograms.length > 0;
     const hasCommitments = work.commitments.length > 0;
-    const hasSuggestions = work.suggestions.length > 0;
+    const hasSuggestions = visibleSuggestions.length > 0;
     const hasRecentlyLanded = recentlyLanded.length > 0;
     const hasReports = reports.length > 0;
     // Shared chapter: any open commitment with a Linear link present on the
@@ -697,25 +705,25 @@ export default function AccountDetailPage() {
         {/* Chapter 2: Suggestions — AI proposals, saffron background.
             DOS Work-tab Phase 3: backed by actions with status='backlog'.
             Accepting promotes to 'unstarted' (and surfaces in Commitments
-            when action_kind='commitment'); dismissing archives + tombstones
-            the commitment bridge when applicable. */}
+            when action_kind='commitment'); "No" archives the suggestion
+            and feeds back into the quality loop. */}
         {hasSuggestions && (
           <MarginSection id="suggestions" label={<>Sugges-<br/>tions</>}>
             <ChapterHeading
               title="Suggestions"
-              epigraph="AI proposals · accept or dismiss"
+              epigraph="AI proposals · accept or validate"
               freshness={
                 <ChapterFreshness
                   enrichedAt={intelligence?.enrichedAt}
                   fragments={[
-                    `${work.suggestions.length} suggestion${work.suggestions.length === 1 ? "" : "s"}`,
-                    "Accept or dismiss — dismissals teach the system",
+                    `${visibleSuggestions.length} suggestion${visibleSuggestions.length === 1 ? "" : "s"}`,
+                    "Use Yes / No to train quality; Accept promotes to commitments",
                   ]}
                 />
               }
             />
             <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-              {work.suggestions.map((r) => {
+              {visibleSuggestions.map((r) => {
                 const provenance: { label: string; href?: string }[] = [];
                 if (r.sourceLabel) provenance.push({ label: r.sourceLabel });
                 else if (r.sourceType) provenance.push({ label: r.sourceType });
@@ -727,9 +735,19 @@ export default function AccountDetailPage() {
                     rationale={r.context ?? ""}
                     provenance={provenance}
                     accepting={work.suggestionAcceptInFlight.has(r.id)}
-                    dismissing={work.suggestionDismissInFlight.has(r.id)}
                     onAccept={() => work.handleAcceptSuggestion(r.id)}
-                    onDismiss={() => work.handleDismissSuggestion(r.id)}
+                    feedbackSlot={
+                      <IntelligenceCorrection
+                        entityId={detail.id}
+                        entityType="account"
+                        field={`work_suggestion:${r.id}`}
+                        itemKey={r.title}
+                        onDismissed={() => {
+                          suppressions.markSuppressed(`work_suggestion:${r.id}`, r.title);
+                          return work.handleDismissSuggestion(r.id);
+                        }}
+                      />
+                    }
                   />
                 );
               })}
