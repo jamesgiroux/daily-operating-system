@@ -2,8 +2,8 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-04-20 by `.docs/generators/gen-command-reference.sh`
-**Registered in lib.rs:** ~384 commands
+**Auto-generated:** 2026-04-21 by `.docs/generators/gen-command-reference.sh`
+**Registered in lib.rs:** ~393 commands
 **Source files:** 11
 
 ---
@@ -22,6 +22,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `chat_query_entity` | yes | entity_id, question |
 | `chat_search_content` | yes | entity_id, query, top_k |
 | `confirm_lifecycle_change` | yes | change_id |
+| `confirm_pending_stakeholder` | yes | account_id, person_id |
 | `correct_account_product` | yes | account_id, product_id, name, status, source_to_penalize |
 | `correct_lifecycle_change` | yes | change_id, corrected_lifecycle, corrected_stage, notes |
 | `create_account` | yes | name, parent_id, account_type |
@@ -29,6 +30,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `create_internal_organization` | yes | company_name, domains, team_name, colleagues, existing_person_ids |
 | `create_team` | yes | name, description, owner_person_id |
 | `dismiss_account_field_conflict` | yes | account_id, field, signal_id, source, suggested_value |
+| `dismiss_pending_stakeholder` | yes | account_id, person_id |
 | `dismiss_stakeholder_suggestion` | yes | suggestion_id |
 | `enrich_account` | yes | account_id |
 | `export_briefing_html` | — | meeting_id, markdown |
@@ -41,6 +43,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `get_descendant_accounts` | yes | ancestor_id |
 | `get_entity_files` | yes | entity_id |
 | `get_internal_team_setup_status` | yes | — |
+| `get_pending_stakeholder_suggestions` | yes | account_id |
 | `get_person_stakeholder_roles` | yes | person_id |
 | `get_stakeholder_suggestions` | yes | account_id |
 | `index_entity_files` | yes | entity_type, entity_id |
@@ -90,7 +93,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `get_meeting_post_intelligence` | yes | meeting_id |
 | `get_next_meeting` | — | — |
 | `get_prediction_scorecard` | yes | meeting_id |
-| `get_suggested_actions` | yes | — |
+| `get_suggested_actions` | yes | show_all |
 | `list_dismissed_email_items` | yes | — |
 | `list_meeting_preps` | — | — |
 | `pin_email` | yes | email_id |
@@ -187,7 +190,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `delete_person_relationship` | yes | id |
 | `detect_smithery_settings` | yes | — |
 | `dev_explore_glean_tools` | yes | account_name |
-| `disconnect_glean` | — | — |
+| `disconnect_glean` | yes | — |
 | `disconnect_smithery` | — | — |
 | `discover_accounts_from_glean` | yes | — |
 | `dismiss_intelligence_item` | yes | entity_id, entity_type, field, item_text |
@@ -239,7 +242,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `set_clay_api_key` | — | key |
 | `set_clay_auto_enrich` | — | enabled |
 | `set_clay_enabled` | — | enabled |
-| `set_context_mode` | — | mode |
+| `set_context_mode` | yes | mode |
 | `set_google_drive_enabled` | — | enabled |
 | `set_granola_enabled` | — | enabled |
 | `set_granola_poll_interval` | — | minutes |
@@ -277,9 +280,12 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `add_meeting_entity` | yes | meeting_id, entity_id, entity_type, meeting_title, start_time, meeting_type_str |
 | `create_person` | yes | email, name, organization, role, relationship |
 | `delete_person` | yes | person_id |
+| `dismiss_entity_link` | yes | owner_type, owner_id, entity_id, entity_type |
 | `dismiss_meeting_entity` | yes | meeting_id, entity_id, entity_type |
 | `enrich_person` | yes | person_id |
 | `get_entity_feedback` | yes | entity_id, entity_type |
+| `get_entity_suppressions` | yes | entity_id |
+| `get_linked_entities_for_owner` | yes | owner_type, owner_id |
 | `get_meeting_attendees` | yes | meeting_id |
 | `get_meeting_entities` | yes | meeting_id |
 | `get_people` | yes | relationship |
@@ -288,12 +294,15 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `link_meeting_entity` | yes | meeting_id, entity_id, entity_type |
 | `link_person_entity` | yes | person_id, entity_id, relationship_type |
 | `merge_people` | yes | keep_id, remove_id |
+| `rebuild_account_domains` | yes | — |
 | `remove_account_keyword` | yes | account_id, keyword |
 | `remove_meeting_entity` | yes | meeting_id, entity_id, entity_type |
 | `remove_project_keyword` | yes | project_id, keyword |
+| `restore_entity_link` | yes | owner_type, owner_id, entity_id, entity_type |
 | `restore_meeting_entity` | yes | meeting_id, entity_id, entity_type |
 | `search_people` | yes | query |
-| `submit_intelligence_correction` | yes | entity_id, entity_type, field, action, corrected_value, annotation |
+| `set_entity_link_primary` | yes | owner_type, owner_id, entity_id, entity_type |
+| `submit_intelligence_correction` | yes | request |
 | `submit_intelligence_feedback` | yes | entity_id, entity_type, field, feedback_type, context |
 | `unlink_meeting_entity` | yes | meeting_id, entity_id |
 | `unlink_person_entity` | yes | person_id, entity_id |
