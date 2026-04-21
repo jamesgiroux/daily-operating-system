@@ -17,34 +17,40 @@ pub trait Rule: Send + Sync {
 const BROADCAST_ATTENDEE_THRESHOLD: usize = 50;
 const BROADCAST_RECIPIENT_THRESHOLD: usize = 20;
 
+/// Result of the Phase 1 suppression check.
+pub enum Phase1Result {
+    /// S1: self-meeting / declined. No facts, no primary.
+    Declined(LinkOutcome),
+    /// S2: all-hands / broadcast. **Facts still written** (spec AC#6), no primary.
+    Broadcast(LinkOutcome),
+    /// Not suppressed — continue to Phase 2+.
+    Continue,
+}
+
 /// Check Phase 1 suppression conditions.
 ///
-/// Returns `Ok(Some(outcome))` if the owner is suppressed and evaluation must
-/// stop. Returns `Ok(None)` to continue to Phase 2+. This is called by
-/// `evaluate()` BEFORE Phase 2 (person-stub creation) so that declined/self
-/// meetings don't generate person rows.
+/// The caller is responsible for calling `phase2_record_facts` for `Broadcast`
+/// (S2) but NOT for `Declined` (S1). This is called by `evaluate()` before
+/// Phase 2 so that self-meetings don't generate person rows.
 pub fn phase1_suppress(
     ctx: &LinkingContext,
     db: &ActionDb,
     trigger: Trigger,
-) -> Result<Option<LinkOutcome>, String> {
+) -> Result<Phase1Result, String> {
     // S1: self-meeting (single attendee) — no facts, no primary.
     let s1 = ctx.attendee_count <= 1 && ctx.participants.len() <= 1;
 
-    // S2: all-hands / broadcast — facts still written in Phase 2 by caller,
-    // but no primary. Caller decides whether to run Phase 2 after this check.
+    // S2: all-hands / broadcast — facts still written in Phase 2 (AC#6),
+    // but no primary.
     let s2 = ctx.attendee_count >= BROADCAST_ATTENDEE_THRESHOLD
         || (ctx.owner.owner_type == super::types::OwnerType::Email
             && ctx.attendee_count >= BROADCAST_RECIPIENT_THRESHOLD);
 
-    let (rule_id, tier) = if s1 {
-        ("S1", LinkTier::Skip)
-    } else if s2 {
-        ("S2", LinkTier::Skip)
-    } else {
-        return Ok(None);
-    };
+    if !s1 && !s2 {
+        return Ok(Phase1Result::Continue);
+    }
 
+    let rule_id = if s1 { "S1" } else { "S2" };
     let ev = evidence::suppress_evidence(ctx, rule_id);
     let _ = db.insert_linking_evaluation(&crate::db::entity_linking::LinkingEvaluationWrite {
         owner_type: ctx.owner.owner_type.as_str(),
@@ -58,13 +64,19 @@ pub fn phase1_suppress(
         evidence_json: &ev.to_string(),
     });
 
-    Ok(Some(LinkOutcome {
+    let outcome = LinkOutcome {
         owner: ctx.owner.clone(),
         primary: None,
         related: vec![],
-        tier,
+        tier: LinkTier::Skip,
         applied_rule: Some(rule_id.to_string()),
-    }))
+    };
+
+    if s1 {
+        Ok(Phase1Result::Declined(outcome))
+    } else {
+        Ok(Phase1Result::Broadcast(outcome))
+    }
 }
 
 // ---------------------------------------------------------------------------

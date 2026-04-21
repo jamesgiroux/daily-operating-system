@@ -67,6 +67,8 @@ function PendingCard({ suggestion, busy, onConfirm, onDismiss }: PendingCardProp
   if (suggestion.email) metaParts.push(suggestion.email);
   if (confidenceLabel) metaParts.push(confidenceLabel);
 
+  const siblings = suggestion.siblingAccountHints ?? [];
+
   return (
     <div className={css.card}>
       <div className={css.cardBody}>
@@ -76,6 +78,14 @@ function PendingCard({ suggestion, busy, onConfirm, onDismiss }: PendingCardProp
             {metaParts.map((part, i) => (
               <span key={i}>{part}</span>
             ))}
+          </div>
+        )}
+        {siblings.length > 0 && (
+          <div className={css.siblingHint}>
+            Also relevant to:{" "}
+            {siblings
+              .map(([, name]) => name)
+              .join(", ")}
           </div>
         )}
       </div>

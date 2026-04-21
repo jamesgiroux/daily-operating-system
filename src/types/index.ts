@@ -1550,6 +1550,11 @@ export interface PendingStakeholderSuggestion {
   confidence: number | null;
   /** 'meeting_attendance' | 'email_correspondence' | etc. */
   dataSource: string | null;
+  /**
+   * AC#13 multi-BU: other accounts that share this person's email domain.
+   * Rendered as "Also add to X?" hints — never auto-confirmed, user-initiated only.
+   */
+  siblingAccountHints: Array<[string, string]>; // [account_id, account_name]
 }
 
 export interface AccountTeamImportNote {
