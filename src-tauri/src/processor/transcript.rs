@@ -3748,6 +3748,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,
@@ -4057,6 +4058,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,
@@ -4111,6 +4113,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,
@@ -4135,6 +4138,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec!["Sarah Chen".to_string(), "Alex Torres".to_string()],
             is_all_day: false,
+        series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "acc-record".to_string(),
                 name: "Acme Corp".to_string(),
@@ -4273,6 +4277,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "proj-route".to_string(),
                 name: "Platform Migration".to_string(),
@@ -4291,6 +4296,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "proj-route".to_string(),
                 name: "Platform Migration".to_string(),
@@ -4309,6 +4315,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "person-route".to_string(),
                 name: "Pat Kim".to_string(),
@@ -4327,6 +4334,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,

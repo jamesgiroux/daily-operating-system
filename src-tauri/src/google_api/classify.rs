@@ -80,6 +80,8 @@ pub struct ClassifiedMeeting {
     pub attendees: Vec<String>,
     pub organizer: String,
     pub is_recurring: bool,
+    /// Google Calendar recurringEventId — identifies which series this belongs to.
+    pub recurring_event_id: Option<String>,
     pub is_all_day: bool,
     pub meeting_type: String,
     /// Resolved entities from multi-entity classification (I336).
@@ -132,6 +134,7 @@ pub fn classify_meeting_multi(
         attendees: event.attendees.clone(),
         organizer: event.organizer.clone(),
         is_recurring: event.is_recurring,
+        recurring_event_id: event.recurring_event_id.clone(),
         is_all_day: event.is_all_day,
         meeting_type: "internal".to_string(),
         resolved_entities: Vec::new(),
@@ -596,6 +599,7 @@ impl ClassifiedMeeting {
             account,
             attendees: self.attendees.clone(),
             is_all_day: self.is_all_day,
+            series_id: self.recurring_event_id.clone(),
             linked_entities: None,
             classified_entities,
             scored_classified_entities,
@@ -625,6 +629,7 @@ mod tests {
             description: String::new(),
             location: String::new(),
             is_recurring,
+            recurring_event_id: None,
             is_all_day: false,
             status: Some("confirmed".to_string()),
         }

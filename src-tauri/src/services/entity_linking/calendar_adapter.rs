@@ -22,10 +22,8 @@ fn meeting_db_id(event: &CalendarEvent) -> String {
 /// Convert a CalendarEvent into a LinkingContext for evaluate().
 ///
 /// Reads graph_version from entity_graph_version (O(1)).
-/// NOTE: CalendarEvent has no `recurring_event_id` field, so `series_id`
-/// is always None and rule P3 (series inheritance) is dormant for the
-/// calendar surface. TODO(Lane-D): plumb recurring_event_id through
-/// CalendarEvent to enable P3.
+/// Sets series_id from CalendarEvent.series_id (Google's recurringEventId),
+/// enabling Rule P3 (series inheritance) for recurring meetings.
 pub fn build_context(event: &CalendarEvent, db: &ActionDb) -> Result<LinkingContext, String> {
     let owner_id = meeting_db_id(event);
     let graph_version = db.get_entity_graph_version().unwrap_or(0);
@@ -60,7 +58,7 @@ pub fn build_context(event: &CalendarEvent, db: &ActionDb) -> Result<LinkingCont
         title: Some(event.title.clone()),
         attendee_count: event.attendees.len(),
         thread_id: None,
-        series_id: None,
+        series_id: event.series_id.clone(),
         graph_version,
         user_domains,
     })

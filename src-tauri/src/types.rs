@@ -1981,6 +1981,12 @@ pub struct CalendarEvent {
     pub attendees: Vec<String>,
     #[serde(default)]
     pub is_all_day: bool,
+    /// Google Calendar recurringEventId — the master series ID.
+    /// Populated by the calendar adapter for Rule P3 (series inheritance):
+    /// if the first instance of the series has a user-set primary, all
+    /// subsequent instances inherit it automatically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub series_id: Option<String>,
     /// Entities linked via M2M junction table or entity resolution (I339)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked_entities: Option<Vec<LinkedEntity>>,
