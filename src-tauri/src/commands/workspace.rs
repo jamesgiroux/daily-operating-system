@@ -439,6 +439,7 @@ pub async fn get_emails_enriched(
 
 /// Update the entity assignment for an email (I395 — user correction).
 /// Cascades to email_signals and emits a signal bus event for relevance learning.
+/// DOS-258: also writes a user-override row to linked_entities_raw (P1 source).
 #[tauri::command]
 pub async fn update_email_entity(
     state: State<'_, Arc<AppState>>,
@@ -447,16 +448,30 @@ pub async fn update_email_entity(
     entity_type: Option<String>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    // Legacy path: keeps emails.entity_id in sync and emits the signal bus event.
+    let eid = email_id.clone();
+    let et_id = entity_id.clone();
+    let et_type = entity_type.clone();
     state
         .db_write(move |db| {
-            crate::services::emails::update_email_entity(
-                db,
-                &email_id,
-                entity_id.as_deref(),
-                entity_type.as_deref(),
-            )
+            crate::services::emails::update_email_entity(db, &eid, et_id.as_deref(), et_type.as_deref())
         })
         .await?;
+
+    // DOS-258 path: write user-override to linked_entities_raw so the new
+    // engine treats this as a P1 user override on the next evaluate() call.
+    let entity_ref = entity_id.map(|id| crate::services::entity_linking::EntityRef {
+        entity_id: id,
+        entity_type: entity_type.unwrap_or_else(|| "account".to_string()),
+    });
+    crate::services::entity_linking::manual_set_primary(
+        state.inner().clone(),
+        crate::services::entity_linking::OwnerType::Email,
+        email_id,
+        entity_ref,
+    )
+    .await?;
+
     let _ = app_handle.emit("emails-updated", ());
     Ok(())
 }

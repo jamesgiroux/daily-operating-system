@@ -790,7 +790,7 @@ pub(crate) fn best_account_for_person(
     let mut stmt = match db.conn_ref().prepare(
         "SELECT a.id, a.name, a.keywords FROM accounts a
          JOIN account_stakeholders as_ ON a.id = as_.account_id
-         WHERE as_.person_id = ?1",
+         WHERE as_.person_id = ?1 AND as_.status = 'active'",
     ) {
         Ok(s) => s,
         Err(_) => return None,
