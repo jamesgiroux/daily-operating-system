@@ -1984,6 +1984,12 @@ impl ActionDb {
              AND field NOT LIKE 'account_field_conflict:%'",
             rusqlite::params![intel.entity_id, intel.entity_type],
         )?;
+        conn.execute(
+            "DELETE FROM entity_feedback_events WHERE entity_id = ?1 AND entity_type = ?2 \
+             AND feedback_type IN ('confirmed', 'rejected') \
+             AND COALESCE(source_kind, '') != 'field_conflict'",
+            rusqlite::params![intel.entity_id, intel.entity_type],
+        )?;
 
         // 2. entity_quality — keep scalar health mirrors for transitional compatibility.
         if let Some(health) = intel.health.as_ref() {

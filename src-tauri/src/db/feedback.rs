@@ -10,14 +10,21 @@ use rusqlite::params;
 /// Each action has distinct downstream semantics in `services::feedback`:
 ///
 /// - `Confirmed` → positive signal, rewards the source via Bayesian alpha++
+/// - `Rejected` → negative feedback without suppressing the content; used by
+///   legacy thumbs-down surfaces that should penalize a source but leave the
+///   item visible.
 /// - `Annotated` → user note stored in `reason`, threaded into next intel prompt
 /// - `Corrected` → `previous_value` + `corrected_value` captured; penalizes source
 ///   via Bayesian beta++; triggers health recalc when field is health-affecting.
+/// - `Dismissed` → negative feedback + suppression tombstone for a claim the
+///   user marked wrong; the current surface should hide it immediately.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CorrectionAction {
     Confirmed,
+    Rejected,
     Annotated,
     Corrected,
+    Dismissed,
 }
 
 impl CorrectionAction {
@@ -25,8 +32,10 @@ impl CorrectionAction {
     pub fn as_str(&self) -> &'static str {
         match self {
             CorrectionAction::Confirmed => "confirmed",
+            CorrectionAction::Rejected => "rejected",
             CorrectionAction::Annotated => "annotated",
             CorrectionAction::Corrected => "corrected",
+            CorrectionAction::Dismissed => "dismissed",
         }
     }
 
@@ -34,48 +43,51 @@ impl CorrectionAction {
     pub fn parse(raw: &str) -> Result<Self, String> {
         match raw {
             "confirmed" => Ok(CorrectionAction::Confirmed),
+            "rejected" => Ok(CorrectionAction::Rejected),
             "annotated" => Ok(CorrectionAction::Annotated),
             "corrected" => Ok(CorrectionAction::Corrected),
+            "dismissed" => Ok(CorrectionAction::Dismissed),
             other => Err(format!(
-                "invalid correction action '{}' (expected confirmed|annotated|corrected)",
+                "invalid correction action '{}' (expected confirmed|rejected|annotated|corrected|dismissed)",
                 other
             )),
         }
     }
 }
 
+#[derive(Debug)]
+pub struct FeedbackEventInput<'a> {
+    pub entity_id: &'a str,
+    pub entity_type: &'a str,
+    pub field_key: &'a str,
+    pub item_key: Option<&'a str>,
+    pub feedback_type: &'a str,
+    pub source_system: Option<&'a str>,
+    pub source_kind: Option<&'a str>,
+    pub previous_value: Option<&'a str>,
+    pub corrected_value: Option<&'a str>,
+    pub reason: Option<&'a str>,
+}
+
 impl ActionDb {
     /// Record a feedback event (dismiss, accept, reject, thumbs-up, thumbs-down, etc.).
-    #[allow(clippy::too_many_arguments)]
-    pub fn record_feedback_event(
-        &self,
-        entity_id: &str,
-        entity_type: &str,
-        field_key: &str,
-        item_key: Option<&str>,
-        feedback_type: &str,
-        source_system: Option<&str>,
-        source_kind: Option<&str>,
-        previous_value: Option<&str>,
-        corrected_value: Option<&str>,
-        reason: Option<&str>,
-    ) -> Result<i64, DbError> {
+    pub fn record_feedback_event(&self, input: &FeedbackEventInput<'_>) -> Result<i64, DbError> {
         self.conn_ref().execute(
             "INSERT INTO entity_feedback_events \
              (entity_id, entity_type, field_key, item_key, feedback_type, \
               source_system, source_kind, previous_value, corrected_value, reason) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
-                entity_id,
-                entity_type,
-                field_key,
-                item_key,
-                feedback_type,
-                source_system,
-                source_kind,
-                previous_value,
-                corrected_value,
-                reason,
+                input.entity_id,
+                input.entity_type,
+                input.field_key,
+                input.item_key,
+                input.feedback_type,
+                input.source_system,
+                input.source_kind,
+                input.previous_value,
+                input.corrected_value,
+                input.reason,
             ],
         )?;
         Ok(self.conn_ref().last_insert_rowid())

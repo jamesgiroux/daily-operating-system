@@ -16,10 +16,12 @@ interface FeedbackRow {
 type FeedbackState = Record<string, "positive" | "negative" | null>;
 
 /**
- * Hook for intelligence quality feedback (I529).
+ * Compatibility hook for the legacy thumbs-up / thumbs-down UI.
  *
- * Fetches existing feedback for an entity on mount,
- * provides per-field feedback state and a submit function.
+ * Reads feedback state through the compatibility `get_entity_feedback` query,
+ * but writes through the unified `submit_intelligence_correction` command so
+ * the old editorial/report surfaces share the same backend event pipeline as
+ * the new binary-validation UX.
  */
 export function useIntelligenceFeedback(
   entityId: string | undefined,
@@ -82,12 +84,16 @@ export function useIntelligenceFeedback(
       setFeedbackState((prev) => ({ ...prev, [field]: newType }));
 
       try {
-        await invoke("submit_intelligence_feedback", {
-          entityId,
-          entityType,
-          field,
-          feedbackType: newType,
-          context: context ?? null,
+        await invoke("submit_intelligence_correction", {
+          request: {
+            entityId,
+            entityType,
+            field,
+            action: newType === "positive" ? "confirmed" : "rejected",
+            correctedValue: null,
+            annotation: context ?? null,
+            itemKey: null,
+          },
         });
       } catch (e) {
         console.error("Failed to submit feedback:", e);

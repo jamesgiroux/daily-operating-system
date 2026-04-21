@@ -88,10 +88,7 @@ describe("SentimentHero", () => {
     expect(screen.getByText(/1 note/)).toBeTruthy();
   });
 
-  it("renders the Still accurate? button unconditionally in the meta line", () => {
-    // Per the mockup (lines 622 / 467 of .docs/mockups/account-health-*.html),
-    // "Still accurate?" is always present alongside the set-date and note
-    // count — it's a zero-pressure prompt, not a staleness escalation.
+  it("renders the Still accurate? button only when the sentiment is stale", () => {
     const { rerender } = render(
       <SentimentHero
         view={makeView({ isStale: false })}
@@ -99,7 +96,7 @@ describe("SentimentHero", () => {
         onAcknowledgeStale={vi.fn().mockResolvedValue(undefined)}
       />,
     );
-    expect(screen.getByText("Still accurate?")).toBeTruthy();
+    expect(screen.queryByText("Still accurate?")).toBeNull();
 
     rerender(
       <SentimentHero
@@ -111,7 +108,7 @@ describe("SentimentHero", () => {
     expect(screen.getByText("Still accurate?")).toBeTruthy();
   });
 
-  it("calls onAcknowledgeStale when Still accurate? is clicked", () => {
+  it("reveals yes/no choices before confirming stale sentiment", () => {
     const onAck = vi.fn().mockResolvedValue(undefined);
     render(
       <SentimentHero
@@ -122,7 +119,38 @@ describe("SentimentHero", () => {
     );
 
     fireEvent.click(screen.getByText("Still accurate?"));
+    expect(screen.getByRole("button", { name: "Yes" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "No" })).toBeTruthy();
+    expect(onAck).not.toHaveBeenCalled();
+  });
+
+  it("calls onAcknowledgeStale when Yes is clicked", () => {
+    const onAck = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SentimentHero
+        view={makeView({ isStale: true })}
+        onSetSentiment={vi.fn().mockResolvedValue(undefined)}
+        onAcknowledgeStale={onAck}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Still accurate?"));
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
     expect(onAck).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the editor when No is clicked on the stale prompt", () => {
+    render(
+      <SentimentHero
+        view={makeView({ isStale: true })}
+        onSetSentiment={vi.fn().mockResolvedValue(undefined)}
+        onAcknowledgeStale={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Still accurate?"));
+    fireEvent.click(screen.getByRole("button", { name: "No" }));
+    expect(screen.getByPlaceholderText(/Add a journal note/)).toBeTruthy();
   });
 
   it("renders the pull quote with attribution", () => {
