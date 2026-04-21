@@ -11,9 +11,10 @@
  * `claimText` are skipped. A Glean channel-sentiment card only renders when
  * we can build a concrete headline from the readings or a divergenceSummary.
  */
-import { useCallback } from "react";
+import { useState } from "react";
 import type { ConsistencyFinding, HealthOutlookSignals, ChannelSentimentSignal, ChannelReading } from "@/types";
-import { useIntelligenceCorrection } from "@/hooks/useIntelligenceCorrection";
+import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
+import { useEntitySuppressions } from "@/hooks/useEntitySuppressions";
 import { TriageCard } from "./TriageCard";
 import styles from "./health.module.css";
 
@@ -78,27 +79,30 @@ function buildChannelCard(
 }
 
 export function DivergenceSection({ findings, gleanSignals, accountId }: DivergenceSectionProps) {
+  const suppressions = useEntitySuppressions(accountId);
   const channel = gleanSignals?.channelSentiment ?? null;
   const channelCard = channel?.divergenceDetected ? buildChannelCard(channel) : null;
   const realFindings = findings.filter(findingHasContent);
-  const correction = useIntelligenceCorrection();
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set());
 
-  const makeConfirmHandler = useCallback(
-    (triageKey: string) => {
-      if (!accountId) return undefined;
-      return async () => {
-        await correction.submit({
-          entityId: accountId,
-          entityType: "account",
-          field: `triage:${triageKey}`,
-          action: "confirmed",
-        });
-      };
-    },
-    [accountId, correction],
-  );
-
-  if (realFindings.length === 0 && !channelCard) return null;
+  const visibleFindings = realFindings
+    .map((finding, index) => ({
+      finding,
+      key: `finding-${index}-${finding.code}`,
+    }))
+    .filter(
+      ({ finding, key }) =>
+        !hiddenKeys.has(key) &&
+        !suppressions.isSuppressed(`triage:${key}`, finding.claimText),
+    );
+  const showChannelCard =
+    channelCard &&
+    !hiddenKeys.has("glean-channel-divergence") &&
+    !suppressions.isSuppressed(
+      "triage:glean-channel-divergence",
+      channelCard.headline,
+    );
+  if (visibleFindings.length === 0 && !showChannelCard) return null;
 
   return (
     <>
@@ -114,7 +118,7 @@ export function DivergenceSection({ findings, gleanSignals, accountId }: Diverge
       </div>
 
       <div>
-        {channelCard && (
+        {showChannelCard && channelCard && (
           <TriageCard
             key="glean-channel-divergence"
             tone="divergence"
@@ -122,12 +126,27 @@ export function DivergenceSection({ findings, gleanSignals, accountId }: Diverge
             headline={channelCard.headline}
             evidence={channelCard.evidence}
             sources={[{ origin: "glean", label: "Channel sentiment" }]}
-            onConfirmAccurate={makeConfirmHandler("glean-channel-divergence")}
+            feedbackSlot={
+              accountId ? (
+                <IntelligenceCorrection
+                  entityId={accountId}
+                  entityType="account"
+                  field="triage:glean-channel-divergence"
+                  itemKey={channelCard.headline}
+                  onDismissed={async () => {
+                    setHiddenKeys((prev) => new Set(prev).add("glean-channel-divergence"));
+                    suppressions.markSuppressed(
+                      "triage:glean-channel-divergence",
+                      channelCard.headline,
+                    );
+                  }}
+                />
+              ) : undefined
+            }
           />
         )}
 
-        {realFindings.map((f, i) => {
-          const key = `finding-${i}-${f.code}`;
+        {visibleFindings.map(({ finding: f, key }) => {
           return (
             <TriageCard
               key={key}
@@ -138,7 +157,20 @@ export function DivergenceSection({ findings, gleanSignals, accountId }: Diverge
                 f.evidenceText && f.evidenceText.trim().length > 0 ? f.evidenceText : undefined
               }
               sources={[{ origin: "local", label: f.fieldPath || f.code }]}
-              onConfirmAccurate={makeConfirmHandler(key)}
+              feedbackSlot={
+                accountId ? (
+                  <IntelligenceCorrection
+                    entityId={accountId}
+                    entityType="account"
+                    field={`triage:${key}`}
+                    itemKey={f.claimText}
+                    onDismissed={async () => {
+                      setHiddenKeys((prev) => new Set(prev).add(key));
+                      suppressions.markSuppressed(`triage:${key}`, f.claimText);
+                    }}
+                  />
+                ) : undefined
+              }
             />
           );
         })}

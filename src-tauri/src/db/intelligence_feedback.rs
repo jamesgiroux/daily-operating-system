@@ -101,6 +101,11 @@ impl ActionDb {
     }
 
     /// Get all feedback for an entity, newest first.
+    ///
+    /// Compatibility read during the feedback-pipeline collapse:
+    /// - legacy `intelligence_feedback` votes remain visible
+    /// - new `entity_feedback_events` rows are mapped back into the old
+    ///   positive/negative/replaced shape for existing thumbs surfaces
     pub fn get_entity_feedback(
         &self,
         entity_id: &str,
@@ -111,8 +116,35 @@ impl ActionDb {
             .prepare(
                 "SELECT id, entity_id, entity_type, field, feedback_type, \
                  previous_value, context, created_at \
-                 FROM intelligence_feedback \
-                 WHERE entity_id = ?1 AND entity_type = ?2 \
+                 FROM (
+                    SELECT id, entity_id, entity_type, field, feedback_type, \
+                           previous_value, context, created_at \
+                    FROM intelligence_feedback \
+                    WHERE entity_id = ?1 AND entity_type = ?2
+
+                    UNION ALL
+
+                    SELECT CAST(id AS TEXT) AS id,
+                           entity_id,
+                           entity_type,
+                           CASE
+                               WHEN source_kind = 'field_conflict'
+                                   THEN 'account_field_conflict:' || field_key || ':' || COALESCE(corrected_value, '')
+                               ELSE field_key
+                           END AS field,
+                           CASE
+                               WHEN feedback_type IN ('confirmed', 'accept') THEN 'positive'
+                               WHEN feedback_type IN ('rejected', 'dismissed', 'reject', 'dismiss') THEN 'negative'
+                               WHEN feedback_type = 'corrected' THEN 'replaced'
+                               ELSE feedback_type
+                           END AS feedback_type,
+                           previous_value,
+                           reason AS context,
+                           created_at
+                    FROM entity_feedback_events \
+                    WHERE entity_id = ?1 AND entity_type = ?2 \
+                      AND feedback_type IN ('confirmed', 'rejected', 'corrected', 'dismissed', 'accept', 'reject', 'dismiss')
+                 ) \
                  ORDER BY created_at DESC",
             )
             .map_err(|e| format!("Prepare get_entity_feedback: {e}"))?;

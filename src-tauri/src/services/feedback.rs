@@ -8,7 +8,7 @@
 //! 2. All entities: fall back to most recent enrichment signal source for the entity
 //! 3. If no source identifiable: record feedback with `source = null` (signal still emitted)
 
-use crate::db::feedback::CorrectionAction;
+use crate::db::feedback::{CorrectionAction, FeedbackEventInput};
 use crate::db::ActionDb;
 
 /// Submit feedback on an intelligence field for an entity.
@@ -23,60 +23,24 @@ pub fn submit_intelligence_feedback(
     feedback_type: &str,
     context: Option<&str>,
 ) -> Result<(), String> {
-    let id = uuid::Uuid::new_v4().to_string();
-
-    // Insert or replace feedback record (UNIQUE on entity_id+entity_type+field per AC16)
-    db.insert_intelligence_feedback(&crate::db::intelligence_feedback::FeedbackInput {
-        id: &id,
-        entity_id,
-        entity_type,
-        field,
-        feedback_type,
-        previous_value: None,
-        context,
-    })?;
-
-    // Resolve the source that produced this intelligence.
-    let prior_source = resolve_intelligence_source(db, entity_id, entity_type, field);
-
-    // Adjust Bayesian source weights based on feedback direction.
-    // negative → beta++ (penalize source), positive → alpha++ (reward source)
-    if let Some(ref source) = prior_source {
-        let field_category = field_to_signal_category(field);
-        match feedback_type {
-            "negative" => {
-                let _ = db.upsert_signal_weight(source, entity_type, &field_category, 0.0, 1.0);
-            }
-            "positive" => {
-                let _ = db.upsert_signal_weight(source, entity_type, &field_category, 1.0, 0.0);
-            }
-            _ => {}
-        }
-    }
-
-    // Emit signal for intelligence feedback
-    let signal_type = if feedback_type == "positive" {
-        "intelligence_confirmed"
-    } else {
-        "intelligence_rejected"
+    let action = match feedback_type {
+        "positive" => CorrectionAction::Confirmed,
+        "negative" => CorrectionAction::Rejected,
+        other => return Err(format!("invalid feedback_type '{other}' (expected positive|negative)")),
     };
-    let value_json = serde_json::json!({
-        "field": field,
-        "feedback_type": feedback_type,
-        "source": prior_source,
-    })
-    .to_string();
-    let _ = crate::services::signals::emit(
-        db,
-        entity_type,
-        entity_id,
-        signal_type,
-        "user_feedback",
-        Some(&value_json),
-        0.8,
-    );
 
-    Ok(())
+    submit_intelligence_correction(
+        db,
+        SubmitIntelligenceCorrectionInput {
+            entity_id,
+            entity_type,
+            field,
+            action,
+            corrected_value: None,
+            annotation: context,
+            item_key: None,
+        },
+    )
 }
 
 /// Resolve the source that produced an intelligence field.
@@ -199,14 +163,26 @@ fn validate_numeric_corrected_value(column: &str, value: &str) -> Result<(), Str
     }
 }
 
+pub struct SubmitIntelligenceCorrectionInput<'a> {
+    pub entity_id: &'a str,
+    pub entity_type: &'a str,
+    pub field: &'a str,
+    pub action: CorrectionAction,
+    pub corrected_value: Option<&'a str>,
+    pub annotation: Option<&'a str>,
+    pub item_key: Option<&'a str>,
+}
+
 /// DOS-41: Submit a consolidated intelligence correction.
 ///
-/// Persists the correction into `entity_feedback_events` with one of three
-/// actions (`confirmed` | `annotated` | `corrected`), then runs the
+/// Persists the correction into `entity_feedback_events` with one of five
+/// actions (`confirmed` | `rejected` | `annotated` | `corrected` | `dismissed`), then runs the
 /// downstream side effects appropriate to the action:
 ///
 /// - `confirmed` → rewards the attributed source (Bayesian alpha++) and emits
 ///   an `intelligence_confirmed` signal.
+/// - `rejected` → penalizes the source (Bayesian beta++) and emits
+///   `intelligence_rejected`, but does not suppress the content.
 /// - `annotated` → stores the user-authored note in `reason`; next
 ///   intelligence prompt will thread this as user context. Emits
 ///   `intelligence_annotated`.
@@ -214,19 +190,26 @@ fn validate_numeric_corrected_value(column: &str, value: &str) -> Result<(), Str
 ///   the source (Bayesian beta++), emits `intelligence_corrected`, and — if
 ///   the field is health-affecting on an account — triggers a background
 ///   health recalc so the UI reflects the correction immediately.
+/// - `dismissed` → records that the claim is wrong, penalizes the source,
+///   creates a suppression tombstone keyed by `field` + `item_key`, and emits
+///   `intelligence_dismissed`.
 ///
-/// All three paths write through `record_feedback_event`, keeping
+/// All correction paths write through `record_feedback_event`, keeping
 /// `entity_feedback_events` as the single source of truth for correction
 /// history.
 pub fn submit_intelligence_correction(
     db: &ActionDb,
-    entity_id: &str,
-    entity_type: &str,
-    field: &str,
-    action: CorrectionAction,
-    corrected_value: Option<&str>,
-    annotation: Option<&str>,
+    input: SubmitIntelligenceCorrectionInput<'_>,
 ) -> Result<(), String> {
+    let SubmitIntelligenceCorrectionInput {
+        entity_id,
+        entity_type,
+        field,
+        action,
+        corrected_value,
+        annotation,
+        item_key,
+    } = input;
     // Authoritative backend validation. The Tauri IPC boundary is
     // reachable by any caller, not just the useIntelligenceCorrection
     // hook — enforce action-specific payload shape here so invalid
@@ -260,7 +243,7 @@ pub fn submit_intelligence_correction(
                 );
             }
         }
-        CorrectionAction::Confirmed => {
+        CorrectionAction::Confirmed | CorrectionAction::Rejected | CorrectionAction::Dismissed => {
             // Confirmed carries neither corrected_value nor annotation.
         }
     }
@@ -287,22 +270,22 @@ pub fn submit_intelligence_correction(
     // Write the feedback event. `reason` carries the user's annotation for
     // annotated + corrected actions so it can be threaded into the next
     // intelligence prompt and displayed in correction history.
-    db.record_feedback_event(
+    db.record_feedback_event(&FeedbackEventInput {
         entity_id,
         entity_type,
-        field,
-        None, // item_key — reserved for list-item corrections
-        action.as_str(),
-        None, // source_system — intelligence correction UX is app-driven
-        prior_source.as_deref(),
-        previous_value.as_deref(),
+        field_key: field,
+        item_key,
+        feedback_type: action.as_str(),
+        source_system: None, // source_system — intelligence correction UX is app-driven
+        source_kind: prior_source.as_deref(),
+        previous_value: previous_value.as_deref(),
         corrected_value,
-        annotation,
-    )
+        reason: annotation,
+    })
     .map_err(|e| format!("record_feedback_event: {e}"))?;
 
-    // Bayesian source-weight update. `confirmed` rewards, `corrected`
-    // penalizes, `annotated` is neutral (user added context but didn't
+    // Bayesian source-weight update. `confirmed` rewards, `rejected` /
+    // `corrected` / `dismissed` penalize, `annotated` is neutral (user added context but didn't
     // reject the AI output).
     if let Some(ref source) = prior_source {
         let field_category = field_to_signal_category(field);
@@ -310,7 +293,7 @@ pub fn submit_intelligence_correction(
             CorrectionAction::Confirmed => {
                 let _ = db.upsert_signal_weight(source, entity_type, &field_category, 1.0, 0.0);
             }
-            CorrectionAction::Corrected => {
+            CorrectionAction::Rejected | CorrectionAction::Corrected | CorrectionAction::Dismissed => {
                 let _ = db.upsert_signal_weight(source, entity_type, &field_category, 0.0, 1.0);
             }
             CorrectionAction::Annotated => {}
@@ -322,8 +305,10 @@ pub fn submit_intelligence_correction(
     // feedback path (0.8).
     let signal_type = match action {
         CorrectionAction::Confirmed => "intelligence_confirmed",
+        CorrectionAction::Rejected => "intelligence_rejected",
         CorrectionAction::Annotated => "intelligence_annotated",
         CorrectionAction::Corrected => "intelligence_corrected",
+        CorrectionAction::Dismissed => "intelligence_dismissed",
     };
     let value_json = serde_json::json!({
         "field": field,
@@ -332,6 +317,7 @@ pub fn submit_intelligence_correction(
         "previous_value": previous_value,
         "corrected_value": corrected_value,
         "annotation": annotation,
+        "item_key": item_key,
     })
     .to_string();
     let _ = crate::services::signals::emit(
@@ -427,6 +413,18 @@ pub fn submit_intelligence_correction(
         }
     }
 
+    if action == CorrectionAction::Dismissed {
+        db.create_suppression_tombstone(
+            entity_id,
+            field,
+            item_key,
+            None,
+            prior_source.as_deref(),
+            None,
+        )
+        .map_err(|e| format!("create_suppression_tombstone: {e}"))?;
+    }
+
     Ok(())
 }
 
@@ -493,8 +491,8 @@ fn field_to_signal_category(field: &str) -> String {
 mod correction_tests {
     //! DOS-41: Unit tests for `submit_intelligence_correction`.
     //!
-    //! Each of the three actions (confirmed / annotated / corrected) goes
-    //! through a distinct downstream path; the tests here exercise each.
+    //! Each correction action goes through a distinct downstream path; the
+    //! tests here exercise the contract.
 
     use super::*;
     use crate::db::{DbAccount, test_utils::test_db};
@@ -512,6 +510,31 @@ mod correction_tests {
             ..Default::default()
         };
         db.upsert_account(&account).expect("seed account");
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn submit_intelligence_correction(
+        db: &ActionDb,
+        entity_id: &str,
+        entity_type: &str,
+        field: &str,
+        action: CorrectionAction,
+        corrected_value: Option<&str>,
+        annotation: Option<&str>,
+        item_key: Option<&str>,
+    ) -> Result<(), String> {
+        super::submit_intelligence_correction(
+            db,
+            SubmitIntelligenceCorrectionInput {
+                entity_id,
+                entity_type,
+                field,
+                action,
+                corrected_value,
+                annotation,
+                item_key,
+            },
+        )
     }
 
     /// Read all feedback rows for an entity; newest first.
@@ -550,6 +573,7 @@ mod correction_tests {
             CorrectionAction::Confirmed,
             None,
             None,
+            None,
         )
         .expect("confirmed submission");
 
@@ -573,6 +597,33 @@ mod correction_tests {
     }
 
     #[test]
+    fn legacy_negative_feedback_flows_through_rejected_event() {
+        let db = test_db();
+        seed_account(&db, "acct-legacy");
+
+        submit_intelligence_feedback(
+            &db,
+            "acct-legacy",
+            "account",
+            "overall_assessment",
+            "negative",
+            None,
+        )
+        .expect("legacy negative feedback submission");
+
+        let rows = feedback_rows(&db, "acct-legacy");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "rejected");
+
+        let compat = db
+            .get_entity_feedback("acct-legacy", "account")
+            .expect("compatibility feedback rows");
+        assert_eq!(compat.len(), 1);
+        assert_eq!(compat[0].field, "overall_assessment");
+        assert_eq!(compat[0].feedback_type, "negative");
+    }
+
+    #[test]
     fn annotated_stores_reason_without_previous_or_corrected_value() {
         let db = test_db();
         seed_account(&db, "acct-2");
@@ -585,6 +636,7 @@ mod correction_tests {
             CorrectionAction::Annotated,
             None,
             Some("This is a crucial nuance the model missed."),
+            None,
         )
         .expect("annotated submission");
 
@@ -625,6 +677,7 @@ mod correction_tests {
             CorrectionAction::Corrected,
             Some("yellow"),
             Some("Stakeholder just flagged concerns — no longer green."),
+            None,
         )
         .expect("corrected submission");
 
@@ -652,6 +705,41 @@ mod correction_tests {
     }
 
     #[test]
+    fn dismissed_creates_feedback_row_and_suppression_tombstone() {
+        let db = test_db();
+        seed_account(&db, "acct-dismissed");
+
+        submit_intelligence_correction(
+            &db,
+            "acct-dismissed",
+            "account",
+            "triage:local-risk-0",
+            CorrectionAction::Dismissed,
+            None,
+            None,
+            Some("Champion has gone dark"),
+        )
+        .expect("dismissed submission");
+
+        let rows = feedback_rows(&db, "acct-dismissed");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "dismissed");
+
+        let tombstone_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM suppression_tombstones \
+                 WHERE entity_id = 'acct-dismissed' \
+                 AND field_key = 'triage:local-risk-0' \
+                 AND item_key = 'Champion has gone dark'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstone_count, 1);
+    }
+
+    #[test]
     fn successive_corrections_chain_previous_values() {
         let db = test_db();
         seed_account(&db, "acct-4");
@@ -659,7 +747,7 @@ mod correction_tests {
         // First correction: green → yellow
         submit_intelligence_correction(
             &db, "acct-4", "account", "health",
-            CorrectionAction::Corrected, Some("yellow"), None,
+            CorrectionAction::Corrected, Some("yellow"), None, None,
         )
         .unwrap();
 
@@ -667,7 +755,7 @@ mod correction_tests {
         // (pulled from the prior correction row), not "green".
         submit_intelligence_correction(
             &db, "acct-4", "account", "health",
-            CorrectionAction::Corrected, Some("red"), None,
+            CorrectionAction::Corrected, Some("red"), None, None,
         )
         .unwrap();
 
@@ -685,8 +773,10 @@ mod correction_tests {
     #[test]
     fn correction_action_parse_rejects_invalid() {
         assert!(CorrectionAction::parse("confirmed").is_ok());
+        assert!(CorrectionAction::parse("rejected").is_ok());
         assert!(CorrectionAction::parse("annotated").is_ok());
         assert!(CorrectionAction::parse("corrected").is_ok());
+        assert!(CorrectionAction::parse("dismissed").is_ok());
         assert!(CorrectionAction::parse("").is_err());
         assert!(CorrectionAction::parse("CONFIRMED").is_err());
         assert!(CorrectionAction::parse("nope").is_err());
@@ -718,6 +808,7 @@ mod correction_tests {
             CorrectionAction::Corrected,
             None,
             None,
+            None,
         )
         .expect_err("corrected requires corrected_value");
         assert!(err.contains("corrected_value"), "err: {err}");
@@ -740,6 +831,7 @@ mod correction_tests {
             CorrectionAction::Corrected,
             Some("   "),
             None,
+            None,
         )
         .expect_err("whitespace corrected_value is not valid");
         assert!(err.contains("corrected_value"), "err: {err}");
@@ -757,6 +849,7 @@ mod correction_tests {
             "account",
             "state_of_play",
             CorrectionAction::Annotated,
+            None,
             None,
             None,
         )
@@ -779,6 +872,7 @@ mod correction_tests {
                 etype,
                 field,
                 CorrectionAction::Confirmed,
+                None,
                 None,
                 None,
             )
@@ -830,6 +924,7 @@ mod correction_tests {
             "arr",
             CorrectionAction::Corrected,
             Some("250000"),
+            None,
             None,
         )
         .expect("corrected submission");
@@ -929,6 +1024,7 @@ mod correction_tests {
             CorrectionAction::Corrected,
             Some("250000"),
             None,
+            None,
         )
         .expect("corrected submission");
 
@@ -978,6 +1074,7 @@ mod correction_tests {
             CorrectionAction::Corrected,
             Some("at-risk"),
             None,
+            None,
         )
         .expect("corrected submission");
 
@@ -1016,6 +1113,7 @@ mod correction_tests {
             CorrectionAction::Corrected,
             Some("new narrative"),
             None,
+            None,
         )
         .expect("corrected submission");
 
@@ -1045,6 +1143,7 @@ mod correction_tests {
             "state_of_play",
             CorrectionAction::Corrected,
             Some("new narrative"),
+            None,
             None,
         )
         .expect("corrected submission on non-health field");
@@ -1095,6 +1194,7 @@ mod correction_tests {
             CorrectionAction::Corrected,
             Some("not-a-number"),
             None,
+            None,
         )
         .expect_err("non-numeric ARR correction must be rejected");
         assert!(
@@ -1133,6 +1233,7 @@ mod correction_tests {
             CorrectionAction::Corrected,
             Some("excellent"),
             None,
+            None,
         )
         .expect_err("non-integer NPS correction must be rejected");
         assert!(
@@ -1164,6 +1265,7 @@ mod correction_tests {
             "arr",
             CorrectionAction::Corrected,
             Some("250000"),
+            None,
             None,
         )
         .expect("numeric ARR correction must succeed");

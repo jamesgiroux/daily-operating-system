@@ -13,6 +13,7 @@ import { useState } from "react";
 import type { SentimentValue, HealthSparklinePoint } from "@/types";
 import type { SentimentView } from "@/hooks/useAccountDetail";
 import { DEFAULT_SENTIMENT_LABELS } from "@/hooks/useAccountDetail";
+import { AccuracyPrompt, type AccuracyPromptOutcome } from "@/components/ui/AccuracyPrompt";
 import css from "./SentimentHero.module.css";
 
 interface SentimentHeroProps {
@@ -355,21 +356,24 @@ export function SentimentHero({
               {noteCount} note{noteCount === 1 ? "" : "s"}
             </>
           )}
-          {/*
-            Mockup convention (lines 622 / 467): "Still accurate?" is always
-            rendered in the meta line — it's a zero-pressure prompt, not a
-            staleness escalation. The `view.isStale` boolean still governs
-            whether this interaction clears an explicit stale flag.
-          */}
-          {" · "}
-          <button
-            type="button"
-            className={css.metaLink}
-            onClick={onAcknowledgeStale}
-            title="Tap to confirm this still reflects the account"
-          >
-            Still accurate?
-          </button>
+          {view.isStale && (
+            <>
+              {" · "}
+              <AccuracyPrompt
+                prompt="Still accurate?"
+                presentation="meta"
+                revealOnClick
+                onYes={async (): Promise<AccuracyPromptOutcome> => {
+                  await onAcknowledgeStale();
+                  return "reset";
+                }}
+                onNo={(): AccuracyPromptOutcome => {
+                  openEditor();
+                  return "reset";
+                }}
+              />
+            </>
+          )}
         </div>
       )}
 

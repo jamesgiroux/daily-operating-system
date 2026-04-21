@@ -18,21 +18,22 @@ import styles from "./RiskBriefingStatus.module.css";
 
 interface RiskBriefingStatusProps {
   job: RiskBriefingJob | null;
+  accountId: string;
   onRetry: () => void | Promise<void>;
 }
 
-export function RiskBriefingStatus({ job, onRetry }: RiskBriefingStatusProps) {
+export function RiskBriefingStatus({ job, accountId, onRetry: _onRetry }: RiskBriefingStatusProps) {
   if (!job) return null;
 
-  // Don't pin anything once the briefing is ready. The briefing content is
-  // rendered in its own report surface; this component is a status strip.
-  if (job.status === "complete") return null;
+  // DOS-113: generation failures stay silent on the Health tab. The user can
+  // still open/regenerate from the report surface without a pinned red strip.
+  if (job.status === "failed") return null;
 
   const labelById: Record<RiskBriefingJob["status"], string> = {
     enqueued: "Risk briefing queued",
     running: "Generating risk briefing…",
-    failed: "Risk briefing failed",
     complete: "Risk briefing ready",
+    failed: "Risk briefing failed",
   };
 
   return (
@@ -46,29 +47,30 @@ export function RiskBriefingStatus({ job, onRetry }: RiskBriefingStatusProps) {
         <strong className={styles.riskBriefingStatusLabel}>
           {labelById[job.status]}
         </strong>
-        {job.status === "failed" && job.errorMessage && (
-          <div
-            className={`${styles.riskBriefingStatusDetail} ${styles.riskBriefingStatusError}`}
-          >
-            {job.errorMessage}
-          </div>
-        )}
         {job.status === "running" && (
           <div className={styles.riskBriefingStatusDetail}>
             Started {new Date(job.enqueuedAt).toLocaleTimeString()}
           </div>
         )}
+        {job.status === "enqueued" && (
+          <div className={styles.riskBriefingStatusDetail}>
+            Started {new Date(job.enqueuedAt).toLocaleTimeString()}
+          </div>
+        )}
+        {job.status === "complete" && (
+          <div className={styles.riskBriefingStatusDetail}>
+            Ready from {new Date(job.completedAt ?? job.enqueuedAt).toLocaleString()}
+          </div>
+        )}
       </div>
-      {job.status === "failed" && (
-        <button
-          type="button"
-          onClick={() => void onRetry()}
-          data-action="retry-risk-briefing"
+      {job.status === "complete" ? (
+        <a
+          href={`/accounts/${accountId}/reports/risk_briefing`}
           className={styles.riskBriefingStatusRetry}
         >
-          Retry
-        </button>
-      )}
+          Open briefing
+        </a>
+      ) : null}
     </div>
   );
 }

@@ -1,27 +1,17 @@
 /**
- * IntelligenceCorrection — DOS-41 consolidated correction UX.
+ * IntelligenceCorrection — binary yes/no validation for AI-authored claims.
  *
- * Replaces the legacy thumbs up/down `IntelligenceFeedback` for AI-generated
- * summaries on **account pages only**. The interaction model collapses three
- * previously fragmented mechanisms (thumbs vote, inline edit, conflict
- * accept/dismiss) into a single "Is this accurate?" prompt with three
- * branches:
+ * The prompt stays neutral: "Is this accurate?". The actions are explicit:
+ *   - Yes → record confirmation / reward the source
+ *   - No  → record dismissal / hide the claim from the current UI
  *
- *   - Yes        → `confirmed`  (rewards source — Bayesian alpha++)
- *   - Partially  → `annotated`  (user note threaded into next intel prompt)
- *   - No         → `corrected`  (replaces value, penalizes source, recomputes
- *                                health when the field is health-affecting —
- *                                see DOS-227 in services/feedback.rs)
- *
- * All three actions flow through `submit_intelligence_correction` via the
- * `useIntelligenceCorrection` hook, which is the stable backend surface.
- *
- * Gradual rollout (per DOS-41 spec): this component is account-page only.
- * `IntelligenceFeedback` remains on project + person surfaces.
+ * `onConfirmed` / `onDismissed` run after the backend correction succeeds, so
+ * parents can optimistically hide cards, clear JSON fields, or archive AI
+ * suggestions without duplicating the feedback plumbing.
  */
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useIntelligenceCorrection } from "@/hooks/useIntelligenceCorrection";
-import styles from "./IntelligenceCorrection.module.css";
+import { AccuracyPrompt, type AccuracyPromptOutcome } from "./AccuracyPrompt";
 
 export interface IntelligenceCorrectionProps {
   /** Entity the AI assessment belongs to. */
@@ -30,49 +20,38 @@ export interface IntelligenceCorrectionProps {
   entityType: "account";
   /** Field key the correction targets (e.g. "state_of_play", "health"). */
   field: string;
-  /**
-   * Current value rendered to the user. Used as the seed for the inline
-   * editor when the user clicks "No" so they can edit-in-place rather
-   * than retype from scratch. Optional — `corrected` still works when
-   * the surface doesn't have a stable scalar (e.g. multi-paragraph blob).
-   */
-  currentValue?: string | null;
-  /**
-   * Optional: called immediately after a successful `corrected` submission
-   * with the new value. Lets the parent surface update its rendered state
-   * without waiting for the next intelligence refresh — DOS-41 acceptance
-   * criterion 7 ("Corrections visible to the user — field updates
-   * immediately, not on next enrichment").
-   */
-  onCorrected?: (correctedValue: string) => void;
+  /** Stable claim key for suppression tombstones on dismiss. */
+  itemKey?: string | null;
+  /** Extra side effects after a successful confirmation. */
+  onConfirmed?: () => void | Promise<void>;
+  /** Extra side effects after a successful dismissal. */
+  onDismissed?: () => void | Promise<void>;
   /** Optional label override (default: "Is this accurate?"). */
   prompt?: string;
+  /** Override for the post-submit confirmation copy. */
+  doneLabel?: string;
 }
-
-type Mode = "idle" | "annotating" | "correcting" | "done";
 
 /**
  * Inline correction prompt rendered after an AI assessment.
  *
  * State machine:
- *   idle      → "Is this accurate?" + Yes / Partially / No buttons
- *   Yes       → submits `confirmed` → done
- *   Partially → annotating (textarea) → submits `annotated` → done
- *   No        → correcting (textarea seeded with currentValue) → submits
- *               `corrected` → done (and notifies parent via onCorrected)
+ *   idle      → "Is this accurate?" + Yes / No buttons
+ *   Yes       → submits `confirmed` → optional parent callback → done
+ *   No        → submits `dismissed` → optional parent callback → done
  *   done      → small "Recorded" affordance, click Undo to reset
  */
 export function IntelligenceCorrection({
   entityId,
   entityType,
   field,
-  currentValue,
-  onCorrected,
+  itemKey,
+  onConfirmed,
+  onDismissed,
   prompt = "Is this accurate?",
+  doneLabel = "Recorded.",
 }: IntelligenceCorrectionProps) {
   const { submit, submitting, reset } = useIntelligenceCorrection();
-  const [mode, setMode] = useState<Mode>("idle");
-  const [draft, setDraft] = useState<string>("");
 
   const onYes = useCallback(async () => {
     const ok = await submit({
@@ -81,163 +60,38 @@ export function IntelligenceCorrection({
       field,
       action: "confirmed",
     });
-    if (ok) setMode("done");
-  }, [entityId, entityType, field, submit]);
+    if (ok) {
+      await onConfirmed?.();
+    }
+    return ok;
+  }, [entityId, entityType, field, onConfirmed, submit]);
 
-  const onPartially = useCallback(() => {
-    setDraft("");
-    setMode("annotating");
-  }, []);
-
-  const onNo = useCallback(() => {
-    setDraft(currentValue ?? "");
-    setMode("correcting");
-  }, [currentValue]);
-
-  const submitAnnotation = useCallback(async () => {
-    const trimmed = draft.trim();
-    if (!trimmed) return;
+  const onNo = useCallback(async () => {
     const ok = await submit({
       entityId,
       entityType,
       field,
-      action: "annotated",
-      annotation: trimmed,
-    });
-    if (ok) setMode("done");
-  }, [draft, entityId, entityType, field, submit]);
-
-  const submitCorrection = useCallback(async () => {
-    const trimmed = draft.trim();
-    if (!trimmed) return;
-    const ok = await submit({
-      entityId,
-      entityType,
-      field,
-      action: "corrected",
-      correctedValue: trimmed,
+      action: "dismissed",
+      itemKey,
     });
     if (ok) {
-      setMode("done");
-      onCorrected?.(trimmed);
+      await onDismissed?.();
     }
-  }, [draft, entityId, entityType, field, submit, onCorrected]);
-
-  const cancel = useCallback(() => {
-    setDraft("");
-    setMode("idle");
-  }, []);
-
-  const startOver = useCallback(() => {
-    reset();
-    setDraft("");
-    setMode("idle");
-  }, [reset]);
-
-  if (mode === "done") {
-    return (
-      <span className={styles.wrapper}>
-        <span className={styles.done}>
-          Recorded.{" "}
-          <button
-            type="button"
-            className={styles.linkButton}
-            onClick={startOver}
-          >
-            Undo
-          </button>
-        </span>
-      </span>
-    );
-  }
-
-  if (mode === "annotating" || mode === "correcting") {
-    const isCorrection = mode === "correcting";
-    return (
-      <span className={styles.wrapper}>
-        <span className={styles.editor}>
-          <span className={styles.editorLabel}>
-            {isCorrection ? "What should it say?" : "What's missing or off?"}
-          </span>
-          <textarea
-            className={styles.textarea}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
-            rows={isCorrection ? 3 : 2}
-            placeholder={
-              isCorrection
-                ? "Replacement value"
-                : "Add the nuance the model missed"
-            }
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                cancel();
-              } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                if (isCorrection) {
-                  void submitCorrection();
-                } else {
-                  void submitAnnotation();
-                }
-              }
-            }}
-          />
-          <span className={styles.editorActions}>
-            <button
-              type="button"
-              className={styles.primaryButton}
-              disabled={submitting || !draft.trim()}
-              onClick={isCorrection ? submitCorrection : submitAnnotation}
-            >
-              {submitting ? "Saving…" : "Save"}
-            </button>
-            <button
-              type="button"
-              className={styles.linkButton}
-              disabled={submitting}
-              onClick={cancel}
-            >
-              Cancel
-            </button>
-          </span>
-        </span>
-      </span>
-    );
-  }
+    return ok;
+  }, [entityId, entityType, field, itemKey, onDismissed, submit]);
 
   return (
-    <span className={styles.wrapper}>
-      <span className={styles.prompt}>{prompt}</span>
-      <span className={styles.choices}>
-        <button
-          type="button"
-          className={styles.choice}
-          onClick={onYes}
-          disabled={submitting}
-          aria-label="Mark this assessment as accurate"
-        >
-          Yes
-        </button>
-        <button
-          type="button"
-          className={styles.choice}
-          onClick={onPartially}
-          disabled={submitting}
-          aria-label="Add a note about what the model missed"
-        >
-          Partially
-        </button>
-        <button
-          type="button"
-          className={styles.choice}
-          onClick={onNo}
-          disabled={submitting}
-          aria-label="Open inline editor to replace this value"
-        >
-          No
-        </button>
-      </span>
-    </span>
+    <AccuracyPrompt
+      prompt={prompt}
+      doneLabel={doneLabel}
+      submitting={submitting}
+      onUndo={reset}
+      onYes={async (): Promise<AccuracyPromptOutcome> => {
+        return (await onYes()) ? "done" : "stay";
+      }}
+      onNo={async (): Promise<AccuracyPromptOutcome> => {
+        return (await onNo()) ? "done" : "stay";
+      }}
+    />
   );
 }

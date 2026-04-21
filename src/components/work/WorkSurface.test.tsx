@@ -62,31 +62,29 @@ describe("CommitmentCard", () => {
 });
 
 describe("SuggestionCard", () => {
-  it("fires onAccept / onDismiss with loading state copy", () => {
+  it("fires onAccept and renders the validation slot", () => {
     const onAccept = vi.fn();
-    const onDismiss = vi.fn();
 
     const { rerender } = render(
       <SuggestionCard
         headline="Propose an EBR"
         rationale="Renewal is 60 days out."
         onAccept={onAccept}
-        onDismiss={onDismiss}
+        feedbackSlot={<span>Is this accurate?</span>}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /accept/i }));
     expect(onAccept).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
-    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Is this accurate?")).toBeInTheDocument();
 
     rerender(
       <SuggestionCard
         headline="Propose an EBR"
         rationale="Renewal is 60 days out."
         onAccept={onAccept}
-        onDismiss={onDismiss}
         accepting
+        feedbackSlot={<span>Is this accurate?</span>}
       />,
     );
     expect(screen.getByRole("button", { name: /accepting/i })).toBeDisabled();
