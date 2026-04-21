@@ -52,42 +52,59 @@ export function usePendingStakeholders(
   const confirm = useCallback(
     async (personId: string) => {
       if (!accountId) return;
-      // Optimistic removal before the network round-trip.
+      // Capture item for rollback before optimistic removal.
+      const removed = suggestions.find((s) => s.personId === personId);
       setSuggestions((prev) => prev.filter((s) => s.personId !== personId));
       setInFlight((prev) => new Set([...prev, personId]));
       try {
         await invoke("confirm_pending_stakeholder", { accountId, personId });
+        void fetch();
+      } catch {
+        // Server rejected — restore the item so the user can retry.
+        if (removed) {
+          setSuggestions((prev) =>
+            prev.some((s) => s.personId === personId)
+              ? prev
+              : [...prev, removed],
+          );
+        }
       } finally {
         setInFlight((prev) => {
           const next = new Set(prev);
           next.delete(personId);
           return next;
         });
-        // Refetch to reconcile any server-side changes.
-        void fetch();
       }
     },
-    [accountId, fetch],
+    [accountId, fetch, suggestions],
   );
 
   const dismiss = useCallback(
     async (personId: string) => {
       if (!accountId) return;
-      // Optimistic removal.
+      const removed = suggestions.find((s) => s.personId === personId);
       setSuggestions((prev) => prev.filter((s) => s.personId !== personId));
       setInFlight((prev) => new Set([...prev, personId]));
       try {
         await invoke("dismiss_pending_stakeholder", { accountId, personId });
+        void fetch();
+      } catch {
+        if (removed) {
+          setSuggestions((prev) =>
+            prev.some((s) => s.personId === personId)
+              ? prev
+              : [...prev, removed],
+          );
+        }
       } finally {
         setInFlight((prev) => {
           const next = new Set(prev);
           next.delete(personId);
           return next;
         });
-        void fetch();
       }
     },
-    [accountId, fetch],
+    [accountId, fetch, suggestions],
   );
 
   return { suggestions, loading, confirm, dismiss, inFlight };

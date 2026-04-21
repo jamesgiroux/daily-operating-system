@@ -61,7 +61,7 @@ export function EntityLinkPicker({
       try {
         // TODO(Lane-G): `manual_set_primary` ships in a later Lane.
         // Until then this invoke will fail; the error is caught and toasted.
-        await invoke("manual_set_primary", {
+        await invoke("set_entity_link_primary", {
           ownerType,
           ownerId,
           entityId,
@@ -84,7 +84,7 @@ export function EntityLinkPicker({
     <div className={css.picker}>
       <p className={css.heading}>Which account is this about?</p>
       <div className={css.chipList}>
-        {related.map(({ entityId, entityType }) => {
+        {related.filter(({ entityType }) => entityType === "account").map(({ entityId, entityType }) => {
           const name = entityNames[entityId] ?? entityId;
           const busy = inFlight === entityId;
           return (
