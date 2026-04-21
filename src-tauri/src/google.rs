@@ -775,28 +775,12 @@ fn populate_people_from_events(
             }
         }
 
-        // I653 FIX 3 / DOS-224: Persist classification-time entity links to
-        // meeting_entities. Prefer the scored variant (full confidence +
-        // source) so weak title-only matches land as non-primary suggestions
-        // instead of masquerading as 0.95-confidence primaries. Fall back to
-        // the legacy `(id, type)` pairs only when scored data is absent.
-        if let Some(ref scored) = event.scored_classified_entities {
-            if !scored.is_empty() {
-                let _ = crate::services::meetings::persist_classification_entities_scored(
-                    &db,
-                    &meeting_id,
-                    scored,
-                );
-            }
-        } else if let Some(ref entities) = event.classified_entities {
-            if !entities.is_empty() {
-                let _ = crate::services::meetings::persist_classification_entities(
-                    &db,
-                    &meeting_id,
-                    entities,
-                );
-            }
-        }
+        // DOS-258: entity linking is now handled by evaluate_meeting() in the
+        // async calendar poll loop (run_calendar_poller), which runs the
+        // deterministic P1-P11 engine and writes to linked_entities_raw.
+        // persist_classification_entities_scored / persist_classification_entities
+        // have been removed — they wrote to the old meeting_entities table and
+        // would conflict with the new engine's dismissal-wins-race guarantee.
 
         for email in &event.attendees {
             let email_lower = email.to_lowercase();
