@@ -560,7 +560,7 @@ pub fn upsert_assessment_snapshot(
     // persist them to account_domains for entity resolution.
     // Only applies to account entities.
     if intel.entity_type == "account" && !intel.domains.is_empty() {
-        db.set_account_domains(&intel.entity_id, &intel.domains)
+        db.merge_account_domains_enrichment(&intel.entity_id, &intel.domains)
             .map_err(|e| {
                 format!(
                     "Failed to store domains for account {}: {}",
