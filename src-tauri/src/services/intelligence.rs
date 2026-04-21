@@ -1139,18 +1139,18 @@ pub async fn dismiss_intelligence_item(
                     .map_err(|e| e.to_string())?;
 
                 // I645: Record feedback event + suppression tombstone.
-                let _ = tx.record_feedback_event(
-                    &entity_id,
-                    &entity_type,
-                    &field,
-                    Some(&item_text),
-                    "dismiss",
-                    None,
-                    Some("intelligence"),
-                    Some(&item_text),
-                    None,
-                    None,
-                );
+                let _ = tx.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
+                    entity_id: &entity_id,
+                    entity_type: &entity_type,
+                    field_key: &field,
+                    item_key: Some(&item_text),
+                    feedback_type: "dismiss",
+                    source_system: None,
+                    source_kind: Some("intelligence"),
+                    previous_value: Some(&item_text),
+                    corrected_value: None,
+                    reason: None,
+                });
                 let _ = tx.create_suppression_tombstone(
                     &entity_id,
                     &field,

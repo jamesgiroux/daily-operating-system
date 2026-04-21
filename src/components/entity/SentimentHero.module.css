@@ -157,16 +157,6 @@
   margin-top: var(--space-md, 16px);
 }
 
-.metaLink {
-  color: var(--color-spice-turmeric);
-  text-decoration: none;
-  border-bottom: 1px solid var(--color-spice-turmeric);
-  background: none;
-  font: inherit;
-  cursor: pointer;
-  padding: 0;
-}
-
 /* ── Pull quote (latest journal note) ───────────────────────────────── */
 
 .pullquote {

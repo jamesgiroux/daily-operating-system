@@ -22,6 +22,7 @@ import type {
   SentimentValue,
   StrategicProgram,
 } from "@/types";
+import type { RolePreset } from "@/types/preset";
 import { useAccountFields } from "./useAccountFields";
 import { useAccountWorkData } from "./useAccountWorkData";
 import { useEnrichmentProgress } from "./useEnrichmentProgress";
@@ -62,6 +63,46 @@ export const DEFAULT_SENTIMENT_LABELS: Record<SentimentValue, string> = {
   at_risk: "At Risk",
   critical: "Critical",
 };
+
+export function buildPresetSentimentLabels(
+  preset: RolePreset | null | undefined,
+): Record<SentimentValue, string> {
+  const healthField = preset?.vitals.account.find(
+    (field) => field.key === "health" && field.fieldType === "select",
+  );
+  const options = (healthField?.options ?? []).filter((option) => option.trim().length > 0);
+  if (options.length < 3) {
+    return DEFAULT_SENTIMENT_LABELS;
+  }
+
+  if (options.length >= 5) {
+    return {
+      strong: options[0]!,
+      on_track: options[1]!,
+      concerning: options[2]!,
+      at_risk: options[3]!,
+      critical: options[4]!,
+    };
+  }
+
+  if (options.length === 4) {
+    return {
+      strong: options[0]!,
+      on_track: options[1]!,
+      concerning: options[2]!,
+      at_risk: options[3]!,
+      critical: options[3]!,
+    };
+  }
+
+  return {
+    strong: options[0]!,
+    on_track: options[0]!,
+    concerning: options[1]!,
+    at_risk: options[2]!,
+    critical: options[2]!,
+  };
+}
 
 export interface SentimentDivergence {
   severity: "minor" | "major";

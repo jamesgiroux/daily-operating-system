@@ -6,19 +6,26 @@ import { toast } from "sonner";
  * DOS-41: Consolidated intelligence correction action.
  *
  * - `confirmed` — user agrees with the AI output (rewards the source)
- * - `annotated` — user adds context without rejecting (threaded into next
- *   intelligence prompt; neutral Bayesian weight impact)
+ * - `rejected` — user disagrees but does not want the item hidden
  * - `corrected` — user replaces the AI output (penalizes source; triggers
  *   health recalc when the field is health-affecting on an account)
+ * - `dismissed` — user marks the AI output wrong and wants it hidden
  */
-export type CorrectionAction = "confirmed" | "annotated" | "corrected";
+export type CorrectionAction =
+  | "confirmed"
+  | "rejected"
+  | "annotated"
+  | "corrected"
+  | "dismissed";
 
 export interface SubmitCorrectionArgs {
   entityId: string;
   entityType: string;
   field: string;
   action: CorrectionAction;
-  /** Required for `corrected`; ignored for `confirmed` / `annotated`. */
+  /** Stable claim key for suppression tombstones on dismiss. */
+  itemKey?: string | null;
+  /** Required for `corrected`; ignored for `confirmed` / `rejected` / `annotated`. */
   correctedValue?: string | null;
   /** User-authored note. Required for `annotated`; optional on others. */
   annotation?: string | null;
@@ -33,7 +40,7 @@ export interface UseIntelligenceCorrectionResult {
   error: string | null;
   /**
    * Submit a correction. Resolves `true` on success, `false` on failure.
-   * All three action types go through `submit_intelligence_correction`.
+   * All supported action types go through `submit_intelligence_correction`.
    */
   submit: (args: SubmitCorrectionArgs) => Promise<boolean>;
   /** Reset `success` / `error` state (e.g. after dismissing a toast). */
@@ -64,6 +71,7 @@ export function useIntelligenceCorrection(): UseIntelligenceCorrectionResult {
         entityType,
         field,
         action,
+        itemKey,
         correctedValue,
         annotation,
       } = args;
@@ -97,12 +105,15 @@ export function useIntelligenceCorrection(): UseIntelligenceCorrectionResult {
 
       try {
         await invoke("submit_intelligence_correction", {
-          entityId,
-          entityType,
-          field,
-          action,
-          correctedValue: correctedValue ?? null,
-          annotation: annotation ?? null,
+          request: {
+            entityId,
+            entityType,
+            field,
+            action,
+            itemKey: itemKey ?? null,
+            correctedValue: correctedValue ?? null,
+            annotation: annotation ?? null,
+          },
         });
         setSuccess(true);
         return true;

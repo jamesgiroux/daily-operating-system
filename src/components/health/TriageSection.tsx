@@ -25,8 +25,10 @@ import type {
   HealthOutlookSignals,
   IntelRisk,
   IntelWin,
+  SentimentValue,
 } from "@/types";
-import { useIntelligenceCorrection } from "@/hooks/useIntelligenceCorrection";
+import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
+import { useEntitySuppressions } from "@/hooks/useEntitySuppressions";
 import {
   TriageCard,
   type TriageAction,
@@ -50,6 +52,8 @@ export type TriageBucket = "urgent" | "soon" | "stakeholder";
 export interface TriageCandidate {
   /** Stable per-card id for feedback attribution. */
   id: string;
+  /** Stable textual claim for suppression + feedback attribution. */
+  itemKey: string;
   /** Ranking bucket. Urgent first, then soon, then stakeholder. */
   bucket: TriageBucket;
   /** Primary origin — drives tag colour when `sources` isn't overridden. */
@@ -142,6 +146,7 @@ function localRiskCandidate(risk: IntelRisk, i: number): TriageCandidate {
   const { headline, evidence } = splitHeadlineEvidence(risk.text);
   return {
     id: `local-risk-${i}`,
+    itemKey: risk.text,
     bucket: bucketFromUrgency(risk.urgency),
     source: "local",
     sourcedAt,
@@ -163,6 +168,7 @@ function localWinCandidate(win: IntelWin, i: number): TriageCandidate {
   const evidence = win.impact ?? splitEvidence;
   return {
     id: `local-win-${i}`,
+    itemKey: win.text,
     bucket: "stakeholder",
     source: "local",
     sourcedAt: win.itemSource?.sourcedAt ?? "",
@@ -209,6 +215,10 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
     }
     cards.push({
       id: "glean-usage-trend",
+      itemKey:
+        usageTrend === "declining"
+          ? "Overall product usage is declining over the last 30 days."
+          : "Product usage trend is unknown — no reliable signal in the last 30 days.",
       bucket: usageTrend === "declining" ? "urgent" : "stakeholder",
       source: "glean",
       sourcedAt: "",
@@ -235,6 +245,7 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
     const citationLabel = q.source ?? q.date ?? "Transcript";
     cards.push({
       id: `glean-churn-q-${i}`,
+      itemKey: q.question,
       bucket: "urgent",
       source: "glean",
       sourcedAt: q.date ?? "",
@@ -255,6 +266,7 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
     const citationLabel = s.source ?? s.date ?? "Transcript";
     cards.push({
       id: `glean-dm-shift-${i}`,
+      itemKey: s.shift,
       bucket: "stakeholder",
       source: "glean",
       sourcedAt: s.date ?? "",
@@ -279,6 +291,7 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
     if (latestNps?.verbatim) evidenceParts.push(`"${latestNps.verbatim}"`);
     cards.push({
       id: "glean-advocacy-cooling",
+      itemKey: "Advocacy is cooling — reference posture is weakening.",
       bucket: "soon",
       source: "glean",
       sourcedAt: latestNps?.surveyDate ?? "",
@@ -291,6 +304,7 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
   } else if (advTrend === "strengthening") {
     cards.push({
       id: "glean-advocacy-strengthening",
+      itemKey: "Advocacy is strengthening — capture the reference window.",
       bucket: "stakeholder",
       source: "glean",
       sourcedAt: "",
@@ -315,6 +329,7 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
     }
     cards.push({
       id: "glean-champion",
+      itemKey: `${cr.championName ?? "Champion"} shows ${level}-risk signals.`,
       bucket,
       source: "glean",
       sourcedAt: "",
@@ -338,6 +353,7 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
       glean.commercialSignals?.paymentEvidence ?? glean.commercialSignals?.paymentBehavior ?? undefined;
     cards.push({
       id: "glean-commercial",
+      itemKey: headline,
       bucket,
       source: "glean",
       sourcedAt: "",
@@ -364,6 +380,7 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
     const citationLabel = c.source ?? c.date ?? "Transcript";
     cards.push({
       id: `glean-competitor-${i}`,
+      itemKey: headline,
       bucket,
       source: "glean",
       sourcedAt: c.date ?? "",
@@ -414,6 +431,7 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
       const citationLabel = q.source ?? q.date ?? "Quote wall";
       cards.push({
         id: `glean-quote-${i}`,
+        itemKey: q.quote,
         bucket,
         source: "glean",
         sourcedAt: q.date ?? "",
@@ -432,6 +450,7 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
     const citationLabel = b.source ?? b.date ?? "Transcript";
     cards.push({
       id: `glean-budget-${i}`,
+      itemKey: b.signal,
       bucket: "soon",
       source: "glean",
       sourcedAt: b.date ?? "",
@@ -466,6 +485,21 @@ function buildAllCandidates(
   const local = intelligence ? buildLocalCandidates(intelligence) : [];
   const glean = gleanSignals ? buildGleanCandidates(gleanSignals) : [];
   return [...glean, ...local];
+}
+
+function passesSentimentThreshold(
+  candidate: TriageCandidate,
+  sentiment: SentimentValue | null | undefined,
+): boolean {
+  if (!sentiment || sentiment === "concerning" || sentiment === "at_risk" || sentiment === "critical") {
+    return true;
+  }
+  if (sentiment === "on_track") {
+    return candidate.bucket !== "stakeholder";
+  }
+  // "strong" should only surface high-signal concerns.
+  if (candidate.bucket === "urgent") return true;
+  return candidate.bucket === "soon" && candidate.source === "local";
 }
 
 /**
@@ -532,6 +566,7 @@ function actionsFor(candidate: TriageCandidate, handlers: ActionHandlers): Triag
 interface TriageSectionProps {
   intelligence: EntityIntelligence | null;
   gleanSignals: HealthOutlookSignals | null;
+  sentiment?: SentimentValue | null;
   /** DOS-269: Account id is required to persist snooze/resolve state. When
    *  absent (tests, previews), actions render but are no-ops. */
   accountId?: string;
@@ -550,14 +585,15 @@ function isSuppressed(row: TriageSnoozeRow, now: number): boolean {
 export function TriageSection({
   intelligence,
   gleanSignals,
+  sentiment,
   accountId,
   maxCards = MAX_CARDS,
 }: TriageSectionProps) {
+  const suppressions = useEntitySuppressions(accountId);
   const [snoozes, setSnoozes] = useState<TriageSnoozeRow[]>([]);
   const [optimisticallyHidden, setOptimisticallyHidden] = useState<Set<string>>(
     () => new Set(),
   );
-  const correction = useIntelligenceCorrection();
 
   const refreshSnoozes = useCallback(async () => {
     if (!accountId) return;
@@ -626,21 +662,6 @@ export function TriageSection({
     [accountId, refreshSnoozes],
   );
 
-  const handleConfirmAccurate = useCallback(
-    async (candidate: TriageCandidate) => {
-      if (!accountId) return;
-      // Fires the DOS-41 confirm-feedback event. Field is the stable triage
-      // card id so per-card Bayesian attribution is preserved.
-      await correction.submit({
-        entityId: accountId,
-        entityType: "account",
-        field: `triage:${candidate.id}`,
-        action: "confirmed",
-      });
-    },
-    [accountId, correction],
-  );
-
   const allCandidates = buildAllCandidates(intelligence, gleanSignals);
   if (allCandidates.length === 0) return null;
 
@@ -651,7 +672,12 @@ export function TriageSection({
   for (const row of snoozes) {
     if (isSuppressed(row, now)) suppressedKeys.add(row.triageKey);
   }
-  const visible = allCandidates.filter((c) => !suppressedKeys.has(c.id));
+  const visible = allCandidates.filter(
+    (c) =>
+      !suppressedKeys.has(c.id) &&
+      !suppressions.isSuppressed(`triage:${c.id}`, c.itemKey) &&
+      passesSentimentThreshold(c, sentiment),
+  );
   if (visible.length === 0) return null;
 
   const ranked = rankTriageCandidates(visible).slice(0, maxCards);
@@ -687,8 +713,18 @@ export function TriageSection({
             sources={c.sources}
             citations={c.citations}
             actions={actionsFor(c, handlers)}
-            onConfirmAccurate={
-              accountId ? () => handleConfirmAccurate(c) : undefined
+            feedbackSlot={
+              accountId ? (
+                <IntelligenceCorrection
+                  entityId={accountId}
+                  entityType="account"
+                  field={`triage:${c.id}`}
+                  itemKey={c.itemKey}
+                  onDismissed={async () => {
+                    suppressions.markSuppressed(`triage:${c.id}`, c.itemKey);
+                  }}
+                />
+              ) : undefined
             }
           />
         ))}
@@ -706,6 +742,9 @@ export function TriageSection({
 export function hasTriageContent(
   intelligence: EntityIntelligence | null,
   gleanSignals: HealthOutlookSignals | null,
+  sentiment?: SentimentValue | null,
 ): boolean {
-  return buildAllCandidates(intelligence, gleanSignals).length > 0;
+  return buildAllCandidates(intelligence, gleanSignals).some((candidate) =>
+    passesSentimentThreshold(candidate, sentiment),
+  );
 }
