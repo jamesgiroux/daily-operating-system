@@ -445,7 +445,9 @@ pub fn run() {
             commands::get_emails_enriched,
             commands::get_email_sync_status,
             commands::update_email_entity,
-            // DOS-258: entity linking manual overrides
+            // DOS-258: entity linking read + manual overrides + admin
+            commands::get_linked_entities_for_owner,
+            commands::rebuild_account_domains,
             commands::set_entity_link_primary,
             commands::dismiss_entity_link,
             commands::restore_entity_link,
