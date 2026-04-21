@@ -241,6 +241,79 @@ pub async fn restore_meeting_entity(
     .await
 }
 
+// =========================================================================
+// DOS-258: entity linking manual overrides
+// =========================================================================
+
+/// Set (or clear) the primary entity for a meeting or email.
+/// Writes a source='user' row to linked_entities_raw (P1 override).
+#[tauri::command]
+pub async fn set_entity_link_primary(
+    owner_type: String,
+    owner_id: String,
+    entity_id: Option<String>,
+    entity_type: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let ot = crate::services::entity_linking::OwnerType::try_from(owner_type.as_str())
+        .map_err(|e| format!("invalid owner_type: {e}"))?;
+    let entity_ref = entity_id.map(|id| crate::services::entity_linking::EntityRef {
+        entity_id: id,
+        entity_type: entity_type.unwrap_or_else(|| "account".to_string()),
+    });
+    crate::services::entity_linking::manual_set_primary(
+        state.inner().clone(),
+        ot,
+        owner_id,
+        entity_ref,
+    )
+    .await
+    .map(|_| ())
+}
+
+/// Dismiss a suggested entity link for a meeting or email.
+/// Writes a linking_dismissals tombstone + marks raw row as user_dismissed.
+#[tauri::command]
+pub async fn dismiss_entity_link(
+    owner_type: String,
+    owner_id: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let ot = crate::services::entity_linking::OwnerType::try_from(owner_type.as_str())
+        .map_err(|e| format!("invalid owner_type: {e}"))?;
+    crate::services::entity_linking::manual_dismiss(
+        state.inner().clone(),
+        ot,
+        owner_id,
+        crate::services::entity_linking::EntityRef { entity_id, entity_type },
+    )
+    .await
+    .map(|_| ())
+}
+
+/// Undo a previous entity link dismissal.
+#[tauri::command]
+pub async fn restore_entity_link(
+    owner_type: String,
+    owner_id: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let ot = crate::services::entity_linking::OwnerType::try_from(owner_type.as_str())
+        .map_err(|e| format!("invalid owner_type: {e}"))?;
+    crate::services::entity_linking::manual_undismiss(
+        state.inner().clone(),
+        ot,
+        owner_id,
+        crate::services::entity_linking::EntityRef { entity_id, entity_type },
+    )
+    .await
+    .map(|_| ())
+}
+
 /// Get all entities linked to a meeting via the junction table.
 #[tauri::command]
 pub async fn get_meeting_entities(
