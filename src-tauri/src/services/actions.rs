@@ -626,8 +626,30 @@ pub fn get_actions_from_db(db: &ActionDb, days_ahead: i32) -> Result<Vec<ActionL
 }
 
 /// Get all suggested (AI-suggested) actions (I256).
+///
+/// Unfiltered. Use `get_suggested_actions_for_user` in the command layer so
+/// the user only sees their own commitments + unassigned items by default —
+/// AI extraction tags every speaker in transcripts as a potential owner, so
+/// the unfiltered list on a real workspace is 90%+ other people's work.
 pub fn get_suggested_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, String> {
     db.get_suggested_actions().map_err(|e| e.to_string())
+}
+
+/// Get suggested actions filtered to the current user + unassigned rows.
+///
+/// Reads the user's name from `user_entity` (the /me page) and applies a
+/// case-insensitive owner-prefix match on `actions.context`. Ambiguous rows
+/// without a recognisable owner prefix still surface so the user doesn't
+/// miss triage work.
+pub fn get_suggested_actions_for_user(
+    db: &ActionDb,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    let user_name = crate::services::user_entity::get_user_entity_from_db(db)
+        .ok()
+        .and_then(|u| u.name)
+        .filter(|n| !n.trim().is_empty());
+    db.get_suggested_actions_for_user(user_name.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 /// DOS Work-tab Phase 3: open, user-accepted commitments for an account.
