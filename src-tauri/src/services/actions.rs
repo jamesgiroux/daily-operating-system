@@ -627,18 +627,20 @@ pub fn get_actions_from_db(db: &ActionDb, days_ahead: i32) -> Result<Vec<ActionL
 
 /// Get all suggested (AI-suggested) actions (I256).
 ///
-/// Unfiltered. Prefer `get_suggested_actions_for_user` for the main list.
+/// Unfiltered. Use `get_suggested_actions_for_user` in the command layer so
+/// the user only sees their own commitments + unassigned items by default —
+/// AI extraction tags every speaker in transcripts as a potential owner, so
+/// the unfiltered list on a real workspace is 90%+ other people's work.
 pub fn get_suggested_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, String> {
     db.get_suggested_actions().map_err(|e| e.to_string())
 }
 
-/// Get suggested actions scoped to the current user + unassigned rows.
+/// Get suggested actions filtered to the current user + unassigned rows.
 ///
-/// Reads `user_entity.name` (the /me page) and passes it to the DB layer
-/// for a case-insensitive owner-prefix match on `actions.context`. Rows
-/// without an owner prefix still surface so triage work isn't hidden.
-/// Defensive fallback: if user_entity is missing or name is empty,
-/// returns the unfiltered list.
+/// Reads the user's name from `user_entity` (the /me page) and applies a
+/// case-insensitive owner-prefix match on `actions.context`. Ambiguous rows
+/// without a recognisable owner prefix still surface so the user doesn't
+/// miss triage work.
 pub fn get_suggested_actions_for_user(
     db: &ActionDb,
 ) -> Result<Vec<crate::db::DbAction>, String> {

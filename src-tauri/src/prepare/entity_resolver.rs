@@ -136,7 +136,9 @@ pub fn resolve_meeting_entities(
     all_signals.extend(crate::signals::patterns::signal_attendee_group_pattern(
         db, meeting,
     ));
-    all_signals.extend(signal_keyword_match(db, meeting));
+    // DOS-258: keyword/fuzzy signals removed — domain evidence now handled by
+    // the deterministic entity_linking engine (P4a/P4b/P4c/P5 rules).
+    // signal_keyword_match stub kept for compile compatibility; call removed.
     if let Some(model) = embedding_model {
         all_signals.extend(signal_embedding_similarity(db, meeting, model));
     }
@@ -391,184 +393,18 @@ fn signal_attendee_inference(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSi
         .collect()
 }
 
-/// Signal 4: Keyword matching against entity names and extracted keywords.
-/// Entity name exact match in title: 0.80. Keyword match: 0.65.
-/// Fuzzy match (jaro_winkler >= 0.85): 0.55 via separate "keyword_fuzzy" source.
+/// Signal 4: Keyword/fuzzy matching — STUBBED (DOS-258).
+///
+/// The fuzzy and keyword signals produced false positives that caused the
+/// entity linking bugs documented in DOS-258 (shared first name collisions,
+/// title-slug cross-account matches). This function is kept as a no-op stub
+/// so callers that haven't been migrated yet still compile. The new
+/// deterministic engine (services::entity_linking, P4a/P4b/P4c/P5 rules)
+/// handles domain and title evidence correctly.
+#[allow(unused_variables)]
 fn signal_keyword_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal> {
-    let title = meeting
-        .get("title")
-        .or_else(|| meeting.get("summary"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let description = meeting
-        .get("description")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    if title.is_empty() && description.is_empty() {
-        return Vec::new();
-    }
-
-    let search_text = format!("{} {}", title, description).to_lowercase();
-    let search_normalized = normalize_key(&search_text);
-
-    // Build multi-word tokens for fuzzy matching (individual words + adjacent pairs)
-    let tokens = build_fuzzy_tokens(&search_text);
-
-    let mut signals = Vec::new();
-    let mut exact_matched_ids = std::collections::HashSet::new();
-
-    // Check accounts
-    if let Ok(accounts) = db.get_all_accounts() {
-        for account in &accounts {
-            if account.archived {
-                continue;
-            }
-            // Check entity name in title (exact)
-            let name_normalized = normalize_key(&account.name);
-            if !name_normalized.is_empty() && search_normalized.contains(&name_normalized) {
-                signals.push(ResolutionSignal {
-                    entity_id: account.id.clone(),
-                    entity_type: EntityType::Account,
-                    confidence: 0.80,
-                    source: "keyword".to_string(),
-                });
-                exact_matched_ids.insert(account.id.clone());
-                continue; // Don't double-count keywords for same entity
-            }
-
-            // Check extracted keywords
-            if let Some(ref kw_json) = account.keywords {
-                if let Ok(keywords) = serde_json::from_str::<Vec<String>>(kw_json) {
-                    if keywords_match_text(&keywords, &search_text) {
-                        signals.push(ResolutionSignal {
-                            entity_id: account.id.clone(),
-                            entity_type: EntityType::Account,
-                            confidence: 0.65,
-                            source: "keyword".to_string(),
-                        });
-                        exact_matched_ids.insert(account.id.clone());
-                    }
-                }
-            }
-        }
-
-        // Fuzzy pass for accounts not already matched
-        for account in &accounts {
-            if account.archived || exact_matched_ids.contains(&account.id) {
-                continue;
-            }
-            let name_lower = account.name.to_lowercase();
-            if name_lower.len() < 3 {
-                continue;
-            }
-            if fuzzy_matches_tokens(&name_lower, &tokens) {
-                signals.push(ResolutionSignal {
-                    entity_id: account.id.clone(),
-                    entity_type: EntityType::Account,
-                    confidence: 0.55,
-                    source: "keyword_fuzzy".to_string(),
-                });
-            }
-        }
-    }
-
-    // Check projects
-    if let Ok(projects) = db.get_all_projects() {
-        for project in &projects {
-            if project.archived {
-                continue;
-            }
-            let name_normalized = normalize_key(&project.name);
-            if !name_normalized.is_empty() && search_normalized.contains(&name_normalized) {
-                signals.push(ResolutionSignal {
-                    entity_id: project.id.clone(),
-                    entity_type: EntityType::Project,
-                    confidence: 0.80,
-                    source: "keyword".to_string(),
-                });
-                exact_matched_ids.insert(project.id.clone());
-                continue;
-            }
-
-            if let Some(ref kw_json) = project.keywords {
-                if let Ok(keywords) = serde_json::from_str::<Vec<String>>(kw_json) {
-                    if keywords_match_text(&keywords, &search_text) {
-                        signals.push(ResolutionSignal {
-                            entity_id: project.id.clone(),
-                            entity_type: EntityType::Project,
-                            confidence: 0.65,
-                            source: "keyword".to_string(),
-                        });
-                        exact_matched_ids.insert(project.id.clone());
-                    }
-                }
-            }
-        }
-
-        // Fuzzy pass for projects not already matched
-        for project in &projects {
-            if project.archived || exact_matched_ids.contains(&project.id) {
-                continue;
-            }
-            let name_lower = project.name.to_lowercase();
-            if name_lower.len() < 3 {
-                continue;
-            }
-            if fuzzy_matches_tokens(&name_lower, &tokens) {
-                signals.push(ResolutionSignal {
-                    entity_id: project.id.clone(),
-                    entity_type: EntityType::Project,
-                    confidence: 0.55,
-                    source: "keyword_fuzzy".to_string(),
-                });
-            }
-        }
-    }
-
-    // I338: Check people by name in meeting title/description
-    if let Ok(people) = db.get_people(None) {
-        for person in &people {
-            if person.archived {
-                continue;
-            }
-            let name_normalized = normalize_key(&person.name);
-            if name_normalized.len() < 3 {
-                continue;
-            }
-            if search_normalized.contains(&name_normalized) {
-                signals.push(ResolutionSignal {
-                    entity_id: person.id.clone(),
-                    entity_type: EntityType::Person,
-                    confidence: 0.80,
-                    source: "keyword".to_string(),
-                });
-                exact_matched_ids.insert(person.id.clone());
-                continue;
-            }
-        }
-
-        // Fuzzy pass for people not already matched
-        for person in &people {
-            if person.archived || exact_matched_ids.contains(&person.id) {
-                continue;
-            }
-            let name_lower = person.name.to_lowercase();
-            if name_lower.len() < 3 {
-                continue;
-            }
-            if fuzzy_matches_tokens(&name_lower, &tokens) {
-                signals.push(ResolutionSignal {
-                    entity_id: person.id.clone(),
-                    entity_type: EntityType::Person,
-                    confidence: 0.55,
-                    source: "keyword_fuzzy".to_string(),
-                });
-            }
-        }
-    }
-
-    signals
+    // Intentionally empty — see DOS-258.
+    Vec::new()
 }
 
 /// Signal 5: Embedding similarity via cosine distance.
@@ -760,41 +596,9 @@ fn outcome_confidence(outcome: &ResolutionOutcome) -> f64 {
     }
 }
 
-// normalize_key moved to crate::helpers::normalize_key (DRY)
-use crate::helpers::normalize_key;
-
-/// Build multi-word tokens from text for fuzzy matching.
-/// Includes individual words (>= 3 chars) and adjacent word pairs.
-fn build_fuzzy_tokens(text: &str) -> Vec<String> {
-    let words: Vec<&str> = text.split_whitespace().filter(|w| w.len() >= 3).collect();
-    let mut tokens: Vec<String> = words.iter().map(|w| w.to_string()).collect();
-    // Adjacent pairs (e.g. "acme corp" for matching "AcmeCorp")
-    for pair in words.windows(2) {
-        tokens.push(format!("{} {}", pair[0], pair[1]));
-    }
-    tokens
-}
-
-/// Check if an entity name fuzzy-matches any token (jaro_winkler >= 0.85).
-fn fuzzy_matches_tokens(name: &str, tokens: &[String]) -> bool {
-    for token in tokens {
-        if strsim::jaro_winkler(name, token) >= 0.85 {
-            return true;
-        }
-    }
-    false
-}
-
-/// Check if any of the keywords appear in the search text (case-insensitive).
-fn keywords_match_text(keywords: &[String], search_text: &str) -> bool {
-    for kw in keywords {
-        let kw_lower = kw.to_lowercase();
-        if kw_lower.len() >= 3 && search_text.contains(&kw_lower) {
-            return true;
-        }
-    }
-    false
-}
+// normalize_key, build_fuzzy_tokens, fuzzy_matches_tokens, keywords_match_text
+// were removed by DOS-258 (Lane D). The strsim crate is kept for the
+// test_fuzzy_matching_jaro_winkler test below.
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -803,6 +607,7 @@ fn keywords_match_text(keywords: &[String], search_text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::helpers::normalize_key;
 
     #[test]
     fn test_normalize_key() {
@@ -812,16 +617,6 @@ mod tests {
         );
         assert_eq!(normalize_key("Acme Corp"), "acmecorp");
         assert_eq!(normalize_key(""), "");
-    }
-
-    #[test]
-    fn test_keywords_match_text() {
-        let keywords = vec!["agentforce".to_string(), "AF platform".to_string()];
-        assert!(keywords_match_text(&keywords, "agentforce demo meeting"));
-        assert!(keywords_match_text(&keywords, "review af platform design"));
-        assert!(!keywords_match_text(&keywords, "quarterly review"));
-        // Short keywords (< 3 chars) are ignored to avoid false positives
-        assert!(!keywords_match_text(&["af".to_string()], "af meeting"));
     }
 
     #[test]
@@ -937,24 +732,5 @@ mod tests {
         assert!(strsim::jaro_winkler("initechco", "initechc") >= 0.85);
     }
 
-    #[test]
-    fn test_build_fuzzy_tokens() {
-        let tokens = build_fuzzy_tokens("review sales force demo");
-        assert!(tokens.contains(&"review".to_string()));
-        assert!(tokens.contains(&"sales".to_string()));
-        assert!(tokens.contains(&"force".to_string()));
-        assert!(tokens.contains(&"demo".to_string()));
-        assert!(tokens.contains(&"review sales".to_string()));
-        assert!(tokens.contains(&"sales force".to_string()));
-        assert!(tokens.contains(&"force demo".to_string()));
-    }
-
-    #[test]
-    fn test_fuzzy_matches_tokens() {
-        let tokens = build_fuzzy_tokens("review globexcor demo");
-        // "globexcorp" should fuzzy-match "globexcor" token
-        assert!(fuzzy_matches_tokens("globexcorp", &tokens));
-        // "microsoft" should not match anything
-        assert!(!fuzzy_matches_tokens("microsoft", &tokens));
-    }
+    // test_build_fuzzy_tokens and test_fuzzy_matches_tokens removed by DOS-258 Lane D.
 }

@@ -10,6 +10,11 @@
  * `meeting_entity_dismissals` and the entity cannot silently re-link on
  * the next calendar-sync or resolver sweep.
  *
+ * DOS-258: Updated to use the new deterministic link model:
+ *   - role === 'auto_suggested' renders as a muted dashed chip
+ *   - role === 'primary' with appliedRule === 'P5' shows the title-only banner
+ *   - primary === null + related.length > 0 shows the "Which account?" picker
+ *
  * Uses optimistic local state so chips appear/disappear instantly without
  * triggering a full dashboard reload.
  *
@@ -17,13 +22,15 @@
  * color coding, no shadcn card chrome.
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { X, Building2, FolderKanban, User } from "lucide-react";
 import { EntityPicker } from "./entity-picker";
-import type { LinkedEntity } from "@/types";
+import { EntityLinkPicker, TitleOnlyBanner } from "@/components/entity/EntityLinkPicker";
+import { getPrimaryEntity, isTitleOnlyPrimary } from "@/lib/entity-helpers";
+import type { LinkedEntity, LinkOutcome } from "@/types";
 
 interface MeetingEntityChipsProps {
   meetingId: string;
@@ -132,108 +139,187 @@ export function MeetingEntityChips({
   const chipPadding = compact ? "2px 8px" : "3px 10px";
   const iconSize = compact ? 10 : 12;
 
+  // DOS-258: Derive the P9 LinkOutcome so EntityLinkPicker can decide whether
+  // to show. We use the new `role` field when present; otherwise fall back to
+  // the legacy `isPrimary`/`suggested` flags so old data still renders.
+  const primaryEntity = useMemo(() => getPrimaryEntity(localEntities), [localEntities]);
+  const showTitleOnlyBanner = isTitleOnlyPrimary(primaryEntity);
+
+  const linkOutcome = useMemo<LinkOutcome>(() => {
+    const hasDos258Roles = localEntities.some((e) => e.role !== undefined);
+
+    if (hasDos258Roles) {
+      // New model: primary and related come directly from role field.
+      const primary = localEntities.find((e) => e.role === "primary") ?? null;
+      const related = localEntities
+        .filter((e) => e.role === "related" || e.role === "auto_suggested")
+        .map((e) => ({ entityId: e.id, entityType: e.entityType }));
+
+      return {
+        ownerType: "meeting",
+        ownerId: meetingId,
+        primary: primary ? { entityId: primary.id, entityType: primary.entityType } : null,
+        related,
+        tier: "entity",
+        appliedRule: primary?.appliedRule ?? null,
+      };
+    }
+
+    // Legacy model: construct outcome from isPrimary/suggested flags.
+    // primary === null when all entities are suggestions (P9 equivalent).
+    const legacyPrimary = primaryEntity;
+    const related = localEntities
+      .filter((e) => e.id !== legacyPrimary?.id && (e.suggested === true || e.isPrimary === false))
+      .map((e) => ({ entityId: e.id, entityType: e.entityType }));
+
+    return {
+      ownerType: "meeting",
+      ownerId: meetingId,
+      primary: legacyPrimary ? { entityId: legacyPrimary.id, entityType: legacyPrimary.entityType } : null,
+      related,
+      // Only show the picker when we have multiple candidates and no primary.
+      tier: legacyPrimary === null && related.length > 0 ? "entity" : "minimal",
+      appliedRule: null,
+    };
+  }, [localEntities, meetingId, primaryEntity]);
+
+  // Build entityId -> name lookup for the picker chips.
+  const entityNames = useMemo(
+    () => Object.fromEntries(localEntities.map((e) => [e.id, e.name])),
+    [localEntities],
+  );
+
   return (
     <div
       style={{
         display: "flex",
-        flexWrap: "wrap",
-        alignItems: "center",
+        flexDirection: "column",
         gap: compact ? 6 : 8,
       }}
       onClick={(e) => e.stopPropagation()}
     >
-      {localEntities.map((entity) => {
-        const color = entityColor[entity.entityType] ?? "var(--color-text-tertiary)";
-        const bg = entityBg[entity.entityType] ?? "var(--color-desk-charcoal-4)";
-        const Icon = entity.entityType === "project"
-          ? FolderKanban
-          : entity.entityType === "person"
-            ? User
-            : Building2;
-        const linkTo = entity.entityType === "project"
-          ? "/projects/$projectId"
-          : entity.entityType === "person"
-            ? "/people/$personId"
-            : "/accounts/$accountId";
-        const linkParams = entity.entityType === "project"
-          ? { projectId: entity.id }
-          : entity.entityType === "person"
-            ? { personId: entity.id }
-            : { accountId: entity.id };
+      {/* Chips row */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: compact ? 6 : 8,
+        }}
+      >
+        {localEntities.map((entity) => {
+          const color = entityColor[entity.entityType] ?? "var(--color-text-tertiary)";
+          const bg = entityBg[entity.entityType] ?? "var(--color-desk-charcoal-4)";
+          const Icon = entity.entityType === "project"
+            ? FolderKanban
+            : entity.entityType === "person"
+              ? User
+              : Building2;
+          const linkTo = entity.entityType === "project"
+            ? "/projects/$projectId"
+            : entity.entityType === "person"
+              ? "/people/$personId"
+              : "/accounts/$accountId";
+          const linkParams = entity.entityType === "project"
+            ? { projectId: entity.id }
+            : entity.entityType === "person"
+              ? { personId: entity.id }
+              : { accountId: entity.id };
 
-        // DOS-74: Render suggestion chips muted with a subtle "suggested"
-        // dashed border so users can see disambiguation options without
-        // mistaking them for co-equal primaries.
-        const isSuggested = entity.suggested === true;
-        return (
-          <span
-            key={entity.id}
-            title={isSuggested ? "Suggested — not auto-linked" : undefined}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              fontFamily: "var(--font-sans)",
-              fontSize,
-              fontWeight: 400,
-              color,
-              background: isSuggested ? "transparent" : bg,
-              padding: chipPadding,
-              borderRadius: 4,
-              lineHeight: 1.3,
-              opacity: isSuggested ? 0.65 : 1,
-              border: isSuggested ? `1px dashed ${color}` : "none",
-              transition: "background 0.15s ease, opacity 0.15s ease",
-            }}
-          >
-            <Icon style={{ width: iconSize, height: iconSize, opacity: 0.7, flexShrink: 0 }} />
-            <Link
-              to={linkTo}
-              params={linkParams as any}
-              style={{
-                color: "inherit",
-                textDecoration: "none",
-              }}
-            >
-              {entity.name}
-            </Link>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                handleRemove(entity.id, entity.name, entity.entityType);
-              }}
+          // DOS-258: Render auto_suggested chips muted with a dashed border.
+          // Falls back to the legacy `suggested` flag for backwards compatibility
+          // with data that hasn't been migrated through the new link engine yet.
+          const isAutoSuggested =
+            entity.role === "auto_suggested" || (entity.role === undefined && entity.suggested === true);
+          return (
+            <span
+              key={entity.id}
+              title={isAutoSuggested ? "Auto-suggested — not confirmed" : undefined}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                justifyContent: "center",
-                width: compact ? 14 : 16,
-                height: compact ? 14 : 16,
-                padding: 0,
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                color: "inherit",
-                opacity: 0.4,
-                transition: "opacity 0.15s ease",
-                borderRadius: 2,
-                marginLeft: 2,
+                gap: 4,
+                fontFamily: "var(--font-sans)",
+                fontSize,
+                fontWeight: 400,
+                color,
+                background: isAutoSuggested ? "transparent" : bg,
+                padding: chipPadding,
+                borderRadius: 4,
+                lineHeight: 1.3,
+                opacity: isAutoSuggested ? 0.65 : 1,
+                border: isAutoSuggested ? `1px dashed ${color}` : "none",
+                transition: "background 0.15s ease, opacity 0.15s ease",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.8"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.4"; }}
             >
-              <X style={{ width: compact ? 10 : 12, height: compact ? 10 : 12 }} />
-            </button>
-          </span>
-        );
-      })}
+              <Icon style={{ width: iconSize, height: iconSize, opacity: 0.7, flexShrink: 0 }} />
+              <Link
+                to={linkTo}
+                params={linkParams as any}
+                style={{
+                  color: "inherit",
+                  textDecoration: "none",
+                }}
+              >
+                {entity.name}
+              </Link>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleRemove(entity.id, entity.name, entity.entityType);
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: compact ? 14 : 16,
+                  height: compact ? 14 : 16,
+                  padding: 0,
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  color: "inherit",
+                  opacity: 0.4,
+                  transition: "opacity 0.15s ease",
+                  borderRadius: 2,
+                  marginLeft: 2,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.8"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.4"; }}
+              >
+                <X style={{ width: compact ? 10 : 12, height: compact ? 10 : 12 }} />
+              </button>
+            </span>
+          );
+        })}
 
-      {/* Always-available picker for adding more entities */}
-      <EntityPicker
-        value={null}
-        onChange={handleAdd}
-        placeholder={localEntities.length === 0 ? "Link to account or project..." : "+"}
-        className={compact ? "h-6 text-[10px] px-1.5" : undefined}
+        {/* Always-available picker for adding more entities */}
+        <EntityPicker
+          value={null}
+          onChange={handleAdd}
+          placeholder={localEntities.length === 0 ? "Link to account or project..." : "+"}
+          className={compact ? "h-6 text-[10px] px-1.5" : undefined}
+        />
+      </div>
+
+      {/* DOS-258 P5: "from title · undo" banner when the primary was matched
+          by title keyword only (no attendee-domain or calendar-identity). */}
+      {showTitleOnlyBanner && primaryEntity && (
+        <TitleOnlyBanner
+          entity={primaryEntity}
+          ownerType="meeting"
+          ownerId={meetingId}
+          onUndo={onEntitiesChanged}
+        />
+      )}
+
+      {/* DOS-258 P9: "Which account is this about?" picker when the link
+          engine found multiple candidates but could not elect a primary. */}
+      <EntityLinkPicker
+        outcome={linkOutcome}
+        entityNames={entityNames}
+        onPrimarySet={onEntitiesChanged}
       />
     </div>
   );

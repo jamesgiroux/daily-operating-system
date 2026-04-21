@@ -1649,7 +1649,7 @@ fn get_person_actions(db: &crate::db::ActionDb, person_id: &str) -> Value {
                    AND (
                      a.person_id = ?1
                      OR a.account_id IN (
-                       SELECT account_id FROM account_stakeholders WHERE person_id = ?1
+                       SELECT account_id FROM account_stakeholders WHERE person_id = ?1 AND status = 'active'
                      )
                    )
                  ORDER BY a.priority, a.due_date

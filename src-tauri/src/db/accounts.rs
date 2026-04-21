@@ -519,6 +519,7 @@ impl ActionDb {
              FROM account_stakeholders as_
              JOIN people p ON p.id = as_.person_id
              WHERE as_.account_id = ?1
+               AND as_.status = 'active'
                AND p.relationship != 'internal'
                AND p.email NOT LIKE '%group-calendar%'
                AND p.email NOT LIKE '%assistant.gong%'
