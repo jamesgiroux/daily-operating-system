@@ -81,6 +81,14 @@ impl GleanIntelligenceProvider {
     /// The caller (`intel_queue.rs`) falls back to PTY on any error.
     ///
     /// I575: When `app_handle` is provided, emits progressive enrichment events.
+    ///
+    /// `is_background` suppresses user-visible degraded/fallback toasts for
+    /// ProactiveHygiene / ContentChange / CalendarChange enrichments. These
+    /// fire on a schedule with no user intent and the natural 1-in-6
+    /// partial-failure rate would otherwise carpet the UI with warnings.
+    /// Audit events still log regardless of priority so failures remain
+    /// diagnosable from ~/.dailyos/audit.log.
+    #[allow(clippy::too_many_arguments)]
     pub async fn enrich_entity(
         &self,
         entity_id: &str,
@@ -89,6 +97,7 @@ impl GleanIntelligenceProvider {
         ctx: &IntelligenceContext,
         relationship: Option<&str>,
         app_handle: Option<&AppHandle>,
+        is_background: bool,
     ) -> Result<IntelligenceJson, String> {
         // Try parallel dimension fan-out first
         match self
@@ -99,6 +108,7 @@ impl GleanIntelligenceProvider {
                 ctx,
                 relationship,
                 app_handle,
+                is_background,
             )
             .await
         {
@@ -124,6 +134,7 @@ impl GleanIntelligenceProvider {
     /// I575: Uses `FuturesUnordered` to process dimensions as they complete,
     /// writing progressive updates to DB and emitting events when `app_handle`
     /// is provided.
+    #[allow(clippy::too_many_arguments)]
     pub async fn enrich_entity_parallel(
         &self,
         entity_id: &str,
@@ -132,6 +143,7 @@ impl GleanIntelligenceProvider {
         ctx: &IntelligenceContext,
         relationship: Option<&str>,
         app_handle: Option<&AppHandle>,
+        is_background: bool,
     ) -> Result<IntelligenceJson, String> {
         use crate::intel_queue::{EnrichmentComplete, EnrichmentProgress};
 
@@ -409,18 +421,24 @@ impl GleanIntelligenceProvider {
                         }),
                     );
                 }
-                let _ = handle.emit(
-                    "enrichment-glean-degraded",
-                    serde_json::json!({
-                        "entity_id": entity_id,
-                        "entity_type": entity_type,
-                        "succeeded": succeeded,
-                        "failed": failed_dims.len(),
-                        "failed_dimensions": failed_dims.clone(),
-                        "wall_clock_ms": total_ms,
-                        "will_fall_back": succeeded == 0,
-                    }),
-                );
+                // Toast only on user-initiated work. Background priorities
+                // (ProactiveHygiene, ContentChange, CalendarChange) fire on a
+                // schedule and the 1-in-6 partial-failure rate would carpet
+                // the UI. Audit event above still logs for diagnostics.
+                if !is_background {
+                    let _ = handle.emit(
+                        "enrichment-glean-degraded",
+                        serde_json::json!({
+                            "entity_id": entity_id,
+                            "entity_type": entity_type,
+                            "succeeded": succeeded,
+                            "failed": failed_dims.len(),
+                            "failed_dimensions": failed_dims.clone(),
+                            "wall_clock_ms": total_ms,
+                            "will_fall_back": succeeded == 0,
+                        }),
+                    );
+                }
             }
         }
 
