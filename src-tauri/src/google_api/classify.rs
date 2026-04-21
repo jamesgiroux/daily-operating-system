@@ -224,15 +224,37 @@ pub fn classify_meeting_multi(
         e.entity_type == "account" && (e.confidence >= 0.70 || e.source != "title")
     });
 
-    // Resolve the best-matched account hint for type checks (I382, DOS-206)
+    // Resolve the best-matched account hint for type checks (I382, DOS-206).
+    // Tie-breaking: when two accounts share the same confidence, prefer the
+    // internal-typed account so the DOS-206 guard reliably fires for
+    // all-internal meetings. Customer beats internal only when it has strictly
+    // higher confidence.
     let best_account_hint = result
         .resolved_entities
         .iter()
         .filter(|e| e.entity_type == "account")
         .max_by(|a, b| {
-            a.confidence
+            let conf_cmp = a.confidence
                 .partial_cmp(&b.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .unwrap_or(std::cmp::Ordering::Equal);
+            if conf_cmp != std::cmp::Ordering::Equal {
+                return conf_cmp;
+            }
+            // On equal confidence: internal account wins so the DOS-206 guard
+            // fires and we never mis-promote an all-internal meeting to "customer".
+            let a_internal = entity_hints
+                .iter()
+                .find(|h| h.id == a.entity_id)
+                .and_then(|h| h.account_type.as_deref()) == Some("internal");
+            let b_internal = entity_hints
+                .iter()
+                .find(|h| h.id == b.entity_id)
+                .and_then(|h| h.account_type.as_deref()) == Some("internal");
+            match (a_internal, b_internal) {
+                (true, false) => std::cmp::Ordering::Greater, // internal a wins
+                (false, true) => std::cmp::Ordering::Less,    // internal b wins
+                _ => std::cmp::Ordering::Equal,
+            }
         })
         .and_then(|best| entity_hints.iter().find(|h| h.id == best.entity_id));
 
