@@ -46,6 +46,8 @@ pub struct ThreadPrimaryLink {
     pub entity_type: String,
     /// Domain list for the primary account (empty if entity_type != "account").
     pub account_domains: Vec<String>,
+    /// Sender email of the parent message — used by P2's same-sender check.
+    pub parent_sender_email: Option<String>,
 }
 
 pub struct PendingStakeholderRow {
@@ -130,10 +132,11 @@ impl ActionDb {
         exclude_email_id: &str,
     ) -> Result<Option<ThreadPrimaryLink>, String> {
         let conn = self.conn_ref();
-        // Check linked_entities_raw first (new system)
+        // Check linked_entities_raw first (new system). Also fetch the parent
+        // sender_email so P2 can apply the "same sender" check.
         let row = conn
             .query_row(
-                "SELECT ler.entity_id, ler.entity_type \
+                "SELECT ler.entity_id, ler.entity_type, e.sender_email \
                  FROM linked_entities_raw ler \
                  JOIN emails e ON e.email_id = ler.owner_id \
                  WHERE ler.owner_type = 'email' \
@@ -143,18 +146,24 @@ impl ActionDb {
                    AND ler.owner_id != ?2 \
                  ORDER BY e.received_at DESC LIMIT 1",
                 params![thread_id, exclude_email_id],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
             )
             .optional()
             .map_err(|e| format!("get_thread_primary_link: {e}"))?;
 
         // Fall back to legacy emails.entity_id
-        let (entity_id, entity_type) = match row {
+        let (entity_id, entity_type, parent_sender_email) = match row {
             Some(r) => r,
             None => {
                 let legacy = conn
                     .query_row(
-                        "SELECT entity_id, entity_type FROM emails \
+                        "SELECT entity_id, entity_type, sender_email FROM emails \
                          WHERE thread_id = ?1 AND email_id != ?2 \
                            AND entity_id IS NOT NULL \
                          ORDER BY received_at DESC LIMIT 1",
@@ -163,6 +172,7 @@ impl ActionDb {
                             Ok((
                                 row.get::<_, String>(0)?,
                                 row.get::<_, String>(1).unwrap_or_else(|_| "account".to_string()),
+                                row.get::<_, Option<String>>(2)?,
                             ))
                         },
                     )
@@ -198,6 +208,7 @@ impl ActionDb {
             entity_id,
             entity_type,
             account_domains,
+            parent_sender_email,
         }))
     }
 
@@ -606,6 +617,63 @@ impl ActionDb {
                 .map_err(|e| format!("drain_thread_inheritance delete: {e}"))?;
         }
         Ok(children)
+    }
+
+    /// Fetch minimal email fields for thread-inheritance re-evaluation.
+    ///
+    /// Returns the fields that email_adapter::build_context needs to rebuild
+    /// a LinkingContext. Other DbEmail fields are set to safe defaults.
+    pub fn get_email_by_id_for_linking(
+        &self,
+        email_id: &str,
+    ) -> Result<Option<crate::db::types::DbEmail>, String> {
+        self.conn_ref()
+            .query_row(
+                "SELECT email_id, thread_id, sender_email, sender_name, subject,
+                        snippet, priority, is_unread, received_at,
+                        enrichment_state, entity_id, entity_type,
+                        user_is_last_sender, last_sender_email,
+                        message_count, created_at, updated_at
+                 FROM emails WHERE email_id = ?1",
+                params![email_id],
+                |row| {
+                    Ok(crate::db::types::DbEmail {
+                        email_id:            row.get(0)?,
+                        thread_id:           row.get(1)?,
+                        sender_email:        row.get(2)?,
+                        sender_name:         row.get(3)?,
+                        subject:             row.get(4)?,
+                        snippet:             row.get(5)?,
+                        priority:            row.get(6)?,
+                        is_unread:           row.get(7).unwrap_or(false),
+                        received_at:         row.get(8)?,
+                        enrichment_state:    row.get(9).unwrap_or_default(),
+                        enrichment_attempts: 0,
+                        last_enrichment_at:  None,
+                        enriched_at:         None,
+                        last_seen_at:        None,
+                        resolved_at:         None,
+                        entity_id:           row.get(10)?,
+                        entity_type:         row.get(11)?,
+                        contextual_summary:  None,
+                        sentiment:           None,
+                        urgency:             None,
+                        user_is_last_sender: row.get(12).unwrap_or(false),
+                        last_sender_email:   row.get(13)?,
+                        message_count:       row.get(14).unwrap_or(1),
+                        created_at:          row.get(15).unwrap_or_default(),
+                        updated_at:          row.get(16).unwrap_or_default(),
+                        relevance_score:     None,
+                        score_reason:        None,
+                        pinned_at:           None,
+                        commitments:         None,
+                        questions:           None,
+                        is_noise:            false,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("get_email_by_id_for_linking: {e}"))
     }
 }
 
