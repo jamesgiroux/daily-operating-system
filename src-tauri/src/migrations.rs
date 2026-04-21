@@ -527,6 +527,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 117,
         sql: include_str!("migrations/116_pending_thread_inheritance.sql"),
     },
+    // DOS-258 follow-up: complete entity_graph_version trigger coverage.
+    // Adds INSERT/DELETE + name/archived UPDATE triggers for accounts and
+    // projects so P5 name-matching and P4/P4b/P4c domain evidence stay
+    // consistent after entity creation, deletion, or rename.
+    Migration {
+        version: 118,
+        sql: include_str!("migrations/117_entity_graph_version_full_triggers.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

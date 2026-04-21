@@ -71,6 +71,8 @@ pub async fn evaluate_email(
     let outcome = super::evaluate(state.clone(), ctx, trigger).await?;
 
     // Flush thread inheritance queue when a primary was just set.
+    // For each waiting child email: fetch it and re-evaluate so P2 can now
+    // resolve correctly with the parent's primary available.
     if outcome.primary.is_some() {
         if let Some(tid) = thread_id {
             let children = state.with_db_read(move |db| {
@@ -79,18 +81,41 @@ pub async fn evaluate_email(
 
             if !children.is_empty() {
                 log::info!(
-                    "entity_linking: invalidating {} pending thread children for re-evaluation",
+                    "entity_linking: re-evaluating {} pending thread children",
                     children.len()
                 );
-                // Invalidate auto links so the next enrichment pass re-evaluates each
-                // child with the parent's primary now available for P2 inheritance.
-                // TODO(Lane-E): fetch DbEmail by id and call evaluate_email recursively
-                // once a get_email_by_id helper is added to ActionDb.
                 for child_id in children {
-                    let child = child_id.clone();
-                    let _ = state
-                        .db_write(move |db| db.delete_auto_links_for_owner("email", &child))
-                        .await;
+                    let cid = child_id.clone();
+                    let child_email = state
+                        .with_db_read(move |db| db.get_email_by_id_for_linking(&cid));
+                    match child_email {
+                        Ok(Some(child_email)) => {
+                            // Box::pin required because evaluate_email calls itself
+                            // (async recursion needs explicit boxing in Rust).
+                            if let Err(e) = Box::pin(evaluate_email(
+                                state.clone(),
+                                &child_email,
+                                Trigger::EmailThreadUpdate,
+                            ))
+                            .await
+                            {
+                                log::warn!(
+                                    "entity_linking: thread child {} re-eval failed: {e}",
+                                    child_email.email_id
+                                );
+                            }
+                        }
+                        Ok(None) => {
+                            log::debug!(
+                                "entity_linking: thread child {child_id} not found, skipping"
+                            );
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "entity_linking: could not fetch thread child {child_id}: {e}"
+                            );
+                        }
+                    }
                 }
             }
         }
