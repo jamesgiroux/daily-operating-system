@@ -224,8 +224,8 @@ pub fn classify_meeting_multi(
         e.entity_type == "account" && (e.confidence >= 0.70 || e.source != "title")
     });
 
-    // Check if best-matched account entity is a partner (I382)
-    let best_account_is_partner = result
+    // Resolve the best-matched account hint for type checks (I382, DOS-206)
+    let best_account_hint = result
         .resolved_entities
         .iter()
         .filter(|e| e.entity_type == "account")
@@ -234,16 +234,31 @@ pub fn classify_meeting_multi(
                 .partial_cmp(&b.confidence)
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
-        .and_then(|best| entity_hints.iter().find(|h| h.id == best.entity_id))
-        .and_then(|hint| hint.account_type.as_deref())
-        == Some("partner");
+        .and_then(|best| entity_hints.iter().find(|h| h.id == best.entity_id));
+
+    // Check if best-matched account entity is a partner (I382)
+    let best_account_is_partner =
+        best_account_hint.and_then(|h| h.account_type.as_deref()) == Some("partner");
+
+    // DOS-206: Check if best-matched account entity is itself internal.
+    // An internal account is one that belongs to the same organisation as the
+    // user (e.g. a subsidiary tracked as an account). When every attendee is
+    // also internal, meeting the internal account is just an internal meeting —
+    // promoting it to "customer" is wrong regardless of how confident the
+    // entity resolution is.
+    let best_account_is_internal =
+        best_account_hint.and_then(|h| h.account_type.as_deref()) == Some("internal");
 
     // ---- Step 5: All-internal path ----
     if !has_external {
         // Entity-aware override: if an account entity was found in the title,
         // promote this meeting to account-level intelligence even though all
         // attendees are internal (e.g., "Acme Corp 1:1" with internal attendees).
-        if has_account_entity {
+        //
+        // DOS-206 guard: skip promotion entirely when the matched account is
+        // itself marked internal. An all-internal team meeting about an internal
+        // account should never become a "customer" meeting.
+        if has_account_entity && !best_account_is_internal {
             result.meeting_type = match title_override {
                 Some("one_on_one") => "one_on_one".to_string(),
                 Some("qbr") => "qbr".to_string(),
@@ -1113,6 +1128,36 @@ mod tests {
         );
         let result = classify_meeting(&event, "company.com", &hints);
         assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
+    }
+
+    /// DOS-206 regression: an all-internal meeting against an account that is
+    /// itself typed "internal" (e.g. a subsidiary tracked in the accounts
+    /// table) must NOT be promoted to "customer", even when the entity match
+    /// is strong (keyword / domain).  The internal-account guard added in
+    /// DOS-206 must fire here.
+    #[test]
+    fn test_dos206_internal_account_type_never_promotes_to_customer() {
+        let mut hint = account_hint_with_domain("sub-id", "InternalUser1 Subsidiary", &["subsidiary.com"]);
+        hint.keywords = vec!["internaluser1 subsidiary".to_string()];
+        hint.account_type = Some("internal".to_string());
+        let hints = vec![hint];
+        // Keyword match at 0.70 — strong enough to trigger entity-aware override
+        // for a normal customer account.  But account_type=internal must block it.
+        let event = make_event(
+            "InternalUser1 Subsidiary Sync",
+            vec!["me@company.com", "a@company.com", "b@company.com"],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &hints);
+        assert_eq!(
+            result.meeting_type, "internal",
+            "all-internal meeting against an internal account must not become customer"
+        );
+        assert_eq!(
+            result.intelligence_tier,
+            IntelligenceTier::Person,
+            "internal account meeting must stay at Person tier"
+        );
     }
 
     #[test]
