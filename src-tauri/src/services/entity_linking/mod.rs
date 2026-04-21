@@ -33,13 +33,21 @@ pub async fn evaluate(
     state
         .db_write(move |db| {
             let user_domains = ctx.user_domains.clone();
-            // Phase 1 suppress check — run BEFORE Phase 2 so declined/self
-            // meetings don't get person stubs created unnecessarily.
-            if let Some(suppressed_outcome) = phases::phase1_suppress(&ctx, db, trigger)? {
-                return Ok(suppressed_outcome);
+            // Phase 1: suppress check. Run BEFORE Phase 2 so S1 (self-meeting)
+            // doesn't generate person stubs. S2 (broadcast) still writes facts.
+            match phases::phase1_suppress(&ctx, db, trigger)? {
+                phases::Phase1Result::Declined(outcome) => {
+                    // S1: no facts, no primary.
+                    return Ok(outcome);
+                }
+                phases::Phase1Result::Broadcast(outcome) => {
+                    // S2: facts written per spec (AC#6), but no primary.
+                    phases::phase2_record_facts(&mut ctx, db, &user_domains);
+                    return Ok(outcome);
+                }
+                phases::Phase1Result::Continue => {}
             }
-            // Phase 2: person stub creation (writes, but independent of the
-            // phase-3 transaction — find_or_create_person has its own txn).
+            // Phase 2: person stub creation (independent txn per stub).
             phases::phase2_record_facts(&mut ctx, db, &user_domains);
             // Phases 3 + 4 inside a single write transaction.
             phases::run_phases(&ctx, db)

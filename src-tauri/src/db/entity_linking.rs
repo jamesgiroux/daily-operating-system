@@ -57,6 +57,9 @@ pub struct PendingStakeholderRow {
     pub confidence: Option<f64>,
     pub data_source: String,
     pub created_at: String,
+    /// Other accounts that share this person's email domain (multi-BU hint).
+    /// Used by the review queue UI to surface "Also add to X?" notes (AC#13).
+    pub sibling_account_hints: Vec<(String, String)>, // (account_id, account_name)
 }
 
 // ---------------------------------------------------------------------------
@@ -553,13 +556,24 @@ impl ActionDb {
             .next()
             .map_err(|e| format!("get_pending_stakeholder_suggestions row: {e}"))?
         {
+            let person_id: String = row.get(0).map_err(|e| format!("pending_stk col0: {e}"))?;
+            let name: String = row.get(1).map_err(|e| format!("pending_stk col1: {e}"))?;
+            let email: String = row.get(2).map_err(|e| format!("pending_stk col2: {e}"))?;
+            let confidence: Option<f64> = row.get(3).map_err(|e| format!("pending_stk col3: {e}"))?;
+            let data_source: String = row.get(4).map_err(|e| format!("pending_stk col4: {e}"))?;
+            let created_at: String = row.get(5).map_err(|e| format!("pending_stk col5: {e}"))?;
+
+            // AC#13 multi-BU: find other accounts sharing this person's email domain.
+            let sibling_account_hints = self.get_sibling_accounts_for_email(&email, account_id);
+
             results.push(PendingStakeholderRow {
-                person_id: row.get(0).map_err(|e| format!("pending_stk col0: {e}"))?,
-                name: row.get(1).map_err(|e| format!("pending_stk col1: {e}"))?,
-                email: row.get(2).map_err(|e| format!("pending_stk col2: {e}"))?,
-                confidence: row.get(3).map_err(|e| format!("pending_stk col3: {e}"))?,
-                data_source: row.get(4).map_err(|e| format!("pending_stk col4: {e}"))?,
-                created_at: row.get(5).map_err(|e| format!("pending_stk col5: {e}"))?,
+                person_id,
+                name,
+                email,
+                confidence,
+                data_source,
+                created_at,
+                sibling_account_hints,
             });
         }
         Ok(results)
@@ -617,6 +631,45 @@ impl ActionDb {
                 .map_err(|e| format!("drain_thread_inheritance delete: {e}"))?;
         }
         Ok(children)
+    }
+
+    /// Return other accounts that share the person's email domain (AC#13 multi-BU hint).
+    /// Excludes the primary account and archived accounts. Returns at most 5 hints.
+    fn get_sibling_accounts_for_email(
+        &self,
+        email: &str,
+        exclude_account_id: &str,
+    ) -> Vec<(String, String)> {
+        let domain = match email.rsplit_once('@').map(|(_, d)| d.to_lowercase()) {
+            Some(d) => d,
+            None => return vec![],
+        };
+        let conn = self.conn_ref();
+        let mut stmt = match conn.prepare(
+            "SELECT DISTINCT a.id, a.name \
+             FROM account_domains ad \
+             JOIN accounts a ON a.id = ad.account_id \
+             WHERE ad.domain = ?1 \
+               AND a.id != ?2 \
+               AND a.archived = 0 \
+             LIMIT 5",
+        ) {
+            Ok(s) => s,
+            Err(_) => return vec![],
+        };
+        let mut rows = match stmt.query(params![domain, exclude_account_id]) {
+            Ok(r) => r,
+            Err(_) => return vec![],
+        };
+        let mut hints = Vec::new();
+        while let Ok(Some(row)) = rows.next() {
+            let id: String = row.get(0).unwrap_or_default();
+            let name: String = row.get(1).unwrap_or_default();
+            if !id.is_empty() {
+                hints.push((id, name));
+            }
+        }
+        hints
     }
 
     /// Fetch minimal email fields for thread-inheritance re-evaluation.
