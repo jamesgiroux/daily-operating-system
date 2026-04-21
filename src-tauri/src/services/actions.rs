@@ -626,8 +626,28 @@ pub fn get_actions_from_db(db: &ActionDb, days_ahead: i32) -> Result<Vec<ActionL
 }
 
 /// Get all suggested (AI-suggested) actions (I256).
+///
+/// Unfiltered. Prefer `get_suggested_actions_for_user` for the main list.
 pub fn get_suggested_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, String> {
     db.get_suggested_actions().map_err(|e| e.to_string())
+}
+
+/// Get suggested actions scoped to the current user + unassigned rows.
+///
+/// Reads `user_entity.name` (the /me page) and passes it to the DB layer
+/// for a case-insensitive owner-prefix match on `actions.context`. Rows
+/// without an owner prefix still surface so triage work isn't hidden.
+/// Defensive fallback: if user_entity is missing or name is empty,
+/// returns the unfiltered list.
+pub fn get_suggested_actions_for_user(
+    db: &ActionDb,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    let user_name = crate::services::user_entity::get_user_entity_from_db(db)
+        .ok()
+        .and_then(|u| u.name)
+        .filter(|n| !n.trim().is_empty());
+    db.get_suggested_actions_for_user(user_name.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 /// DOS Work-tab Phase 3: open, user-accepted commitments for an account.
