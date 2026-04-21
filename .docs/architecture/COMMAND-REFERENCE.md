@@ -2,8 +2,8 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-04-19 by `.docs/generators/gen-command-reference.sh`
-**Registered in lib.rs:** ~380 commands
+**Auto-generated:** 2026-04-20 by `.docs/generators/gen-command-reference.sh`
+**Registered in lib.rs:** ~384 commands
 **Source files:** 11
 
 ---
@@ -44,15 +44,19 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `get_person_stakeholder_roles` | yes | person_id |
 | `get_stakeholder_suggestions` | yes | account_id |
 | `index_entity_files` | yes | entity_type, entity_id |
+| `list_triage_snoozes` | yes | entity_type, entity_id |
 | `remove_account_team_member` | yes | account_id, person_id, role |
 | `remove_stakeholder_role` | yes | account_id, person_id, role |
+| `resolve_triage_item` | yes | entity_type, entity_id, triage_key |
 | `retry_risk_briefing` | yes | account_id |
 | `reveal_in_finder` | — | path |
 | `set_team_member_role` | yes | account_id, person_id, new_role |
 | `set_user_health_sentiment` | yes | account_id, sentiment, note |
+| `snooze_triage_item` | yes | entity_type, entity_id, triage_key, days |
 | `update_account_field` | yes | account_id, field, value |
 | `update_account_notes` | yes | account_id, notes |
 | `update_account_programs` | yes | account_id, programs_json |
+| `update_latest_sentiment_note` | yes | account_id, note |
 | `update_stakeholder_assessment` | yes | account_id, person_id, assessment |
 | `update_stakeholder_engagement` | yes | account_id, person_id, engagement |
 | `update_technical_footprint_field` | yes | account_id, field, value |

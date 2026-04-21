@@ -481,19 +481,21 @@ const MIGRATIONS: &[Migration] = &[
         version: 109,
         sql: include_str!("migrations/108_work_tab_actions.sql"),
     },
-    // DOS-269: Persist Health-tab triage card Snooze + Confirm-resolved
-    // state so dismissals survive refresh. Keyed on (entity_type,
-    // entity_id, triage_key).
+    // DOS-269: Persist Health-tab triage card Snooze + Confirm-resolved state
+    // so dismissals survive refresh. Keyed on (entity_type, entity_id,
+    // triage_key); rendering-time filter hides rows where
+    // resolved_at IS NOT NULL or snoozed_until > now.
     Migration {
         version: 110,
         sql: include_str!("migrations/109_triage_snoozes.sql"),
     },
-    // DOS-258 Lane A: entity linking schema foundation. linked_entities_raw
-    // (write surface), linking_dismissals (cross-surface dismissal store),
+    // DOS-258 Lane A: entity linking schema foundation.
+    // linked_entities_raw (write surface) + linked_entities view (read surface),
+    // linking_dismissals (cross-surface dismissal store),
     // entity_linking_evaluations (append-only provenance audit),
-    // entity_graph_version singleton counter, account_stakeholders
-    // status/confidence columns + review-queue index, backfill of existing
-    // meeting_entity_dismissals into linking_dismissals.
+    // entity_graph_version singleton counter + triggers,
+    // account_stakeholders status/confidence columns + review-queue index,
+    // backfill of existing meeting_entity_dismissals into linking_dismissals.
     Migration {
         version: 111,
         sql: include_str!("migrations/110_linked_entities_raw.sql"),
@@ -519,9 +521,8 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("migrations/115_migrate_meeting_entity_dismissals.sql"),
     },
     // DOS-258 Lane C: pending_thread_inheritance queue for P2 out-of-order
-    // email delivery. When a child email arrives before its parent, P2
-    // enqueues it here; the queue is drained when the parent is later
-    // evaluated.
+    // email delivery. When a child email arrives before its parent, P2 enqueues
+    // it here; the queue is drained when the parent is later evaluated.
     Migration {
         version: 117,
         sql: include_str!("migrations/116_pending_thread_inheritance.sql"),
@@ -753,12 +754,15 @@ fn create_backup_via_sqlcipher_export(
     backup_path: &Path,
     hex_key: &str,
 ) -> Result<(), String> {
+    // sqlcipher_export must run inside BEGIN IMMEDIATE so that WAL frames are
+    // included in the snapshot. Without the transaction, SQLCipher copies only
+    // the base page state and produces an 8KB hollow file (DOS-273).
     let backup_path_s = backup_path.to_string_lossy().replace('\'', "''");
     conn.execute_batch(&format!(
         "ATTACH DATABASE '{backup_path_s}' AS premigration KEY \"x'{hex_key}'\";"
     ))
     .map_err(|e| format!("Failed to attach fallback pre-migration backup DB: {e}"))?;
-    conn.execute_batch("SELECT sqlcipher_export('premigration');")
+    conn.execute_batch("BEGIN IMMEDIATE; SELECT sqlcipher_export('premigration'); COMMIT;")
         .map_err(|e| format!("Fallback pre-migration backup export failed: {e}"))?;
     conn.execute_batch("DETACH DATABASE premigration;")
         .map_err(|e| format!("Failed to detach fallback pre-migration backup DB: {e}"))?;
@@ -832,8 +836,25 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
         None
     };
 
-    let backup_result = create_backup_via_api(conn, &backup_path, encryption_key.as_deref());
+    // For encrypted DBs: use the Backup API with the key applied to the
+    // destination — the same pattern backup_database() uses successfully.
+    // Both sides use the same key so encrypted pages copy verbatim.
+    //
+    // The previous sqlcipher_export-first approach produced 8KB hollow files
+    // because sqlcipher_export without a transaction only copies base pages,
+    // not the WAL. The Backup API reads through the WAL correctly (DOS-273).
+    let backup_result = if encrypted {
+        let key = encryption_key
+            .as_deref()
+            .ok_or_else(|| "Missing encryption key for backup".to_string())?;
+        create_backup_via_api(conn, &backup_path, Some(key))
+    } else {
+        create_backup_via_api(conn, &backup_path, None)
+    };
     if let Err(err) = backup_result {
+        let _ = std::fs::remove_file(&backup_path);
+        // Last resort: sqlcipher_export (now transaction-wrapped). Only reached
+        // if the Backup API itself reports an encryption incompatibility.
         if should_try_encrypted_backup_fallback(encrypted, &err) {
             let key = encryption_key
                 .as_deref()
@@ -844,10 +865,25 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
         }
     }
 
+    // Sanity-check: a real backup of a multi-MB database must be more than a
+    // page or two. A hollow backup (< 64KB from a > 128KB source) is worse
+    // than no backup — it creates false confidence. Fail loudly so the user
+    // knows migrations did not run with a real safety net.
+    let source_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+    let backup_size = std::fs::metadata(&backup_path).map(|m| m.len()).unwrap_or(0);
+    if source_size > 128 * 1024 && backup_size < 64 * 1024 {
+        let _ = std::fs::remove_file(&backup_path);
+        return Err(format!(
+            "Pre-migration backup is suspiciously small ({backup_size} bytes) for a \
+             {source_size}-byte source database. The backup is likely hollow. \
+             Refusing to apply migrations without a valid safety copy (DOS-273)."
+        ));
+    }
+
     crate::db::hardening::set_file_permissions(&backup_path);
     prune_old_migration_backups(&db_path, 10)?;
     log::info!(
-        "Pre-migration backup created at {}",
+        "Pre-migration backup created at {} ({backup_size} bytes)",
         backup_path.to_string_lossy()
     );
     Ok(backup_path)
@@ -1409,6 +1445,98 @@ mod tests {
             [],
         )
         .expect("linear_entity_links table should exist and accept inserts");
+
+        // DOS-258 Lane A: verify entity linking schema (migrations 111–116)
+
+        // linked_entities_raw: table exists and enforces CHECK constraints
+        conn.execute(
+            "INSERT INTO linked_entities_raw
+             (owner_type, owner_id, entity_id, entity_type, role, source, graph_version, created_at)
+             VALUES ('meeting', 'm1', 'a1', 'account', 'primary', 'rule:P4a', 0, '2026-01-01')",
+            [],
+        )
+        .expect("linked_entities_raw should accept valid inserts");
+
+        // idx_one_primary: a second primary for the SAME owner (different entity) must fail
+        let dup_primary_result = conn.execute(
+            "INSERT INTO linked_entities_raw
+             (owner_type, owner_id, entity_id, entity_type, role, source, graph_version, created_at)
+             VALUES ('meeting', 'm1', 'p1', 'person', 'primary', 'rule:P7', 0, '2026-01-01')",
+            [],
+        );
+        assert!(
+            dup_primary_result.is_err(),
+            "idx_one_primary should reject a second primary for the same (owner_type, owner_id)"
+        );
+
+        // linked_entities view filters user_dismissed rows (different entity than the primary above)
+        conn.execute(
+            "INSERT INTO linked_entities_raw
+             (owner_type, owner_id, entity_id, entity_type, role, source, graph_version, created_at)
+             VALUES ('meeting', 'm1', 'p1', 'person', 'related', 'user_dismissed', 0, '2026-01-01')",
+            [],
+        )
+        .expect("linked_entities_raw should store user_dismissed rows");
+        let view_count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM linked_entities WHERE owner_id = 'm1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("linked_entities view should be queryable");
+        assert_eq!(view_count, 1, "linked_entities view should hide user_dismissed rows");
+
+        // linking_dismissals table
+        conn.execute(
+            "INSERT INTO linking_dismissals (owner_type, owner_id, entity_id, entity_type, created_at)
+             VALUES ('meeting', 'm1', 'a1', 'account', '2026-01-01')",
+            [],
+        )
+        .expect("linking_dismissals should exist and accept inserts");
+
+        // entity_linking_evaluations table
+        conn.execute(
+            "INSERT INTO entity_linking_evaluations
+             (owner_type, owner_id, link_trigger, rule_id, entity_id, entity_type, role, graph_version, evidence_json)
+             VALUES ('meeting', 'm1', 'CalendarPoll', 'P4a', 'a1', 'account', 'primary', 0, '{}')",
+            [],
+        )
+        .expect("entity_linking_evaluations should exist and accept inserts");
+
+        // entity_graph_version: seed row exists, trigger bumps on account_domains insert
+        let before_version: i32 = conn
+            .query_row(
+                "SELECT version FROM entity_graph_version WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("entity_graph_version seed row should exist");
+        conn.execute(
+            "INSERT INTO account_domains (account_id, domain) VALUES ('a1', 'trigger-test.com')",
+            [],
+        )
+        .expect("account_domains insert for trigger test");
+        let after_version: i32 = conn
+            .query_row(
+                "SELECT version FROM entity_graph_version WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("entity_graph_version should be queryable after trigger");
+        assert!(
+            after_version > before_version,
+            "account_domains insert should bump entity_graph_version ({} -> {})",
+            before_version,
+            after_version
+        );
+
+        // account_stakeholders: status and confidence columns exist (migration 115)
+        conn.execute(
+            "UPDATE account_stakeholders SET status = 'pending_review', confidence = 0.85
+             WHERE account_id = 'a1' AND person_id = 'p1'",
+            [],
+        )
+        .expect("account_stakeholders should have status and confidence columns");
     }
 
     #[test]

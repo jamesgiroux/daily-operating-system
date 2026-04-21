@@ -650,6 +650,10 @@ pub fn run() {
             commands::get_stakeholder_suggestions,
             commands::accept_stakeholder_suggestion,
             commands::dismiss_stakeholder_suggestion,
+            // DOS-258 Lane F: pending stakeholder review queue
+            commands::get_pending_stakeholder_suggestions,
+            commands::confirm_pending_stakeholder,
+            commands::dismiss_pending_stakeholder,
             commands::create_account,
             commands::create_child_account,
             commands::create_team,

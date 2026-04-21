@@ -604,7 +604,7 @@ impl ActionDb {
                     p.company_industry, p.company_size, p.company_hq, p.last_enriched_at, p.enrichment_sources
              FROM people p
              WHERE p.id IN (
-                 SELECT as_.person_id FROM account_stakeholders as_ WHERE as_.account_id = ?1
+                 SELECT as_.person_id FROM account_stakeholders as_ WHERE as_.account_id = ?1 AND as_.status = 'active'
                  UNION
                  SELECT em.person_id FROM entity_members em WHERE em.entity_id = ?1
              )
