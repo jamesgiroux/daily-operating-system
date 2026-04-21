@@ -270,14 +270,31 @@ pub async fn resolve_decision(
         .await
 }
 
-/// Get all suggested (AI-suggested) actions (I256).
+/// Get suggested (AI-suggested) actions.
+///
+/// Default (`show_all` unset or false): scopes to the current user's own
+/// commitments + unassigned rows based on `user_entity.name`. This is the
+/// behaviour the UI should use for the main "Suggested" list — AI
+/// extraction tags every speaker in a transcript as a potential owner, so
+/// the unfiltered result on a real workspace is mostly other people's
+/// work (observed 355 rows total, 26 actually owned by the user).
+///
+/// `show_all: Some(true)` returns every backlog row regardless of owner,
+/// for a "Show everyone's" toggle.
 #[tauri::command]
 pub async fn get_suggested_actions(
     state: State<'_, Arc<AppState>>,
+    show_all: Option<bool>,
 ) -> Result<Vec<crate::db::DbAction>, String> {
-    state
-        .db_read(crate::services::actions::get_suggested_actions)
-        .await
+    if show_all.unwrap_or(false) {
+        state
+            .db_read(crate::services::actions::get_suggested_actions)
+            .await
+    } else {
+        state
+            .db_read(crate::services::actions::get_suggested_actions_for_user)
+            .await
+    }
 }
 
 /// DOS Work-tab Phase 3: open commitments for the Work tab Commitments chapter.
