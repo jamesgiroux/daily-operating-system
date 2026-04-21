@@ -119,7 +119,34 @@ struct Phase3Result {
 }
 
 fn phase3(ctx: &LinkingContext, db: &ActionDb) -> Phase3Result {
-    let p4_entity_id = run_p4_probe(ctx, db);
+    // Run all three P4 domain rules and collect every match.
+    // This enables P9 detection (multiple accounts) without requiring P9 to
+    // fire as a separate rule — P9 is a dispatcher-level decision, not a rule.
+    let p4_candidates = collect_p4_candidates(ctx, db);
+
+    // P9: two or more distinct domain-evidence accounts — no primary,
+    // all become related chips so the user can pick via EntityLinkPicker.
+    if p4_candidates.len() > 1 {
+        let related = p4_candidates
+            .into_iter()
+            .map(|mut c| {
+                c.role = LinkRole::Related;
+                c
+            })
+            .collect();
+        return Phase3Result {
+            primary_candidate: None,
+            related_candidates: related,
+            applied_rule: Some("P9".to_string()),
+        };
+    }
+
+    // Pass the single P4 entity_id to P5 so title evidence can check
+    // domain consistency. If no P4 match, P5 runs unconstrained.
+    let p4_entity_id = p4_candidates.into_iter().next().map(|c| c.entity.entity_id);
+
+    // Full ordered rule list. P4 rules run again here (read-only, safe)
+    // because they need to be part of the first-Matched-wins chain.
     let rule_list = rules::ordered_rules(p4_entity_id);
     let mut related: Vec<super::types::Candidate> = Vec::new();
 
@@ -136,7 +163,6 @@ fn phase3(ctx: &LinkingContext, db: &ActionDb) -> Phase3Result {
                 }
 
                 // P10 returns AutoSuggested — write as related chip, not primary.
-                // Continue to next rule so a real primary can still be found.
                 if candidate.role == LinkRole::AutoSuggested {
                     related.push(candidate);
                     continue;
@@ -148,7 +174,6 @@ fn phase3(ctx: &LinkingContext, db: &ActionDb) -> Phase3Result {
                     continue;
                 }
 
-                // First Matched with role=Primary terminates Phase 3.
                 return Phase3Result {
                     primary_candidate: Some(candidate),
                     related_candidates: related,
@@ -166,23 +191,35 @@ fn phase3(ctx: &LinkingContext, db: &ActionDb) -> Phase3Result {
     }
 }
 
-fn run_p4_probe(ctx: &LinkingContext, db: &ActionDb) -> Option<String> {
+/// Run all P4 domain rules and collect every match.
+/// Returns 0 items (no domain evidence), 1 item (normal P4), or ≥2 items (P9).
+fn collect_p4_candidates(ctx: &LinkingContext, db: &ActionDb) -> Vec<super::types::Candidate> {
     use rules::{
         p4a_one_on_one::P4aOneOnOne, p4b_group_shared::P4bGroupShared,
         p4c_sender_domain::P4cSenderDomain,
     };
+    let mut candidates = Vec::new();
     for rule in [
         &P4aOneOnOne as &dyn Rule,
-        &P4bGroupShared,
-        &P4cSenderDomain,
+        &P4bGroupShared as &dyn Rule,
+        &P4cSenderDomain as &dyn Rule,
     ] {
         if let RuleOutcome::Matched(c) = rule.evaluate(ctx, db) {
             if !rules::is_no_primary_sentinel(&c) {
-                return Some(c.entity.entity_id);
+                // Deduplicate by entity_id — P4b and P4c could both match
+                // the same account for a given email.
+                if !candidates
+                    .iter()
+                    .any(|existing: &super::types::Candidate| {
+                        existing.entity.entity_id == c.entity.entity_id
+                    })
+                {
+                    candidates.push(c);
+                }
             }
         }
     }
-    None
+    candidates
 }
 
 // ---------------------------------------------------------------------------
@@ -195,19 +232,23 @@ fn run_p4_probe(ctx: &LinkingContext, db: &ActionDb) -> Option<String> {
 /// before entering this function.
 pub fn run_phases(ctx: &LinkingContext, db: &ActionDb) -> Result<LinkOutcome, String> {
     let phase3_result = db.with_transaction(|_| {
-        // Re-read graph version inside the transaction. Log a warning if it
-        // changed since ctx was built; proceed rather than retry for now
-        // (TODO: implement the single-retry loop specified in DOS-258).
-        if let Ok(current_version) = db.get_entity_graph_version() {
-            if current_version != ctx.graph_version {
-                log::warn!(
-                    "entity_linking: graph version changed during evaluation \
-                     ({} → {}); proceeding with stale context (retry TODO)",
-                    ctx.graph_version,
-                    current_version
-                );
-            }
-        }
+        // CAS: read graph version inside the transaction. If it changed since
+        // the adapter built ctx, retry phase3 once with the fresh snapshot
+        // rather than writing stale links (DOS-258 spec: "retry once").
+        let current_version = db.get_entity_graph_version().unwrap_or(ctx.graph_version);
+        let refreshed_ctx: std::borrow::Cow<LinkingContext> = if current_version != ctx.graph_version {
+            log::info!(
+                "entity_linking: graph version changed ({} → {}), re-running phase3 \
+                 with fresh snapshot",
+                ctx.graph_version, current_version
+            );
+            let mut refreshed = ctx.clone();
+            refreshed.graph_version = current_version;
+            std::borrow::Cow::Owned(refreshed)
+        } else {
+            std::borrow::Cow::Borrowed(ctx)
+        };
+        let ctx = &*refreshed_ctx;
 
         let dismissals = db
             .get_linking_dismissals(ctx.owner.owner_type.as_str(), &ctx.owner.owner_id)

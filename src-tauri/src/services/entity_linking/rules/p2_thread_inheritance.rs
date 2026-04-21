@@ -25,12 +25,12 @@ impl super::super::phases::Rule for P2ThreadInheritance {
             }
         };
 
-        // Domain compatibility check: child sender domain must be in parent
-        // account's domains, or sender must be the same as the parent's sender.
-        let sender_domain = ctx
-            .from_participant()
-            .and_then(|p| primitives::domain_from_email(&p.email));
+        let sender = ctx.from_participant();
+        let sender_email = sender.map(|p| p.email.as_str()).unwrap_or("");
+        let sender_domain = sender.and_then(|p| primitives::domain_from_email(&p.email));
 
+        // Domain compatibility: child sender domain must be in parent account's
+        // domains. If entity_type != 'account', domain check is skipped.
         let domain_ok = sender_domain
             .as_deref()
             .map(|d| {
@@ -41,7 +41,15 @@ impl super::super::phases::Rule for P2ThreadInheritance {
             })
             .unwrap_or(false);
 
-        if !domain_ok {
+        // Same-sender check: child and parent were sent by the same email address
+        // (e.g. a reply from the same contact on a person-primary thread).
+        let same_sender = parent
+            .parent_sender_email
+            .as_deref()
+            .map(|ps| ps.eq_ignore_ascii_case(sender_email))
+            .unwrap_or(false);
+
+        if !domain_ok && !same_sender {
             return RuleOutcome::Skip;
         }
 

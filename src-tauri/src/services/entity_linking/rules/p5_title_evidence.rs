@@ -68,8 +68,17 @@ impl super::super::phases::Rule for P5TitleEvidence {
                 .filter(|w| w.len() >= 4)
                 .collect();
 
-            let name_match = !name_words.is_empty()
-                && name_words.iter().all(|nw| tokens.contains(nw));
+            // Only require non-stoplist words to appear in the title tokens.
+            // This fixes false negatives for entity names that contain stoplist
+            // words (e.g. "Open Source Co" → check "source" and "co", not "open").
+            let name_words_for_match: Vec<&str> = name_words
+                .iter()
+                .copied()
+                .filter(|w| !STOPLIST.contains(w))
+                .collect();
+
+            let name_match = !name_words_for_match.is_empty()
+                && name_words_for_match.iter().all(|nw| tokens.contains(nw));
 
             let keyword_match = keywords_json
                 .as_deref()
