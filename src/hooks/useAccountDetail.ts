@@ -17,9 +17,14 @@ import type {
   AccountDetail,
   AccountEvent,
   ContentFile,
+  HealthSparklinePoint,
+  SentimentJournalEntry,
+  SentimentValue,
   StrategicProgram,
 } from "@/types";
+import type { RolePreset } from "@/types/preset";
 import { useAccountFields } from "./useAccountFields";
+import { useAccountWorkData } from "./useAccountWorkData";
 import { useEnrichmentProgress } from "./useEnrichmentProgress";
 import { useTeamManagement } from "./useTeamManagement";
 
@@ -30,6 +35,131 @@ interface BackgroundWorkStatusEvent {
   entityType?: string;
   stage?: string;
   error?: string;
+}
+
+/** DOS-27: Band steps used to score divergence magnitude. */
+const SENTIMENT_RANK: Record<SentimentValue, number> = {
+  strong: 4,
+  on_track: 3,
+  concerning: 2,
+  at_risk: 1,
+  critical: 0,
+};
+
+const COMPUTED_BAND_RANK: Record<string, number> = {
+  green: 4,
+  yellow: 2,
+  red: 0,
+};
+
+const MILLIS_PER_DAY = 24 * 60 * 60 * 1000;
+const SENTIMENT_STALE_DAYS = 30;
+
+/** CS preset — default labels. Other presets would override via hook composition later. */
+export const DEFAULT_SENTIMENT_LABELS: Record<SentimentValue, string> = {
+  strong: "Strong",
+  on_track: "On Track",
+  concerning: "Concerning",
+  at_risk: "At Risk",
+  critical: "Critical",
+};
+
+export function buildPresetSentimentLabels(
+  preset: RolePreset | null | undefined,
+): Record<SentimentValue, string> {
+  const healthField = preset?.vitals.account.find(
+    (field) => field.key === "health" && field.fieldType === "select",
+  );
+  const options = (healthField?.options ?? []).filter((option) => option.trim().length > 0);
+  if (options.length < 3) {
+    return DEFAULT_SENTIMENT_LABELS;
+  }
+
+  if (options.length >= 5) {
+    return {
+      strong: options[0]!,
+      on_track: options[1]!,
+      concerning: options[2]!,
+      at_risk: options[3]!,
+      critical: options[4]!,
+    };
+  }
+
+  if (options.length === 4) {
+    return {
+      strong: options[0]!,
+      on_track: options[1]!,
+      concerning: options[2]!,
+      at_risk: options[3]!,
+      critical: options[3]!,
+    };
+  }
+
+  return {
+    strong: options[0]!,
+    on_track: options[0]!,
+    concerning: options[1]!,
+    at_risk: options[2]!,
+    critical: options[2]!,
+  };
+}
+
+export interface SentimentDivergence {
+  severity: "minor" | "major";
+  computedBand: string;
+  delta: number;
+}
+
+export interface SentimentView {
+  current: SentimentValue | null;
+  note: string | null;
+  setAt: string | null;
+  history: SentimentJournalEntry[];
+  sparkline: HealthSparklinePoint[];
+  divergence: SentimentDivergence | null;
+  isStale: boolean;
+  presetLabels: Record<SentimentValue, string>;
+}
+
+function buildSentimentView(detail: AccountDetail | null): SentimentView {
+  const current = (detail?.userHealthSentiment ?? null) as SentimentValue | null;
+  const setAt = detail?.sentimentSetAt ?? null;
+  const note = detail?.sentimentNote ?? null;
+  const history = detail?.sentimentHistory ?? [];
+  const sparkline = detail?.healthSparkline ?? [];
+
+  // Divergence: compare sentiment rank against current computed band rank.
+  let divergence: SentimentDivergence | null = null;
+  const computedBand = (detail?.health ?? "").toLowerCase();
+  if (current && COMPUTED_BAND_RANK[computedBand] !== undefined) {
+    const sRank = SENTIMENT_RANK[current];
+    const cRank = COMPUTED_BAND_RANK[computedBand];
+    const delta = Math.abs(sRank - cRank);
+    if (delta >= 2) {
+      divergence = {
+        severity: delta >= 3 ? "major" : "minor",
+        computedBand,
+        delta,
+      };
+    }
+  }
+
+  let isStale = false;
+  if (setAt) {
+    const ageDays = (Date.now() - new Date(setAt).getTime()) / MILLIS_PER_DAY;
+    isStale = ageDays >= SENTIMENT_STALE_DAYS;
+  }
+
+  return {
+    current,
+    note,
+    setAt,
+    history,
+    sparkline,
+    divergence,
+    isStale,
+    presetLabels: DEFAULT_SENTIMENT_LABELS,
+  };
 }
 
 export function useAccountDetail(accountId: string | undefined) {
@@ -134,8 +264,16 @@ export function useAccountDetail(accountId: string | undefined) {
 
   // ─── Composed sub-hooks ───────────────────────────────────────────────
 
-  const fields = useAccountFields(detail, load, setError);
-  const team = useTeamManagement(accountId, silentRefresh);
+  // DOS-229 Wave 0e Fix 5: expose setDetail to sub-hooks so commands that
+  // return a fresh AccountDetail can apply it directly (no follow-up
+  // silentRefresh needed, avoiding SQLite WAL reader-snapshot lag).
+  const applyDetail = useCallback((d: AccountDetail) => {
+    setDetail(d);
+    setPrograms(d.strategicPrograms);
+  }, []);
+
+  const fields = useAccountFields(detail, load, setError, applyDetail);
+  const team = useTeamManagement(accountId, silentRefresh, applyDetail);
 
   // I575: Progressive enrichment — refresh data as each dimension completes
   const enrichmentProgress = useEnrichmentProgress(accountId, silentRefresh);
@@ -361,6 +499,15 @@ export function useAccountDetail(accountId: string | undefined) {
     }
   }
 
+  // ─── DOS Work-tab Phase 3: Commitments / Suggestions / Recently landed ──
+  // Action-table-backed surfaces, id-based dispatch. Replaces the previous
+  // index-based IntelligenceJson handlers (Phase 2 made Commitments and
+  // Suggestions read from actions directly; the old `mark_commitment_done`
+  // / `dismiss_intelligence_item` / `track_recommendation` /
+  // `dismiss_recommendation` commands are no longer called from the Work
+  // tab UI).
+  const work = useAccountWorkData(accountId);
+
   async function handleCreateAction() {
     if (!detail || !newActionTitle.trim()) return;
     setCreatingAction(true);
@@ -378,7 +525,84 @@ export function useAccountDetail(accountId: string | undefined) {
     }
   }
 
+  // ─── DOS-27: Sentiment journal + divergence ───────────────────────────
+
+  const sentiment = buildSentimentView(detail);
+
+  async function setUserHealthSentiment(value: SentimentValue, note?: string) {
+    if (!accountId) return;
+    // DOS-229: Command returns the updated AccountDetail assembled on the
+    // writer connection — apply it directly. Avoids the SQLite WAL reader
+    // snapshot lag that made a follow-up silentRefresh() show stale data
+    // until a manual reload.
+    const result = await invoke<AccountDetail>("set_user_health_sentiment", {
+      accountId,
+      sentiment: value,
+      note: note?.trim() ? note.trim() : null,
+    });
+    setDetail(result);
+    setPrograms(result.strategicPrograms);
+  }
+
+  /**
+   * DOS-269: "Add more detail" — update the note on the existing journal
+   * entry rather than creating a new one. Backs the SentimentHero
+   * `onUpdateNote` prop. Falls back to a fresh insert when no journal row
+   * exists for the current sentiment value yet.
+   */
+  async function updateSentimentNote(note: string) {
+    if (!accountId) return;
+    const cleaned = note.trim().length > 0 ? note.trim() : null;
+    const result = await invoke<AccountDetail>("update_latest_sentiment_note", {
+      accountId,
+      note: cleaned,
+    });
+    setDetail(result);
+    setPrograms(result.strategicPrograms);
+  }
+
+  /** Re-stamp sentiment_set_at so the "Still accurate?" prompt resets for 30 days. */
+  async function acknowledgeSentimentStale() {
+    if (!accountId || !detail?.userHealthSentiment) return;
+    const result = await invoke<AccountDetail>("set_user_health_sentiment", {
+      accountId,
+      sentiment: detail.userHealthSentiment,
+      note: null,
+    });
+    setDetail(result);
+    setPrograms(result.strategicPrograms);
+  }
+
+  // ─── DOS-228 Wave 0e Fix 4: risk briefing status + retry ──────────────
+
+  const riskBriefingJob = detail?.riskBriefingJob ?? null;
+
+  /**
+   * Kick off a new risk-briefing generation attempt. Safe to call from a
+   * UI button — backend coalesces into an already-running job and the
+   * status transitions become visible on the next `get_account_detail`
+   * (we optimistically refresh after a short delay to pick up the
+   * enqueued → running transition).
+   */
+  async function retryRiskBriefing() {
+    if (!accountId) return;
+    try {
+      await invoke("retry_risk_briefing", { accountId });
+      // Pick up the fresh 'enqueued' row. We can't use the DOS-229 pattern
+      // here because retry_risk_briefing returns void — the status is
+      // persisted on a separate writer call and we already wait for it.
+      await silentRefresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   // ─── Flat public API ──────────────────────────────────────────────────
+
+  // DOS-15: Glean leading-signal enrichment bundle for Health & Outlook tab.
+  // Namespaced under `gleanSignals` per v121-foundation peer coordination
+  // (does not collide with DOS-27's `sentiment.*` namespace).
+  const gleanSignals = detail?.gleanSignals ?? null;
 
   return {
     // Core data
@@ -386,6 +610,7 @@ export function useAccountDetail(accountId: string | undefined) {
     loading,
     error,
     intelligence,
+    gleanSignals,
     files,
     events,
     programs,
@@ -450,5 +675,20 @@ export function useAccountDetail(accountId: string | undefined) {
     handleCreateInlineTeamMember: team.handleCreateInlineTeamMember,
     handleImportNoteCreateAndAdd: team.handleImportNoteCreateAndAdd,
     handleCreateAction,
+
+    // DOS Work-tab Phase 3: Action-table-backed Work surfaces
+    // `work.commitments`, `work.suggestions`, `work.recentlyLanded`, plus
+    // id-based handlers + in-flight Sets. See useAccountWorkData.
+    work,
+
+    // DOS-27: sentiment journal
+    sentiment,
+    setUserHealthSentiment,
+    acknowledgeSentimentStale,
+    updateSentimentNote,
+
+    // DOS-228 Wave 0e Fix 4: risk briefing status + retry
+    riskBriefingJob,
+    retryRiskBriefing,
   };
 }

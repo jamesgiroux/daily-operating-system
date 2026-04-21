@@ -19,10 +19,18 @@ use crate::db::ActionDb;
 use crate::intelligence::prompts::{GapQueryItem, IntelligenceContext};
 use crate::intelligence::IntelligenceJson;
 
-/// Timeout for individual Glean API calls.
-const GLEAN_CALL_TIMEOUT: Duration = Duration::from_secs(10);
+/// Timeout for lightweight non-chat Glean API calls (list_sources, search,
+/// read_document). 30s leaves headroom for internet latency + Glean
+/// backend variance without letting a dead endpoint stall forever.
+const GLEAN_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 /// I535: Longer timeout for Glean `chat` tool — AI synthesis takes 10-30s.
-const GLEAN_CHAT_TIMEOUT: Duration = Duration::from_secs(60);
+// 240s: Glean chat is agentic — runs internal search tool-calls before
+// returning the final answer. For well-documented accounts (lots of Gong
+// transcripts / SFDC records / Zendesk tickets), chat can take minutes.
+// 60s was too tight and caused cascade timeout → PTY fallback → items
+// tagged with local source instead of glean_*. 240s matches the outer
+// timeout in enrich_entity_parallel so slow-but-valid responses complete.
+const GLEAN_CHAT_TIMEOUT: Duration = Duration::from_secs(240);
 
 /// Maximum documents to fetch per entity context gather.
 const MAX_DOCUMENTS_PER_ENTITY: usize = 10;

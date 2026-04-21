@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::dimension_prompts::{self, DIMENSION_NAMES};
 use super::io::{IntelligenceJson, SourceManifestEntry};
@@ -81,6 +81,14 @@ impl GleanIntelligenceProvider {
     /// The caller (`intel_queue.rs`) falls back to PTY on any error.
     ///
     /// I575: When `app_handle` is provided, emits progressive enrichment events.
+    ///
+    /// `is_background` suppresses user-visible degraded/fallback toasts for
+    /// ProactiveHygiene / ContentChange / CalendarChange enrichments. These
+    /// fire on a schedule with no user intent and the natural 1-in-6
+    /// partial-failure rate would otherwise carpet the UI with warnings.
+    /// Audit events still log regardless of priority so failures remain
+    /// diagnosable from ~/.dailyos/audit.log.
+    #[allow(clippy::too_many_arguments)]
     pub async fn enrich_entity(
         &self,
         entity_id: &str,
@@ -89,6 +97,7 @@ impl GleanIntelligenceProvider {
         ctx: &IntelligenceContext,
         relationship: Option<&str>,
         app_handle: Option<&AppHandle>,
+        is_background: bool,
     ) -> Result<IntelligenceJson, String> {
         // Try parallel dimension fan-out first
         match self
@@ -99,6 +108,7 @@ impl GleanIntelligenceProvider {
                 ctx,
                 relationship,
                 app_handle,
+                is_background,
             )
             .await
         {
@@ -124,6 +134,7 @@ impl GleanIntelligenceProvider {
     /// I575: Uses `FuturesUnordered` to process dimensions as they complete,
     /// writing progressive updates to DB and emitting events when `app_handle`
     /// is provided.
+    #[allow(clippy::too_many_arguments)]
     pub async fn enrich_entity_parallel(
         &self,
         entity_id: &str,
@@ -132,6 +143,7 @@ impl GleanIntelligenceProvider {
         ctx: &IntelligenceContext,
         relationship: Option<&str>,
         app_handle: Option<&AppHandle>,
+        is_background: bool,
     ) -> Result<IntelligenceJson, String> {
         use crate::intel_queue::{EnrichmentComplete, EnrichmentProgress};
 
@@ -188,8 +200,17 @@ impl GleanIntelligenceProvider {
                 let start = Instant::now();
                 let client = GleanMcpClient::new(&ep);
 
+                // 240s budget: Glean chat is agentic (runs internal search
+                // tool-calls before generating the answer). For well-indexed
+                // accounts with lots of docs/transcripts the response can
+                // take minutes. The original 30s cap fired before the inner
+                // reqwest timeout, killing every dimension and falling back
+                // silently to PTY — resulting in items tagged with local
+                // source enum (transcript|local_file|pty_synthesis) instead
+                // of glean_*. 240s matches GLEAN_CHAT_TIMEOUT so slow-but-
+                // valid responses complete before either timeout fires.
                 let response_result =
-                    tokio::time::timeout(Duration::from_secs(30), client.chat(&prompt, None)).await;
+                    tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt, None)).await;
 
                 let elapsed_ms = start.elapsed().as_millis();
 
@@ -367,12 +388,75 @@ impl GleanIntelligenceProvider {
             );
         }
 
+        // Surface any Glean dimension failures loudly. Without this,
+        // timeouts / errors on dimension fan-out fall through silently to
+        // legacy enrichment → PTY fallback, leaving users staring at
+        // local-sourced items with no signal that Glean couldn't finish.
+        //
+        // Emits:
+        //   - Audit event "glean_enrichment_degraded" (partial) or
+        //     "glean_enrichment_all_failed" (full miss) with failed
+        //     dimensions + wall-clock ms. grep-able from ~/.dailyos/audit.log.
+        //   - Tauri event "enrichment-glean-degraded" so the frontend can
+        //     surface a toast/banner when Glean came back partial/empty.
+        if !failed_dims.is_empty() {
+            if let Some(handle) = app_handle {
+                {
+                    let state = handle.state::<std::sync::Arc<crate::state::AppState>>();
+                    let mut audit = state.audit_log.lock();
+                    let _ = audit.append(
+                        "data_access",
+                        if succeeded == 0 {
+                            "glean_enrichment_all_failed"
+                        } else {
+                            "glean_enrichment_degraded"
+                        },
+                        serde_json::json!({
+                            "entity_id": entity_id,
+                            "entity_type": entity_type,
+                            "succeeded": succeeded,
+                            "failed": failed_dims.len(),
+                            "failed_dimensions": failed_dims,
+                            "wall_clock_ms": total_ms,
+                        }),
+                    );
+                }
+                // Toast only on user-initiated work. Background priorities
+                // (ProactiveHygiene, ContentChange, CalendarChange) fire on a
+                // schedule and the 1-in-6 partial-failure rate would carpet
+                // the UI. Audit event above still logs for diagnostics.
+                if !is_background {
+                    let _ = handle.emit(
+                        "enrichment-glean-degraded",
+                        serde_json::json!({
+                            "entity_id": entity_id,
+                            "entity_type": entity_type,
+                            "succeeded": succeeded,
+                            "failed": failed_dims.len(),
+                            "failed_dimensions": failed_dims.clone(),
+                            "wall_clock_ms": total_ms,
+                            "will_fall_back": succeeded == 0,
+                        }),
+                    );
+                }
+            }
+        }
+
         if succeeded == 0 {
             return Err(format!("All 6 Glean dimensions failed for {}", entity_name));
         }
 
         // Set metadata on combined result
         combined.enriched_at = chrono::Utc::now().to_rfc3339();
+        // Surface the count of indexed source files we had to work with —
+        // the manifest below records "glean_chat" as the synthesis channel,
+        // but the UI's "About this intelligence" block expects
+        // source_file_count to reflect how many real files backed the
+        // enrichment (content_index rows passed through the 90-day cutoff).
+        // Without this, the About panel shows "1 of 0 total files" because
+        // IntelligenceJson::default() zeroes the field and merge_dimension_into
+        // doesn't propagate per-dimension counts.
+        combined.source_file_count = ctx.file_manifest.len();
         // Build source manifest with a single glean_chat entry
         if combined.source_manifest.is_empty() {
             combined.source_manifest.push(SourceManifestEntry {
@@ -629,6 +713,39 @@ impl GleanIntelligenceProvider {
     /// Get the endpoint this provider is configured for.
     pub fn endpoint(&self) -> &str {
         &self.endpoint
+    }
+
+    /// DOS-15: Supplemental leading-signals enrichment for the Health & Outlook tab.
+    ///
+    /// Runs a second Glean `chat` call with the leading-signals prompt, parses the
+    /// 7-bucket JSON response, and returns a normalized `HealthOutlookSignals`.
+    /// Called by `intel_queue.rs` after the main per-dimension enrichment completes
+    /// successfully. Returns `Err` on chat failure, timeout, or unparseable response
+    /// — the caller swallows the error (silent fallback per ADR-0100).
+    pub async fn enrich_leading_signals(
+        &self,
+        entity_name: &str,
+    ) -> Result<super::glean_leading_signals::HealthOutlookSignals, String> {
+        let prompt = super::glean_leading_signals::build_leading_signals_prompt(entity_name);
+        let client = GleanMcpClient::new(&self.endpoint);
+
+        let response_text =
+            tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt, None))
+                .await
+                .map_err(|_| {
+                    format!("Glean leading-signals chat timed out for {}", entity_name)
+                })?
+                .map_err(|e| {
+                    format!("Glean leading-signals chat failed for {}: {}", entity_name, e)
+                })?;
+
+        log::info!(
+            "[DOS-15] Glean leading-signals response for {} — {} chars",
+            entity_name,
+            response_text.len()
+        );
+
+        super::glean_leading_signals::parse_leading_signals(&response_text)
     }
 }
 
@@ -1200,7 +1317,12 @@ pub fn reconcile_enrichment(
     // Skip reconciliation for fields with user edits — preserve_user_edits
     // handles those after this function returns.
 
-    if !has_user_edits("risks") {
+    // Non-destructive-empty guard (DOS Blackstone regression): when a dimension
+    // times out, its fields arrive empty. Reconciling an empty new_items array
+    // against existing pty_synthesis items would wipe them all. Reconcile only
+    // when the new output actually has data, or when existing is also empty
+    // (nothing to preserve).
+    if !has_user_edits("risks") && (!new_output.risks.is_empty() || existing.risks.is_empty()) {
         result.risks = reconcile_vec_items(
             &existing.risks,
             &new_output.risks,
@@ -1211,7 +1333,9 @@ pub fn reconcile_enrichment(
         );
     }
 
-    if !has_user_edits("recentWins") {
+    if !has_user_edits("recentWins")
+        && (!new_output.recent_wins.is_empty() || existing.recent_wins.is_empty())
+    {
         result.recent_wins = reconcile_vec_items(
             &existing.recent_wins,
             &new_output.recent_wins,
@@ -1228,7 +1352,9 @@ pub fn reconcile_enrichment(
     // insights to DB columns or stakeholder_suggestions table.
     result.stakeholder_insights = new_output.stakeholder_insights;
 
-    if !has_user_edits("valueDelivered") {
+    if !has_user_edits("valueDelivered")
+        && (!new_output.value_delivered.is_empty() || existing.value_delivered.is_empty())
+    {
         result.value_delivered = reconcile_vec_items(
             &existing.value_delivered,
             &new_output.value_delivered,
@@ -1239,7 +1365,9 @@ pub fn reconcile_enrichment(
         );
     }
 
-    if !has_user_edits("competitiveContext") {
+    if !has_user_edits("competitiveContext")
+        && (!new_output.competitive_context.is_empty() || existing.competitive_context.is_empty())
+    {
         result.competitive_context = reconcile_vec_items(
             &existing.competitive_context,
             &new_output.competitive_context,
@@ -1250,7 +1378,27 @@ pub fn reconcile_enrichment(
         );
     }
 
-    if !has_user_edits("organizationalChanges") {
+    // MarketContext reconciliation — same non-destructive-empty guard as
+    // the other vec fields. Prevents a sparse enrichment from wiping
+    // prior regulatory/market items that user corrections or earlier
+    // enrichments accumulated.
+    if !has_user_edits("marketContext")
+        && (!new_output.market_context.is_empty() || existing.market_context.is_empty())
+    {
+        result.market_context = reconcile_vec_items(
+            &existing.market_context,
+            &new_output.market_context,
+            refreshed_sources,
+            dismissed,
+            "marketContext",
+            |m| &m.title,
+        );
+    }
+
+    if !has_user_edits("organizationalChanges")
+        && (!new_output.organizational_changes.is_empty()
+            || existing.organizational_changes.is_empty())
+    {
         result.organizational_changes = reconcile_vec_items(
             &existing.organizational_changes,
             &new_output.organizational_changes,
@@ -1261,7 +1409,9 @@ pub fn reconcile_enrichment(
         );
     }
 
-    if !has_user_edits("expansionSignals") {
+    if !has_user_edits("expansionSignals")
+        && (!new_output.expansion_signals.is_empty() || existing.expansion_signals.is_empty())
+    {
         result.expansion_signals = reconcile_vec_items(
             &existing.expansion_signals,
             &new_output.expansion_signals,
@@ -1277,15 +1427,18 @@ pub fn reconcile_enrichment(
         if let (Some(existing_oc), Some(new_oc)) =
             (&existing.open_commitments, &new_output.open_commitments)
         {
-            let reconciled = reconcile_vec_items(
-                existing_oc,
-                new_oc,
-                refreshed_sources,
-                dismissed,
-                "openCommitments",
-                |c| &c.description,
-            );
-            result.open_commitments = Some(reconciled);
+            // Non-destructive-empty: if new dimension returned empty, keep existing.
+            if !new_oc.is_empty() || existing_oc.is_empty() {
+                let reconciled = reconcile_vec_items(
+                    existing_oc,
+                    new_oc,
+                    refreshed_sources,
+                    dismissed,
+                    "openCommitments",
+                    |c| &c.description,
+                );
+                result.open_commitments = Some(reconciled);
+            }
         } else if new_output.open_commitments.is_some() {
             result.open_commitments = new_output.open_commitments;
         }
@@ -1330,6 +1483,8 @@ pub fn reconcile_enrichment(
     reconcile_option!(success_plan_signals, "successPlanSignals");
 
     // Non-source-attributed vecs: strategic_priorities, internal_team, blockers, gong_call_summaries
+    // These already use an "only-overwrite-if-non-empty" guard via the is_empty checks below,
+    // which preserves existing values when the dimension returns nothing.
     if !new_output.strategic_priorities.is_empty() {
         result.strategic_priorities = new_output.strategic_priorities;
     }

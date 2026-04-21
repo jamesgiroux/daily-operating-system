@@ -1,30 +1,25 @@
 /**
- * StrategicLandscape -- Competitive & Strategic chapter (Ledger style).
+ * StrategicLandscape -- Chapter 3 "What matters to them" (Context tab).
  *
- * Four subsections: Strategic Priorities (numbered list), Competitive Landscape
- * (threat matrix grid), Organizational Changes (compact timeline with icons),
- * and Blockers (terracotta accent blocks).
- *
- * Each subsection renders only when its data is non-empty.
- * Returns null when all four sources are empty.
- *
- * I550: Per-item inline editing, dismiss, and feedback controls.
+ * Matches .docs/mockups/account-context-globex.html Chapter 3.
+ * Three subsections, each rendered only when data is present:
+ *   1. Strategic priorities — 2-col grid, span-2 on last card when count is odd.
+ *   2. Competitive landscape — 3-col grid with 3-dot threat scale.
+ *   3. Regulatory & market context — full-width reg-card per item.
  */
-import { X } from "lucide-react";
+import { useState } from "react";
 import type { EntityIntelligence } from "@/types";
-import { EditableText } from "@/components/ui/EditableText";
+import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
+import { useEntitySuppressions } from "@/hooks/useEntitySuppressions";
 import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
-import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import css from "./StrategicLandscape.module.css";
 
 interface StrategicLandscapeProps {
   intelligence: EntityIntelligence;
+  /** Dismiss = clear field + fire negative feedback (Bayesian loop). */
   onUpdateField?: (fieldPath: string, value: string) => void;
-  getItemFeedback?: (fieldPath: string) => "positive" | "negative" | null;
   onItemFeedback?: (fieldPath: string, type: "positive" | "negative") => void;
 }
-
-/* -- Helpers -------------------------------------------------------------- */
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return "";
@@ -38,356 +33,237 @@ function formatDate(dateStr?: string): string {
   }
 }
 
-function priorityStatusBadge(status?: string): { label: string; cls: string } {
-  switch (status?.toLowerCase().replace(/[_\s-]/g, "")) {
+function priorityStatus(raw?: string): { label: string; cls: string } {
+  const key = raw?.toLowerCase().replace(/[_\s-]/g, "") ?? "";
+  switch (key) {
     case "active":
-      return { label: "Active", cls: css.badgeSage };
-    case "atrisk":
-      return { label: "At Risk", cls: css.badgeTerracotta };
-    case "completed":
-      return { label: "Completed", cls: css.badgeSage };
+      return { label: "Active", cls: css.statusActive };
+    case "exploring":
+      return { label: "Exploring", cls: css.statusExploring };
+    case "evaluating":
+      return { label: "Evaluating", cls: css.statusEvaluating };
     case "paused":
-      return { label: "Paused", cls: css.badgeLarkspur };
+      return { label: "Paused", cls: css.statusNeutral };
+    case "completed":
+      return { label: "Completed", cls: css.statusActive };
+    case "atrisk":
+      return { label: "At Risk", cls: css.statusAtRisk };
     default:
-      return { label: status ?? "", cls: css.badgeNeutral };
+      return { label: raw ?? "Active", cls: css.statusActive };
   }
 }
 
-function threatBadge(level?: string): { label: string; cls: string } {
+function threatDotsCount(level?: string): 1 | 2 | 3 {
   switch (level?.toLowerCase().replace(/[_\s-]/g, "")) {
     case "displacement":
-      return { label: "Displacement", cls: css.badgeTerracotta };
-    case "evaluation":
-      return { label: "Evaluation", cls: css.badgeTerracotta };
-    case "mentioned":
-      return { label: "Mentioned", cls: css.badgeNeutral };
     case "incumbent":
-      return { label: "Incumbent", cls: css.badgeSage };
+      return 3;
+    case "evaluation":
+      return 2;
+    case "mentioned":
     default:
-      return { label: level ?? "", cls: css.badgeNeutral };
+      return 1;
   }
 }
 
-function normalizeChangeType(changeType: string): string {
-  return changeType.toLowerCase().replace(/[_\s-]/g, "");
-}
-
-function changeIconClass(changeType: string): string {
-  switch (normalizeChangeType(changeType)) {
-    case "departure":
-      return css.changeIconDeparture;
-    case "hire":
-      return css.changeIconHire;
-    case "promotion":
-    case "rolechange":
-      return css.changeIconPromotion;
-    case "reorg":
-      return css.changeIconReorg;
+function threatLabel(level?: string): string {
+  const key = level?.toLowerCase().replace(/[_\s-]/g, "") ?? "";
+  switch (key) {
+    case "displacement":
+      return "Displacement";
+    case "evaluation":
+      return "Evaluation";
+    case "incumbent":
+      return "Incumbent";
+    case "mentioned":
     default:
-      return css.changeIconDefault;
+      return "Mentioned";
   }
 }
-
-function changeIconChar(changeType: string): string {
-  switch (normalizeChangeType(changeType)) {
-    case "departure":
-      return "\u2197"; // ↗
-    case "hire":
-      return "+";
-    case "promotion":
-      return "\u2191"; // ↑
-    case "rolechange":
-      return "\u21c4"; // ⇄
-    case "reorg":
-      return "\u2725"; // ✥
-    default:
-      return "\u2022"; // bullet
-  }
-}
-
-function changeTypeLabel(changeType: string): string {
-  switch (normalizeChangeType(changeType)) {
-    case "departure":
-      return "Departure";
-    case "hire":
-      return "New Hire";
-    case "promotion":
-      return "Promotion";
-    case "rolechange":
-      return "Role Change";
-    case "reorg":
-      return "Reorganization";
-    default:
-      // Title-case the raw value
-      return changeType.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-}
-
-function impactBadge(impact?: string): { label: string; cls: string } {
-  switch (impact?.toLowerCase()) {
-    case "critical":
-      return { label: "Critical", cls: css.badgeTerracotta };
-    case "high":
-      return { label: "High", cls: css.badgeTurmeric };
-    case "moderate":
-      return { label: "Moderate", cls: css.badgeSage };
-    case "low":
-      return { label: "Low", cls: css.badgeNeutral };
-    default:
-      return { label: impact ?? "", cls: css.badgeNeutral };
-  }
-}
-
-/* -- Component ------------------------------------------------------------ */
 
 export function StrategicLandscape({
   intelligence,
   onUpdateField,
-  getItemFeedback,
-  onItemFeedback,
+  onItemFeedback: _onItemFeedback,
 }: StrategicLandscapeProps) {
-  const priorities = (intelligence.strategicPriorities ?? []).filter((p) => p.priority?.trim());
-  const competitors = (intelligence.competitiveContext ?? []).filter((c) => c.context?.trim() || c.competitor?.trim());
-  const orgChanges = (intelligence.organizationalChanges ?? []).filter((o) => o.person?.trim());
-  const blockers = (intelligence.blockers ?? []).filter((b) => b.description?.trim());
+  const suppressions = useEntitySuppressions(intelligence.entityId);
+  const [hiddenPaths, setHiddenPaths] = useState<Set<string>>(() => new Set());
+  const editable = !!onUpdateField;
+  const priorities = (intelligence.strategicPriorities ?? [])
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.priority?.trim())
+    .filter(({ index }) => !hiddenPaths.has(`strategicPriorities[${index}].priority`))
+    .filter(({ item }) => !suppressions.isSuppressed("strategicPriorities", item.priority));
+  const competitors = (intelligence.competitiveContext ?? [])
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.competitor?.trim() || item.context?.trim())
+    .filter(({ index }) => !hiddenPaths.has(`competitiveContext[${index}].competitor`))
+    .filter(
+      ({ item }) =>
+        !suppressions.isSuppressed(
+          "competitiveContext",
+          item.competitor ?? item.context ?? null,
+        ),
+    );
+  const marketItems = (intelligence.marketContext ?? [])
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.title?.trim() || item.body?.trim())
+    .filter(({ index }) => !hiddenPaths.has(`marketContext[${index}].title`))
+    .filter(
+      ({ item }) =>
+        !suppressions.isSuppressed(
+          "marketContext",
+          item.title ?? item.body ?? null,
+        ),
+    );
 
   const hasPriorities = priorities.length > 0;
   const hasCompetitors = competitors.length > 0;
-  const hasOrgChanges = orgChanges.length > 0;
-  const hasBlockers = blockers.length > 0;
+  const hasMarket = marketItems.length > 0;
 
-  if (!hasPriorities && !hasCompetitors && !hasOrgChanges && !hasBlockers) return null;
-
-  const showActions = !!(onUpdateField || onItemFeedback);
+  if (!hasPriorities && !hasCompetitors && !hasMarket) return null;
 
   return (
     <section className={css.section}>
-      {/* ── Strategic Priorities ── */}
       {hasPriorities && (
-        <div className={css.subsection}>
-          <h3 className={css.subsectionLabel}>Strategic Priorities</h3>
-          {priorities.map((p, i) => {
-            const badge = p.status ? priorityStatusBadge(p.status) : null;
-            const path = `strategicPriorities[${i}].priority`;
-            return (
-              <div key={i} className={css.priorityRow}>
-                <div className={css.priorityNum}>{i + 1}</div>
-                <div className={css.priorityBody}>
-                  {onUpdateField ? (
-                    <EditableText
-                      value={p.priority}
-                      onChange={(v) => onUpdateField(path, v)}
-                      as="p"
-                      multiline
-                      className={css.priorityText}
-                    />
-                  ) : (
-                    <p className={css.priorityText}>{p.priority}</p>
-                  )}
-                  <div className={css.priorityMeta}>
-                    {badge && (
-                      <span className={`${css.badge} ${badge.cls}`}>{badge.label}</span>
-                    )}
-                    {p.owner && <span>{p.owner}</span>}
-                    {p.timeline && <span>{p.timeline}</span>}
+        <>
+          <div className={css.subsectionLabel}>Strategic priorities</div>
+          <div className={css.priorityGrid}>
+            {priorities.map(({ item: p, index: rawIndex }, i) => {
+              const status = priorityStatus(p.status);
+              const isLastOdd =
+                i === priorities.length - 1 && priorities.length % 2 === 1;
+              const metaBits = [p.owner, p.timeline].filter(Boolean);
+              const ctxText = p.context;
+              const path = `strategicPriorities[${rawIndex}].priority`;
+              return (
+                <article
+                  key={i}
+                  className={`${css.priorityCard}${isLastOdd ? ` ${css.priorityCardSpan}` : ""}`}
+                >
+                  <div className={css.priorityHead}>
+                    <div className={css.priorityName}>{p.priority}</div>
+                    <span className={`${css.statusTag} ${status.cls}`}>
+                      {status.label}
+                    </span>
                   </div>
-                </div>
-                {showActions && (
-                  <span className={css.itemActions}>
-                    {onItemFeedback && (
-                      <IntelligenceFeedback
-                        value={getItemFeedback?.(path) ?? null}
-                        onFeedback={(type) => onItemFeedback(path, type)}
-                      />
-                    )}
-                    {onUpdateField && (
-                      <button
-                        type="button"
-                        className={css.dismissButton}
-                        onClick={() => onUpdateField(path, "")}
-                        title="Dismiss"
-                      >
-                        <X size={13} />
-                      </button>
-                    )}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  {metaBits.length > 0 && (
+                    <div className={css.priorityMeta}>
+                      {metaBits.join(" · ")}
+                    </div>
+                  )}
+                  {ctxText && <div className={css.priorityContext}>{ctxText}</div>}
+                  {editable && (
+                    <IntelligenceCorrection
+                      entityId={intelligence.entityId}
+                      entityType="account"
+                      field="strategicPriorities"
+                      itemKey={p.priority}
+                      onDismissed={async () => {
+                        suppressions.markSuppressed("strategicPriorities", p.priority);
+                        setHiddenPaths((prev) => new Set(prev).add(path));
+                        await onUpdateField?.(path, "");
+                      }}
+                    />
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </>
       )}
 
-      {/* ── Competitive Landscape ── */}
       {hasCompetitors && (
-        <div className={css.subsection}>
-          <h3 className={css.subsectionLabel}>Competitive Landscape</h3>
-          {competitors.map((c, i) => {
-            const badge = c.threatLevel ? threatBadge(c.threatLevel) : null;
-            const path = `competitiveContext[${i}].context`;
-            return (
-              <div key={i} className={css.competitorRow}>
-                <div className={css.competitorBody}>
-                  <div className={css.competitorHeader}>
-                    <span className={css.competitorName}>{c.competitor}</span>
-                    {badge && (
-                      <span className={`${css.badge} ${badge.cls}`}>{badge.label}</span>
-                    )}
+        <>
+          <div className={css.subsectionLabel}>Competitive landscape</div>
+          <div className={css.competitorRow}>
+            {competitors.map(({ item: c, index: rawIndex }, i) => {
+              const dots = threatDotsCount(c.threatLevel);
+              const label = threatLabel(c.threatLevel);
+              const sourceBits: string[] = [];
+              if (c.detectedAt) sourceBits.push(formatDate(c.detectedAt));
+              if (c.source) sourceBits.push(c.source);
+              const path = `competitiveContext[${rawIndex}].competitor`;
+              return (
+                <article key={i} className={css.competitorCard}>
+                  <div className={css.competitorName}>{c.competitor ?? "—"}</div>
+                  <div className={css.threatScale}>
+                    <span
+                      className={`${css.threatDot}${dots >= 1 ? ` ${css.threatDotOn}` : ""}`}
+                    />
+                    <span
+                      className={`${css.threatDot}${dots >= 2 ? ` ${css.threatDotOn}` : ""}`}
+                    />
+                    <span
+                      className={`${css.threatDot}${dots >= 3 ? ` ${css.threatDotOn}` : ""}`}
+                    />
                   </div>
+                  <div className={css.threatLabel}>{label}</div>
                   {c.context && (
-                    onUpdateField ? (
-                      <EditableText
-                        value={c.context}
-                        onChange={(v) => onUpdateField(path, v)}
-                        as="p"
-                        multiline
-                        className={css.threatContext}
-                      />
-                    ) : (
-                      <p className={css.threatContext}>{c.context}</p>
-                    )
+                    <div className={css.competitorContext}>{c.context}</div>
+                  )}
+                  {sourceBits.length > 0 && (
+                    <div className={css.competitorSource}>
+                      {sourceBits.join(" · ")}
+                    </div>
                   )}
                   <ProvenanceTag itemSource={c.itemSource} discrepancy={c.discrepancy} />
-                </div>
-                {showActions && (
-                  <span className={css.itemActions}>
-                    {onItemFeedback && (
-                      <IntelligenceFeedback
-                        value={getItemFeedback?.(path) ?? null}
-                        onFeedback={(type) => onItemFeedback(path, type)}
-                      />
-                    )}
-                    {onUpdateField && (
-                      <button
-                        type="button"
-                        className={css.dismissButton}
-                        onClick={() => onUpdateField(path, "")}
-                        title="Dismiss"
-                      >
-                        <X size={13} />
-                      </button>
-                    )}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  {editable && (
+                    <IntelligenceCorrection
+                      entityId={intelligence.entityId}
+                      entityType="account"
+                      field="competitiveContext"
+                      itemKey={c.competitor ?? c.context ?? path}
+                      onDismissed={async () => {
+                        suppressions.markSuppressed(
+                          "competitiveContext",
+                          c.competitor ?? c.context ?? path,
+                        );
+                        setHiddenPaths((prev) => new Set(prev).add(path));
+                        await onUpdateField?.(path, "");
+                      }}
+                    />
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </>
       )}
 
-      {/* ── Organizational Changes ── */}
-      {hasOrgChanges && (
-        <div className={css.subsection}>
-          <h3 className={css.subsectionLabel}>Organizational Changes</h3>
-          {orgChanges.map((change, i) => {
-            const path = `organizationalChanges[${i}].person`;
-            const transition = [change.from, change.to].filter(Boolean);
-            const hasTransition = transition.length > 0;
+      {hasMarket && (
+        <>
+          <div className={css.subsectionLabel}>Regulatory &amp; market context</div>
+          {marketItems.map(({ item: m, index: rawIndex }, i) => {
+            const path = `marketContext[${rawIndex}].title`;
             return (
-              <div key={i} className={css.changeRow}>
-                <div className={changeIconClass(change.changeType)}>
-                  {changeIconChar(change.changeType)}
+              <article key={i} className={css.regCard}>
+                <div className={css.regHead}>
+                  <div className={css.regTitle}>{m.title}</div>
+                  {m.category && <span className={css.xrefPill}>{m.category}</span>}
                 </div>
-                <div className={css.changeBody}>
-                  <div className={css.changeHeader}>
-                    <span className={css.changeName}>{change.person}</span>
-                    <span className={css.changeTypeBadge}>
-                      {changeTypeLabel(change.changeType)}
-                    </span>
-                  </div>
-                  {hasTransition && (
-                    <p className={css.changeTransition}>
-                      {transition.join(" \u2192 ")}
-                    </p>
-                  )}
-                  <div className={css.changeMeta}>
-                    {change.detectedAt && (
-                      <span>Detected {formatDate(change.detectedAt)}</span>
-                    )}
-                    <ProvenanceTag itemSource={change.itemSource} discrepancy={change.discrepancy} />
-                  </div>
-                </div>
-                {showActions && (
-                  <span className={css.itemActions}>
-                    {onItemFeedback && (
-                      <IntelligenceFeedback
-                        value={getItemFeedback?.(path) ?? null}
-                        onFeedback={(type) => onItemFeedback(path, type)}
-                      />
-                    )}
-                    {onUpdateField && (
-                      <button
-                        type="button"
-                        className={css.dismissButton}
-                        onClick={() => onUpdateField(path, "")}
-                        title="Dismiss"
-                      >
-                        <X size={13} />
-                      </button>
-                    )}
-                  </span>
+                {m.body && <p className={css.regBody}>{m.body}</p>}
+                <ProvenanceTag itemSource={m.itemSource} discrepancy={m.discrepancy} />
+                {editable && (
+                <IntelligenceCorrection
+                  entityId={intelligence.entityId}
+                  entityType="account"
+                  field="marketContext"
+                  itemKey={m.title ?? m.body ?? path}
+                  onDismissed={async () => {
+                    suppressions.markSuppressed(
+                      "marketContext",
+                      m.title ?? m.body ?? path,
+                    );
+                    setHiddenPaths((prev) => new Set(prev).add(path));
+                    await onUpdateField?.(path, "");
+                  }}
+                  />
                 )}
-              </div>
+              </article>
             );
           })}
-        </div>
-      )}
-
-      {/* ── Blockers ── */}
-      {hasBlockers && (
-        <div className={css.subsection}>
-          <h3 className={css.subsectionLabel}>Blockers</h3>
-          {blockers.map((b, i) => {
-            const badge = b.impact ? impactBadge(b.impact) : null;
-            const path = `blockers[${i}].description`;
-            return (
-              <div key={i} className={css.blockerItem}>
-                <div className={css.blockerInner}>
-                  <div className={css.blockerContent}>
-                    {onUpdateField ? (
-                      <EditableText
-                        value={b.description}
-                        onChange={(v) => onUpdateField(path, v)}
-                        as="p"
-                        multiline
-                        className={css.blockerDesc}
-                      />
-                    ) : (
-                      <p className={css.blockerDesc}>{b.description}</p>
-                    )}
-                    <div className={css.blockerMeta}>
-                      {b.owner && <span>{b.owner}</span>}
-                      {b.since && <span>Since: {formatDate(b.since)}</span>}
-                      {badge && (
-                        <span className={`${css.badge} ${badge.cls}`}>{badge.label}</span>
-                      )}
-                    </div>
-                  </div>
-                  {showActions && (
-                    <span className={css.itemActions}>
-                      {onItemFeedback && (
-                        <IntelligenceFeedback
-                          value={getItemFeedback?.(path) ?? null}
-                          onFeedback={(type) => onItemFeedback(path, type)}
-                        />
-                      )}
-                      {onUpdateField && (
-                        <button
-                          type="button"
-                          className={css.dismissButton}
-                          onClick={() => onUpdateField(path, "")}
-                          title="Dismiss"
-                        >
-                          <X size={13} />
-                        </button>
-                      )}
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        </>
       )}
     </section>
   );

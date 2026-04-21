@@ -315,3 +315,18 @@ Apply this rule to new log statements going forward. Do not do a mass retrofit -
 - `open_readonly()` (MCP subprocess) requires the same key from Keychain. The subprocess runs as the same user -- Keychain access is available. No architectural change.
 - Time Machine exclusion is best-effort. If `tmutil` is unavailable, log a warning and continue -- don't fail startup.
 - iCloud detection is informational only. No blocking. The `~/.dailyos/` directory is not in iCloud scope regardless.
+
+## Amendment (2026-04-20) — PGLite evaluation outcome
+
+Context: GBrain (Garry Tan's personal-memory project) uses PGLite (embedded Postgres WASM) as its zero-config default with same-schema migration to Supabase Postgres for production. The question was raised: should DailyOS adopt PGLite to get Postgres features (JSONB GIN, HNSW vector, richer window functions) and a cleaner migration path to a future cloud peer?
+
+**Decision: no. Stay on SQLite + SQLCipher.**
+
+Reasons:
+
+1. **No encryption at rest in PGLite.** The embedded engine writes plaintext to the filesystem. Security would rely entirely on macOS FileVault / full-disk encryption. This violates the core contract of this ADR -- DB at rest is encrypted with an app-owned key, independent of OS-level disk encryption posture. There is no published PGLite encryption-at-rest roadmap.
+2. **Rust/Tauri integration is alpha.** PGLite ships as a WASM module with Node and browser bindings. Rust embedding through a Tauri sidecar is technically possible but unsupported, adds a WASM runtime dependency to the backend, and introduces a maintenance surface we have no appetite for.
+3. **Future Postgres migration is not foreclosed.** If DailyOS ever needs a server-side peer (e.g., to resolve ADR-0121 team-intelligence architecture via a federated backend), we can migrate the schema at that point. SQLite's SQL is conservative enough that porting forward to Postgres is a linear logical export/import, not a rewrite. Nothing we're building now closes that door.
+4. **The features we'd gain are not the bottleneck.** JSONB GIN and HNSW vector are nice; neither is blocking any current roadmap item. Our retrieval quality wins (DOS-261 BrainBench-style eval) come from graph edges (ADR-0113) and trust-weighted ranking (ADR-0110), not from a better full-text engine.
+
+Inverse check: if someone proposes PGLite again, the required precondition is a published, audited encryption-at-rest story for PGLite *and* a stable Rust embedding path *and* a concrete feature we cannot build on SQLite. Absent all three, the answer is still no.

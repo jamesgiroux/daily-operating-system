@@ -224,6 +224,9 @@ pub async fn enrich_entity(
         {
             let provider =
                 crate::intelligence::glean_provider::GleanIntelligenceProvider::new(endpoint);
+            // This path is the services::intelligence manual-refresh entry,
+            // always user-initiated — pass is_background=false so the UI
+            // gets degraded/fallback toasts.
             match provider
                 .enrich_entity(
                     &input.entity_id,
@@ -232,6 +235,7 @@ pub async fn enrich_entity(
                     ctx,
                     input.relationship.as_deref(),
                     app_handle,
+                    false,
                 )
                 .await
             {
@@ -256,6 +260,33 @@ pub async fn enrich_entity(
                         input.entity_name,
                         e
                     );
+                    // Surface the fallback loudly — otherwise users see
+                    // local-sourced items on a Glean-mode account with no
+                    // signal that Glean enrichment couldn't complete.
+                    {
+                        let mut audit = state.audit_log.lock();
+                        let _ = audit.append(
+                            "data_access",
+                            "glean_enrichment_fellback_to_pty",
+                            serde_json::json!({
+                                "entity_id": input.entity_id,
+                                "entity_type": input.entity_type,
+                                "entity_name": input.entity_name,
+                                "reason": e.to_string(),
+                            }),
+                        );
+                    }
+                    if let Some(handle) = app_handle {
+                        let _ = handle.emit(
+                            "enrichment-glean-fallback",
+                            serde_json::json!({
+                                "entity_id": input.entity_id,
+                                "entity_type": input.entity_type,
+                                "entity_name": input.entity_name,
+                                "reason": e.to_string(),
+                            }),
+                        );
+                    }
                 }
             }
         }
@@ -483,6 +514,32 @@ pub fn upsert_assessment_from_enrichment(
         }
     }
 
+    // DOS Work-tab: Best-effort bridge of AI-inferred commitments → Actions.
+    // Enrichment write is the source of truth; bridge errors must not fail it.
+    if entity_type == "account" {
+        if let Some(ref commitments) = intel.open_commitments {
+            match crate::services::commitment_bridge::sync_ai_commitments(
+                db,
+                entity_type,
+                entity_id,
+                commitments,
+            ) {
+                Ok(summary) => log::info!(
+                    "commitment_bridge: {} created, {} updated, {} tombstoned-skip, {} missing-id ({}:{})",
+                    summary.created,
+                    summary.updated,
+                    summary.skipped_tombstoned,
+                    summary.skipped_missing_id,
+                    entity_type,
+                    entity_id
+                ),
+                Err(e) => log::warn!(
+                    "commitment_bridge sync failed for {entity_type}:{entity_id} (non-fatal): {e}"
+                ),
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -503,7 +560,7 @@ pub fn upsert_assessment_snapshot(
     // persist them to account_domains for entity resolution.
     // Only applies to account entities.
     if intel.entity_type == "account" && !intel.domains.is_empty() {
-        db.set_account_domains(&intel.entity_id, &intel.domains)
+        db.merge_account_domains_enrichment(&intel.entity_id, &intel.domains)
             .map_err(|e| {
                 format!(
                     "Failed to store domains for account {}: {}",
@@ -518,6 +575,94 @@ pub fn upsert_assessment_snapshot(
     }
 
     Ok(())
+}
+
+/// DOS-15: Persist the Glean leading-signals JSON blob on `entity_assessment`
+/// and emit the four callout-worthy signals derived from it.
+///
+/// Wrapped in a transaction so the blob write and signal emissions either all
+/// land or all roll back. Source is tagged `glean_leading_signals` at confidence
+/// 0.8 (champion_at_risk), 0.75 (competitor_decision_relevant), 0.7
+/// (sentiment_divergence), 0.75 (budget_cycle_locked) — matching the tier policy
+/// of other Glean-derived signals registered in `signals/callouts.rs`.
+pub fn upsert_health_outlook_signals(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    signals: &crate::intelligence::glean_leading_signals::HealthOutlookSignals,
+) -> Result<(), String> {
+    let blob = serde_json::to_string(signals)
+        .map_err(|e| format!("Failed to serialize health_outlook_signals: {e}"))?;
+
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE entity_assessment SET health_outlook_signals_json = ?1 WHERE entity_id = ?2",
+                rusqlite::params![&blob, entity_id],
+            )
+            .map_err(|e| format!("Failed to upsert health_outlook_signals_json: {e}"))?;
+
+        let derived = signals.derive_signals();
+
+        if let Some(payload) = derived.champion_at_risk {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                engine,
+                entity_type,
+                entity_id,
+                "champion_at_risk",
+                "glean_leading_signals",
+                Some(&payload),
+                0.8,
+            )
+            .map_err(|e| format!("champion_at_risk emit failed: {e}"))?;
+        }
+
+        if let Some(payload) = derived.sentiment_divergence {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                engine,
+                entity_type,
+                entity_id,
+                "sentiment_divergence",
+                "glean_leading_signals",
+                Some(&payload),
+                0.7,
+            )
+            .map_err(|e| format!("sentiment_divergence emit failed: {e}"))?;
+        }
+
+        for payload in derived.competitor_decision_relevant {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                engine,
+                entity_type,
+                entity_id,
+                "competitor_decision_relevant",
+                "glean_leading_signals",
+                Some(&payload),
+                0.75,
+            )
+            .map_err(|e| format!("competitor_decision_relevant emit failed: {e}"))?;
+        }
+
+        if let Some(payload) = derived.budget_cycle_locked {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                engine,
+                entity_type,
+                entity_id,
+                "budget_cycle_locked",
+                "glean_leading_signals",
+                Some(&payload),
+                0.75,
+            )
+            .map_err(|e| format!("budget_cycle_locked emit failed: {e}"))?;
+        }
+
+        Ok(())
+    })
 }
 
 /// Persist AI-inferred person relationships for an enrichment run (I504).
@@ -994,18 +1139,18 @@ pub async fn dismiss_intelligence_item(
                     .map_err(|e| e.to_string())?;
 
                 // I645: Record feedback event + suppression tombstone.
-                let _ = tx.record_feedback_event(
-                    &entity_id,
-                    &entity_type,
-                    &field,
-                    Some(&item_text),
-                    "dismiss",
-                    None,
-                    Some("intelligence"),
-                    Some(&item_text),
-                    None,
-                    None,
-                );
+                let _ = tx.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
+                    entity_id: &entity_id,
+                    entity_type: &entity_type,
+                    field_key: &field,
+                    item_key: Some(&item_text),
+                    feedback_type: "dismiss",
+                    source_system: None,
+                    source_kind: Some("intelligence"),
+                    previous_value: Some(&item_text),
+                    corrected_value: None,
+                    reason: None,
+                });
                 let _ = tx.create_suppression_tombstone(
                     &entity_id,
                     &field,
@@ -1252,6 +1397,7 @@ pub async fn track_recommendation(
                 source_type: Some("intelligence".to_string()),
                 source_id: Some(entity_id.clone()),
                 source_label: Some("Based on account intelligence".to_string()),
+                action_kind: crate::action_status::KIND_TASK.to_string(),
                 context: Some(rec.rationale.clone()),
                 waiting_on: None,
                 updated_at: now,
@@ -1347,7 +1493,16 @@ pub async fn dismiss_recommendation(
                 account.as_ref(),
             )?;
 
-            let mut intel = crate::intelligence::read_intelligence_json(&dir).unwrap_or_default();
+            // DOS-92: DB is sole source of truth — no filesystem fallback.
+            let mut intel = db
+                .get_entity_intelligence(&entity_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "DOS-92: no DB intelligence row for {} — cannot dismiss recommendation",
+                        entity_id
+                    )
+                })?;
 
             if index >= intel.recommended_actions.len() {
                 return Err(format!("Recommendation index {} out of bounds", index));
@@ -1376,6 +1531,124 @@ pub async fn dismiss_recommendation(
                     removed.title.replace('"', "\\\"")
                 )),
                 0.3,
+            );
+
+            Ok(())
+        })
+        .await
+}
+
+/// DOS-13 / Wave 0e: Mark an open commitment as done.
+///
+/// Removes the commitment at `index` from `openCommitments`, promotes it
+/// into `valueDelivered` as a completion record, persists the updated
+/// intelligence, and emits a `commitment_completed` signal so downstream
+/// health scoring and briefing callouts see the transition.
+///
+/// Entity lookup and filesystem write mirror `dismiss_recommendation` so
+/// the DB and on-disk intelligence.json stay in lockstep.
+pub async fn mark_commitment_done(
+    entity_id: &str,
+    entity_type: &str,
+    index: usize,
+    state: &AppState,
+) -> Result<(), String> {
+    let config = state.config.read().clone();
+    let config = config.ok_or("No configuration loaded")?;
+    let workspace_path = config.workspace_path.clone();
+
+    let engine = state.signals.engine.clone();
+    let entity_id = entity_id.to_string();
+    let entity_type = entity_type.to_string();
+
+    state
+        .db_write(move |db| {
+            let workspace = Path::new(&workspace_path);
+
+            let account = if entity_type == "account" {
+                db.get_account(&entity_id).map_err(|e| e.to_string())?
+            } else {
+                None
+            };
+
+            let entity_name = match entity_type.as_str() {
+                "account" => account.as_ref().map(|a| a.name.clone()),
+                "project" => db
+                    .get_project(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                "person" => db
+                    .get_person(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                _ => return Err(format!("Unsupported entity type: {}", entity_type)),
+            }
+            .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
+
+            let dir = crate::intelligence::resolve_entity_dir(
+                workspace,
+                &entity_type,
+                &entity_name,
+                account.as_ref(),
+            )?;
+
+            let mut intel = db
+                .get_entity_intelligence(&entity_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "No DB intelligence row for {} — cannot mark commitment done",
+                        entity_id
+                    )
+                })?;
+
+            let commitment = {
+                let list = intel.open_commitments.as_mut().ok_or_else(|| {
+                    format!("Entity {} has no open commitments", entity_id)
+                })?;
+                if index >= list.len() {
+                    return Err(format!("Commitment index {} out of bounds", index));
+                }
+                list.remove(index)
+            };
+
+            // Promote into value_delivered as a completion record. The
+            // "date" field takes now(); the original source is preserved so
+            // the Context value-delivered chapter can show provenance.
+            let now = chrono::Utc::now().to_rfc3339();
+            intel
+                .value_delivered
+                .push(crate::intelligence::io::ValueItem {
+                    date: Some(now.clone()),
+                    statement: commitment.description.clone(),
+                    source: commitment.source.clone(),
+                    impact: None,
+                    item_source: Some(crate::intelligence::io::ItemSource {
+                        source: "commitment_completed".to_string(),
+                        confidence: 0.95,
+                        sourced_at: now.clone(),
+                        reference: commitment.owner.clone(),
+                    }),
+                    discrepancy: None,
+                });
+
+            crate::intelligence::write_intelligence_json(&dir, &intel)
+                .map_err(|e| format!("Failed to write intelligence: {}", e))?;
+            db.upsert_entity_intelligence(&intel)
+                .map_err(|e| e.to_string())?;
+
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                &entity_type,
+                &entity_id,
+                "commitment_completed",
+                "user_curation",
+                Some(&format!(
+                    "{{\"description\":\"{}\"}}",
+                    commitment.description.replace('"', "\\\"")
+                )),
+                0.85,
             );
 
             Ok(())
@@ -2183,6 +2456,7 @@ mod live_acceptance_tests {
                 band: "green".to_string(),
                 source: HealthSource::Computed,
                 confidence: 0.78,
+                sufficient_data: false, // Only 1 dimension populated in test
                 trend: HealthTrend {
                     direction: "improving".to_string(),
                     rationale: Some("Usage and expansion improved".to_string()),

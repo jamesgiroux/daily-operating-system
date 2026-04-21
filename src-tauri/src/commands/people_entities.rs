@@ -203,6 +203,117 @@ pub async fn unlink_meeting_entity(
     .await
 }
 
+/// DOS-240: Dismiss an auto-resolved meeting entity. Unlinks it AND records
+/// a persistent dismissal so future calendar-sync / resolver sweeps do not
+/// re-link the same (meeting, entity, type) tuple.
+#[tauri::command]
+pub async fn dismiss_meeting_entity(
+    meeting_id: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::meetings::dismiss_meeting_entity(
+        &state,
+        &meeting_id,
+        &entity_id,
+        &entity_type,
+        None,
+    )
+    .await
+}
+
+/// DOS-240: Undo a previous dismissal. Removes the dismissal record so the
+/// entity can auto-link again on the next calendar-sync or resolver pass.
+#[tauri::command]
+pub async fn restore_meeting_entity(
+    meeting_id: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    crate::services::meetings::restore_meeting_entity(
+        &state,
+        &meeting_id,
+        &entity_id,
+        &entity_type,
+    )
+    .await
+}
+
+// =========================================================================
+// DOS-258: entity linking manual overrides
+// =========================================================================
+
+/// Set (or clear) the primary entity for a meeting or email.
+/// Writes a source='user' row to linked_entities_raw (P1 override).
+#[tauri::command]
+pub async fn set_entity_link_primary(
+    owner_type: String,
+    owner_id: String,
+    entity_id: Option<String>,
+    entity_type: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let ot = crate::services::entity_linking::OwnerType::try_from(owner_type.as_str())
+        .map_err(|e| format!("invalid owner_type: {e}"))?;
+    let entity_ref = entity_id.map(|id| crate::services::entity_linking::EntityRef {
+        entity_id: id,
+        entity_type: entity_type.unwrap_or_else(|| "account".to_string()),
+    });
+    crate::services::entity_linking::manual_set_primary(
+        state.inner().clone(),
+        ot,
+        owner_id,
+        entity_ref,
+    )
+    .await
+    .map(|_| ())
+}
+
+/// Dismiss a suggested entity link for a meeting or email.
+/// Writes a linking_dismissals tombstone + marks raw row as user_dismissed.
+#[tauri::command]
+pub async fn dismiss_entity_link(
+    owner_type: String,
+    owner_id: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let ot = crate::services::entity_linking::OwnerType::try_from(owner_type.as_str())
+        .map_err(|e| format!("invalid owner_type: {e}"))?;
+    crate::services::entity_linking::manual_dismiss(
+        state.inner().clone(),
+        ot,
+        owner_id,
+        crate::services::entity_linking::EntityRef { entity_id, entity_type },
+    )
+    .await
+    .map(|_| ())
+}
+
+/// Undo a previous entity link dismissal.
+#[tauri::command]
+pub async fn restore_entity_link(
+    owner_type: String,
+    owner_id: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let ot = crate::services::entity_linking::OwnerType::try_from(owner_type.as_str())
+        .map_err(|e| format!("invalid owner_type: {e}"))?;
+    crate::services::entity_linking::manual_undismiss(
+        state.inner().clone(),
+        ot,
+        owner_id,
+        crate::services::entity_linking::EntityRef { entity_id, entity_type },
+    )
+    .await
+    .map(|_| ())
+}
+
 /// Get all entities linked to a meeting via the junction table.
 #[tauri::command]
 pub async fn get_meeting_entities(
@@ -437,6 +548,54 @@ pub async fn submit_intelligence_feedback(
         .await
 }
 
+/// DOS-41: Submit a consolidated intelligence correction.
+///
+/// Replaces the legacy thumbs up/down + separate "replaced" paths with a
+/// single command that handles all supported user actions:
+/// - `confirmed`  — user agrees with the AI output
+/// - `rejected`   — user disagrees but keeps the content visible
+/// - `annotated`  — user adds context without rejecting the output
+/// - `corrected`  — user replaces the output with a new value
+/// - `dismissed`  — user marks the output wrong and wants it hidden
+///
+/// Frontend integration: `useIntelligenceCorrection` hook. Component
+/// placement (`IntelligenceCorrection.tsx`) lands in Wave 1.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitIntelligenceCorrectionRequest {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub field: String,
+    pub action: String,
+    pub corrected_value: Option<String>,
+    pub annotation: Option<String>,
+    pub item_key: Option<String>,
+}
+
+#[tauri::command]
+pub async fn submit_intelligence_correction(
+    request: SubmitIntelligenceCorrectionRequest,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let parsed = crate::db::feedback::CorrectionAction::parse(&request.action)?;
+    state
+        .db_write(move |db| {
+            crate::services::feedback::submit_intelligence_correction(
+                db,
+                crate::services::feedback::SubmitIntelligenceCorrectionInput {
+                    entity_id: &request.entity_id,
+                    entity_type: &request.entity_type,
+                    field: &request.field,
+                    action: parsed,
+                    corrected_value: request.corrected_value.as_deref(),
+                    annotation: request.annotation.as_deref(),
+                    item_key: request.item_key.as_deref(),
+                },
+            )
+        })
+        .await
+}
+
 /// Get all feedback records for an entity.
 #[tauri::command]
 pub async fn get_entity_feedback(
@@ -446,5 +605,105 @@ pub async fn get_entity_feedback(
 ) -> Result<Vec<crate::db::intelligence_feedback::FeedbackRow>, String> {
     state
         .db_read(move |db| db.get_entity_feedback(&entity_id, &entity_type))
+        .await
+}
+
+// =========================================================================
+// DOS-258: read linked entities from the new view
+// =========================================================================
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkedEntityDto {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub role: String,   // "primary" | "related" | "auto_suggested"
+    pub confidence: Option<f64>,
+    pub applied_rule: Option<String>,
+}
+
+/// Read linked entities from the DOS-258 linked_entities view.
+///
+/// Returns primary + related entities from `linked_entities_raw` (excluding
+/// user_dismissed rows). Falls back to empty when no entries exist yet.
+/// The meeting chip uses the `role` field directly to render primary vs related.
+#[tauri::command]
+pub async fn get_linked_entities_for_owner(
+    owner_type: String,
+    owner_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<LinkedEntityDto>, String> {
+    state
+        .db_read(move |db| {
+            let conn = db.conn_ref();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT lr.entity_id, lr.entity_type, lr.role,
+                            lr.confidence, lr.rule_id,
+                            COALESCE(acc.name, proj.name, p.name, lr.entity_id) as name
+                     FROM linked_entities lr
+                     LEFT JOIN accounts acc
+                          ON lr.entity_type = 'account' AND acc.id = lr.entity_id
+                     LEFT JOIN projects proj
+                          ON lr.entity_type = 'project' AND proj.id = lr.entity_id
+                     LEFT JOIN people p
+                          ON lr.entity_type = 'person' AND p.id = lr.entity_id
+                     WHERE lr.owner_type = ?1 AND lr.owner_id = ?2
+                     ORDER BY
+                       CASE lr.role WHEN 'primary' THEN 0
+                                    WHEN 'related' THEN 1
+                                    ELSE 2 END",
+                )
+                .map_err(|e| format!("prepare get_linked_entities_for_owner: {e}"))?;
+            let mut rows = stmt
+                .query(rusqlite::params![owner_type, owner_id])
+                .map_err(|e| format!("get_linked_entities_for_owner query: {e}"))?;
+            let mut results = Vec::new();
+            while let Some(row) = rows
+                .next()
+                .map_err(|e| format!("get_linked_entities_for_owner row: {e}"))?
+            {
+                results.push(LinkedEntityDto {
+                    id: row.get(0).unwrap_or_default(),
+                    entity_type: row.get(1).unwrap_or_default(),
+                    role: row.get(2).unwrap_or_default(),
+                    confidence: row.get(3).ok(),
+                    applied_rule: row.get(4).ok(),
+                    name: row.get(5).unwrap_or_default(),
+                });
+            }
+            Ok(results)
+        })
+        .await
+}
+
+/// Purge inferred account_domains before DOS-258 flag flip (admin/devtools).
+///
+/// Removes all rows where source='inferred'. User-entered ('user') and
+/// enrichment-sourced ('enrichment') domains are preserved.
+#[tauri::command]
+pub async fn rebuild_account_domains(
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    state
+        .db_write(|db| {
+            crate::services::entity_linking::repository::raw_rebuild_account_domains(db)
+                .map(|_| "account_domains rebuild complete".to_string())
+        })
+        .await
+}
+
+/// Get all active suppression tombstones for an entity.
+#[tauri::command]
+pub async fn get_entity_suppressions(
+    entity_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::SuppressionTombstone>, String> {
+    state
+        .db_read(move |db| {
+            db.get_active_suppressions(&entity_id)
+                .map_err(|e| e.to_string())
+        })
         .await
 }

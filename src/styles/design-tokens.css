@@ -18,7 +18,17 @@
      ───────────────────────────────────────────────────────────────────────── */
   --color-desk-charcoal: #1e2530;
   --color-desk-ink: #2a2b3d;
-  --color-desk-espresso: #3d2e27;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SURFACE ALIASES — Semantic Backgrounds (DOS-62)
+     Ghost tokens consumed by ActionRow/Emails/DatabaseRecovery/ContextSource.
+     Map to paper palette so backgrounds render opaque instead of transparent.
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-surface: var(--color-paper-cream); /* Page ground, base surface */
+  --color-surface-primary: var(--color-paper-warm-white); /* Primary card surface */
+  --color-surface-secondary: var(--color-paper-linen); /* Recessed / secondary panels */
+  --color-surface-inset: var(--color-desk-charcoal-4); /* Inset config panels, subtle recess on cream */
+  --color-surface-subtle: var(--color-black-4); /* Subtle chip/badge tint */
 
   /* ─────────────────────────────────────────────────────────────────────────
      SPICE PALETTE — Warm Accents (Accounts, Active States, Urgency)
@@ -50,14 +60,12 @@
   --color-rule-heavy: rgba(30, 37, 48, 0.12); /* Primary dividers, section rules */
   --color-rule-light: rgba(30, 37, 48, 0.06); /* Secondary dividers, soft separators */
 
-  /* ─────────────────────────────────────────────────────────────────────────
-     ENTITY COLORS (ADR-0076)
-     ───────────────────────────────────────────────────────────────────────── */
-  --color-entity-account: var(--color-spice-turmeric); /* Accounts */
-  --color-entity-project: var(--color-garden-olive); /* Projects */
-  --color-entity-person: var(--color-garden-larkspur); /* People */
-  --color-entity-action: var(--color-spice-terracotta); /* Actions, overdue */
-  --color-entity-user: var(--color-garden-eucalyptus); /* User entity (/me page) */
+  /* Entity color aliases intentionally omitted (DOS-61).
+     ADR-0076 defines entity colors, but the semantic layer was never adopted
+     across ~20 call sites that reference the underlying palette tokens
+     directly (e.g., `var(--color-spice-turmeric)` for Account accents).
+     Deleting rather than expanding scope to avoid unrelated churn. If the
+     semantic layer is revived, redefine here and refactor call sites together. */
 
   /* ─────────────────────────────────────────────────────────────────────────
      OPACITY VARIANTS — Tinted backgrounds, borders, hover states
@@ -67,22 +75,14 @@
   --color-spice-turmeric-30: rgba(201, 162, 39, 0.30);
   --color-spice-saffron-8: rgba(222, 184, 65, 0.08);
   --color-spice-saffron-12: rgba(222, 184, 65, 0.12);
-  --color-spice-saffron-30: rgba(222, 184, 65, 0.30);
   --color-spice-terracotta-8: rgba(196, 101, 74, 0.08);
   --color-spice-terracotta-12: rgba(196, 101, 74, 0.12);
-  --color-spice-terracotta-30: rgba(196, 101, 74, 0.30);
   --color-garden-sage-12: rgba(126, 170, 123, 0.12);
-  --color-garden-sage-30: rgba(126, 170, 123, 0.30);
-  --color-garden-olive-12: rgba(107, 124, 82, 0.12);
   --color-garden-larkspur-8: rgba(143, 163, 196, 0.08);
   --color-garden-larkspur-12: rgba(143, 163, 196, 0.12);
   --color-garden-larkspur-15: rgba(143, 163, 196, 0.15);
-  --color-garden-larkspur-30: rgba(143, 163, 196, 0.30);
   --color-garden-eucalyptus-6: rgba(107, 168, 164, 0.06);
-  --color-garden-eucalyptus-8: rgba(107, 168, 164, 0.08); /* User entity tint — from --color-garden-eucalyptus #6ba8a4 */
   --color-garden-eucalyptus-10: rgba(107, 168, 164, 0.10);
-  --color-garden-eucalyptus-12: rgba(107, 168, 164, 0.12);
-  --color-garden-eucalyptus-15: rgba(107, 168, 164, 0.15);
   --color-garden-olive-6: rgba(107, 124, 82, 0.06);
   --color-garden-olive-8: rgba(107, 124, 82, 0.08);
   --color-garden-olive-10: rgba(107, 124, 82, 0.10);
@@ -91,7 +91,6 @@
   --color-garden-sage-14: rgba(126, 170, 123, 0.14);
   --color-garden-sage-15: rgba(126, 170, 123, 0.15);
   --color-garden-sage-20: rgba(126, 170, 123, 0.20);
-  --color-garden-sage-25: rgba(126, 170, 123, 0.25);
   --color-garden-larkspur-10: rgba(143, 163, 196, 0.10);
   --color-garden-larkspur-14: rgba(143, 163, 196, 0.14);
   --color-garden-rosemary-12: rgba(74, 103, 65, 0.12);
@@ -103,8 +102,6 @@
   --color-spice-turmeric-10: rgba(201, 162, 39, 0.10);
   --color-spice-turmeric-15: rgba(201, 162, 39, 0.15);
   --color-spice-turmeric-18: rgba(201, 162, 39, 0.18);
-  --color-spice-turmeric-25: rgba(201, 162, 39, 0.25);
-  --color-spice-turmeric-40: rgba(201, 162, 39, 0.40);
   --color-spice-turmeric-60: rgba(201, 162, 39, 0.60);
   --color-spice-terracotta-10: rgba(196, 101, 74, 0.10);
   --color-spice-terracotta-15: rgba(196, 101, 74, 0.15);
@@ -116,9 +113,6 @@
   --color-desk-charcoal-8: rgba(30, 37, 48, 0.08);
   --color-desk-charcoal-25: rgba(30, 37, 48, 0.25);
   --color-desk-charcoal-40: rgba(30, 37, 48, 0.40);
-  --color-desk-ink-12: rgba(42, 43, 61, 0.12);
-  --color-desk-ink-55: rgba(42, 43, 61, 0.55);
-  --color-desk-ink-65: rgba(42, 43, 61, 0.65);
 
   /* ─────────────────────────────────────────────────────────────────────────
      OVERLAY COLORS — Modal backdrops, scrim layers
@@ -133,7 +127,6 @@
   --color-black-3: rgba(0, 0, 0, 0.03);
   --color-black-4: rgba(0, 0, 0, 0.04);
   --color-black-8: rgba(0, 0, 0, 0.08);
-  --color-black-12: rgba(0, 0, 0, 0.12);
 
   /* ─────────────────────────────────────────────────────────────────────────
      TYPOGRAPHY — Font Families (ADR-0073)
@@ -167,7 +160,7 @@
   --page-padding-horizontal: 120px; /* Left/right padding for page container */
   --page-padding-bottom: 160px; /* Bottom padding for page container */
   --page-margin-top: 40px; /* Clearance for fixed folio bar */
-  --page-max-width: 1100px; /* Maximum content width */
+  --page-max-width: 1180px; /* Maximum content width */
   --page-content-width-standard: 900px; /* Standard editorial page width */
   --page-content-width-reading: 760px; /* Narrower prose/report width */
   --nav-island-right: 28px; /* Distance from right edge */
@@ -196,7 +189,6 @@
      ───────────────────────────────────────────────────────────────────────── */
   --transition-fast: 0.12s ease;
   --transition-normal: 0.15s ease;
-  --transition-slow: 0.2s ease;
 
   /* ─────────────────────────────────────────────────────────────────────────
      BACKDROP & GLASS EFFECTS (macOS Native)

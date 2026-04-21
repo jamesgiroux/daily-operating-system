@@ -1014,6 +1014,7 @@ pub async fn capture_meeting_outcome(
                     source_type: Some("post_meeting".to_string()),
                     source_id: Some(outcome_clone.meeting_id.clone()),
                     source_label: Some(outcome_clone.meeting_title.clone()),
+                    action_kind: crate::action_status::KIND_TASK.to_string(),
                     context: action.owner.clone(),
                     waiting_on: None,
                     updated_at: now,
@@ -1555,6 +1556,9 @@ pub async fn get_meeting_intelligence(
                     id: e.id,
                     name: e.name,
                     entity_type: e.entity_type.as_str().to_string(),
+                    confidence: 0.95,
+                    is_primary: true,
+                    suggested: false,
                 })
                 .collect::<Vec<_>>();
 
@@ -1632,11 +1636,27 @@ pub async fn link_meeting_entity_with_prep_queue(
     let entity_type_s = entity_type.to_string();
     state
         .db_write(move |db| {
+            // Legacy write (meeting_entities table) — kept during cutover window.
             db.link_meeting_entity(&meeting_id_s, &entity_id_s, &entity_type_s)
                 .map_err(|e| e.to_string())?;
             let _ = db.conn_ref().execute(
                 "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
+            );
+            // DOS-258 dual-write: record user override in linked_entities_raw (P1 source).
+            let now = chrono::Utc::now().to_rfc3339();
+            let version = db.get_entity_graph_version().unwrap_or(0);
+            let _ = db.conn_ref().execute(
+                "DELETE FROM linked_entities_raw \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1 AND role = 'primary'",
+                rusqlite::params![meeting_id_s],
+            );
+            let _ = db.conn_ref().execute(
+                "INSERT OR REPLACE INTO linked_entities_raw \
+                 (owner_type, owner_id, entity_id, entity_type, role, source, \
+                  rule_id, confidence, graph_version, created_at) \
+                 VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, ?4, ?5)",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s, version, now],
             );
             Ok(())
         })
@@ -1657,6 +1677,116 @@ pub async fn link_meeting_entity_with_prep_queue(
     Ok(())
 }
 
+/// DOS-240: Dismiss an auto-resolved meeting entity. This both unlinks the
+/// current row AND records a persistent dismissal so calendar-sync and the
+/// background resolver will not re-link the same (meeting, entity, type)
+/// tuple on subsequent sweeps. Prep is invalidated and re-enqueued so the
+/// meeting briefing reflects the removal immediately.
+pub async fn dismiss_meeting_entity(
+    state: &AppState,
+    meeting_id: &str,
+    entity_id: &str,
+    entity_type: &str,
+    dismissed_by: Option<&str>,
+) -> Result<(), String> {
+    let meeting_id_s = meeting_id.to_string();
+    let entity_id_s = entity_id.to_string();
+    let entity_type_s = entity_type.to_string();
+    let dismissed_by_s = dismissed_by.map(|s| s.to_string());
+    state
+        .db_write(move |db| {
+            // Legacy write — kept during cutover window.
+            db.record_meeting_entity_dismissal(
+                &meeting_id_s,
+                &entity_id_s,
+                &entity_type_s,
+                dismissed_by_s.as_deref(),
+            )
+            .map_err(|e| e.to_string())?;
+            db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
+                .map_err(|e| e.to_string())?;
+            let _ = db.conn_ref().execute(
+                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                rusqlite::params![meeting_id_s],
+            );
+            // DOS-258 dual-write: tombstone in linking_dismissals + mark raw row.
+            let now = chrono::Utc::now().to_rfc3339();
+            let _ = db.conn_ref().execute(
+                "INSERT OR IGNORE INTO linking_dismissals \
+                 (owner_type, owner_id, entity_id, entity_type, dismissed_by, created_at) \
+                 VALUES ('meeting', ?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s, dismissed_by_s, now],
+            );
+            let _ = db.conn_ref().execute(
+                "UPDATE linked_entities_raw SET source = 'user_dismissed' \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                   AND entity_id = ?2 AND entity_type = ?3",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
+            );
+            Ok(())
+        })
+        .await?;
+    state
+        .meeting_prep_queue
+        .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+            meeting_id.to_string(),
+            crate::meeting_prep_queue::PrepPriority::Manual,
+        ));
+    state.integrations.prep_queue_wake.notify_one();
+    log::info!(
+        "dismiss_meeting_entity: dismissed {} from {} ({}), recorded persistent dismissal",
+        entity_id,
+        meeting_id,
+        entity_type,
+    );
+    Ok(())
+}
+
+/// DOS-240: Restore a previously-dismissed meeting entity by deleting the
+/// dismissal record. The entity will not appear immediately; it will reappear
+/// on the next calendar-sync or resolver pass that produces the same match.
+pub async fn restore_meeting_entity(
+    state: &AppState,
+    meeting_id: &str,
+    entity_id: &str,
+    entity_type: &str,
+) -> Result<bool, String> {
+    let meeting_id_s = meeting_id.to_string();
+    let entity_id_s = entity_id.to_string();
+    let entity_type_s = entity_type.to_string();
+    let removed = state
+        .db_write(move |db| {
+            // Legacy write — kept during cutover window.
+            let r = db
+                .remove_meeting_entity_dismissal(&meeting_id_s, &entity_id_s, &entity_type_s)
+                .map_err(|e| e.to_string())?;
+            // DOS-258 dual-write: remove linking_dismissals tombstone.
+            let _ = db.conn_ref().execute(
+                "DELETE FROM linking_dismissals \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                   AND entity_id = ?2 AND entity_type = ?3",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
+            );
+            let _ = db.conn_ref().execute(
+                "UPDATE linked_entities_raw SET source = 'rule:restored' \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                   AND entity_id = ?2 AND entity_type = ?3 \
+                   AND source = 'user_dismissed'",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
+            );
+            Ok(r)
+        })
+        .await?;
+    log::info!(
+        "restore_meeting_entity: {} dismissal for {} → {} ({})",
+        if removed { "removed" } else { "no-op (none)" },
+        meeting_id,
+        entity_id,
+        entity_type,
+    );
+    Ok(removed)
+}
+
 /// Unlink meeting entity: DB unlink, clear prep, enqueue re-assembly.
 pub async fn unlink_meeting_entity_with_prep_queue(
     state: &AppState,
@@ -1667,11 +1797,35 @@ pub async fn unlink_meeting_entity_with_prep_queue(
     let entity_id_s = entity_id.to_string();
     state
         .db_write(move |db| {
+            // Legacy write — kept during cutover window.
             db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
                 .map_err(|e| e.to_string())?;
             let _ = db.conn_ref().execute(
                 "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
+            );
+            // DOS-258 dual-write: unlink = dismiss in the new model.
+            // Look up entity_type from meeting_entities first; fall back to 'account'.
+            let entity_type: String = db
+                .conn_ref()
+                .query_row(
+                    "SELECT entity_type FROM meeting_entities \
+                     WHERE meeting_id = ?1 AND entity_id = ?2 LIMIT 1",
+                    rusqlite::params![meeting_id_s, entity_id_s],
+                    |row| row.get(0),
+                )
+                .unwrap_or_else(|_| "account".to_string());
+            let now = chrono::Utc::now().to_rfc3339();
+            let _ = db.conn_ref().execute(
+                "INSERT OR IGNORE INTO linking_dismissals \
+                 (owner_type, owner_id, entity_id, entity_type, created_at) \
+                 VALUES ('meeting', ?1, ?2, ?3, ?4)",
+                rusqlite::params![meeting_id_s, entity_id_s, entity_type, now],
+            );
+            let _ = db.conn_ref().execute(
+                "UPDATE linked_entities_raw SET source = 'user_dismissed' \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1 AND entity_id = ?2",
+                rusqlite::params![meeting_id_s, entity_id_s],
             );
             Ok(())
         })
@@ -1697,34 +1851,143 @@ pub async fn unlink_meeting_entity_with_prep_queue(
 /// At this point, prep does not exist yet, so no invalidation is needed.
 /// Additive: INSERT OR IGNORE preserves existing manual user links.
 /// No signal emission — classification is detection, not user mutation.
+///
+/// DOS-224: Backward-compatible shim. Callers that only have `(id, type)`
+/// pairs land at confidence 0.95 / is_primary=1 (the same defaults the
+/// legacy `link_meeting_entity` used). For scored input use the
+/// `_scored` variant below — that's what the calendar-sync path does now.
+///
+/// DOS-240: Filters out any (entity_id, entity_type) the user previously
+/// dismissed so dismissals survive calendar-sync sweeps.
 pub fn persist_classification_entities(
     db: &crate::db::ActionDb,
     meeting_id: &str,
     entities: &[(String, String)], // (entity_id, entity_type)
 ) -> Result<usize, String> {
+    let scored: Vec<crate::google_api::classify::ResolvedMeetingEntity> = entities
+        .iter()
+        .map(
+            |(id, t)| crate::google_api::classify::ResolvedMeetingEntity {
+                entity_id: id.clone(),
+                entity_type: t.clone(),
+                name: String::new(),
+                confidence: 0.95,
+                source: "legacy".to_string(),
+            },
+        )
+        .collect();
+    persist_classification_entities_scored(db, meeting_id, &scored)
+}
+
+/// DOS-224: Scored variant of `persist_classification_entities`. Writes each
+/// junction row with its real confidence and a principled `is_primary`
+/// decision derived from the resolver output instead of pretending every
+/// classification-time link is a high-confidence primary.
+///
+/// Rules:
+///   - At most one `is_primary = 1` row per `entity_type` per meeting — the
+///     single highest-confidence resolution wins.
+///   - A resolution is eligible for primary only if it passes the DOS-206
+///     strength check: confidence >= 0.70 OR source != "title". Weaker
+///     title-only matches (confidence 0.50 / source="title") still land,
+///     but as non-primary suggestions — never as `is_primary = 1`.
+///   - `link_meeting_entity_with_confidence` uses `ON CONFLICT ... MAX(...)`
+///     so a later lower-confidence sweep can never downgrade a previously
+///     linked primary.
+///
+/// DOS-240: Dismissed entities (user-unlinked, recorded in
+/// `meeting_entity_dismissals`) are skipped before any write. This closes
+/// the "dismissed entity comes back every sync" loop at the calendar-sync
+/// edge, mirroring the guard in
+/// `persist_and_invalidate_entity_links_sync_scored` for the resolver edge.
+pub fn persist_classification_entities_scored(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    entities: &[crate::google_api::classify::ResolvedMeetingEntity],
+) -> Result<usize, String> {
+    if entities.is_empty() {
+        return Ok(0);
+    }
+
+    // DOS-240: filter dismissals up front.
+    let dismissed = db
+        .list_dismissed_meeting_entities(meeting_id)
+        .unwrap_or_default();
+    let filtered: Vec<&crate::google_api::classify::ResolvedMeetingEntity> = entities
+        .iter()
+        .filter(|e| !dismissed.contains(&(e.entity_id.clone(), e.entity_type.clone())))
+        .collect();
+
+    if filtered.len() < entities.len() {
+        log::info!(
+            "persist_classification_entities_scored: skipped {} dismissed entities for meeting {}",
+            entities.len() - filtered.len(),
+            meeting_id,
+        );
+    }
+
+    // DOS-224: pick at most one primary per entity_type (single-primary rule,
+    // mirrors `select_auto_link_candidates` in the resolver path). A resolution
+    // is "primary-eligible" only when it's stronger than a bare title-slug
+    // match (confidence >= 0.70 OR source != "title").
+    let mut primary_per_type: std::collections::HashMap<
+        String,
+        &crate::google_api::classify::ResolvedMeetingEntity,
+    > = std::collections::HashMap::new();
+    for entity in &filtered {
+        let eligible_for_primary = entity.confidence >= 0.70 || entity.source != "title";
+        if !eligible_for_primary {
+            continue;
+        }
+        let key = entity.entity_type.clone();
+        match primary_per_type.get(&key) {
+            None => {
+                primary_per_type.insert(key, *entity);
+            }
+            Some(existing) => {
+                if entity.confidence > existing.confidence {
+                    primary_per_type.insert(key, *entity);
+                }
+            }
+        }
+    }
+    let primary_ids: std::collections::HashSet<(String, String)> = primary_per_type
+        .values()
+        .map(|e| (e.entity_id.clone(), e.entity_type.clone()))
+        .collect();
+
     let mut linked = 0usize;
-    for (entity_id, entity_type) in entities {
-        match db.link_meeting_entity(meeting_id, entity_id, entity_type) {
-            Ok(_) => linked += 1,
+    for entity in &filtered {
+        let is_primary = primary_ids.contains(&(entity.entity_id.clone(), entity.entity_type.clone()));
+        let confidence = entity.confidence.clamp(0.0, 1.0);
+        match db.link_meeting_entity_with_confidence(
+            meeting_id,
+            &entity.entity_id,
+            &entity.entity_type,
+            confidence,
+            is_primary,
+        ) {
+            Ok(()) => linked += 1,
             Err(e) => {
-                // INSERT OR IGNORE — duplicates are expected, real errors are not
                 let msg = e.to_string();
                 if !msg.contains("UNIQUE constraint") {
                     log::warn!(
-                        "persist_classification_entities: failed to link {} → {} ({}): {}",
+                        "persist_classification_entities_scored: failed to link {} → {} ({}): {}",
                         meeting_id,
-                        entity_id,
-                        entity_type,
+                        entity.entity_id,
+                        entity.entity_type,
                         msg,
                     );
                 }
             }
         }
     }
+
     if linked > 0 {
         log::info!(
-            "persist_classification_entities: linked {} entities to meeting {}",
+            "persist_classification_entities_scored: linked {} entities ({} primary) to meeting {}",
             linked,
+            primary_ids.len(),
             meeting_id,
         );
     }
@@ -1811,9 +2074,23 @@ pub async fn persist_and_invalidate_entity_links(
     Ok(linked)
 }
 
+/// DOS-74: Entity link candidate with per-junction confidence and primary flag.
+#[derive(Debug, Clone)]
+pub struct EntityLinkCandidate {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub confidence: f64,
+    pub is_primary: bool,
+}
+
 /// Sync variant of persist_and_invalidate_entity_links for callers that
 /// already hold a DB handle (e.g., event_trigger background task).
 /// AC4 requires all entity linking to go through service functions.
+///
+/// DOS-74: Backward-compatible wrapper around
+/// `persist_and_invalidate_entity_links_sync_scored` that treats all
+/// inputs as high-confidence primaries (confidence 0.95, is_primary true).
+/// New callers with scored outcomes should use the scored variant directly.
 pub fn persist_and_invalidate_entity_links_sync(
     db: &crate::db::ActionDb,
     meeting_id: &str,
@@ -1821,20 +2098,87 @@ pub fn persist_and_invalidate_entity_links_sync(
     prep_queue: &crate::meeting_prep_queue::MeetingPrepQueue,
     prep_queue_wake: &tokio::sync::Notify,
 ) -> Result<usize, String> {
-    if entities.is_empty() {
+    let candidates: Vec<EntityLinkCandidate> = entities
+        .iter()
+        .map(|(id, typ)| EntityLinkCandidate {
+            entity_id: id.clone(),
+            entity_type: typ.clone(),
+            confidence: 0.95,
+            is_primary: true,
+        })
+        .collect();
+    persist_and_invalidate_entity_links_sync_scored(
+        db,
+        meeting_id,
+        &candidates,
+        prep_queue,
+        prep_queue_wake,
+    )
+}
+
+/// DOS-74: Scored variant of persist_and_invalidate_entity_links_sync.
+/// Writes each junction row with its per-link confidence + is_primary flag
+/// so the frontend can render one primary entity and N muted suggestions.
+pub fn persist_and_invalidate_entity_links_sync_scored(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    candidates: &[EntityLinkCandidate],
+    prep_queue: &crate::meeting_prep_queue::MeetingPrepQueue,
+    prep_queue_wake: &tokio::sync::Notify,
+) -> Result<usize, String> {
+    if candidates.is_empty() {
         return Ok(0);
     }
 
+    // DOS-240: user-dismissed entities must NOT be re-linked by the
+    // background resolver. Mirror of the guard in
+    // `persist_classification_entities_scored`.
+    let dismissed = db
+        .list_dismissed_meeting_entities(meeting_id)
+        .unwrap_or_default();
+    let original_len = candidates.len();
+    let candidates: Vec<&EntityLinkCandidate> = candidates
+        .iter()
+        .filter(|c| !dismissed.contains(&(c.entity_id.clone(), c.entity_type.clone())))
+        .collect();
+    if candidates.len() < original_len {
+        log::info!(
+            "persist_and_invalidate_entity_links_sync_scored: skipped {} dismissed entities for meeting {}",
+            original_len - candidates.len(),
+            meeting_id,
+        );
+    }
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+
+    // Track whether a link existed before for prep-invalidation accounting.
     let mut linked = 0usize;
-    for (entity_id, entity_type) in entities {
-        match db.link_meeting_entity_if_absent(meeting_id, entity_id, entity_type) {
-            Ok(true) => linked += 1,
-            Ok(false) => {}
+    for candidate in &candidates {
+        // Check existence first so we can increment only on new inserts.
+        let already: bool = db
+            .conn_ref()
+            .prepare("SELECT 1 FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2")
+            .and_then(|mut s| s.exists(rusqlite::params![meeting_id, candidate.entity_id]))
+            .unwrap_or(false);
+
+        match db.link_meeting_entity_with_confidence(
+            meeting_id,
+            &candidate.entity_id,
+            &candidate.entity_type,
+            candidate.confidence,
+            candidate.is_primary,
+        ) {
+            Ok(()) => {
+                if !already {
+                    linked += 1;
+                }
+            }
             Err(e) => {
                 log::warn!(
                     "persist_and_invalidate_sync: failed to link {} → {}: {}",
                     meeting_id,
-                    entity_id,
+                    candidate.entity_id,
                     e,
                 );
             }
@@ -2910,9 +3254,11 @@ pub async fn reprocess_meeting_transcript(
         meeting_type: crate::parser::parse_meeting_type(&meeting_row.meeting_type),
         attendees: Vec::new(),
         is_all_day: false,
+        series_id: None,
         account: None, // Resolved by transcript pipeline from meeting_entities
         linked_entities: None,
         classified_entities: None,
+        scored_classified_entities: None,
     };
 
     // Re-run the full pipeline via the existing attach path
@@ -3265,6 +3611,75 @@ pub async fn attach_meeting_transcript(
 #[cfg(test)]
 mod tests {
     use super::plan_refresh_completion;
+    use super::persist_classification_entities_scored;
+    use crate::db::test_utils::test_db;
+    use crate::google_api::classify::ResolvedMeetingEntity;
+
+    /// DOS-240 (chip-X → dismissal contract): after the UI dismisses an
+    /// auto-linked entity (via `dismiss_meeting_entity` writing a row to
+    /// `meeting_entity_dismissals`), the next classification persist pass
+    /// MUST NOT re-link the same (meeting_id, entity_id, entity_type). This
+    /// test pins the end-to-end contract the UI fix depends on: the chip X
+    /// now invokes `dismiss_meeting_entity` instead of the legacy
+    /// `remove_meeting_entity`, and the subsequent calendar-sync persist
+    /// respects the dismissal.
+    #[test]
+    fn dos240_chip_x_dismissal_blocks_next_persist_pass() {
+        let db = test_db();
+        let meeting_id = "mtg-dos240";
+        let entity_id = "acct-dos240";
+        let entity_type = "account";
+
+        // First pass: scored persist links the entity (simulates initial
+        // auto-resolution from calendar sync).
+        let entities = vec![ResolvedMeetingEntity {
+            entity_id: entity_id.to_string(),
+            entity_type: entity_type.to_string(),
+            name: "Example Co".to_string(),
+            confidence: 0.95,
+            source: "keyword".to_string(),
+        }];
+        let linked = persist_classification_entities_scored(&db, meeting_id, &entities)
+            .expect("first persist pass");
+        assert_eq!(linked, 1, "initial persist should link one entity");
+
+        // Simulate the chip X: record a dismissal + unlink. This mirrors
+        // what `services::meetings::dismiss_meeting_entity` does inside its
+        // db_write closure.
+        db.record_meeting_entity_dismissal(meeting_id, entity_id, entity_type, Some("user"))
+            .expect("record dismissal");
+        db.unlink_meeting_entity(meeting_id, entity_id)
+            .expect("unlink");
+
+        // Assert the dismissal row exists (the critical bug the first
+        // attempt missed: legacy `remove_meeting_entity` never wrote this).
+        assert!(
+            db.is_meeting_entity_dismissed(meeting_id, entity_id, entity_type)
+                .expect("probe"),
+            "dismissal row must exist in meeting_entity_dismissals",
+        );
+
+        // Second pass: the next calendar-sync classification runs again
+        // with the same scored outcome. The dismissal filter inside
+        // `persist_classification_entities_scored` MUST skip the write.
+        let linked2 = persist_classification_entities_scored(&db, meeting_id, &entities)
+            .expect("second persist pass");
+        assert_eq!(
+            linked2, 0,
+            "dismissed entity must not be re-linked on subsequent persist pass",
+        );
+
+        // And the junction table must still show the entity unlinked.
+        let still_linked: bool = db
+            .conn_ref()
+            .prepare("SELECT 1 FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2")
+            .and_then(|mut s| s.exists(rusqlite::params![meeting_id, entity_id]))
+            .unwrap_or(false);
+        assert!(
+            !still_linked,
+            "meeting_entities must remain empty for the dismissed (meeting, entity) pair",
+        );
+    }
 
     #[test]
     fn refresh_completion_restores_snapshot_on_full_failure() {

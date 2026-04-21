@@ -442,6 +442,7 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
                             score={linkedAccountHealth.health.score}
                             band={linkedAccountHealth.health.band}
                             trend={linkedAccountHealth.health.trend}
+                            sufficientData={linkedAccountHealth.health.sufficientData}
                             size="compact"
                           />
                         </div>

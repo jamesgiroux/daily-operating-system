@@ -93,6 +93,10 @@ pub struct GoogleCalendarEvent {
     pub description: String,
     pub location: String,
     pub is_recurring: bool,
+    /// Google Calendar's recurringEventId — the master event ID for a series.
+    /// Used by P3 (series inheritance) to link all instances of a recurring
+    /// meeting to the same primary entity as the first user-set instance.
+    pub recurring_event_id: Option<String>,
     pub is_all_day: bool,
     /// Event status from Google Calendar: "confirmed", "tentative", or "cancelled".
     #[serde(default)]
@@ -235,6 +239,7 @@ pub async fn fetch_events(
                 description: item.description.unwrap_or_default(),
                 location: item.location.unwrap_or_default(),
                 is_recurring: item.recurring_event_id.is_some(),
+                recurring_event_id: item.recurring_event_id.clone(),
                 is_all_day,
                 status: item.status,
             });

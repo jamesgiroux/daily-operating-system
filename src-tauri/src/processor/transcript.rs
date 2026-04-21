@@ -26,8 +26,9 @@ use crate::util::{
 use super::enrich::parse_enrichment_response;
 use super::hooks;
 
-/// Per-phase timeout for phased transcript processing (60s each, 3 phases = 180s max)
-const TRANSCRIPT_PHASE_TIMEOUT_SECS: u64 = 60;
+/// Per-phase timeout for phased transcript processing (90s each, 3 phases = 270s max).
+/// Raised from 60s to the v1.2.1 floor of 90s.
+const TRANSCRIPT_PHASE_TIMEOUT_SECS: u64 = 90;
 
 /// Maximum transcript content sent to AI (covers ~75 min calls).
 const TRANSCRIPT_MAX_CHARS: usize = 60_000;
@@ -35,7 +36,8 @@ const TRANSCRIPT_MAX_CHARS: usize = 60_000;
 /// Head portion kept for tail-biased truncation (attendee context, meeting opening).
 const TRANSCRIPT_HEAD_KEEP: usize = 3_000;
 /// Timeout for the post-extraction role-attribution review pass.
-const TRANSCRIPT_ROLE_REVIEW_TIMEOUT_SECS: u64 = 30;
+/// Raised from 30s to the v1.2.1 floor of 90s.
+const TRANSCRIPT_ROLE_REVIEW_TIMEOUT_SECS: u64 = 90;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranscriptContentKind {
@@ -1845,6 +1847,7 @@ fn extract_transcript_actions(
             source_type: Some("transcript".to_string()),
             source_id: Some(meeting_id.to_string()),
             source_label: Some(meeting_title.to_string()),
+            action_kind: crate::action_status::KIND_TASK.to_string(),
             context: meta.context,
             waiting_on: if meta.is_waiting {
                 Some("true".to_string())
@@ -3745,8 +3748,10 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         }
     }
 
@@ -4053,8 +4058,10 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         };
 
         assert!(build_prediction_scorecard_markdown(&meeting, &db).is_none());
@@ -4106,8 +4113,10 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         };
 
         let markdown = build_prediction_scorecard_markdown(&meeting, &db)
@@ -4129,12 +4138,15 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec!["Sarah Chen".to_string(), "Alex Torres".to_string()],
             is_all_day: false,
+        series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "acc-record".to_string(),
                 name: "Acme Corp".to_string(),
                 entity_type: "account".to_string(),
+                ..Default::default()
             }]),
             classified_entities: None,
+            scored_classified_entities: None,
         };
         let wins = vec!["Expansion budget approved".to_string()];
         let risks = vec!["Legal review is blocking procurement".to_string()];
@@ -4265,12 +4277,15 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "proj-route".to_string(),
                 name: "Platform Migration".to_string(),
                 entity_type: "project".to_string(),
+                ..Default::default()
             }]),
             classified_entities: None,
+            scored_classified_entities: None,
         };
         let project_meeting = CalendarEvent {
             id: "mtg-project-route".to_string(),
@@ -4281,12 +4296,15 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "proj-route".to_string(),
                 name: "Platform Migration".to_string(),
                 entity_type: "project".to_string(),
+                ..Default::default()
             }]),
             classified_entities: None,
+            scored_classified_entities: None,
         };
         let person_meeting = CalendarEvent {
             id: "mtg-person-route".to_string(),
@@ -4297,12 +4315,15 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "person-route".to_string(),
                 name: "Pat Kim".to_string(),
                 entity_type: "person".to_string(),
+                ..Default::default()
             }]),
             classified_entities: None,
+            scored_classified_entities: None,
         };
         let archive_meeting = CalendarEvent {
             id: "mtg-archive-route".to_string(),
@@ -4313,8 +4334,10 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         };
 
         let account_path = compute_meeting_record_path(workspace, &account_meeting, &db);

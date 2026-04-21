@@ -14,6 +14,7 @@ impl ActionDb {
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
                     (SELECT m.title FROM meeting_entities me
                      JOIN meetings m ON me.meeting_id = m.id
                      WHERE me.entity_id = actions.account_id
@@ -45,14 +46,14 @@ impl ActionDb {
         let days_param = format!("+{days_ahead}");
         let rows = stmt.query_map(params![days_param], |row| {
             let mut action = Self::map_action_row(row)?;
-            action.next_meeting_title = row.get(17)?;
-            action.next_meeting_start = row.get(18)?;
-            let nd: i32 = row.get(19)?;
+            action.next_meeting_title = row.get(18)?;
+            action.next_meeting_start = row.get(19)?;
+            let nd: i32 = row.get(20)?;
             action.needs_decision = nd != 0;
-            action.decision_owner = row.get(20)?;
-            action.decision_stakes = row.get(21)?;
-            action.linear_identifier = row.get(22)?;
-            action.linear_url = row.get(23)?;
+            action.decision_owner = row.get(21)?;
+            action.decision_stakes = row.get(22)?;
+            action.linear_identifier = row.get(23)?;
+            action.linear_url = row.get(24)?;
             Ok(action)
         })?;
 
@@ -71,7 +72,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status IN ('unstarted', 'started')
@@ -102,7 +104,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE account_id = ?1
@@ -111,6 +114,127 @@ impl ActionDb {
         )?;
 
         let rows = stmt.query_map(params![account_id], Self::map_action_row)?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// DOS Work-tab Phase 3: open commitments for the Commitments chapter.
+    ///
+    /// Returns rows where `action_kind = 'commitment'` AND status is one of
+    /// (unstarted, started) — i.e. ACCEPTED only. Backlog commitments are
+    /// AI-inferred suggestions that the user has not yet accepted, and live
+    /// in the Suggestions chapter via `get_account_suggestions`. Accepting a
+    /// suggested commitment promotes backlog → unstarted and moves the row
+    /// into this chapter.
+    ///
+    /// Sort: status ASC (unstarted before started), then `created_at DESC` so
+    /// the most recently emitted commitments lead each bucket. Includes
+    /// Linear link fields.
+    pub fn get_account_commitments(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
+                    all_links.linear_identifier, all_links.linear_url
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
+             WHERE actions.account_id = ?1
+               AND actions.action_kind = 'commitment'
+               AND actions.status IN ('unstarted', 'started')
+             ORDER BY
+               CASE actions.status
+                 WHEN 'unstarted' THEN 0
+                 WHEN 'started' THEN 1
+                 ELSE 2
+               END,
+               actions.created_at DESC",
+        )?;
+
+        let rows = stmt.query_map(params![account_id], |row| {
+            let mut action = Self::map_action_row(row)?;
+            action.linear_identifier = row.get(18)?;
+            action.linear_url = row.get(19)?;
+            Ok(action)
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// DOS Work-tab Phase 3: backlog suggestions for the Suggestions chapter.
+    ///
+    /// Returns rows with `status = 'backlog'` for the account, regardless of
+    /// `action_kind`. Backlog commitments AND backlog tasks both show as
+    /// suggestions until the user accepts (backlog → unstarted) or rejects.
+    pub fn get_account_suggestions(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
+                    all_links.linear_identifier, all_links.linear_url
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
+             WHERE actions.account_id = ?1
+               AND actions.status = 'backlog'
+             ORDER BY priority, actions.created_at DESC",
+        )?;
+
+        let rows = stmt.query_map(params![account_id], |row| {
+            let mut action = Self::map_action_row(row)?;
+            action.linear_identifier = row.get(18)?;
+            action.linear_url = row.get(19)?;
+            Ok(action)
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// DOS Work-tab Phase 3: recently completed actions for the Recently
+    /// landed chapter.
+    ///
+    /// Returns rows with `status = 'completed'` AND `completed_at >= now - 30
+    /// days` for the account. Sort: `completed_at DESC`. Capped at 20 rows.
+    pub fn get_account_recently_landed(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
+                    all_links.linear_identifier, all_links.linear_url
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
+             WHERE actions.account_id = ?1
+               AND actions.status = 'completed'
+               AND actions.completed_at >= datetime('now', '-30 days')
+             ORDER BY actions.completed_at DESC
+             LIMIT 20",
+        )?;
+
+        let rows = stmt.query_map(params![account_id], |row| {
+            let mut action = Self::map_action_row(row)?;
+            action.linear_identifier = row.get(18)?;
+            action.linear_url = row.get(19)?;
+            Ok(action)
+        })?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -130,7 +254,7 @@ impl ActionDb {
             "SELECT DISTINCT a.id, a.title, a.priority, a.status, a.created_at, a.due_date,
                     a.completed_at, a.account_id, a.project_id, a.source_type, a.source_id,
                     a.source_label, a.context, a.waiting_on, a.updated_at, a.person_id,
-                    acc.name AS account_name
+                    acc.name AS account_name, a.action_kind
              FROM actions a
              LEFT JOIN accounts acc ON a.account_id = acc.id
              WHERE a.status IN ('unstarted', 'completed')
@@ -251,6 +375,7 @@ impl ActionDb {
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
                     actions.needs_decision, actions.decision_owner, actions.decision_stakes,
                     all_links.linear_identifier, all_links.linear_url
              FROM actions
@@ -261,12 +386,12 @@ impl ActionDb {
 
         let mut rows = stmt.query_map(params![id], |row| {
             let mut action = Self::map_action_row(row)?;
-            let nd: i32 = row.get(17)?;
+            let nd: i32 = row.get(18)?;
             action.needs_decision = nd != 0;
-            action.decision_owner = row.get(18)?;
-            action.decision_stakes = row.get(19)?;
-            action.linear_identifier = row.get(20)?;
-            action.linear_url = row.get(21)?;
+            action.decision_owner = row.get(19)?;
+            action.decision_stakes = row.get(20)?;
+            action.linear_identifier = row.get(21)?;
+            action.linear_url = row.get(22)?;
             Ok(action)
         })?;
 
@@ -282,6 +407,7 @@ impl ActionDb {
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
                     all_links.linear_identifier, all_links.linear_url
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
@@ -294,8 +420,8 @@ impl ActionDb {
         let hours_param = format!("-{} hours", since_hours);
         let rows = stmt.query_map(params![hours_param], |row| {
             let mut action = Self::map_action_row(row)?;
-            action.linear_identifier = row.get(17)?;
-            action.linear_url = row.get(18)?;
+            action.linear_identifier = row.get(18)?;
+            action.linear_url = row.get(19)?;
             Ok(action)
         })?;
 
@@ -312,7 +438,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'completed'
@@ -433,8 +560,8 @@ impl ActionDb {
             "INSERT INTO actions (
                 id, title, priority, status, created_at, due_date, completed_at,
                 account_id, project_id, source_type, source_id, source_label,
-                context, waiting_on, updated_at, person_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                context, waiting_on, updated_at, person_id, action_kind
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 priority = excluded.priority,
@@ -449,7 +576,8 @@ impl ActionDb {
                 context = excluded.context,
                 waiting_on = excluded.waiting_on,
                 updated_at = excluded.updated_at,
-                person_id = excluded.person_id",
+                person_id = excluded.person_id,
+                action_kind = excluded.action_kind",
             params![
                 action.id,
                 action.title,
@@ -467,6 +595,7 @@ impl ActionDb {
                 action.waiting_on,
                 action.updated_at,
                 action.person_id,
+                action.action_kind,
             ],
         )?;
         Ok(())
@@ -481,7 +610,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'unstarted'
@@ -554,12 +684,20 @@ impl ActionDb {
     // Suggested Actions (I256)
     // =========================================================================
 
-    /// Get all suggested actions.
+    /// Get all suggested actions (no owner filter).
+    ///
+    /// Prefer `get_suggested_actions_for_user` in production — this variant
+    /// returns every backlog row regardless of who owns it, which on a real
+    /// workspace drowns the user in other people's commitments (AI
+    /// extraction tags every speaker in transcripts as a potential owner).
+    /// Kept for devtools, tests, and explicit "show everyone's" frontend
+    /// toggles.
     pub fn get_suggested_actions(&self) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'backlog'
@@ -567,6 +705,61 @@ impl ActionDb {
         )?;
 
         let rows = stmt.query_map([], Self::map_action_row)?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// Get suggested actions scoped to the current user + unassigned rows.
+    ///
+    /// AI extraction populates `context` with an `"owner: <name>"` prefix
+    /// for every commitment it finds in a transcript — including ones where
+    /// the user is a passive observer, not the owner. On a real workspace
+    /// this produces hundreds of "suggested actions" that belong to other
+    /// people (other TAMs, customer stakeholders, internal peers). The user
+    /// can't realistically triage that firehose.
+    ///
+    /// This variant filters to rows whose `context` either:
+    ///   - starts with `"owner: <user_name>"` (case-insensitive), or
+    ///   - has no recognisable owner prefix (ambiguous — still worth
+    ///     surfacing for triage)
+    ///
+    /// If `user_name` is None or empty, falls back to no filter (safer than
+    /// showing nothing when identity isn't configured).
+    pub fn get_suggested_actions_for_user(
+        &self,
+        user_name: Option<&str>,
+    ) -> Result<Vec<DbAction>, DbError> {
+        let trimmed = user_name.map(|n| n.trim()).filter(|n| !n.is_empty());
+        let Some(name) = trimmed else {
+            return self.get_suggested_actions();
+        };
+
+        // LIKE pattern: match "owner: <name>" prefix, case-insensitive via LOWER().
+        // Unassigned rows (context NULL / empty / no owner prefix) are included
+        // so the user doesn't miss ambiguous work that still needs triage.
+        let owner_prefix = format!("owner: {}", name.to_lowercase());
+        let mut stmt = self.conn.prepare(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             WHERE status = 'backlog'
+               AND (
+                     context IS NULL
+                  OR context = ''
+                  OR LOWER(context) NOT LIKE 'owner:%'
+                  OR LOWER(context) LIKE ?1 || '%'
+               )
+             ORDER BY priority, created_at DESC",
+        )?;
+
+        let rows = stmt.query_map([owner_prefix.as_str()], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -668,7 +861,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE source_id = ?1
@@ -701,7 +895,8 @@ impl ActionDb {
         let sql = format!(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE actions.source_type = ?1
@@ -748,7 +943,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'unstarted'
@@ -775,7 +971,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE needs_decision = 1
@@ -929,6 +1126,7 @@ impl ActionDb {
             updated_at: row.get(14)?,
             person_id: row.get(15)?,
             account_name: row.get(16)?,
+            action_kind: row.get(17)?,
             next_meeting_title: None,
             next_meeting_start: None,
             needs_decision: false,
@@ -1314,6 +1512,7 @@ mod tests {
             source_type: Some("briefing".into()),
             source_id: None,
             source_label: None,
+            action_kind: crate::action_status::KIND_TASK.to_string(),
             context: None,
             waiting_on: None,
             updated_at: Utc::now().to_rfc3339(),
@@ -1459,5 +1658,66 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 2, "rejection_count should be incremented");
+    }
+
+    /// Regression: get_suggested_actions_for_user must scope to the user's own
+    /// commitments + unassigned rows. Without this filter a real workspace
+    /// returns 355 rows of which ~90% are other people's commitments.
+    #[test]
+    fn suggested_actions_for_user_filters_by_owner_prefix() {
+        let db = test_db();
+
+        let seeds = [
+            ("a-mine", "Send the deck", "owner: James Giroux (TAM)"),
+            ("b-mine-case", "Schedule sync", "owner: james giroux"),
+            ("c-other", "Prep contract", "owner: Renan Basteris (Account Manager)"),
+            ("d-other", "Migration plan", "owner: Sean Langlands"),
+            ("e-unassigned", "Follow up on Q", ""),
+            ("f-unassigned-null", "Review transcript", ""),
+            (
+                "g-unassigned-prose",
+                "Coordinate with team",
+                "Internal coordination without owner prefix",
+            ),
+        ];
+        for (id, title, ctx) in seeds {
+            db.conn
+                .execute(
+                    "INSERT INTO actions (id, title, priority, status, created_at, updated_at, context, action_kind)
+                     VALUES (?1, ?2, 2, 'backlog', datetime('now'), datetime('now'), ?3, 'commitment')",
+                    params![id, title, if ctx.is_empty() { None } else { Some(ctx) }],
+                )
+                .expect("insert seed");
+        }
+
+        // Mine + unassigned only.
+        let scoped = db
+            .get_suggested_actions_for_user(Some("James Giroux"))
+            .expect("scoped");
+        let ids: std::collections::HashSet<_> = scoped.iter().map(|a| a.id.clone()).collect();
+        assert!(ids.contains("a-mine"), "expected a-mine in scoped set");
+        assert!(ids.contains("b-mine-case"), "case-insensitive owner match");
+        assert!(
+            ids.contains("e-unassigned") && ids.contains("f-unassigned-null"),
+            "empty-context rows must surface for triage"
+        );
+        assert!(
+            ids.contains("g-unassigned-prose"),
+            "rows without owner: prefix must surface"
+        );
+        assert!(!ids.contains("c-other"), "other-owner rows must be filtered out");
+        assert!(!ids.contains("d-other"), "other-owner rows must be filtered out");
+
+        // Unscoped fallback (None) = full list, same as get_suggested_actions().
+        let unscoped = db.get_suggested_actions_for_user(None).expect("unscoped");
+        assert_eq!(
+            unscoped.len(),
+            7,
+            "None user_name should return all seeded rows"
+        );
+
+        // Empty user_name also falls back to full list (defensive).
+        let empty = db.get_suggested_actions_for_user(Some("   ")).expect("empty");
+        assert_eq!(empty.len(), 7, "whitespace-only name falls back to full list");
     }
 }

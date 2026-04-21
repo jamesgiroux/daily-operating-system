@@ -10,6 +10,24 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.2.1 — The right account, every time
+
+DailyOS has always known a lot about your accounts. The problem was linking. A meeting with someone from Acme might file under a parent company, a subsidiary, or not link at all — depending on subtle quirks in how the meeting was structured. This release replaces that heuristic guessing with a deterministic system: the same meeting will always reach the same answer, and you can see why.
+
+**Meetings link to the right account, reliably.** The system now applies a defined set of rules — sender domain, title, attendee history, meeting series — in a specific order. No more coin-flips between parent and subsidiary. No more internal team syncs accidentally linking to a customer. Open any meeting to see which account it's connected to and dismiss the link if the system got it wrong.
+
+**Dismissals stick across the whole app.** When you dismiss an account link on a meeting, it's gone — from that meeting, from the briefing, from the email thread. It doesn't bounce back after the next sync. The system remembers your correction and applies it everywhere.
+
+**New people surface before they matter.** When the system spots someone regularly in your meetings who isn't in your stakeholder list yet, they appear in a Pending queue on the account page. One click to confirm, one click to dismiss. You stay in control — nothing gets added without your say.
+
+**Triage cards do something now.** Health triage items (risks, gaps, aging concerns) now have Snooze and Resolve buttons. Snooze a card if the issue is known and being handled. Resolve it when it's fixed. The triage list clears as you work through it, instead of just accumulating.
+
+**Internal meetings stay internal.** A standing bug caused some internal team meetings to get classified as customer meetings, pulling them into account briefings where they didn't belong. Fixed. Team syncs, all-hands, and 1:1s with colleagues now stay out of your customer-facing context.
+
+**Your backups are real now.** A quiet bug in the backup system was producing near-empty files instead of actual copies of your database. The backup now captures everything — including any unwritten WAL data — and we verify the result before calling it done. If you had backups that were suspiciously small (under 64KB), they weren't real. New backups will be.
+
+---
+
 ## v1.2.0 — Actions that close the loop
 
 DailyOS used to be one-directional: AI produces, you consume. Now actions are a two-way street. Capture your own tasks, push them to Linear, and let the system learn what matters to you.

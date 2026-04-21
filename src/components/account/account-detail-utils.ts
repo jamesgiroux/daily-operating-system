@@ -18,6 +18,19 @@ import {
   Award,
   Compass,
   Telescope,
+  Quote,
+  MessageSquareQuote,
+  Cpu,
+  BookOpen,
+  Flag,
+  Sparkles,
+  Share2,
+  PackageCheck,
+  AlertTriangle,
+  Info,
+  DollarSign,
+  HeartHandshake,
+  NotebookPen,
 } from "lucide-react";
 
 /* ── Vitals assembly ── */
@@ -116,7 +129,7 @@ const PORTFOLIO_CHAPTER = {
 
 const HEALTH_CHAPTER = {
   id: "relationship-health",
-  label: "Health",
+  label: "The Read",
   icon: React.createElement(BarChart3, { size: 18, strokeWidth: 1.5 }),
 };
 
@@ -128,6 +141,127 @@ export function buildChapters(isParent: boolean, hasHealth: boolean) {
   const sopIndex = chapters.findIndex((c) => c.id === "state-of-play");
   if (hasHealth && sopIndex >= 0) {
     chapters.splice(sopIndex + 1, 0, HEALTH_CHAPTER);
+  }
+  return chapters;
+}
+
+/* ── Per-view chapter builders (DOS-112) ── */
+
+export function buildHealthChapters(
+  isParent: boolean,
+  hasHealth: boolean,
+  opts: { fineState?: boolean; hasOutlook?: boolean } = {},
+) {
+  // DOS-203: Health tab IA matches renderHealthView section ids. Chapter
+  // order mirrors the mockup (.docs/mockups/account-health-outlook-globex.html):
+  //   your-assessment → needs-attention | on-track → outlook →
+  //   relationship-health → [portfolio] → about-intelligence
+  // Every id here MUST correspond to a rendered <section>/<MarginSection>
+  // in AccountDetailPage.renderHealthView or the nav anchor dead-links.
+  const chapters: { id: string; label: string; icon: React.ReactNode }[] = [
+    {
+      id: "your-assessment",
+      label: "Your Assessment",
+      icon: React.createElement(NotebookPen, { size: 18, strokeWidth: 1.5 }),
+    },
+  ];
+  if (opts.fineState) {
+    chapters.push({
+      id: "on-track",
+      label: "On Track",
+      icon: React.createElement(HeartHandshake, { size: 18, strokeWidth: 1.5 }),
+    });
+  } else {
+    chapters.push({
+      id: "needs-attention",
+      label: "Needs attention",
+      icon: React.createElement(AlertTriangle, { size: 18, strokeWidth: 1.5 }),
+    });
+  }
+  if (opts.hasOutlook !== false) {
+    chapters.push({
+      id: "outlook",
+      label: "Outlook",
+      icon: React.createElement(Telescope, { size: 18, strokeWidth: 1.5 }),
+    });
+  }
+  if (hasHealth) {
+    chapters.push(HEALTH_CHAPTER);
+  }
+  if (isParent) {
+    chapters.push(PORTFOLIO_CHAPTER);
+  }
+  chapters.push({
+    id: "about-intelligence",
+    label: "About intelligence",
+    icon: React.createElement(Info, { size: 18, strokeWidth: 1.5 }),
+  });
+  return chapters;
+}
+
+export function buildContextChapters(
+  opts: {
+    hasWhatMatters?: boolean;
+    hasBuilt?: boolean;
+    hasTechnical?: boolean;
+  } = {},
+) {
+  // DOS-18: IA matches renderContextView section order. Conditional chapters
+  // are included only when the page renders them — otherwise the nav dead-links.
+  const chapters: { id: string; label: string; icon: React.ReactNode }[] = [
+    { id: "thesis", label: "Thesis", icon: React.createElement(Quote, { size: 18, strokeWidth: 1.5 }) },
+    { id: "the-room", label: "The Room", icon: React.createElement(Users, { size: 18, strokeWidth: 1.5 }) },
+  ];
+  if (opts.hasWhatMatters !== false) {
+    chapters.push({ id: "what-matters", label: "What matters", icon: React.createElement(Compass, { size: 18, strokeWidth: 1.5 }) });
+  }
+  if (opts.hasBuilt !== false) {
+    chapters.push({ id: "value-commitments", label: "What we've built", icon: React.createElement(Award, { size: 18, strokeWidth: 1.5 }) });
+  }
+  chapters.push(
+    { id: "their-voice", label: "Their voice", icon: React.createElement(MessageSquareQuote, { size: 18, strokeWidth: 1.5 }) },
+    { id: "commercial-shape", label: "Commercial shape", icon: React.createElement(DollarSign, { size: 18, strokeWidth: 1.5 }) },
+  );
+  if (opts.hasTechnical !== false) {
+    chapters.push({ id: "technical-shape", label: "Technical shape", icon: React.createElement(Cpu, { size: 18, strokeWidth: 1.5 }) });
+  }
+  chapters.push(
+    { id: "relationship-fabric", label: "Relationship fabric", icon: React.createElement(HeartHandshake, { size: 18, strokeWidth: 1.5 }) },
+    { id: "about-dossier", label: "About the dossier", icon: React.createElement(BookOpen, { size: 18, strokeWidth: 1.5 }) },
+  );
+  return chapters;
+}
+
+/**
+ * DOS-13 Work tab IA — chapter pills matching section ids rendered by
+ * AccountDetailPage.renderWorkView. Each id here MUST match a MarginSection
+ * id in the page or the nav anchor will dead-link.
+ *
+ * Section-id contract (verified in tests/account-detail-utils.test.ts):
+ *   focus, programs, commitments, suggestions, [shared?], recently-landed,
+ *   outputs, nudges.
+ *
+ * Wave 0g Finding 2 (honest degradation): the "shared" pill is only emitted
+ * when real tracker provenance exists on the account. Without it, the page
+ * suppresses the chapter — the pill would dead-link. Tracker provenance
+ * lands in v1.2.2 (DOS-75); until then hasSharedData is always false.
+ */
+export function buildWorkChapters(hasSharedData: boolean = false, hasFiles: boolean = false) {
+  const chapters = [
+    { id: "commitments", label: "Commitments", icon: React.createElement(CheckSquare2, { size: 18, strokeWidth: 1.5 }) },
+    { id: "suggestions", label: "Suggestions", icon: React.createElement(Sparkles, { size: 18, strokeWidth: 1.5 }) },
+    { id: "programs", label: "Programs & motions", icon: React.createElement(Flag, { size: 18, strokeWidth: 1.5 }) },
+  ];
+  if (hasSharedData) {
+    chapters.push({ id: "shared", label: "Shared with team", icon: React.createElement(Share2, { size: 18, strokeWidth: 1.5 }) });
+  }
+  chapters.push(
+    { id: "recently-landed", label: "Recently landed", icon: React.createElement(PackageCheck, { size: 18, strokeWidth: 1.5 }) },
+    { id: "outputs", label: "Outputs", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) },
+    { id: "the-record", label: "The Record", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) },
+  );
+  if (hasFiles) {
+    chapters.push({ id: "files", label: "Files", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) });
   }
   return chapters;
 }

@@ -5,6 +5,42 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.2.1] — 2026-04-21
+
+### Added
+
+- **Deterministic entity linking service (DOS-258)** — complete rewrite replacing fuzzy/keyword matching. P1–P11 rule engine selects primary entity using domain evidence (P4a/P4b/P4c), thread inheritance (P2), series inheritance (P3), title evidence (P5), and shape rules (P6–P11). `linked_entities_raw` table stores all link decisions with `role`, `confidence`, `rule_id`, and `evidence_json`. `linking_dismissals` table stores dismissal tombstones that survive every sync cycle. `entity_graph_version` singleton counter with triggers on account_domains, account_stakeholders, keywords, and project links for O(1) staleness detection.
+- **Pending stakeholder review queue (DOS-258/F)** — `account_stakeholders` rows with `status='pending_review'` surface in a review queue on the account detail page. New stakeholders detected from meeting attendance or email correspondence are queued automatically. Confirm promotes to active; dismiss blocks future re-surfacing. Multi-BU sibling account hints shown inline.
+- **Email participant parsing for domain evidence (DOS-258/E)** — `emails.to_recipients` and `emails.cc_recipients` columns store comma-separated recipient addresses from Gmail `To`/`Cc` headers. `email_adapter::build_context` now produces `From`/`To`/`Cc` participants so P4b/P4c domain rules see all participants, not just the sender.
+- **Recurring event series_id for P3 inheritance (DOS-258/D)** — `GoogleCalendarEvent.recurring_event_id` plumbed through `ClassifiedMeeting` → `CalendarEvent.series_id` → `LinkingContext.series_id`. Rule P3 (series inheritance: user-set primary on first instance propagates to all future events) is now live.
+- **account_domains source provenance (DOS-258 follow-up)** — `account_domains.source` column (`'user'`/`'enrichment'`/`'inferred'`). User-entered domains tagged `user`; Glean/Clay enrichment tagged `enrichment`; attendee-inferred domains tagged `inferred`. `raw_rebuild_account_domains()` purges inferred domains before cutover.
+- **entity_graph_version full trigger coverage** — INSERT/DELETE and name/archived UPDATE triggers added for accounts and projects so P5 title-matching and P4 domain evidence stay consistent after entity creation, deletion, or rename.
+- **EntityLinkPicker for P9 ambiguous case (DOS-258/G)** — "Which account is this about?" picker renders when multiple domain-evidence candidates exist with no primary. Shows account chips; selecting one calls `set_entity_link_primary`.
+- **TitleOnlyBanner for P5 primary (DOS-258/G)** — "from title · undo" banner renders below the primary chip when the P5 rule fired. Undo calls `dismiss_entity_link`.
+- **Health tab triage action wiring (DOS-269)** — Snooze and "Confirm resolved" buttons on triage cards now persist to a `triage_snoozes` table. Snoozed cards hide until the snooze expires; resolved cards hide permanently. State survives app restart.
+- **Suggested Actions scoped to current user** — `get_suggested_actions_for_user` uses `user_entity.name` to filter AI-extracted actions to the current user's commitments plus unassigned items.
+
+### Changed
+
+- **Entity linking pipeline now sole writer** — `persist_classification_entities_scored` and `persist_classification_entities` removed from calendar sync path. `evaluate_meeting()` is the only function that writes entity links. Meeting chips read from the new `linked_entities` view.
+- **Fuzzy/keyword signals stripped** — `signal_keyword_match`, `build_fuzzy_tokens`, `fuzzy_matches_tokens`, `keywords_match_text` deleted from `entity_resolver.rs`. The deterministic engine (P4/P5 rules) handles all domain and title evidence.
+- **account_stakeholders status filter** — queries that feed stakeholder grids, The Record, email fanout, and meeting context now filter `status = 'active'`. `pending_review` and `dismissed` suggestions no longer bleed into stakeholder displays.
+- **Meeting entity chips use role-based rendering** — `linked_entities_raw.role` (`primary`/`related`/`auto_suggested`) drives chip display. Legacy `isPrimary`/`suggested` flags retained as fallback for older data.
+- **Glean enrichment domains tagged as enrichment source** — `merge_account_domains_enrichment()` writes `source='enrichment'` so trusted provider domains are preserved by `raw_rebuild_account_domains`.
+
+### Fixed
+
+- **DOS-273: Pre-migration backup generates hollow 8KB files** — `sqlcipher_export` without a transaction wrapper was producing schema-only backups. Switched to the Backup API (same pattern `backup_database()` uses). Added post-backup size check: refuses to apply migrations if backup is < 64KB from a > 128KB source.
+- **DOS-206: All-internal meetings mis-classified as "customer"** — entity-aware promotion now checks `best_account_hint.account_type`. Accounts typed `'internal'` never promote an all-internal meeting to `customer` regardless of title confidence. Secondary sort key ensures internal accounts win ties over customer accounts so the guard reliably fires.
+- **DOS-225: Reclassify Path A flips mixed-attendee meetings to internal** — already fixed in a prior session; verified in this train.
+- **Health tab triage cards: dismissed items return on reload** — persisted to `triage_snoozes` table; rendering-time filter suppresses snoozed and resolved cards.
+- **Stakeholder tier sort** — primary stakeholders sort before verified, verified before AI-inferred on the account detail page.
+- **Glean degraded/fallback toasts on background enrichments** — toast suppressed when Glean call is triggered from a background context; only surfaces for user-initiated enrichment.
+- **Briefing: prep_context_json not deserialized** — `Meeting.prep` field now correctly populated from `prep_context_json` column.
+- **Work tab commitments** — user-created commitments protected from AI overwrite; inline edit wired; CSS fixes.
+- **PTY: ANTHROPIC_API_KEY not forwarded to Claude CLI child** — key now forwarded explicitly; empty env vars stripped so child can fall back to Keychain.
+- **DB: ActionDb::open() on hot path caused UI freeze under load** — DB access unified on dedicated-thread DbService pool via `state.db_read()`/`state.db_write()`. No connection opened per event.
+
 ## [1.2.0] — 2026-04-15
 
 ### Added

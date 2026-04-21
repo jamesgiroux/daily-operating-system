@@ -906,12 +906,33 @@ pub struct CalendarAttendeeEntry {
 }
 
 /// An entity linked to a meeting via the junction table.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// DOS-74: carries per-junction confidence and suggestion flag so the UI can
+/// paint one primary entity + N suggestions instead of co-equal chips.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkedEntity {
     pub id: String,
     pub name: String,
     pub entity_type: String,
+    /// Per-junction confidence (0.0 — 1.0). Manual/high-confidence links = 0.95.
+    #[serde(default = "default_linked_entity_confidence")]
+    pub confidence: f64,
+    /// True for the highest-confidence link per meeting; false for suggestions.
+    #[serde(default = "default_linked_entity_primary")]
+    pub is_primary: bool,
+    /// Rendering hint: true when `is_primary` is false AND confidence is in
+    /// the suggestion tier (<0.60). Frontend paints these muted with a
+    /// "suggested" affordance rather than as a primary chip.
+    #[serde(default)]
+    pub suggested: bool,
+}
+
+fn default_linked_entity_confidence() -> f64 {
+    0.95
+}
+
+fn default_linked_entity_primary() -> bool {
+    true
 }
 
 /// Action priority level (Linear-compatible integer 0-4).
@@ -1960,6 +1981,12 @@ pub struct CalendarEvent {
     pub attendees: Vec<String>,
     #[serde(default)]
     pub is_all_day: bool,
+    /// Google Calendar recurringEventId — the master series ID.
+    /// Populated by the calendar adapter for Rule P3 (series inheritance):
+    /// if the first instance of the series has a user-set primary, all
+    /// subsequent instances inherit it automatically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub series_id: Option<String>,
     /// Entities linked via M2M junction table or entity resolution (I339)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked_entities: Option<Vec<LinkedEntity>>,
@@ -1969,6 +1996,13 @@ pub struct CalendarEvent {
     /// Default empty — only populated by classify_meeting_multi → to_calendar_event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub classified_entities: Option<Vec<(String, String)>>, // (entity_id, entity_type)
+    /// DOS-224: Scored entity resolutions from classification time. Unlike
+    /// `classified_entities` which loses confidence + source, this field
+    /// carries everything the persistence layer needs to make a principled
+    /// primary-vs-suggestion decision (and to refuse weak title-only
+    /// matches from claiming is_primary=1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scored_classified_entities: Option<Vec<crate::google_api::classify::ResolvedMeetingEntity>>,
 }
 
 // =============================================================================

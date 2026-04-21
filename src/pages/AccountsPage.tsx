@@ -901,7 +901,7 @@ function AccountRow({
 
   const ih = account.intelligenceHealth;
   const healthAvatar = ih ? (
-    <HealthBadge score={ih.score} band={ih.band} trend={ih.trend} size="compact" />
+    <HealthBadge score={ih.score} band={ih.band} trend={ih.trend} sufficientData={ih.sufficientData} size="compact" />
   ) : undefined;
 
   return (

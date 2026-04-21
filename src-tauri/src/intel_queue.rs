@@ -28,7 +28,13 @@ use crate::types::AiModelConfig;
 /// Debounce window for content-triggered enrichment requests.
 const CONTENT_DEBOUNCE_SECS: u64 = 30;
 const CALENDAR_DEBOUNCE_SECS: u64 = 600;
-const BACKGROUND_ENRICHMENT_TIMEOUT_SECS: u64 = 20;
+/// Background enrichment timeout — raised from 20s to the v1.2.1 floor of 90s.
+const BACKGROUND_ENRICHMENT_TIMEOUT_SECS: u64 = 90;
+/// Per-dimension manual-refresh timeout. Large accounts with deep context
+/// (e.g. Blackstone-scale) need >90s for some dimensions; 90s caused half
+/// the dimensions to time out and return empty arrays, which silently wiped
+/// downstream Work/Context content. Bumped to the 240s cap.
+const DIMENSION_ENRICHMENT_TIMEOUT_SECS: u64 = 240;
 
 /// How often the background processor checks for work.
 const POLL_INTERVAL_SECS: u64 = 5;
@@ -259,6 +265,49 @@ fn usage_context_for_priority(priority: IntelPriority) -> AiUsageContext {
     AiUsageContext::new("intel_queue", operation)
         .with_trigger(trigger_for_priority(priority))
         .with_background(background)
+}
+
+/// DOS-15: surface a failed leading-signals enrichment pass to the audit log
+/// and the frontend. Mirrors the main-enrichment degraded/fallback pattern so
+/// users see *why* Health triage cards are activity-sourced instead of
+/// Glean-sourced on accounts where Glean is configured.
+fn emit_leading_signals_failed(
+    state: &AppState,
+    app: &AppHandle,
+    entity_id: &str,
+    entity_type: &str,
+    reason: &str,
+    wall_clock_ms: u64,
+    is_background: bool,
+) {
+    {
+        let mut audit = state.audit_log.lock();
+        let _ = audit.append(
+            "data_access",
+            "glean_leading_signals_failed",
+            serde_json::json!({
+                "entity_id": entity_id,
+                "entity_type": entity_type,
+                "reason": reason,
+                "wall_clock_ms": wall_clock_ms,
+                "background": is_background,
+            }),
+        );
+    }
+    // Toast only on user-initiated work — match the main-enrichment gate.
+    // Background hygiene sweeps would otherwise spam toasts every few
+    // minutes as Glean's natural partial-failure rate surfaces.
+    if !is_background {
+        let _ = app.emit(
+            "enrichment-glean-leading-signals-failed",
+            serde_json::json!({
+                "entity_id": entity_id,
+                "entity_type": entity_type,
+                "reason": reason,
+                "wall_clock_ms": wall_clock_ms,
+            }),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -715,6 +764,87 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
+            // DOS-15: Supplemental leading-signals enrichment for Health & Outlook.
+            // Runs only for accounts and only when Glean is configured. Failures
+            // are isolated (the main dimension enrichment already landed) but
+            // no longer silent — we emit an audit event + Tauri event so the
+            // frontend can surface a toast and we can see why Health triage
+            // fell back to activity-sourced cards.
+            if state.context_provider().is_remote() && request.entity_type == "account" {
+                let endpoint = state
+                    .context_provider()
+                    .remote_endpoint()
+                    .map(|s| s.to_string());
+                if let Some(endpoint) = endpoint {
+                    let entity_name = input.entity_name.clone();
+                    let entity_id = request.entity_id.clone();
+                    let entity_type = request.entity_type.clone();
+                    let engine = std::sync::Arc::clone(&state.signals.engine);
+                    let state_for_spawn = std::sync::Arc::clone(&state);
+                    let app_for_spawn = app.clone();
+                    // Same is_background gate as main enrichment: suppress
+                    // user-visible toast on scheduled work, keep audit log.
+                    let is_background = is_background_priority(request.priority);
+                    tauri::async_runtime::spawn(async move {
+                        let provider = crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
+                        let ls_start = std::time::Instant::now();
+                        match provider.enrich_leading_signals(&entity_name).await {
+                            Ok(signals) => {
+                                if let Ok(db) = crate::db::ActionDb::open() {
+                                    if let Err(e) =
+                                        crate::services::intelligence::upsert_health_outlook_signals(
+                                            &db,
+                                            &engine,
+                                            &entity_type,
+                                            &entity_id,
+                                            &signals,
+                                        )
+                                    {
+                                        log::warn!(
+                                            "[DOS-15] upsert_health_outlook_signals failed for {}: {}",
+                                            entity_id,
+                                            e
+                                        );
+                                        // Persist failure visible in audit + toast
+                                        let reason = format!("persistence failed: {e}");
+                                        emit_leading_signals_failed(
+                                            &state_for_spawn,
+                                            &app_for_spawn,
+                                            &entity_id,
+                                            &entity_type,
+                                            &reason,
+                                            ls_start.elapsed().as_millis() as u64,
+                                            is_background,
+                                        );
+                                    } else {
+                                        log::info!(
+                                            "[DOS-15] Leading signals persisted for {}",
+                                            entity_id
+                                        );
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "[DOS-15] Leading-signals enrichment failed for {}: {}",
+                                    entity_id,
+                                    e
+                                );
+                                emit_leading_signals_failed(
+                                    &state_for_spawn,
+                                    &app_for_spawn,
+                                    &entity_id,
+                                    &entity_type,
+                                    &e,
+                                    ls_start.elapsed().as_millis() as u64,
+                                    is_background,
+                                );
+                            }
+                        }
+                    });
+                }
+            }
+
             if !parsed.inferred_relationships.is_empty() {
                 let db = match crate::db::ActionDb::open() {
                     Ok(db) => db,
@@ -1109,6 +1239,7 @@ async fn run_glean_enrichment_with_fallback(
                 input.entity_type
             );
 
+            let is_background = is_background_priority(request.priority);
             match provider
                 .enrich_entity(
                     &input.entity_id,
@@ -1117,6 +1248,7 @@ async fn run_glean_enrichment_with_fallback(
                     ctx,
                     input.relationship.as_deref(),
                     Some(app_handle),
+                    is_background,
                 )
                 .await
             {
@@ -1297,7 +1429,7 @@ fn run_parallel_enrichment(
 
             let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_cfg)
                 .with_usage_context(dimension_usage_context)
-                .with_timeout(30)
+                .with_timeout(DIMENSION_ENRICHMENT_TIMEOUT_SECS)
                 .with_nice_priority(10);
 
             let result = pty
@@ -1497,7 +1629,7 @@ fn run_enrichment_legacy(
 ) -> Result<EnrichmentParseResult, String> {
     let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
         .with_usage_context(usage_context.clone().with_tier(ModelTier::Synthesis))
-        .with_timeout(30)
+        .with_timeout(DIMENSION_ENRICHMENT_TIMEOUT_SECS)
         .with_nice_priority(10);
     let output = pty
         .spawn_claude(&input.workspace, &input.prompt)
@@ -1582,7 +1714,7 @@ fn run_consistency_repair_retry(
                 .with_trigger("post_write_repair")
                 .with_tier(ModelTier::Extraction),
         )
-        .with_timeout(30)
+        .with_timeout(90)
         .with_nice_priority(10);
     let output = pty
         .spawn_claude(&input.workspace, &prompt)
@@ -1706,22 +1838,37 @@ pub fn write_enrichment_results(
 
                         // Upsert roles: skip user-owned, update/insert AI-owned
                         if let Some(ref role) = insight.role {
-                            let role_ds: Option<String> = db_sh
+                            // Existence check returns data_source AND
+                            // dismissed_at so we can distinguish three
+                            // states: not-present, active-ai-owned,
+                            // active-user-owned, soft-deleted. Soft-
+                            // deleted rows are treated the same as
+                            // user-owned: do not touch. Without this,
+                            // AI would re-UPDATE a dismissed row and
+                            // (via ON CONFLICT) keep writing data_source=
+                            // 'ai' on every enrichment, even though the
+                            // dismissal filter keeps it hidden.
+                            let existing: Option<(Option<String>, Option<String>)> = db_sh
                                 .conn_ref()
                                 .query_row(
-                                    "SELECT data_source FROM account_stakeholder_roles WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
+                                    "SELECT data_source, dismissed_at FROM account_stakeholder_roles
+                                     WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
                                     rusqlite::params![&input.entity_id, pid, role],
-                                    |row| row.get(0),
+                                    |row| Ok((row.get(0)?, row.get(1)?)),
                                 )
                                 .ok();
-                            match role_ds.as_deref() {
-                                Some("user") => { /* User-owned role — do not touch */ }
-                                Some(_) | None => {
-                                    let _ = db_sh.conn_ref().execute(
-                                        "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
-                                        rusqlite::params![&input.entity_id, pid, role],
-                                    );
-                                }
+                            let is_user_owned = matches!(
+                                existing.as_ref().and_then(|(ds, _)| ds.as_deref()),
+                                Some("user")
+                            );
+                            let is_dismissed = existing
+                                .as_ref()
+                                .is_some_and(|(_, d)| d.is_some());
+                            if !is_user_owned && !is_dismissed {
+                                let _ = db_sh.conn_ref().execute(
+                                    "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
+                                    rusqlite::params![&input.entity_id, pid, role],
+                                );
                             }
                         }
                     } else {
@@ -2346,7 +2493,7 @@ fn dual_write_enrichment_products(
 
     for feature in &adoption.feature_adoption {
         // Parse "Core platform: 95%" → name = "Core platform", adoption_pct ~0.95
-        let (name, _adoption_pct) = if let Some(colon_pos) = feature.find(':') {
+        let (name, adoption_pct) = if let Some(colon_pos) = feature.find(':') {
             let raw_name = feature[..colon_pos].trim();
             let pct_str = feature[colon_pos + 1..].trim().trim_end_matches('%');
             let pct = pct_str.parse::<f64>().ok().map(|v| v / 100.0);
@@ -2359,7 +2506,7 @@ fn dual_write_enrichment_products(
             continue;
         }
 
-        match db.upsert_account_product(entity_id, &name, None, "active", None, source, 0.55, None)
+        match db.upsert_account_product(entity_id, &name, None, "active", adoption_pct, source, 0.55, None)
         {
             Ok(_) => upserted += 1,
             Err(e) => {

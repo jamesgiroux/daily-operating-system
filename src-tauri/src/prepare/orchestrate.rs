@@ -81,6 +81,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                         domains: vec![],
                         keywords: vec![],
                         emails: vec![],
+                        // account_type is unknown in the filesystem fallback (no DB).
+                        // The DOS-206 guard will not fire for internal accounts in
+                        // this path — acceptable because the DB-backed path is
+                        // always used in production.
                         account_type: None,
                         linked_account_ids: vec![],
                     })
@@ -202,10 +206,23 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // I365: Persist fetched emails to DB (after classification + boosting)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
+            // DOS-242: load tracked domains once for the noise filter.
+            let (account_domains_for_noise, person_domains_for_noise) = load_tracked_domains(&db);
             let mut persisted = 0usize;
+            let mut suppressed = 0usize;
             for raw in &email_result.raw_emails {
                 let sender_email = email_classify::extract_email_address(&raw.from);
                 let sender_name = extract_display_name(&raw.from);
+                let is_noise = email_classify::should_suppress_email(
+                    &raw.from,
+                    &raw.subject,
+                    &raw.list_unsubscribe,
+                    &account_domains_for_noise,
+                    &person_domains_for_noise,
+                );
+                if is_noise {
+                    suppressed += 1;
+                }
                 // Use boosted priority from all array if available
                 let priority = email_result
                     .all
@@ -250,6 +267,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     pinned_at: None,
                     commitments: None,
                     questions: None,
+                    is_noise,
+                    to_recipients: extract_recipient_addresses(&raw.to),
+                    cc_recipients: extract_recipient_addresses(&raw.cc),
                 };
                 if let Err(e) = db.upsert_email(&db_email) {
                     log::warn!("Failed to persist email {}: {}", raw.id, e);
@@ -258,7 +278,11 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 }
             }
             if persisted > 0 {
-                log::info!("prepare_today: persisted {} emails to DB", persisted);
+                log::info!(
+                    "prepare_today: persisted {} emails to DB ({} suppressed as noise)",
+                    persisted,
+                    suppressed
+                );
             }
 
             // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
@@ -712,19 +736,47 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
                 // I653 FIX 5: Persist classification-time entity links (mirrors prepare_week:1139)
                 if let Some(entities) = cm.get("entities").and_then(|v| v.as_array()) {
-                    let entity_pairs: Vec<(String, String)> = entities
+                    // DOS-224: `cm["entities"]` is a ResolvedMeetingEntity[]
+                    // with camelCase serde — NOT the snake_case pairs the
+                    // previous reader expected. Parse the full scored shape
+                    // so the persistence layer can enforce primary rules.
+                    let scored: Vec<crate::google_api::classify::ResolvedMeetingEntity> = entities
                         .iter()
                         .filter_map(|e| {
-                            let id = e.get("entity_id").and_then(|v| v.as_str())?;
-                            let t = e.get("entity_type").and_then(|v| v.as_str())?;
-                            Some((id.to_string(), t.to_string()))
+                            let id = e
+                                .get("entityId")
+                                .or_else(|| e.get("entity_id"))
+                                .and_then(|v| v.as_str())?;
+                            let t = e
+                                .get("entityType")
+                                .or_else(|| e.get("entity_type"))
+                                .and_then(|v| v.as_str())?;
+                            let name = e
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let confidence =
+                                e.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let source = e
+                                .get("source")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            Some(crate::google_api::classify::ResolvedMeetingEntity {
+                                entity_id: id.to_string(),
+                                entity_type: t.to_string(),
+                                name,
+                                confidence,
+                                source,
+                            })
                         })
                         .collect();
-                    if !entity_pairs.is_empty() {
-                        let _ = crate::services::meetings::persist_classification_entities(
+                    if !scored.is_empty() {
+                        let _ = crate::services::meetings::persist_classification_entities_scored(
                             &db,
                             calendar_event_id,
-                            &entity_pairs,
+                            &scored,
                         );
                     }
                 }
@@ -1151,21 +1203,48 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                     new_id
                 };
 
-                // Link meeting entities (I336, refactored I653 to use centralized service)
+                // Link meeting entities (I336, refactored I653 to use centralized service).
+                // DOS-224: parse scored shape (camelCase) and route through the
+                // scored persistence path so weak title-only matches land as
+                // non-primary suggestions rather than bogus primaries.
                 if let Some(entities) = cm.get("entities").and_then(|v| v.as_array()) {
-                    let entity_pairs: Vec<(String, String)> = entities
+                    let scored: Vec<crate::google_api::classify::ResolvedMeetingEntity> = entities
                         .iter()
                         .filter_map(|e| {
-                            let id = e.get("entity_id").and_then(|v| v.as_str())?;
-                            let t = e.get("entity_type").and_then(|v| v.as_str())?;
-                            Some((id.to_string(), t.to_string()))
+                            let id = e
+                                .get("entityId")
+                                .or_else(|| e.get("entity_id"))
+                                .and_then(|v| v.as_str())?;
+                            let t = e
+                                .get("entityType")
+                                .or_else(|| e.get("entity_type"))
+                                .and_then(|v| v.as_str())?;
+                            let name = e
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let confidence =
+                                e.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let source = e
+                                .get("source")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            Some(crate::google_api::classify::ResolvedMeetingEntity {
+                                entity_id: id.to_string(),
+                                entity_type: t.to_string(),
+                                name,
+                                confidence,
+                                source,
+                            })
                         })
                         .collect();
-                    if !entity_pairs.is_empty() {
-                        let _ = crate::services::meetings::persist_classification_entities(
+                    if !scored.is_empty() {
+                        let _ = crate::services::meetings::persist_classification_entities_scored(
                             &db,
                             &meeting_id,
-                            &entity_pairs,
+                            &scored,
                         );
                     }
                 }
@@ -1366,6 +1445,27 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
 /// Replaces refresh_emails.py. Writes: _today/data/email-refresh-directive.json
 pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), ExecutionError> {
+    refresh_emails_with_retry_batch(state, workspace, None).await
+}
+
+/// DOS-226 (Codex finding 1): Email refresh variant that understands an
+/// in-flight user-initiated retry batch.
+///
+/// When `retry_batch_id` is Some, this function promotes the batch's
+/// `pending_retry` rows to `pending` with `enrichment_attempts = 0`
+/// *after* the Gmail fetch succeeds and *before* the enrichment pass
+/// runs. This ordering is load-bearing: `get_pending_enrichment` filters
+/// `enrichment_attempts < 3`, so rows left in `pending_retry` at the
+/// 3-attempt cap would be skipped by the enrichment pass they're meant
+/// to participate in — the bug Codex caught.
+///
+/// When `retry_batch_id` is None (auto-poll, /today pipeline) the
+/// function behaves exactly like the pre-DOS-226 refresh.
+pub async fn refresh_emails_with_retry_batch(
+    state: &AppState,
+    workspace: &Path,
+    retry_batch_id: Option<&str>,
+) -> Result<(), ExecutionError> {
     // I567: Permit moved to wrap only the PTY enrichment call below.
     // Gmail fetch, DB persistence, thread update, signal emission run without the permit.
 
@@ -1427,7 +1527,10 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
 
     // I365: Persist fetched emails to DB
     if let Ok(db) = crate::db::ActionDb::open() {
+        // DOS-242: load tracked domains once for the noise filter.
+        let (account_domains_for_noise, person_domains_for_noise) = load_tracked_domains(&db);
         let mut persisted = 0usize;
+        let mut suppressed = 0usize;
         for raw in &email_result.raw_emails {
             let sender_email = email_classify::extract_email_address(&raw.from);
             let sender_name = extract_display_name(&raw.from);
@@ -1436,6 +1539,16 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
                 .get(&raw.id)
                 .map(|s| s.as_str())
                 .unwrap_or("medium");
+            let is_noise = email_classify::should_suppress_email(
+                &raw.from,
+                &raw.subject,
+                &raw.list_unsubscribe,
+                &account_domains_for_noise,
+                &person_domains_for_noise,
+            );
+            if is_noise {
+                suppressed += 1;
+            }
             let db_email = crate::db::DbEmail {
                 email_id: raw.id.clone(),
                 thread_id: Some(raw.thread_id.clone()),
@@ -1467,6 +1580,9 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
                 pinned_at: None,
                 commitments: None,
                 questions: None,
+                is_noise,
+                to_recipients: extract_recipient_addresses(&raw.to),
+                cc_recipients: extract_recipient_addresses(&raw.cc),
             };
             if let Err(e) = db.upsert_email(&db_email) {
                 log::warn!("Failed to persist email {}: {}", raw.id, e);
@@ -1475,11 +1591,98 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
             }
         }
         if persisted > 0 {
-            log::info!("I365: Persisted {} emails to DB", persisted);
+            log::info!(
+                "I365: Persisted {} emails to DB ({} suppressed as noise)",
+                persisted,
+                suppressed
+            );
         }
 
         // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
         reconcile_inbox_emails(&email_result.raw_emails, &db);
+
+        // DOS-31: Record that a Gmail fetch succeeded (independent of whether
+        // downstream enrichment succeeds below). This is the canonical "fetch
+        // is healthy" timestamp surfaced in the sync status UI, as opposed to
+        // `last_seen_at` which only moves when individual rows are upserted.
+        //
+        // DOS-226: a write failure here is propagated, not swallowed. Pre-fix
+        // this was log-only — meaning a corrupted `email_sync_meta` row, a
+        // schema-drift drop of the table, or a disk-full ENOSPC would leave
+        // the sync_status UI stuck at "never fetched" forever while every
+        // refresh appeared to succeed. Surfacing the error makes the failure
+        // visible to the service-layer caller, which then triggers the retry
+        // batch rollback (so retried rows return to `failed` instead of being
+        // promoted by the finalize block below into a misleading "pending"
+        // state on top of a broken sync_meta).
+        if let Err(e) = db.set_last_successful_fetch_at() {
+            log::error!("DOS-226: set_last_successful_fetch_at failed: {}", e);
+            return Err(ExecutionError::IoError(format!(
+                "Failed to record last_successful_fetch_at: {e}"
+            )));
+        }
+
+        // DOS-226 (Codex finding 1): promote this retry batch's rows
+        // *before* enrichment runs below. `get_pending_enrichment` filters
+        // `enrichment_attempts < 3`; leaving rows at attempts=3 in
+        // `pending_retry` means the enrichment pass immediately below
+        // skips the very rows the user asked to retry. Pre-fix, the
+        // finalize lived in `services::emails::refresh_emails` and fired
+        // *after* orchestrate returned — which is why the UI reported
+        // "retrying, cleared" while zero enrichment work happened.
+        //
+        // DOS-226 Wave 0g: for retry-batched refreshes (`retry_batch_id`
+        // is Some), finalize failure is LOAD-BEARING. If the promotion
+        // errors or unexpectedly promotes zero rows, the enrichment pass
+        // below will skip the retried rows and the service layer's
+        // residual finalize will report success — the "retry succeeded
+        // while zero retry work ran" regression. Surface the failure as
+        // an `ExecutionError` so the service caller rolls back the
+        // batch. For non-retry refreshes (`retry_batch_id` is None) this
+        // whole block is skipped.
+        if let Some(batch_id) = retry_batch_id {
+            match db.finalize_pending_retry_success(batch_id) {
+                Ok(promoted) if promoted > 0 => {
+                    log::info!(
+                        "DOS-226: Gmail fetch succeeded, promoted {} pending_retry rows to pending for batch {} (attempts reset to 0)",
+                        promoted,
+                        batch_id
+                    );
+                }
+                Ok(_) => {
+                    // `retry_batch_id` is Some — the service layer only
+                    // threads it when it stamped `marked > 0` rows into
+                    // `pending_retry` under this batch. Zero rows
+                    // promoted therefore means the batch is genuinely
+                    // stuck (rows evaporated, schema drift, stale UUID
+                    // reuse). Surfacing an Err prevents the refresh
+                    // from reporting success while the retry was a no-op.
+                    log::error!(
+                        "DOS-226: finalize_pending_retry_success promoted 0 rows for batch {} — retry batch stuck",
+                        batch_id
+                    );
+                    return Err(ExecutionError::ScriptFailed {
+                        code: 1,
+                        stderr: format!(
+                            "Email retry batch {batch_id} promoted 0 rows — batch is stuck, enrichment would skip it"
+                        ),
+                    });
+                }
+                Err(e) => {
+                    log::error!(
+                        "DOS-226: finalize_pending_retry_success failed for batch {}: {}",
+                        batch_id,
+                        e
+                    );
+                    return Err(ExecutionError::ScriptFailed {
+                        code: 1,
+                        stderr: format!(
+                            "Email retry batch {batch_id} finalize failed: {e}"
+                        ),
+                    });
+                }
+            }
+        }
     }
 
     // I370: Refresh thread positions from sent messages
@@ -2051,6 +2254,47 @@ async fn fetch_and_classify_week(
     )
 }
 
+/// DOS-242: collect every domain we treat as "tracked correspondence" so the
+/// noise filter never suppresses real customer or contact email. Sourced from
+/// `account_domains` (every account, not just today's meeting attendees) and
+/// `person_emails` (all tracked-person addresses). Returned as
+/// `(account_domains, person_domains)` lowercase sets.
+fn load_tracked_domains(db: &crate::db::ActionDb) -> (HashSet<String>, HashSet<String>) {
+    let mut account_domains: HashSet<String> = HashSet::new();
+    if let Ok(mut stmt) = db.conn_ref().prepare("SELECT DISTINCT domain FROM account_domains") {
+        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+            for d in rows.flatten() {
+                let d = d.trim().to_lowercase();
+                if !d.is_empty() {
+                    account_domains.insert(d);
+                }
+            }
+        }
+    }
+
+    // DOS-248: return full email addresses (not just domains). Domain-only
+    // matching let internal-org bulk notifications (e.g.
+    // no-reply@gainsightapp.com, notifications@wordpress.com) escape
+    // suppression because a colleague at the same domain was tracked.
+    let mut person_emails_full: HashSet<String> = HashSet::new();
+    if let Ok(mut stmt) = db.conn_ref().prepare(
+        "SELECT DISTINCT email FROM person_emails
+         UNION
+         SELECT DISTINCT email FROM people WHERE email IS NOT NULL",
+    ) {
+        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+            for email in rows.flatten() {
+                let e = email.trim().to_lowercase();
+                if !e.is_empty() {
+                    person_emails_full.insert(e);
+                }
+            }
+        }
+    }
+
+    (account_domains, person_emails_full)
+}
+
 /// Fetch and classify emails (async, uses google_api).
 struct EmailResult {
     all: Vec<Value>,
@@ -2299,6 +2543,33 @@ fn extract_display_name(from_field: &str) -> String {
 /// Extract the email address from From field, falling back to the full string.
 fn sender_name_fallback(from_field: &str) -> String {
     email_classify::extract_email_address(from_field)
+}
+
+/// Extract bare lowercase email addresses from an RFC 2822 To/Cc header.
+///
+/// Input: `"Alice" <alice@acme.com>, bob@acme.com`
+/// Output: `Some("alice@acme.com,bob@acme.com")`
+///
+/// Returns None when the header is empty or contains no valid addresses.
+fn extract_recipient_addresses(header: &str) -> Option<String> {
+    if header.is_empty() {
+        return None;
+    }
+    let addrs: Vec<String> = header
+        .split(',')
+        .filter_map(|part| {
+            let part = part.trim();
+            if let (Some(lt), Some(gt)) = (part.find('<'), part.rfind('>')) {
+                let addr = part[lt + 1..gt].trim().to_lowercase();
+                if addr.contains('@') { Some(addr) } else { None }
+            } else if part.contains('@') {
+                Some(part.to_lowercase())
+            } else {
+                None
+            }
+        })
+        .collect();
+    if addrs.is_empty() { None } else { Some(addrs.join(",")) }
 }
 
 /// I318: Track thread positions from fetched high-priority emails.

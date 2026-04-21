@@ -404,7 +404,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE project_id = ?1
@@ -493,6 +494,67 @@ impl ActionDb {
         Ok(())
     }
 
+    /// DOS-74: Link a meeting to an entity with per-junction confidence + primary flag.
+    /// If the link already exists, upgrades `confidence` when the new value is
+    /// higher (never downgrades — a later low-confidence sweep should not
+    /// stomp a high-confidence manual link).
+    ///
+    /// DOS-224: single-primary invariant. When writing a new primary, this
+    /// runs inside a transaction that FIRST demotes any existing
+    /// `is_primary = 1` rows with the same `(meeting_id, entity_type)` to
+    /// `is_primary = 0`, THEN upserts the new primary. The previous
+    /// implementation used `is_primary = MAX(is_primary, excluded.is_primary)`
+    /// which could never demote — so a later batch electing a different
+    /// primary left two rows with `is_primary = 1` for the same
+    /// `(meeting_id, entity_type)`, breaking the UI's single-primary
+    /// assumption. When `is_primary = false`, no demotion is performed
+    /// (suggestion writes cannot steal primaryhood, and we must still not
+    /// downgrade an existing primary via the upsert path).
+    pub fn link_meeting_entity_with_confidence(
+        &self,
+        meeting_id: &str,
+        entity_id: &str,
+        entity_type: &str,
+        confidence: f64,
+        is_primary: bool,
+    ) -> Result<(), DbError> {
+        let primary_int: i64 = if is_primary { 1 } else { 0 };
+
+        if is_primary {
+            // Transactional demote-then-upsert: guarantees exactly one
+            // `is_primary = 1` row per `(meeting_id, entity_type)`.
+            let tx = self.conn.unchecked_transaction()?;
+            tx.execute(
+                "UPDATE meeting_entities
+                    SET is_primary = 0
+                  WHERE meeting_id = ?1
+                    AND entity_type = ?2
+                    AND entity_id <> ?3
+                    AND is_primary = 1",
+                params![meeting_id, entity_type, entity_id],
+            )?;
+            tx.execute(
+                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence, is_primary)
+                 VALUES (?1, ?2, ?3, ?4, 1)
+                 ON CONFLICT(meeting_id, entity_id) DO UPDATE SET
+                     confidence = MAX(confidence, excluded.confidence),
+                     is_primary = 1",
+                params![meeting_id, entity_id, entity_type, confidence],
+            )?;
+            tx.commit()?;
+        } else {
+            // Suggestion write: never promote, never demote an existing primary.
+            self.conn.execute(
+                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence, is_primary)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(meeting_id, entity_id) DO UPDATE SET
+                     confidence = MAX(confidence, excluded.confidence)",
+                params![meeting_id, entity_id, entity_type, confidence, primary_int],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Remove a meeting-entity link from the junction table.
     pub fn unlink_meeting_entity(&self, meeting_id: &str, entity_id: &str) -> Result<(), DbError> {
         self.conn.execute(
@@ -500,6 +562,120 @@ impl ActionDb {
             params![meeting_id, entity_id],
         )?;
         Ok(())
+    }
+
+    /// DOS-240: Record that the user has dismissed an auto-resolved entity
+    /// from a meeting. The dismissal persists across calendar-sync and
+    /// resolver sweeps so the entity will not silently re-link on its own.
+    /// The accompanying `unlink_meeting_entity` call is the caller's job —
+    /// this helper only writes the dictionary entry.
+    pub fn record_meeting_entity_dismissal(
+        &self,
+        meeting_id: &str,
+        entity_id: &str,
+        entity_type: &str,
+        dismissed_by: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO meeting_entity_dismissals
+                 (meeting_id, entity_id, entity_type, dismissed_at, dismissed_by)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(meeting_id, entity_id, entity_type) DO UPDATE SET
+                 dismissed_at = excluded.dismissed_at,
+                 dismissed_by = excluded.dismissed_by",
+            params![meeting_id, entity_id, entity_type, now, dismissed_by],
+        )?;
+        Ok(())
+    }
+
+    /// DOS-240: Remove a dismissal record so the entity can auto-link again
+    /// on the next resolver pass. Used by the undo / restore flow.
+    pub fn remove_meeting_entity_dismissal(
+        &self,
+        meeting_id: &str,
+        entity_id: &str,
+        entity_type: &str,
+    ) -> Result<bool, DbError> {
+        let removed = self.conn.execute(
+            "DELETE FROM meeting_entity_dismissals
+             WHERE meeting_id = ?1 AND entity_id = ?2 AND entity_type = ?3",
+            params![meeting_id, entity_id, entity_type],
+        )?;
+        Ok(removed > 0)
+    }
+
+    /// DOS-240: Is the given (meeting, entity, type) currently dismissed?
+    /// Used by both calendar-sync and resolver persistence paths to gate
+    /// re-insertion.
+    pub fn is_meeting_entity_dismissed(
+        &self,
+        meeting_id: &str,
+        entity_id: &str,
+        entity_type: &str,
+    ) -> Result<bool, DbError> {
+        let exists: bool = self
+            .conn
+            .prepare(
+                "SELECT 1 FROM meeting_entity_dismissals
+                 WHERE meeting_id = ?1 AND entity_id = ?2 AND entity_type = ?3",
+            )?
+            .exists(params![meeting_id, entity_id, entity_type])?;
+        Ok(exists)
+    }
+
+    /// DOS-240: List all (entity_id, entity_type) pairs dismissed for a
+    /// meeting. Used when persisting a batch of resolution outcomes so we
+    /// can filter the whole batch in a single query rather than probing
+    /// per-entity.
+    pub fn list_dismissed_meeting_entities(
+        &self,
+        meeting_id: &str,
+    ) -> Result<std::collections::HashSet<(String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT entity_id, entity_type FROM meeting_entity_dismissals
+             WHERE meeting_id = ?1",
+        )?;
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut set = std::collections::HashSet::new();
+        for r in rows {
+            set.insert(r?);
+        }
+        Ok(set)
+    }
+
+    /// DOS-74: Get all linked entities for a meeting with confidence + primary
+    /// flags, ordered by (is_primary DESC, confidence DESC, name ASC) so
+    /// `[0]` is the single best primary entity and lower-confidence siblings
+    /// trail as suggestions.
+    pub fn get_meeting_linked_entities(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Vec<LinkedEntity>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT e.id, e.name, me.entity_type, me.confidence, me.is_primary
+             FROM meeting_entities me
+             JOIN entities e ON e.id = me.entity_id
+             WHERE me.meeting_id = ?1
+             ORDER BY me.is_primary DESC, me.confidence DESC, e.name ASC",
+        )?;
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            let confidence: f64 = row.get(3)?;
+            let is_primary: i64 = row.get(4)?;
+            let is_primary = is_primary != 0;
+            let suggested = !is_primary && confidence < 0.60;
+            Ok(LinkedEntity {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entity_type: row.get(2)?,
+                confidence,
+                is_primary,
+                suggested,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Get all entities linked to a meeting via the junction table.
@@ -525,6 +701,11 @@ impl ActionDb {
 
     /// Batch query: get linked entities for multiple meetings at once.
     /// Returns a map from meeting_id → Vec<LinkedEntity>.
+    ///
+    /// DOS-74: Results are ordered by confidence DESC within each meeting so
+    /// `entities[0]` is always the highest-confidence (primary) link. Low-
+    /// confidence siblings (<0.60) are flagged `suggested = true` for muted
+    /// UI rendering.
     pub fn get_meeting_entity_map(
         &self,
         meeting_ids: &[String],
@@ -536,10 +717,11 @@ impl ActionDb {
             .map(|i| format!("?{}", i + 1))
             .collect();
         let sql = format!(
-            "SELECT me.meeting_id, e.id, e.name, me.entity_type
+            "SELECT me.meeting_id, e.id, e.name, me.entity_type, me.confidence, me.is_primary
              FROM meeting_entities me
              JOIN entities e ON e.id = me.entity_id
-             WHERE me.meeting_id IN ({})",
+             WHERE me.meeting_id IN ({})
+             ORDER BY me.is_primary DESC, me.confidence DESC, e.name ASC",
             placeholders.join(", ")
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -548,12 +730,26 @@ impl ActionDb {
             .map(|id| id as &dyn rusqlite::types::ToSql)
             .collect();
         let rows = stmt.query_map(params.as_slice(), |row| {
+            let meeting_id: String = row.get(0)?;
+            let id: String = row.get(1)?;
+            let name: String = row.get(2)?;
+            let entity_type: String = row.get(3)?;
+            let confidence: f64 = row.get(4)?;
+            let is_primary: i64 = row.get(5)?;
+            let is_primary = is_primary != 0;
+            // DOS-74: suggestion tier is anything below the ResolvedWithFlag
+            // cutoff (0.60) that is also not flagged as primary. UI paints
+            // these muted with a "suggested" affordance.
+            let suggested = !is_primary && confidence < 0.60;
             Ok((
-                row.get::<_, String>(0)?,
+                meeting_id,
                 LinkedEntity {
-                    id: row.get(1)?,
-                    name: row.get(2)?,
-                    entity_type: row.get(3)?,
+                    id,
+                    name,
+                    entity_type,
+                    confidence,
+                    is_primary,
+                    suggested,
                 },
             ))
         })?;

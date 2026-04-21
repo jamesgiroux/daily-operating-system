@@ -435,7 +435,8 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT a.id, a.title, a.priority, a.status, a.created_at, a.due_date, a.completed_at,
                     a.account_id, a.project_id, a.source_type, a.source_id, a.source_label,
-                    a.context, a.waiting_on, a.updated_at, a.person_id, acc.name AS account_name
+                    a.context, a.waiting_on, a.updated_at, a.person_id, acc.name AS account_name,
+                    a.action_kind
              FROM action_objective_links aol
              JOIN actions a ON a.id = aol.action_id
              LEFT JOIN accounts acc ON a.account_id = acc.id

@@ -170,7 +170,8 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Set domains for an account (replace-all).
+    /// Set domains for an account (replace-all). Writes source='user' — this is
+    /// the explicit user-entry path (account settings page, onboarding setup).
     pub fn set_account_domains(&self, account_id: &str, domains: &[String]) -> Result<(), DbError> {
         let normalized = crate::helpers::normalize_domains(domains);
         self.conn.execute(
@@ -179,18 +180,17 @@ impl ActionDb {
         )?;
         for domain in normalized {
             self.conn.execute(
-                "INSERT OR IGNORE INTO account_domains (account_id, domain) VALUES (?1, ?2)",
+                "INSERT OR IGNORE INTO account_domains (account_id, domain, source) \
+                 VALUES (?1, ?2, 'user')",
                 params![account_id, &domain],
             )?;
         }
         Ok(())
     }
 
-    /// Additively merge domains into an account's domain list.
-    ///
-    /// Unlike `set_account_domains` which replaces all domains, this function
-    /// only adds new domains without removing existing ones. Used when accumulating
-    /// domains from multiple meetings for the same account.
+    /// Additively merge domains from meeting attendee inference. Uses the
+    /// default source='inferred', meaning these can be purged by
+    /// `raw_rebuild_account_domains` before the DOS-258 cutover.
     pub fn merge_account_domains(
         &self,
         account_id: &str,
@@ -200,6 +200,25 @@ impl ActionDb {
         for domain in normalized {
             self.conn.execute(
                 "INSERT OR IGNORE INTO account_domains (account_id, domain) VALUES (?1, ?2)",
+                params![account_id, &domain],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Additively merge domains from a trusted enrichment provider (Clay, Glean, Google).
+    /// Writes source='enrichment' so `raw_rebuild_account_domains` preserves these
+    /// while purging attendee-inferred domains.
+    pub fn merge_account_domains_enrichment(
+        &self,
+        account_id: &str,
+        domains: &[String],
+    ) -> Result<(), DbError> {
+        let normalized = crate::helpers::normalize_domains(domains);
+        for domain in normalized {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO account_domains (account_id, domain, source) \
+                 VALUES (?1, ?2, 'enrichment')",
                 params![account_id, &domain],
             )?;
         }
@@ -246,8 +265,8 @@ impl ActionDb {
 
         let mut result: Vec<(DbAccount, Vec<String>)> = Vec::new();
         let mut current_id: Option<String> = None;
-        // Domain column follows all ACCOUNT_COLUMNS (39 columns, 0-indexed → index 39).
-        let domain_idx = 39;
+        // Domain column follows all ACCOUNT_COLUMNS (41 columns, 0-indexed → index 41).
+        let domain_idx = 41;
 
         while let Some(row) = rows.next()? {
             let account_id: String = row.get(0)?;
@@ -293,10 +312,11 @@ impl ActionDb {
     }
 
     /// Copy domains from parent to child (idempotent).
+    /// Copy domains from parent to child, preserving the source column.
     pub fn copy_account_domains(&self, parent_id: &str, child_id: &str) -> Result<(), DbError> {
         self.conn.execute(
-            "INSERT OR IGNORE INTO account_domains (account_id, domain)
-             SELECT ?1, domain FROM account_domains WHERE account_id = ?2",
+            "INSERT OR IGNORE INTO account_domains (account_id, domain, source)
+             SELECT ?1, domain, source FROM account_domains WHERE account_id = ?2",
             params![child_id, parent_id],
         )?;
         Ok(())
@@ -437,7 +457,8 @@ impl ActionDb {
                     COALESCE(
                         (SELECT GROUP_CONCAT(asr.role, ',')
                          FROM account_stakeholder_roles asr
-                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
+                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id
+                           AND asr.dismissed_at IS NULL),
                         ''
                     ) AS roles,
                     as_.created_at
@@ -470,7 +491,8 @@ impl ActionDb {
                     COALESCE(
                         (SELECT GROUP_CONCAT(asr.role, ',')
                          FROM account_stakeholder_roles asr
-                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
+                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id
+                           AND asr.dismissed_at IS NULL),
                         ''
                     ) AS roles,
                     as_.created_at
@@ -505,7 +527,8 @@ impl ActionDb {
                     COALESCE(
                         (SELECT GROUP_CONCAT(asr.role, ',')
                          FROM account_stakeholder_roles asr
-                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id),
+                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id
+                           AND asr.dismissed_at IS NULL),
                         'associated'
                     ) AS stakeholder_roles,
                     as_.data_source, as_.last_seen_in_glean,
@@ -516,6 +539,7 @@ impl ActionDb {
              FROM account_stakeholders as_
              JOIN people p ON p.id = as_.person_id
              WHERE as_.account_id = ?1
+               AND as_.status = 'active'
                AND p.relationship != 'internal'
                AND p.email NOT LIKE '%group-calendar%'
                AND p.email NOT LIKE '%assistant.gong%'
@@ -573,7 +597,7 @@ impl ActionDb {
             "SELECT asr.account_id, a.name AS account_name, asr.role, asr.data_source
              FROM account_stakeholder_roles asr
              JOIN accounts a ON a.id = asr.account_id
-             WHERE asr.person_id = ?1
+             WHERE asr.person_id = ?1 AND asr.dismissed_at IS NULL
              ORDER BY a.name, asr.role",
         )?;
         let rows = stmt.query_map(params![person_id], |row| {
@@ -595,7 +619,7 @@ impl ActionDb {
     ) -> Result<Vec<crate::db::types::StakeholderRole>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT role, data_source FROM account_stakeholder_roles
-             WHERE account_id = ?1 AND person_id = ?2
+             WHERE account_id = ?1 AND person_id = ?2 AND dismissed_at IS NULL
              ORDER BY role",
         )?;
         let rows = stmt.query_map(params![account_id, person_id], |row| {
@@ -637,8 +661,21 @@ impl ActionDb {
     }
 
     /// Replace all roles for a team member (single-select role change).
-    /// Deletes existing roles and inserts the new one in a single transaction.
-    /// If new_role is empty, removes all roles (person stays as stakeholder with no role).
+    /// Replace the user's pinned roles with a single new user-owned role.
+    ///
+    /// Semantics: this is the "swap my pinned role" operation. It touches
+    /// ONLY rows where `data_source = 'user'`. AI-surfaced roles
+    /// (`data_source = 'ai' | 'glean' | 'pty_synthesis'`) survive untouched.
+    ///
+    /// The old implementation deleted ALL roles for the person-account
+    /// pair regardless of provenance. That let a single user dropdown
+    /// click wipe out AI-surfaced role rows, and the next enrichment
+    /// would then re-insert Champion/Technical/etc. with `data_source='ai'`,
+    /// silently losing the human's original pin — the primary cause of
+    /// the "AI keeps overwriting my champion" bug the user reported.
+    ///
+    /// `new_role` empty → remove the user's pinned role(s) entirely;
+    /// person stays as stakeholder with any AI-surfaced roles intact.
     pub fn set_team_member_role(
         &self,
         account_id: &str,
@@ -646,17 +683,24 @@ impl ActionDb {
         new_role: &str,
     ) -> Result<(), DbError> {
         let role = new_role.trim().to_lowercase();
-        // Remove all existing roles for this person-account pair
+        // Remove only user-owned roles. AI-surfaced rows are preserved so
+        // a role swap in the UI can't silently drop enrichment-discovered
+        // context.
         self.conn.execute(
-            "DELETE FROM account_stakeholder_roles WHERE account_id = ?1 AND person_id = ?2",
+            "DELETE FROM account_stakeholder_roles
+             WHERE account_id = ?1 AND person_id = ?2 AND data_source = 'user'",
             params![account_id, person_id],
         )?;
-        // Insert the new role (if non-empty)
+        // Insert the new user-owned role. ON CONFLICT promotes an AI row
+        // to user ownership without churning the row (so if the user
+        // pins the same role AI had surfaced, provenance flips cleanly).
         if !role.is_empty() {
             let now = Utc::now().to_rfc3339();
             self.conn.execute(
                 "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
-                 VALUES (?1, ?2, ?3, 'user', ?4)",
+                 VALUES (?1, ?2, ?3, 'user', ?4)
+                 ON CONFLICT(account_id, person_id, role) DO UPDATE SET
+                    data_source = 'user'",
                 params![account_id, person_id, role, now],
             )?;
         }
@@ -848,6 +892,16 @@ impl ActionDb {
     }
 
     /// Get meetings for an account, most recent first.
+    ///
+    /// DOS-232 Codex follow-up: apply the same 0.70 accepted-confidence
+    /// floor used by `get_meetings_for_account_with_prep` and the
+    /// `get_total_meeting_count_for_account` helpers. Without it, the
+    /// account chat LLM context, dossier markdown generation, and email
+    /// prep enrichment all ingested speculative domain-match junctions
+    /// (confidence < 0.70) as if they were real meetings — contaminating
+    /// account reasoning with meetings the classifier never accepted.
+    /// 0.70 matches the classifier promotion threshold
+    /// (google_api/classify.rs).
     pub fn get_meetings_for_account(
         &self,
         account_id: &str,
@@ -860,7 +914,9 @@ impl ActionDb {
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
-             WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+             WHERE me.entity_id = ?1
+               AND me.entity_type = 'account'
+               AND me.confidence >= 0.70
              ORDER BY m.start_time DESC
              LIMIT ?2",
         )?;
@@ -897,6 +953,48 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// DOS-233 Codex fix: total count of meetings linked to an account above
+    /// the accepted-confidence floor (0.70). Used by the About-this-dossier
+    /// counts so active accounts don't stall at "10 meetings on record" —
+    /// the preview list still caps at 10, but totals come from COUNT(*)
+    /// without a LIMIT. Matches the visibility rule used by
+    /// `get_meetings_for_account_with_prep`: include every junction above
+    /// the floor regardless of `is_primary`.
+    pub fn get_total_meeting_count_for_account(&self, account_id: &str) -> Result<i64, DbError> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM meeting_entities me
+                 WHERE me.entity_id = ?1
+                   AND me.entity_type = 'account'
+                   AND me.confidence >= 0.70",
+                params![account_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(DbError::from)
+    }
+
+    /// DOS-233 Codex fix: total count of transcripts for meetings linked to
+    /// an account above the accepted-confidence floor. Joined through
+    /// meeting_transcripts (a meeting only counts when it has a transcript
+    /// row AND a non-null transcript_path).
+    pub fn get_total_transcript_count_for_account(&self, account_id: &str) -> Result<i64, DbError> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(DISTINCT m.id)
+                 FROM meetings m
+                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 INNER JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                 WHERE me.entity_id = ?1
+                   AND me.entity_type = 'account'
+                   AND me.confidence >= 0.70
+                   AND mt.transcript_path IS NOT NULL",
+                params![account_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(DbError::from)
+    }
+
     /// Get past meetings for an account with prep context (ADR-0063).
     /// Used only on account detail page where prep preview cards are needed.
     pub fn get_meetings_for_account_with_prep(
@@ -904,6 +1002,19 @@ impl ActionDb {
         account_id: &str,
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
+        // DOS-232 Codex fix: account-specific The Record / recentMeetings
+        // queries must include EVERY meeting whose junction to this account
+        // is above the accepted-confidence floor (0.70), regardless of the
+        // `is_primary` flag. DOS-224 intentionally persists exactly one
+        // primary per meeting even when multiple accounts share that meeting
+        // — so a secondary account at confidence 0.80 on a meeting where
+        // another account is the primary would previously be hidden from its
+        // own timeline/dossier counts. `is_primary` stays as the
+        // meeting-chip prominence signal (used elsewhere), not as an account
+        // visibility gate. The 0.70 floor — the same threshold the
+        // classifier uses to promote all-internal meetings (see
+        // google_api/classify.rs) — still filters out speculative
+        // domain-match junctions.
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
                     m.attendees, m.notes_path, mt.summary, m.created_at,
@@ -912,7 +1023,9 @@ impl ActionDb {
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
-             WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+             WHERE me.entity_id = ?1
+               AND me.entity_type = 'account'
+               AND me.confidence >= 0.70
              ORDER BY m.start_time DESC
              LIMIT ?2",
         )?;
@@ -1003,6 +1116,16 @@ impl ActionDb {
     /// Update a single whitelisted field on an account.
     pub fn update_account_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
+        // JSON-typed columns: validate non-empty values parse as JSON to prevent
+        // silently storing corrupt data that later fails parse-on-read.
+        if matches!(field, "strategic_programs" | "company_overview") && !value.is_empty() {
+            serde_json::from_str::<serde_json::Value>(value).map_err(|e| {
+                DbError::Sqlite(rusqlite::Error::InvalidParameterName(format!(
+                    "Invalid JSON for field '{}': {}",
+                    field, e
+                )))
+            })?;
+        }
         // parent_id uses NULL for empty values (top-level accounts)
         if field == "parent_id" {
             if value.is_empty() {
@@ -1061,6 +1184,24 @@ impl ActionDb {
             }
             "account_type" => {
                 "UPDATE accounts SET account_type = ?1, is_internal = CASE WHEN ?1 = 'internal' THEN 1 ELSE 0 END, updated_at = ?3 WHERE id = ?2"
+            }
+            "user_health_sentiment" => {
+                "UPDATE accounts SET user_health_sentiment = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "sentiment_set_at" => {
+                "UPDATE accounts SET sentiment_set_at = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "tracker_path" => {
+                "UPDATE accounts SET tracker_path = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "notes" => {
+                "UPDATE accounts SET notes = CASE WHEN ?1 = '' THEN NULL ELSE ?1 END, updated_at = ?3 WHERE id = ?2"
+            }
+            "strategic_programs" => {
+                "UPDATE accounts SET strategic_programs = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "company_overview" => {
+                "UPDATE accounts SET company_overview = ?1, updated_at = ?3 WHERE id = ?2"
             }
             _ => {
                 return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
@@ -1676,19 +1817,169 @@ impl ActionDb {
     pub fn reclassify_meeting_types_from_attendees(&self) -> Result<usize, DbError> {
         let mut total = 0;
 
-        // Meetings classified as customer/external/one_on_one but ALL attendees are now internal → internal
-        total += self.conn.execute(
-            "UPDATE meetings SET meeting_type = 'internal'
+        // DOS-225: Path A — flip meetings to internal only when EVERY attendee
+        // is accounted for as internal.
+        //
+        // The prior version joined `meeting_attendees` → `people` and required
+        // "zero joined attendees with non-internal relationship". That was
+        // broken: if a meeting had one internal attendee (joined) and one
+        // external attendee that never got a `people` row (e.g., a Gmail
+        // address or a new domain), the JOIN silently dropped the external
+        // row and the aggregate said "all internal" → the meeting flipped.
+        //
+        // The fix requires full coverage. For each candidate meeting we read
+        // `meetings.attendees` (canonical attendee JSON) and ensure EVERY
+        // parseable email is either:
+        //   (a) already resolved via `meeting_attendees` / `people` as
+        //       `relationship = 'internal'`, OR
+        //   (b) its domain matches a user-owned domain (config fallback).
+        // Any unresolved external email blocks the flip. Meetings with no
+        // attendees at all (attendees JSON empty / missing) are skipped —
+        // we can't judge coverage without attendees.
+        let user_domains_for_path_a: Vec<String> = crate::state::load_config()
+            .map(|c| c.resolved_user_domains())
+            .unwrap_or_default();
+
+        let mut path_a_stmt = self.conn.prepare(
+            "SELECT id, attendees FROM meetings
              WHERE meeting_type IN ('customer', 'external', 'one_on_one')
-               AND id IN (
-                   SELECT ma.meeting_id
-                   FROM meeting_attendees ma
-                   JOIN people p ON ma.person_id = p.id
-                   GROUP BY ma.meeting_id
-                   HAVING COUNT(CASE WHEN p.relationship != 'internal' THEN 1 END) = 0
-               )",
-            [],
+               AND attendees IS NOT NULL
+               AND attendees != ''",
         )?;
+        let path_a_rows = path_a_stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(path_a_stmt);
+
+        let mut internal_emails_stmt = self.conn.prepare(
+            "SELECT LOWER(p.email)
+             FROM meeting_attendees ma
+             JOIN people p ON ma.person_id = p.id
+             WHERE ma.meeting_id = ?1
+               AND p.relationship = 'internal'
+               AND p.email IS NOT NULL
+               AND p.email != ''",
+        )?;
+
+        let mut path_a_update_stmt = self
+            .conn
+            .prepare("UPDATE meetings SET meeting_type = 'internal' WHERE id = ?1")?;
+
+        for (meeting_id, attendees_str) in path_a_rows {
+            let attendees: Vec<String> =
+                match serde_json::from_str::<Vec<String>>(&attendees_str) {
+                    Ok(arr) => arr,
+                    Err(_) => attendees_str
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect(),
+                };
+
+            // Only parseable emails participate in the coverage check.
+            let emails: Vec<String> = attendees
+                .iter()
+                .filter(|a| a.contains('@'))
+                .map(|a| a.to_lowercase())
+                .collect();
+            if emails.is_empty() {
+                continue;
+            }
+
+            // Collect internal emails known via the junction.
+            let internal_from_people: std::collections::HashSet<String> = internal_emails_stmt
+                .query_map(params![meeting_id], |row| row.get::<_, String>(0))?
+                .filter_map(Result::ok)
+                .collect();
+
+            // Every attendee email must be resolvable as internal — either
+            // known-internal via people, or domain-owned via config.
+            let all_internal = emails.iter().all(|email| {
+                if internal_from_people.contains(email) {
+                    return true;
+                }
+                let domain = email.split('@').nth(1).unwrap_or("");
+                !domain.is_empty()
+                    && user_domains_for_path_a
+                        .iter()
+                        .any(|d| !d.is_empty() && domain.eq_ignore_ascii_case(d))
+            });
+
+            if all_internal {
+                path_a_update_stmt.execute(params![meeting_id])?;
+                total += 1;
+            }
+        }
+
+        // DOS-206: Path B — via raw attendee email strings vs user_domains.
+        // The people-join query above misses meetings where attendees are
+        // stored only in the `meetings.attendees` JSON / CSV blob and have
+        // never been materialized into the `people` table. We need a second
+        // sweep that parses the raw attendee strings and flips meetings
+        // where every parseable email ends in a user-owned domain.
+        //
+        // The config's user_domains is the source of truth; we load it in
+        // Rust and iterate, rather than trying to SQL-parse attendees.
+        let user_domains: Vec<String> = crate::state::load_config()
+            .map(|c| c.resolved_user_domains())
+            .unwrap_or_default();
+
+        if !user_domains.is_empty() {
+            // Fetch candidate meetings that are currently customer/external/one_on_one.
+            let mut stmt = self.conn.prepare(
+                "SELECT id, attendees FROM meetings
+                 WHERE meeting_type IN ('customer', 'external', 'one_on_one')
+                   AND attendees IS NOT NULL
+                   AND attendees != ''",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            drop(stmt);
+
+            let mut update_stmt = self
+                .conn
+                .prepare("UPDATE meetings SET meeting_type = 'internal' WHERE id = ?1")?;
+
+            for (id, attendees_str) in rows {
+                let attendees: Vec<String> =
+                    match serde_json::from_str::<Vec<String>>(&attendees_str) {
+                        Ok(arr) => arr,
+                        Err(_) => attendees_str
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect(),
+                    };
+
+                // Parseable emails only. If no emails at all, skip (can't judge).
+                let emails: Vec<String> = attendees
+                    .iter()
+                    .filter(|a| a.contains('@'))
+                    .map(|a| a.to_lowercase())
+                    .collect();
+                if emails.is_empty() {
+                    continue;
+                }
+
+                // Every parseable email must end in a user_domain → all-internal.
+                let all_internal = emails.iter().all(|e| {
+                    let domain = e.split('@').nth(1).unwrap_or("");
+                    user_domains
+                        .iter()
+                        .any(|d| !d.is_empty() && domain.eq_ignore_ascii_case(d))
+                });
+
+                if all_internal {
+                    update_stmt.execute(params![id])?;
+                    total += 1;
+                }
+            }
+        }
 
         // Meetings classified as internal but ANY attendee is now external → customer
         total += self.conn.execute(
@@ -1855,7 +2146,8 @@ impl ActionDb {
          icp_fit_score, icp_fit_score_source, \
          primary_product, \
          customer_status, customer_status_source, customer_status_updated_at, \
-         company_overview, strategic_programs, notes";
+         company_overview, strategic_programs, notes, \
+         user_health_sentiment, sentiment_set_at";
 
     /// Helper: prefix every column in ACCOUNT_COLUMNS with a table alias.
     fn account_columns_aliased(alias: &str) -> String {
@@ -1913,6 +2205,9 @@ impl ActionDb {
             company_overview: row.get(36).unwrap_or(None),
             strategic_programs: row.get(37).unwrap_or(None),
             notes: row.get(38).unwrap_or(None),
+            // DOS-110: User health sentiment
+            user_health_sentiment: row.get(39).unwrap_or(None),
+            sentiment_set_at: row.get(40).unwrap_or(None),
         })
     }
 
@@ -2356,6 +2651,99 @@ impl ActionDb {
         Ok(())
     }
 
+    /// DOS-231 Codex fix: update a single column on `account_technical_footprint`.
+    /// Whitelisted to the gap-row fields surfaced by `AccountTechnicalFootprint`
+    /// in chapter variant — other columns (source, timestamps, integrations_json)
+    /// are not user-editable through this path.
+    ///
+    /// Creates the row if it does not yet exist (common for accounts Glean has
+    /// not enriched) so the first user write can succeed without a separate
+    /// bootstrap. Bumps `updated_at`; stamps `source = 'user_edit'` and
+    /// `sourced_at = now` so downstream signal emitters see a fresh user-
+    /// authored footprint.
+    pub fn update_technical_footprint_field(
+        &self,
+        account_id: &str,
+        field: &str,
+        value: &str,
+    ) -> Result<(), DbError> {
+        // Whitelist + column binding. We never interpolate `field` from the
+        // caller into SQL directly.
+        enum Kind {
+            Text,
+            Integer,
+            Real,
+        }
+        let (column, kind) = match field {
+            "usage_tier" => ("usage_tier", Kind::Text),
+            "services_stage" => ("services_stage", Kind::Text),
+            "support_tier" => ("support_tier", Kind::Text),
+            "active_users" => ("active_users", Kind::Integer),
+            "open_tickets" => ("open_tickets", Kind::Integer),
+            "csat_score" => ("csat_score", Kind::Real),
+            "adoption_score" => ("adoption_score", Kind::Real),
+            other => {
+                return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                    format!("update_technical_footprint_field: unsupported field '{other}'"),
+                )));
+            }
+        };
+
+        // Ensure a row exists first (idempotent). INSERT-OR-IGNORE bootstraps
+        // a blank row only when none exists; existing rows (with real
+        // `open_tickets`, `adoption_score`, etc.) are left untouched because
+        // the full-row `upsert_account_technical_footprint` would clobber
+        // `open_tickets` on the UPDATE branch (its UPSERT clause writes
+        // `open_tickets = excluded.open_tickets` unconditionally, so the
+        // sentinel `0` passed here would silently wipe real support data
+        // whenever a user edits `usage_tier`, `csat_score`, or any other
+        // non-`open_tickets` gap field — DOS-231 Codex follow-up).
+        let bootstrap_now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO account_technical_footprint
+                (account_id, integrations_json, usage_tier, adoption_score, active_users,
+                 support_tier, csat_score, open_tickets, services_stage, source, sourced_at, updated_at)
+             VALUES (?1, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, 'user_edit', ?2, ?2)",
+            params![account_id, bootstrap_now],
+        )?;
+
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let sql = format!(
+            "UPDATE account_technical_footprint
+             SET {column} = ?1,
+                 source = 'user_edit',
+                 sourced_at = ?2,
+                 updated_at = ?2
+             WHERE account_id = ?3"
+        );
+        match kind {
+            Kind::Text => {
+                self.conn.execute(&sql, params![value, now, account_id])?;
+            }
+            Kind::Integer => {
+                let parsed: i64 = value.parse().map_err(|_| {
+                    DbError::Sqlite(rusqlite::Error::InvalidParameterName(format!(
+                        "update_technical_footprint_field: '{value}' is not a valid integer for {column}"
+                    )))
+                })?;
+                self.conn
+                    .execute(&sql, params![parsed, now, account_id])?;
+            }
+            Kind::Real => {
+                let parsed: f64 = value.parse().map_err(|_| {
+                    DbError::Sqlite(rusqlite::Error::InvalidParameterName(format!(
+                        "update_technical_footprint_field: '{value}' is not a valid number for {column}"
+                    )))
+                })?;
+                self.conn
+                    .execute(&sql, params![parsed, now, account_id])?;
+            }
+        }
+        Ok(())
+    }
+
     /// Get the technical footprint for an account, if present.
     pub fn get_account_technical_footprint(
         &self,
@@ -2556,4 +2944,471 @@ impl ActionDb {
         )?;
         Ok(())
     }
+
+    // =========================================================================
+    // DOS-27: Sentiment journal
+    // =========================================================================
+
+    /// Insert a sentiment journal entry (value + optional note + timestamp).
+    /// Computed band and score at set-time are stored for divergence analysis.
+    pub fn insert_sentiment_journal_entry(
+        &self,
+        account_id: &str,
+        sentiment: &str,
+        note: Option<&str>,
+        computed_band: Option<&str>,
+        computed_score: Option<f64>,
+    ) -> Result<(), DbError> {
+        let note_clean = note.and_then(|n| {
+            let trimmed = n.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+        self.conn.execute(
+            "INSERT INTO user_sentiment_history
+                (account_id, sentiment, note, computed_band, computed_score)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![account_id, sentiment, note_clean, computed_band, computed_score],
+        )?;
+        Ok(())
+    }
+
+    /// Get sentiment journal entries for an account within the last N days.
+    /// Returns entries ordered newest-first.
+    pub fn get_sentiment_history(
+        &self,
+        account_id: &str,
+        days: i64,
+    ) -> Result<Vec<DbSentimentJournalEntry>, DbError> {
+        let cutoff = format!("-{} days", days);
+        let mut stmt = self.conn.prepare(
+            "SELECT sentiment, note, computed_band, computed_score, set_at
+             FROM user_sentiment_history
+             WHERE account_id = ?1
+               AND set_at >= datetime('now', ?2)
+             ORDER BY set_at DESC",
+        )?;
+        let rows = stmt.query_map(params![account_id, cutoff], |row| {
+            Ok(DbSentimentJournalEntry {
+                sentiment: row.get(0)?,
+                note: row.get(1)?,
+                computed_band: row.get(2)?,
+                computed_score: row.get(3)?,
+                set_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// DOS-228 Fix 1: Most recent note attached to the account's CURRENT
+    /// sentiment value. If the account has no current sentiment, or no note
+    /// has ever been recorded against that sentiment value, returns None.
+    ///
+    /// Previously this returned the newest non-null note regardless of the
+    /// current `user_health_sentiment`, so a user could change sentiment
+    /// from `at_risk` (with a note) to `on_track` (no note) and the stale
+    /// at_risk note would still surface in the UI. The journal entry itself
+    /// is preserved for history — this accessor just filters by the value
+    /// that is currently set on the account.
+    pub fn get_latest_sentiment_note(
+        &self,
+        account_id: &str,
+    ) -> Result<Option<(String, String)>, DbError> {
+        // Look up the account's current sentiment. No sentiment → no note.
+        let current_sentiment: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT user_health_sentiment FROM accounts WHERE id = ?1",
+                params![account_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+
+        let Some(sentiment) = current_sentiment else {
+            return Ok(None);
+        };
+
+        let result = self.conn.query_row(
+            "SELECT note, set_at FROM user_sentiment_history
+             WHERE account_id = ?1 AND sentiment = ?2 AND note IS NOT NULL
+             ORDER BY set_at DESC LIMIT 1",
+            params![account_id, sentiment],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        );
+        match result {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::from(e)),
+        }
+    }
+
+    /// DOS-269: Update the note on the newest sentiment journal row whose
+    /// `sentiment` matches the account's current `user_health_sentiment`.
+    /// This is the "Add more detail" path — user is augmenting the existing
+    /// journal entry rather than creating a new one. Returns `true` if a row
+    /// was updated, `false` when there is no matching history row (caller
+    /// should fall back to a fresh `insert_sentiment_journal_entry`).
+    pub fn update_latest_sentiment_note(
+        &self,
+        account_id: &str,
+        note: Option<&str>,
+    ) -> Result<bool, DbError> {
+        let current_sentiment: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT user_health_sentiment FROM accounts WHERE id = ?1",
+                params![account_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        let Some(sentiment) = current_sentiment else {
+            return Ok(false);
+        };
+        let latest_rowid: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT rowid FROM user_sentiment_history
+                 WHERE account_id = ?1 AND sentiment = ?2
+                 ORDER BY set_at DESC LIMIT 1",
+                params![account_id, sentiment],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        let Some(rowid) = latest_rowid else {
+            return Ok(false);
+        };
+        let note_clean = note.and_then(|n| {
+            let trimmed = n.trim();
+            if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+        });
+        self.conn.execute(
+            "UPDATE user_sentiment_history SET note = ?1 WHERE rowid = ?2",
+            params![note_clean, rowid],
+        )?;
+        Ok(true)
+    }
+
+    // =========================================================================
+    // DOS-269: triage_snoozes — per-card dismissal persistence for Health tab
+    // Snooze / Confirm-resolved actions. Keyed on (entity, triage_key).
+    // =========================================================================
+
+    /// Upsert a snooze for a triage card. `snoozed_until` is an ISO-8601 UTC
+    /// timestamp; rendering-time filter hides cards whose snoozed_until is
+    /// still in the future.
+    pub fn snooze_triage_item(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+        triage_key: &str,
+        snoozed_until: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO triage_snoozes (entity_type, entity_id, triage_key, snoozed_until, updated_at)
+             VALUES (?1, ?2, ?3, ?4, datetime('now'))
+             ON CONFLICT(entity_type, entity_id, triage_key) DO UPDATE SET
+                snoozed_until = excluded.snoozed_until,
+                resolved_at   = NULL,
+                updated_at    = datetime('now')",
+            params![entity_type, entity_id, triage_key, snoozed_until],
+        )?;
+        Ok(())
+    }
+
+    /// Mark a triage card resolved. Resolution is permanent for the lifetime
+    /// of the card key (stable until re-enrichment emits a new one).
+    pub fn resolve_triage_item(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+        triage_key: &str,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO triage_snoozes (entity_type, entity_id, triage_key, resolved_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, datetime('now'))
+             ON CONFLICT(entity_type, entity_id, triage_key) DO UPDATE SET
+                resolved_at = excluded.resolved_at,
+                updated_at  = datetime('now')",
+            params![entity_type, entity_id, triage_key, now],
+        )?;
+        Ok(())
+    }
+
+    /// List active triage suppressions for an entity — returns (triage_key,
+    /// snoozed_until, resolved_at) tuples so the frontend can decide
+    /// card-by-card whether to hide. Returns all rows; callers filter by
+    /// expiration so a snooze that's aged out becomes visible again.
+    pub fn list_triage_snoozes(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+    ) -> Result<Vec<(String, Option<String>, Option<String>)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT triage_key, snoozed_until, resolved_at
+             FROM triage_snoozes
+             WHERE entity_type = ?1 AND entity_id = ?2",
+        )?;
+        let rows = stmt.query_map(params![entity_type, entity_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Return the daily-bucketed computed health scores for an account over
+    /// the last N days, for sparkline rendering.
+    /// Newest-last so the sparkline reads left-to-right chronologically.
+    pub fn get_health_score_sparkline(
+        &self,
+        account_id: &str,
+        days: i64,
+    ) -> Result<Vec<DbHealthSparklinePoint>, DbError> {
+        let cutoff = format!("-{} days", days);
+        let mut stmt = self.conn.prepare(
+            "SELECT date(computed_at) AS day,
+                    AVG(score) AS avg_score,
+                    (SELECT band FROM health_score_history h2
+                     WHERE h2.account_id = h1.account_id
+                       AND date(h2.computed_at) = date(h1.computed_at)
+                     ORDER BY h2.computed_at DESC LIMIT 1) AS last_band
+             FROM health_score_history h1
+             WHERE account_id = ?1
+               AND computed_at >= datetime('now', ?2)
+             GROUP BY date(computed_at)
+             ORDER BY day ASC",
+        )?;
+        let rows = stmt.query_map(params![account_id, cutoff], |row| {
+            Ok(DbHealthSparklinePoint {
+                day: row.get(0)?,
+                score: row.get(1)?,
+                band: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    // =========================================================================
+    // DOS-228 Fix 3: risk_briefing_jobs — persisted status for async risk
+    // briefing generation. One row per account; the row is upserted at each
+    // lifecycle transition (enqueued → running → complete|failed).
+    // =========================================================================
+
+    /// Mark a risk briefing as enqueued for `account_id` with a fresh
+    /// `attempt_id`. Overwrites any prior job — only the latest attempt is
+    /// retained. The caller (service layer) owns the returned attempt_id and
+    /// must present it on every subsequent transition for compare-and-set.
+    ///
+    /// DOS-228 Wave 0e Fix 2: the attempt_id column lets a superseding
+    /// retry invalidate a prior lifecycle runner's updates instead of
+    /// last-write-wins corruption when two retries race.
+    pub fn upsert_risk_briefing_job_enqueued(
+        &self,
+        account_id: &str,
+        attempt_id: &str,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO risk_briefing_jobs
+                (account_id, status, enqueued_at, completed_at, error_message, attempt_id)
+             VALUES (?1, 'enqueued', ?2, NULL, NULL, ?3)
+             ON CONFLICT(account_id) DO UPDATE SET
+                status        = 'enqueued',
+                enqueued_at   = excluded.enqueued_at,
+                completed_at  = NULL,
+                error_message = NULL,
+                attempt_id    = excluded.attempt_id",
+            params![account_id, now, attempt_id],
+        )?;
+        Ok(())
+    }
+
+    /// Compare-and-set transition to `running`. Returns true if the row's
+    /// `attempt_id` still matches `attempt_id` — i.e. this runner still owns
+    /// the lifecycle. Returns false if superseded (another retry has
+    /// stamped a newer attempt_id), in which case the caller must exit
+    /// without further writes.
+    pub fn mark_risk_briefing_job_running(
+        &self,
+        account_id: &str,
+        attempt_id: &str,
+    ) -> Result<bool, DbError> {
+        let affected = self.conn.execute(
+            "UPDATE risk_briefing_jobs
+                SET status = 'running', completed_at = NULL, error_message = NULL
+              WHERE account_id = ?1 AND attempt_id = ?2",
+            params![account_id, attempt_id],
+        )?;
+        Ok(affected > 0)
+    }
+
+    /// Compare-and-set terminal transition to `complete`. Returns true if
+    /// this runner's attempt is still current.
+    pub fn mark_risk_briefing_job_complete(
+        &self,
+        account_id: &str,
+        attempt_id: &str,
+    ) -> Result<bool, DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let affected = self.conn.execute(
+            "UPDATE risk_briefing_jobs
+                SET status = 'complete', completed_at = ?2, error_message = NULL
+              WHERE account_id = ?1 AND attempt_id = ?3",
+            params![account_id, now, attempt_id],
+        )?;
+        Ok(affected > 0)
+    }
+
+    /// Compare-and-set terminal transition to `failed` with a truncated
+    /// error message (>2000 chars are clipped to keep rows compact).
+    pub fn mark_risk_briefing_job_failed(
+        &self,
+        account_id: &str,
+        attempt_id: &str,
+        error_message: &str,
+    ) -> Result<bool, DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let truncated: String = error_message.chars().take(2_000).collect();
+        let affected = self.conn.execute(
+            "UPDATE risk_briefing_jobs
+                SET status = 'failed', completed_at = ?2, error_message = ?3
+              WHERE account_id = ?1 AND attempt_id = ?4",
+            params![account_id, now, truncated, attempt_id],
+        )?;
+        Ok(affected > 0)
+    }
+
+    /// Current status of the risk-briefing job, if any. Used by
+    /// `retry_risk_briefing` to reject retries while a job is running.
+    pub fn get_risk_briefing_job_status(
+        &self,
+        account_id: &str,
+    ) -> Result<Option<String>, DbError> {
+        let result = self.conn.query_row(
+            "SELECT status FROM risk_briefing_jobs WHERE account_id = ?1",
+            params![account_id],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::from(e)),
+        }
+    }
+
+    /// Read the current (latest) job row for `account_id`.
+    pub fn get_risk_briefing_job(
+        &self,
+        account_id: &str,
+    ) -> Result<Option<DbRiskBriefingJob>, DbError> {
+        let result = self.conn.query_row(
+            "SELECT account_id, status, enqueued_at, completed_at, error_message
+               FROM risk_briefing_jobs
+              WHERE account_id = ?1",
+            params![account_id],
+            |row| {
+                Ok(DbRiskBriefingJob {
+                    account_id: row.get(0)?,
+                    status: row.get(1)?,
+                    enqueued_at: row.get(2)?,
+                    completed_at: row.get(3)?,
+                    error_message: row.get(4)?,
+                })
+            },
+        );
+        match result {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::from(e)),
+        }
+    }
+
+    // =========================================================================
+    // DOS-228 Wave 0e Fix 3: health_recompute_pending — durable debounce
+    // marker. Scheduling a recompute writes a row; a successful recompute
+    // clears it. Startup drains whatever survived a crash so committed
+    // field edits never silently lose their health recompute.
+    // =========================================================================
+
+    /// Mark a pending health recompute for `account_id`. Idempotent — stamps
+    /// `requested_at` on each call so diagnostics can show staleness.
+    pub fn mark_health_recompute_pending(&self, account_id: &str) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO health_recompute_pending (account_id, requested_at)
+             VALUES (?1, ?2)
+             ON CONFLICT(account_id) DO UPDATE SET requested_at = excluded.requested_at",
+            params![account_id, now],
+        )?;
+        Ok(())
+    }
+
+    /// Clear the pending marker for `account_id`. Called after a successful
+    /// recompute so the drain on next startup won't redo the work.
+    pub fn clear_health_recompute_pending(&self, account_id: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM health_recompute_pending WHERE account_id = ?1",
+            params![account_id],
+        )?;
+        Ok(())
+    }
+
+    /// List all account_ids with a pending health recompute. Ordered by
+    /// requested_at so startup drains oldest-first.
+    pub fn list_health_recompute_pending(&self) -> Result<Vec<String>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT account_id FROM health_recompute_pending ORDER BY requested_at ASC",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+}
+
+/// DOS-228 Fix 3: Status of a risk-briefing generation job.
+/// Exposed via `get_account_detail` so the UI can render a "generating…"
+/// indicator, a "retry" affordance on failure, or the timestamp of the last
+/// successful generation.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbRiskBriefingJob {
+    pub account_id: String,
+    /// One of: `enqueued`, `running`, `complete`, `failed`.
+    pub status: String,
+    pub enqueued_at: String,
+    pub completed_at: Option<String>,
+    pub error_message: Option<String>,
+}
+
+// Note: `attempt_id` is an internal CAS token (DOS-228 Wave 0e Fix 2) and is
+// intentionally NOT exposed on `DbRiskBriefingJob` — the frontend only needs
+// `status`/`enqueuedAt`/`completedAt`/`errorMessage` to render progress and
+// retry affordance, and hiding the token prevents UI code from accidentally
+// making it part of a retry contract.
+
+/// One sentiment journal entry for API exposure.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbSentimentJournalEntry {
+    pub sentiment: String,
+    pub note: Option<String>,
+    pub computed_band: Option<String>,
+    pub computed_score: Option<f64>,
+    pub set_at: String,
+}
+
+/// One daily sparkline point for the Health sentiment hero.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbHealthSparklinePoint {
+    pub day: String,
+    pub score: f64,
+    pub band: String,
 }
