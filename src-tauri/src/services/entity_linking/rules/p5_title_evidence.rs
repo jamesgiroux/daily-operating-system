@@ -25,12 +25,11 @@ impl super::super::phases::Rule for P5TitleEvidence {
     fn id(&self) -> &'static str { "P5" }
 
     fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
-        // AC#1: P5 must not fire for 1:1 internal × internal meetings.
-        // P6 handles that shape; P5 title evidence would steal the account match.
-        if ctx.is_one_on_one() && ctx.internal_participants().count() == 2 {
-            return RuleOutcome::Skip;
-        }
-
+        // P5 deliberately runs for 1:1 internal × internal meetings (AC#5: "Acme
+        // renewal plan" internal sync → P5 links to Acme, beats P6). The old
+        // name-collision bug (AC#1) was from fuzzy/keyword signals that are now
+        // gone. P5 only matches account/project names (≥4 chars, full words), not
+        // person first names, so phantom links from shared first names cannot occur.
         let title = match &ctx.title {
             Some(t) if !t.is_empty() => t.to_lowercase(),
             _ => return RuleOutcome::Skip,

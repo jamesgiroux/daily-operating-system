@@ -975,12 +975,12 @@ pub struct PendingStakeholderRow {
     pub email: Option<String>,
     pub confidence: Option<f64>,
     pub data_source: Option<String>,
+    /// AC#13 multi-BU: other accounts sharing this person's email domain.
+    /// Each entry is (account_id, account_name). Rendered as "Also add to X?" hints.
+    pub sibling_account_hints: Vec<(String, String)>,
 }
 
 /// Get pending stakeholder suggestions (status='pending_review') for an account.
-///
-/// Returns rows ordered by confidence DESC (highest-confidence first) then
-/// by created_at DESC so the most actionable items are at the top of the queue.
 #[tauri::command]
 pub async fn get_pending_stakeholder_suggestions(
     account_id: String,
@@ -988,28 +988,20 @@ pub async fn get_pending_stakeholder_suggestions(
 ) -> Result<Vec<PendingStakeholderRow>, String> {
     state
         .db_read(move |db| {
-            let mut stmt = db.conn.prepare(
-                "SELECT as_.person_id, p.name, p.email, as_.confidence, as_.data_source
-                 FROM account_stakeholders as_
-                 JOIN people p ON p.id = as_.person_id
-                 WHERE as_.account_id = ?1 AND as_.status = 'pending_review'
-                 ORDER BY as_.confidence DESC NULLS LAST, as_.created_at DESC",
-            )
-            .map_err(|e| e.to_string())?;
-            let rows = stmt
-                .query_map(rusqlite::params![account_id], |row| {
-                    Ok(PendingStakeholderRow {
-                        person_id: row.get(0)?,
-                        name: row.get(1)?,
-                        email: row.get(2)?,
-                        confidence: row.get(3)?,
-                        data_source: row.get(4)?,
-                    })
+            // Delegate to the entity_linking DB helper which also computes sibling hints.
+            let rows = db.get_pending_stakeholder_suggestions(&account_id)
+                .map_err(|e| e.to_string())?;
+            Ok(rows
+                .into_iter()
+                .map(|r| PendingStakeholderRow {
+                    person_id: r.person_id,
+                    name: Some(r.name),
+                    email: Some(r.email),
+                    confidence: r.confidence,
+                    data_source: Some(r.data_source),
+                    sibling_account_hints: r.sibling_account_hints,
                 })
-                .map_err(|e| e.to_string())?
-                .filter_map(|r| r.ok())
-                .collect();
-            Ok(rows)
+                .collect())
         })
         .await
 }

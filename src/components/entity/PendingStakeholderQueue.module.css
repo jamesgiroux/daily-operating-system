@@ -91,6 +91,15 @@
   gap: var(--space-sm);
 }
 
+/* AC#13 multi-BU sibling hint */
+.siblingHint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  margin-top: var(--space-xs);
+}
+
 /* ═════════ ACTION BUTTONS ═════════ */
 
 .actions {
