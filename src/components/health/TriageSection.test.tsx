@@ -26,6 +26,13 @@ vi.mock("@/hooks/useIntelligenceCorrection", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useEntitySuppressions", () => ({
+  useEntitySuppressions: () => ({
+    isSuppressed: () => false,
+    markSuppressed: vi.fn(),
+  }),
+}));
+
 function emptySignals(overrides: Partial<HealthOutlookSignals>): HealthOutlookSignals {
   return {
     championRisk: null,
@@ -324,6 +331,21 @@ describe("TriageSection — DOS-249 cap + ranking + feedback slot", () => {
       screen.getByText(/Jorge has dominated the last three strategy sessions/i),
     ).toBeInTheDocument();
   });
+
+  it("raises the triage threshold when the user sentiment is strong", () => {
+    const glean = emptySignals({
+      transcriptExtraction: {
+        churnAdjacentQuestions: [],
+        expansionAdjacentQuestions: [],
+        competitorBenchmarks: [],
+        decisionMakerShifts: [{ shift: "CFO changed", date: "2026-03-15" }],
+        budgetCycleSignals: [],
+      },
+    });
+
+    expect(hasTriageContent(null, glean, "strong")).toBe(false);
+    expect(hasTriageContent(null, glean, "at_risk")).toBe(true);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -455,7 +477,7 @@ describe("TriageSection — DOS-269 action wiring", () => {
     });
   });
 
-  it('renders "Still accurate?" affordance when accountId is provided', async () => {
+  it('renders binary "Is this accurate?" validation when accountId is provided', async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     (invoke as unknown as ReturnType<typeof vi.fn>).mockReset();
     (invoke as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);
@@ -471,7 +493,9 @@ describe("TriageSection — DOS-269 action wiring", () => {
       />,
     );
     expect(
-      await screen.findByRole("button", { name: /still accurate/i }),
+      await screen.findByText("Is this accurate?"),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Yes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "No" })).toBeInTheDocument();
   });
 });
