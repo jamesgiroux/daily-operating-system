@@ -679,8 +679,10 @@ pub fn regenerate_mechanical_prep_now_blocking(
     generate_mechanical_prep_with_inputs(workspace, embedding_model, &meeting_id, true)
 }
 
-/// PTY enrichment timeout for a single meeting (30 seconds).
-const ENRICHMENT_TIMEOUT_SECS: u64 = 30;
+/// PTY enrichment timeout for a single meeting (90 seconds).
+/// Raised from 30s to the v1.2.1 floor of 90s to avoid user-visible
+/// Claude-timeout errors on manual refresh paths.
+const ENRICHMENT_TIMEOUT_SECS: u64 = 90;
 
 /// Enrich a single meeting's prep via PTY-spawned Claude (async wrapper).
 ///

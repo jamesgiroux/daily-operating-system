@@ -383,6 +383,170 @@ const MIGRATIONS: &[Migration] = &[
         version: 91,
         sql: include_str!("migrations/085_action_linear_links.sql"),
     },
+    Migration {
+        version: 92,
+        sql: include_str!("migrations/092_deactivate_propagated_email_signals.sql"),
+    },
+    Migration {
+        version: 93,
+        sql: include_str!("migrations/091_user_health_sentiment.sql"),
+    },
+    Migration {
+        version: 94,
+        sql: include_str!("migrations/093_email_sync_meta.sql"),
+    },
+    Migration {
+        version: 95,
+        sql: include_str!("migrations/094_user_sentiment_history.sql"),
+    },
+    Migration {
+        version: 96,
+        sql: include_str!("migrations/095_meeting_entities_confidence.sql"),
+    },
+    Migration {
+        version: 97,
+        sql: include_str!("migrations/096_health_outlook_signals.sql"),
+    },
+    Migration {
+        version: 98,
+        sql: include_str!("migrations/097_email_pending_retry_state.sql"),
+    },
+    Migration {
+        version: 99,
+        sql: include_str!("migrations/098_risk_briefing_jobs.sql"),
+    },
+    Migration {
+        version: 100,
+        sql: include_str!("migrations/099_meeting_entity_dismissals.sql"),
+    },
+    Migration {
+        version: 101,
+        sql: include_str!("migrations/100_email_retry_batch.sql"),
+    },
+    // DOS-228 Wave 0e fixes: risk_briefing_jobs.attempt_id (CAS lifecycle)
+    // + health_recompute_pending (durable debouncer). Combined migration to
+    // minimize collision with parallel work.
+    Migration {
+        version: 102,
+        sql: include_str!("migrations/101_risk_briefing_attempt_and_recompute_pending.sql"),
+    },
+    // DOS-242: emails.is_noise column for hard-drop bulk/marketing filter.
+    Migration {
+        version: 103,
+        sql: include_str!("migrations/102_email_is_noise.sql"),
+    },
+    // DOS-31: track stale-failed auto-retry count so we cap automatic
+    // promotions instead of looping forever on rows that fundamentally
+    // can't enrich. DOS-29 reads this column to compute the
+    // `permanently_failed` count surfaced in the failure UX.
+    Migration {
+        version: 104,
+        sql: include_str!("migrations/103_email_auto_retry_count.sql"),
+    },
+    // DOS-247: Defensive re-add of `is_noise` column. Tolerated as
+    // "duplicate column name" by the framework if the column already
+    // exists (normal upgrade); a real fix for users whose v103
+    // schema_version was recorded without the ALTER actually applying.
+    Migration {
+        version: 105,
+        sql: include_str!("migrations/104_email_is_noise_defensive.sql"),
+    },
+    // DOS-247: Recover emails over-suppressed by DOS-242 Rule 3
+    // (List-Unsubscribe alone). Rule is tightened in code; this
+    // migration restores is_noise=0 for rows outside the bulk allow-list.
+    Migration {
+        version: 106,
+        sql: include_str!("migrations/105_email_noise_recovery.sql"),
+    },
+    // DOS-248: After DOS-247's coarse recovery, re-suppress noreply
+    // senders and bracket-prefix internal-org notifications that the
+    // tightened rules now catch. Brings existing data in line with
+    // the fixed code without requiring a fresh sync.
+    Migration {
+        version: 107,
+        sql: include_str!("migrations/106_email_resuppress_noreply.sql"),
+    },
+    // Stakeholder-role soft-delete: `dismissed_at` tombstones user-removed
+    // role rows so subsequent enrichment can't silently re-surface the
+    // role via intel_queue's INSERT ON CONFLICT path.
+    Migration {
+        version: 108,
+        sql: include_str!("migrations/107_stakeholder_role_dismissals.sql"),
+    },
+    // Work-tab foundation: action_kind column + ai_commitment_bridge +
+    // account_focus_pins + nudge_dismissals. Enables commitments-as-Actions,
+    // focus pin overlay, and nudge dismissal memory. See migration file
+    // header for rationale.
+    Migration {
+        version: 109,
+        sql: include_str!("migrations/108_work_tab_actions.sql"),
+    },
+    // DOS-269: Persist Health-tab triage card Snooze + Confirm-resolved state
+    // so dismissals survive refresh. Keyed on (entity_type, entity_id,
+    // triage_key); rendering-time filter hides rows where
+    // resolved_at IS NOT NULL or snoozed_until > now.
+    Migration {
+        version: 110,
+        sql: include_str!("migrations/109_triage_snoozes.sql"),
+    },
+    // DOS-258 Lane A: entity linking schema foundation.
+    // linked_entities_raw (write surface) + linked_entities view (read surface),
+    // linking_dismissals (cross-surface dismissal store),
+    // entity_linking_evaluations (append-only provenance audit),
+    // entity_graph_version singleton counter + triggers,
+    // account_stakeholders status/confidence columns + review-queue index,
+    // backfill of existing meeting_entity_dismissals into linking_dismissals.
+    Migration {
+        version: 111,
+        sql: include_str!("migrations/110_linked_entities_raw.sql"),
+    },
+    Migration {
+        version: 112,
+        sql: include_str!("migrations/111_linking_dismissals.sql"),
+    },
+    Migration {
+        version: 113,
+        sql: include_str!("migrations/112_entity_linking_evaluations.sql"),
+    },
+    Migration {
+        version: 114,
+        sql: include_str!("migrations/113_entity_graph_version.sql"),
+    },
+    Migration {
+        version: 115,
+        sql: include_str!("migrations/114_account_stakeholders_review_queue_idx.sql"),
+    },
+    Migration {
+        version: 116,
+        sql: include_str!("migrations/115_migrate_meeting_entity_dismissals.sql"),
+    },
+    // DOS-258 Lane C: pending_thread_inheritance queue for P2 out-of-order
+    // email delivery. When a child email arrives before its parent, P2 enqueues
+    // it here; the queue is drained when the parent is later evaluated.
+    Migration {
+        version: 117,
+        sql: include_str!("migrations/116_pending_thread_inheritance.sql"),
+    },
+    // DOS-258 follow-up: complete entity_graph_version trigger coverage.
+    // Adds INSERT/DELETE + name/archived UPDATE triggers for accounts and
+    // projects so P5 name-matching and P4/P4b/P4c domain evidence stay
+    // consistent after entity creation, deletion, or rename.
+    Migration {
+        version: 118,
+        sql: include_str!("migrations/117_entity_graph_version_full_triggers.sql"),
+    },
+    // DOS-258 follow-up: add source provenance to account_domains so
+    // raw_rebuild_account_domains can purge inferred domains before cutover.
+    Migration {
+        version: 119,
+        sql: include_str!("migrations/118_account_domains_source.sql"),
+    },
+    // DOS-258 follow-up: email To/Cc recipient columns for multi-participant
+    // domain evidence in P4b/P4c rules.
+    Migration {
+        version: 120,
+        sql: include_str!("migrations/119_email_to_cc.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -610,12 +774,15 @@ fn create_backup_via_sqlcipher_export(
     backup_path: &Path,
     hex_key: &str,
 ) -> Result<(), String> {
+    // sqlcipher_export must run inside BEGIN IMMEDIATE so that WAL frames are
+    // included in the snapshot. Without the transaction, SQLCipher copies only
+    // the base page state and produces an 8KB hollow file (DOS-273).
     let backup_path_s = backup_path.to_string_lossy().replace('\'', "''");
     conn.execute_batch(&format!(
         "ATTACH DATABASE '{backup_path_s}' AS premigration KEY \"x'{hex_key}'\";"
     ))
     .map_err(|e| format!("Failed to attach fallback pre-migration backup DB: {e}"))?;
-    conn.execute_batch("SELECT sqlcipher_export('premigration');")
+    conn.execute_batch("BEGIN IMMEDIATE; SELECT sqlcipher_export('premigration'); COMMIT;")
         .map_err(|e| format!("Fallback pre-migration backup export failed: {e}"))?;
     conn.execute_batch("DETACH DATABASE premigration;")
         .map_err(|e| format!("Failed to detach fallback pre-migration backup DB: {e}"))?;
@@ -689,8 +856,25 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
         None
     };
 
-    let backup_result = create_backup_via_api(conn, &backup_path, encryption_key.as_deref());
+    // For encrypted DBs: use the Backup API with the key applied to the
+    // destination — the same pattern backup_database() uses successfully.
+    // Both sides use the same key so encrypted pages copy verbatim.
+    //
+    // The previous sqlcipher_export-first approach produced 8KB hollow files
+    // because sqlcipher_export without a transaction only copies base pages,
+    // not the WAL. The Backup API reads through the WAL correctly (DOS-273).
+    let backup_result = if encrypted {
+        let key = encryption_key
+            .as_deref()
+            .ok_or_else(|| "Missing encryption key for backup".to_string())?;
+        create_backup_via_api(conn, &backup_path, Some(key))
+    } else {
+        create_backup_via_api(conn, &backup_path, None)
+    };
     if let Err(err) = backup_result {
+        let _ = std::fs::remove_file(&backup_path);
+        // Last resort: sqlcipher_export (now transaction-wrapped). Only reached
+        // if the Backup API itself reports an encryption incompatibility.
         if should_try_encrypted_backup_fallback(encrypted, &err) {
             let key = encryption_key
                 .as_deref()
@@ -701,10 +885,25 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
         }
     }
 
+    // Sanity-check: a real backup of a multi-MB database must be more than a
+    // page or two. A hollow backup (< 64KB from a > 128KB source) is worse
+    // than no backup — it creates false confidence. Fail loudly so the user
+    // knows migrations did not run with a real safety net.
+    let source_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+    let backup_size = std::fs::metadata(&backup_path).map(|m| m.len()).unwrap_or(0);
+    if source_size > 128 * 1024 && backup_size < 64 * 1024 {
+        let _ = std::fs::remove_file(&backup_path);
+        return Err(format!(
+            "Pre-migration backup is suspiciously small ({backup_size} bytes) for a \
+             {source_size}-byte source database. The backup is likely hollow. \
+             Refusing to apply migrations without a valid safety copy (DOS-273)."
+        ));
+    }
+
     crate::db::hardening::set_file_permissions(&backup_path);
     prune_old_migration_backups(&db_path, 10)?;
     log::info!(
-        "Pre-migration backup created at {}",
+        "Pre-migration backup created at {} ({backup_size} bytes)",
         backup_path.to_string_lossy()
     );
     Ok(backup_path)
@@ -1266,6 +1465,98 @@ mod tests {
             [],
         )
         .expect("linear_entity_links table should exist and accept inserts");
+
+        // DOS-258 Lane A: verify entity linking schema (migrations 111–116)
+
+        // linked_entities_raw: table exists and enforces CHECK constraints
+        conn.execute(
+            "INSERT INTO linked_entities_raw
+             (owner_type, owner_id, entity_id, entity_type, role, source, graph_version, created_at)
+             VALUES ('meeting', 'm1', 'a1', 'account', 'primary', 'rule:P4a', 0, '2026-01-01')",
+            [],
+        )
+        .expect("linked_entities_raw should accept valid inserts");
+
+        // idx_one_primary: a second primary for the SAME owner (different entity) must fail
+        let dup_primary_result = conn.execute(
+            "INSERT INTO linked_entities_raw
+             (owner_type, owner_id, entity_id, entity_type, role, source, graph_version, created_at)
+             VALUES ('meeting', 'm1', 'p1', 'person', 'primary', 'rule:P7', 0, '2026-01-01')",
+            [],
+        );
+        assert!(
+            dup_primary_result.is_err(),
+            "idx_one_primary should reject a second primary for the same (owner_type, owner_id)"
+        );
+
+        // linked_entities view filters user_dismissed rows (different entity than the primary above)
+        conn.execute(
+            "INSERT INTO linked_entities_raw
+             (owner_type, owner_id, entity_id, entity_type, role, source, graph_version, created_at)
+             VALUES ('meeting', 'm1', 'p1', 'person', 'related', 'user_dismissed', 0, '2026-01-01')",
+            [],
+        )
+        .expect("linked_entities_raw should store user_dismissed rows");
+        let view_count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM linked_entities WHERE owner_id = 'm1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("linked_entities view should be queryable");
+        assert_eq!(view_count, 1, "linked_entities view should hide user_dismissed rows");
+
+        // linking_dismissals table
+        conn.execute(
+            "INSERT INTO linking_dismissals (owner_type, owner_id, entity_id, entity_type, created_at)
+             VALUES ('meeting', 'm1', 'a1', 'account', '2026-01-01')",
+            [],
+        )
+        .expect("linking_dismissals should exist and accept inserts");
+
+        // entity_linking_evaluations table
+        conn.execute(
+            "INSERT INTO entity_linking_evaluations
+             (owner_type, owner_id, link_trigger, rule_id, entity_id, entity_type, role, graph_version, evidence_json)
+             VALUES ('meeting', 'm1', 'CalendarPoll', 'P4a', 'a1', 'account', 'primary', 0, '{}')",
+            [],
+        )
+        .expect("entity_linking_evaluations should exist and accept inserts");
+
+        // entity_graph_version: seed row exists, trigger bumps on account_domains insert
+        let before_version: i32 = conn
+            .query_row(
+                "SELECT version FROM entity_graph_version WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("entity_graph_version seed row should exist");
+        conn.execute(
+            "INSERT INTO account_domains (account_id, domain) VALUES ('a1', 'trigger-test.com')",
+            [],
+        )
+        .expect("account_domains insert for trigger test");
+        let after_version: i32 = conn
+            .query_row(
+                "SELECT version FROM entity_graph_version WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("entity_graph_version should be queryable after trigger");
+        assert!(
+            after_version > before_version,
+            "account_domains insert should bump entity_graph_version ({} -> {})",
+            before_version,
+            after_version
+        );
+
+        // account_stakeholders: status and confidence columns exist (migration 115)
+        conn.execute(
+            "UPDATE account_stakeholders SET status = 'pending_review', confidence = 0.85
+             WHERE account_id = 'a1' AND person_id = 'p1'",
+            [],
+        )
+        .expect("account_stakeholders should have status and confidence columns");
     }
 
     #[test]
@@ -1570,6 +1861,51 @@ mod tests {
             err.contains("Schema integrity check failed") || err.contains("Migration v68 failed"),
             "error should identify schema integrity failure or migration failure: {err}"
         );
+    }
+
+    /// DOS-226 (Codex finding 4): migration 097 rebuilds the `emails` table to
+    /// widen the `enrichment_state` CHECK constraint. The rebuild must
+    /// recreate every index that existed on the old table. If any index is
+    /// dropped silently (as was the case pre-fix for `idx_emails_relevance`
+    /// and `idx_emails_enriched_at`), inbox/read query plans regress without
+    /// any visible error at upgrade time.
+    #[test]
+    fn test_emails_indexes_survive_migration_097() {
+        let conn = mem_db();
+        let applied = run_migrations(&conn).expect("migrations should succeed");
+        assert_eq!(applied, MIGRATIONS.len(), "all migrations applied");
+
+        // Introspect sqlite_master for every index currently on `emails`.
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'emails' AND name NOT LIKE 'sqlite_%'")
+            .expect("prepare sqlite_master query");
+        let rows: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query sqlite_master")
+            .filter_map(Result::ok)
+            .collect();
+
+        // Every index declared in the migration history for `emails` must be
+        // present after the full migration chain runs. This is a regression
+        // guard against future table rebuilds losing indexes.
+        let required = [
+            "idx_emails_thread_id",
+            "idx_emails_enrichment",
+            "idx_emails_entity",
+            "idx_emails_priority_resolved",
+            "idx_emails_last_seen",
+            "idx_emails_resolved",
+            "idx_emails_relevance",   // migration 035 — regressed pre-fix
+            "idx_emails_enriched_at", // migration 082 — regressed pre-fix
+        ];
+        for expected in required {
+            assert!(
+                rows.iter().any(|n| n == expected),
+                "expected index `{}` to exist after migrations; found: {:?}",
+                expected,
+                rows
+            );
+        }
     }
 
     #[test]

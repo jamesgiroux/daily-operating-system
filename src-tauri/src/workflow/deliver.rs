@@ -815,9 +815,14 @@ pub fn deliver_schedule(
                 obj.insert("calendarAttendees".to_string(), json!(attendee_arr));
             }
 
-            // Embed linked entities from junction table (I52)
+            // Embed linked entities from junction table (I52).
+            // DOS-74: emit confidence + isPrimary + suggested so the UI can
+            // paint exactly one primary entity and render lower-confidence
+            // siblings as muted suggestions. Results are pre-sorted by
+            // (is_primary DESC, confidence DESC) so `linkedEntities[0]` is
+            // always the single best entity for the meeting.
             if let Some(db) = db {
-                if let Ok(entities) = db.get_meeting_entities(&meeting_id) {
+                if let Ok(entities) = db.get_meeting_linked_entities(&meeting_id) {
                     if !entities.is_empty() {
                         let entity_arr: Vec<Value> = entities
                             .iter()
@@ -825,7 +830,10 @@ pub fn deliver_schedule(
                                 json!({
                                     "id": e.id,
                                     "name": e.name,
-                                    "entityType": e.entity_type.as_str(),
+                                    "entityType": e.entity_type,
+                                    "confidence": e.confidence,
+                                    "isPrimary": e.is_primary,
+                                    "suggested": e.suggested,
                                 })
                             })
                             .collect();
@@ -3068,6 +3076,7 @@ pub fn enrich_emails(
                 entity_type: None,
                 sentiment: sentiment_str,
                 urgency: urgency_str,
+                is_noise: None,
             };
 
             // DIRECT_DB_ALLOWED: internal workflow pipeline — enrichment writes are background processing, not user-facing mutations

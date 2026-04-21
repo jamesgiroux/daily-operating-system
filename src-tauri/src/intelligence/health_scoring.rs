@@ -47,6 +47,10 @@ pub fn compute_account_health(
     let weights = redistribute_weights(&dims, raw_weights);
     let confidence = compute_confidence(&dims);
 
+    // DOS-84: Count dimensions with actual data (weight > 0), excluding
+    // the signal_momentum neutral placeholder which always has weight > 0.
+    let sufficient_data = has_sufficient_data(&dims);
+
     // Compute weighted average of non-null dimensions
     let dim_arr = [
         &dims.meeting_cadence,
@@ -116,6 +120,7 @@ pub fn compute_account_health(
         band,
         source: HealthSource::Computed,
         confidence,
+        sufficient_data,
         trend,
         dimensions: dims,
         narrative: None,
@@ -435,6 +440,9 @@ fn compute_meeting_cadence(db: &ActionDb, account_id: &str) -> DimensionScore {
 }
 
 fn compute_email_engagement(db: &ActionDb, account_id: &str) -> DimensionScore {
+    // TODO(v1.2.2): commitment completion rate → behavioral input for engagement dim.
+    // When the AI commitment bridge has enough signal volume, weight the engagement
+    // score by the delivered:rejected ratio over a rolling 90-day window.
     let signals = db
         .list_recent_email_signals_for_entity(account_id, 50)
         .unwrap_or_default();
@@ -697,7 +705,7 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
         .prepare(
             "SELECT asr.person_id, p.name FROM account_stakeholder_roles asr \
              JOIN people p ON p.id = asr.person_id \
-             WHERE asr.account_id = ?1 AND asr.role = 'champion'",
+             WHERE asr.account_id = ?1 AND asr.role = 'champion' AND asr.dismissed_at IS NULL",
         )
         .and_then(|mut stmt| {
             stmt.query_map(rusqlite::params![account_id], |row| {
@@ -1230,6 +1238,23 @@ fn redistribute_weights(dims: &RelationshipDimensions, raw: [f64; 6]) -> [f64; 6
     result
 }
 
+/// DOS-84: Determine if enough dimensions have real data for a reliable health score.
+/// Returns true when >= 3 non-placeholder dimensions are populated.
+fn has_sufficient_data(dims: &RelationshipDimensions) -> bool {
+    let populated_count = [
+        &dims.meeting_cadence,
+        &dims.email_engagement,
+        &dims.stakeholder_coverage,
+        &dims.champion_health,
+        &dims.financial_proximity,
+        &dims.signal_momentum,
+    ]
+    .iter()
+    .filter(|d| d.weight > 0.0 && !is_neutral_momentum_placeholder(d))
+    .count();
+    populated_count >= 3
+}
+
 /// Confidence = fraction of non-null dimensions.
 fn is_neutral_momentum_placeholder(dim: &DimensionScore) -> bool {
     dim.weight > 0.0
@@ -1502,6 +1527,7 @@ mod tests {
             band: "yellow".to_string(),
             source: HealthSource::Computed,
             confidence: 0.6,
+            sufficient_data: true,
             trend: HealthTrend::default(),
             dimensions: RelationshipDimensions {
                 meeting_cadence: active_dim(70.0),
@@ -1820,6 +1846,7 @@ mod tests {
             band: "yellow".to_string(),
             source: HealthSource::Computed,
             confidence: 0.6,
+            sufficient_data: true,
             trend: HealthTrend::default(),
             dimensions: RelationshipDimensions {
                 meeting_cadence: active_dim(20.0),
@@ -1838,6 +1865,54 @@ mod tests {
         assert!(
             !rationale.is_empty(),
             "classification should return a rationale"
+        );
+    }
+
+    // ===== DOS-84: Sufficient data threshold tests =====
+
+    #[test]
+    fn test_sufficient_data_with_sparse_dimensions() {
+        // Only 2 real dimensions — below the 3-dimension threshold.
+        // Calls the production has_sufficient_data() function directly.
+        let dims = RelationshipDimensions {
+            meeting_cadence: active_dim(70.0),
+            email_engagement: active_dim(60.0),
+            stakeholder_coverage: null_dim(),
+            champion_health: null_dim(),
+            financial_proximity: null_dim(),
+            signal_momentum: DimensionScore {
+                score: 50.0,
+                weight: 1.0,
+                evidence: vec!["No recent signals — neutral baseline".to_string()],
+                trend: "stable".to_string(),
+            },
+        };
+        assert!(
+            !has_sufficient_data(&dims),
+            "2 real dimensions should be insufficient"
+        );
+    }
+
+    #[test]
+    fn test_sufficient_data_with_three_dimensions() {
+        // Exactly 3 real dimensions — at the threshold.
+        // Calls the production has_sufficient_data() function directly.
+        let dims = RelationshipDimensions {
+            meeting_cadence: active_dim(70.0),
+            email_engagement: active_dim(60.0),
+            stakeholder_coverage: active_dim(50.0),
+            champion_health: null_dim(),
+            financial_proximity: null_dim(),
+            signal_momentum: DimensionScore {
+                score: 50.0,
+                weight: 1.0,
+                evidence: vec!["No recent signals — neutral baseline".to_string()],
+                trend: "stable".to_string(),
+            },
+        };
+        assert!(
+            has_sufficient_data(&dims),
+            "3 real dimensions should be sufficient"
         );
     }
 }

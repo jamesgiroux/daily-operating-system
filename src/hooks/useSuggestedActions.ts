@@ -10,15 +10,29 @@ interface UseSuggestedActionsReturn {
   rejectAction: (id: string, source?: "actions_page" | "daily_briefing" | "meeting_detail") => Promise<void>;
   isLoading: boolean;
   refresh: () => Promise<void>;
+  showAll: boolean;
+  setShowAll: (v: boolean) => void;
 }
 
+/**
+ * Suggested actions hook.
+ *
+ * `showAll=false` (default): scopes to the user's own commitments +
+ * unassigned rows via the backend's `user_entity.name` match. Without
+ * this filter the list is dominated by other people's commitments that
+ * AI extraction tags while transcribing meetings — observed 355 rows
+ * total with only 26 actually owned by the user on a real workspace.
+ *
+ * `showAll=true`: returns every backlog row regardless of owner.
+ */
 export function useSuggestedActions(): UseSuggestedActionsReturn {
   const [suggestedActions, setSuggestedActions] = useState<DbAction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const result = await invoke<DbAction[]>("get_suggested_actions");
+      const result = await invoke<DbAction[]>("get_suggested_actions", { showAll });
       setSuggestedActions(result);
     } catch (err) {
       console.error("Failed to load suggested actions:", err); // Expected: background data fetch on mount
@@ -26,7 +40,7 @@ export function useSuggestedActions(): UseSuggestedActionsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [showAll]);
 
   useEffect(() => {
     refresh();
@@ -65,5 +79,5 @@ export function useSuggestedActions(): UseSuggestedActionsReturn {
     []
   );
 
-  return { suggestedActions, acceptAction, rejectAction, isLoading, refresh };
+  return { suggestedActions, acceptAction, rejectAction, isLoading, refresh, showAll, setShowAll };
 }

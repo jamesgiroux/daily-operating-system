@@ -78,7 +78,10 @@ fn probe_claude_binary() -> Option<PathBuf> {
     None
 }
 
-/// Default timeout for AI enrichment phase (5 minutes)
+/// Default timeout for AI enrichment phase (5 minutes).
+/// Per-call overrides cap at 240s under the v1.2.1 floor/ceiling range;
+/// this default stays at 300s to give sessionless PTY spawns a little
+/// extra headroom before surfacing a timeout.
 pub const DEFAULT_CLAUDE_TIMEOUT_SECS: u64 = 300;
 pub const AI_USAGE_DAILY_KEY: &str = "ai_usage_daily";
 pub const AI_USAGE_RECENT_KEY: &str = "ai_usage_recent";
@@ -718,6 +721,40 @@ impl PtyManager {
             "CLAUDE_CODE_ENTRYPOINT",
         ] {
             cmd.env_remove(key);
+        }
+
+        // Handle Anthropic API auth env vars. Three cases:
+        //
+        // 1. Parent has a non-empty value → forward it. CLI uses the env
+        //    credential first, skips Keychain lookup (which would otherwise
+        //    fail under PTY ACLs on macOS).
+        //
+        // 2. Parent has an empty value (e.g. set by Claude Code's harness
+        //    shell, or an incomplete `export ANTHROPIC_API_KEY=` line in a
+        //    shell rc) → the child would inherit the empty string via
+        //    portable-pty's default-inherit behaviour, *and* the CLI would
+        //    trust that empty value, send an empty bearer, and hit 401. We
+        //    must explicitly `env_remove` to force the child's env to have
+        //    no value at all, so the CLI falls back to its Keychain path.
+        //    This is the case that broke risk_briefing and transcript
+        //    extraction when DailyOS was launched from a Claude Code shell.
+        //
+        // 3. Parent has no such var → nothing to do; default inheritance
+        //    passes nothing.
+        for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
+            match std::env::var(key) {
+                Ok(value) if !value.is_empty() => {
+                    cmd.env(key, value);
+                }
+                Ok(_) => {
+                    // Empty parent value — strip so the child can fall back
+                    // to Keychain. Without this, CLI fails 401.
+                    cmd.env_remove(key);
+                }
+                Err(_) => {
+                    // Not set — nothing to forward, nothing to strip.
+                }
+            }
         }
 
         // Spawn the child process

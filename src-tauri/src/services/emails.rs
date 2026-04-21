@@ -633,6 +633,7 @@ pub fn detect_gone_quiet_accounts(
                 "SELECT received_at, sender_name, sender_email
                  FROM emails
                  WHERE entity_id = ?1 AND entity_type = 'account'
+                   AND is_noise = 0
                  ORDER BY datetime(received_at) DESC, datetime(created_at) DESC
                  LIMIT 1",
                 rusqlite::params![entity_id],
@@ -789,7 +790,7 @@ pub(crate) fn best_account_for_person(
     let mut stmt = match db.conn_ref().prepare(
         "SELECT a.id, a.name, a.keywords FROM accounts a
          JOIN account_stakeholders as_ ON a.id = as_.account_id
-         WHERE as_.person_id = ?1",
+         WHERE as_.person_id = ?1 AND as_.status = 'active'",
     ) {
         Ok(s) => s,
         Err(_) => return None,
@@ -866,8 +867,8 @@ pub fn get_entity_emails(
                             contextual_summary, sentiment, urgency, user_is_last_sender,
                             last_sender_email, message_count, created_at, updated_at,
                             relevance_score, score_reason,
-                            pinned_at, commitments, questions
-                     FROM emails WHERE sender_email = ?1 AND resolved_at IS NULL ORDER BY received_at DESC",
+                            pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
+                     FROM emails WHERE sender_email = ?1 AND resolved_at IS NULL AND is_noise = 0 ORDER BY received_at DESC",
                 )
                 .map_err(|e| format!("query error: {e}"))?;
             let rows = stmt
@@ -903,6 +904,9 @@ pub fn get_entity_emails(
                         pinned_at: row.get(27).ok(),
                         commitments: row.get(28).ok(),
                         questions: row.get(29).ok(),
+                        is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
+                        to_recipients: row.get(31).ok(),
+                        cc_recipients: row.get(32).ok(),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -940,8 +944,8 @@ pub fn get_entity_emails(
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                            pinned_at, commitments, questions
-                 FROM emails WHERE sender_email IN ({}) AND resolved_at IS NULL ORDER BY received_at DESC",
+                            pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
+                 FROM emails WHERE sender_email IN ({}) AND resolved_at IS NULL AND is_noise = 0 ORDER BY received_at DESC",
                 placeholders.join(",")
             );
             let mut stmt = db
@@ -985,6 +989,9 @@ pub fn get_entity_emails(
                         pinned_at: row.get(27).ok(),
                         commitments: row.get(28).ok(),
                         questions: row.get(29).ok(),
+                        is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
+                        to_recipients: row.get(31).ok(),
+                        cc_recipients: row.get(32).ok(),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -1165,6 +1172,13 @@ async fn unarchive_emails_in_gmail(
     Ok(())
 }
 
+/// DOS-242 rescue: clear `is_noise` on an email so it surfaces again in inbox
+/// and Records. Used by the "this isn't noise" affordance (DOS-41 wires UI).
+/// All mutations go through services per CLAUDE.md.
+pub fn unsuppress_email(db: &crate::db::ActionDb, email_id: &str) -> Result<(), String> {
+    db.unsuppress_email(email_id)
+}
+
 /// Toggle pin on an email. Returns the new pinned state.
 pub fn pin_email(
     db: &crate::db::ActionDb,
@@ -1261,6 +1275,7 @@ pub fn promote_commitment_to_action(
         source_type: Some("email_commitment".to_string()),
         source_id: Some(email_id.to_string()),
         source_label: Some("Email commitment".to_string()),
+        action_kind: crate::action_status::KIND_TASK.to_string(),
         context: Some(build_email_commitment_context(
             owner.as_deref(),
             commitment_text,
@@ -1536,7 +1551,55 @@ pub async fn archive_low_priority_emails(state: &AppState) -> Result<usize, Stri
     Ok(archived)
 }
 
+/// DOS-226 (Codex finding 2): bound for `rollback_stale_pending_retry`.
+/// Any `pending_retry` row older than this is assumed to belong to a
+/// crashed or never-finalized refresh from a previous process instance.
+/// 10 minutes comfortably exceeds the p99 refresh duration even with slow
+/// PTY enrichment while still recovering before the user retries again.
+const PENDING_RETRY_STALE_AFTER_SECS: i64 = 600;
+
+/// DOS-31: bound for `auto_retry_stale_failed`. A `failed` row older than
+/// this (measured against `last_enrichment_at`, falling back to
+/// `created_at`) is automatically reset to `pending` on the next refresh
+/// so the user doesn't have to manually click Retry to clear an old
+/// transient failure. 24 hours is intentionally cautious: short enough
+/// that the inbox self-heals overnight, long enough that an in-flight
+/// enrichment failure isn't immediately re-attempted on the very next
+/// refresh (which would just re-fail in the same way).
+const STALE_FAILED_AFTER_SECS: i64 = 24 * 60 * 60;
+// Cumulative auto-retry cap is owned by `db::emails` so the stats query and
+// the retry pass share one threshold — see `STALE_FAILED_MAX_AUTO_RETRIES`.
+
 /// Refresh emails independently without re-running the full /today pipeline (I20).
+///
+/// DOS-31 / DOS-226: Manual refresh is a user signal that they want previously
+/// failed enrichments retried. The retry is rollback-safe and crash-safe:
+///
+/// 1. Recover any `pending_retry` rows stranded by a prior crashed refresh
+///    back to `failed` (Codex finding 2). Without this step, a crash between
+///    `mark_failed_for_retry` and finalize/rollback would orphan rows in
+///    `pending_retry` forever: stats would count them failed, but the count
+///    query in `retry_failed_emails` (matching `failed` only) would return
+///    0 and the refresh would never re-run on them.
+/// 2. Allocate a fresh `batch_id` and mark `failed` rows `pending_retry`
+///    under that batch. Keeps `enrichment_attempts` intact; the UI still
+///    counts them as failed so the Retry notice stays visible while the
+///    refresh is in flight.
+/// 3. Run the Gmail refresh + enrichment pipeline. Inside the orchestrator
+///    the batch is promoted to `pending` with `enrichment_attempts = 0`
+///    *after* Gmail fetch success and *before* enrichment runs — so the
+///    enrichment pass actually processes the retried rows (Codex finding 1).
+/// 4. On any error surfaced from the refresh, roll back this batch's
+///    rows to `failed`. Rollback failure is no longer log-only: it
+///    surfaces to the caller so the UI can report the real state
+///    (Codex finding 2).
+///
+/// Prior behaviour (pre-DOS-226) reset `failed -> pending` with attempts=0
+/// *before* the refresh ran; a refresh failure then left rows looking
+/// healthy when in fact enrichment had never re-run. The initial DOS-226
+/// fix deferred the attempts reset to *after* the refresh returned, which
+/// meant enrichment's `attempts < 3` filter skipped the retried rows
+/// (Codex finding 1).
 pub async fn refresh_emails(
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
@@ -1547,17 +1610,167 @@ pub async fn refresh_emails(
         .clone()
         .ok_or("No configuration loaded")?;
 
+    // Phase 0 — recover stranded rows from any prior crashed refresh
+    // before we stamp a new batch. Silent no-op in the happy path.
+    let recovered = state
+        .db_write(|db| db.rollback_stale_pending_retry(PENDING_RETRY_STALE_AFTER_SECS))
+        .await
+        .map_err(|e| format!("Failed to recover stale pending_retry rows: {e}"))?;
+    if recovered > 0 {
+        log::warn!(
+            "DOS-226: recovered {recovered} stale pending_retry rows (stranded by a prior crashed refresh)"
+        );
+    }
+
+    // Phase 0.5 (DOS-31) — auto-promote stale `failed` rows to `pending` so
+    // the next enrichment pass picks them up without the user clicking
+    // Retry. Failed rows under the cumulative `auto_retry_count` cap and
+    // older than 24h are silently re-attempted; rows at the cap stay in
+    // `failed` and surface in the user-facing "couldn't be enriched" UX
+    // (DOS-29). Runs BEFORE the manual retry batch is stamped so a row
+    // promoted by auto-retry is selectable by `get_pending_enrichment`.
+    // Runs AFTER the pending_retry recovery so we don't double-promote a
+    // row that's just been rolled back from a crashed refresh.
+    let auto_retried = state
+        .db_write(|db| {
+            db.auto_retry_stale_failed(
+                STALE_FAILED_AFTER_SECS,
+                crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES,
+            )
+        })
+        .await
+        .map_err(|e| format!("Failed to auto-retry stale failed emails: {e}"))?;
+    if auto_retried > 0 {
+        log::info!(
+            "DOS-31: auto-promoted {auto_retried} stale failed emails to pending (older than {}s, under cap)",
+            STALE_FAILED_AFTER_SECS
+        );
+    }
+
+    // Phase 1 — mark failed rows as pending_retry under a new batch_id.
+    let batch_id = uuid::Uuid::new_v4().to_string();
+    let batch_id_for_mark = batch_id.clone();
+    let marked = state
+        .db_write(move |db| db.mark_failed_for_retry(&batch_id_for_mark))
+        .await
+        .map_err(|e| format!("Failed to mark failed emails for retry: {e}"))?;
+    if marked > 0 {
+        log::info!(
+            "DOS-226: marked {marked} failed emails as pending_retry under batch {batch_id}"
+        );
+    }
+
     let state_clone = state.clone();
     let workspace_path = config.workspace_path.clone();
+    let batch_id_for_exec = batch_id.clone();
+    // Only thread the retry batch into the executor when we actually
+    // have rows to retry. Wave 0g's fail-closed branch treats a batch
+    // with zero promoted rows as a stuck retry batch and errors out —
+    // which is correct for real retry batches, but would turn every
+    // healthy refresh (no failed rows, marked == 0) into an error
+    // (regression flagged by Codex final verification 2026-04-18).
+    let retry_batch_for_exec: Option<String> = if marked > 0 {
+        Some(batch_id_for_exec)
+    } else {
+        None
+    };
 
-    tauri::async_runtime::spawn(async move {
+    // Phase 2 — run the refresh. When a retry batch is active, the
+    // orchestrator will finalize our batch mid-run (after Gmail fetch
+    // succeeds, before enrichment) so the retried rows are eligible
+    // for the enrichment pass that just started. For zero-retry
+    // refreshes the orchestrator skips the finalize branch entirely.
+    let refresh_outcome: Result<(), String> = tauri::async_runtime::spawn(async move {
         let workspace = std::path::Path::new(&workspace_path);
         let executor = crate::executor::Executor::new(state_clone, app_handle);
-        executor.execute_email_refresh(workspace).await
+        executor
+            .execute_email_refresh_with_retry_batch(workspace, retry_batch_for_exec.as_deref())
+            .await
     })
     .await
-    .map_err(|e| format!("Email refresh task failed: {}", e))?
-    .map(|_| "Email refresh complete".to_string())
+    .map_err(|e| format!("Email refresh task failed: {}", e))
+    .and_then(|inner| inner);
+
+    // Phase 3 — on error, roll back this batch's rows. Success path is
+    // already finalized inside the orchestrator (see Codex finding 1).
+    // We still defensively finalize on the success path to clean up any
+    // pending_retry rows that predate the Gmail-fetch-success hook
+    // (shouldn't happen now, but cheap insurance).
+    match &refresh_outcome {
+        Ok(_) => {
+            if marked > 0 {
+                let batch_id_for_finalize = batch_id.clone();
+                let residual = state
+                    .db_write(move |db| {
+                        db.finalize_pending_retry_success(&batch_id_for_finalize)
+                    })
+                    .await
+                    .map_err(|e| {
+                        format!("Refresh succeeded but retry finalize failed: {e}")
+                    })?;
+                if residual > 0 {
+                    log::warn!(
+                        "DOS-226: finalized {residual} residual pending_retry rows in batch {batch_id} (orchestrator should have handled these mid-run)"
+                    );
+                }
+            }
+        }
+        Err(refresh_err) => {
+            if marked > 0 {
+                // Codex finding 2: rollback failure MUST surface. Log-only
+                // previously orphaned rows in pending_retry.
+                let batch_id_for_rollback = batch_id.clone();
+                let rolled = state
+                    .db_write(move |db| db.rollback_pending_retry(&batch_id_for_rollback))
+                    .await
+                    .map_err(|e| {
+                        log::error!(
+                            "DOS-226: refresh failed AND rollback failed: refresh={refresh_err}, rollback={e}"
+                        );
+                        format!("Email refresh failed ({refresh_err}); rollback also failed ({e}). Retry state is inconsistent.")
+                    })?;
+                log::warn!(
+                    "DOS-226: refresh failed ({refresh_err}); rolled back {rolled} pending_retry rows in batch {batch_id}"
+                );
+            }
+        }
+    }
+
+    refresh_outcome.map(|_| "Email refresh complete".to_string())
+}
+
+/// DOS-226: Reset failed email enrichments and trigger re-enrichment.
+///
+/// Centralizes retry semantics previously split between the Tauri command
+/// (`commands::workspace::retry_failed_emails`) and `refresh_emails`. The
+/// command now delegates here so there is exactly one place to reason about
+/// failed-state transitions.
+///
+/// Returns the number of rows that were in the `failed` state at the moment
+/// the retry was kicked off (regardless of whether they ultimately re-enriched
+/// successfully — that lands in the sync-stats query on the next UI poll).
+pub async fn retry_failed_emails(
+    state: &std::sync::Arc<AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<usize, String> {
+    // DOS-226 (Codex finding 2): include `pending_retry` in the retriable
+    // count so rows orphaned by a prior crashed refresh don't silently
+    // drop to "nothing to retry". The refresh's phase-0 recovery will
+    // roll them back to `failed` before the new batch is stamped.
+    let retriable_before: usize = state
+        .db_read(|db| db.count_retriable_emails())
+        .await?;
+
+    if retriable_before == 0 {
+        log::info!("DOS-226: retry_failed_emails called with no retriable rows; no-op");
+        return Ok(0);
+    }
+
+    log::info!(
+        "DOS-226: retry_failed_emails starting; {retriable_before} failed/pending_retry rows will be retried"
+    );
+    refresh_emails(state, app_handle).await?;
+    Ok(retriable_before)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1702,7 +1915,7 @@ mod tests {
     fn test_empty_email_ids() {
         let _conn = setup_test_db();
         let db = crate::db::ActionDb::from_conn(&_conn);
-        let result = get_email_snapshots_for_content_check(db, "account_123", &[]);
+        let result = get_email_snapshots_for_content_check(&db, "account_123", &[]);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
         assert!(snapshots.is_empty());
@@ -1726,7 +1939,7 @@ mod tests {
 
         let db = crate::db::ActionDb::from_conn(&conn);
         let result =
-            get_email_snapshots_for_content_check(db, "account_123", &["email_1".to_string()]);
+            get_email_snapshots_for_content_check(&db, "account_123", &["email_1".to_string()]);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 
@@ -1762,7 +1975,7 @@ mod tests {
             "email_3".to_string(),
         ];
         let db = crate::db::ActionDb::from_conn(&conn);
-        let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
+        let result = get_email_snapshots_for_content_check(&db, "account_123", &email_ids);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 
@@ -1795,7 +2008,7 @@ mod tests {
         // Request two emails, only one exists
         let email_ids = vec!["email_1".to_string(), "email_missing".to_string()];
         let db = crate::db::ActionDb::from_conn(&conn);
-        let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
+        let result = get_email_snapshots_for_content_check(&db, "account_123", &email_ids);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 
@@ -1830,7 +2043,7 @@ mod tests {
             "email_2".to_string(),
         ];
         let db = crate::db::ActionDb::from_conn(&conn);
-        let result = get_email_snapshots_for_content_check(db, "account_123", &email_ids);
+        let result = get_email_snapshots_for_content_check(&db, "account_123", &email_ids);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 
@@ -1846,6 +2059,346 @@ mod tests {
         assert_eq!(snapshots["email_3"].subject, Some("Subject 3".to_string()));
     }
 
+    /// DOS-229 — thread-collapse swap reproducer.
+    ///
+    /// Repro for the user-visible "I changed the customer on this email and on
+    /// next reload it reverted" symptom. The WAL-snapshot hypothesis was
+    /// disproven on `dev` (commit 10b7c143). This test demonstrates the real
+    /// shape: `update_email_entity` writes correctly, but the inbox view is
+    /// thread-collapsed via `collapse_to_latest_thread_emails`, which keeps
+    /// the most recently received message per `thread_id`. When a newer
+    /// message arrives in the same thread (or already exists), its
+    /// auto-classified `entity_id` is what the user sees — not the user's
+    /// edit on the older message.
+    ///
+    /// This test FAILS today: it shows the bug. The fix is for
+    /// `update_email_entity` to either (a) propagate the entity to all rows
+    /// in the thread, or for collapse to prefer rows whose entity_id was
+    /// last touched by a user_correction.
+    #[test]
+    fn dos_229_thread_collapse_reverts_user_entity_edit() {
+        use std::path::PathBuf;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path: PathBuf = dir.path().join("dos229_thread.db");
+        let db = crate::db::ActionDb::open_at_unencrypted(path).expect("open db");
+
+        // Two messages in the same thread. Email B is newer (received later).
+        // Both were auto-classified to acc-old at insertion time.
+        let now = chrono::Utc::now();
+        let earlier = (now - chrono::Duration::minutes(10)).to_rfc3339();
+        let later = now.to_rfc3339();
+
+        let mk = |id: &str, received: &str| crate::db::DbEmail {
+            email_id: id.to_string(),
+            thread_id: Some("thread-shared".to_string()),
+            sender_email: Some("sender@example.com".to_string()),
+            sender_name: Some("Sender".to_string()),
+            subject: Some("Re: Renewal".to_string()),
+            snippet: Some("snip".to_string()),
+            priority: Some("medium".to_string()),
+            is_unread: true,
+            received_at: Some(received.to_string()),
+            enrichment_state: "enriched".to_string(),
+            enrichment_attempts: 1,
+            last_enrichment_at: Some(received.to_string()),
+            enriched_at: Some(received.to_string()),
+            last_seen_at: Some(received.to_string()),
+            resolved_at: None,
+            entity_id: Some("acc-old".to_string()),
+            entity_type: Some("account".to_string()),
+            contextual_summary: Some("ctx".to_string()),
+            sentiment: None,
+            urgency: None,
+            user_is_last_sender: false,
+            last_sender_email: Some("sender@example.com".to_string()),
+            message_count: 1,
+            created_at: received.to_string(),
+            updated_at: received.to_string(),
+            relevance_score: Some(0.5),
+            score_reason: None,
+            pinned_at: None,
+            commitments: None,
+            questions: None,
+            is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
+        };
+
+        db.upsert_email(&mk("em-A-older", &earlier)).expect("upsert A");
+        db.upsert_email(&mk("em-B-newer", &later)).expect("upsert B");
+
+        // The inbox renders the LATER row (B) under thread collapse.
+        // Suppose the user clicks the chip on what they see and reassigns it
+        // to acc-new. The chip passes the visible row's email_id, which is B.
+        db.update_email_entity("em-B-newer", Some("acc-new"), Some("account"))
+            .expect("update entity on visible row");
+
+        // Now simulate a silent refresh: a brand-new message C arrives in the
+        // SAME thread (Gmail poll). It carries the auto-classifier's entity_id
+        // (acc-old), and it is the newest received_at.
+        let even_later = (now + chrono::Duration::minutes(5)).to_rfc3339();
+        db.upsert_email(&mk("em-C-newest", &even_later))
+            .expect("upsert C from poll");
+
+        // Re-render the inbox.
+        let all_rows = db.get_all_active_emails().expect("get all");
+        let collapsed = collapse_to_latest_thread_emails(&all_rows);
+
+        // Bug: C wins thread collapse, so the user sees acc-old again.
+        // The user's correction on B is hidden, looking like a revert.
+        assert_eq!(collapsed.len(), 1, "thread collapses to one row");
+        assert_eq!(
+            collapsed[0].entity_id.as_deref(),
+            Some("acc-new"),
+            "DOS-229: user's edit on the visible row should survive a poll \
+             that adds a newer message to the same thread, but currently the \
+             newest row's auto-classified entity_id is what renders"
+        );
+    }
+
+    /// DOS-229 — companion repro showing the same root cause hides a sentiment
+    /// edit. Sentiment is a column on `emails`, not on accounts; the
+    /// "sentiment save" symptom lives at the same surface (account/email
+    /// view that displays the most-recent thread row's sentiment).
+    #[test]
+    fn dos_229_thread_collapse_reverts_sentiment_edit() {
+        use std::path::PathBuf;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path: PathBuf = dir.path().join("dos229_thread_sent.db");
+        let db = crate::db::ActionDb::open_at_unencrypted(path).expect("open db");
+
+        let now = chrono::Utc::now();
+        let earlier = (now - chrono::Duration::minutes(10)).to_rfc3339();
+
+        let mut a = crate::db::DbEmail {
+            email_id: "em-S-A".to_string(),
+            thread_id: Some("thread-S".to_string()),
+            sender_email: Some("sender@example.com".to_string()),
+            sender_name: Some("Sender".to_string()),
+            subject: Some("Re: Renewal".to_string()),
+            snippet: Some("snip".to_string()),
+            priority: Some("medium".to_string()),
+            is_unread: true,
+            received_at: Some(earlier.clone()),
+            enrichment_state: "enriched".to_string(),
+            enrichment_attempts: 1,
+            last_enrichment_at: Some(earlier.clone()),
+            enriched_at: Some(earlier.clone()),
+            last_seen_at: Some(earlier.clone()),
+            resolved_at: None,
+            entity_id: Some("acc-x".to_string()),
+            entity_type: Some("account".to_string()),
+            contextual_summary: Some("ctx".to_string()),
+            sentiment: Some("neutral".to_string()),
+            urgency: None,
+            user_is_last_sender: false,
+            last_sender_email: Some("sender@example.com".to_string()),
+            message_count: 1,
+            created_at: earlier.clone(),
+            updated_at: earlier.clone(),
+            relevance_score: Some(0.5),
+            score_reason: None,
+            pinned_at: None,
+            commitments: None,
+            questions: None,
+            is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
+        };
+        db.upsert_email(&a).expect("upsert A");
+
+        // User edits sentiment on the row they currently see (A is the only one).
+        // DOS-229 fix: route the edit through `update_email_sentiment` which
+        // cascades the new value to every unresolved row in the thread, so the
+        // edit survives newer siblings arriving from a silent Gmail poll.
+        db.update_email_sentiment("em-S-A", Some("positive"))
+            .expect("update sentiment");
+
+        // Silent refresh adds a newer message in the same thread; the
+        // enricher tagged it sentiment=neutral.
+        a.email_id = "em-S-B".to_string();
+        a.received_at = Some((now + chrono::Duration::minutes(5)).to_rfc3339());
+        a.sentiment = Some("neutral".to_string());
+        db.upsert_email(&a).expect("upsert B");
+
+        let all = db.get_all_active_emails().expect("get all");
+        let collapsed = collapse_to_latest_thread_emails(&all);
+        assert_eq!(collapsed.len(), 1, "thread collapses to one row");
+        assert_eq!(
+            collapsed[0].sentiment.as_deref(),
+            Some("positive"),
+            "DOS-229: user's sentiment edit should survive the silent refresh \
+             that adds a newer enriched message; today the newer row's \
+             sentiment overwrites what the user sees"
+        );
+    }
+
+    /// DOS-229 — the cascade must be bounded by `thread_id`. Editing one
+    /// thread's entity must NOT touch any row in a different thread, even if
+    /// other threads share the same prior entity. This is the safety bound
+    /// that keeps `update_email_entity` from becoming a global rewrite.
+    #[test]
+    fn dos_229_entity_cascade_is_bounded_by_thread_id() {
+        use std::path::PathBuf;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path: PathBuf = dir.path().join("dos229_bounded_thread.db");
+        let db = crate::db::ActionDb::open_at_unencrypted(path).expect("open db");
+
+        let now = chrono::Utc::now();
+        let earlier = (now - chrono::Duration::minutes(10)).to_rfc3339();
+        let later = now.to_rfc3339();
+
+        let mk = |id: &str, thread: &str, received: &str| crate::db::DbEmail {
+            email_id: id.to_string(),
+            thread_id: Some(thread.to_string()),
+            sender_email: Some("sender@example.com".to_string()),
+            sender_name: Some("Sender".to_string()),
+            subject: Some("Subj".to_string()),
+            snippet: Some("snip".to_string()),
+            priority: Some("medium".to_string()),
+            is_unread: true,
+            received_at: Some(received.to_string()),
+            enrichment_state: "enriched".to_string(),
+            enrichment_attempts: 1,
+            last_enrichment_at: Some(received.to_string()),
+            enriched_at: Some(received.to_string()),
+            last_seen_at: Some(received.to_string()),
+            resolved_at: None,
+            entity_id: Some("acc-old".to_string()),
+            entity_type: Some("account".to_string()),
+            contextual_summary: Some("ctx".to_string()),
+            sentiment: None,
+            urgency: None,
+            user_is_last_sender: false,
+            last_sender_email: Some("sender@example.com".to_string()),
+            message_count: 1,
+            created_at: received.to_string(),
+            updated_at: received.to_string(),
+            relevance_score: Some(0.5),
+            score_reason: None,
+            pinned_at: None,
+            commitments: None,
+            questions: None,
+            is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
+        };
+
+        // Thread 1 has two siblings. Thread 2 has one row, both currently
+        // pointing at acc-old.
+        db.upsert_email(&mk("t1-A", "thread-1", &earlier))
+            .expect("upsert t1-A");
+        db.upsert_email(&mk("t1-B", "thread-1", &later))
+            .expect("upsert t1-B");
+        db.upsert_email(&mk("t2-X", "thread-2", &later))
+            .expect("upsert t2-X");
+
+        // User reassigns thread 1 to acc-new.
+        db.update_email_entity("t1-B", Some("acc-new"), Some("account"))
+            .expect("update entity on thread-1 row");
+
+        let row_entity = |email_id: &str| -> Option<String> {
+            db.conn_ref()
+                .query_row(
+                    "SELECT entity_id FROM emails WHERE email_id = ?1",
+                    rusqlite::params![email_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .expect("read entity")
+        };
+
+        // Both thread-1 rows must move to acc-new.
+        assert_eq!(row_entity("t1-A").as_deref(), Some("acc-new"));
+        assert_eq!(row_entity("t1-B").as_deref(), Some("acc-new"));
+        // The thread-2 row must be untouched.
+        assert_eq!(
+            row_entity("t2-X").as_deref(),
+            Some("acc-old"),
+            "DOS-229: cascade must be bounded by thread_id; editing one \
+             thread should not bleed into other threads"
+        );
+    }
+
+    /// DOS-229 — the cascade must be bounded by `resolved_at IS NULL`.
+    /// Archived rows in the same thread keep their historical entity so that
+    /// the past correctly reflects what was true when the user archived them.
+    #[test]
+    fn dos_229_entity_cascade_skips_resolved_rows() {
+        use std::path::PathBuf;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path: PathBuf = dir.path().join("dos229_bounded_resolved.db");
+        let db = crate::db::ActionDb::open_at_unencrypted(path).expect("open db");
+
+        let now = chrono::Utc::now();
+        let earlier = (now - chrono::Duration::minutes(10)).to_rfc3339();
+        let later = now.to_rfc3339();
+
+        let mk = |id: &str, received: &str, resolved: Option<&str>| crate::db::DbEmail {
+            email_id: id.to_string(),
+            thread_id: Some("thread-mixed".to_string()),
+            sender_email: Some("sender@example.com".to_string()),
+            sender_name: Some("Sender".to_string()),
+            subject: Some("Subj".to_string()),
+            snippet: Some("snip".to_string()),
+            priority: Some("medium".to_string()),
+            is_unread: true,
+            received_at: Some(received.to_string()),
+            enrichment_state: "enriched".to_string(),
+            enrichment_attempts: 1,
+            last_enrichment_at: Some(received.to_string()),
+            enriched_at: Some(received.to_string()),
+            last_seen_at: Some(received.to_string()),
+            resolved_at: resolved.map(|s| s.to_string()),
+            entity_id: Some("acc-old".to_string()),
+            entity_type: Some("account".to_string()),
+            contextual_summary: Some("ctx".to_string()),
+            sentiment: None,
+            urgency: None,
+            user_is_last_sender: false,
+            last_sender_email: Some("sender@example.com".to_string()),
+            message_count: 1,
+            created_at: received.to_string(),
+            updated_at: received.to_string(),
+            relevance_score: Some(0.5),
+            score_reason: None,
+            pinned_at: None,
+            commitments: None,
+            questions: None,
+            is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
+        };
+
+        // Resolved historical row + active row in the same thread.
+        let resolved_at = (now - chrono::Duration::minutes(5)).to_rfc3339();
+        db.upsert_email(&mk("archived", &earlier, Some(&resolved_at)))
+            .expect("upsert archived");
+        db.upsert_email(&mk("active", &later, None))
+            .expect("upsert active");
+
+        // User reassigns the active row.
+        db.update_email_entity("active", Some("acc-new"), Some("account"))
+            .expect("update entity on active row");
+
+        let row_entity = |email_id: &str| -> Option<String> {
+            db.conn_ref()
+                .query_row(
+                    "SELECT entity_id FROM emails WHERE email_id = ?1",
+                    rusqlite::params![email_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .expect("read entity")
+        };
+
+        assert_eq!(row_entity("active").as_deref(), Some("acc-new"));
+        assert_eq!(
+            row_entity("archived").as_deref(),
+            Some("acc-old"),
+            "DOS-229: archived rows in the same thread must keep their \
+             historical entity_id; cascade is bounded by resolved_at IS NULL"
+        );
+    }
+
     #[test]
     fn test_null_fields_default_to_none() {
         let conn = setup_test_db();
@@ -1859,7 +2412,7 @@ mod tests {
 
         let db = crate::db::ActionDb::from_conn(&conn);
         let result =
-            get_email_snapshots_for_content_check(db, "account_123", &["email_1".to_string()]);
+            get_email_snapshots_for_content_check(&db, "account_123", &["email_1".to_string()]);
         assert!(result.is_ok());
         let snapshots = result.unwrap();
 

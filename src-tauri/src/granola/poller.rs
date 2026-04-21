@@ -339,6 +339,7 @@ fn process_granola_document(
                     source_type: Some("transcript".to_string()),
                     source_id: Some(calendar_event.id.clone()),
                     source_label: Some(calendar_event.title.clone()),
+                    action_kind: crate::action_status::KIND_TASK.to_string(),
                     context: action.context.clone(),
                     waiting_on: None,
                     updated_at: now.clone(),

@@ -608,6 +608,11 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
     let n2 = delete_mock("meeting_entities", "meeting_id");
     summary.push(format!("meeting_entities: {}", n1 + n2));
 
+    // DOS-240: dismissal dictionary — clear by meeting_id / entity_id patterns.
+    let n1 = delete_mock("meeting_entity_dismissals", "meeting_id");
+    let n2 = delete_mock("meeting_entity_dismissals", "entity_id");
+    summary.push(format!("meeting_entity_dismissals: {}", n1 + n2));
+
     let n = delete_mock("meeting_attendees", "person_id");
     summary.push(format!("meeting_attendees: {}", n));
 
@@ -2056,6 +2061,27 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             rusqlite::params![meeting_id, entity_id, entity_type],
         ).map_err(|e| format!("Today meeting-entity link: {}", e))?;
     }
+
+    // DOS-240: seed a meeting-entity dismissal so the fixture scenario exercises
+    // the "dismissed entity stays gone across sync" guard. The Acme Weekly
+    // meeting pretends a user dismissed a stray "mock-initech" resolution —
+    // any calendar-sync / resolver pass that would re-match Initech against
+    // that meeting must now short-circuit before re-inserting the junction row.
+    let dismissal_meeting_id = format!("mock-mtg-acme-weekly-{}", today_str);
+    let dismissed_at = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO meeting_entity_dismissals
+             (meeting_id, entity_id, entity_type, dismissed_at, dismissed_by)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            dismissal_meeting_id,
+            "mock-initech",
+            "account",
+            dismissed_at,
+            Option::<&str>::None,
+        ],
+    )
+    .map_err(|e| format!("Dismissal seed: {}", e))?;
 
     // --- Captures ---
     let capture_rows: Vec<(&str, &str, &str, Option<&str>, &str, &str)> = vec![
@@ -4619,6 +4645,16 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params![signals_json],
     ).ok();
 
+    // ── DOS-15: Seed health_outlook_signals_json on mock accounts ──
+    // Leading signals that complement base enrichment — champion risk, usage
+    // trend, channel sentiment, commercial signals, quote wall. Keeps dev-mode
+    // Health & Outlook tab realistic without touching production data.
+    let health_outlook_signals = r#"{"championRisk":{"championName":"Sarah Chen","atRisk":false,"riskLevel":"low","riskEvidence":["Response time steady under 6 hours","Attended last 4 QBRs"],"tenureSignal":"2.5 years in role","recentRoleChange":null,"emailSentimentTrend30d":"stable_positive","emailResponseTimeTrend":"steady","backupChampionCandidates":[{"name":"Jordan Park","role":"Director of Engineering","why":"Shadows Sarah on technical decisions","engagementLevel":"medium"}]},"productUsageTrend":{"trajectory":"growing","evidenceSummary":"Seat activation up 18% quarter-over-quarter","weeklyActiveUsersTrend":"rising","featureAdoptionHighlights":["Workflow automation now used by 3 teams","API ingestion live since Feb"]},"channelSentiment":{"divergenceDetected":false,"supportTicketTone":"cordial","meetingTone":"collaborative","emailTone":"friendly","summary":"All channels aligned — low-risk"},"transcriptExtraction":{"churnAdjacentQuestions":[],"expansionAdjacentQuestions":[{"question":"Can we extend this to our APAC engineering org?","askedBy":"Sarah Chen","meetingDate":"2026-02-28","meetingTitle":"Q1 QBR","sentiment":"positive","whyItMatters":"Live expansion signal — APAC onboarding already on the milestone list"}]},"commercialSignals":{"arrDirection":"growing","paymentBehavior":"on_time","discountStacking":"minimal","budgetStatus":"confirmed_fy27","procurementFriction":"low"},"advocacyTrack":{"referenceReady":true,"caseStudyWillingness":"expressed_interest","speakingSlotsOffered":[],"referralsMade":1},"quoteWall":[{"speaker":"Sarah Chen","quote":"The workflow automation has genuinely changed how we ship.","meetingDate":"2026-02-28","meetingTitle":"Q1 QBR","topicTags":["adoption","value"],"sentiment":"positive","publicSafeConfidence":"high"}]}"#;
+    conn.execute(
+        "UPDATE entity_assessment SET health_outlook_signals_json = ?1 WHERE entity_id = 'mock-acme-corp'",
+        rusqlite::params![health_outlook_signals],
+    ).ok();
+
     Ok(())
 }
 
@@ -4713,6 +4749,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             band: "green".into(),
             source: HealthSource::Computed,
             confidence: 0.85,
+            sufficient_data: true,
             trend: HealthTrend {
                 direction: "stable".into(),
                 rationale: Some("Strong Phase 1 execution offset by NPS concerns and Alex Torres departure".into()),
@@ -4737,9 +4774,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             SuccessMetric { name: "Platform Adoption".into(), target: Some("80%+".into()), current: Some("85%".into()), status: Some("on_track".into()), owner: None },
         ]),
         open_commitments: Some(vec![
-            OpenCommitment { description: "Finalize Phase 2 SOW with legal".into(), owner: Some("Legal / us".into()), due_date: Some(date_only(7)), source: Some("meeting".into()), status: Some("blocked".into()), item_source: None, discrepancy: None },
-            OpenCommitment { description: "Complete Alex Torres knowledge transfer".into(), owner: Some("Alex Torres + team".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
-            OpenCommitment { description: "Address NPS detractor concerns".into(), owner: Some("CS team".into()), due_date: Some(date_only(21)), source: Some("NPS survey".into()), status: Some("in_progress".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Finalize Phase 2 SOW with legal".into(), owner: Some("Legal / us".into()), due_date: Some(date_only(7)), source: Some("meeting".into()), status: Some("blocked".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Complete Alex Torres knowledge transfer".into(), owner: Some("Alex Torres + team".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Address NPS detractor concerns".into(), owner: Some("CS team".into()), due_date: Some(date_only(21)), source: Some("NPS survey".into()), status: Some("in_progress".into()), item_source: None, discrepancy: None },
         ]),
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("strong".into()),
@@ -4752,8 +4789,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             CompetitiveInsight { competitor: "Contoso Platform".into(), threat_level: Some("mentioned".into()), context: Some("Pat Kim mentioned evaluating Contoso for APAC deployment".into()), source: Some("meeting".into()), detected_at: Some(days_ago_rfc(14)), item_source: None, discrepancy: None },
         ],
         strategic_priorities: vec![
-            StrategicPriority { priority: "Phase 2 Expansion".into(), status: Some("active".into()), owner: Some("Sarah Chen".into()), source: Some("meeting".into()), timeline: Some("Q2 2026".into()) },
-            StrategicPriority { priority: "APAC Pilot (Singapore)".into(), status: Some("paused".into()), owner: Some("Pat Kim".into()), source: Some("meeting".into()), timeline: Some("H2 2026".into()) },
+            StrategicPriority { priority: "Phase 2 Expansion".into(), status: Some("active".into()), owner: Some("Sarah Chen".into()), source: Some("meeting".into()), timeline: Some("Q2 2026".into()), context: None },
+            StrategicPriority { priority: "APAC Pilot (Singapore)".into(), status: Some("paused".into()), owner: Some("Pat Kim".into()), source: Some("meeting".into()), timeline: Some("H2 2026".into()), context: None },
         ],
         // Dimension 2: Relationship Health
         coverage_assessment: Some(CoverageAssessment {
@@ -4930,6 +4967,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             band: "red".into(),
             source: HealthSource::Computed,
             confidence: 0.78,
+            sufficient_data: true,
             trend: HealthTrend {
                 direction: "declining".into(),
                 rationale: Some("Team B decline and executive sponsor departure offsetting expansion wins".into()),
@@ -4953,9 +4991,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             SuccessMetric { name: "Team B Usage".into(), target: Some("stable".into()), current: Some("-20% MoM".into()), status: Some("critical".into()), owner: None },
         ]),
         open_commitments: Some(vec![
-            OpenCommitment { description: "Address Team B usage decline before QBR".into(), owner: Some("CS + Product".into()), due_date: Some(date_only(5)), source: Some("meeting".into()), status: Some("in_progress".into()), item_source: None, discrepancy: None },
-            OpenCommitment { description: "Secure renewal commitment".into(), owner: Some("Account team".into()), due_date: Some(date_only(45)), source: Some("renewal".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
-            OpenCommitment { description: "Identify Pat Reynolds' successor".into(), owner: Some("Account team".into()), due_date: Some(date_only(30)), source: Some("meeting".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Address Team B usage decline before QBR".into(), owner: Some("CS + Product".into()), due_date: Some(date_only(5)), source: Some("meeting".into()), status: Some("in_progress".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Secure renewal commitment".into(), owner: Some("Account team".into()), due_date: Some(date_only(45)), source: Some("renewal".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Identify Pat Reynolds' successor".into(), owner: Some("Account team".into()), due_date: Some(date_only(30)), source: Some("meeting".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
         ]),
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("moderate".into()),
@@ -4967,8 +5005,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             CompetitiveInsight { competitor: "Contoso Platform".into(), threat_level: Some("evaluation".into()), context: Some("Casey Lee actively evaluating Contoso for Team B replacement".into()), source: Some("email".into()), detected_at: Some(days_ago_rfc(7)), item_source: None, discrepancy: None },
         ],
         strategic_priorities: vec![
-            StrategicPriority { priority: "Renewal Commitment".into(), status: Some("at_risk".into()), owner: Some("Account team".into()), source: Some("renewal cycle".into()), timeline: Some(date_only(45)) },
-            StrategicPriority { priority: "Team B Recovery".into(), status: Some("active".into()), owner: Some("CS team".into()), source: Some("usage data".into()), timeline: Some("Before QBR".into()) },
+            StrategicPriority { priority: "Renewal Commitment".into(), status: Some("at_risk".into()), owner: Some("Account team".into()), source: Some("renewal cycle".into()), timeline: Some(date_only(45)), context: None },
+            StrategicPriority { priority: "Team B Recovery".into(), status: Some("active".into()), owner: Some("CS team".into()), source: Some("usage data".into()), timeline: Some("Before QBR".into()), context: None },
         ],
         coverage_assessment: Some(CoverageAssessment {
             role_fill_rate: Some(0.5),
@@ -5132,6 +5170,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             band: "yellow".into(),
             source: HealthSource::Computed,
             confidence: 0.65,
+            sufficient_data: true,
             trend: HealthTrend {
                 direction: "stable".into(),
                 rationale: Some("Phase 1 success builds credibility but limited engagement history".into()),
@@ -5155,8 +5194,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             SuccessMetric { name: "Phase 1 Completion".into(), target: Some("100%".into()), current: Some("100%".into()), status: Some("on_track".into()), owner: None },
         ]),
         open_commitments: Some(vec![
-            OpenCommitment { description: "Get Phase 2 budget approved".into(), owner: Some("Dana Patel / Finance".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("blocked".into()), item_source: None, discrepancy: None },
-            OpenCommitment { description: "Schedule Phase 2 kickoff".into(), owner: Some("Account team".into()), due_date: None, source: Some("meeting".into()), status: Some("waiting".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Get Phase 2 budget approved".into(), owner: Some("Dana Patel / Finance".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("blocked".into()), item_source: None, discrepancy: None },
+            OpenCommitment { commitment_id: None, description: "Schedule Phase 2 kickoff".into(), owner: Some("Account team".into()), due_date: None, source: Some("meeting".into()), status: Some("waiting".into()), item_source: None, discrepancy: None },
         ]),
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("developing".into()),
@@ -5166,7 +5205,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         }),
         competitive_context: vec![],
         strategic_priorities: vec![
-            StrategicPriority { priority: "Phase 2 Expansion".into(), status: Some("paused".into()), owner: Some("Dana Patel".into()), source: Some("meeting".into()), timeline: Some("Pending budget".into()) },
+            StrategicPriority { priority: "Phase 2 Expansion".into(), status: Some("paused".into()), owner: Some("Dana Patel".into()), source: Some("meeting".into()), timeline: Some("Pending budget".into()), context: None },
         ],
         coverage_assessment: Some(CoverageAssessment {
             role_fill_rate: Some(0.5),
@@ -5879,6 +5918,60 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     // I645: entity_feedback_events and suppression_tombstones are populated
     // by user actions (thumbs/dismiss/accept). No mock seeds — start empty.
 
+    // DOS-228 Fix 3: seed two risk_briefing_jobs rows so dev mode exercises
+    // the full UI surface — one successful (complete) and one failed (retry
+    // affordance). Globex is the "needs retry" case and Acme is "complete"
+    // so engineers can visually diff the two states without running the
+    // real PTY pipeline.
+    let one_hour_ago = (now - chrono::Duration::hours(1)).to_rfc3339();
+    let five_min_ago = (now - chrono::Duration::minutes(5)).to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO risk_briefing_jobs
+            (account_id, status, enqueued_at, completed_at, error_message)
+         VALUES (?1, 'complete', ?2, ?3, NULL)",
+        rusqlite::params!["mock-acme-corp", &one_hour_ago, &five_min_ago],
+    )
+    .map_err(|e| format!("Seed risk_briefing_jobs (acme): {}", e))?;
+    conn.execute(
+        "INSERT OR REPLACE INTO risk_briefing_jobs
+            (account_id, status, enqueued_at, completed_at, error_message)
+         VALUES (?1, 'failed', ?2, ?3, ?4)",
+        rusqlite::params![
+            "mock-globex-industries",
+            &one_hour_ago,
+            &five_min_ago,
+            "Claude Code timeout after 30s — retry to re-run",
+        ],
+    )
+    .map_err(|e| format!("Seed risk_briefing_jobs (globex): {}", e))?;
+
+    // DOS-228 Wave 0e Fix 2: attempt_id for the two seeded rows. Both are
+    // terminal states so no live runner will touch them, but the column is
+    // NOT NULL-friendly only after a successful generation; we seed non-NULL
+    // values so devtools exercises the same code path production hits.
+    conn.execute(
+        "UPDATE risk_briefing_jobs SET attempt_id = 'seed-acme-attempt' WHERE account_id = ?1",
+        rusqlite::params!["mock-acme-corp"],
+    )
+    .map_err(|e| format!("Seed risk_briefing_jobs attempt_id (acme): {}", e))?;
+    conn.execute(
+        "UPDATE risk_briefing_jobs SET attempt_id = 'seed-globex-attempt' WHERE account_id = ?1",
+        rusqlite::params!["mock-globex-industries"],
+    )
+    .map_err(|e| format!("Seed risk_briefing_jobs attempt_id (globex): {}", e))?;
+
+    // DOS-228 Wave 0e Fix 3: seed one health_recompute_pending row so dev
+    // mode exercises the startup-drain path at least once. The drain is
+    // idempotent — if a real edit landed before devtools re-seeded, the
+    // next schedule_recompute simply re-marks this row.
+    let now_iso = now.to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO health_recompute_pending (account_id, requested_at)
+         VALUES (?1, ?2)",
+        rusqlite::params!["mock-acme-corp", &now_iso],
+    )
+    .map_err(|e| format!("Seed health_recompute_pending: {}", e))?;
+
     Ok(())
 }
 
@@ -5912,8 +6005,10 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
             account: account.map(|s| s.to_string()),
             attendees: attendees.into_iter().map(String::from).collect(),
             is_all_day: false,
+            series_id: None,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         }
     };
 

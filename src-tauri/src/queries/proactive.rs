@@ -359,6 +359,7 @@ mod tests {
             source_type: None,
             source_id: None,
             source_label: None,
+            action_kind: crate::action_status::KIND_TASK.to_string(),
             context: None,
             waiting_on: None,
             updated_at: "2026-02-10T08:00:00Z".to_string(),
@@ -388,8 +389,10 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         }
     }
 

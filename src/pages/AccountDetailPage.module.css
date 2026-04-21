@@ -1,0 +1,12 @@
+@import '../styles/design-tokens.css';
+
+/* Each view wrapper is a plain flow container. The first child owns its
+ * own top padding — SentimentHero has `padding-top: var(--space-2xl)`,
+ * AccountPullQuote brings its own spacing, MarginSection has its frame.
+ * Stacking an extra `padding-top: var(--space-xl)` at the wrapper level
+ * double-counted against whatever the first child already provided and
+ * produced an orphan ~32px gap below the hero.
+ */
+.view {
+  display: block;
+}

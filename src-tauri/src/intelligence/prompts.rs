@@ -2394,6 +2394,8 @@ struct AiIntelResponse {
     #[serde(default)]
     strategic_priorities: Vec<super::io::StrategicPriority>,
     #[serde(default)]
+    market_context: Vec<super::io::MarketContextItem>,
+    #[serde(default)]
     coverage_assessment: Option<super::io::CoverageAssessment>,
     #[serde(default)]
     organizational_changes: Vec<super::io::OrgChange>,
@@ -2453,6 +2455,7 @@ fn legacy_health_to_account_health(
         band: band.to_string(),
         source: super::io::HealthSource::Computed,
         confidence: 0.3,
+        sufficient_data: false, // DOS-84: LLM-derived scores lack dimension data
         trend: super::io::HealthTrend {
             direction: health_trend
                 .as_ref()
@@ -2488,6 +2491,8 @@ struct AiSuccessMetric {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiOpenCommitment {
+    #[serde(default)]
+    commitment_id: Option<String>,
     description: String,
     #[serde(default)]
     owner: Option<String>,
@@ -3038,6 +3043,7 @@ fn try_parse_json_response(
             commits
                 .into_iter()
                 .map(|c| super::io::OpenCommitment {
+                    commitment_id: c.commitment_id,
                     description: c.description,
                     owner: c.owner,
                     due_date: c.due_date,
@@ -3062,6 +3068,7 @@ fn try_parse_json_response(
         // I508b: map LLM-returned dimension fields into IntelligenceJson
         competitive_context: ai_resp.competitive_context,
         strategic_priorities: ai_resp.strategic_priorities,
+        market_context: ai_resp.market_context,
         coverage_assessment: ai_resp.coverage_assessment,
         organizational_changes: ai_resp.organizational_changes,
         internal_team: ai_resp.internal_team,

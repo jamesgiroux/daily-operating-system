@@ -384,6 +384,7 @@ async fn process_sync_row(
                             source_type: Some("transcript".to_string()),
                             source_id: Some(calendar_event.id.clone()),
                             source_label: Some(calendar_event.title.clone()),
+                            action_kind: crate::action_status::KIND_TASK.to_string(),
                             context: None,
                             waiting_on: None,
                             updated_at: now.clone(),

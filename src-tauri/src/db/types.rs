@@ -8,6 +8,10 @@ fn default_email_signal_source() -> String {
     "email_enrichment".to_string()
 }
 
+fn default_action_kind() -> String {
+    crate::action_status::KIND_TASK.to_string()
+}
+
 /// Errors specific to database operations.
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -46,6 +50,9 @@ pub struct DbAction {
     pub source_type: Option<String>,
     pub source_id: Option<String>,
     pub source_label: Option<String>,
+    /// Discriminator between generic tasks and AI-inferred commitments (DOS Work-tab).
+    #[serde(default = "default_action_kind")]
+    pub action_kind: String,
     pub context: Option<String>,
     pub waiting_on: Option<String>,
     pub updated_at: String,
@@ -209,6 +216,12 @@ pub struct DbAccount {
     /// I644: Free-text notes (promoted from dashboard.json).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    /// DOS-110: User's manual health sentiment assessment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_health_sentiment: Option<String>,
+    /// DOS-110: When the user last set their health sentiment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment_set_at: Option<String>,
 }
 
 /// Parameters for writing a source reference row (I644).
@@ -581,6 +594,17 @@ pub struct DbEmail {
     pub commitments: Option<String>,
     /// JSON array of extracted questions (I580).
     pub questions: Option<String>,
+    /// DOS-242: when true, hide this email from inbox / Records / signal
+    /// emission. Set during upsert by `should_suppress_email`. Flip back
+    /// to false via `unsuppress_email` rescue command.
+    #[serde(default)]
+    pub is_noise: bool,
+    /// DOS-258: comma-separated To recipient addresses (bare lowercase).
+    /// Populated from Gmail To header at sync time. Used by P4b/P4c domain matching.
+    pub to_recipients: Option<String>,
+    /// DOS-258: comma-separated Cc recipient addresses (bare lowercase).
+    /// Populated from Gmail Cc header at sync time. Used by P4b/P4c domain matching.
+    pub cc_recipients: Option<String>,
 }
 
 /// Email sync statistics for the frontend sync status indicator (I373).
@@ -588,10 +612,32 @@ pub struct DbEmail {
 #[serde(rename_all = "camelCase")]
 pub struct EmailSyncStats {
     pub last_fetch_at: Option<String>,
+    /// DOS-31: Last time the Gmail fetch itself completed successfully,
+    /// independent of whether enrichment succeeded. Used to distinguish
+    /// "fetch is healthy but enrichment is stuck" from "we can't reach Gmail".
+    pub last_successful_fetch_at: Option<String>,
     pub total: i32,
     pub enriched: i32,
     pub pending: i32,
     pub failed: i32,
+    /// DOS-29: subset of `failed` that has exhausted automatic retry attempts.
+    /// These are the rows the user-facing "couldn't be enriched" UX surfaces;
+    /// rows in `failed` but below the auto-retry cap are silently re-attempted
+    /// by the next refresh and shouldn't bother the user.
+    pub permanently_failed: i32,
+}
+
+/// DOS-29: Lightweight preview of a permanently-failed email for the
+/// "View details" expansion on the EmailsPage failure UX.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FailedEmailPreview {
+    pub email_id: String,
+    pub subject: Option<String>,
+    pub sender_email: Option<String>,
+    pub sender_name: Option<String>,
+    pub last_enrichment_at: Option<String>,
+    pub auto_retry_count: i32,
 }
 
 /// Stakeholder relationship signals computed from meeting history and account data (I43).

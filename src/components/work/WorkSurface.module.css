@@ -1,0 +1,659 @@
+/* ==========================================================================
+ * WorkSurface.module.css — Work tab (DOS-13)
+ *
+ * Workbench, not todo list. Zero-guilt execution surface.
+ * Colocated styles for the 8-chapter Work view components:
+ *   NumberedFocusList, ProgramPill, CommitmentCard, SuggestionCard,
+ *   SharedRefRow, RecentlyLandedRow, ReportCard, NudgeRow, VisibilityPill.
+ *
+ * Token + typography fidelity verified against
+ *   .docs/mockups/account-work-globex.html
+ * ========================================================================= */
+
+/* ═════════ Shared freshness strip (chapter sublabel style) ═════════ */
+.sublabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-text-secondary);
+  margin: 8px 0 0 0;
+}
+
+/* ═════════ CHAPTER 1 — 90-DAY FOCUS (editorial numbered list) ═════════ */
+.focusList {
+  display: flex;
+  flex-direction: column;
+  gap: 56px;
+  padding-top: 24px;
+}
+.focusItem {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 32px;
+  align-items: baseline;
+}
+.focusNumeral {
+  font-family: var(--font-serif);
+  font-size: 72px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--color-rule-heavy);
+  letter-spacing: -0.03em;
+  text-align: right;
+  padding-top: 4px;
+}
+.focusBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.focusHeadline {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.focusPara {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  max-width: 680px;
+  margin: 0;
+}
+.focusProvenance {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-text-tertiary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  padding-top: 4px;
+}
+.focusProvenanceLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-right: 4px;
+}
+.citeChip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  border-bottom: 1px dotted var(--color-text-tertiary);
+  text-decoration: none;
+  white-space: nowrap;
+  padding-bottom: 1px;
+}
+.citeChip:hover {
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric);
+}
+
+/* ═════════ CHAPTER 2 — PROGRAMS & MOTIONS ═════════ */
+.programsRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  padding-top: 8px;
+}
+.programPill {
+  padding: 32px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 10px;
+  border-left: 2px solid var(--color-spice-turmeric);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.programState {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-spice-turmeric);
+}
+.programDescription {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+
+@media (max-width: 900px) {
+  .programsRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ═════════ CHAPTER 3 — COMMITMENTS ═════════ */
+.commitmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+.commitmentCard {
+  padding: 32px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.commitmentHeadline {
+  font-family: var(--font-serif);
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+/* DOS Work-tab Phase 3: top-4 emphasis for Commitments chapter.
+   Mockup uses a uniform 19px serif 400; emphasis lifts the first few cards
+   with a slight size bump only — weight stays at 400 so the list stays in
+   the editorial serif register rather than reading as two weights.
+   v1.2.1 QA: user reported base 19px/400 cards were reading too heavy
+   because the emphasis bump to 600 raised the whole chapter's perceived
+   weight. */
+.commitmentHeadlineEmphasis {
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+/* Inline click-to-edit affordance for the commitment owner/due fields.
+   Matches the saffron-underline cue used by the global inline-edit pattern
+   (EditableText flips to a terracotta underline while editing; this
+   reveals the same hover background as EditableText.module.css). */
+.inlineEditable {
+  cursor: text;
+  border-radius: 2px;
+  transition: background 0.15s ease;
+  padding: 0 2px;
+}
+.inlineEditable:hover {
+  background: var(--color-desk-charcoal-5);
+}
+.commitmentMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+.commitmentMetaRow strong {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+.commitmentOwnerRow {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.commitmentOwnerRow strong {
+  font-weight: 600;
+}
+.pillRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ── Audience pill ── */
+.audiencePill {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 5px 14px;
+  border-radius: 100px;
+}
+.audienceCustomer {
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-rosemary);
+}
+.audienceInternal {
+  background: var(--color-desk-charcoal-8);
+  color: var(--color-text-secondary);
+}
+
+/* ── Visibility pill (Private / Shared) ── */
+.visibilityPill {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 5px 14px;
+  border-radius: 100px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+.visibilityPill::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.visibilityPrivate {
+  background: var(--color-desk-charcoal-8);
+  color: var(--color-text-secondary);
+}
+.visibilityPrivate::before {
+  background: var(--color-text-tertiary);
+}
+.visibilityShared {
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-rosemary);
+  border-bottom: 1px dotted var(--color-garden-rosemary);
+}
+.visibilityShared::before {
+  background: var(--color-garden-sage);
+}
+
+/* ── Soft nudge (non-guilt flag inside a commitment) ── */
+.softNudge {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  color: #a6862c;
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 4px 4px 0;
+  padding: 8px 16px;
+  line-height: 1.5;
+}
+.softNudgeLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  font-style: normal;
+  color: #a6862c;
+  margin-right: 8px;
+}
+.linearStatusNote {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  padding: 4px 0;
+}
+
+.commitmentActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 16px;
+  margin-top: 4px;
+  border-top: 1px dashed var(--color-rule-light);
+  align-items: center;
+}
+
+/* ── Work buttons (shared across commitments, suggestions, nudges, reports) ── */
+.workBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary);
+  padding: 7px 13px;
+  border-radius: 100px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.workBtn:hover {
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text-primary);
+}
+.workBtnPrimary {
+  background: var(--color-desk-charcoal);
+  color: var(--color-paper-cream);
+  border-color: var(--color-desk-charcoal);
+}
+.workBtnPrimary:hover {
+  background: var(--color-desk-ink);
+  border-color: var(--color-desk-ink);
+  /* v1.2.1 QA fix: .workBtn:hover flipped color to text-primary (black),
+     fighting the cream base on primary buttons. Re-assert cream here so
+     Mark done stays legible on hover without introducing !important. */
+  color: var(--color-paper-cream);
+}
+.workBtnAccent {
+  background: var(--color-spice-turmeric);
+  color: white;
+  border-color: var(--color-spice-turmeric);
+}
+.workBtnAccent:hover {
+  background: #b58f1f;
+  border-color: #b58f1f;
+  color: white;
+}
+.workBtnMuted {
+  color: var(--color-text-tertiary);
+  border-color: transparent;
+  background: none;
+}
+.workBtnMuted:hover {
+  color: var(--color-text-secondary);
+}
+
+/* ═════════ CHAPTER 4 — SUGGESTIONS (saffron) ═════════ */
+.recList {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+.recCard {
+  padding: 24px 32px;
+  background: var(--color-spice-saffron-10);
+  border-left: 3px solid var(--color-spice-saffron);
+  border-radius: 0 10px 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.recLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #a6862c;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.recLabel::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-spice-saffron);
+}
+.recHeadline {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.recRationale {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  max-width: 680px;
+  margin: 0;
+}
+.recProvenance {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+.recActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+  align-items: center;
+}
+.recDismissHint {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  margin-left: auto;
+}
+
+/* ═════════ CHAPTER 5 — SHARED WITH THE TEAM ═════════ */
+.sharedSubsectionLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  margin-top: 32px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+.sharedSubsectionLabel:first-of-type {
+  margin-top: 16px;
+}
+.refRow {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 24px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.refRow:last-child {
+  border-bottom: none;
+}
+.refRowId {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-garden-rosemary);
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--color-garden-rosemary);
+}
+.refRowBody {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
+.refRowBody strong {
+  font-weight: 500;
+}
+.refRowSub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+}
+.refRowMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+/* ═════════ CHAPTER 6 — RECENTLY LANDED ═════════ */
+.timelineList {
+  display: flex;
+  flex-direction: column;
+  padding-top: 8px;
+}
+.timelineRow {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: 32px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.timelineRow:last-child {
+  border-bottom: none;
+}
+.timelineDate {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-garden-rosemary);
+}
+.timelineEvent {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.timelineSource {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+}
+.timelineDelivered {
+  color: var(--color-garden-rosemary);
+}
+
+/* ═════════ CHAPTER 7 — OUTPUTS ═════════ */
+.reportGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  padding-top: 8px;
+}
+@media (max-width: 900px) {
+  .reportGrid {
+    grid-template-columns: 1fr;
+  }
+}
+.reportCard {
+  padding: 32px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 220px;
+}
+.reportType {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-spice-turmeric);
+}
+.reportTitle {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.reportGen {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  line-height: 1.55;
+  margin-top: auto;
+}
+.reportActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--color-rule-light);
+}
+.reportFooterNote {
+  margin-top: 32px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  line-height: 1.6;
+  max-width: 620px;
+}
+
+/* ═════════ CHAPTER 8 — NUDGES (rows, hidden when empty) ═════════ */
+.nudgeList {
+  display: flex;
+  flex-direction: column;
+  padding-top: 8px;
+}
+.nudgeRow {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.nudgeRow:last-child {
+  border-bottom: none;
+}
+.nudgeHeadline {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  letter-spacing: -0.005em;
+  margin: 0;
+}
+.nudgeBody {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 680px;
+  margin: 0;
+}
+.nudgeActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-top: 4px;
+}
+.nudgeLeaveAsIs {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+}

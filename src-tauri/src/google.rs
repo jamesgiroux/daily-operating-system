@@ -246,6 +246,25 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Populate people from calendar attendees (I51)
                 let sync_intel = populate_people_from_events(&events, &state, &workspace);
 
+                // DOS-258 Lane D: run deterministic entity linking for each event.
+                for event in &events {
+                    if let Err(e) =
+                        crate::services::entity_linking::calendar_adapter::evaluate_meeting(
+                            state.clone(),
+                            event,
+                            crate::services::entity_linking::Trigger::CalendarPoll,
+                        )
+                        .await
+                    {
+                        log::debug!(
+                            "entity_linking: evaluate_meeting '{}' ({}): {}",
+                            event.title,
+                            event.id,
+                            e,
+                        );
+                    }
+                }
+
                 // Trigger intelligence lifecycle for new/changed meetings (ADR-0081).
                 // Spawn so the calendar poll loop isn't blocked by AI enrichment.
                 // Emits `entity-updated` after all enrichment completes so the
@@ -756,16 +775,12 @@ fn populate_people_from_events(
             }
         }
 
-        // I653 FIX 3: Persist classification-time entity links to meeting_entities
-        if let Some(ref entities) = event.classified_entities {
-            if !entities.is_empty() {
-                let _ = crate::services::meetings::persist_classification_entities(
-                    &db,
-                    &meeting_id,
-                    entities,
-                );
-            }
-        }
+        // DOS-258: entity linking is now handled by evaluate_meeting() in the
+        // async calendar poll loop (run_calendar_poller), which runs the
+        // deterministic P1-P11 engine and writes to linked_entities_raw.
+        // persist_classification_entities_scored / persist_classification_entities
+        // have been removed — they wrote to the old meeting_entities table and
+        // would conflict with the new engine's dismissal-wins-race guarantee.
 
         for email in &event.attendees {
             let email_lower = email.to_lowercase();
@@ -1488,8 +1503,10 @@ mod tests {
             account: account.map(|a| a.to_string()),
             attendees: vec![],
             is_all_day: false,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         }
     }
 
@@ -1623,8 +1640,10 @@ mod tests {
             account: Some("acme".to_string()),
             attendees: vec![],
             is_all_day: true,
+        series_id: None,
             linked_entities: None,
             classified_entities: None,
+            scored_classified_entities: None,
         };
 
         assert!(event.is_all_day || !PREP_ELIGIBLE_TYPES.contains(&event.meeting_type));

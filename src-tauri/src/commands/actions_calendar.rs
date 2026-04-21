@@ -122,6 +122,22 @@ pub async fn unarchive_email(
     Ok(())
 }
 
+/// DOS-242: rescue an email previously suppressed by the noise filter.
+/// Clears `is_noise = 0`, causing the email to surface in inbox/Records again.
+/// Emits `emails-updated` so all pages refresh.
+#[tauri::command]
+pub async fn unsuppress_email(
+    email_id: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| crate::services::emails::unsuppress_email(db, &email_id))
+        .await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(())
+}
+
 /// Toggle pin on an email. Returns the new pinned state (true = pinned).
 #[tauri::command]
 pub async fn pin_email(
@@ -254,13 +270,75 @@ pub async fn resolve_decision(
         .await
 }
 
-/// Get all suggested (AI-suggested) actions (I256).
+/// Get suggested (AI-suggested) actions.
+///
+/// Default (`show_all` unset or false): scopes to the current user's own
+/// commitments + unassigned rows based on `user_entity.name`. This is the
+/// behaviour the UI should use for the main "Suggested" list — AI
+/// extraction tags every speaker in a transcript as a potential owner, so
+/// the unfiltered result on a real workspace is mostly other people's
+/// work (observed 355 rows total, 26 actually owned by the user).
+///
+/// `show_all: Some(true)` returns every backlog row regardless of owner,
+/// for a "Show everyone's" toggle.
 #[tauri::command]
 pub async fn get_suggested_actions(
     state: State<'_, Arc<AppState>>,
+    show_all: Option<bool>,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    if show_all.unwrap_or(false) {
+        state
+            .db_read(crate::services::actions::get_suggested_actions)
+            .await
+    } else {
+        state
+            .db_read(crate::services::actions::get_suggested_actions_for_user)
+            .await
+    }
+}
+
+/// DOS Work-tab Phase 3: open commitments for the Work tab Commitments chapter.
+///
+/// Returns rows with `action_kind = 'commitment'` AND status in
+/// (backlog, unstarted, started). Sort: status ASC (backlog first), then
+/// `created_at DESC`.
+#[tauri::command]
+pub async fn get_account_commitments(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAction>, String> {
     state
-        .db_read(crate::services::actions::get_suggested_actions)
+        .db_read(move |db| crate::services::actions::get_account_commitments(db, &account_id))
+        .await
+}
+
+/// DOS Work-tab Phase 3: backlog suggestions for the Work tab Suggestions chapter.
+///
+/// Returns `status = 'backlog'` rows for the account (any `action_kind`).
+/// Backlog commitments and backlog tasks both surface as suggestions until
+/// accepted (backlog → unstarted) or rejected (→ archived).
+#[tauri::command]
+pub async fn get_account_suggestions(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    state
+        .db_read(move |db| crate::services::actions::get_account_suggestions(db, &account_id))
+        .await
+}
+
+/// DOS Work-tab Phase 3: recently landed (completed) actions for the Work
+/// tab Recently landed chapter.
+///
+/// Returns `status = 'completed'` rows with `completed_at >= now - 30 days`
+/// for the account. Sort: `completed_at DESC`. Cap 20.
+#[tauri::command]
+pub async fn get_account_recently_landed(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    state
+        .db_read(move |db| crate::services::actions::get_account_recently_landed(db, &account_id))
         .await
 }
 
@@ -793,6 +871,10 @@ pub struct CreateActionRequest {
     pub person_id: Option<String>,
     pub context: Option<String>,
     pub source_label: Option<String>,
+    /// DOS Work-tab Phase 1: discriminator between generic tasks and AI-inferred
+    /// commitments. Defaults to `task` when absent.
+    #[serde(default)]
+    pub action_kind: Option<String>,
 }
 
 #[tauri::command]

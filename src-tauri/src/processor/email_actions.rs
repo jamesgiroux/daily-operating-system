@@ -61,7 +61,7 @@ pub fn extract_email_commitments(
                 .with_trigger("email_actions")
                 .with_tier(ModelTier::Extraction),
         )
-        .with_timeout(30)
+        .with_timeout(90)
         .with_nice_priority(10);
 
     let output = match pty.spawn_claude(workspace, &prompt) {
@@ -107,6 +107,7 @@ pub fn extract_email_commitments(
             source_type: Some("email".to_string()),
             source_id: Some(email_id.to_string()),
             source_label: Some(subject.to_string()),
+            action_kind: crate::action_status::KIND_TASK.to_string(),
             context: Some(format!(
                 "From: {} — {}",
                 from_email, commitment.commitment_type

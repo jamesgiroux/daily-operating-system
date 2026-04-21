@@ -1,6 +1,6 @@
 [package]
 name = "dailyos"
-version = "1.2.0"
+version = "1.2.1"
 default-run = "dailyos"
 description = "Operational intelligence for your workday. Open the app, your day is ready."
 authors = ["DailyOS"]
@@ -72,7 +72,7 @@ strsim = "0.11"
 dashmap = "6"
 
 # Non-poisoning Mutex/RwLock — prevents cascade crashes when a task panics while holding a lock
-parking_lot = "0.12"
+parking_lot = { version = "0.12", features = ["arc_lock"] }
 tempfile = "3"
 
 # MCP Server (ADR-0075) + Quill MCP client

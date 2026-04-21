@@ -131,6 +131,54 @@ export interface LinkedEntity {
   id: string;
   name: string;
   entityType: "account" | "project" | "person";
+  /** DOS-74: per-junction confidence (0.0 – 1.0). Higher = stronger match. */
+  confidence?: number;
+  /** DOS-74: true if this is the primary entity for the meeting. */
+  isPrimary?: boolean;
+  /** DOS-74: true for low-confidence siblings rendered as muted suggestions. */
+  suggested?: boolean;
+  /**
+   * DOS-258: deterministic link role from the new entity linking engine.
+   * Supersedes isPrimary + suggested when present.
+   */
+  role?: LinkRole;
+  /** DOS-258: rule identifier that produced this link (e.g. "P5", "P9"). */
+  appliedRule?: string | null;
+}
+
+// ─── DOS-258: New entity linking vocabulary ───────────────────────────────────
+
+/** Role of a linked entity in the context of its owner (meeting / email / thread). */
+export type LinkRole = "primary" | "related" | "auto_suggested" | "user_dismissed";
+
+/** Tier describes how much entity context is available for an owner. */
+export type LinkTier = "entity" | "person" | "minimal" | "skip";
+
+/** Owner surface types for entity linking. */
+export type OwnerType = "meeting" | "email" | "email_thread";
+
+/** A resolved entity chip as produced by the DOS-258 link engine. */
+export interface LinkedEntityChip {
+  entityId: string;
+  entityType: string;
+  role: LinkRole;
+  confidence: number | null;
+  appliedRule: string | null;
+  source: string;
+}
+
+/**
+ * Full link outcome for a single owner (meeting / email / thread).
+ * primary === null + related.length > 0 + tier === 'entity' is the P9
+ * ambiguous case that triggers the EntityLinkPicker.
+ */
+export interface LinkOutcome {
+  ownerType: OwnerType;
+  ownerId: string;
+  primary: { entityId: string; entityType: string } | null;
+  related: Array<{ entityId: string; entityType: string }>;
+  tier: LinkTier;
+  appliedRule: string | null;
 }
 
 export interface Meeting {
@@ -217,6 +265,8 @@ export interface DbAction {
   sourceType?: string;
   sourceId?: string;
   sourceLabel?: string;
+  /** DOS Work-tab Phase 1: `task` (default) or `commitment` (AI-inferred). */
+  actionKind?: string;
   context?: string;
   waitingOn?: string;
   updatedAt: string;
@@ -265,13 +315,38 @@ export interface EmailSyncStatus {
   lastSuccessAt?: string;
 }
 
-/** Email sync stats from DB enrichment state counts (I373). */
+/** Email sync stats from DB enrichment state counts (I373 / DOS-31). */
 export interface EmailSyncStats {
   lastFetchAt: string | null;
+  /**
+   * DOS-31: Last time the Gmail fetch itself completed successfully,
+   * independent of enrichment success. When `lastFetchAt` is stale but
+   * `lastSuccessfulFetchAt` is recent, the inbox is healthy and only the
+   * enrichment pipeline is stuck — different message than "can't reach Gmail".
+   */
+  lastSuccessfulFetchAt: string | null;
   total: number;
   enriched: number;
   pending: number;
   failed: number;
+  /**
+   * DOS-29: Subset of `failed` that has exhausted automatic retries. Rows
+   * still under the auto-retry cap will be silently re-attempted by the
+   * next refresh (DOS-31) and shouldn't bother the user. The failure UX
+   * shows `permanentlyFailed`, not `failed`.
+   */
+  permanentlyFailed: number;
+}
+
+/** DOS-29: Lightweight preview of a permanently-failed email for the
+ *  "View details" expansion on the EmailsPage failure UX. */
+export interface FailedEmailPreview {
+  emailId: string;
+  subject: string | null;
+  senderEmail: string | null;
+  senderName: string | null;
+  lastEnrichmentAt: string | null;
+  autoRetryCount: number;
 }
 
 export interface Email {
@@ -1355,6 +1430,10 @@ export interface AccountListItem {
   archived: boolean;
   /** I502: Intelligence health data when available (populated from entity_intelligence). */
   intelligenceHealth?: IntelligenceAccountHealth | null;
+  /** DOS-110: User's manual health sentiment assessment. */
+  userHealthSentiment?: string;
+  /** DOS-110: When the sentiment was last set. */
+  sentimentSetAt?: string;
 }
 
 export interface CompanyOverview {
@@ -1462,6 +1541,22 @@ export interface StakeholderSuggestion {
   resolvedAt?: string | null;
 }
 
+/** DOS-258 Lane F: a pending_review row from account_stakeholders + people join. */
+export interface PendingStakeholderSuggestion {
+  personId: string;
+  name: string | null;
+  email: string | null;
+  /** 0.0–1.0 confidence score from the auto-suggest engine, null for legacy rows. */
+  confidence: number | null;
+  /** 'meeting_attendance' | 'email_correspondence' | etc. */
+  dataSource: string | null;
+  /**
+   * AC#13 multi-BU: other accounts that share this person's email domain.
+   * Rendered as "Also add to X?" hints — never auto-confirmed, user-initiated only.
+   */
+  siblingAccountHints: Array<[string, string]>; // [account_id, account_name]
+}
+
 export interface AccountTeamImportNote {
   id: number;
   accountId: string;
@@ -1487,6 +1582,12 @@ export interface AccountDetail extends AccountListItem {
   upcomingMeetings: MeetingSummary[];
   /** ADR-0063: richer type with optional prep context for preview cards. */
   recentMeetings: MeetingPreview[];
+  /** DOS-233 Codex fix: total meeting count for the About-dossier chapter.
+   * `recentMeetings` is capped at 10 for preview rendering; this is the
+   * unbounded COUNT(*) source of truth. */
+  meetingTotalCount?: number;
+  /** DOS-233 Codex fix: total transcripts-on-record count, unbounded. */
+  transcriptTotalCount?: number;
   openActions: Action[];
   linkedPeople: Person[];
   accountTeam: AccountTeamMember[];
@@ -1525,6 +1626,229 @@ export interface AccountDetail extends AccountListItem {
   stakeholdersFull?: StakeholderFull[];
   /** I644: Per-field source attribution from account_source_refs. */
   sourceRefs?: AccountSourceRef[];
+  /** DOS-27: Most recent journal note attached to the current sentiment value. */
+  sentimentNote?: string;
+  /** DOS-27: Sentiment journal entries from the last 90 days, newest-first. */
+  sentimentHistory?: SentimentJournalEntry[];
+  /** DOS-27: Daily computed-health sparkline points (last 90 days, chronological). */
+  healthSparkline?: HealthSparklinePoint[];
+  /** DOS-15: Glean leading-signal enrichment bundle (health & outlook signals). */
+  gleanSignals?: HealthOutlookSignals | null;
+  /**
+   * DOS-228 Wave 0e Fix 4: Current risk-briefing generation job status.
+   * Present when a briefing has ever been enqueued for this account. The
+   * Health tab uses this to pin a "generating…" affordance at the top while
+   * status === "running", surface the error + retry button when
+   * status === "failed", and confirm success with the completedAt timestamp.
+   */
+  riskBriefingJob?: RiskBriefingJob;
+}
+
+/** DOS-228 Wave 0e Fix 4: Risk-briefing job status contract. */
+export interface RiskBriefingJob {
+  /** One of: `enqueued`, `running`, `complete`, `failed`. */
+  status: "enqueued" | "running" | "complete" | "failed";
+  enqueuedAt: string;
+  completedAt?: string;
+  errorMessage?: string;
+}
+
+/** DOS-27: A single sentiment journal entry. */
+export type SentimentValue =
+  | "strong"
+  | "on_track"
+  | "concerning"
+  | "at_risk"
+  | "critical";
+
+export interface SentimentJournalEntry {
+  sentiment: SentimentValue;
+  note?: string;
+  computedBand?: string;
+  computedScore?: number;
+  setAt: string;
+}
+
+/** DOS-27: One day of computed health score for the sparkline. */
+export interface HealthSparklinePoint {
+  day: string;
+  score: number;
+  band: string;
+}
+
+/** DOS-15: Glean leading-signal enrichment types (Health & Outlook tab). */
+export interface HealthOutlookSignals {
+  championRisk?: ChampionRiskSignal | null;
+  productUsageTrend?: ProductUsageTrendSignal | null;
+  channelSentiment?: ChannelSentimentSignal | null;
+  transcriptExtraction?: TranscriptExtractionSignal | null;
+  commercialSignals?: CommercialSignalsBlock | null;
+  advocacyTrack?: AdvocacyTrackSignal | null;
+  quoteWall: QuoteWallEntry[];
+  /** Trend signals from a separate PTY pass (DOS-204). `null` until that pass runs. */
+  trends?: TrendSignals | null;
+}
+
+export interface ChampionRiskSignal {
+  championName?: string | null;
+  atRisk: boolean;
+  riskLevel?: "low" | "moderate" | "high" | null;
+  riskEvidence: string[];
+  tenureSignal?: string | null;
+  recentRoleChange?: string | null;
+  emailSentimentTrend30d?: "warming" | "stable" | "cooling" | null;
+  emailResponseTimeTrend?: "faster" | "stable" | "slower" | "unknown" | null;
+  backupChampionCandidates: {
+    name: string;
+    role?: string | null;
+    why?: string | null;
+    engagementLevel?: "high" | "medium" | "low" | null;
+  }[];
+}
+
+export interface ProductUsageTrendSignal {
+  overallTrend30d?: "growing" | "stable" | "declining" | "unknown" | null;
+  overallTrend90d?: "growing" | "stable" | "declining" | "unknown" | null;
+  features: {
+    name: string;
+    adoptionStatus?: string | null;
+    activeUsersEstimate?: unknown;
+    usageTrend30d?: string | null;
+    evidence?: string | null;
+  }[];
+  underutilizedFeatures: {
+    name: string;
+    licensedButUnusedDays?: number | null;
+    coachingOpportunity?: string | null;
+  }[];
+  highlyStickyFeatures: { name: string; whySticky?: string | null }[];
+  summary?: string | null;
+}
+
+export interface ChannelSentimentSignal {
+  email?: ChannelReading | null;
+  meetings?: ChannelReading | null;
+  supportTickets?: ChannelReading | null;
+  slack?: ChannelReading | null;
+  divergenceDetected: boolean;
+  divergenceSummary?: string | null;
+}
+
+export interface ChannelReading {
+  sentiment?: string | null;
+  trend30d?: "warming" | "stable" | "cooling" | null;
+  evidence?: string | null;
+}
+
+export interface TranscriptExtractionSignal {
+  churnAdjacentQuestions: TranscriptQuestion[];
+  expansionAdjacentQuestions: TranscriptQuestion[];
+  competitorBenchmarks: {
+    competitor: string;
+    context?: string | null;
+    threatLevel?:
+      | "mentioned"
+      | "evaluating"
+      | "actively_comparing"
+      | "decision_relevant"
+      | null;
+    date?: string | null;
+    source?: string | null;
+  }[];
+  decisionMakerShifts: {
+    shift: string;
+    who?: string | null;
+    date?: string | null;
+    source?: string | null;
+    implication?: string | null;
+  }[];
+  budgetCycleSignals: {
+    signal: string;
+    date?: string | null;
+    source?: string | null;
+    implication?: string | null;
+    locked: boolean;
+  }[];
+}
+
+export interface TranscriptQuestion {
+  question: string;
+  speaker?: string | null;
+  date?: string | null;
+  source?: string | null;
+  riskSignal?: string | null;
+  opportunitySignal?: string | null;
+  estimatedArrUpside?: unknown;
+}
+
+export interface CommercialSignalsBlock {
+  arrTrend12mo: { period: string; arr?: number | null; note?: string | null }[];
+  arrDirection?: "growing" | "flat" | "shrinking" | null;
+  paymentBehavior?: string | null;
+  paymentEvidence?: string | null;
+  discountHistory: {
+    date?: string | null;
+    percentOrAmount?: string | null;
+    reason?: string | null;
+  }[];
+  discountAppetiteRemaining?: "full" | "partial" | "exhausted" | "unknown" | null;
+  budgetCycleAlignment?: string | null;
+  procurementComplexity?: {
+    lastCycleLengthDays?: number | null;
+    signersRequired?: number | null;
+    legalReviewRequired?: boolean | null;
+    knownGotchas?: string | null;
+  } | null;
+  previousRenewalOutcome?: string | null;
+}
+
+export interface AdvocacyTrackSignal {
+  isReferenceCustomer?: boolean | null;
+  logoPermission?: "yes" | "no" | "requested" | "unknown" | null;
+  caseStudy?: {
+    published?: boolean | null;
+    inProgress?: boolean | null;
+    topic?: string | null;
+    publishDate?: string | null;
+  } | null;
+  speakingSlots: {
+    event: string;
+    date?: string | null;
+    speaker?: string | null;
+    topic?: string | null;
+  }[];
+  betaProgramsIn: {
+    program: string;
+    enrolledDate?: string | null;
+    engagementLevel?: string | null;
+  }[];
+  referralsMade: {
+    referredCompany: string;
+    outcome?: string | null;
+    date?: string | null;
+  }[];
+  npsHistory: {
+    surveyDate?: string | null;
+    score?: number | null;
+    verbatim?: string | null;
+    respondent?: string | null;
+  }[];
+  advocacyTrend?: "strengthening" | "stable" | "cooling" | null;
+}
+
+export interface QuoteWallEntry {
+  quote: string;
+  speaker?: string | null;
+  role?: string | null;
+  date?: string | null;
+  source?: string | null;
+  sentiment?: "positive" | "neutral" | "negative" | "mixed" | null;
+  whyItMatters?: string | null;
+}
+
+export interface TrendSignals {
+  usageTrajectory: unknown[];
+  sentimentOverTime: unknown[];
 }
 
 /** I644: Source reference for a tracked account field. */
@@ -1752,6 +2076,9 @@ export interface IntelligenceAccountHealth {
   band: "green" | "yellow" | "red";
   source: "org" | "computed" | "userSet";
   confidence: number;
+  /** DOS-84: true when >= 3 of 6 health dimensions have data.
+   *  When false, UI should show "Insufficient Data" instead of the score. */
+  sufficientData?: boolean;
   trend: IntelligenceHealthTrend;
   dimensions: RelationshipDimensions;
   divergence?: HealthDivergence | null;
@@ -1835,6 +2162,17 @@ export interface StrategicPriority {
   owner?: string;
   source?: string;
   timeline?: string;
+  /** Optional one-sentence rationale. Renders as italic paragraph below meta. */
+  context?: string;
+}
+
+export interface MarketContextItem {
+  title: string;
+  body: string;
+  category?: string;
+  effectiveDate?: string;
+  itemSource?: ItemSource;
+  discrepancy?: boolean;
 }
 
 // -- Dimension 2: Relationship Health --
@@ -1985,7 +2323,7 @@ export interface EntityIntelligence {
   /** I396: Success metrics / KPIs tracked for this entity. */
   successMetrics?: Array<{ name: string; target?: string; current?: string; status?: string; owner?: string }> | null;
   /** I396: Open commitments (promises made to/from the account). */
-  openCommitments?: Array<{ description: string; owner?: string; dueDate?: string; source?: string; status?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
+  openCommitments?: Array<{ commitmentId?: string; description: string; owner?: string; dueDate?: string; source?: string; status?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
   /** I396: Relationship depth assessment. */
   relationshipDepth?: { championStrength?: string; executiveAccess?: string; stakeholderCoverage?: string; coverageGaps?: string[] } | null;
   /** I527: Deterministic consistency status. */
@@ -2001,6 +2339,8 @@ export interface EntityIntelligence {
   competitiveContext?: CompetitiveInsight[];
   /** Dimension 1: Strategic priorities. */
   strategicPriorities?: StrategicPriority[];
+  /** Dimension 1: Market / regulatory context items. */
+  marketContext?: MarketContextItem[];
 
   /** Dimension 2: Stakeholder coverage assessment. */
   coverageAssessment?: CoverageAssessment | null;

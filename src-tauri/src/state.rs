@@ -1,7 +1,7 @@
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::Arc;
 use std::time::Instant;
@@ -228,7 +228,7 @@ pub struct AppState {
     ///
     /// `RwLock<Option<>>` instead of `OnceCell` so dev mode can reinitialize
     /// the service to point at `dailyos-dev.db`.
-    pub db_service: tokio::sync::RwLock<Option<crate::db_service::DbService>>,
+    pub db_service: tokio::sync::RwLock<Option<std::sync::Arc<crate::db_service::DbService>>>,
     /// User activity monitor for throttling background work (I426).
     pub activity: Arc<crate::activity::ActivityMonitor>,
     /// Calendar subsystem state (I404).
@@ -237,6 +237,12 @@ pub struct AppState {
     pub capture: CaptureState,
     /// Background intelligence enrichment queue (I132)
     pub intel_queue: Arc<crate::intel_queue::IntelligenceQueue>,
+    /// DOS-228 Fix 2: Per-account debouncer for post-edit health recompute.
+    /// Rapid edits (10 in 2s) coalesce into a single recompute that reflects
+    /// the final committed state. Replaces the old synchronous recompute in
+    /// `services::accounts::update_account_field`.
+    pub health_recompute_debouncer:
+        Arc<crate::services::health_debouncer::HealthRecomputeDebouncer>,
     /// Shared embedding model runtime (Sprint 26).
     pub embedding_model: Arc<crate::embeddings::EmbeddingModel>,
     /// Background embedding generation queue (Sprint 26).
@@ -525,6 +531,9 @@ impl AppState {
                 transcript_processed: Mutex::new(transcript_processed),
             },
             intel_queue: intel_queue_arc,
+            health_recompute_debouncer: Arc::new(
+                crate::services::health_debouncer::HealthRecomputeDebouncer::new(),
+            ),
             embedding_model,
             embedding_queue: Arc::new(crate::processor::embeddings::EmbeddingQueue::new()),
             hygiene: HygieneState {
@@ -747,11 +756,16 @@ impl AppState {
     // Async DbService helpers — use these for new/migrated command handlers.
     // -------------------------------------------------------------------------
 
-    /// Initialize the async DbService. Called from Tauri setup and on dev mode transitions.
+    /// Initialize the unified DbService pool. Called from Tauri setup and on
+    /// dev-mode transitions. Also installs the pool as the process-wide
+    /// singleton so sync `ActionDb::open()` routes through it instead of
+    /// opening a fresh `rusqlite::Connection` (which races the pool writer
+    /// mid-commit under SQLCipher).
     pub async fn init_db_service(&self) -> Result<(), String> {
         let svc = crate::db_service::DbService::open()
             .await
             .map_err(|e| format!("Failed to open DbService: {e}"))?;
+        crate::db_service::install_global(svc.clone());
         let mut guard = self.db_service.write().await;
         *guard = Some(svc);
         Ok(())
@@ -760,7 +774,8 @@ impl AppState {
     /// Reinitialize the DbService at the current DB path (live or dev).
     /// Called during dev mode enter/exit to switch the async connection pool.
     pub async fn reinit_db_service(&self) -> Result<(), String> {
-        // Drop the old service first
+        // Drop the old service first — both from state and the global.
+        crate::db_service::uninstall_global();
         {
             let mut guard = self.db_service.write().await;
             *guard = None;
@@ -795,7 +810,7 @@ impl AppState {
                     .reader()
                     .call(move |conn| {
                         let db = crate::db::ActionDb::from_conn(conn);
-                        Ok(f(db))
+                        Ok(f(&db))
                     })
                     .await
                     .map_err(|e| format!("DB read error: {e}"))?;
@@ -833,7 +848,7 @@ impl AppState {
                     .writer()
                     .call(move |conn| {
                         let db = crate::db::ActionDb::from_conn(conn);
-                        Ok(f(db))
+                        Ok(f(&db))
                     })
                     .await
                     .map_err(|e| format!("DB write error: {e}"))?;
@@ -975,9 +990,6 @@ pub fn run_startup_sync(state: &AppState) {
             Err(e) => log::warn!("Search index rebuild failed: {}", e),
         }
     }
-
-    // One-off: import master-task-list.md into SQLite (DELETE after confirmed)
-    import_master_task_list(workspace, &db);
 }
 
 /// Recover from an unclean dev-mode exit (app quit without restore_live).
@@ -1356,213 +1368,6 @@ pub fn create_execution_record(workflow: WorkflowId, trigger: ExecutionTrigger) 
         can_retry: None,
         trigger,
     }
-}
-
-/// One-off import of master-task-list.md into SQLite actions table.
-/// Reads the multi-line format (checkbox + indented metadata sub-lines),
-/// resolves account names to SQLite IDs, and upserts as source_type="import".
-/// Creates a .imported marker so it never runs twice.
-/// DELETE THIS FUNCTION after confirming the import worked.
-fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
-    let task_file = workspace.join("_today/tasks/master-task-list.md");
-    let marker = workspace.join("_today/tasks/.master-task-list-imported");
-
-    if !task_file.exists() || marker.exists() {
-        return;
-    }
-
-    let content = match fs::read_to_string(&task_file) {
-        Ok(c) => c,
-        Err(e) => {
-            log::warn!("Could not read master-task-list.md: {}", e);
-            return;
-        }
-    };
-
-    // Build account name → id lookup (case-insensitive)
-    let accounts = db.get_all_accounts().unwrap_or_default();
-    let account_lookup: HashMap<String, String> = accounts
-        .iter()
-        .map(|a| (a.name.to_lowercase(), a.id.clone()))
-        .collect();
-
-    let now = Utc::now().to_rfc3339();
-    let mut imported = 0;
-    let mut skipped_completed = 0;
-    let lines: Vec<&str> = content.lines().collect();
-    let mut i = 0;
-
-    while i < lines.len() {
-        let trimmed = lines[i].trim();
-
-        // Match checkbox lines
-        let (is_completed, raw_title) = if let Some(rest) = trimmed.strip_prefix("- [ ] ") {
-            (false, rest.trim())
-        } else if let Some(rest) = trimmed.strip_prefix("- [x] ") {
-            (true, rest.trim())
-        } else {
-            i += 1;
-            continue;
-        };
-
-        // Parse title: strip **bold** markers and `backtick-id`
-        let title = raw_title.replace("**", "").trim().to_string();
-        // Extract the backtick ID if present
-        let (clean_title, task_id) = if let Some(bt_start) = title.rfind('`') {
-            let before = &title[..title[..bt_start].rfind('`').unwrap_or(bt_start)];
-            let id_part = title[before.len()..].trim().trim_matches('`').trim();
-            (before.trim().to_string(), id_part.to_string())
-        } else {
-            (title.clone(), String::new())
-        };
-
-        // Read indented sub-lines for metadata
-        let mut account_raw: Option<String> = None;
-        let mut due_date: Option<String> = None;
-        let mut priority = crate::action_status::PRIORITY_MEDIUM;
-        let mut context: Option<String> = None;
-        let mut source: Option<String> = None;
-        let mut owner: Option<String> = None;
-
-        i += 1;
-        while i < lines.len() {
-            let sub = lines[i].trim();
-            if !sub.starts_with("- ") || sub.starts_with("- [ ]") || sub.starts_with("- [x]") {
-                break;
-            }
-            let sub_content = sub.strip_prefix("- ").unwrap_or(sub);
-
-            if let Some(v) = sub_content.strip_prefix("Account:") {
-                account_raw = Some(v.trim().to_string());
-            } else if let Some(v) = sub_content.strip_prefix("Due:") {
-                // Extract YYYY-MM-DD from due text like "2026-01-31 (book travel by mid-Feb)"
-                let due_text = v.trim();
-                if due_text.len() >= 10 {
-                    let date_part = &due_text[..10];
-                    if date_part.chars().filter(|c| *c == '-').count() == 2 && date_part.len() == 10
-                    {
-                        due_date = Some(date_part.to_string());
-                    }
-                }
-            } else if let Some(v) = sub_content.strip_prefix("Priority:") {
-                priority = crate::action_status::migrate_priority(v.trim());
-            } else if let Some(v) = sub_content.strip_prefix("Context:") {
-                context = Some(v.trim().to_string());
-            } else if let Some(v) = sub_content.strip_prefix("Source:") {
-                source = Some(v.trim().to_string());
-            } else if let Some(v) = sub_content.strip_prefix("Owner:") {
-                owner = Some(v.trim().to_string());
-            }
-            // Skip: Completed, Outcome, Contacts, Note, Status, Area, Project
-            i += 1;
-        }
-
-        if is_completed {
-            skipped_completed += 1;
-            continue;
-        }
-
-        if clean_title.is_empty() {
-            continue;
-        }
-
-        // Resolve account name to SQLite id
-        // Handle "Crestview Media / Corporate-Services-B2B" → try full name, then parent
-        let account_id = account_raw.as_ref().and_then(|name| {
-            let lower = name.to_lowercase();
-            // Try exact match first
-            if let Some(id) = account_lookup.get(&lower) {
-                return Some(id.clone());
-            }
-            // Try parent (before " / ")
-            if let Some(parent) = lower.split(" / ").next() {
-                if let Some(id) = account_lookup.get(parent.trim()) {
-                    return Some(id.clone());
-                }
-            }
-            // Try child (after " / ")
-            if let Some(child) = lower.split(" / ").nth(1) {
-                if let Some(id) = account_lookup.get(child.trim()) {
-                    return Some(id.clone());
-                }
-            }
-            None
-        });
-
-        let action_id = if !task_id.is_empty() {
-            format!("import-{}", task_id)
-        } else {
-            format!("import-{}", crate::util::slugify(&clean_title))
-        };
-
-        // Build context with owner + source if available
-        let full_context = {
-            let mut parts = Vec::new();
-            if let Some(ref o) = owner {
-                parts.push(format!("Owner: {}", o));
-            }
-            if let Some(ref s) = source {
-                parts.push(format!("Source: {}", s));
-            }
-            if let Some(ref c) = context {
-                parts.push(c.clone());
-            }
-            if parts.is_empty() {
-                None
-            } else {
-                Some(parts.join(". "))
-            }
-        };
-
-        let action = crate::db::DbAction {
-            id: action_id,
-            title: clean_title,
-            priority,
-            status: crate::action_status::UNSTARTED.to_string(),
-            created_at: now.clone(),
-            due_date,
-            completed_at: None,
-            account_id,
-            project_id: None,
-            source_type: Some("import".to_string()),
-            source_id: if !task_id.is_empty() {
-                Some(task_id)
-            } else {
-                None
-            },
-            source_label: Some("master-task-list.md".to_string()),
-            context: full_context,
-            waiting_on: None,
-            updated_at: now.clone(),
-            person_id: None,
-            account_name: None,
-            next_meeting_title: None,
-            next_meeting_start: None,
-            needs_decision: false,
-            decision_owner: None,
-            decision_stakes: None,
-            linear_identifier: None,
-            linear_url: None,
-        };
-
-        if db.upsert_action_if_not_completed(&action).is_ok() {
-            imported += 1;
-        }
-    }
-
-    // Write marker so this never runs again
-    let _ = fs::write(
-        &marker,
-        format!(
-            "Imported {} actions, skipped {} completed on {}",
-            imported, skipped_completed, now
-        ),
-    );
-    log::info!(
-        "master-task-list.md import complete: {} actions imported, {} completed skipped",
-        imported,
-        skipped_completed
-    );
 }
 
 #[cfg(test)]

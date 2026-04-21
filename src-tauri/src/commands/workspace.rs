@@ -439,6 +439,7 @@ pub async fn get_emails_enriched(
 
 /// Update the entity assignment for an email (I395 — user correction).
 /// Cascades to email_signals and emits a signal bus event for relevance learning.
+/// DOS-258: also writes a user-override row to linked_entities_raw (P1 source).
 #[tauri::command]
 pub async fn update_email_entity(
     state: State<'_, Arc<AppState>>,
@@ -447,16 +448,30 @@ pub async fn update_email_entity(
     entity_type: Option<String>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    // Legacy path: keeps emails.entity_id in sync and emits the signal bus event.
+    let eid = email_id.clone();
+    let et_id = entity_id.clone();
+    let et_type = entity_type.clone();
     state
         .db_write(move |db| {
-            crate::services::emails::update_email_entity(
-                db,
-                &email_id,
-                entity_id.as_deref(),
-                entity_type.as_deref(),
-            )
+            crate::services::emails::update_email_entity(db, &eid, et_id.as_deref(), et_type.as_deref())
         })
         .await?;
+
+    // DOS-258 path: write user-override to linked_entities_raw so the new
+    // engine treats this as a P1 user override on the next evaluate() call.
+    let entity_ref = entity_id.map(|id| crate::services::entity_linking::EntityRef {
+        entity_id: id,
+        entity_type: entity_type.unwrap_or_else(|| "account".to_string()),
+    });
+    crate::services::entity_linking::manual_set_primary(
+        state.inner().clone(),
+        crate::services::entity_linking::OwnerType::Email,
+        email_id,
+        entity_ref,
+    )
+    .await?;
+
     let _ = app_handle.emit("emails-updated", ());
     Ok(())
 }
@@ -546,6 +561,57 @@ pub async fn sync_email_inbox_presence(
 #[tauri::command]
 pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     crate::services::emails::archive_low_priority_emails(&state).await
+}
+
+/// Reset failed email enrichments and trigger re-enrichment (DOS-195, DOS-226).
+///
+/// DOS-226: This command previously mutated the DB directly (`failed -> pending`
+/// with attempts=0) *before* calling `refresh_emails`, meaning a Gmail refresh
+/// failure would leave rows looking healthy while enrichment had never re-run,
+/// silently dismissing the user-visible Retry notice. The retry semantics now
+/// live in `services::emails::retry_failed_emails`, which performs the
+/// transition through a transitional `pending_retry` state that rolls back on
+/// refresh failure. The command is a thin delegate so the rollback-safe path
+/// is the only path.
+#[tauri::command]
+pub async fn retry_failed_emails(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<usize, String> {
+    crate::services::emails::retry_failed_emails(state.inner(), app_handle).await
+}
+
+/// DOS-29: List the permanently-failed emails (above the auto-retry cap)
+/// for the "View details" affordance on the EmailsPage failure UX. Capped
+/// at 20 rows to keep the payload bounded — if a user has more than 20
+/// permanently-failed emails the right action is to triage in batch, not
+/// scroll the whole list.
+#[tauri::command]
+pub async fn list_permanently_failed_emails(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::FailedEmailPreview>, String> {
+    state
+        .db_read(|db| {
+            db.list_permanently_failed_previews(
+                crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES,
+                20,
+            )
+        })
+        .await
+}
+
+/// DOS-29: User-initiated "Skip" action for the failure UX. Marks the
+/// supplied permanently-failed email IDs as resolved so they leave the
+/// failed-count entirely. The Gmail message stays in the inbox; we just
+/// stop trying to enrich it. Returns the number of rows skipped.
+#[tauri::command]
+pub async fn skip_failed_emails(
+    state: State<'_, Arc<AppState>>,
+    email_ids: Vec<String>,
+) -> Result<usize, String> {
+    state
+        .db_write(move |db| db.skip_failed_emails(&email_ids))
+        .await
 }
 
 /// Set user profile (customer-success or general)

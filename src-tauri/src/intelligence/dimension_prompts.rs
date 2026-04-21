@@ -339,6 +339,9 @@ pub fn merge_dimension_into(
             if !partial.strategic_priorities.is_empty() {
                 existing.strategic_priorities = partial.strategic_priorities.clone();
             }
+            if !partial.market_context.is_empty() {
+                existing.market_context = partial.market_context.clone();
+            }
         }
 
         "value_success" => {
@@ -800,7 +803,8 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
                 s.push_str(
                     r#"
   "competitiveContext": [{"competitor": "name", "threatLevel": "displacement|evaluation|mentioned|incumbent", "context": "1 sentence", "detectedAt": "ISO date or null", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
-  "strategicPriorities": [{"priority": "...", "status": "active|at_risk|completed|paused", "owner": "...", "timeline": "..."}]
+  "strategicPriorities": [{"priority": "short name, ≤80 chars", "status": "active|exploring|evaluating|paused|completed|at_risk", "owner": "short party name only — e.g. 'Chris Anderson & Diego Martinez' or 'Globex commercial team'. NOT a rationale.", "timeline": "short phrase only — e.g. 'Ongoing', 'Q2 2026', 'Beta March 2026'. NOT a rationale.", "context": "optional one sentence (≤180 chars) of rationale explaining why this matters or how it's evolving; leave null if you'd have nothing new to add beyond the priority name"}],
+  "marketContext": [{"title": "short title (e.g. 'DORA compliance + SOC 2 Type II')", "body": "1-3 sentence narrative explaining why this regulatory/market/compliance force shapes this account's buying, renewal, or usage decisions", "category": "regulatory|market|geopolitical|compliance|industry|other", "effectiveDate": "ISO date or null", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}]
 "#,
                 );
             } else {
@@ -816,7 +820,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
     "mutualSuccessCriteria": [{"criterion": "...", "ownedBy": "us|them|joint", "status": "not_started|in_progress|achieved|at_risk"}],
     "milestoneCandidates": [{"milestone": "...", "expectedBy": "ISO or null", "detectedFrom": "source", "autoDetectEvent": "lifecycle event type or null"}]
   },
-  "openCommitments": [{"description": "what was committed", "owner": "who owns it", "dueDate": "ISO date or null", "source": "meeting/email where committed", "status": "open|in_progress|overdue|completed", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}]
+  "openCommitments": [{"commitmentId": "stable identity, REQUIRED — format: `{source_type}:{source_id}:{n}` e.g. `meeting:abc123:2`. Same commitment MUST produce the same commitmentId across enrichment passes so the backend can track accept/complete/dismiss state.", "description": "what was committed", "owner": "who owns it", "dueDate": "ISO date or null", "source": "meeting/email where committed", "status": "open|in_progress|overdue|completed", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}]
 "#,
             );
         }
@@ -962,6 +966,7 @@ mod tests {
             owner: None,
             source: None,
             timeline: None,
+            context: None,
         }];
 
         let mut partial = empty_intel();

@@ -19,6 +19,12 @@ pub struct AccountListItem {
     pub is_parent: bool,
     pub account_type: crate::db::AccountType,
     pub archived: bool,
+    /// DOS-110: User health sentiment assessment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_health_sentiment: Option<String>,
+    /// DOS-110: When the sentiment was last set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment_set_at: Option<String>,
 }
 
 /// Full account detail for the detail page.
@@ -44,6 +50,17 @@ pub struct AccountDetailResult {
     pub open_actions: Vec<crate::db::DbAction>,
     pub upcoming_meetings: Vec<MeetingSummary>,
     pub recent_meetings: Vec<MeetingPreview>,
+    /// DOS-233 Codex fix: total count of meetings linked to this account
+    /// above the accepted-confidence floor (0.70). `recent_meetings` is
+    /// capped at 10 for preview rendering; this field gives the About-
+    /// dossier its true "N meetings on record" number.
+    #[serde(default)]
+    pub meeting_total_count: i64,
+    /// DOS-233 Codex fix: total count of meetings with a transcript on
+    /// record for this account (unbounded). The preview/manifest lists
+    /// remain capped; this is the dossier count source of truth.
+    #[serde(default)]
+    pub transcript_total_count: i64,
     pub linked_people: Vec<crate::db::DbPerson>,
     pub account_team: Vec<crate::db::DbAccountTeamMember>,
     pub account_team_import_notes: Vec<crate::db::DbAccountTeamImportNote>,
@@ -80,6 +97,35 @@ pub struct AccountDetailResult {
     /// I644: Source references for promoted account facts.
     #[serde(default)]
     pub source_refs: Vec<crate::db::DbAccountSourceRef>,
+    /// DOS-110: User health sentiment assessment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_health_sentiment: Option<String>,
+    /// DOS-110: When the sentiment was last set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment_set_at: Option<String>,
+    /// DOS-27: Most recent sentiment journal note for the current value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment_note: Option<String>,
+    /// DOS-27: Sentiment journal entries — last 90 days.
+    #[serde(default)]
+    pub sentiment_history: Vec<crate::db::accounts::DbSentimentJournalEntry>,
+    /// DOS-27: Daily computed-health sparkline — last 90 days.
+    #[serde(default)]
+    pub health_sparkline: Vec<crate::db::accounts::DbHealthSparklinePoint>,
+    /// DOS-15: Glean leading-signal enrichment bundle (champion risk, usage
+    /// trends, sentiment divergence, transcript extraction, commercial signals,
+    /// advocacy, quote wall). Null when Glean is not configured or enrichment
+    /// has not yet run for this account.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "gleanSignals")]
+    pub glean_signals:
+        Option<crate::intelligence::glean_leading_signals::HealthOutlookSignals>,
+    /// DOS-228 Fix 3: Current risk-briefing generation job status.
+    /// Present when a briefing has ever been enqueued for this account; the
+    /// frontend uses this to render progress, surface failures, and expose a
+    /// retry affordance. Replaces the old fire-and-forget behaviour where
+    /// failures only appeared in the log stream.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk_briefing_job: Option<crate::db::accounts::DbRiskBriefingJob>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
@@ -264,7 +310,7 @@ pub async fn update_account_field(
     field: String,
     value: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
@@ -277,6 +323,150 @@ pub async fn update_account_field(
             )
         })
         .await
+}
+
+/// DOS-231 Codex fix: persist a single gap-row field on
+/// `account_technical_footprint` and return the refreshed account detail so
+/// the frontend can render the value without a follow-up fetch.
+#[tauri::command]
+pub async fn update_technical_footprint_field(
+    account_id: String,
+    field: String,
+    value: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<AccountDetailResult, String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_technical_footprint_field(
+                db,
+                &app_state,
+                &account_id,
+                &field,
+                &value,
+            )
+        })
+        .await
+}
+
+/// DOS-110 / DOS-27: Set the user's manual health sentiment on an account,
+/// optionally attaching a journal note.
+#[tauri::command]
+pub async fn set_user_health_sentiment(
+    account_id: String,
+    sentiment: String,
+    note: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<AccountDetailResult, String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::set_user_health_sentiment(
+                db,
+                &app_state,
+                &account_id,
+                &sentiment,
+                note.as_deref(),
+            )
+        })
+        .await
+}
+
+/// DOS-269: Update the note on the latest sentiment journal row for an
+/// account rather than inserting a new history entry. This is the
+/// "Add more detail" flow — the user is augmenting the existing journal
+/// entry, not creating a new sentiment change. Falls back to insertion
+/// when no matching history row exists.
+#[tauri::command]
+pub async fn update_latest_sentiment_note(
+    account_id: String,
+    note: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<AccountDetailResult, String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_latest_sentiment_note(
+                db,
+                &app_state,
+                &account_id,
+                note.as_deref(),
+            )
+        })
+        .await
+}
+
+/// DOS-269: Persist a triage-card snooze. `triage_key` is the frontend's
+/// stable card id; `days` is the snooze window (default 14 at the call
+/// site). Resolves silently — the UI refreshes after the call.
+#[tauri::command]
+pub async fn snooze_triage_item(
+    entity_type: String,
+    entity_id: String,
+    triage_key: String,
+    days: Option<i64>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| {
+            crate::services::accounts::snooze_triage_item(
+                db,
+                &entity_type,
+                &entity_id,
+                &triage_key,
+                days.unwrap_or(14),
+            )
+        })
+        .await
+}
+
+/// DOS-269: Mark a triage card resolved. Permanent for the lifetime of the
+/// card key — re-enrichment that emits a new key will re-surface.
+#[tauri::command]
+pub async fn resolve_triage_item(
+    entity_type: String,
+    entity_id: String,
+    triage_key: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::accounts::resolve_triage_item(
+                db,
+                &app_state,
+                &entity_type,
+                &entity_id,
+                &triage_key,
+            )
+        })
+        .await
+}
+
+/// DOS-269: Return the active snooze/resolution rows for an entity so the
+/// frontend can hide matching triage cards.
+#[tauri::command]
+pub async fn list_triage_snoozes(
+    entity_type: String,
+    entity_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::services::accounts::TriageSnoozeRow>, String> {
+    state
+        .db_read(move |db| {
+            crate::services::accounts::list_triage_snoozes(db, &entity_type, &entity_id)
+        })
+        .await
+}
+
+/// DOS-228 Fix 3: Retry a failed (or re-run a prior) risk-briefing job.
+/// Returns immediately; the user should refetch `get_account_detail` to see
+/// the `risk_briefing_job` row progress through enqueued → running → complete.
+#[tauri::command]
+pub async fn retry_risk_briefing(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::accounts::retry_risk_briefing(state.inner(), &account_id).await
 }
 
 #[tauri::command]
@@ -352,7 +542,7 @@ pub async fn accept_account_field_conflict(
     source: String,
     signal_id: Option<String>,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
@@ -377,7 +567,7 @@ pub async fn dismiss_account_field_conflict(
     source: String,
     suggested_value: Option<String>,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
@@ -632,13 +822,13 @@ pub async fn update_stakeholder_engagement(
     person_id: String,
     engagement: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
             crate::services::accounts::update_stakeholder_engagement(
                 db,
-                &app_state.signals.engine,
+                &app_state,
                 &account_id,
                 &person_id,
                 &engagement,
@@ -654,13 +844,13 @@ pub async fn update_stakeholder_assessment(
     person_id: String,
     assessment: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
             crate::services::accounts::update_stakeholder_assessment(
                 db,
-                &app_state.signals.engine,
+                &app_state,
                 &account_id,
                 &person_id,
                 &assessment,
@@ -690,13 +880,13 @@ pub async fn add_stakeholder_role(
     person_id: String,
     role: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
             crate::services::accounts::add_stakeholder_role(
                 db,
-                &app_state.signals.engine,
+                &app_state,
                 &account_id,
                 &person_id,
                 &role,
@@ -712,13 +902,13 @@ pub async fn remove_stakeholder_role(
     person_id: String,
     role: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
             crate::services::accounts::remove_stakeholder_role(
                 db,
-                &app_state.signals.engine,
+                &app_state,
                 &account_id,
                 &person_id,
                 &role,
@@ -771,6 +961,79 @@ pub async fn dismiss_stakeholder_suggestion(
             )
         })
         .await
+}
+
+// =============================================================================
+// DOS-258 Lane F: Pending stakeholder review queue
+// =============================================================================
+
+/// Row returned by get_pending_stakeholder_suggestions.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct PendingStakeholderRow {
+    pub person_id: String,
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub confidence: Option<f64>,
+    pub data_source: Option<String>,
+    /// AC#13 multi-BU: other accounts sharing this person's email domain.
+    /// Each entry is (account_id, account_name). Rendered as "Also add to X?" hints.
+    pub sibling_account_hints: Vec<(String, String)>,
+}
+
+/// Get pending stakeholder suggestions (status='pending_review') for an account.
+#[tauri::command]
+pub async fn get_pending_stakeholder_suggestions(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<PendingStakeholderRow>, String> {
+    state
+        .db_read(move |db| {
+            // Delegate to the entity_linking DB helper which also computes sibling hints.
+            let rows = db.get_pending_stakeholder_suggestions(&account_id)
+                .map_err(|e| e.to_string())?;
+            Ok(rows
+                .into_iter()
+                .map(|r| PendingStakeholderRow {
+                    person_id: r.person_id,
+                    name: Some(r.name),
+                    email: Some(r.email),
+                    confidence: r.confidence,
+                    data_source: Some(r.data_source),
+                    sibling_account_hints: r.sibling_account_hints,
+                })
+                .collect())
+        })
+        .await
+}
+
+/// Confirm a pending_review stakeholder: promotes status to 'active'.
+#[tauri::command]
+pub async fn confirm_pending_stakeholder(
+    account_id: String,
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::entity_linking::confirm_stakeholder_suggestion(
+        state.inner().clone(),
+        account_id,
+        person_id,
+    )
+    .await
+}
+
+/// Dismiss a pending_review stakeholder: sets status to 'dismissed'.
+#[tauri::command]
+pub async fn dismiss_pending_stakeholder(
+    account_id: String,
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::entity_linking::dismiss_stakeholder_suggestion(
+        state.inner().clone(),
+        account_id,
+        person_id,
+    )
+    .await
 }
 
 // =============================================================================

@@ -26,7 +26,7 @@ import { useWorkflow } from "@/hooks/useWorkflow";
 
 // Page components
 import AccountsPage from "@/pages/AccountsPage";
-import AccountDetailEditorial from "@/pages/AccountDetailEditorial";
+import AccountDetailPage from "@/pages/AccountDetailPage";
 import ActionDetailPage from "@/pages/ActionDetailPage";
 import ActionsPage from "@/pages/ActionsPage";
 import InboxPage from "@/pages/InboxPage";
@@ -536,7 +536,7 @@ const accountsRoute = createRoute({
 const accountDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/accounts/$accountId",
-  component: AccountDetailEditorial,
+  component: AccountDetailPage,
 });
 
 const riskBriefingRoute = createRoute({

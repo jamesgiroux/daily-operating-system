@@ -38,19 +38,37 @@ export default function ContextSourceSection() {
   const isConnected = glean.status.status === "authenticated";
 
   const load = useCallback(async () => {
-    try {
-      const currentMode = await invoke<ContextMode>("get_context_mode");
-      setMode(currentMode);
-      if (currentMode.mode === "Glean") {
-        setEndpoint(currentMode.endpoint);
+    // Retry with backoff — DB is locked during startup migrations, and a
+    // silent catch would leave the UI stuck on the Local default even when
+    // context_mode_config has Glean persisted. Every restart was forcing
+    // the user to re-enter the MCP URL because of this race.
+    const delays = [0, 250, 500, 1000, 2000];
+    for (const delay of delays) {
+      if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+      try {
+        const currentMode = await invoke<ContextMode>("get_context_mode");
+        setMode(currentMode);
+        if (currentMode.mode === "Glean") {
+          setEndpoint(currentMode.endpoint);
+        }
+        return;
+      } catch {
+        // Retry
       }
-    } catch {
-      // DB not ready yet — defaults are fine
     }
   }, []);
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // Re-load when Glean auth changes — keeps the mode toggle and endpoint
+  // field in sync after OAuth completes or token is revoked.
+  useEffect(() => {
+    const unlisten = listen("glean-auth-changed", () => {
+      setTimeout(() => void load(), 500);
+    });
+    return () => { unlisten.then((fn) => fn()); };
   }, [load]);
 
   const refreshTokenHealth = useCallback(async () => {
