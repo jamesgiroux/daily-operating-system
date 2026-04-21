@@ -81,6 +81,7 @@ import pageStyles from "./AccountDetailPage.module.css";
 export default function AccountDetailPage() {
   const { accountId } = useParams({ strict: false });
   const page = useAccountDetailPage(accountId);
+  const suppressions = useEntitySuppressions(page.detail?.id ?? accountId);
 
   // v1.2.1 QA fix: gate the "Push to Linear" button on actual Linear
   // configuration so users don't land on a dead picker.
@@ -99,7 +100,6 @@ export default function AccountDetailPage() {
   if (page.error || !page.detail) return <EditorialError message={page.error ?? "Account not found"} onRetry={page.acct.load} />;
 
   const { detail, intelligence, acct, preset, activeView } = page;
-  const suppressions = useEntitySuppressions(detail.id);
   const fb = page.feedback;
 
   // ─── View 1: Health & Outlook ───────────────────────────────────────────
