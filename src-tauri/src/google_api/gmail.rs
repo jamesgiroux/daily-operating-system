@@ -80,6 +80,10 @@ pub struct RawEmail {
     /// Optional email body text (only fetched when emailBodyAccess is enabled).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
+    /// To header (raw RFC 2822, e.g. `"Alice" <alice@acme.com>, bob@acme.com`).
+    pub to: String,
+    /// Cc header (raw RFC 2822).
+    pub cc: String,
 }
 
 // ============================================================================
@@ -242,6 +246,8 @@ async fn fetch_message_metadata(
         client.get(&url).bearer_auth(access_token).query(&[
             ("format", "metadata"),
             ("metadataHeaders", "From"),
+            ("metadataHeaders", "To"),
+            ("metadataHeaders", "Cc"),
             ("metadataHeaders", "Subject"),
             ("metadataHeaders", "Date"),
             ("metadataHeaders", "List-Unsubscribe"),
@@ -281,6 +287,8 @@ async fn fetch_message_metadata(
         id: detail.id,
         thread_id: detail.thread_id,
         from: get_header("From"),
+        to: get_header("To"),
+        cc: get_header("Cc"),
         subject: get_header("Subject"),
         snippet: detail.snippet,
         date: get_header("Date"),
@@ -730,6 +738,8 @@ mod tests {
             precedence: "".to_string(),
             is_unread: true,
             body: None,
+            to: String::new(),
+            cc: String::new(),
         };
 
         let json = serde_json::to_value(&email).unwrap();

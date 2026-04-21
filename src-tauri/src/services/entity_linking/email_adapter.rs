@@ -13,9 +13,8 @@ use super::types::{
 
 /// Convert a DbEmail into a LinkingContext for evaluate().
 ///
-/// DbEmail only stores sender_email (no to/cc columns persist in the schema).
-/// Participants are therefore limited to the From sender only.
-/// TODO(Lane-E): extend when recipient columns are added to DbEmail.
+/// Builds participants from From, To, and Cc so P4a/P4b/P4c domain evidence
+/// rules can evaluate all participants, not just the sender.
 pub fn build_context(
     email: &DbEmail,
     _thread_primary_entity_id: Option<&str>,
@@ -33,6 +32,33 @@ pub fn build_context(
         });
     }
 
+    // Parse comma-separated To recipients stored at sync time.
+    if let Some(ref to_str) = email.to_recipients {
+        for addr in to_str.split(',').map(str::trim).filter(|s| s.contains('@')) {
+            participants.push(Participant {
+                email: addr.to_string(),
+                name: None,
+                role: ParticipantRole::To,
+                person_id: None,
+                domain: domain_from_email(addr),
+            });
+        }
+    }
+
+    // Parse comma-separated Cc recipients.
+    if let Some(ref cc_str) = email.cc_recipients {
+        for addr in cc_str.split(',').map(str::trim).filter(|s| s.contains('@')) {
+            participants.push(Participant {
+                email: addr.to_string(),
+                name: None,
+                role: ParticipantRole::Cc,
+                person_id: None,
+                domain: domain_from_email(addr),
+            });
+        }
+    }
+
+    let attendee_count = participants.len().max(1);
     let graph_version = db.get_entity_graph_version().unwrap_or(0);
 
     let user_domains = crate::state::load_config()
@@ -47,7 +73,7 @@ pub fn build_context(
         },
         participants,
         title: email.subject.clone(),
-        attendee_count: 1,
+        attendee_count,
         thread_id: email.thread_id.clone(),
         series_id: None,
         graph_version,

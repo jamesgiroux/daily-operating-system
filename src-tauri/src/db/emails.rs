@@ -43,10 +43,11 @@ impl ActionDb {
                         priority, is_unread, received_at, enrichment_state, enrichment_attempts,
                         last_enrichment_at, enriched_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
-                        last_sender_email, message_count, created_at, updated_at, is_noise
+                        last_sender_email, message_count, created_at, updated_at, is_noise,
+                        to_recipients, cc_recipients
                      ) VALUES (
                         ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                        ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26
+                        ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28
                      )
                      ON CONFLICT(email_id) DO UPDATE SET
                         thread_id = excluded.thread_id,
@@ -62,6 +63,8 @@ impl ActionDb {
                         last_sender_email = excluded.last_sender_email,
                         message_count = excluded.message_count,
                         updated_at = excluded.updated_at,
+                        to_recipients = COALESCE(excluded.to_recipients, to_recipients),
+                        cc_recipients = COALESCE(excluded.cc_recipients, cc_recipients),
                         -- DOS-242: never silently re-noise an email the user has rescued.
                         -- Once is_noise is cleared (via unsuppress_email), keep it cleared.
                         is_noise = MIN(emails.is_noise, excluded.is_noise)",
@@ -92,6 +95,8 @@ impl ActionDb {
                         now,
                         now,
                         email.is_noise as i32,
+                        email.to_recipients,
+                        email.cc_recipients,
                     ],
                 )
                 .map_err(|e| format!("Failed to upsert email {}: {e}", email.email_id))?;
@@ -260,7 +265,7 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions, is_noise
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
                  FROM emails
                  WHERE enrichment_state IN ('pending', 'pending_retry', 'failed')
                    AND enrichment_attempts < 3
@@ -334,7 +339,7 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions, is_noise
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
                  FROM emails
                  WHERE resolved_at IS NULL
                    AND is_noise = 0
@@ -364,7 +369,7 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions, is_noise
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
                  FROM emails
                  WHERE entity_id = ?1 AND resolved_at IS NULL AND is_noise = 0
                  ORDER BY received_at DESC",
@@ -906,7 +911,7 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions, is_noise
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
                  FROM emails
                  WHERE resolved_at IS NULL
                    AND is_noise = 0
@@ -939,7 +944,7 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions, is_noise
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
                  FROM emails
                  WHERE user_is_last_sender = 0
                    AND resolved_at IS NULL
@@ -1318,7 +1323,7 @@ pub struct EmailEnrichmentUpdate<'a> {
     pub is_noise: Option<bool>,
 }
 
-/// Row mapper for emails SELECT queries (31 columns).
+/// Row mapper for emails SELECT queries (33 columns).
 fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
     Ok(DbEmail {
         email_id: row.get(0)?,
@@ -1353,5 +1358,8 @@ fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
         questions: row.get(29).ok(),
         // DOS-242: column added by migration 092. Default false on legacy rows.
         is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
+        // DOS-258: columns added by migration 120. Default None on legacy rows.
+        to_recipients: row.get(31).ok(),
+        cc_recipients: row.get(32).ok(),
     })
 }

@@ -599,6 +599,12 @@ pub struct DbEmail {
     /// to false via `unsuppress_email` rescue command.
     #[serde(default)]
     pub is_noise: bool,
+    /// DOS-258: comma-separated To recipient addresses (bare lowercase).
+    /// Populated from Gmail To header at sync time. Used by P4b/P4c domain matching.
+    pub to_recipients: Option<String>,
+    /// DOS-258: comma-separated Cc recipient addresses (bare lowercase).
+    /// Populated from Gmail Cc header at sync time. Used by P4b/P4c domain matching.
+    pub cc_recipients: Option<String>,
 }
 
 /// Email sync statistics for the frontend sync status indicator (I373).

@@ -170,7 +170,8 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Set domains for an account (replace-all).
+    /// Set domains for an account (replace-all). Writes source='user' — this is
+    /// the explicit user-entry path (account settings page, onboarding setup).
     pub fn set_account_domains(&self, account_id: &str, domains: &[String]) -> Result<(), DbError> {
         let normalized = crate::helpers::normalize_domains(domains);
         self.conn.execute(
@@ -179,18 +180,17 @@ impl ActionDb {
         )?;
         for domain in normalized {
             self.conn.execute(
-                "INSERT OR IGNORE INTO account_domains (account_id, domain) VALUES (?1, ?2)",
+                "INSERT OR IGNORE INTO account_domains (account_id, domain, source) \
+                 VALUES (?1, ?2, 'user')",
                 params![account_id, &domain],
             )?;
         }
         Ok(())
     }
 
-    /// Additively merge domains into an account's domain list.
-    ///
-    /// Unlike `set_account_domains` which replaces all domains, this function
-    /// only adds new domains without removing existing ones. Used when accumulating
-    /// domains from multiple meetings for the same account.
+    /// Additively merge domains from meeting attendee inference. Uses the
+    /// default source='inferred', meaning these can be purged by
+    /// `raw_rebuild_account_domains` before the DOS-258 cutover.
     pub fn merge_account_domains(
         &self,
         account_id: &str,
@@ -200,6 +200,25 @@ impl ActionDb {
         for domain in normalized {
             self.conn.execute(
                 "INSERT OR IGNORE INTO account_domains (account_id, domain) VALUES (?1, ?2)",
+                params![account_id, &domain],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Additively merge domains from a trusted enrichment provider (Clay, Glean, Google).
+    /// Writes source='enrichment' so `raw_rebuild_account_domains` preserves these
+    /// while purging attendee-inferred domains.
+    pub fn merge_account_domains_enrichment(
+        &self,
+        account_id: &str,
+        domains: &[String],
+    ) -> Result<(), DbError> {
+        let normalized = crate::helpers::normalize_domains(domains);
+        for domain in normalized {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO account_domains (account_id, domain, source) \
+                 VALUES (?1, ?2, 'enrichment')",
                 params![account_id, &domain],
             )?;
         }
@@ -293,10 +312,11 @@ impl ActionDb {
     }
 
     /// Copy domains from parent to child (idempotent).
+    /// Copy domains from parent to child, preserving the source column.
     pub fn copy_account_domains(&self, parent_id: &str, child_id: &str) -> Result<(), DbError> {
         self.conn.execute(
-            "INSERT OR IGNORE INTO account_domains (account_id, domain)
-             SELECT ?1, domain FROM account_domains WHERE account_id = ?2",
+            "INSERT OR IGNORE INTO account_domains (account_id, domain, source)
+             SELECT ?1, domain, source FROM account_domains WHERE account_id = ?2",
             params![child_id, parent_id],
         )?;
         Ok(())

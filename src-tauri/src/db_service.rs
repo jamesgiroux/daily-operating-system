@@ -443,6 +443,8 @@ mod tests {
             commitments: None,
             questions: None,
             is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
         }
     }
 

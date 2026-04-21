@@ -867,7 +867,7 @@ pub fn get_entity_emails(
                             contextual_summary, sentiment, urgency, user_is_last_sender,
                             last_sender_email, message_count, created_at, updated_at,
                             relevance_score, score_reason,
-                            pinned_at, commitments, questions, is_noise
+                            pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
                      FROM emails WHERE sender_email = ?1 AND resolved_at IS NULL AND is_noise = 0 ORDER BY received_at DESC",
                 )
                 .map_err(|e| format!("query error: {e}"))?;
@@ -905,6 +905,8 @@ pub fn get_entity_emails(
                         commitments: row.get(28).ok(),
                         questions: row.get(29).ok(),
                         is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
+                        to_recipients: row.get(31).ok(),
+                        cc_recipients: row.get(32).ok(),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -942,7 +944,7 @@ pub fn get_entity_emails(
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                            pinned_at, commitments, questions, is_noise
+                            pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
                  FROM emails WHERE sender_email IN ({}) AND resolved_at IS NULL AND is_noise = 0 ORDER BY received_at DESC",
                 placeholders.join(",")
             );
@@ -988,6 +990,8 @@ pub fn get_entity_emails(
                         commitments: row.get(28).ok(),
                         questions: row.get(29).ok(),
                         is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
+                        to_recipients: row.get(31).ok(),
+                        cc_recipients: row.get(32).ok(),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -2116,6 +2120,8 @@ mod tests {
             commitments: None,
             questions: None,
             is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
         };
 
         db.upsert_email(&mk("em-A-older", &earlier)).expect("upsert A");
@@ -2196,6 +2202,8 @@ mod tests {
             commitments: None,
             questions: None,
             is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
         };
         db.upsert_email(&a).expect("upsert A");
 
@@ -2272,6 +2280,8 @@ mod tests {
             commitments: None,
             questions: None,
             is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
         };
 
         // Thread 1 has two siblings. Thread 2 has one row, both currently
@@ -2355,6 +2365,8 @@ mod tests {
             commitments: None,
             questions: None,
             is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
         };
 
         // Resolved historical row + active row in the same thread.

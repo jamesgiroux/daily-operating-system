@@ -535,6 +535,18 @@ const MIGRATIONS: &[Migration] = &[
         version: 118,
         sql: include_str!("migrations/117_entity_graph_version_full_triggers.sql"),
     },
+    // DOS-258 follow-up: add source provenance to account_domains so
+    // raw_rebuild_account_domains can purge inferred domains before cutover.
+    Migration {
+        version: 119,
+        sql: include_str!("migrations/118_account_domains_source.sql"),
+    },
+    // DOS-258 follow-up: email To/Cc recipient columns for multi-participant
+    // domain evidence in P4b/P4c rules.
+    Migration {
+        version: 120,
+        sql: include_str!("migrations/119_email_to_cc.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

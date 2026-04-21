@@ -264,6 +264,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     commitments: None,
                     questions: None,
                     is_noise,
+                    to_recipients: extract_recipient_addresses(&raw.to),
+                    cc_recipients: extract_recipient_addresses(&raw.cc),
                 };
                 if let Err(e) = db.upsert_email(&db_email) {
                     log::warn!("Failed to persist email {}: {}", raw.id, e);
@@ -1575,6 +1577,8 @@ pub async fn refresh_emails_with_retry_batch(
                 commitments: None,
                 questions: None,
                 is_noise,
+                to_recipients: extract_recipient_addresses(&raw.to),
+                cc_recipients: extract_recipient_addresses(&raw.cc),
             };
             if let Err(e) = db.upsert_email(&db_email) {
                 log::warn!("Failed to persist email {}: {}", raw.id, e);
@@ -2535,6 +2539,33 @@ fn extract_display_name(from_field: &str) -> String {
 /// Extract the email address from From field, falling back to the full string.
 fn sender_name_fallback(from_field: &str) -> String {
     email_classify::extract_email_address(from_field)
+}
+
+/// Extract bare lowercase email addresses from an RFC 2822 To/Cc header.
+///
+/// Input: `"Alice" <alice@acme.com>, bob@acme.com`
+/// Output: `Some("alice@acme.com,bob@acme.com")`
+///
+/// Returns None when the header is empty or contains no valid addresses.
+fn extract_recipient_addresses(header: &str) -> Option<String> {
+    if header.is_empty() {
+        return None;
+    }
+    let addrs: Vec<String> = header
+        .split(',')
+        .filter_map(|part| {
+            let part = part.trim();
+            if let (Some(lt), Some(gt)) = (part.find('<'), part.rfind('>')) {
+                let addr = part[lt + 1..gt].trim().to_lowercase();
+                if addr.contains('@') { Some(addr) } else { None }
+            } else if part.contains('@') {
+                Some(part.to_lowercase())
+            } else {
+                None
+            }
+        })
+        .collect();
+    if addrs.is_empty() { None } else { Some(addrs.join(",")) }
 }
 
 /// I318: Track thread positions from fetched high-priority emails.
