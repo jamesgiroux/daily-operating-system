@@ -551,34 +551,46 @@ pub async fn submit_intelligence_feedback(
 /// DOS-41: Submit a consolidated intelligence correction.
 ///
 /// Replaces the legacy thumbs up/down + separate "replaced" paths with a
-/// single command that handles all three user actions:
+/// single command that handles all supported user actions:
 /// - `confirmed`  — user agrees with the AI output
+/// - `rejected`   — user disagrees but keeps the content visible
 /// - `annotated`  — user adds context without rejecting the output
 /// - `corrected`  — user replaces the output with a new value
+/// - `dismissed`  — user marks the output wrong and wants it hidden
 ///
 /// Frontend integration: `useIntelligenceCorrection` hook. Component
 /// placement (`IntelligenceCorrection.tsx`) lands in Wave 1.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitIntelligenceCorrectionRequest {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub field: String,
+    pub action: String,
+    pub corrected_value: Option<String>,
+    pub annotation: Option<String>,
+    pub item_key: Option<String>,
+}
+
 #[tauri::command]
 pub async fn submit_intelligence_correction(
-    entity_id: String,
-    entity_type: String,
-    field: String,
-    action: String,
-    corrected_value: Option<String>,
-    annotation: Option<String>,
+    request: SubmitIntelligenceCorrectionRequest,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let parsed = crate::db::feedback::CorrectionAction::parse(&action)?;
+    let parsed = crate::db::feedback::CorrectionAction::parse(&request.action)?;
     state
         .db_write(move |db| {
             crate::services::feedback::submit_intelligence_correction(
                 db,
-                &entity_id,
-                &entity_type,
-                &field,
-                parsed,
-                corrected_value.as_deref(),
-                annotation.as_deref(),
+                crate::services::feedback::SubmitIntelligenceCorrectionInput {
+                    entity_id: &request.entity_id,
+                    entity_type: &request.entity_type,
+                    field: &request.field,
+                    action: parsed,
+                    corrected_value: request.corrected_value.as_deref(),
+                    annotation: request.annotation.as_deref(),
+                    item_key: request.item_key.as_deref(),
+                },
             )
         })
         .await
@@ -593,5 +605,19 @@ pub async fn get_entity_feedback(
 ) -> Result<Vec<crate::db::intelligence_feedback::FeedbackRow>, String> {
     state
         .db_read(move |db| db.get_entity_feedback(&entity_id, &entity_type))
+        .await
+}
+
+/// Get all active suppression tombstones for an entity.
+#[tauri::command]
+pub async fn get_entity_suppressions(
+    entity_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::SuppressionTombstone>, String> {
+    state
+        .db_read(move |db| {
+            db.get_active_suppressions(&entity_id)
+                .map_err(|e| e.to_string())
+        })
         .await
 }

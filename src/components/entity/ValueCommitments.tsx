@@ -11,10 +11,12 @@
  * Per-item dismiss (hover X) calls both `onUpdateField(path, "")` (hides the item)
  * and `onItemFeedback(path, "negative")` (feeds Bayesian source weights).
  */
-import { X } from "lucide-react";
+import { useState } from "react";
 import type { EntityIntelligence } from "@/types";
 import { hasBleedFlag } from "@/lib/contamination-guard";
 import { ContaminationWarning } from "@/components/ui/ContaminationWarning";
+import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
+import { useEntitySuppressions } from "@/hooks/useEntitySuppressions";
 import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
 import css from "./ValueCommitments.module.css";
 
@@ -88,10 +90,20 @@ function metricStatus(raw?: string): { label: string; cls: string } | null {
 export function ValueCommitments({
   intelligence,
   onUpdateField,
-  onItemFeedback,
+  onItemFeedback: _onItemFeedback,
 }: ValueCommitmentsProps) {
-  const valueDelivered = (intelligence.valueDelivered ?? []).filter((v) => v.statement?.trim());
-  const successMetrics = (intelligence.successMetrics ?? []).filter((m) => m.name?.trim());
+  const suppressions = useEntitySuppressions(intelligence.entityId);
+  const [hiddenPaths, setHiddenPaths] = useState<Set<string>>(() => new Set());
+  const valueDelivered = (intelligence.valueDelivered ?? [])
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.statement?.trim())
+    .filter(({ index }) => !hiddenPaths.has(`valueDelivered[${index}].statement`))
+    .filter(({ item }) => !suppressions.isSuppressed("valueDelivered", item.statement));
+  const successMetrics = (intelligence.successMetrics ?? [])
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.name?.trim())
+    .filter(({ index }) => !hiddenPaths.has(`successMetrics[${index}].name`))
+    .filter(({ item }) => !suppressions.isSuppressed("successMetrics", item.name));
 
   const hasValue = valueDelivered.length > 0;
   const hasMetrics = successMetrics.length > 0;
@@ -100,23 +112,18 @@ export function ValueCommitments({
 
   const metricsBleed = hasBleedFlag(intelligence.consistencyFindings, "successMetrics");
 
-  const dismiss = (path: string) => {
-    onUpdateField?.(path, "");
-    onItemFeedback?.(path, "negative");
-  };
-
   return (
     <section className={css.section}>
       {hasValue && (
         <>
           <div className={css.subsectionLabel}>Value delivered</div>
           <div className={css.valueGrid}>
-            {valueDelivered.map((item, i) => {
+            {valueDelivered.map(({ item, index }, i) => {
               const kind = classifyImpact(item.impact);
               const sourceBits: string[] = [];
               if (item.date) sourceBits.push(formatShortDate(item.date));
               if (item.source) sourceBits.push(item.source);
-              const path = `valueDelivered[${i}].statement`;
+              const path = `valueDelivered[${index}].statement`;
               return (
                 <article key={i} className={css.valueCard}>
                   <span className={`${css.impactTag} ${impactTagClass(kind)}`}>
@@ -128,14 +135,17 @@ export function ValueCommitments({
                   )}
                   <ProvenanceTag itemSource={item.itemSource} discrepancy={item.discrepancy} />
                   {onUpdateField && (
-                    <button
-                      type="button"
-                      className={css.dismissButton}
-                      onClick={() => dismiss(path)}
-                      title="Dismiss (feeds back into AI)"
-                    >
-                      <X size={13} />
-                    </button>
+                    <IntelligenceCorrection
+                      entityId={intelligence.entityId}
+                      entityType="account"
+                      field="valueDelivered"
+                      itemKey={item.statement}
+                      onDismissed={async () => {
+                        suppressions.markSuppressed("valueDelivered", item.statement);
+                        setHiddenPaths((prev) => new Set(prev).add(path));
+                        await onUpdateField(path, "");
+                      }}
+                    />
                   )}
                 </article>
               );
@@ -151,9 +161,9 @@ export function ValueCommitments({
             <ContaminationWarning />
           ) : (
             <div className={css.metricRow}>
-              {successMetrics.map((metric, i) => {
+              {successMetrics.map(({ item: metric, index }, i) => {
                 const status = metricStatus(metric.status);
-                const path = `successMetrics[${i}].name`;
+                const path = `successMetrics[${index}].name`;
                 return (
                   <article key={i} className={css.metricCard}>
                     <div className={css.metricName}>{metric.name}</div>
@@ -174,14 +184,17 @@ export function ValueCommitments({
                       )}
                     </div>
                     {onUpdateField && (
-                      <button
-                        type="button"
-                        className={css.dismissButton}
-                        onClick={() => dismiss(path)}
-                        title="Dismiss (feeds back into AI)"
-                      >
-                        <X size={13} />
-                      </button>
+                      <IntelligenceCorrection
+                        entityId={intelligence.entityId}
+                        entityType="account"
+                        field="successMetrics"
+                        itemKey={metric.name}
+                        onDismissed={async () => {
+                          suppressions.markSuppressed("successMetrics", metric.name);
+                          setHiddenPaths((prev) => new Set(prev).add(path));
+                          await onUpdateField(path, "");
+                        }}
+                      />
                     )}
                   </article>
                 );

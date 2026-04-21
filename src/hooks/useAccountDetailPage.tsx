@@ -7,7 +7,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
-import { useAccountDetail } from "@/hooks/useAccountDetail";
+import { buildPresetSentimentLabels, useAccountDetail } from "@/hooks/useAccountDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell, useUpdateFolioVolatile } from "@/hooks/useMagazineShell";
@@ -43,6 +43,13 @@ export function useAccountDetailPage(accountId: string | undefined) {
   const navigate = useNavigate();
   const acct = useAccountDetail(accountId);
   const preset = useActivePreset();
+  const sentiment = useMemo(
+    () => ({
+      ...acct.sentiment,
+      presetLabels: buildPresetSentimentLabels(preset),
+    }),
+    [acct.sentiment, preset],
+  );
 
   // View state — driven by ?view= URL param, synced back on change.
   // Declared first so useRevealObserver below can take it as a revision
@@ -101,7 +108,7 @@ export function useAccountDetailPage(accountId: string | undefined) {
       // the page uses so the two stay in lockstep.
       const findings = intel?.consistencyFindings ?? [];
       const glean = acct.gleanSignals;
-      const showTriage = hasTriageContent(intel, glean);
+      const showTriage = hasTriageContent(intel, glean, sentiment.current);
       const showDivergence = hasDivergenceContent(findings, glean);
       const fineState = !!intel && !showTriage && !showDivergence;
       const hasOutlook = !!(
@@ -141,6 +148,7 @@ export function useAccountDetailPage(accountId: string | undefined) {
     acct.detail?.products,
     acct.intelligence,
     acct.gleanSignals,
+    sentiment.current,
     acct.files,
     hasSharedData,
   ]);
@@ -243,6 +251,7 @@ export function useAccountDetailPage(accountId: string | undefined) {
     // Derived
     detail: acct.detail,
     intelligence: acct.detail?.intelligence ?? null,
+    sentiment,
     loading: acct.loading,
     error: acct.error,
 
