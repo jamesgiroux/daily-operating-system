@@ -81,6 +81,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                         domains: vec![],
                         keywords: vec![],
                         emails: vec![],
+                        // account_type is unknown in the filesystem fallback (no DB).
+                        // The DOS-206 guard will not fire for internal accounts in
+                        // this path — acceptable because the DB-backed path is
+                        // always used in production.
                         account_type: None,
                         linked_account_ids: vec![],
                     })
