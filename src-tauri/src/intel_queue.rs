@@ -278,6 +278,7 @@ fn emit_leading_signals_failed(
     entity_type: &str,
     reason: &str,
     wall_clock_ms: u64,
+    is_background: bool,
 ) {
     {
         let mut audit = state.audit_log.lock();
@@ -289,18 +290,24 @@ fn emit_leading_signals_failed(
                 "entity_type": entity_type,
                 "reason": reason,
                 "wall_clock_ms": wall_clock_ms,
+                "background": is_background,
             }),
         );
     }
-    let _ = app.emit(
-        "enrichment-glean-leading-signals-failed",
-        serde_json::json!({
-            "entity_id": entity_id,
-            "entity_type": entity_type,
-            "reason": reason,
-            "wall_clock_ms": wall_clock_ms,
-        }),
-    );
+    // Toast only on user-initiated work — match the main-enrichment gate.
+    // Background hygiene sweeps would otherwise spam toasts every few
+    // minutes as Glean's natural partial-failure rate surfaces.
+    if !is_background {
+        let _ = app.emit(
+            "enrichment-glean-leading-signals-failed",
+            serde_json::json!({
+                "entity_id": entity_id,
+                "entity_type": entity_type,
+                "reason": reason,
+                "wall_clock_ms": wall_clock_ms,
+            }),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -775,6 +782,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     let engine = std::sync::Arc::clone(&state.signals.engine);
                     let state_for_spawn = std::sync::Arc::clone(&state);
                     let app_for_spawn = app.clone();
+                    // Same is_background gate as main enrichment: suppress
+                    // user-visible toast on scheduled work, keep audit log.
+                    let is_background = is_background_priority(request.priority);
                     tauri::async_runtime::spawn(async move {
                         let provider = crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
                         let ls_start = std::time::Instant::now();
@@ -804,6 +814,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                                             &entity_type,
                                             &reason,
                                             ls_start.elapsed().as_millis() as u64,
+                                            is_background,
                                         );
                                     } else {
                                         log::info!(
@@ -826,6 +837,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                                     &entity_type,
                                     &e,
                                     ls_start.elapsed().as_millis() as u64,
+                                    is_background,
                                 );
                             }
                         }
@@ -1227,6 +1239,7 @@ async fn run_glean_enrichment_with_fallback(
                 input.entity_type
             );
 
+            let is_background = is_background_priority(request.priority);
             match provider
                 .enrich_entity(
                     &input.entity_id,
@@ -1235,6 +1248,7 @@ async fn run_glean_enrichment_with_fallback(
                     ctx,
                     input.relationship.as_deref(),
                     Some(app_handle),
+                    is_background,
                 )
                 .await
             {
