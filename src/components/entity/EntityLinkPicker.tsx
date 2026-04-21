@@ -9,15 +9,10 @@
  *   outcome.tier === 'entity'
  *
  * Renders a list of related entity chips. Clicking one calls
- * `invoke('manual_set_primary', ...)` and optimistically updates local state.
+ * `invoke('set_entity_link_primary', ...)` and optimistically updates local state.
  *
  * Also renders the P5 title-only banner:
  *   Shows "from title · undo" when a primary entity's appliedRule === 'P5'.
- *
- * NOTE: `manual_set_primary` is a DOS-258 backend command that will be wired
- * in a later Lane. Until it lands, the button is present and fires the invoke
- * but the backend will return an error (gracefully caught and toasted).
- * TODO(Lane-G): remove the try/catch fallback once Lane H/I ships the command.
  */
 
 import { useState, useCallback } from "react";
@@ -59,8 +54,6 @@ export function EntityLinkPicker({
     async (entityId: string, entityType: string) => {
       setInFlight(entityId);
       try {
-        // TODO(Lane-G): `manual_set_primary` ships in a later Lane.
-        // Until then this invoke will fail; the error is caught and toasted.
         await invoke("set_entity_link_primary", {
           ownerType,
           ownerId,
@@ -69,8 +62,8 @@ export function EntityLinkPicker({
         });
         onPrimarySet?.();
       } catch (err) {
-        console.error("manual_set_primary failed:", err);
-        toast.error("Could not set primary — backend not yet available");
+        console.error("set_entity_link_primary failed:", err);
+        toast.error("Could not set primary");
       } finally {
         setInFlight(null);
       }
@@ -136,9 +129,6 @@ export function TitleOnlyBanner({
   const handleUndo = useCallback(async () => {
     setBusy(true);
     try {
-      // TODO(Lane-G): `dismiss_meeting_entity` already exists (DOS-240).
-      // For email/thread, a parallel command will be needed. For now wire
-      // meeting surface only; other surfaces fall through gracefully.
       if (ownerType === "meeting") {
         await invoke("dismiss_meeting_entity", {
           meetingId: ownerId,

@@ -1015,55 +1015,33 @@ pub async fn get_pending_stakeholder_suggestions(
 }
 
 /// Confirm a pending_review stakeholder: promotes status to 'active'.
-///
-/// TODO(Lane-C): replace this inline SQL with a call to
-/// services::entity_linking::confirm_stakeholder_suggestion once that
-/// service stub is implemented.
 #[tauri::command]
 pub async fn confirm_pending_stakeholder(
     account_id: String,
     person_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state
-        .db_write(move |db| {
-            db.conn
-                .execute(
-                    "UPDATE account_stakeholders
-                     SET status = 'active'
-                     WHERE account_id = ?1 AND person_id = ?2 AND status = 'pending_review'",
-                    rusqlite::params![account_id, person_id],
-                )
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        })
-        .await
+    crate::services::entity_linking::confirm_stakeholder_suggestion(
+        state.inner().clone(),
+        account_id,
+        person_id,
+    )
+    .await
 }
 
 /// Dismiss a pending_review stakeholder: sets status to 'dismissed'.
-///
-/// TODO(Lane-C): replace this inline SQL with a call to
-/// services::entity_linking::dismiss_stakeholder_suggestion once that
-/// service stub is implemented.
 #[tauri::command]
 pub async fn dismiss_pending_stakeholder(
     account_id: String,
     person_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state
-        .db_write(move |db| {
-            db.conn
-                .execute(
-                    "UPDATE account_stakeholders
-                     SET status = 'dismissed'
-                     WHERE account_id = ?1 AND person_id = ?2 AND status = 'pending_review'",
-                    rusqlite::params![account_id, person_id],
-                )
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        })
-        .await
+    crate::services::entity_linking::dismiss_stakeholder_suggestion(
+        state.inner().clone(),
+        account_id,
+        person_id,
+    )
+    .await
 }
 
 // =============================================================================
