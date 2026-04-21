@@ -137,6 +137,48 @@ export interface LinkedEntity {
   isPrimary?: boolean;
   /** DOS-74: true for low-confidence siblings rendered as muted suggestions. */
   suggested?: boolean;
+  /**
+   * DOS-258: deterministic link role from the new entity linking engine.
+   * Supersedes isPrimary + suggested when present.
+   */
+  role?: LinkRole;
+  /** DOS-258: rule identifier that produced this link (e.g. "P5", "P9"). */
+  appliedRule?: string | null;
+}
+
+// ─── DOS-258: New entity linking vocabulary ───────────────────────────────────
+
+/** Role of a linked entity in the context of its owner (meeting / email / thread). */
+export type LinkRole = "primary" | "related" | "auto_suggested" | "user_dismissed";
+
+/** Tier describes how much entity context is available for an owner. */
+export type LinkTier = "entity" | "person" | "minimal" | "skip";
+
+/** Owner surface types for entity linking. */
+export type OwnerType = "meeting" | "email" | "email_thread";
+
+/** A resolved entity chip as produced by the DOS-258 link engine. */
+export interface LinkedEntityChip {
+  entityId: string;
+  entityType: string;
+  role: LinkRole;
+  confidence: number | null;
+  appliedRule: string | null;
+  source: string;
+}
+
+/**
+ * Full link outcome for a single owner (meeting / email / thread).
+ * primary === null + related.length > 0 + tier === 'entity' is the P9
+ * ambiguous case that triggers the EntityLinkPicker.
+ */
+export interface LinkOutcome {
+  ownerType: OwnerType;
+  ownerId: string;
+  primary: { entityId: string; entityType: string } | null;
+  related: Array<{ entityId: string; entityType: string }>;
+  tier: LinkTier;
+  appliedRule: string | null;
 }
 
 export interface Meeting {
