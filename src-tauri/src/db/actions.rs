@@ -684,7 +684,14 @@ impl ActionDb {
     // Suggested Actions (I256)
     // =========================================================================
 
-    /// Get all suggested actions.
+    /// Get all suggested actions (no owner filter).
+    ///
+    /// Prefer `get_suggested_actions_for_user` in production — this variant
+    /// returns every backlog row regardless of who owns it, which on a real
+    /// workspace drowns the user in other people's commitments (AI
+    /// extraction tags every speaker in transcripts as a potential owner).
+    /// Kept for devtools, tests, and explicit "show everyone's" frontend
+    /// toggles.
     pub fn get_suggested_actions(&self) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
@@ -698,6 +705,61 @@ impl ActionDb {
         )?;
 
         let rows = stmt.query_map([], Self::map_action_row)?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// Get suggested actions scoped to the current user + unassigned rows.
+    ///
+    /// AI extraction populates `context` with an `"owner: <name>"` prefix
+    /// for every commitment it finds in a transcript — including ones where
+    /// the user is a passive observer, not the owner. On a real workspace
+    /// this produces hundreds of "suggested actions" that belong to other
+    /// people (other TAMs, customer stakeholders, internal peers). The user
+    /// can't realistically triage that firehose.
+    ///
+    /// This variant filters to rows whose `context` either:
+    ///   - starts with `"owner: <user_name>"` (case-insensitive), or
+    ///   - has no recognisable owner prefix (ambiguous — still worth
+    ///     surfacing for triage)
+    ///
+    /// If `user_name` is None or empty, falls back to no filter (safer than
+    /// showing nothing when identity isn't configured).
+    pub fn get_suggested_actions_for_user(
+        &self,
+        user_name: Option<&str>,
+    ) -> Result<Vec<DbAction>, DbError> {
+        let trimmed = user_name.map(|n| n.trim()).filter(|n| !n.is_empty());
+        let Some(name) = trimmed else {
+            return self.get_suggested_actions();
+        };
+
+        // LIKE pattern: match "owner: <name>" prefix, case-insensitive via LOWER().
+        // Unassigned rows (context NULL / empty / no owner prefix) are included
+        // so the user doesn't miss ambiguous work that still needs triage.
+        let owner_prefix = format!("owner: {}", name.to_lowercase());
+        let mut stmt = self.conn.prepare(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             WHERE status = 'backlog'
+               AND (
+                     context IS NULL
+                  OR context = ''
+                  OR LOWER(context) NOT LIKE 'owner:%'
+                  OR LOWER(context) LIKE ?1 || '%'
+               )
+             ORDER BY priority, created_at DESC",
+        )?;
+
+        let rows = stmt.query_map([owner_prefix.as_str()], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -1596,5 +1658,66 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 2, "rejection_count should be incremented");
+    }
+
+    /// Regression: get_suggested_actions_for_user must scope to the user's own
+    /// commitments + unassigned rows. Without this filter a real workspace
+    /// returns 355 rows of which ~90% are other people's commitments.
+    #[test]
+    fn suggested_actions_for_user_filters_by_owner_prefix() {
+        let db = test_db();
+
+        let seeds = [
+            ("a-mine", "Send the deck", "owner: James Giroux (TAM)"),
+            ("b-mine-case", "Schedule sync", "owner: james giroux"),
+            ("c-other", "Prep contract", "owner: Renan Basteris (Account Manager)"),
+            ("d-other", "Migration plan", "owner: Sean Langlands"),
+            ("e-unassigned", "Follow up on Q", ""),
+            ("f-unassigned-null", "Review transcript", ""),
+            (
+                "g-unassigned-prose",
+                "Coordinate with team",
+                "Internal coordination without owner prefix",
+            ),
+        ];
+        for (id, title, ctx) in seeds {
+            db.conn
+                .execute(
+                    "INSERT INTO actions (id, title, priority, status, created_at, updated_at, context, action_kind)
+                     VALUES (?1, ?2, 2, 'backlog', datetime('now'), datetime('now'), ?3, 'commitment')",
+                    params![id, title, if ctx.is_empty() { None } else { Some(ctx) }],
+                )
+                .expect("insert seed");
+        }
+
+        // Mine + unassigned only.
+        let scoped = db
+            .get_suggested_actions_for_user(Some("James Giroux"))
+            .expect("scoped");
+        let ids: std::collections::HashSet<_> = scoped.iter().map(|a| a.id.clone()).collect();
+        assert!(ids.contains("a-mine"), "expected a-mine in scoped set");
+        assert!(ids.contains("b-mine-case"), "case-insensitive owner match");
+        assert!(
+            ids.contains("e-unassigned") && ids.contains("f-unassigned-null"),
+            "empty-context rows must surface for triage"
+        );
+        assert!(
+            ids.contains("g-unassigned-prose"),
+            "rows without owner: prefix must surface"
+        );
+        assert!(!ids.contains("c-other"), "other-owner rows must be filtered out");
+        assert!(!ids.contains("d-other"), "other-owner rows must be filtered out");
+
+        // Unscoped fallback (None) = full list, same as get_suggested_actions().
+        let unscoped = db.get_suggested_actions_for_user(None).expect("unscoped");
+        assert_eq!(
+            unscoped.len(),
+            7,
+            "None user_name should return all seeded rows"
+        );
+
+        // Empty user_name also falls back to full list (defensive).
+        let empty = db.get_suggested_actions_for_user(Some("   ")).expect("empty");
+        assert_eq!(empty.len(), 7, "whitespace-only name falls back to full list");
     }
 }
