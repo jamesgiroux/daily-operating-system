@@ -3254,6 +3254,7 @@ pub async fn reprocess_meeting_transcript(
         meeting_type: crate::parser::parse_meeting_type(&meeting_row.meeting_type),
         attendees: Vec::new(),
         is_all_day: false,
+        series_id: None,
         account: None, // Resolved by transcript pipeline from meeting_entities
         linked_entities: None,
         classified_entities: None,
