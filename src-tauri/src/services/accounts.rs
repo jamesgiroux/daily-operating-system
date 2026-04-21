@@ -83,20 +83,25 @@ pub fn create_child_account_record(
             .map_err(|e| e.to_string())?;
     }
 
+    if let Some(desc) = description {
+        let trimmed = desc.trim();
+        if !trimmed.is_empty() {
+            let _ = db.update_account_field(&account.id, "notes", trimmed);
+        }
+    }
+
+    let account = db
+        .get_account(&account.id)
+        .map_err(|e| e.to_string())?
+        .unwrap_or(account);
+
     if let Some(ws) = workspace {
         let account_dir = crate::accounts::resolve_account_dir(ws, &account);
         let _ = std::fs::create_dir_all(&account_dir);
         let _ = crate::util::bootstrap_entity_directory(&account_dir, name, "account");
 
-        let mut json = default_account_json(&account);
-        if let Some(desc) = description {
-            let trimmed = desc.trim();
-            if !trimmed.is_empty() {
-                json.notes = Some(trimmed.to_string());
-            }
-        }
-        let _ = crate::accounts::write_account_json(ws, &account, Some(&json), db);
-        let _ = crate::accounts::write_account_markdown(ws, &account, Some(&json), db);
+        let _ = crate::accounts::write_account_json(ws, &account, None, db);
+        let _ = crate::accounts::write_account_markdown(ws, &account, None, db);
     }
 
     Ok(account)
@@ -117,9 +122,16 @@ pub fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::
             csm: None,
             champion: None,
         },
-        company_overview: None,
-        strategic_programs: Vec::new(),
-        notes: None,
+        company_overview: account
+            .company_overview
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok()),
+        strategic_programs: account
+            .strategic_programs
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default(),
+        notes: account.notes.clone(),
         custom_sections: Vec::new(),
         parent_id: account.parent_id.clone(),
     }
@@ -1049,19 +1061,19 @@ pub fn correct_lifecycle_change(
 #[allow(clippy::too_many_arguments)]
 pub fn accept_account_field_conflict(
     db: &ActionDb,
-    state: &AppState,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     field: &str,
     suggested_value: &str,
     source: &str,
     signal_id: Option<&str>,
-) -> Result<(), String> {
+) -> Result<AccountDetailResult, String> {
     let next_value = if field == "lifecycle" {
         normalized_lifecycle(suggested_value)
     } else {
         suggested_value.to_string()
     };
-    update_account_field(db, state, account_id, field, &next_value)?;
+    update_account_field_inner(db, state, account_id, field, &next_value)?;
 
     if matches!(field, "arr" | "lifecycle" | "contract_end" | "nps") {
         db.set_account_field_provenance(account_id, field, source, None)
@@ -1069,44 +1081,24 @@ pub fn accept_account_field_conflict(
     }
 
     if let Some(sig_id) = signal_id {
-        let feedback_id = uuid::Uuid::new_v4().to_string();
-        let feedback_key = account_field_conflict_feedback_key(field, suggested_value);
-        let context = serde_json::json!({
-            "source": source,
-            "signal_id": sig_id,
-            "suggested_value": suggested_value,
-        })
-        .to_string();
-        db.insert_intelligence_feedback(
-            &crate::db::intelligence_feedback::FeedbackInput {
-                id: &feedback_id,
-                entity_id: account_id,
-                entity_type: "account",
-                field: &feedback_key,
-                feedback_type: "positive",
-                previous_value: None,
-                context: Some(&context),
-            },
-        )?;
-
         let accepted_signal_id =
             format!("account-field-conflict-accepted-{}", uuid::Uuid::new_v4());
         let _ = crate::signals::bus::supersede_signal(db, sig_id, &accepted_signal_id);
     }
 
     // I645: Record feedback event for accepted field conflict.
-    let _ = db.record_feedback_event(
-        account_id,
-        "account",
-        field,
-        signal_id,
-        "accept",
-        Some(source),
-        Some("field_conflict"),
-        None,
-        Some(suggested_value),
-        None,
-    );
+    let _ = db.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
+        entity_id: account_id,
+        entity_type: "account",
+        field_key: field,
+        item_key: signal_id,
+        feedback_type: "accept",
+        source_system: Some(source),
+        source_kind: Some("field_conflict"),
+        previous_value: None,
+        corrected_value: Some(suggested_value),
+        reason: None,
+    });
 
     let _ = db.upsert_signal_weight(
         source,
@@ -1136,7 +1128,9 @@ pub fn accept_account_field_conflict(
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
 
-    Ok(())
+    // DOS-229 Wave 0e Fix 5: return post-write detail so the frontend can
+    // setDetail(result) without a second fetch.
+    build_account_detail_result(db, account_id)
 }
 
 pub fn dismiss_account_field_conflict(
@@ -1147,40 +1141,20 @@ pub fn dismiss_account_field_conflict(
     signal_id: &str,
     source: &str,
     suggested_value: Option<&str>,
-) -> Result<(), String> {
-    let feedback_id = uuid::Uuid::new_v4().to_string();
-    let feedback_key = account_field_conflict_feedback_key(field, suggested_value.unwrap_or(""));
-    let context = serde_json::json!({
-        "source": source,
-        "signal_id": signal_id,
-        "suggested_value": suggested_value,
-    })
-    .to_string();
-    db.insert_intelligence_feedback(
-        &crate::db::intelligence_feedback::FeedbackInput {
-            id: &feedback_id,
-            entity_id: account_id,
-            entity_type: "account",
-            field: &feedback_key,
-            feedback_type: "negative",
-            previous_value: None,
-            context: Some(&context),
-        },
-    )?;
-
+) -> Result<AccountDetailResult, String> {
     // I645: Record feedback event + suppression tombstone for rejected field conflict.
-    let _ = db.record_feedback_event(
-        account_id,
-        "account",
-        field,
-        Some(signal_id),
-        "reject",
-        Some(source),
-        Some("field_conflict"),
-        None,
-        suggested_value,
-        None,
-    );
+    let _ = db.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
+        entity_id: account_id,
+        entity_type: "account",
+        field_key: field,
+        item_key: Some(signal_id),
+        feedback_type: "reject",
+        source_system: Some(source),
+        source_kind: Some("field_conflict"),
+        previous_value: None,
+        corrected_value: suggested_value,
+        reason: None,
+    });
     let _ = db.create_suppression_tombstone(
         account_id,
         field,
@@ -1220,7 +1194,7 @@ pub fn dismiss_account_field_conflict(
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
 
-    Ok(())
+    build_account_detail_result(db, account_id)
 }
 
 /// Get full detail for an account by ID.
@@ -1241,7 +1215,22 @@ pub async fn get_account_detail(
 
     let account_id = account_id.to_string();
     state
-        .db_read(move |db| {
+        .db_read(move |db| build_account_detail_result(db, &account_id))
+        .await
+}
+
+/// DOS-229: Synchronous assembly of `AccountDetailResult` against a given DB
+/// connection. Extracted so write commands can read back post-write state
+/// from the SAME writer connection (avoiding SQLite WAL reader-snapshot lag
+/// that makes a follow-up `db_read` return stale rows until app reload).
+pub fn build_account_detail_result(
+    db: &ActionDb,
+    account_id: &str,
+) -> Result<AccountDetailResult, String> {
+    // Shadow with owned String so the rest of the original closure body —
+    // which takes `&account_id` referring to a `String` — still borrows as
+    // `&String` (coerces to `&str`). Keeps the diff minimal on extract.
+    let account_id: String = account_id.to_string();
             let account = db
                 .get_account(&account_id)
                 .map_err(|e| e.to_string())?
@@ -1301,6 +1290,16 @@ pub async fn get_account_detail(
                 })
                 .collect();
 
+            // DOS-233 Codex fix: totals are COUNT(*) without a LIMIT so
+            // active accounts don't stall at 10 meetings / transcripts in
+            // the About-this-dossier chapter.
+            let meeting_total_count = db
+                .get_total_meeting_count_for_account(&account_id)
+                .unwrap_or(0);
+            let transcript_total_count = db
+                .get_total_transcript_count_for_account(&account_id)
+                .unwrap_or(0);
+
             let recent_meetings: Vec<MeetingPreview> =
                 db.get_meetings_for_account_with_prep(&account_id, 10)
                     .map_err(|e| e.to_string())?
@@ -1332,8 +1331,10 @@ pub async fn get_account_detail(
             let recent_captures = db
                 .get_captures_for_account(&account_id, 90)
                 .unwrap_or_default();
+            // DOS-156: Use direct-only query for The Record display (precision over recall).
+            // Propagated person→account signals caused 14.6x fan-out noise.
             let recent_email_signals = db
-                .list_recent_email_signals_for_entity(&account_id, 12)
+                .list_direct_email_signals_for_entity(&account_id, 12)
                 .unwrap_or_default();
 
             // I114: Resolve parent name for child accounts, children for parent accounts
@@ -1399,6 +1400,37 @@ pub async fn get_account_detail(
             // I644: Source references for promoted account facts
             let source_refs = db.get_account_source_refs(&account.id).unwrap_or_default();
 
+            // DOS-228 Fix 3: current risk-briefing job status for UI progress
+            // and retry affordance.
+            let risk_briefing_job = db.get_risk_briefing_job(&account.id).ok().flatten();
+
+            // DOS-27: Sentiment journal + sparkline (last 90 days).
+            let sentiment_history = db
+                .get_sentiment_history(&account.id, 90)
+                .unwrap_or_default();
+            let sentiment_note = db
+                .get_latest_sentiment_note(&account.id)
+                .ok()
+                .flatten()
+                .map(|(note, _)| note);
+            let health_sparkline = db
+                .get_health_score_sparkline(&account.id, 90)
+                .unwrap_or_default();
+
+            // DOS-15: Glean leading-signal enrichment bundle — nullable.
+            let glean_signals: Option<
+                crate::intelligence::glean_leading_signals::HealthOutlookSignals,
+            > = db
+                .conn_ref()
+                .query_row(
+                    "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+                    rusqlite::params![&account.id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .ok()
+                .flatten()
+                .and_then(|json| serde_json::from_str(&json).ok());
+
             Ok(AccountDetailResult {
                 id: account.id,
                 name: account.name,
@@ -1416,6 +1448,8 @@ pub async fn get_account_detail(
                 open_actions,
                 upcoming_meetings,
                 recent_meetings,
+                meeting_total_count,
+                transcript_total_count,
                 linked_people,
                 account_team,
                 account_team_import_notes,
@@ -1438,16 +1472,36 @@ pub async fn get_account_detail(
                 technical_footprint,
                 stakeholders_full,
                 source_refs,
+                user_health_sentiment: account.user_health_sentiment,
+                sentiment_set_at: account.sentiment_set_at,
+                sentiment_note,
+                sentiment_history,
+                health_sparkline,
+                glean_signals,
+                risk_briefing_job,
             })
-        })
-        .await
 }
 
 /// Update a single structured field on an account.
 /// Writes to SQLite, emits signal, then regenerates dashboard.json + dashboard.md.
 pub fn update_account_field(
     db: &ActionDb,
-    state: &AppState,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    field: &str,
+    value: &str,
+) -> Result<AccountDetailResult, String> {
+    update_account_field_inner(db, state, account_id, field, value)?;
+    // DOS-229 generalization (Wave 0e Fix 5): return the fresh detail
+    // assembled on the SAME writer connection so the frontend hook can
+    // setDetail(result) without a follow-up silentRefresh (which hits a
+    // different pool reader whose WAL snapshot may lag).
+    build_account_detail_result(db, account_id)
+}
+
+fn update_account_field_inner(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     field: &str,
     value: &str,
@@ -1518,6 +1572,25 @@ pub fn update_account_field(
         );
     }
 
+    // DOS-228 Fix 2: Health-relevant field edits schedule a DEBOUNCED recompute
+    // on the backend. 10 rapid edits within the debounce window coalesce into
+    // exactly one recompute, reflecting the last committed state. This replaces
+    // the previous synchronous recompute, which fired once per edit and could
+    // not be trusted (AI agents, chat, and automation bypass the UI debounce).
+    //
+    // DOS-228 Wave 0f: persist the durable `health_recompute_pending` marker
+    // SYNCHRONOUSLY on the same writer connection that just committed the
+    // field edit, BEFORE scheduling the in-memory debounce. The debouncer
+    // only owns timing/coalescing — it must never own marker durability, or
+    // a crash during the 2s sleep window silently loses the committed edit's
+    // health recompute. Marker-write failure is propagated as Err so the
+    // mutation fails loudly rather than swallowing durability loss.
+    if is_health_relevant_field(field) {
+        db.mark_health_recompute_pending(account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
+        crate::services::health_debouncer::schedule_recompute(state, account_id);
+    }
+
     // Regenerate workspace files
     if let Ok(Some(account)) = db.get_account(account_id) {
         let config = state.config.read();
@@ -1571,32 +1644,486 @@ pub fn update_account_field(
                 .ok()
                 .flatten()
                 .unwrap_or(account);
-            let json_path =
-                crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
-            let existing = if json_path.exists() {
-                crate::accounts::read_account_json(&json_path)
-                    .ok()
-                    .map(|r| r.json)
-            } else {
-                None
-            };
-            let _ = crate::accounts::write_account_json(workspace, &account, existing.as_ref(), db);
-            let _ =
-                crate::accounts::write_account_markdown(workspace, &account, existing.as_ref(), db);
+            let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+            let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
         }
     }
 
     Ok(())
 }
 
-/// Update account notes (narrative field — JSON only, not SQLite).
-/// Writes dashboard.json + regenerates dashboard.md.
+/// DOS-27: Sentiment values that represent elevated risk.
+/// Transitioning INTO one of these from a non-risk value triggers
+/// background risk-briefing generation.
+const RISK_SENTIMENTS: &[&str] = &["at_risk", "critical"];
+
+/// DOS-231 Codex fix: persist a single gap-row field on `account_technical_footprint`.
+///
+/// Intelligence Loop 5Q:
+///   1. Emits a `field_updated` signal with source `user_edit` and
+///      confidence 0.9 — same propagation path as `update_account_field`.
+///   2. Technical-footprint fields already feed the health scoring behavioral
+///      layer (see `intelligence::health_scoring`), so a user edit
+///      materially improves the dimension's signal quality.
+///   3. Is included in `build_intelligence_context` via the existing
+///      `DbAccountTechnicalFootprint` block (read by prompts.rs / meeting_context.rs).
+///   4. No new briefing callout type required — the existing
+///      `field_updated` signal covers it.
+///   5. User corrections are already recorded against the "glean" enrichment
+///      source when applicable via the self-healing feedback system; here we
+///      stamp `source = 'user_edit'` on the row.
+pub fn update_technical_footprint_field(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    field: &str,
+    value: &str,
+) -> Result<AccountDetailResult, String> {
+    db.update_technical_footprint_field(account_id, field, value)
+        .map_err(|e| e.to_string())?;
+
+    // Emit field-update signal + self-healing evaluation so the rest of
+    // the Intelligence Loop picks up the user correction.
+    crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"table\":\"account_technical_footprint\",\"field\":\"{}\",\"value\":\"{}\"}}",
+            field,
+            value.replace('"', "\\\"")
+        )),
+        0.9,
+        &state.intel_queue,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
+
+    // Return the updated detail on the SAME writer connection so the
+    // frontend sees the persisted value immediately (DOS-229 pattern).
+    build_account_detail_result(db, account_id)
+}
+
+/// DOS-110 / DOS-27: Set the user's manual health sentiment on an account.
+/// Writes the current sentiment + timestamp, appends a journal entry (value +
+/// optional note + computed band snapshot), emits a `field_updated` signal,
+/// and — on transition into at_risk/critical — enqueues a background risk
+/// briefing generation.
+pub fn set_user_health_sentiment(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    sentiment: &str,
+    note: Option<&str>,
+) -> Result<AccountDetailResult, String> {
+    const VALID_SENTIMENTS: &[&str] =
+        &["strong", "on_track", "concerning", "at_risk", "critical"];
+    if !VALID_SENTIMENTS.contains(&sentiment) {
+        return Err(format!(
+            "Invalid sentiment '{}'. Must be one of: {}",
+            sentiment,
+            VALID_SENTIMENTS.join(", ")
+        ));
+    }
+
+    let previous = db
+        .get_account(account_id)
+        .map_err(|e| e.to_string())?
+        .and_then(|a| a.user_health_sentiment);
+
+    let now = Utc::now().to_rfc3339();
+    db.update_account_field(account_id, "user_health_sentiment", sentiment)
+        .map_err(|e| e.to_string())?;
+    db.update_account_field(account_id, "sentiment_set_at", &now)
+        .map_err(|e| e.to_string())?;
+
+    // Snapshot computed health at set-time for divergence analysis.
+    let (computed_band, computed_score) = db
+        .get_account(account_id)
+        .map_err(|e| e.to_string())?
+        .map(|acct| {
+            let health = crate::intelligence::health_scoring::compute_account_health(
+                db, &acct, None,
+            );
+            (Some(health.band), Some(health.score))
+        })
+        .unwrap_or((None, None));
+
+    db.insert_sentiment_journal_entry(
+        account_id,
+        sentiment,
+        note,
+        computed_band.as_deref(),
+        computed_score,
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Emit field_updated signal with high confidence (user-initiated)
+    crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"field\":\"user_health_sentiment\",\"value\":\"{}\"}}",
+            sentiment
+        )),
+        0.95,
+        &state.intel_queue,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
+
+    // DOS-27: Transition INTO at_risk/critical enqueues background risk briefing.
+    // Not every save — only the transition. Silent on failure.
+    let transitioning_into_risk = RISK_SENTIMENTS.contains(&sentiment)
+        && !previous
+            .as_deref()
+            .map(|p| RISK_SENTIMENTS.contains(&p))
+            .unwrap_or(false);
+
+    // DOS-228 Wave 0e Fix 1: persist the `enqueued` row on THIS writer
+    // connection BEFORE we build the result. Previously the row was written
+    // by a spawned `db_write` task, which cannot execute while the current
+    // writer closure is still running — so the first AccountDetailResult
+    // the user saw had a missing/stale `risk_briefing_job`. Enqueue on the
+    // same connection, then kick off the async lifecycle runner with the
+    // attempt_id we just stamped.
+    if transitioning_into_risk {
+        let attempt_id = uuid::Uuid::new_v4().to_string();
+        db.upsert_risk_briefing_job_enqueued(account_id, &attempt_id)
+            .map_err(|e| format!("persist risk briefing enqueue: {e}"))?;
+        spawn_risk_briefing_lifecycle(state, account_id.to_string(), attempt_id);
+    }
+
+    // DOS-229: Read back the updated detail on the SAME writer connection so
+    // the frontend sees post-write state immediately. A follow-up `db_read`
+    // hits a different pool connection whose WAL snapshot can lag.
+    build_account_detail_result(db, account_id)
+}
+
+/// DOS-269: "Add more detail" — update the note on the newest sentiment
+/// history row whose sentiment matches the account's current value. No new
+/// history entry is appended. Falls back to `insert_sentiment_journal_entry`
+/// when there is no matching row yet (first-ever note for this value).
+/// Emits the same `field_updated` signal as `set_user_health_sentiment` so
+/// the Intelligence Loop sees that the user touched this surface.
+pub fn update_latest_sentiment_note(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    note: Option<&str>,
+) -> Result<AccountDetailResult, String> {
+    let current_sentiment: Option<String> = db
+        .get_account(account_id)
+        .map_err(|e| e.to_string())?
+        .and_then(|a| a.user_health_sentiment);
+    let sentiment = current_sentiment.ok_or_else(|| {
+        "Cannot update sentiment note before a sentiment value is set".to_string()
+    })?;
+
+    let updated = db
+        .update_latest_sentiment_note(account_id, note)
+        .map_err(|e| e.to_string())?;
+
+    if !updated {
+        // No prior history row for this sentiment — insert a fresh one so
+        // the note has somewhere to live. Computed-band snapshot mirrors
+        // `set_user_health_sentiment` for divergence parity.
+        let (computed_band, computed_score) = db
+            .get_account(account_id)
+            .map_err(|e| e.to_string())?
+            .map(|acct| {
+                let health = crate::intelligence::health_scoring::compute_account_health(
+                    db, &acct, None,
+                );
+                (Some(health.band), Some(health.score))
+            })
+            .unwrap_or((None, None));
+        db.insert_sentiment_journal_entry(
+            account_id,
+            &sentiment,
+            note,
+            computed_band.as_deref(),
+            computed_score,
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    // Emit annotation-level signal (user augmented their journal entry).
+    crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"field\":\"sentiment_note\",\"value\":\"{}\"}}",
+            sentiment
+        )),
+        0.8,
+        &state.intel_queue,
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
+
+    build_account_detail_result(db, account_id)
+}
+
+/// DOS-269: Triage snooze / resolve persistence. Serializable row for the
+/// `list_triage_snoozes` command.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TriageSnoozeRow {
+    pub triage_key: String,
+    pub snoozed_until: Option<String>,
+    pub resolved_at: Option<String>,
+}
+
+/// DOS-269: Snooze a triage card for N days. `days` must be positive; the
+/// frontend default is 14.
+pub fn snooze_triage_item(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    triage_key: &str,
+    days: i64,
+) -> Result<(), String> {
+    let days = days.max(1);
+    let until = Utc::now() + chrono::Duration::days(days);
+    db.snooze_triage_item(entity_type, entity_id, triage_key, &until.to_rfc3339())
+        .map_err(|e| e.to_string())
+}
+
+/// DOS-269: Mark a triage card resolved. Permanent for that card id.
+/// Emits a low-weight field_updated signal so the Intelligence Loop
+/// records that the user acted on this card (parity with DOS-41 confirm).
+pub fn resolve_triage_item(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
+    entity_type: &str,
+    entity_id: &str,
+    triage_key: &str,
+) -> Result<(), String> {
+    db.resolve_triage_item(entity_type, entity_id, triage_key)
+        .map_err(|e| e.to_string())?;
+    // Best-effort signal emit — triage resolution is user-intent evidence
+    // the card was accurate + actioned. Failure should not rollback.
+    let _ = crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        entity_type,
+        entity_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"field\":\"triage_resolved\",\"triage_key\":\"{}\"}}",
+            triage_key
+        )),
+        0.8,
+        &state.intel_queue,
+    );
+    Ok(())
+}
+
+/// DOS-269: Return all snooze/resolve rows for an entity. Rendering-time
+/// filter decides whether a snooze is still active.
+pub fn list_triage_snoozes(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<Vec<TriageSnoozeRow>, String> {
+    let rows = db
+        .list_triage_snoozes(entity_type, entity_id)
+        .map_err(|e| e.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(triage_key, snoozed_until, resolved_at)| TriageSnoozeRow {
+            triage_key,
+            snoozed_until,
+            resolved_at,
+        })
+        .collect())
+}
+
+/// DOS-228 Wave 0e Fix 2: Spawn the SINGLE ordered lifecycle task for a
+/// risk briefing attempt.
+///
+/// The caller is responsible for having written the `enqueued` row with
+/// `attempt_id` on the originating writer connection; this task only runs
+/// the enqueued → running → complete|failed transitions, each gated by a
+/// compare-and-set against `attempt_id`. If a superseding retry overwrites
+/// the row's attempt_id between two of our transitions, our CAS fails and
+/// we bail out cleanly — preventing the "two racing retries corrupt each
+/// other" last-write-wins bug that the prior two-spawn design had.
+fn spawn_risk_briefing_lifecycle(
+    state: &std::sync::Arc<AppState>,
+    account_id: String,
+    attempt_id: String,
+) {
+    let state_clone = state.clone();
+    let handle = state.app_handle();
+
+    tauri::async_runtime::spawn(async move {
+        log::info!(
+            "DOS-27: risk briefing lifecycle {} for account {}",
+            attempt_id,
+            account_id
+        );
+
+        // Transition enqueued → running (CAS).
+        let running_id = account_id.clone();
+        let running_attempt = attempt_id.clone();
+        let running_state = state_clone.clone();
+        let owns_attempt = running_state
+            .db_write(move |db| {
+                db.mark_risk_briefing_job_running(&running_id, &running_attempt)
+                    .map_err(|e| e.to_string())
+            })
+            .await
+            .unwrap_or(false);
+
+        if !owns_attempt {
+            log::info!(
+                "DOS-228: risk briefing attempt {} for {} superseded before running; exiting",
+                attempt_id,
+                account_id
+            );
+            return;
+        }
+
+        let outcome = crate::services::intelligence::generate_risk_briefing(
+            &state_clone,
+            &account_id,
+            handle,
+        )
+        .await;
+
+        // Terminal transition (CAS). A superseding retry that landed while
+        // generation was running will own the next attempt; our update
+        // affects zero rows and we log+exit without clobbering.
+        let terminal_id = account_id.clone();
+        let terminal_attempt = attempt_id.clone();
+        let terminal_state = state_clone.clone();
+        let terminal_outcome = outcome.as_ref().map(|_| ()).map_err(|e| e.clone());
+        let still_current = terminal_state
+            .db_write(move |db| match &terminal_outcome {
+                Ok(()) => db
+                    .mark_risk_briefing_job_complete(&terminal_id, &terminal_attempt)
+                    .map_err(|e| e.to_string()),
+                Err(msg) => db
+                    .mark_risk_briefing_job_failed(&terminal_id, &terminal_attempt, msg)
+                    .map_err(|e| e.to_string()),
+            })
+            .await
+            .unwrap_or(false);
+
+        if !still_current {
+            log::info!(
+                "DOS-228: risk briefing attempt {} for {} superseded before terminal write; outcome discarded",
+                attempt_id,
+                account_id
+            );
+            return;
+        }
+
+        match outcome {
+            Ok(_) => log::info!(
+                "DOS-27: risk briefing generated for account {}",
+                account_id
+            ),
+            Err(e) => log::warn!(
+                "DOS-27: risk briefing generation failed for account {}: {}",
+                account_id,
+                e
+            ),
+        }
+    });
+}
+
+/// DOS-228 Wave 0e Fix 2: Re-enqueue a risk briefing generation.
+///
+/// Behavior is now guarded:
+/// 1. The account must exist (rejects dangling IDs that would otherwise
+///    spawn a useless lifecycle task).
+/// 2. If the current job is `running`, the retry is COALESCED into the
+///    existing attempt — we return Ok without spawning a duplicate runner.
+///    This closes the "tap retry twice fast → two runners corrupt each
+///    other" hole.
+/// 3. Otherwise (failed / complete / no prior row / enqueued-but-not-yet-
+///    started) we stamp a fresh attempt_id and spawn a new lifecycle. The
+///    CAS machinery ensures any stale runner from a prior attempt can't
+///    clobber the new one's state.
+pub async fn retry_risk_briefing(
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+) -> Result<(), String> {
+    let id_for_read = account_id.to_string();
+    let (exists, current_status) = state
+        .db_read(move |db| {
+            let exists = db
+                .get_account(&id_for_read)
+                .map_err(|e| e.to_string())?
+                .is_some();
+            let status = db
+                .get_risk_briefing_job_status(&id_for_read)
+                .map_err(|e| e.to_string())?;
+            Ok::<_, String>((exists, status))
+        })
+        .await?;
+
+    if !exists {
+        return Err(format!("Account not found: {}", account_id));
+    }
+
+    // Coalesce: don't start a second runner while one is actively generating.
+    if current_status.as_deref() == Some("running") {
+        log::info!(
+            "DOS-228: retry_risk_briefing for {} coalesced into running job",
+            account_id
+        );
+        return Ok(());
+    }
+
+    let attempt_id = uuid::Uuid::new_v4().to_string();
+    let enqueue_id = account_id.to_string();
+    let enqueue_attempt = attempt_id.clone();
+    state
+        .db_write(move |db| {
+            db.upsert_risk_briefing_job_enqueued(&enqueue_id, &enqueue_attempt)
+                .map_err(|e| e.to_string())
+        })
+        .await?;
+
+    spawn_risk_briefing_lifecycle(state, account_id.to_string(), attempt_id);
+    Ok(())
+}
+
+/// DOS-27: Field edits to health-relevant columns trigger a synchronous
+/// health recompute so the UI reflects the new band immediately.
+/// Rapid-fire edits are naturally coalesced: the frontend debounces at 2s
+/// before calling the backend command, so we don't duplicate the debounce here.
+pub fn is_health_relevant_field(field: &str) -> bool {
+    matches!(
+        field,
+        "health" | "lifecycle" | "contract_end" | "arr" | "nps"
+    )
+}
+
+/// Update account notes (narrative field).
+/// Writes to SQLite, then regenerates dashboard.json + dashboard.md.
 pub fn update_account_notes(
     db: &ActionDb,
     state: &AppState,
     account_id: &str,
     notes: &str,
 ) -> Result<(), String> {
+    db.update_account_field(account_id, "notes", notes)
+        .map_err(|e| e.to_string())?;
+
     let account = db
         .get_account(account_id)
         .map_err(|e| e.to_string())?
@@ -1606,24 +2133,8 @@ pub fn update_account_notes(
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
-    let json_path =
-        crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
-    let mut existing = if json_path.exists() {
-        crate::accounts::read_account_json(&json_path)
-            .map(|r| r.json)
-            .unwrap_or_else(|_| default_account_json(&account))
-    } else {
-        default_account_json(&account)
-    };
-
-    existing.notes = if notes.is_empty() {
-        None
-    } else {
-        Some(notes.to_string())
-    };
-
-    let _ = crate::accounts::write_account_json(workspace, &account, Some(&existing), db);
-    let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
+    let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+    let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
 
     // Emit field update signal (I377)
     crate::services::signals::emit_and_propagate(
@@ -1648,40 +2159,31 @@ pub fn update_account_notes(
     Ok(())
 }
 
-/// Update account strategic programs (narrative field — JSON only).
-/// Writes dashboard.json + regenerates dashboard.md.
+/// Update account strategic programs (narrative field).
+/// Validates JSON, writes to SQLite, then regenerates dashboard.json + dashboard.md.
 pub fn update_account_programs(
     db: &ActionDb,
     state: &AppState,
     account_id: &str,
     programs_json: &str,
 ) -> Result<(), String> {
+    let _: Vec<crate::accounts::StrategicProgram> =
+        serde_json::from_str(programs_json).map_err(|e| format!("Invalid programs JSON: {}", e))?;
+
+    db.update_account_field(account_id, "strategic_programs", programs_json)
+        .map_err(|e| e.to_string())?;
+
     let account = db
         .get_account(account_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-    let programs: Vec<crate::accounts::StrategicProgram> =
-        serde_json::from_str(programs_json).map_err(|e| format!("Invalid programs JSON: {}", e))?;
-
     let config = state.config.read();
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
-    let json_path =
-        crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
-    let mut existing = if json_path.exists() {
-        crate::accounts::read_account_json(&json_path)
-            .map(|r| r.json)
-            .unwrap_or_else(|_| default_account_json(&account))
-    } else {
-        default_account_json(&account)
-    };
-
-    existing.strategic_programs = programs;
-
-    let _ = crate::accounts::write_account_json(workspace, &account, Some(&existing), db);
-    let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
+    let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+    let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
 
     // Emit field update signal (I377)
     crate::services::signals::emit_and_propagate(
@@ -2081,6 +2583,8 @@ pub fn account_to_list_item(
         is_parent: child_count > 0,
         account_type: a.account_type.clone(),
         archived: a.archived,
+        user_health_sentiment: a.user_health_sentiment.clone(),
+        sentiment_set_at: a.sentiment_set_at.clone(),
     }
 }
 
@@ -2438,7 +2942,18 @@ pub fn backfill_internal_meeting_associations(db: &ActionDb) -> Result<usize, St
 /// Update engagement level for a stakeholder with signal emission.
 pub fn update_stakeholder_engagement(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    person_id: &str,
+    engagement: &str,
+) -> Result<AccountDetailResult, String> {
+    update_stakeholder_engagement_inner(db, state, account_id, person_id, engagement)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn update_stakeholder_engagement_inner(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     engagement: &str,
@@ -2454,7 +2969,7 @@ pub fn update_stakeholder_engagement(
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             tx,
-            engine,
+            &state.signals.engine,
             "account",
             account_id,
             "stakeholder_engagement_updated",
@@ -2466,14 +2981,33 @@ pub fn update_stakeholder_engagement(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
+        // DOS-228 Wave 0g: stakeholder engagement feeds the `stakeholder_coverage`
+        // and `champion_health` health dimensions. Persist the durable marker
+        // co-committed with the mutation so a crash between here and the debounce
+        // flush leaves a trail for startup drain. See `update_account_field_inner`.
+        tx.mark_health_recompute_pending(account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
-    })
+    })?;
+    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    Ok(())
 }
 
 /// Update assessment text for a stakeholder with signal emission.
 pub fn update_stakeholder_assessment(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    person_id: &str,
+    assessment: &str,
+) -> Result<AccountDetailResult, String> {
+    update_stakeholder_assessment_inner(db, state, account_id, person_id, assessment)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn update_stakeholder_assessment_inner(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     assessment: &str,
@@ -2489,7 +3023,7 @@ pub fn update_stakeholder_assessment(
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             tx,
-            engine,
+            &state.signals.engine,
             "account",
             account_id,
             "stakeholder_assessment_updated",
@@ -2498,14 +3032,31 @@ pub fn update_stakeholder_assessment(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
+        // DOS-228 Wave 0g: assessment edits change champion_health inputs —
+        // co-commit the marker with the mutation, then debounce a recompute.
+        tx.mark_health_recompute_pending(account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
-    })
+    })?;
+    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    Ok(())
 }
 
 /// Add a role to a stakeholder (multi-role — doesn't replace existing roles).
 pub fn add_stakeholder_role(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<AccountDetailResult, String> {
+    add_stakeholder_role_inner(db, state, account_id, person_id, role)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn add_stakeholder_role_inner(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     role: &str,
@@ -2516,18 +3067,24 @@ pub fn add_stakeholder_role(
     }
     db.with_transaction(|tx| {
         let now = chrono::Utc::now().to_rfc3339();
+        // Re-adding a role must clear any prior soft-delete tombstone.
+        // Without the `dismissed_at = NULL` in the ON CONFLICT clause,
+        // a user who dismisses then re-adds would see the row written
+        // but still filtered out of reads (because dismissed_at stays
+        // set) — effectively a silent failure.
         tx.conn_ref()
             .execute(
                 "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
                  VALUES (?1, ?2, ?3, 'user', ?4)
                  ON CONFLICT(account_id, person_id, role) DO UPDATE SET
-                    data_source = 'user'",
+                    data_source = 'user',
+                    dismissed_at = NULL",
                 rusqlite::params![account_id, person_id, role, now],
             )
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             tx,
-            engine,
+            &state.signals.engine,
             "account",
             account_id,
             "stakeholder_role_added",
@@ -2539,29 +3096,55 @@ pub fn add_stakeholder_role(
             0.9,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
+        // DOS-228 Wave 0g: champion_health reads account_stakeholder_roles
+        // directly. Adding a role (especially 'champion') is load-bearing for
+        // the health dimension — co-commit the pending marker.
+        tx.mark_health_recompute_pending(account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
-    })
+    })?;
+    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    Ok(())
 }
 
 /// Remove a specific role from a stakeholder.
 pub fn remove_stakeholder_role(
     db: &ActionDb,
-    engine: &PropagationEngine,
+    state: &std::sync::Arc<AppState>,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<AccountDetailResult, String> {
+    remove_stakeholder_role_inner(db, state, account_id, person_id, role)?;
+    build_account_detail_result(db, account_id)
+}
+
+fn remove_stakeholder_role_inner(
+    db: &ActionDb,
+    state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     role: &str,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
+        // Soft-delete: tombstone the row with `dismissed_at = now` and
+        // flip provenance to 'user'. The hard-DELETE version let the
+        // next enrichment cycle re-add the same role via intel_queue's
+        // INSERT ON CONFLICT path — user dismissal was forgotten every
+        // time AI re-surfaced the role. With the tombstone, intel_queue's
+        // existence check finds data_source='user' and skips; reads
+        // filter dismissed_at IS NULL so the UI doesn't show the row.
         tx.conn_ref()
             .execute(
-                "DELETE FROM account_stakeholder_roles
+                "UPDATE account_stakeholder_roles
+                 SET dismissed_at = datetime('now'), data_source = 'user'
                  WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
                 rusqlite::params![account_id, person_id, role],
             )
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             tx,
-            engine,
+            &state.signals.engine,
             "account",
             account_id,
             "stakeholder_role_removed",
@@ -2573,17 +3156,23 @@ pub fn remove_stakeholder_role(
             0.8,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
+        // DOS-228 Wave 0g: removing a role (e.g. champion) downgrades
+        // champion_health and stakeholder_coverage — co-commit the marker.
+        tx.mark_health_recompute_pending(account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
-    })
+    })?;
+    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    Ok(())
 }
 
 /// Accept a stakeholder suggestion: create person if needed, add to account.
 pub fn accept_stakeholder_suggestion(
     db: &ActionDb,
-    state: &crate::state::AppState,
+    state: &std::sync::Arc<AppState>,
     suggestion_id: i64,
 ) -> Result<(), String> {
-    db.with_transaction(|tx| {
+    let account_id = db.with_transaction(|tx| {
         let suggestion = tx
             .get_stakeholder_suggestion(suggestion_id)
             .map_err(|e| e.to_string())?
@@ -2700,8 +3289,15 @@ pub fn accept_stakeholder_suggestion(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        Ok(())
-    })
+        // DOS-228 Wave 0g: accepting a suggestion inserts stakeholder rows,
+        // optional roles, and optional engagement — all health-scoring inputs.
+        // Co-commit the marker on the same writer before returning.
+        tx.mark_health_recompute_pending(&suggestion.account_id)
+            .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
+        Ok(suggestion.account_id.clone())
+    })?;
+    crate::services::health_debouncer::schedule_recompute(state, &account_id);
+    Ok(())
 }
 
 /// Dismiss a stakeholder suggestion.
@@ -2945,6 +3541,263 @@ mod tests {
         assert!(
             signal_count(&db, "acc-tm", "team_member_removed") > 0,
             "Expected team_member_removed signal"
+        );
+    }
+
+    /// Regression test for the "AI overwrites my pinned champion" bug.
+    ///
+    /// Before the fix, `set_team_member_role` deleted EVERY role row for the
+    /// (account, person) pair regardless of provenance. A user dropdown
+    /// swap from Champion → Economic wiped out the AI-surfaced Technical
+    /// role alongside the user's Champion pin. The next enrichment
+    /// re-inserted Champion with `data_source='ai'`, silently erasing the
+    /// human's original intent.
+    ///
+    /// Post-fix behavior: set_team_member_role only touches user-owned
+    /// rows. AI-surfaced rows survive. A subsequent role pin can promote
+    /// an AI row to user ownership via the ON CONFLICT clause.
+    #[test]
+    fn test_set_team_member_role_preserves_ai_owned_roles() {
+        let db = test_db();
+        let account = make_account("acc-rp", "RolePreserve Corp");
+        db.upsert_account(&account).unwrap();
+
+        // Seed a person and a stakeholder link
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES ('p-rp', 'rp@x.com', 'RoleP', '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acc-rp', 'p-rp', 'user')",
+                [],
+            )
+            .unwrap();
+
+        // Seed two existing roles: one user-pinned (champion), one
+        // AI-surfaced (technical). This is the Chris-on-Blackstone shape.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES ('acc-rp', 'p-rp', 'champion', 'user')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES ('acc-rp', 'p-rp', 'technical', 'ai')",
+                [],
+            )
+            .unwrap();
+
+        // User swaps their pinned role from Champion → Economic.
+        db.set_team_member_role("acc-rp", "p-rp", "economic")
+            .expect("set_team_member_role should succeed");
+
+        // AI-surfaced 'technical' row MUST survive the user action.
+        let technical_survived: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-rp' AND person_id = 'p-rp'
+                   AND role = 'technical' AND data_source = 'ai'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            technical_survived, 1,
+            "AI-owned 'technical' role should survive a user role swap"
+        );
+
+        // The old user-pinned 'champion' row should be gone (user chose
+        // to swap) and 'economic' should now be user-owned.
+        let champion_gone: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-rp' AND person_id = 'p-rp' AND role = 'champion'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(champion_gone, 0, "Old user-pinned 'champion' should be cleared by the swap");
+
+        let economic: (i64, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*), COALESCE(MAX(data_source), '')
+                 FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-rp' AND person_id = 'p-rp' AND role = 'economic'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(economic.0, 1, "New 'economic' role should be present");
+        assert_eq!(economic.1, "user", "New 'economic' role should be user-owned");
+    }
+
+    /// When the user re-pins a role that the AI had previously surfaced,
+    /// `set_team_member_role` should flip provenance to 'user' via the
+    /// ON CONFLICT promotion clause rather than error or leave it as 'ai'.
+    /// Regression test for the "I removed 'associated' but it came back on
+    /// reload" bug. The old service-layer remove path ran a hard DELETE;
+    /// next enrichment cycle the intel_queue check saw "no row exists"
+    /// and re-INSERTed the role with data_source='ai'. User dismissal was
+    /// forgotten every time AI re-surfaced the role.
+    ///
+    /// Post-fix: remove soft-deletes via UPDATE SET dismissed_at = now
+    /// AND data_source = 'user'. Reads filter dismissed_at IS NULL so the
+    /// UI hides the row; intel_queue's existence check sees either
+    /// data_source='user' or a populated dismissed_at and skips re-insert.
+    ///
+    /// This test exercises the DB-level contract directly (without
+    /// AppState/signals plumbing) so it focuses on the data-integrity
+    /// invariant.
+    #[test]
+    fn test_stakeholder_role_dismissal_tombstone_and_reactivation() {
+        let db = test_db();
+        let account = make_account("acc-dsm", "Dismissal Corp");
+        db.upsert_account(&account).unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES ('p-dsm', 'dsm@x.com', 'DismissP', '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acc-dsm', 'p-dsm', 'user')",
+                [],
+            )
+            .unwrap();
+
+        // Seed a user-pinned role (what `add_stakeholder_role` writes).
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES ('acc-dsm', 'p-dsm', 'associated', 'user')",
+                [],
+            )
+            .unwrap();
+
+        let visible_after_add: Vec<String> = db
+            .get_stakeholder_roles("acc-dsm", "p-dsm")
+            .unwrap()
+            .into_iter()
+            .map(|r| r.role)
+            .collect();
+        assert_eq!(visible_after_add, vec!["associated"]);
+
+        // Simulate the soft-delete write path (UPDATE the row to
+        // tombstone it rather than DELETE).
+        db.conn_ref()
+            .execute(
+                "UPDATE account_stakeholder_roles
+                 SET dismissed_at = datetime('now'), data_source = 'user'
+                 WHERE account_id = 'acc-dsm' AND person_id = 'p-dsm' AND role = 'associated'",
+                [],
+            )
+            .unwrap();
+
+        // Filtered reads don't see the tombstone.
+        let visible_after_remove = db.get_stakeholder_roles("acc-dsm", "p-dsm").unwrap();
+        assert!(
+            visible_after_remove.is_empty(),
+            "soft-deleted role should be hidden from read; got {:?}",
+            visible_after_remove,
+        );
+
+        // Underlying row still exists as a tombstone.
+        let tombstone_exists: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-dsm' AND person_id = 'p-dsm'
+                   AND role = 'associated' AND dismissed_at IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstone_exists, 1, "soft-delete should leave a tombstone row");
+
+        // Simulate the user re-adding the role (`add_stakeholder_role`'s
+        // INSERT ON CONFLICT path). dismissed_at MUST clear on reactivate.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES ('acc-dsm', 'p-dsm', 'associated', 'user')
+                 ON CONFLICT(account_id, person_id, role) DO UPDATE SET
+                    data_source = 'user',
+                    dismissed_at = NULL",
+                [],
+            )
+            .unwrap();
+        let visible_after_readd: Vec<String> = db
+            .get_stakeholder_roles("acc-dsm", "p-dsm")
+            .unwrap()
+            .into_iter()
+            .map(|r| r.role)
+            .collect();
+        assert_eq!(visible_after_readd, vec!["associated"]);
+        let dismissed_cleared: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT dismissed_at FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-dsm' AND person_id = 'p-dsm' AND role = 'associated'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(dismissed_cleared.is_none(), "re-adding should clear dismissed_at");
+    }
+
+    #[test]
+    fn test_set_team_member_role_promotes_ai_row_to_user() {
+        let db = test_db();
+        let account = make_account("acc-pr", "Promote Corp");
+        db.upsert_account(&account).unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES ('p-pr', 'pr@x.com', 'PromoteP', '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acc-pr', 'p-pr', 'ai')",
+                [],
+            )
+            .unwrap();
+        // AI had surfaced Chris as Champion; user now explicitly pins Champion.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
+                 VALUES ('acc-pr', 'p-pr', 'champion', 'ai')",
+                [],
+            )
+            .unwrap();
+
+        db.set_team_member_role("acc-pr", "p-pr", "champion")
+            .expect("set_team_member_role should succeed");
+
+        let champion: (i64, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*), COALESCE(MAX(data_source), '')
+                 FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-pr' AND person_id = 'p-pr' AND role = 'champion'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(champion.0, 1, "Champion row should still exist");
+        assert_eq!(
+            champion.1, "user",
+            "Re-pinning an AI-surfaced role should promote data_source to 'user'",
         );
     }
 
@@ -3218,5 +4071,63 @@ mod tests {
             alpha
         );
         assert!(beta > 1.0, "Beta should increase on correct (was {})", beta);
+    }
+
+    /// DOS-229: `build_account_detail_result` — called on the writer
+    /// connection after a mutation — must reflect the just-written state.
+    /// Regression guard for the SQLite WAL reader-snapshot lag that caused
+    /// save→refresh UI staleness on account detail pages.
+    #[test]
+    fn test_build_account_detail_reflects_writer_updates() {
+        let db = test_db();
+        let account = make_account("acc-dos229", "Post-Write Corp");
+        db.upsert_account(&account).unwrap();
+
+        // Baseline: no sentiment set.
+        let before = super::build_account_detail_result(&db, "acc-dos229")
+            .expect("baseline build");
+        assert!(before.user_health_sentiment.is_none());
+        assert!(before.sentiment_set_at.is_none());
+
+        // Simulate the writer-side mutation that `set_user_health_sentiment`
+        // performs (field update only — signal emission needs AppState).
+        db.update_account_field("acc-dos229", "user_health_sentiment", "at_risk")
+            .expect("write sentiment");
+        let ts = chrono::Utc::now().to_rfc3339();
+        db.update_account_field("acc-dos229", "sentiment_set_at", &ts)
+            .expect("write sentiment_set_at");
+
+        // Re-assembling the detail on the SAME connection must reflect the
+        // write — this is the invariant DOS-229 depends on.
+        let after = super::build_account_detail_result(&db, "acc-dos229")
+            .expect("post-write build");
+        assert_eq!(after.user_health_sentiment.as_deref(), Some("at_risk"));
+        assert_eq!(after.sentiment_set_at.as_deref(), Some(ts.as_str()));
+    }
+
+    /// DOS-228 Wave 0e Fix 1: the `risk_briefing_job` row must be visible
+    /// on the FIRST result returned from the sentiment save. Previously the
+    /// row was written by a separately spawned task and the first response
+    /// had `risk_briefing_job: None`. This test simulates the writer-side
+    /// sequence: persist the enqueued row on the same connection, THEN
+    /// build the result — which must include the enqueued status.
+    #[test]
+    fn test_build_account_detail_includes_enqueued_risk_briefing_job() {
+        let db = test_db();
+        let account = make_account("acc-w0eb-1", "Sentiment Co");
+        db.upsert_account(&account).unwrap();
+
+        // Simulate the order production code now enforces:
+        db.upsert_risk_briefing_job_enqueued("acc-w0eb-1", "attempt-xyz")
+            .expect("enqueue on writer");
+        let result = super::build_account_detail_result(&db, "acc-w0eb-1")
+            .expect("build");
+
+        let job = result
+            .risk_briefing_job
+            .as_ref()
+            .expect("risk_briefing_job must be present on first response");
+        assert_eq!(job.status, "enqueued");
+        assert!(job.error_message.is_none());
     }
 }

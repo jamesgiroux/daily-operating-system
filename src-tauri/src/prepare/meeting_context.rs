@@ -1649,7 +1649,7 @@ fn get_person_actions(db: &crate::db::ActionDb, person_id: &str) -> Value {
                    AND (
                      a.person_id = ?1
                      OR a.account_id IN (
-                       SELECT account_id FROM account_stakeholders WHERE person_id = ?1
+                       SELECT account_id FROM account_stakeholders WHERE person_id = ?1 AND status = 'active'
                      )
                    )
                  ORDER BY a.priority, a.due_date
@@ -1900,7 +1900,7 @@ mod tests {
         // Match by domain (most common for BU meetings)
         let meeting = json!({
             "title": "Weekly Sync",
-            "external_domains": ["consumer-brands.cox.com"],
+            "external_domains": ["consumer-brands.crestviewmedia.com"],
         });
         let matched = guess_account_name(&meeting, dir.path()).unwrap();
         assert_eq!(matched.name, "Consumer-Brands");

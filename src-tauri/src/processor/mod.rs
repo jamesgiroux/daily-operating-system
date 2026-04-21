@@ -509,6 +509,7 @@ fn extract_and_sync_actions(
             source_type: Some("inbox".to_string()),
             source_id: Some(raw_title.to_string()),
             source_label: Some(source_filename.to_string()),
+            action_kind: crate::action_status::KIND_TASK.to_string(),
             context: meta.context,
             waiting_on: if meta.is_waiting {
                 Some("true".to_string())

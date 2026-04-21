@@ -6,7 +6,8 @@
 use std::collections::HashSet;
 
 use super::constants::{
-    BULK_SENDER_DOMAINS, HIGH_PRIORITY_SUBJECT_KEYWORDS, LOW_PRIORITY_SIGNALS, NOREPLY_LOCAL_PARTS,
+    BULK_SENDER_DOMAINS, HIGH_PRIORITY_SUBJECT_KEYWORDS, LOW_PRIORITY_SIGNALS,
+    NOISE_SUBJECT_PATTERNS, NOREPLY_LOCAL_PARTS,
 };
 
 /// Extract bare email from a "From" header like "Name <email@example.com>".
@@ -378,6 +379,88 @@ pub fn boost_with_entity_context(
 }
 
 // ============================================================================
+// DOS-242: Hard-drop noise suppression
+// ============================================================================
+
+/// Decide whether an inbound email should be suppressed entirely
+/// (hidden from inbox, account Records, signal emission).
+///
+/// Suppress when ANY of the following hold:
+/// 1. Sender domain is in `BULK_SENDER_DOMAINS` (LinkedIn, Slack, GitHub
+///    notifications, etc.) — these are noise regardless of List-Unsubscribe.
+/// 2. Subject matches any `NOISE_SUBJECT_PATTERNS` entry — automated
+///    receipts, digests, verification codes, etc.
+/// 3. `List-Unsubscribe` header present AND another automation marker is
+///    also present (noreply local-part, "newsletter" in sender, or noisy
+///    subject pattern). DOS-247: List-Unsubscribe alone over-fires —
+///    legitimate 1:1 customer email sent via Salesforce/HubSpot/Outreach
+///    or Google Groups carries this header. Require corroboration.
+///
+/// `account_domains` are lowercase customer domains from `account_domains`
+/// table — domain-level match (any email from a customer's domain is spared).
+/// `person_emails_full` are lowercase EXACT email addresses from
+/// `person_emails` + `people.email`. DOS-248: matching on full address (not
+/// domain) prevents internal-org bulk notifications (e.g.
+/// `no-reply@gainsightapp.com`, `notifications@wordpress.com`) from getting
+/// a free pass just because a colleague's address shares the domain.
+pub fn should_suppress_email(
+    sender: &str,
+    subject: &str,
+    list_unsubscribe: &str,
+    account_domains: &HashSet<String>,
+    person_emails_full: &HashSet<String>,
+) -> bool {
+    let from_addr = extract_email_address(sender);
+    let domain = extract_domain(&from_addr);
+
+    // Customer correspondence (domain in account_domains) and known
+    // 1:1 contacts (exact email in person_emails) are never suppressed.
+    // DOS-248: the previous check used domain-only match against
+    // person_emails, which let any noreply@<colleague-domain> through.
+    if !domain.is_empty() && account_domains.contains(&domain) {
+        return false;
+    }
+    if !from_addr.is_empty() && person_emails_full.contains(&from_addr) {
+        return false;
+    }
+
+    // Rule 1: bulk/SaaS-notification sender domain → suppress.
+    if !domain.is_empty() && BULK_SENDER_DOMAINS.contains(&domain.as_str()) {
+        return true;
+    }
+
+    // Rule 2: subject signals automation/transactional/digest mail.
+    let subject_lower = subject.to_lowercase();
+    let subject_noisy = NOISE_SUBJECT_PATTERNS
+        .iter()
+        .any(|pat| subject_lower.contains(pat));
+    if subject_noisy {
+        return true;
+    }
+
+    // Rule 2b (DOS-248): noreply local-part is bulk by definition.
+    // Suppress unconditionally — these are never 1:1 correspondence.
+    let local_part = from_addr.split('@').next().unwrap_or("");
+    let local_part_noisy = NOREPLY_LOCAL_PARTS
+        .iter()
+        .any(|pat| local_part.contains(pat));
+    if local_part_noisy {
+        return true;
+    }
+
+    // DOS-249: List-Unsubscribe heuristic is intentionally dropped.
+    // The AI enrichment pass (`prepare/email_enrich.rs`) judges noise
+    // for everything that survives the deterministic rules above. The
+    // LLM has the full body context and can distinguish a genuine
+    // customer reply (List-Unsubscribe present, but real 1:1) from a
+    // marketing blast much more reliably than substring matching on
+    // the sender header.
+    let _ = list_unsubscribe;
+
+    false
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -736,6 +819,179 @@ mod tests {
             ),
             "medium"
         );
+    }
+
+    // --- DOS-242: should_suppress_email tests ---
+
+    #[test]
+    fn test_suppress_bulk_sender_linkedin() {
+        assert!(should_suppress_email(
+            "LinkedIn <invitations@linkedin.com>",
+            "You have a new connection",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn test_suppress_subject_pattern_receipt() {
+        assert!(should_suppress_email(
+            "billing@somesaas.example",
+            "Your receipt from SomeSaaS",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_249_no_deterministic_suppress_for_list_unsubscribe_alone() {
+        // DOS-249: List-Unsubscribe heuristic dropped from the
+        // deterministic pre-filter — LLM enrichment now classifies
+        // these. should_suppress_email returns false; the email
+        // enters the enrichment pipeline where Claude judges noise.
+        assert!(!should_suppress_email(
+            "Contact <hello@randomvendor.example>",
+            "New product launch",
+            "<https://example.com/unsub>",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn test_no_suppress_account_domain_even_with_unsubscribe() {
+        // Real customer correspondence with an inadvertent unsubscribe footer
+        // (e.g. routed through a corporate ESP) must NOT be suppressed.
+        let mut accounts = HashSet::new();
+        accounts.insert("subsidiary.com".to_string());
+        assert!(!should_suppress_email(
+            "Jane <jane@subsidiary.com>",
+            "Re: contract review",
+            "<https://corp.example/unsub>",
+            &accounts,
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn test_no_suppress_person_exact_email_bulk_sender_overridden() {
+        // DOS-248: matching is now exact-email (not domain). A tracked
+        // contact at a bulk-sender domain still gets through.
+        let mut persons = HashSet::new();
+        persons.insert("alex@github.com".to_string());
+        assert!(!should_suppress_email(
+            "Alex <alex@github.com>",
+            "Re: PR review",
+            "",
+            &HashSet::new(),
+            &persons,
+        ));
+    }
+
+    #[test]
+    fn dos_248_suppress_internal_org_noreply_when_colleague_same_domain() {
+        // Even though a colleague (alice@automattic.com) is tracked,
+        // notifications@automattic.com is NOT spared. Domain-only match
+        // (the pre-DOS-248 behavior) would have let this through.
+        let mut persons = HashSet::new();
+        persons.insert("alice@automattic.com".to_string());
+        assert!(should_suppress_email(
+            "Thursday Updates <noreply@automattic.com>",
+            "[New post] Systems Update",
+            "<https://automattic.com/unsub>",
+            &HashSet::new(),
+            &persons,
+        ));
+    }
+
+    #[test]
+    fn dos_248_suppress_gainsight_noreply() {
+        // Realistic CSP-tool notification — should be suppressed even
+        // though gainsightapp.com isn't on the bulk allow-list.
+        assert!(should_suppress_email(
+            "Gainsight <no-reply@gainsightapp.com>",
+            "Renan Basteris added Activity",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_248_suppress_internal_blog_post_pattern() {
+        // [New post] / [New mention] / [WPVIP] subject patterns should
+        // catch internal-org distribution-list noise.
+        assert!(should_suppress_email(
+            "VIP Accounts Org <notifications@example.org>",
+            "[New post] Customer Contact Lookup",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_248_suppress_registration_confirmation() {
+        assert!(should_suppress_email(
+            "Forrester Events <events@forrester.example>",
+            "Registration Confirmed: B2B Summit North America 2026",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn test_no_suppress_normal_external_email() {
+        assert!(!should_suppress_email(
+            "Bob <bob@unknown.example>",
+            "Quick question",
+            "",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_247_no_suppress_real_person_with_list_unsubscribe() {
+        // Real 1:1 customer email sent via Salesforce / HubSpot / Outreach
+        // / Google Groups carries List-Unsubscribe but is not noise.
+        // Untracked domain (no account_domains/person_domains entry) — must
+        // still not be suppressed when the sender looks like a real person.
+        assert!(!should_suppress_email(
+            "Jane Smith <jane.smith@prospect.example>",
+            "Re: pricing question",
+            "<https://prospect.example/unsubscribe?id=abc>",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_247_suppress_noreply_with_list_unsubscribe() {
+        // noreply local-part + List-Unsubscribe = bona fide bulk mail, suppress.
+        assert!(should_suppress_email(
+            "Acme <noreply@acmeapp.example>",
+            "Your weekly summary is ready",
+            "<https://acmeapp.example/unsub>",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn dos_247_no_suppress_internal_distribution_with_list_unsubscribe() {
+        // Google Workspace adds List-Unsubscribe to internal group mail.
+        // Untracked-domain real human sender must not be suppressed.
+        assert!(!should_suppress_email(
+            "Alex Patel <alex@partnercorp.example>",
+            "Q3 planning sync — agenda attached",
+            "<mailto:unsubscribe@partnercorp.example>",
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
     }
 
     #[test]

@@ -18,6 +18,8 @@ interface HealthBadgeProps {
   band: "green" | "yellow" | "red";
   trend: IntelligenceHealthTrend;
   confidence?: number;
+  /** DOS-84: When false, show "Insufficient Data" instead of the score. */
+  sufficientData?: boolean;
   source?: string;
   size?: "compact" | "standard" | "hero";
   showScore?: boolean;
@@ -69,11 +71,31 @@ export function HealthBadge({
   band,
   trend,
   confidence,
+  sufficientData,
   source,
   size = "standard",
   showScore = true,
   divergence,
 }: HealthBadgeProps) {
+  // DOS-84: When sufficientData is not true (false OR undefined from old cached data),
+  // show "Insufficient Data" instead of the computed score (which is unreliable with < 3 dimensions).
+  const isInsufficient = sufficientData !== true;
+
+  if (size === "hero" && isInsufficient) {
+    return (
+      <div className={styles.hero}>
+        <div className={styles.heroRow}>
+          <span className={`${styles.dot} ${styles.dotHero} ${styles.dotMuted}`} />
+          <span className={`${styles.score} ${styles.scoreHero} ${styles.scoreMuted}`}>--</span>
+        </div>
+        <p className={styles.heroRationale}>Insufficient data to compute a reliable health score</p>
+        <div className={styles.heroMeta}>
+          <span className={styles.confidenceQualifier}>Insufficient Data</span>
+        </div>
+      </div>
+    );
+  }
+
   if (size === "hero") {
     return (
       <div className={`${styles.hero} ${heroTintClass[band] ?? ""}`}>
@@ -112,6 +134,20 @@ export function HealthBadge({
   // compact and standard
   const dotSizeClass = size === "compact" ? styles.dotCompact : styles.dotStandard;
   const scoreSizeClass = size === "compact" ? styles.scoreCompact : styles.scoreStandard;
+
+  // DOS-84: Insufficient data in compact/standard — muted dot + visible label
+  if (isInsufficient) {
+    return (
+      <span className={styles.badge} title="Insufficient data for health score">
+        <span className={`${styles.dot} ${dotSizeClass} ${styles.dotMuted}`} />
+        {showScore && (
+          <span className={`${styles.score} ${scoreSizeClass} ${styles.scoreMuted}`}>
+            {size === "compact" ? "N/A" : "Insufficient Data"}
+          </span>
+        )}
+      </span>
+    );
+  }
 
   return (
     <span className={styles.badge}>

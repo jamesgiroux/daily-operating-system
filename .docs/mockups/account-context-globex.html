@@ -1,0 +1,1606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Context — Globex Holdings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,200..800;1,200..800&family=DM+Sans:ital,wght@0,100..1000;1,100..1000&family=JetBrains+Mono:wght@100..800&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+/* ═════════ DESIGN TOKENS (copied verbatim from Health mockup) ═════════ */
+:root {
+  --color-paper-cream: #f5f2ef;
+  --color-paper-linen: #e8e2d9;
+  --color-paper-warm-white: #faf8f6;
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+  --color-spice-turmeric: #c9a227;
+  --color-spice-saffron: #deb841;
+  --color-spice-terracotta: #c4654a;
+  --color-spice-chili: #9b3a2a;
+  --color-garden-sage: #7eaa7b;
+  --color-garden-olive: #6b7c52;
+  --color-garden-rosemary: #4a6741;
+  --color-garden-larkspur: #8fa3c4;
+  --color-garden-eucalyptus: #6ba8a4;
+  --color-text-primary: var(--color-desk-charcoal);
+  --color-text-secondary: #5a6370;
+  --color-text-tertiary: #6b7280;
+  --color-rule-heavy: rgba(30, 37, 48, 0.12);
+  --color-rule-light: rgba(30, 37, 48, 0.06);
+  --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-spice-turmeric-15: rgba(201, 162, 39, 0.15);
+  --color-spice-saffron-10: rgba(222, 184, 65, 0.10);
+  --color-spice-saffron-15: rgba(222, 184, 65, 0.15);
+  --color-spice-terracotta-10: rgba(196, 101, 74, 0.10);
+  --color-spice-terracotta-15: rgba(196, 101, 74, 0.15);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-garden-sage-15: rgba(126, 170, 123, 0.15);
+  --color-garden-larkspur-15: rgba(143, 163, 196, 0.15);
+  --color-desk-charcoal-4: rgba(30, 37, 48, 0.04);
+  --color-desk-charcoal-8: rgba(30, 37, 48, 0.08);
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --radius-sm: 4px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --shadow-sm: 0 2px 8px rgba(30, 37, 48, 0.1);
+  --shadow-md: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-paper-cream);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 120px 200px;
+}
+
+/* ═════════ SHARED HEADER ═════════ */
+.hero-date {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: var(--space-xl) 0 var(--space-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+.hero-date-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-garden-sage); }
+.badge-customer {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: 100px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.name {
+  font-family: var(--font-serif);
+  font-size: 76px;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1.06;
+  padding-bottom: var(--space-md);
+}
+.vitals {
+  display: flex;
+  gap: var(--space-2xl);
+  padding: var(--space-md) 0 var(--space-xl);
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xl);
+}
+.vital-arr { color: var(--color-spice-turmeric); }
+
+/* Switcher / Mockup note (shared) */
+.switcher {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 4px;
+  background: var(--color-desk-charcoal); border-radius: 100px;
+  box-shadow: var(--shadow-sm); z-index: 100;
+}
+.switcher button {
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  padding: 8px 20px; border: none; border-radius: 100px;
+  cursor: pointer; background: transparent; color: rgba(255,255,255,0.5);
+}
+.switcher button.active { background: rgba(255,255,255,0.15); color: white; }
+
+.mockup-note {
+  position: fixed; top: 10px; left: 10px;
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  padding: 4px 8px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 9px; z-index: 100;
+  line-height: 1.3; opacity: 0.55;
+  max-width: 140px;
+  white-space: nowrap; overflow: hidden;
+  cursor: default;
+  transition: opacity 0.15s ease, max-width 0.2s ease, white-space 0s linear 0.2s;
+}
+.mockup-note:hover {
+  opacity: 1; max-width: 280px; white-space: normal;
+  transition: opacity 0.15s ease, max-width 0.2s ease, white-space 0s;
+}
+.mockup-note strong {
+  color: var(--color-spice-turmeric); display: inline;
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 9px;
+}
+.mockup-note .mockup-note-body { display: none; }
+.mockup-note:hover .mockup-note-body { display: block; margin-top: 3px; }
+
+/* ═════════ CHAPTER ═════════ */
+.chapter { padding-top: 112px; }
+.chapter-rule {
+  border: none; border-top: 1px solid var(--color-rule-heavy);
+  margin-bottom: var(--space-lg);
+}
+.chapter-title {
+  font-family: var(--font-serif); font-size: 28px; font-weight: 400;
+  color: var(--color-text-primary); letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.chapter-title-ref {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--color-text-secondary);
+}
+.freshness-strip {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-top: var(--space-sm); margin-bottom: var(--space-2xl);
+}
+.freshness-strip .stale { color: var(--color-spice-saffron); }
+
+/* ═════════ CHAPTER 1 — THESIS PULL QUOTE ═════════ */
+.thesis {
+  padding: var(--space-4xl) 0 var(--space-3xl);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+.thesis-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.14em; color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xl);
+}
+.thesis-quote {
+  font-family: var(--font-serif); font-size: 40px; font-weight: 400;
+  line-height: 1.25; color: var(--color-text-primary); letter-spacing: -0.01em;
+  font-style: italic;
+  max-width: 820px;
+}
+.thesis-quote .mark {
+  color: var(--color-spice-turmeric); font-style: normal; font-weight: 500;
+  font-size: 48px; line-height: 0;
+}
+.thesis-meta {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-top: var(--space-2xl);
+  display: flex; gap: var(--space-md); align-items: center; flex-wrap: wrap;
+}
+.thesis-meta a {
+  color: var(--color-spice-turmeric); text-decoration: none;
+  border-bottom: 1px solid var(--color-spice-turmeric);
+}
+
+/* ═════════ CHAPTER 2 — THE ROOM ═════════ */
+.room-subsection-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--color-text-secondary); font-weight: 600;
+  margin-top: var(--space-3xl); margin-bottom: var(--space-lg);
+  display: flex; align-items: baseline; gap: var(--space-sm);
+}
+.room-subsection-label:first-of-type { margin-top: var(--space-lg); }
+.room-subsection-label .sublabel-hint {
+  font-family: var(--font-sans); font-size: 12px; font-weight: 400;
+  color: var(--color-text-tertiary); text-transform: none; letter-spacing: 0;
+  font-style: italic;
+}
+.room-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-xl);
+}
+.room-grid.internal {
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-lg);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-2xl);
+  border-top: 1px dashed var(--color-rule-light);
+}
+.room-grid.internal .person-card {
+  background: var(--color-desk-charcoal-4);
+  border-color: transparent;
+  padding: var(--space-md);
+}
+.room-grid.internal .avatar {
+  width: 40px; height: 40px; font-size: 14px;
+  background: var(--color-paper-cream);
+}
+.room-grid.internal .person-name { font-size: 14px; }
+.room-grid.internal .person-title { font-size: 12px; }
+.room-grid.internal .person-assessment { font-size: 13px; padding-top: var(--space-xs); }
+.person-card {
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-xl);
+  display: flex; flex-direction: column; gap: var(--space-md);
+}
+.person-card.primary { grid-column: span 2; }
+.person-header {
+  display: flex; align-items: flex-start; gap: var(--space-md);
+}
+.avatar {
+  width: 56px; height: 56px; flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--color-paper-linen);
+  color: var(--color-desk-charcoal);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-serif); font-size: 20px; font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.person-identity { flex: 1; min-width: 0; }
+.person-name {
+  font-family: var(--font-sans); font-size: 16px; font-weight: 500;
+  color: var(--color-text-primary); display: flex; align-items: center; gap: var(--space-sm);
+}
+.engagement-dot {
+  width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+}
+.engagement-dot.high { background: var(--color-garden-sage); }
+.engagement-dot.medium { background: var(--color-spice-saffron); }
+.engagement-dot.low { background: var(--color-text-tertiary); opacity: 0.5; }
+.person-title {
+  font-family: var(--font-sans); font-size: 13px;
+  color: var(--color-text-secondary); margin-top: 2px;
+}
+.person-location {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary); margin-top: 3px;
+}
+.role-pills {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--space-sm);
+}
+.role-pill {
+  font-family: var(--font-sans); font-size: 12px;
+  font-weight: 500; line-height: 1;
+  padding: 5px 14px; border-radius: 100px;
+}
+.role-pill.champion { background: var(--color-garden-sage-15); color: var(--color-garden-rosemary); }
+.role-pill.technical { background: var(--color-garden-larkspur-15); color: #4a6186; }
+.role-pill.economic { background: var(--color-spice-turmeric-15); color: var(--color-spice-turmeric); }
+.role-pill.internal { background: var(--color-desk-charcoal-8); color: var(--color-text-secondary); }
+.role-pill.gap { background: var(--color-spice-saffron-15); color: #a6862c; }
+.person-assessment {
+  font-family: var(--font-serif); font-size: 14px; font-style: italic;
+  line-height: 1.65; color: var(--color-text-primary);
+  padding-top: var(--space-md);
+}
+.person-assessment.gap-state {
+  font-style: italic; color: var(--color-text-tertiary);
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: var(--space-sm) var(--space-md);
+  font-size: 13px;
+}
+.person-quote {
+  font-family: var(--font-serif); font-size: 13px; font-style: italic;
+  line-height: 1.5; color: var(--color-text-secondary);
+  padding-left: var(--space-md);
+  border-left: 2px solid var(--color-spice-turmeric);
+  margin-top: var(--space-xs);
+}
+.person-quote-attr {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary); font-style: normal;
+  margin-top: 3px; display: block;
+}
+.person-footer {
+  display: flex; gap: var(--space-md); flex-wrap: wrap;
+  padding-top: var(--space-md); margin-top: var(--space-sm);
+  border-top: 1px dashed var(--color-rule-light);
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--color-text-tertiary); letter-spacing: 0.04em;
+}
+.xref-pill {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-spice-turmeric);
+  border-bottom: 1px dotted var(--color-spice-turmeric); text-decoration: none;
+  margin-left: auto;
+}
+.more-associated {
+  margin-top: var(--space-xl);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-desk-charcoal-4);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--color-text-secondary);
+  display: flex; align-items: center; gap: var(--space-sm);
+  letter-spacing: 0.04em;
+}
+.more-associated .count {
+  background: var(--color-desk-charcoal); color: var(--color-paper-cream);
+  padding: 3px 8px; border-radius: 100px; font-weight: 600;
+}
+
+/* ═════════ CHAPTER 3 — WHAT MATTERS ═════════ */
+.subsection-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.14em; color: var(--color-text-tertiary);
+  margin-top: var(--space-3xl); margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px dashed var(--color-rule-light);
+}
+.priority-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg);
+}
+.priority-card {
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-rule-light);
+}
+.priority-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-sm);
+}
+.priority-name {
+  font-family: var(--font-serif); font-size: 17px; font-weight: 400;
+  line-height: 1.3; color: var(--color-text-primary);
+}
+.status-tag {
+  font-family: var(--font-sans); font-size: 12px;
+  font-weight: 500; line-height: 1;
+  padding: 5px 14px; border-radius: 100px; white-space: nowrap;
+}
+.status-tag.active { background: var(--color-garden-sage-15); color: var(--color-garden-rosemary); }
+.status-tag.exploring { background: var(--color-spice-turmeric-15); color: var(--color-spice-turmeric); }
+.status-tag.evaluating { background: var(--color-garden-larkspur-15); color: #4a6186; }
+.priority-meta {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+  margin-top: var(--space-md);
+}
+.priority-context {
+  font-family: var(--font-sans); font-size: 13px; font-style: italic;
+  line-height: 1.6; color: var(--color-text-secondary);
+  margin-top: var(--space-md);
+}
+
+.competitor-row {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg);
+}
+.competitor-card {
+  padding: var(--space-lg); background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light); border-radius: var(--radius-md);
+}
+.competitor-name {
+  font-family: var(--font-serif); font-size: 18px; font-weight: 400;
+  color: var(--color-text-primary);
+}
+.threat-scale {
+  display: flex; gap: 3px; margin-top: var(--space-xs);
+}
+.threat-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-rule-heavy);
+}
+.threat-dot.on { background: var(--color-spice-turmeric); }
+.threat-label {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-top: var(--space-xs);
+}
+.competitor-context {
+  font-family: var(--font-sans); font-size: 12px; line-height: 1.5;
+  color: var(--color-text-secondary); margin-top: var(--space-sm);
+}
+.competitor-source {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+  margin-top: var(--space-sm);
+}
+
+.reg-card {
+  padding: var(--space-xl) var(--space-2xl);
+  background: var(--color-paper-warm-white);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-rule-light);
+}
+.reg-head {
+  display: flex; align-items: baseline; gap: var(--space-md);
+  flex-wrap: wrap;
+}
+.reg-title {
+  font-family: var(--font-serif); font-size: 20px; font-weight: 400;
+  color: var(--color-text-primary);
+}
+.reg-body {
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.7;
+  color: var(--color-text-secondary); margin-top: var(--space-md);
+  max-width: 720px;
+}
+.reg-body strong { color: var(--color-text-primary); font-weight: 500; }
+
+/* ═════════ CHAPTER 4 — WHAT WE'VE BUILT ═════════ */
+.value-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-lg);
+}
+.value-card {
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
+  display: flex; flex-direction: column; gap: var(--space-md);
+}
+.impact-tag {
+  align-self: flex-start;
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.1em; font-weight: 600;
+  padding: 3px 8px; border-radius: 3px;
+}
+.impact-cost { background: var(--color-spice-turmeric-15); color: var(--color-spice-turmeric); }
+.impact-speed { background: var(--color-garden-sage-15); color: var(--color-garden-rosemary); }
+.impact-risk { background: var(--color-garden-larkspur-15); color: #4a6186; }
+.value-headline {
+  font-family: var(--font-serif); font-size: 17px; font-weight: 400;
+  line-height: 1.35; color: var(--color-text-primary);
+}
+.value-source {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+  margin-top: auto;
+}
+
+.metric-row {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg);
+}
+.metric-card {
+  padding: var(--space-lg); background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light); border-radius: var(--radius-md);
+}
+.metric-name {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary);
+}
+.metric-values {
+  font-family: var(--font-serif); font-size: 20px; font-weight: 400;
+  color: var(--color-text-primary); margin-top: var(--space-xs);
+  display: flex; align-items: baseline; gap: var(--space-sm);
+}
+.metric-current { color: var(--color-garden-rosemary); font-weight: 500; }
+.metric-target { font-size: 13px; color: var(--color-text-tertiary); font-family: var(--font-mono); }
+.metric-footer {
+  margin-top: var(--space-sm);
+  display: flex; justify-content: space-between; gap: var(--space-sm);
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+}
+.metric-footer .status.achieved { color: var(--color-garden-rosemary); font-weight: 600; }
+.metric-footer .status.ontrack { color: var(--color-spice-turmeric); font-weight: 600; }
+
+/* ═════════ CHAPTER 5 — QUOTE WALL ═════════ */
+.filter-bar {
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--color-desk-charcoal-4);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-2xl);
+  display: flex; flex-wrap: wrap; gap: var(--space-md);
+  align-items: center;
+}
+.filter-group {
+  display: flex; align-items: center; gap: var(--space-sm);
+}
+.filter-label {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary); font-weight: 600;
+}
+.filter-pill {
+  font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+  padding: 5px 12px; border: 1px solid var(--color-rule-heavy);
+  background: var(--color-paper-warm-white); border-radius: 100px;
+  color: var(--color-text-secondary); cursor: pointer;
+}
+.filter-pill.on { background: var(--color-desk-charcoal); color: var(--color-paper-cream); border-color: var(--color-desk-charcoal); }
+.filter-input {
+  font-family: var(--font-sans); font-size: 12px;
+  padding: 5px 12px; border: 1px solid var(--color-rule-heavy);
+  border-radius: 100px; min-width: 140px;
+  background: var(--color-paper-warm-white); color: var(--color-text-secondary);
+}
+.filter-note {
+  margin-left: auto;
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--color-text-tertiary); font-style: italic;
+}
+
+.quote-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-xl);
+}
+.quote-card {
+  position: relative;
+  padding: var(--space-xl) var(--space-xl) var(--space-lg);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
+  display: flex; flex-direction: column; gap: var(--space-md);
+}
+.quote-mark {
+  font-family: var(--font-serif); font-size: 72px; line-height: 0.6;
+  color: var(--color-spice-turmeric); opacity: 0.4;
+  position: absolute; top: 28px; left: 18px;
+}
+.quote-body {
+  font-family: var(--font-serif); font-size: 17px; line-height: 1.5;
+  font-style: italic; color: var(--color-text-primary);
+  padding-left: var(--space-xl); padding-top: var(--space-xs);
+}
+.quote-attr {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+  padding-left: var(--space-xl);
+}
+.quote-tags {
+  padding-left: var(--space-xl);
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+}
+.tag-pill {
+  font-family: var(--font-mono); font-size: 9px;
+  padding: 2px 7px; border-radius: 3px;
+  background: var(--color-desk-charcoal-4); color: var(--color-text-secondary);
+  letter-spacing: 0.04em;
+}
+.sentiment-dot {
+  width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+  margin-right: var(--space-xs);
+}
+.sentiment-dot.positive { background: var(--color-garden-sage); }
+.sentiment-dot.neutral { background: var(--color-text-tertiary); opacity: 0.6; }
+.sentiment-dot.negative { background: var(--color-spice-terracotta); }
+.quote-footer {
+  padding-left: var(--space-xl); padding-top: var(--space-md);
+  margin-top: var(--space-sm);
+  border-top: 1px dashed var(--color-rule-light);
+  display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center;
+}
+.safety-pill {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.08em; font-weight: 600;
+  padding: 3px 8px; border-radius: 3px;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.safety-pill.public { background: var(--color-garden-sage-15); color: var(--color-garden-rosemary); }
+.safety-pill.internal { background: var(--color-desk-charcoal-8); color: var(--color-text-secondary); }
+.confidence-pill {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 8px; border-radius: 3px;
+  background: var(--color-desk-charcoal-4); color: var(--color-text-tertiary);
+}
+.quote-actions {
+  margin-left: auto; display: flex; gap: 4px;
+}
+.quote-action-btn {
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.08em; font-weight: 600;
+  background: none; border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary); padding: 5px 10px;
+  border-radius: 100px; cursor: pointer;
+}
+
+/* ═════════ CHAPTERS 6 & 7 — REFERENCE WEIGHT ═════════ */
+.ref-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-xs) var(--space-3xl);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-light);
+}
+.ref-row {
+  display: flex; justify-content: space-between; gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  font-family: var(--font-mono); font-size: 11px;
+  line-height: 1.6;
+}
+.ref-label {
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+.ref-value {
+  color: var(--color-text-primary); font-weight: 500;
+  text-align: right;
+}
+.ref-value.gap {
+  color: var(--color-spice-saffron); font-style: italic; font-weight: 400;
+}
+.ref-value.turmeric { color: var(--color-spice-turmeric); font-weight: 600; }
+
+.sparkline-inline {
+  display: inline-flex; align-items: flex-end; gap: 2px; height: 14px;
+  vertical-align: middle;
+}
+.sparkline-inline .bar {
+  width: 3px; border-radius: 1px; background: var(--color-garden-sage);
+}
+
+.gap-summary-bar {
+  margin-top: var(--space-xl);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #a6862c;
+  display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;
+}
+.gap-summary-bar a {
+  margin-left: auto; color: var(--color-spice-turmeric);
+  border-bottom: 1px dotted var(--color-spice-turmeric); text-decoration: none;
+}
+
+.feature-grid {
+  margin-top: var(--space-lg);
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-sm) var(--space-xl);
+}
+.feature-item {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+  font-family: var(--font-sans); font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.feature-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.feature-dot.fresh { background: var(--color-garden-sage); }
+.feature-dot.stale { background: var(--color-spice-saffron); }
+.feature-dot.old { background: var(--color-text-tertiary); opacity: 0.4; }
+.feature-note {
+  margin-top: var(--space-md);
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-tertiary);
+}
+
+/* ═════════ CHAPTER 8 — RELATIONSHIP FABRIC ═════════ */
+.fabric-list { display: flex; flex-direction: column; gap: var(--space-md); }
+.fabric-row {
+  display: grid; grid-template-columns: 200px 1fr;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.fabric-row .ref-label { font-family: var(--font-mono); font-size: 11px; }
+.fabric-content {
+  font-family: var(--font-sans); font-size: 13px;
+  color: var(--color-text-primary); line-height: 1.5;
+}
+.fabric-content.gap { color: var(--color-spice-saffron); font-style: italic; }
+.fabric-highlight {
+  background: var(--color-garden-sage-15);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-serif); font-size: 14px; font-style: italic;
+}
+.fabric-highlight-nps {
+  font-family: var(--font-serif); font-weight: 500; font-style: normal;
+  color: var(--color-garden-rosemary); font-size: 18px;
+  margin-right: var(--space-sm);
+}
+.editorial-close {
+  margin-top: var(--space-2xl);
+  padding: var(--space-xl) var(--space-2xl);
+  background: var(--color-paper-warm-white);
+  border-left: 2px solid var(--color-text-tertiary);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-family: var(--font-serif); font-size: 16px; font-style: italic;
+  line-height: 1.65; color: var(--color-text-secondary);
+  max-width: 720px;
+}
+
+/* ═════════ META + FINIS (shared pattern) ═════════ */
+.meta-section {
+  padding-top: 112px;
+  padding-bottom: var(--space-lg);
+}
+.meta-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary); margin-bottom: var(--space-lg);
+}
+.meta-card {
+  background: var(--color-desk-charcoal-4);
+  border-left: 2px solid var(--color-text-tertiary);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: var(--space-lg) var(--space-xl);
+  margin-top: var(--space-md);
+}
+.meta-card-label {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--color-text-tertiary); margin-bottom: var(--space-xs);
+}
+.meta-card-text {
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.55;
+  color: var(--color-text-secondary); max-width: 620px;
+}
+.meta-card-text strong { color: var(--color-text-primary); font-weight: 500; }
+
+.finis { text-align: center; padding: var(--space-4xl) 0 var(--space-2xl); color: var(--color-text-tertiary); }
+.finis-mark {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 14px;
+  color: var(--color-spice-turmeric); opacity: 0.4; letter-spacing: 0.5em;
+}
+.finis-date {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.08em; margin-top: var(--space-sm);
+}
+
+/* ═════════ CHROME: ATMOSPHERE + FOLIO + WATERMARK — §5 ═════════ */
+.atmosphere {
+  position: fixed; inset: 0;
+  z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 900px 700px at 20% 15%, rgba(201, 162, 39, 0.09), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 85% 70%, rgba(201, 162, 39, 0.06), transparent 55%);
+  animation: atmosphere-breathe 14s ease-in-out infinite;
+}
+@keyframes atmosphere-breathe {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+.folio {
+  position: fixed; top: 0; left: 0; right: 0; height: 40px;
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-rule-light);
+  z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.folio-left { display: flex; align-items: center; gap: var(--space-md); }
+.folio-mark {
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 18px;
+  color: var(--color-spice-turmeric);
+  line-height: 1; letter-spacing: 0;
+}
+.folio-center { letter-spacing: 0.1em; }
+.folio-right { display: flex; align-items: center; gap: var(--space-sm); }
+.folio-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+.page { position: relative; z-index: 1; }
+.hero-watermark-wrap { position: relative; }
+.hero-watermark {
+  position: absolute; top: -120px; right: -40px;
+  font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 420px;
+  color: var(--color-spice-turmeric);
+  opacity: 0.07; line-height: 1;
+  transform: rotate(12deg);
+  z-index: -1; pointer-events: none; user-select: none;
+}
+</style>
+</head>
+<body>
+
+<!-- Atmosphere Layer -->
+<div class="atmosphere" aria-hidden="true"></div>
+
+<!-- Folio Bar -->
+<header class="folio" role="banner">
+  <div class="folio-left">
+    <span class="folio-mark">*</span>
+    <span>Accounts / Globex Holdings / Context</span>
+  </div>
+  <div class="folio-center">Apr 17, 2026 · 10:42</div>
+  <div class="folio-right">
+    <span class="folio-status-dot"></span>
+    <span>&gt;_ ready</span>
+  </div>
+</header>
+
+<div class="mockup-note">
+  <strong>Mockup v1 · Context</strong>
+  <div class="mockup-note-body">Real Globex Holdings data from DB pull (Apr 17, 2026). Dossier-grade depth, organized in briefing-pull order. Density is freshness + completeness — chapters own their own knowledge gaps.</div>
+</div>
+
+<div class="page">
+
+  <!-- ═════════ SHARED HEADER ═════════ -->
+  <div class="hero-date">
+    <span class="hero-date-dot"></span>
+    Last updated 1w ago
+    <span class="badge-customer">Customer ▾</span>
+    <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); letter-spacing: 0.04em;">
+      · Sources: 5 transcripts · 24 emails · Zendesk · Gong · SF · <span style="color: var(--color-spice-turmeric);">Glean ●</span>
+    </span>
+  </div>
+  <div class="hero-watermark-wrap">
+    <div class="hero-watermark" aria-hidden="true">*</div>
+    <h1 class="name">Globex Holdings</h1>
+  </div>
+  <div class="vitals">
+    <span class="vital-arr">$185K ARR</span>
+    <span>•</span>
+    <span>Green Health</span>
+    <span>•</span>
+    <span>Steady-State Lifecycle</span>
+    <span>•</span>
+    <span>NPS 67 · CSAT 4.5</span>
+    <span>•</span>
+    <span>Renewal in 221d</span>
+  </div>
+
+  <!-- ═════════ CHAPTER 1 — THESIS ═════════ -->
+  <section class="thesis">
+    <div class="thesis-label">The thesis</div>
+    <p class="thesis-quote">
+      <span class="mark">&ldquo;</span>Globex Holdings's editor performance bottlenecks and compliance demands are the critical levers for deepening trust and unlocking expansion.<span class="mark">&rdquo;</span>
+    </p>
+    <div class="thesis-meta">
+      <span>Synthesized from 14 meetings · 5 transcripts · Updated 2 days ago</span>
+      <span>·</span>
+      <a href="#">Refresh</a>
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 2 — THE ROOM ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">The Room</h2>
+    <div class="freshness-strip">
+      12 people · 4 with assessments · <span class="stale">8 need verification</span> · Updated Apr 16
+    </div>
+
+    <div class="room-subsection-label">
+      Their team
+      <span class="sublabel-hint">who we're meeting with — Globex Holdings</span>
+    </div>
+
+    <div class="room-grid">
+
+      <!-- 1. Chris Anderson (primary) -->
+      <article class="person-card primary">
+        <div class="person-header">
+          <div class="avatar">JK</div>
+          <div class="person-identity">
+            <div class="person-name">
+              Chris Anderson
+              <span class="engagement-dot high" title="High engagement"></span>
+            </div>
+            <div class="person-title">Technical/Business Stakeholder · Globex Holdings</div>
+            <div class="person-location">New York · external</div>
+            <div class="role-pills">
+              <span class="role-pill technical">Technical</span>
+              <span class="role-pill economic">Economic</span>
+              <span class="role-pill champion">Champion-adjacent</span>
+            </div>
+          </div>
+          <a href="#" class="xref-pill">Active in Health →</a>
+        </div>
+        <div class="person-assessment">
+          James is highly engaged, leading discussions on headless CMS, performance, personalization, and analytics. Primary decision-maker for technical direction and cost considerations.
+        </div>
+        <div class="person-quote">
+          Headless handles personalization better.
+          <span class="person-quote-attr">— Feb 17 Gong call</span>
+        </div>
+        <div class="person-footer">
+          <span>Last in meeting · Apr 23</span>
+          <span>·</span>
+          <span>3 meetings · 24 emails</span>
+        </div>
+      </article>
+
+      <!-- 2. Diego Martinez (primary) -->
+      <article class="person-card primary">
+        <div class="person-header">
+          <div class="avatar">JL</div>
+          <div class="person-identity">
+            <div class="person-name">
+              Diego Martinez
+              <span class="engagement-dot low" title="Engagement unknown"></span>
+            </div>
+            <div class="person-title">Technical lead · Globex Holdings</div>
+            <div class="person-location">Miami · external</div>
+            <div class="role-pills">
+              <span class="role-pill technical">Technical</span>
+              <span class="role-pill gap">Needs verification</span>
+            </div>
+          </div>
+          <a href="#" class="xref-pill">Active in Health →</a>
+        </div>
+        <div class="person-assessment">
+          Role and influence need direct verification in a customer-facing meeting.
+        </div>
+        <div class="person-quote">
+          How does headless pricing work? What does the architecture service look like for React/Next.js?
+          <span class="person-quote-attr">— Feb 17 Gong call</span>
+        </div>
+        <div class="person-footer">
+          <span>Last in meeting · Apr 23</span>
+          <span>·</span>
+          <span>3 meetings</span>
+        </div>
+      </article>
+
+      <!-- 5. Priya Shah (secondary, gap) -->
+      <article class="person-card">
+        <div class="person-header">
+          <div class="avatar">KV</div>
+          <div class="person-identity">
+            <div class="person-name">
+              Priya Shah
+              <span class="engagement-dot low"></span>
+            </div>
+            <div class="person-title">Globex Holdings · external</div>
+            <div class="role-pills">
+              <span class="role-pill gap">Needs assessment</span>
+            </div>
+          </div>
+        </div>
+        <div class="person-assessment gap-state">
+          Assessment pending — attended 3 meetings but never characterized.
+        </div>
+        <div class="person-footer">
+          <span>3 meetings</span>
+        </div>
+      </article>
+
+      <!-- 6. Miguel Torres (secondary, gap) -->
+      <article class="person-card">
+        <div class="person-header">
+          <div class="avatar">LG</div>
+          <div class="person-identity">
+            <div class="person-name">
+              Miguel Torres
+              <span class="engagement-dot low"></span>
+            </div>
+            <div class="person-title">Globex Holdings · external</div>
+            <div class="role-pills">
+              <span class="role-pill gap">Needs assessment</span>
+            </div>
+          </div>
+        </div>
+        <div class="person-assessment gap-state">
+          Assessment pending — attended 3 meetings but never characterized.
+        </div>
+        <div class="person-footer">
+          <span>3 meetings</span>
+        </div>
+      </article>
+    </div>
+
+    <div class="more-associated">
+      <span class="count">+6</span>
+      more associated · Sam Reyes · Jordan Chen · Avery Patel · and 3 others
+    </div>
+
+    <div class="room-subsection-label">
+      Our team
+      <span class="sublabel-hint">who we bring into Globex Holdings conversations — Automattic</span>
+    </div>
+
+    <div class="room-grid internal">
+      <!-- Jamie Carter (internal) -->
+      <article class="person-card">
+        <div class="person-header">
+          <div class="avatar">AG</div>
+          <div class="person-identity">
+            <div class="person-name">
+              Jamie Carter
+              <span class="engagement-dot high"></span>
+            </div>
+            <div class="person-title">Relationship Manager · Automattic</div>
+            <div class="role-pills">
+              <span class="role-pill internal">Relationship Manager</span>
+            </div>
+          </div>
+        </div>
+        <div class="person-assessment">
+          Main relationship contact, facilitating commercial and technical conversations and coordinating follow-ups.
+        </div>
+        <div class="person-footer">
+          <span>30 meetings</span>
+          <span>·</span>
+          <span>Shared owner with CSM</span>
+        </div>
+      </article>
+
+      <!-- Riley Park (internal) -->
+      <article class="person-card">
+        <div class="person-header">
+          <div class="avatar">CC</div>
+          <div class="person-identity">
+            <div class="person-name">
+              Riley Park
+              <span class="engagement-dot low"></span>
+            </div>
+            <div class="person-title">Account Executive · Automattic</div>
+            <div class="role-pills">
+              <span class="role-pill internal">Account Executive</span>
+              <span class="role-pill gap">Needs verification</span>
+            </div>
+          </div>
+        </div>
+        <div class="person-assessment">
+          Role and influence need direct verification in a customer-facing meeting.
+        </div>
+        <div class="person-footer">
+          <span>8 meetings</span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 3 — WHAT MATTERS TO THEM ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">What matters to them</h2>
+    <div class="freshness-strip">
+      5 strategic priorities · 3 competitive mentions · 3 expansion signals · Updated Mar 15
+    </div>
+
+    <div class="subsection-label">Strategic priorities</div>
+    <div class="priority-grid">
+      <article class="priority-card">
+        <div class="priority-head">
+          <div class="priority-name">Digital asset consolidation and CMS standardization</div>
+          <span class="status-tag active">Active</span>
+        </div>
+        <div class="priority-meta">Globex Holdings digital/commercial teams · Ongoing</div>
+      </article>
+
+      <article class="priority-card">
+        <div class="priority-head">
+          <div class="priority-name">Evaluating headless WordPress architecture</div>
+          <span class="status-tag active">Active</span>
+        </div>
+        <div class="priority-meta">Chris Anderson &amp; Diego Martinez · Proof of concept phase</div>
+        <div class="priority-context">On the renewal opportunity metadata — tagged "headless wordpress." Organizational momentum, not curiosity.</div>
+      </article>
+
+      <article class="priority-card">
+        <div class="priority-head">
+          <div class="priority-name">Unified analytics and cross-domain user tracking</div>
+          <span class="status-tag active">Active</span>
+        </div>
+        <div class="priority-meta">Globex Holdings analytics/compliance teams · Ongoing internal initiative</div>
+      </article>
+
+      <article class="priority-card">
+        <div class="priority-head">
+          <div class="priority-name">Safe Publisher beta participation</div>
+          <span class="status-tag active">Active</span>
+        </div>
+        <div class="priority-meta">Globex Holdings product/technical teams · Beta planned for March 2026</div>
+      </article>
+
+      <article class="priority-card" style="grid-column: span 2;">
+        <div class="priority-head">
+          <div class="priority-name">Cost reduction and tech stack consolidation</div>
+          <span class="status-tag active">Active</span>
+        </div>
+        <div class="priority-meta">Globex Holdings commercial/IT leadership · Ongoing</div>
+      </article>
+    </div>
+
+    <div class="subsection-label">Competitive landscape</div>
+    <div class="competitor-row">
+      <article class="competitor-card">
+        <div class="competitor-name">Webflow</div>
+        <div class="threat-scale"><span class="threat-dot on"></span><span class="threat-dot"></span><span class="threat-dot"></span></div>
+        <div class="threat-label">Mentioned</div>
+        <div class="competitor-context">Competitive platform in digital asset and CMS landscape.</div>
+        <div class="competitor-source">Feb 17 · Gong call</div>
+      </article>
+      <article class="competitor-card">
+        <div class="competitor-name">Drupal</div>
+        <div class="threat-scale"><span class="threat-dot on"></span><span class="threat-dot"></span><span class="threat-dot"></span></div>
+        <div class="threat-label">Mentioned</div>
+        <div class="competitor-context">Competitive CMS option in Globex Holdings's environment.</div>
+        <div class="competitor-source">Feb 17 · Gong call</div>
+      </article>
+      <article class="competitor-card">
+        <div class="competitor-name">Google Analytics</div>
+        <div class="threat-scale"><span class="threat-dot on"></span><span class="threat-dot"></span><span class="threat-dot"></span></div>
+        <div class="threat-label">Mentioned</div>
+        <div class="competitor-context">Referenced re: sampling limitations compared to other solutions.</div>
+        <div class="competitor-source">Mar 15 · Salesforce opportunity</div>
+      </article>
+    </div>
+
+    <div class="subsection-label">Regulatory &amp; market context</div>
+    <article class="reg-card">
+      <div class="reg-head">
+        <div class="reg-title">DORA compliance + SOC 2 Type II reporting</div>
+        <a href="#" class="xref-pill">Active in Health →</a>
+      </div>
+      <p class="reg-body">
+        On <strong>Mar 10, 2025</strong> Globex Holdings stated <strong>DORA compliance</strong> was a priority and <strong>SOC 2 Type II-style reporting</strong> would be ideal for their security and cyber teams. Trust Center doesn't currently meet this bar. Shapes every compliance conversation.
+      </p>
+    </article>
+  </section>
+
+  <!-- ═════════ CHAPTER 4 — WHAT WE'VE BUILT TOGETHER ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">What we've built together</h2>
+    <div class="freshness-strip">
+      3 value statements · 3 success metrics · Last captured Feb 17
+    </div>
+
+    <div class="subsection-label">Value delivered</div>
+    <div class="value-grid">
+      <article class="value-card">
+        <span class="impact-tag impact-cost">Cost</span>
+        <div class="value-headline">Launched Defensive Mode — enabled Globex Holdings to avoid up to $60K in third-party security spend.</div>
+        <div class="value-source">Feb 17 · Meeting</div>
+      </article>
+      <article class="value-card">
+        <span class="impact-tag impact-speed">Speed</span>
+        <div class="value-headline">Enabled collaborative editing for 2+ users per session — improved editorial speed, reduced content bottlenecks.</div>
+        <div class="value-source">Feb 17 · Meeting</div>
+      </article>
+      <article class="value-card">
+        <span class="impact-tag impact-risk">Risk</span>
+        <div class="value-headline">Provided access to self-serve Trust Center — streamlined compliance documentation for annual GRC process.</div>
+        <div class="value-source">Feb 17 · Meeting</div>
+      </article>
+    </div>
+
+    <div class="subsection-label">Success metrics</div>
+    <div class="metric-row">
+      <article class="metric-card">
+        <div class="metric-name">DDoS Incidents Prevented</div>
+        <div class="metric-values"><span class="metric-current">100%</span><span class="metric-target">/ 100% target</span></div>
+        <div class="metric-footer"><span class="status achieved">Achieved</span><span>Owner: James Giroux</span></div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-name">Editorial Collaboration</div>
+        <div class="metric-values"><span class="metric-current">2</span><span class="metric-target">/ 2+ users/session</span></div>
+        <div class="metric-footer"><span class="status ontrack">On track</span><span>Owner: James Giroux</span></div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-name">Compliance Docs Access</div>
+        <div class="metric-values"><span class="metric-current">100%</span><span class="metric-target">/ 100% self-serve</span></div>
+        <div class="metric-footer"><span class="status achieved">Achieved</span><span>Owner: Jamie Carter</span></div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 5 — THEIR VOICE ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Their voice</h2>
+    <div class="freshness-strip">
+      6 quotes · filter by speaker, topic, feature · grab one for a report
+    </div>
+
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Speaker</span>
+        <span class="filter-pill on">All</span>
+        <span class="filter-pill">Chris Anderson</span>
+        <span class="filter-pill">Jorge L.R.</span>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Topic</span>
+        <span class="filter-pill">headless</span>
+        <span class="filter-pill">compliance</span>
+        <span class="filter-pill">pricing</span>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Sentiment</span>
+        <span class="filter-pill">+</span>
+        <span class="filter-pill">neutral</span>
+        <span class="filter-pill">−</span>
+      </div>
+      <input type="text" class="filter-input" placeholder="Search quotes...">
+      <span class="filter-note">Filter UI not functional in mockup</span>
+    </div>
+
+    <div class="quote-grid">
+      <!-- Q1 -->
+      <article class="quote-card">
+        <div class="quote-mark">&ldquo;</div>
+        <div class="quote-body">How does headless pricing work? What does the architecture service look like for React/Next.js?</div>
+        <div class="quote-attr">— Diego Martinez, Technical lead · Feb 17, Gong call</div>
+        <div class="quote-tags">
+          <span class="sentiment-dot neutral"></span>
+          <span class="tag-pill">headless</span>
+          <span class="tag-pill">pricing</span>
+        </div>
+        <div class="quote-footer">
+          <span class="safety-pill internal">Internal only</span>
+          <span class="confidence-pill">Verbatim</span>
+          <div class="quote-actions">
+            <button class="quote-action-btn">Copy</button>
+            <button class="quote-action-btn">Use in report</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Q2 -->
+      <article class="quote-card">
+        <div class="quote-mark">&ldquo;</div>
+        <div class="quote-body">PHP and WordPress talent is scarce right now.</div>
+        <div class="quote-attr">— Diego Martinez, Technical lead · Feb 17, Gong call</div>
+        <div class="quote-tags">
+          <span class="sentiment-dot neutral"></span>
+          <span class="tag-pill">hiring</span>
+          <span class="tag-pill">wordpress</span>
+        </div>
+        <div class="quote-footer">
+          <span class="safety-pill internal">Internal only</span>
+          <span class="confidence-pill">Near-verbatim</span>
+          <div class="quote-actions">
+            <button class="quote-action-btn">Copy</button>
+            <button class="quote-action-btn">Use in report</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Q3 -->
+      <article class="quote-card">
+        <div class="quote-mark">&ldquo;</div>
+        <div class="quote-body">Headless handles personalization better.</div>
+        <div class="quote-attr">— Chris Anderson, Technical/Business stakeholder · Feb 17, Gong call</div>
+        <div class="quote-tags">
+          <span class="sentiment-dot neutral"></span>
+          <span class="tag-pill">headless</span>
+          <span class="tag-pill">personalization</span>
+        </div>
+        <div class="quote-footer">
+          <span class="safety-pill internal">Internal only</span>
+          <span class="confidence-pill">Verbatim</span>
+          <div class="quote-actions">
+            <button class="quote-action-btn">Copy</button>
+            <button class="quote-action-btn">Use in report</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Q4 -->
+      <article class="quote-card">
+        <div class="quote-mark">&ldquo;</div>
+        <div class="quote-body">That's above my pay grade, or not something I know well yet.</div>
+        <div class="quote-attr">— Chris Anderson · Feb 17, Gong call (re: portfolio company authority)</div>
+        <div class="quote-tags">
+          <span class="sentiment-dot neutral"></span>
+          <span class="tag-pill">authority</span>
+          <span class="tag-pill">scope</span>
+        </div>
+        <div class="quote-footer">
+          <span class="safety-pill internal">Internal only</span>
+          <span class="confidence-pill">Verbatim</span>
+          <div class="quote-actions">
+            <button class="quote-action-btn">Copy</button>
+            <button class="quote-action-btn">Use in report</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Q5 -->
+      <article class="quote-card">
+        <div class="quote-mark">&ldquo;</div>
+        <div class="quote-body">Customer is happy with VIP. We're building more relationships across the org and on Parse.ly sell to increase stickiness.</div>
+        <div class="quote-attr">— NPS survey · Mar 1, 2026</div>
+        <div class="quote-tags">
+          <span class="sentiment-dot positive"></span>
+          <span class="tag-pill">nps</span>
+          <span class="tag-pill">satisfaction</span>
+          <span class="tag-pill">parsely</span>
+        </div>
+        <div class="quote-footer">
+          <span class="safety-pill public">Public-safe (ask first)</span>
+          <span class="confidence-pill">Verbatim</span>
+          <div class="quote-actions">
+            <button class="quote-action-btn">Copy</button>
+            <button class="quote-action-btn">Use in report</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Q6 -->
+      <article class="quote-card">
+        <div class="quote-mark">&ldquo;</div>
+        <div class="quote-body">Bringing the account into DORA compliance is a priority, and SOC 2 Type II-style reporting would be ideal for our security and cyber teams.</div>
+        <div class="quote-attr">— Chris Anderson (attributed) · Mar 10, 2025, Gong call</div>
+        <div class="quote-tags">
+          <span class="sentiment-dot neutral"></span>
+          <span class="tag-pill">compliance</span>
+          <span class="tag-pill">dora</span>
+          <span class="tag-pill">soc2</span>
+        </div>
+        <div class="quote-footer">
+          <span class="safety-pill internal">Internal only</span>
+          <span class="confidence-pill">Near-verbatim</span>
+          <div class="quote-actions">
+            <button class="quote-action-btn">Copy</button>
+            <button class="quote-action-btn">Use in report</button>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 6 — COMMERCIAL SHAPE (reference weight) ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <div class="chapter-title-ref">Commercial shape</div>
+    <div class="freshness-strip">
+      Updated Apr 9 · <span class="stale">Several fields unverified — see gaps below</span>
+    </div>
+
+    <div class="ref-grid">
+      <div class="ref-row">
+        <span class="ref-label">ARR (current)</span>
+        <span class="ref-value turmeric">$185,400 · auto-renew: yes</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">12-month trend</span>
+        <span class="ref-value">
+          <span class="sparkline-inline">
+            <span class="bar" style="height:8px"></span>
+            <span class="bar" style="height:8px"></span>
+            <span class="bar" style="height:9px"></span>
+            <span class="bar" style="height:9px"></span>
+            <span class="bar" style="height:9px"></span>
+            <span class="bar" style="height:10px"></span>
+            <span class="bar" style="height:10px"></span>
+            <span class="bar" style="height:10px"></span>
+            <span class="bar" style="height:11px"></span>
+            <span class="bar" style="height:11px"></span>
+            <span class="bar" style="height:11px"></span>
+            <span class="bar" style="height:12px"></span>
+          </span>
+          +0% YoY — flat
+        </span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Contract type</span>
+        <span class="ref-value">Annual</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Renewal date</span>
+        <span class="ref-value">May 1, 2026</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Multi-year remaining</span>
+        <span class="ref-value gap">— not captured</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Customer fiscal year</span>
+        <span class="ref-value gap">— not captured</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Previous renewal outcome</span>
+        <span class="ref-value gap">— not captured</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Procurement complexity</span>
+        <span class="ref-value gap">— not yet surveyed</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Discount history</span>
+        <span class="ref-value gap">— none captured</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Discount appetite</span>
+        <span class="ref-value gap">— unknown</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Payment behavior</span>
+        <span class="ref-value gap">— unknown</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Budget holder</span>
+        <span class="ref-value gap">— unknown</span>
+      </div>
+    </div>
+
+    <div class="gap-summary-bar">
+      7 of 10 commercial fields unfilled
+      <a href="#">Capture now →</a>
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 7 — TECHNICAL SHAPE ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <div class="chapter-title-ref">Technical shape</div>
+    <div class="freshness-strip">
+      Updated Apr 9 · 1 open ticket · 18 features active
+    </div>
+
+    <div class="ref-grid">
+      <div class="ref-row">
+        <span class="ref-label">Usage tier</span>
+        <span class="ref-value gap">— not captured</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Active users</span>
+        <span class="ref-value gap">— not captured</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Services stage</span>
+        <span class="ref-value gap">— not captured</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Support tier</span>
+        <span class="ref-value gap">— not captured</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Open tickets</span>
+        <span class="ref-value">1</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">CSAT</span>
+        <span class="ref-value">4.5</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Adoption score</span>
+        <span class="ref-value gap">— not computed</span>
+      </div>
+      <div class="ref-row">
+        <span class="ref-label">Integrations</span>
+        <span class="ref-value gap">— not captured</span>
+      </div>
+    </div>
+
+    <div class="subsection-label">Feature adoption · 18 active</div>
+    <div class="feature-grid">
+      <div class="feature-item"><span class="feature-dot fresh"></span> Defensive Mode</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Safe Publishing</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Headless</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Anomaly Detection</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> APM &mdash; Browser Monitoring</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> APM &mdash; Synthetics Monitoring</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Application Downtime Monitoring</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Concierge Onboarding</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Database Backup Shipping</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Debugging</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Enhanced Support</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Geographical Redundancy</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Hourly Backups</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Log Shipping</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Multisite Support</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Non-Production Environments</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> Preview Environment + Sandbox</div>
+      <div class="feature-item"><span class="feature-dot fresh"></span> + 1 more</div>
+    </div>
+    <div class="feature-note">All 18 features active as of Apr 8, 2026 (Glean)</div>
+
+    <div class="gap-summary-bar">
+      4 of 6 technical fields unfilled · Last enrichment Apr 9
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 8 — RELATIONSHIP FABRIC ═════════ -->
+  <section class="chapter">
+    <hr class="chapter-rule">
+    <h2 class="chapter-title">Relationship fabric</h2>
+    <div class="freshness-strip">
+      <span class="stale">Most fields not captured — this is a known gap</span>
+    </div>
+
+    <div class="fabric-list">
+      <div class="fabric-row">
+        <span class="ref-label">Reference customer</span>
+        <span class="fabric-content gap">Unknown — not captured</span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Logo permission</span>
+        <span class="fabric-content gap">Unknown — not captured</span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Case study</span>
+        <span class="fabric-content gap">None — not captured</span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Beta programs</span>
+        <span class="fabric-content">
+          <strong>Safe Publisher</strong> — planned March 2026 · engagement: active
+        </span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">NPS history</span>
+        <span class="fabric-content">
+          <span class="fabric-highlight-nps">67</span>
+          <span class="fabric-highlight">"Customer is happy with VIP..." (Mar 1, 2026)</span>
+          <a href="#quote-wall" class="xref-pill" style="margin-left: var(--space-sm); margin-top: 4px; display: inline-block;">See quote wall →</a>
+        </span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Speaking slots</span>
+        <span class="fabric-content gap">None captured</span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Referrals made</span>
+        <span class="fabric-content gap">None captured</span>
+      </div>
+      <div class="fabric-row">
+        <span class="ref-label">Advocacy trend</span>
+        <span class="fabric-content gap">Unknown — not captured</span>
+      </div>
+    </div>
+
+    <div class="editorial-close">
+      We haven't systematically captured advocacy signal for Globex Holdings. Given the NPS 67 and healthy relationship, this is a likely source of unrealized value.
+    </div>
+  </section>
+
+  <!-- ═════════ CHAPTER 9 — META ═════════ -->
+  <section class="meta-section">
+    <div class="meta-label">About this dossier</div>
+
+    <div class="meta-card">
+      <div class="meta-card-label">Our data capture gap</div>
+      <div class="meta-card-text">
+        Stakeholder assessments for <strong>Diego Martinez</strong> and <strong>Riley Park</strong> flagged for verification — they've been in 3+ meetings but we haven't characterized their role or influence. Two Globex Holdings attendees (<strong>Priya Shah</strong>, <strong>Miguel Torres</strong>) have zero assessment despite 3 meetings each.
+      </div>
+    </div>
+
+    <div class="meta-card">
+      <div class="meta-card-label">Source coverage</div>
+      <div class="meta-card-text">
+        Glean flagged that <strong>at least one Globex Holdings call wasn't captured in Gong</strong> (Amy used a local recording). Staircase notes hit-or-miss. Notion not indexed. Commercial dossier fields (procurement, payment behavior, fiscal alignment, discount history) all unfilled — these require manual capture.
+      </div>
+    </div>
+
+    <div class="meta-card">
+      <div class="meta-card-label">Freshness</div>
+      <div class="meta-card-text">
+        14 meetings on record · 5 with transcripts · Last full dossier enrichment: Apr 16, 2026 · Stale fields: commercial shape (7 of 10), relationship fabric (6 of 8)
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ FINIS ═════════ -->
+  <div class="finis">
+    <div class="finis-mark">* * *</div>
+    <div class="finis-date">Dossier pull Apr 17, 2026 · 12 people · 5 strategic priorities · 6 quotes · 11 gaps identified</div>
+  </div>
+
+</div>
+
+<!-- Switcher -->
+<div class="switcher">
+  <button>Health &amp; Outlook</button>
+  <button class="active">Context</button>
+  <button>The Work</button>
+</div>
+
+</body>
+</html>

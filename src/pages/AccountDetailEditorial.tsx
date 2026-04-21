@@ -1,3 +1,10 @@
+/**
+ * @deprecated DOS-112: This flat page component is no longer a route target.
+ * AccountDetailShell + view routes (AccountHealthView, AccountContextView,
+ * AccountWorkView) replace it. Kept because AccountDetailEditorial.module.css
+ * is still imported by many child components. Safe to delete once the CSS
+ * module is renamed or consolidated.
+ */
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
@@ -174,7 +181,7 @@ export default function AccountDetailEditorial() {
       </MarginSection>
 
       {intelligence && <AccountPullQuote intelligence={intelligence} />}
-      {intelligence?.health && <AccountHealthSection health={intelligence.health} />}
+      {intelligence?.health && <AccountHealthSection health={intelligence.health} consistencyFindings={intelligence.consistencyFindings} />}
 
       <MarginSection id="the-room" label={<>The<br/>Room</>}>
         <StakeholderGallery intelligence={intelligence} linkedPeople={detail.linkedPeople}
@@ -199,14 +206,14 @@ export default function AccountDetailEditorial() {
       {intelligence && (intelligence.valueDelivered?.length || intelligence.successMetrics?.length || intelligence.openCommitments?.length) ? (
         <MarginSection id="value-commitments" label={<>Value &amp;<br/>Commitments</>}>
           <ChapterHeading title="Value & Commitments" />
-          <ValueCommitments intelligence={intelligence} onUpdateField={handleUpdateIntelField} getItemFeedback={fb.get} onItemFeedback={fb.submit} />
+          <ValueCommitments intelligence={intelligence} onUpdateField={handleUpdateIntelField} onItemFeedback={fb.submit} />
         </MarginSection>
       ) : null}
 
-      {intelligence && (intelligence.strategicPriorities?.length || intelligence.competitiveContext?.length || intelligence.organizationalChanges?.length || intelligence.blockers?.length) ? (
+      {intelligence && (intelligence.strategicPriorities?.length || intelligence.competitiveContext?.length || intelligence.marketContext?.length) ? (
         <MarginSection id="strategic-landscape" label={<>Competitive &amp;<br/>Strategic</>}>
           <ChapterHeading title="Competitive & Strategic" />
-          <StrategicLandscape intelligence={intelligence} onUpdateField={handleUpdateIntelField} getItemFeedback={fb.get} onItemFeedback={fb.submit} />
+          <StrategicLandscape intelligence={intelligence} onUpdateField={handleUpdateIntelField} onItemFeedback={fb.submit} />
         </MarginSection>
       ) : null}
 

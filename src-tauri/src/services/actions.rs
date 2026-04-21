@@ -47,6 +47,28 @@ pub fn complete_action(
             Some(&format!("{{\"action_id\":\"{}\"}}", id)),
             0.7,
         );
+
+        // DOS Work-tab: Commitment lifecycle — delivered + tombstone the bridge.
+        if action.action_kind == crate::action_status::KIND_COMMITMENT {
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                engine,
+                entity_type,
+                &entity_id,
+                "commitment_delivered",
+                action.source_type.as_deref().unwrap_or("commitment"),
+                Some(&format!(
+                    "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+                    id,
+                    action.title.replace('"', "\\\"")
+                )),
+                0.8,
+            );
+            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(db, id)
+            {
+                log::warn!("commitment_bridge tombstone on complete failed (non-fatal): {e}");
+            }
+        }
     }
 
     Ok(())
@@ -103,6 +125,24 @@ pub fn accept_suggested_action(
             )),
             0.8,
         );
+
+        // DOS Work-tab: Commitment lifecycle — accepted (backlog → unstarted).
+        if action.action_kind == crate::action_status::KIND_COMMITMENT {
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                engine,
+                entity_type,
+                &entity_id,
+                "commitment_accepted",
+                action.source_type.as_deref().unwrap_or("commitment"),
+                Some(&format!(
+                    "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+                    id,
+                    action.title.replace('"', "\\\"")
+                )),
+                0.7,
+            );
+        }
     }
 
     Ok(())
@@ -140,6 +180,28 @@ pub fn reject_suggested_action(
         // Record rejection patterns for future suppression (DOS-18)
         if let Err(e) = db.record_rejection_pattern(action) {
             log::warn!("Failed to record rejection pattern: {}", e);
+        }
+
+        // DOS Work-tab: Commitment lifecycle — rejected + tombstone the bridge.
+        if action.action_kind == crate::action_status::KIND_COMMITMENT {
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                engine,
+                entity_type,
+                &entity_id,
+                "commitment_rejected",
+                action.source_type.as_deref().unwrap_or("commitment"),
+                Some(&format!(
+                    "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+                    id,
+                    action.title.replace('"', "\\\"")
+                )),
+                0.5,
+            );
+            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(db, id)
+            {
+                log::warn!("commitment_bridge tombstone on reject failed (non-fatal): {e}");
+            }
         }
     }
 
@@ -238,6 +300,7 @@ pub async fn create_action(
         person_id,
         context,
         source_label,
+        action_kind,
     } = request;
 
     let title = crate::util::validate_bounded_string(&title, "title", 1, 280)?;
@@ -270,6 +333,13 @@ pub async fn create_action(
     let now = chrono::Utc::now().to_rfc3339();
     let id = uuid::Uuid::new_v4().to_string();
 
+    let action_kind = action_kind
+        .filter(|k| !k.trim().is_empty())
+        .unwrap_or_else(|| crate::action_status::KIND_TASK.to_string());
+    if !crate::action_status::ALL_KINDS.contains(&action_kind.as_str()) {
+        return Err(format!("Invalid action_kind: {action_kind}"));
+    }
+
     let action = crate::db::DbAction {
         id: id.clone(),
         title,
@@ -283,6 +353,7 @@ pub async fn create_action(
         source_type: Some("user_manual".to_string()),
         source_id: None,
         source_label,
+        action_kind,
         context,
         waiting_on: None,
         updated_at: now,
@@ -555,8 +626,70 @@ pub fn get_actions_from_db(db: &ActionDb, days_ahead: i32) -> Result<Vec<ActionL
 }
 
 /// Get all suggested (AI-suggested) actions (I256).
+///
+/// Unfiltered. Use `get_suggested_actions_for_user` in the command layer so
+/// the user only sees their own commitments + unassigned items by default —
+/// AI extraction tags every speaker in transcripts as a potential owner, so
+/// the unfiltered list on a real workspace is 90%+ other people's work.
 pub fn get_suggested_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, String> {
     db.get_suggested_actions().map_err(|e| e.to_string())
+}
+
+/// Get suggested actions filtered to the current user + unassigned rows.
+///
+/// Reads the user's name from `user_entity` (the /me page) and applies a
+/// case-insensitive owner-prefix match on `actions.context`. Ambiguous rows
+/// without a recognisable owner prefix still surface so the user doesn't
+/// miss triage work.
+pub fn get_suggested_actions_for_user(
+    db: &ActionDb,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    let user_name = crate::services::user_entity::get_user_entity_from_db(db)
+        .ok()
+        .and_then(|u| u.name)
+        .filter(|n| !n.trim().is_empty());
+    db.get_suggested_actions_for_user(user_name.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// DOS Work-tab Phase 3: open, user-accepted commitments for an account.
+///
+/// Thin wrapper over `ActionDb::get_account_commitments` that surfaces
+/// `action_kind='commitment'` rows in (unstarted, started) — the read side
+/// of the Commitments chapter. Backlog commitments are unaccepted
+/// suggestions and live in `get_account_suggestions` until the user
+/// promotes them.
+pub fn get_account_commitments(
+    db: &ActionDb,
+    account_id: &str,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    db.get_account_commitments(account_id)
+        .map_err(|e| e.to_string())
+}
+
+/// DOS Work-tab Phase 3: backlog suggestions for an account.
+///
+/// Thin wrapper over `ActionDb::get_account_suggestions` — backlog tasks
+/// and backlog commitments both appear as suggestions until accepted
+/// (backlog → unstarted) or rejected (→ archived).
+pub fn get_account_suggestions(
+    db: &ActionDb,
+    account_id: &str,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    db.get_account_suggestions(account_id)
+        .map_err(|e| e.to_string())
+}
+
+/// DOS Work-tab Phase 3: recently landed actions for an account (30-day
+/// window, cap 20).
+///
+/// Thin wrapper over `ActionDb::get_account_recently_landed`.
+pub fn get_account_recently_landed(
+    db: &ActionDb,
+    account_id: &str,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    db.get_account_recently_landed(account_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Resolve a decision: clear needs_decision flag and emit signal (DOS-17).

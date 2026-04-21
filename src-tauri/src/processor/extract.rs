@@ -711,7 +711,7 @@ mod tests {
     #[test]
     fn test_build_enriched_markdown_with_frontmatter() {
         let md = build_enriched_markdown_with_frontmatter(
-            "2026-03-24-cox-onsite.md",
+            "2026-03-24-crestview-onsite.md",
             "# Notes",
             "meeting_notes",
             Some("Crestview Media / Corporate-Services-B2B"),

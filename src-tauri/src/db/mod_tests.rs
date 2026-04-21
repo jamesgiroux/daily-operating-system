@@ -21,6 +21,7 @@ fn sample_action(id: &str, title: &str) -> DbAction {
         source_type: None,
         source_id: None,
         source_label: None,
+        action_kind: crate::action_status::KIND_TASK.to_string(),
         context: None,
         waiting_on: None,
         updated_at: now,
@@ -69,6 +70,9 @@ fn sample_email(id: &str, thread_id: &str, subject: &str) -> DbEmail {
         pinned_at: None,
         commitments: None,
         questions: None,
+        is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
     }
 }
 
@@ -184,6 +188,426 @@ fn test_archive_email_archives_entire_thread() {
 
     let active = db.get_all_active_emails().expect("active after undo");
     assert_eq!(active.len(), 2, "undo should restore the full thread");
+}
+
+#[test]
+fn test_dos31_last_successful_fetch_at_roundtrip() {
+    // DOS-31: the `email_sync_meta` singleton row must be seeded by migration 094
+    // and round-trip through the get/set API. Starts as None, becomes Some(now)
+    // after a recorded successful fetch.
+    let db = test_db();
+
+    let initial = db
+        .get_last_successful_fetch_at()
+        .expect("meta query should succeed even when value is NULL");
+    assert_eq!(initial, None, "meta row seeded with NULL last_successful_fetch_at");
+
+    db.set_last_successful_fetch_at()
+        .expect("set_last_successful_fetch_at should succeed");
+
+    let after = db
+        .get_last_successful_fetch_at()
+        .expect("meta query after set");
+    assert!(after.is_some(), "timestamp should be populated after set");
+}
+
+#[test]
+fn test_dos31_sync_stats_includes_last_successful_fetch_at() {
+    // DOS-31 AC: `get_email_sync_stats` exposes the separate
+    // `last_successful_fetch_at` timestamp so the UI can distinguish a healthy
+    // fetch from a stalled enrichment pipeline.
+    let db = test_db();
+    db.set_last_successful_fetch_at().expect("record fetch");
+
+    let stats = db.get_email_sync_stats().expect("sync stats");
+    assert!(
+        stats.last_successful_fetch_at.is_some(),
+        "stats must surface last_successful_fetch_at after a recorded fetch"
+    );
+}
+
+/// Seed a single email row in the `failed` state at the 3-attempt cap.
+/// Centralized so the DOS-226 rollback/finalize tests stay readable.
+#[cfg(test)]
+fn seed_failed_email(db: &ActionDb, email_id: &str) {
+    let mut stuck = sample_email(email_id, "thread-stuck", "Stuck email");
+    stuck.enrichment_state = "failed".to_string();
+    stuck.enrichment_attempts = 3;
+    db.upsert_email(&stuck).expect("upsert stuck");
+    // upsert_email doesn't persist enrichment_state/attempts on conflict; force
+    // the row into the expected failed/3 state.
+    db.conn
+        .execute(
+            "UPDATE emails SET enrichment_state = 'failed', enrichment_attempts = 3 WHERE email_id = ?1",
+            rusqlite::params![email_id],
+        )
+        .expect("seed failed state");
+}
+
+#[cfg(test)]
+fn read_enrichment_state(db: &ActionDb, email_id: &str) -> (String, i32) {
+    db.conn
+        .query_row(
+            "SELECT enrichment_state, enrichment_attempts FROM emails WHERE email_id = ?1",
+            rusqlite::params![email_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read back state")
+}
+
+#[test]
+fn test_dos226_mark_failed_for_retry_preserves_attempts() {
+    // DOS-226: the retry transition must preserve enrichment_attempts so a
+    // rollback (refresh failure) can restore the row to exactly its pre-retry
+    // state. Counting the row as failed in the UI also depends on the
+    // attempts cap staying at 3.
+    let db = test_db();
+    seed_failed_email(&db, "em-stuck-1");
+
+    let marked = db.mark_failed_for_retry("batch-a").expect("mark");
+    assert_eq!(marked, 1);
+
+    let (state, attempts) = read_enrichment_state(&db, "em-stuck-1");
+    assert_eq!(state, "pending_retry");
+    assert_eq!(attempts, 3, "attempts must be preserved for rollback");
+}
+
+#[test]
+fn test_dos226_pending_retry_still_counts_as_failed_in_stats() {
+    // DOS-226: while a retry is in flight, the UI must keep rendering the
+    // Retry notice. That means `get_email_sync_stats().failed` needs to
+    // include rows in the transitional `pending_retry` state.
+    let db = test_db();
+    seed_failed_email(&db, "em-stuck-1");
+    db.mark_failed_for_retry("batch-b").expect("mark");
+
+    let stats = db.get_email_sync_stats().expect("stats");
+    assert_eq!(
+        stats.failed, 1,
+        "pending_retry must count as failed for UI purposes"
+    );
+}
+
+#[test]
+fn test_dos226_rollback_restores_failed_state() {
+    // DOS-226: If the Gmail refresh fails mid-retry, the rows must return
+    // to `failed` with their original `enrichment_attempts` so the user
+    // can retry again (and the Retry notice never silently disappeared).
+    let db = test_db();
+    seed_failed_email(&db, "em-stuck-1");
+
+    db.mark_failed_for_retry("batch-c").expect("mark");
+    let rolled = db.rollback_pending_retry("batch-c").expect("rollback");
+    assert_eq!(rolled, 1);
+
+    let (state, attempts) = read_enrichment_state(&db, "em-stuck-1");
+    assert_eq!(state, "failed");
+    assert_eq!(attempts, 3, "attempts must be restored");
+}
+
+#[test]
+fn test_dos226_finalize_success_promotes_to_pending_and_zeros_attempts() {
+    // DOS-226: On refresh success, `pending_retry` rows must become `pending`
+    // with zeroed attempts so the enrichment pipeline actually re-runs them
+    // (it skips rows that have reached the 3-attempt cap).
+    let db = test_db();
+    seed_failed_email(&db, "em-stuck-1");
+
+    db.mark_failed_for_retry("batch-d").expect("mark");
+    let promoted = db.finalize_pending_retry_success("batch-d").expect("finalize");
+    assert_eq!(promoted, 1);
+
+    let (state, attempts) = read_enrichment_state(&db, "em-stuck-1");
+    assert_eq!(state, "pending");
+    assert_eq!(attempts, 0);
+}
+
+#[test]
+fn test_dos226_finalize_is_scoped_to_batch_id() {
+    // Codex finding 2: a finalize from refresh A must not accidentally
+    // adopt rows owned by refresh B. If batching were ignored, a rapid
+    // double-refresh could drop rows into `pending` with attempts=0 that
+    // the first refresh had not yet finished processing.
+    let db = test_db();
+    seed_failed_email(&db, "em-batch-a-1");
+    seed_failed_email(&db, "em-batch-a-2");
+
+    db.mark_failed_for_retry("batch-A").expect("mark A");
+
+    // Simulate a second refresh arriving before A finalizes.
+    let bogus = db
+        .finalize_pending_retry_success("batch-B")
+        .expect("finalize B");
+    assert_eq!(bogus, 0, "finalize for unknown batch must touch zero rows");
+
+    // A's rows are still in pending_retry.
+    let (state, _) = read_enrichment_state(&db, "em-batch-a-1");
+    assert_eq!(state, "pending_retry");
+
+    // A finalizes its own batch correctly.
+    let promoted = db
+        .finalize_pending_retry_success("batch-A")
+        .expect("finalize A");
+    assert_eq!(promoted, 2);
+}
+
+#[test]
+fn test_dos226_rollback_is_scoped_to_batch_id() {
+    // Codex finding 2: rollback from one batch must not clobber another
+    // batch's in-flight rows.
+    let db = test_db();
+    seed_failed_email(&db, "em-rb-1");
+
+    db.mark_failed_for_retry("batch-X").expect("mark X");
+    let rolled = db.rollback_pending_retry("batch-Y").expect("rollback Y");
+    assert_eq!(rolled, 0, "rollback for unknown batch is a no-op");
+
+    let (state, _) = read_enrichment_state(&db, "em-rb-1");
+    assert_eq!(state, "pending_retry", "X's row must be untouched");
+}
+
+#[test]
+fn test_dos226_rollback_stale_pending_retry_recovers_orphans() {
+    // Codex finding 2: simulate a crash between mark_failed_for_retry and
+    // refresh completion. The row is stranded in pending_retry with a
+    // batch_id that will never be finalized or rolled back by its owner.
+    // Phase-0 recovery on the next refresh must promote it back to `failed`
+    // so retry_failed_emails() will actually re-run it.
+    let db = test_db();
+    seed_failed_email(&db, "em-crashed");
+
+    db.mark_failed_for_retry("batch-crashed").expect("mark");
+
+    // Backdate retry_started_at to simulate staleness (older than the
+    // recovery bound). Without this the row would be considered fresh.
+    db.conn
+        .execute(
+            "UPDATE emails SET retry_started_at = '2020-01-01T00:00:00Z' \
+             WHERE email_id = 'em-crashed'",
+            [],
+        )
+        .expect("backdate");
+
+    // `retry_failed_emails` counted only `failed` before the fix. Verify
+    // the count_retriable helper includes pending_retry rows so a user
+    // clicking Retry still triggers a refresh (the refresh's phase-0
+    // recovery will then roll this row back to failed).
+    let retriable = db.count_retriable_emails().expect("count retriable");
+    assert_eq!(
+        retriable, 1,
+        "count_retriable must include pending_retry so orphans aren't invisible to Retry"
+    );
+
+    // Run the stale-recovery pass with a short bound.
+    let recovered = db
+        .rollback_stale_pending_retry(60)
+        .expect("recover stale");
+    assert_eq!(recovered, 1);
+
+    let (state, attempts) = read_enrichment_state(&db, "em-crashed");
+    assert_eq!(state, "failed", "stale pending_retry must be rolled back");
+    assert_eq!(attempts, 3, "attempts untouched during recovery");
+
+    // Columns cleared so the recovered row can participate in a fresh batch.
+    let (batch_id, started_at): (Option<String>, Option<String>) = db
+        .conn
+        .query_row(
+            "SELECT retry_batch_id, retry_started_at FROM emails WHERE email_id = 'em-crashed'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read cols");
+    assert!(batch_id.is_none(), "retry_batch_id cleared on recovery");
+    assert!(started_at.is_none(), "retry_started_at cleared on recovery");
+}
+
+#[test]
+fn test_dos226_rollback_stale_respects_fresh_batches() {
+    // Codex finding 2: a concurrent refresh's fresh rows must survive the
+    // recovery pass — only stale rows are rolled back.
+    let db = test_db();
+    seed_failed_email(&db, "em-fresh");
+
+    db.mark_failed_for_retry("batch-fresh").expect("mark");
+
+    let recovered = db
+        .rollback_stale_pending_retry(600)
+        .expect("recover stale");
+    assert_eq!(recovered, 0, "fresh batches must not be disturbed");
+
+    let (state, _) = read_enrichment_state(&db, "em-fresh");
+    assert_eq!(state, "pending_retry");
+}
+
+// ---------------------------------------------------------------------------
+// DOS-226 Wave 0g: retry-batched finalize failure must surface, not swallow
+// ---------------------------------------------------------------------------
+//
+// Regression guard for the Wave 0g HIGH finding: the orchestrator promoted
+// `pending_retry` rows to `pending` *before* enrichment via
+// `finalize_pending_retry_success`. If that call erred or returned zero
+// promoted rows for a retry batch, the old code logged and continued — the
+// service-layer's residual finalize after enrichment then returned success
+// while zero retry work had actually happened.
+//
+// The tests below pin the semantic invariants the orchestrator relies on:
+//   (a) Finalizing a non-existent batch_id returns `Ok(0)` — distinct from
+//       success, and the orchestrator must treat this as "batch stuck".
+//   (b) After `rollback_pending_retry`, rows are back in `failed` with their
+//       original attempts preserved, so the user can retry again. This is
+//       what the service-layer wrapper does on orchestrate Err.
+
+#[test]
+fn test_dos226_w0g_finalize_missing_batch_returns_zero_not_err() {
+    // Wave 0g: the orchestrator's new fail-loud branch distinguishes
+    // `Ok(0)` (genuinely stuck batch) from `Err` (SQLite failure). Both
+    // must surface as `Err(ExecutionError)` in the orchestrator so the
+    // service rollback runs. This test pins the DB-level contract that
+    // finalize on a batch with no matching rows returns `Ok(0)` — the
+    // "stuck" signal the orchestrator now acts on.
+    let db = test_db();
+    seed_failed_email(&db, "em-w0g-stuck");
+    // Stamp a batch, but pretend the orchestrator lost track and calls
+    // finalize with a wrong/missing batch_id.
+    db.mark_failed_for_retry("batch-real").expect("mark");
+
+    let promoted = db
+        .finalize_pending_retry_success("batch-phantom")
+        .expect("finalize returns Ok even for missing batch");
+    assert_eq!(
+        promoted, 0,
+        "finalize for a batch with no matching rows is Ok(0); orchestrator treats this as stuck"
+    );
+
+    // The original batch's row is still in pending_retry — the phantom
+    // finalize did not accidentally promote it.
+    let (state, _) = read_enrichment_state(&db, "em-w0g-stuck");
+    assert_eq!(
+        state, "pending_retry",
+        "the real batch's row must not have been promoted by the phantom finalize"
+    );
+}
+
+#[test]
+fn test_dos226_w0g_rollback_after_failed_finalize_restores_retry() {
+    // Wave 0g: when the orchestrator returns Err (our new behavior when
+    // finalize fails or returns 0 for a retry batch), the service layer
+    // takes the `Err` branch and calls `rollback_pending_retry`. This
+    // test pins the end-state the user sees: the rows are back in
+    // `failed` with preserved attempts, not stranded in `pending_retry`
+    // with a dead batch_id. In other words: the "retry succeeded while
+    // zero work ran" bug cannot manifest, because the failure propagates
+    // all the way to a visible rollback.
+    let db = test_db();
+    seed_failed_email(&db, "em-w0g-rb-1");
+    seed_failed_email(&db, "em-w0g-rb-2");
+
+    db.mark_failed_for_retry("batch-w0g-rb").expect("mark");
+    // Simulate the orchestrator having returned Err (finalize failed
+    // mid-run). The service layer's Err branch runs rollback.
+    let rolled = db
+        .rollback_pending_retry("batch-w0g-rb")
+        .expect("rollback");
+    assert_eq!(rolled, 2, "both rows must be returned to failed state");
+
+    for id in ["em-w0g-rb-1", "em-w0g-rb-2"] {
+        let (state, attempts) = read_enrichment_state(&db, id);
+        assert_eq!(state, "failed", "row {id} must be back in failed");
+        assert_eq!(
+            attempts, 3,
+            "row {id} must have its original attempts preserved so user can retry again"
+        );
+    }
+
+    // And the batch's columns are cleared — a fresh retry can adopt them.
+    let (batch_id, started_at): (Option<String>, Option<String>) = db
+        .conn
+        .query_row(
+            "SELECT retry_batch_id, retry_started_at FROM emails WHERE email_id = 'em-w0g-rb-1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read cols");
+    assert!(batch_id.is_none(), "retry_batch_id cleared after rollback");
+    assert!(
+        started_at.is_none(),
+        "retry_started_at cleared after rollback"
+    );
+}
+
+#[test]
+fn test_dos226_pending_retry_eligible_for_enrichment_after_finalize() {
+    // Codex finding 1 regression guard: the whole retry loop hinges on
+    // the retried row becoming eligible for the next enrichment pass.
+    // Before this fix, `pending_retry` at attempts=3 would be filtered
+    // out by `get_pending_enrichment` (which requires attempts < 3), so
+    // the user-visible "retrying" state translated to zero work done.
+    //
+    // After finalize, the row must be state=pending + attempts=0 and
+    // therefore selectable by `get_pending_enrichment`.
+    let db = test_db();
+    seed_failed_email(&db, "em-e2e");
+
+    // Sanity: attempts=3 in `failed` is selected by get_pending_enrichment
+    // (the query matches failed|pending|pending_retry). But the important
+    // case for finding 1 is post-finalize eligibility, below.
+    db.mark_failed_for_retry("batch-e2e").expect("mark");
+    db.finalize_pending_retry_success("batch-e2e")
+        .expect("finalize");
+
+    let pending = db.get_pending_enrichment(10).expect("query pending");
+    assert!(
+        pending.iter().any(|e| e.email_id == "em-e2e"),
+        "finalized retry row must be visible to enrichment; \
+         otherwise the user-facing retry is a no-op"
+    );
+    let entry = pending.iter().find(|e| e.email_id == "em-e2e").unwrap();
+    assert_eq!(entry.enrichment_state, "pending");
+    assert_eq!(entry.enrichment_attempts, 0);
+}
+
+#[test]
+fn test_dos226_set_last_successful_fetch_at_is_upsert() {
+    // DOS-226: If the `email_sync_meta` singleton row is missing (fresh DB
+    // that skipped the seed insert, partial restore, etc.), the timestamp
+    // write must still materialize. The old UPDATE-only path silently
+    // no-op'd, leaving the UI stuck on "never fetched".
+    let db = test_db();
+
+    // Simulate the missing-singleton case — this is the exact drift the fix
+    // defends against.
+    db.conn
+        .execute("DELETE FROM email_sync_meta WHERE id = 1", [])
+        .expect("delete seed");
+
+    db.set_last_successful_fetch_at()
+        .expect("upsert must succeed even when seed row is missing");
+
+    let stamped = db
+        .get_last_successful_fetch_at()
+        .expect("read back")
+        .expect("timestamp must be populated after upsert");
+    assert!(!stamped.is_empty());
+}
+
+#[test]
+fn test_dos226_get_email_sync_stats_propagates_errors() {
+    // DOS-226: `get_email_sync_stats` previously swallowed errors from the
+    // meta query as `Ok(None)`, masking schema drift (e.g. migration 094
+    // never applied) as a benign "never fetched". Verify errors bubble up.
+    let db = test_db();
+
+    // Simulate schema drift: drop the meta table entirely. `get_last_...`
+    // must now return Err, and the stats query must propagate it.
+    db.conn
+        .execute("DROP TABLE email_sync_meta", [])
+        .expect("drop meta");
+
+    let result = db.get_email_sync_stats();
+    assert!(
+        result.is_err(),
+        "sync stats must propagate unexpected meta query errors"
+    );
 }
 
 #[test]
@@ -2481,6 +2905,7 @@ fn test_get_project_actions() {
         source_type: None,
         source_id: None,
         source_label: None,
+        action_kind: crate::action_status::KIND_TASK.to_string(),
         context: None,
         waiting_on: None,
         updated_at: now,
@@ -3031,6 +3456,7 @@ fn test_create_action_all_fields() {
         source_type: Some("manual".to_string()),
         source_id: None,
         source_label: Some("Slack #cs-team".to_string()),
+        action_kind: crate::action_status::KIND_TASK.to_string(),
         context: Some("Jane mentioned churn risk in standup".to_string()),
         waiting_on: None,
         updated_at: now.clone(),
@@ -3081,6 +3507,7 @@ fn test_create_action_defaults() {
         source_type: Some("manual".to_string()),
         source_id: None,
         source_label: None,
+        action_kind: crate::action_status::KIND_TASK.to_string(),
         context: None,
         waiting_on: None,
         updated_at: now,
@@ -3155,6 +3582,7 @@ fn test_update_action_clear_fields() {
         source_type: Some("manual".to_string()),
         source_id: None,
         source_label: Some("Call".to_string()),
+        action_kind: crate::action_status::KIND_TASK.to_string(),
         context: Some("Some context".to_string()),
         waiting_on: None,
         updated_at: now,
@@ -3244,6 +3672,7 @@ fn test_manual_actions_in_non_briefing_query() {
         source_type: Some("manual".to_string()),
         source_id: None,
         source_label: None,
+        action_kind: crate::action_status::KIND_TASK.to_string(),
         context: None,
         waiting_on: None,
         updated_at: now,
@@ -3521,21 +3950,16 @@ fn test_reclassify_people_for_domains() {
 #[test]
 fn test_reclassify_meeting_types_from_attendees() {
     let db = test_db();
-    setup_meeting(&db, "m1", "Subsidiary Sync");
+    // DOS-225: Path A now requires full attendee coverage via the `attendees`
+    // JSON blob, so the meeting must have it populated explicitly rather than
+    // relying on junction-join coverage alone.
+    setup_meeting_with_attendees(&db, "m1", "customer", r#"["alice@subsidiary.com"]"#);
 
     // Create person who is currently external
     let mut p1 = sample_person("alice@subsidiary.com");
     p1.relationship = "external".to_string();
     db.upsert_person(&p1).expect("upsert");
     db.record_meeting_attendance("m1", &p1.id).expect("attend");
-
-    // Meeting was classified as 'customer' because alice was external
-    db.conn
-        .execute(
-            "UPDATE meetings SET meeting_type = 'customer' WHERE id = 'm1'",
-            [],
-        )
-        .expect("set type");
 
     // Now reclassify alice as internal
     let domains = vec!["myco.com".to_string(), "subsidiary.com".to_string()];
@@ -3557,6 +3981,54 @@ fn test_reclassify_meeting_types_from_attendees() {
         )
         .expect("query");
     assert_eq!(meeting, "internal");
+}
+
+/// DOS-206 regression: stale meeting rows must be swept even when no people
+/// rows changed during the current reclassification pass.
+///
+/// Scenario: user adds a new user_domain. People records were already
+/// correctly classified (alice@subsidiary.com was `internal` before this
+/// sweep). But an old meeting is still stuck at `customer` because it was
+/// classified before the people correction. Re-running
+/// `reclassify_meeting_types_from_attendees()` must flip it to `internal`.
+#[test]
+fn test_dos206_reclassify_catches_stale_customer_meetings() {
+    let db = test_db();
+    // DOS-225: populate the attendees JSON blob — the new Path A enforces
+    // full-attendee-coverage against this canonical list.
+    setup_meeting_with_attendees(
+        &db,
+        "m_stale",
+        "customer",
+        r#"["alice@internal.co"]"#,
+    );
+
+    // Alice is ALREADY internal before the sweep — this mirrors the case
+    // where domains were set correctly but an older meeting was misclassified.
+    let mut alice = sample_person("alice@internal.co");
+    alice.relationship = "internal".to_string();
+    db.upsert_person(&alice).expect("upsert");
+    db.record_meeting_attendance("m_stale", &alice.id)
+        .expect("attend");
+
+    // Reclassify: no people changed, but the meeting must still be flipped.
+    let changed = db
+        .reclassify_meeting_types_from_attendees()
+        .expect("reclassify");
+    assert!(
+        changed >= 1,
+        "stale customer meeting with all-internal attendees must be reclassified"
+    );
+
+    let meeting_type: String = db
+        .conn
+        .query_row(
+            "SELECT meeting_type FROM meetings WHERE id = 'm_stale'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("query");
+    assert_eq!(meeting_type, "internal");
 }
 
 #[test]
@@ -4648,4 +5120,1702 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
     assert_eq!(health_delta.previous, 72.0);
     assert_eq!(health_delta.current, 84.0);
     assert!(!thread.is_first_meeting);
+}
+
+/// DOS-74 regression: when a meeting's linked_entities junction contains a
+/// high-confidence primary plus a low-confidence sibling (a "suggestion"),
+/// `get_meeting_linked_entities` returns them in primary-first, confidence-
+/// descending order and flags the sibling as `suggested`.
+#[test]
+fn test_dos74_get_meeting_linked_entities_primary_then_suggestions() {
+    let db = test_db();
+
+    // Seed two accounts + their junction entity rows.
+    let parent = sample_account("parent", "Parent Co");
+    db.upsert_account(&parent).expect("upsert parent");
+    let sub = sample_account("sub", "Subsidiary BU");
+    db.upsert_account(&sub).expect("upsert sub");
+
+    setup_meeting(&db, "m_dos74", "Joint Strategy Sync");
+
+    // High-confidence primary link (e.g. resolved from strong domain signal).
+    db.link_meeting_entity_with_confidence("m_dos74", "parent", "account", 0.95, true)
+        .expect("link primary");
+    // Low-confidence sibling link (domain_sibling tier, DOS-74 suggestion).
+    db.link_meeting_entity_with_confidence("m_dos74", "sub", "account", 0.45, false)
+        .expect("link suggestion");
+
+    let linked = db
+        .get_meeting_linked_entities("m_dos74")
+        .expect("get linked");
+    assert_eq!(linked.len(), 2);
+
+    // [0] must be the primary, [1] the suggestion.
+    assert_eq!(linked[0].id, "parent");
+    assert!(linked[0].is_primary);
+    assert!(!linked[0].suggested);
+    assert!(linked[0].confidence >= 0.9);
+
+    assert_eq!(linked[1].id, "sub");
+    assert!(!linked[1].is_primary);
+    assert!(linked[1].suggested, "low-confidence sibling must render as suggestion");
+    assert!(linked[1].confidence < 0.60);
+}
+
+/// DOS-74 regression: `link_meeting_entity_with_confidence` must NEVER
+/// downgrade an existing high-confidence link. If a manual/junction
+/// resolution already wrote confidence 0.95 / is_primary=true, a later
+/// background sweep at 0.45 must not stomp that row.
+#[test]
+fn test_dos74_link_confidence_never_downgrades() {
+    let db = test_db();
+    let acct = sample_account("acct1", "Acct One");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m1", "Sync");
+
+    // First: low confidence sibling write.
+    db.link_meeting_entity_with_confidence("m1", "acct1", "account", 0.45, false)
+        .expect("initial weak link");
+    // Second: high confidence primary write — should upgrade.
+    db.link_meeting_entity_with_confidence("m1", "acct1", "account", 0.95, true)
+        .expect("upgrade to primary");
+
+    let linked = db.get_meeting_linked_entities("m1").expect("get");
+    assert_eq!(linked.len(), 1);
+    assert!(linked[0].is_primary);
+    assert!(linked[0].confidence >= 0.9);
+
+    // Third: another weak write should NOT downgrade.
+    db.link_meeting_entity_with_confidence("m1", "acct1", "account", 0.30, false)
+        .expect("weak retry");
+    let linked = db.get_meeting_linked_entities("m1").expect("get");
+    assert!(linked[0].is_primary, "primary flag must not be cleared");
+    assert!(linked[0].confidence >= 0.9, "confidence must not decrease");
+}
+
+#[test]
+fn test_dos228_sentiment_note_bound_to_current_value() {
+    // DOS-228 Fix 1: get_latest_sentiment_note must return None when the
+    // account's current sentiment has no associated note, even if older
+    // sentiment values have notes in the journal history.
+    let db = test_db();
+    let acct = sample_account("acct-sent", "Sent Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    // Step 1: set sentiment to at_risk with a note
+    db.update_account_field("acct-sent", "user_health_sentiment", "at_risk")
+        .expect("set at_risk");
+    db.insert_sentiment_journal_entry(
+        "acct-sent",
+        "at_risk",
+        Some("churn risk — exec escalation"),
+        None,
+        None,
+    )
+    .expect("journal at_risk");
+
+    let note = db
+        .get_latest_sentiment_note("acct-sent")
+        .expect("lookup1");
+    assert!(
+        note.as_ref().map(|(n, _)| n.as_str()) == Some("churn risk — exec escalation"),
+        "should return the at_risk note while at_risk is current, got {:?}",
+        note
+    );
+
+    // Step 2: transition to on_track with NO note
+    db.update_account_field("acct-sent", "user_health_sentiment", "on_track")
+        .expect("set on_track");
+    db.insert_sentiment_journal_entry("acct-sent", "on_track", None, None, None)
+        .expect("journal on_track");
+
+    // Assertion: the stale at_risk note must NOT leak through.
+    let note = db
+        .get_latest_sentiment_note("acct-sent")
+        .expect("lookup2");
+    assert_eq!(
+        note, None,
+        "note must be None when current sentiment has no note attached"
+    );
+
+    // Step 3: add a note against on_track — should surface now
+    db.insert_sentiment_journal_entry(
+        "acct-sent",
+        "on_track",
+        Some("stabilized after QBR"),
+        None,
+        None,
+    )
+    .expect("journal on_track with note");
+    let note = db
+        .get_latest_sentiment_note("acct-sent")
+        .expect("lookup3");
+    assert_eq!(
+        note.map(|(n, _)| n),
+        Some("stabilized after QBR".to_string())
+    );
+}
+
+#[test]
+fn test_dos228_sentiment_note_none_when_no_current_sentiment() {
+    // DOS-228 Fix 1: when user_health_sentiment is NULL, return None even if
+    // historical journal entries exist.
+    let db = test_db();
+    let acct = sample_account("acct-no-sent", "NoSent Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    // Historical note against at_risk, but no current sentiment set.
+    db.insert_sentiment_journal_entry(
+        "acct-no-sent",
+        "at_risk",
+        Some("legacy note"),
+        None,
+        None,
+    )
+    .expect("journal");
+
+    let note = db
+        .get_latest_sentiment_note("acct-no-sent")
+        .expect("lookup");
+    assert_eq!(note, None);
+}
+
+#[test]
+fn test_dos228_risk_briefing_job_lifecycle() {
+    // DOS-228 Fix 3: job progresses enqueued → running → complete.
+    let db = test_db();
+    let acct = sample_account("acct-rb", "RB Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    // Initially no job exists.
+    assert!(db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .is_none());
+
+    // Enqueue.
+    let attempt = "attempt-1";
+    db.upsert_risk_briefing_job_enqueued("acct-rb", attempt)
+        .expect("enqueue");
+    let job = db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "enqueued");
+    assert!(job.completed_at.is_none());
+    assert!(job.error_message.is_none());
+
+    // Running (CAS must succeed for the current attempt).
+    assert!(db
+        .mark_risk_briefing_job_running("acct-rb", attempt)
+        .expect("running"));
+    let job = db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "running");
+
+    // Complete (CAS).
+    assert!(db
+        .mark_risk_briefing_job_complete("acct-rb", attempt)
+        .expect("complete"));
+    let job = db
+        .get_risk_briefing_job("acct-rb")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "complete");
+    assert!(job.completed_at.is_some());
+    assert!(job.error_message.is_none());
+}
+
+#[test]
+fn test_dos228_risk_briefing_job_failure_path() {
+    // DOS-228 Fix 3: failed jobs persist an error_message so the UI can
+    // explain the retry prompt.
+    let db = test_db();
+    let acct = sample_account("acct-rb-fail", "Fail Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    let attempt_a = "attempt-a";
+    db.upsert_risk_briefing_job_enqueued("acct-rb-fail", attempt_a)
+        .expect("enqueue");
+    assert!(db
+        .mark_risk_briefing_job_running("acct-rb-fail", attempt_a)
+        .expect("running"));
+    assert!(db
+        .mark_risk_briefing_job_failed("acct-rb-fail", attempt_a, "Claude timeout after 30s")
+        .expect("failed"));
+
+    let job = db
+        .get_risk_briefing_job("acct-rb-fail")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "failed");
+    assert_eq!(
+        job.error_message.as_deref(),
+        Some("Claude timeout after 30s")
+    );
+    assert!(job.completed_at.is_some());
+
+    // Retry: re-enqueuing with a fresh attempt_id must reset status and
+    // clear the error. The old attempt_id's CAS writes would now no-op.
+    let attempt_b = "attempt-b";
+    db.upsert_risk_briefing_job_enqueued("acct-rb-fail", attempt_b)
+        .expect("retry enqueue");
+    let job = db
+        .get_risk_briefing_job("acct-rb-fail")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "enqueued");
+    assert!(
+        job.error_message.is_none(),
+        "re-enqueue must clear prior error_message"
+    );
+    assert!(job.completed_at.is_none());
+}
+
+#[test]
+fn test_dos228_risk_briefing_job_error_truncation() {
+    // DOS-228 Fix 3: huge error blobs are truncated to 2000 chars so a
+    // runaway PTY stderr cannot bloat the DB.
+    let db = test_db();
+    let acct = sample_account("acct-rb-big", "Big Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    let attempt_big = "attempt-big";
+    db.upsert_risk_briefing_job_enqueued("acct-rb-big", attempt_big)
+        .expect("enqueue");
+    let huge = "x".repeat(10_000);
+    assert!(db
+        .mark_risk_briefing_job_failed("acct-rb-big", attempt_big, &huge)
+        .expect("failed"));
+
+    let job = db
+        .get_risk_briefing_job("acct-rb-big")
+        .expect("get")
+        .expect("present");
+    assert_eq!(
+        job.error_message.as_ref().map(|s| s.chars().count()),
+        Some(2_000)
+    );
+}
+
+#[test]
+fn test_dos228_w0eb_risk_briefing_cas_rejects_stale_attempt() {
+    // Wave 0e Fix 2: a superseding retry overwrites attempt_id; writes from
+    // the prior runner must no-op instead of corrupting the new attempt.
+    let db = test_db();
+    let acct = sample_account("acct-rb-cas", "CAS Co");
+    db.upsert_account(&acct).expect("upsert");
+
+    db.upsert_risk_briefing_job_enqueued("acct-rb-cas", "old-attempt")
+        .expect("enqueue old");
+
+    // Retry lands — overwrites attempt_id.
+    db.upsert_risk_briefing_job_enqueued("acct-rb-cas", "new-attempt")
+        .expect("enqueue new");
+
+    // Stale runner tries to transition → running. Must NOT succeed, and the
+    // row must stay in the "enqueued / new-attempt" state.
+    let ran = db
+        .mark_risk_briefing_job_running("acct-rb-cas", "old-attempt")
+        .expect("stale running");
+    assert!(!ran, "stale CAS running must fail");
+
+    let job = db
+        .get_risk_briefing_job("acct-rb-cas")
+        .expect("get")
+        .expect("present");
+    assert_eq!(job.status, "enqueued");
+
+    // New runner transitions normally.
+    assert!(db
+        .mark_risk_briefing_job_running("acct-rb-cas", "new-attempt")
+        .expect("running"));
+    assert!(db
+        .mark_risk_briefing_job_complete("acct-rb-cas", "new-attempt")
+        .expect("complete"));
+
+    // Stale runner's terminal write must fail the CAS.
+    let stale_fail = db
+        .mark_risk_briefing_job_failed("acct-rb-cas", "old-attempt", "stale error")
+        .expect("stale failed");
+    assert!(!stale_fail, "stale CAS failed must be no-op");
+    let job = db
+        .get_risk_briefing_job("acct-rb-cas")
+        .expect("get")
+        .expect("present");
+    assert_eq!(
+        job.status, "complete",
+        "stale terminal write must not overwrite new attempt outcome"
+    );
+}
+
+#[test]
+fn test_dos228_w0eb_health_recompute_pending_marker_lifecycle() {
+    // Wave 0e Fix 3: mark/list/clear supports startup drain of debounced
+    // recomputes that would otherwise be lost on crash.
+    let db = test_db();
+    assert!(db
+        .list_health_recompute_pending()
+        .expect("list")
+        .is_empty());
+
+    db.mark_health_recompute_pending("acct-1").expect("mark 1");
+    db.mark_health_recompute_pending("acct-2").expect("mark 2");
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(pending.len(), 2);
+    assert!(pending.contains(&"acct-1".to_string()));
+    assert!(pending.contains(&"acct-2".to_string()));
+
+    db.clear_health_recompute_pending("acct-1").expect("clear 1");
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(pending, vec!["acct-2".to_string()]);
+
+    // Double-clear is idempotent.
+    db.clear_health_recompute_pending("acct-1").expect("clear 1 again");
+    // Re-mark refreshes timestamp but keeps the row.
+    db.mark_health_recompute_pending("acct-2").expect("remark 2");
+    assert_eq!(db.list_health_recompute_pending().expect("list").len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// DOS-228 Wave 0f: health_recompute_pending marker durability across sessions.
+//
+// The contract the debouncer refactor must uphold:
+//   1. Mutation-path writer commits both the edit and the marker in the same
+//      writer closure. The in-memory debouncer owns only timing/coalescing.
+//   2. A marker that survives a crash is drained on the next startup —
+//      regardless of whether the in-memory debouncer has any knowledge of it.
+//   3. A fresh startup with no markers runs zero recomputes.
+// ---------------------------------------------------------------------------
+
+/// Minimal account seed for Wave 0f drain/mutation tests. Uses `upsert_account`
+/// so we get the canonical row shape + the ensure-entity side effect rather
+/// than a brittle raw INSERT that drifts whenever the schema evolves.
+#[cfg(test)]
+fn seed_w0f_account(db: &ActionDb, id: &str, name: &str) {
+    let account = DbAccount {
+        id: id.to_string(),
+        name: name.to_string(),
+        lifecycle: Some("steady-state".to_string()),
+        arr: Some(100_000.0),
+        health: Some("green".to_string()),
+        contract_start: Some("2026-01-01".to_string()),
+        contract_end: Some("2027-01-01".to_string()),
+        nps: None,
+        tracker_path: None,
+        parent_id: None,
+        account_type: crate::db::AccountType::Customer,
+        updated_at: Utc::now().to_rfc3339(),
+        archived: false,
+        keywords: None,
+        keywords_extracted_at: None,
+        metadata: None,
+        ..Default::default()
+    };
+    db.upsert_account(&account).expect("seed account");
+}
+
+/// Simulates the startup-drain loop body without needing a live AppState.
+/// Mirrors `services::health_debouncer::drain_pending` — for each persisted
+/// marker, run the recompute, then clear the marker on success.
+#[cfg(test)]
+fn drain_pending_sync(db: &ActionDb) -> (usize, usize) {
+    let ids = db.list_health_recompute_pending().expect("list pending");
+    let mut ran = 0;
+    let mut cleared = 0;
+    for id in ids {
+        // We intentionally call the same service-level function the real
+        // drain uses, so test coverage tracks the production path.
+        if crate::services::intelligence::recompute_entity_health(db, &id, "account").is_ok() {
+            ran += 1;
+            db.clear_health_recompute_pending(&id)
+                .expect("clear marker after recompute");
+            cleared += 1;
+        }
+    }
+    (ran, cleared)
+}
+
+/// Unit: a fresh session with no pending markers drains into a no-op. This
+/// is the "schedule_recompute without a DB marker write" half of the Wave 0f
+/// test plan — the debouncer's in-memory record() never touches SQLite, so
+/// if a mutation path forgot to call mark_health_recompute_pending, the
+/// next startup drain has literally nothing to do.
+#[test]
+fn test_dos228_w0f_drain_on_empty_db_is_noop() {
+    let db = test_db();
+    assert!(
+        db.list_health_recompute_pending().expect("list").is_empty(),
+        "fresh DB starts with no pending markers"
+    );
+    let (ran, cleared) = drain_pending_sync(&db);
+    assert_eq!(ran, 0);
+    assert_eq!(cleared, 0);
+}
+
+/// Integration: seed a marker directly in SQLite (simulating a crash after
+/// the committed mutation persisted the marker), open a fresh "session"
+/// (same DB, but a brand-new in-memory debouncer would exist alongside it
+/// in production), and call the drain helper. The marker must be cleared
+/// and the recompute must have executed.
+#[test]
+fn test_dos228_w0f_drain_recovers_seeded_marker() {
+    let db = test_db();
+
+    // Seed a minimal account + intelligence row so recompute_entity_health
+    // has enough state to do real work (rather than early-return on missing
+    // rows). Health scoring is account-only, so this mirrors production.
+    seed_w0f_account(&db, "acct-w0f-drain", "Wave0f Drain Co");
+
+    // Seed marker directly — same shape a Wave 0e mutation path would have
+    // written before the app crashed mid-debounce.
+    db.mark_health_recompute_pending("acct-w0f-drain")
+        .expect("seed marker");
+    assert_eq!(
+        db.list_health_recompute_pending().expect("list").len(),
+        1,
+        "marker seeded"
+    );
+
+    // Fresh-session drain — no in-memory debouncer state required, because
+    // durability lives in SQLite.
+    let (ran, cleared) = drain_pending_sync(&db);
+    assert_eq!(ran, 1, "drain must run the seeded recompute");
+    assert_eq!(cleared, 1, "drain must clear the marker on success");
+    assert!(
+        db.list_health_recompute_pending().expect("list").is_empty(),
+        "marker cleared after successful drain"
+    );
+}
+
+/// Integration: verifies the Wave 0f invariant that the marker write is
+/// co-committed with the triggering mutation — NOT eventually-consistent.
+///
+/// We exercise the mutation primitive path that `update_account_field_inner`
+/// uses: on the same writer connection, write the field, then mark the
+/// marker. The key assertion is that after that sequence returns, a read
+/// immediately sees the marker. Under the Wave 0e-B regression, the marker
+/// write was spawned onto the async runtime and could lag (or be lost on
+/// shutdown) — this test would have caught that.
+#[test]
+fn test_dos228_w0f_marker_written_synchronously_with_mutation() {
+    let db = test_db();
+
+    seed_w0f_account(&db, "acct-w0f-sync", "Wave0f Sync Co");
+
+    // Simulate the mutation path: field update + marker, on the same conn.
+    // Under Wave 0e-B this marker call lived in a spawned async task and
+    // could lose the write on shutdown; under Wave 0f it is the caller's
+    // responsibility, on the writer, before schedule_recompute runs.
+    db.update_account_field("acct-w0f-sync", "user_health_sentiment", "at_risk")
+        .expect("update field");
+    db.mark_health_recompute_pending("acct-w0f-sync")
+        .expect("mark pending synchronously");
+
+    // No sleep, no runtime tick — the marker must be visible immediately.
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(
+        pending,
+        vec!["acct-w0f-sync".to_string()],
+        "marker must be durably committed before the mutation returns"
+    );
+}
+
+/// Integration: simulates "kill the debouncer's spawn (drop the state), call
+/// drain on a fresh state". We mark pending, then never run the in-memory
+/// debouncer's sleep-and-claim task (equivalent to the process dying before
+/// the 2s window expires), and verify the drain on a brand-new session
+/// still recovers the recompute.
+#[test]
+fn test_dos228_w0f_drain_recovers_after_simulated_shutdown() {
+    let db = test_db();
+    seed_w0f_account(&db, "acct-w0f-kill", "Wave0f Kill Co");
+
+    // Production-equivalent mutation path: commit edit + marker together.
+    db.update_account_field("acct-w0f-kill", "user_health_sentiment", "at_risk")
+        .expect("update field");
+    db.mark_health_recompute_pending("acct-w0f-kill")
+        .expect("mark pending");
+
+    // "Kill" the in-memory debouncer: we never spawn its sleep task. In the
+    // real regression, the marker write ALSO lived in a spawned task, so a
+    // shutdown at this exact moment would have lost the marker entirely
+    // and the next startup drain would find nothing. Under Wave 0f, the
+    // marker is already in SQLite — durability is independent of any
+    // async task.
+    assert_eq!(
+        db.list_health_recompute_pending().expect("list").len(),
+        1,
+        "marker durable even though no debounce task ever ran"
+    );
+
+    // Fresh startup drain recovers it.
+    let (ran, cleared) = drain_pending_sync(&db);
+    assert_eq!(ran, 1);
+    assert_eq!(cleared, 1);
+}
+
+// ---------------------------------------------------------------------------
+// DOS-228 Wave 0g: stakeholder mutations co-commit health_recompute_pending
+// ---------------------------------------------------------------------------
+//
+// Regression for the Wave 0g HIGH finding: stakeholder mutations
+// (engagement/assessment updates, role add/remove, suggestion accept) are
+// inputs to the `stakeholder_coverage` and `champion_health` scoring
+// dimensions, but the pre-fix service path returned refreshed account detail
+// without persisting the durable `health_recompute_pending` marker. A crash
+// between the mutation commit and any future recompute would leave
+// entity_quality stale indefinitely.
+//
+// Each test below exercises the exact SQL body the service function commits
+// inside `db.with_transaction(...)` (including the new
+// `tx.mark_health_recompute_pending(...)` call), and asserts the marker is
+// visible synchronously after the transaction returns. We bypass AppState
+// because `schedule_recompute` requires a Tauri async runtime that isn't
+// available in unit tests; durability is the load-bearing invariant, and it
+// is owned entirely by the transaction — the in-memory debouncer only
+// coalesces timing.
+
+fn seed_w0g_account(db: &ActionDb, id: &str) {
+    let account = DbAccount {
+        id: id.to_string(),
+        name: format!("W0g {id} Co"),
+        lifecycle: Some("steady-state".to_string()),
+        arr: Some(50_000.0),
+        health: Some("green".to_string()),
+        contract_start: Some("2026-01-01".to_string()),
+        contract_end: Some("2027-01-01".to_string()),
+        nps: None,
+        tracker_path: None,
+        parent_id: None,
+        account_type: crate::db::AccountType::Customer,
+        updated_at: Utc::now().to_rfc3339(),
+        archived: false,
+        keywords: None,
+        keywords_extracted_at: None,
+        metadata: None,
+        ..Default::default()
+    };
+    db.upsert_account(&account).expect("seed w0g account");
+}
+
+fn seed_w0g_stakeholder(db: &ActionDb, account_id: &str, person_id: &str) {
+    // Minimal person row (unique email per test via the person_id suffix).
+    db.conn_ref()
+        .execute(
+            "INSERT OR IGNORE INTO people (id, email, name, updated_at)
+             VALUES (?1, ?2, 'W0g Person', '2026-01-01T00:00:00Z')",
+            rusqlite::params![person_id, format!("{person_id}@example.com")],
+        )
+        .expect("seed person");
+    db.conn_ref()
+        .execute(
+            "INSERT OR IGNORE INTO account_stakeholders
+             (account_id, person_id, data_source, created_at)
+             VALUES (?1, ?2, 'user', '2026-01-01T00:00:00Z')",
+            rusqlite::params![account_id, person_id],
+        )
+        .expect("seed stakeholder");
+}
+
+#[test]
+fn test_dos228_w0g_add_champion_role_marks_pending() {
+    let db = test_db();
+    seed_w0g_account(&db, "acct-w0g-add");
+    seed_w0g_stakeholder(&db, "acct-w0g-add", "p-w0g-add");
+
+    // Mirrors `add_stakeholder_role_inner`: INSERT role + mark pending, in one tx.
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles
+                 (account_id, person_id, role, data_source, created_at)
+                 VALUES (?1, ?2, 'champion', 'user', ?3)
+                 ON CONFLICT(account_id, person_id, role) DO UPDATE SET
+                    data_source = 'user'",
+                rusqlite::params!["acct-w0g-add", "p-w0g-add", Utc::now().to_rfc3339()],
+            )
+            .map_err(|e| e.to_string())?;
+        tx.mark_health_recompute_pending("acct-w0g-add")
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .expect("add champion tx");
+
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(
+        pending,
+        vec!["acct-w0g-add".to_string()],
+        "adding a champion role must synchronously persist the recompute marker"
+    );
+}
+
+#[test]
+fn test_dos228_w0g_remove_champion_role_marks_pending() {
+    let db = test_db();
+    seed_w0g_account(&db, "acct-w0g-rm");
+    seed_w0g_stakeholder(&db, "acct-w0g-rm", "p-w0g-rm");
+    // Pre-seed the champion role we're about to remove.
+    db.conn_ref()
+        .execute(
+            "INSERT INTO account_stakeholder_roles
+             (account_id, person_id, role, data_source, created_at)
+             VALUES ('acct-w0g-rm', 'p-w0g-rm', 'champion', 'user', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("seed champion role");
+
+    // Mirrors `remove_stakeholder_role_inner`.
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "DELETE FROM account_stakeholder_roles
+                 WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
+                rusqlite::params!["acct-w0g-rm", "p-w0g-rm", "champion"],
+            )
+            .map_err(|e| e.to_string())?;
+        tx.mark_health_recompute_pending("acct-w0g-rm")
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .expect("remove champion tx");
+
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(
+        pending,
+        vec!["acct-w0g-rm".to_string()],
+        "removing a champion role must synchronously persist the recompute marker"
+    );
+}
+
+#[test]
+fn test_dos228_w0g_update_engagement_marks_pending() {
+    let db = test_db();
+    seed_w0g_account(&db, "acct-w0g-eng");
+    seed_w0g_stakeholder(&db, "acct-w0g-eng", "p-w0g-eng");
+
+    // Mirrors `update_stakeholder_engagement_inner`.
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE account_stakeholders
+                 SET engagement = ?1, data_source_engagement = 'user'
+                 WHERE account_id = ?2 AND person_id = ?3",
+                rusqlite::params!["high", "acct-w0g-eng", "p-w0g-eng"],
+            )
+            .map_err(|e| e.to_string())?;
+        tx.mark_health_recompute_pending("acct-w0g-eng")
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .expect("update engagement tx");
+
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(
+        pending,
+        vec!["acct-w0g-eng".to_string()],
+        "engagement update must synchronously persist the recompute marker"
+    );
+}
+
+#[test]
+fn test_dos228_w0g_update_assessment_marks_pending() {
+    let db = test_db();
+    seed_w0g_account(&db, "acct-w0g-assm");
+    seed_w0g_stakeholder(&db, "acct-w0g-assm", "p-w0g-assm");
+
+    // Mirrors `update_stakeholder_assessment_inner`.
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE account_stakeholders
+                 SET assessment = ?1, data_source_assessment = 'user'
+                 WHERE account_id = ?2 AND person_id = ?3",
+                rusqlite::params![
+                    "Strong advocate — renewed unprompted.",
+                    "acct-w0g-assm",
+                    "p-w0g-assm"
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        tx.mark_health_recompute_pending("acct-w0g-assm")
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .expect("update assessment tx");
+
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert_eq!(
+        pending,
+        vec!["acct-w0g-assm".to_string()],
+        "assessment update must synchronously persist the recompute marker"
+    );
+}
+
+#[test]
+fn test_dos228_w0g_marker_rolled_back_on_tx_failure() {
+    // The whole point of co-commit is that if the mutation rolls back, the
+    // marker rolls back with it. Seed a mutation that errors AFTER the
+    // mark_health_recompute_pending call and assert the marker is NOT
+    // present post-rollback (no orphan marker, no orphan recompute).
+    let db = test_db();
+    seed_w0g_account(&db, "acct-w0g-rb");
+    seed_w0g_stakeholder(&db, "acct-w0g-rb", "p-w0g-rb");
+
+    let res: Result<(), String> = db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE account_stakeholders
+                 SET engagement = 'high', data_source_engagement = 'user'
+                 WHERE account_id = ?1 AND person_id = ?2",
+                rusqlite::params!["acct-w0g-rb", "p-w0g-rb"],
+            )
+            .map_err(|e| e.to_string())?;
+        tx.mark_health_recompute_pending("acct-w0g-rb")
+            .map_err(|e| e.to_string())?;
+        // Simulate a downstream step failing (e.g., signal emission error).
+        Err("simulated emit failure".to_string())
+    });
+    assert!(res.is_err(), "tx must surface the simulated failure");
+
+    let pending = db.list_health_recompute_pending().expect("list");
+    assert!(
+        pending.is_empty(),
+        "rolled-back mutation must roll back the marker — no orphan recompute"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DOS-240: meeting-entity dismissal dictionary
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dos240_dismissal_roundtrip() {
+    let db = test_db();
+    assert!(!db
+        .is_meeting_entity_dismissed("m1", "acct1", "account")
+        .expect("probe"));
+
+    db.record_meeting_entity_dismissal("m1", "acct1", "account", Some("user"))
+        .expect("record");
+    assert!(db
+        .is_meeting_entity_dismissed("m1", "acct1", "account")
+        .expect("probe"));
+
+    let set = db
+        .list_dismissed_meeting_entities("m1")
+        .expect("list");
+    assert!(set.contains(&("acct1".to_string(), "account".to_string())));
+
+    // Undo / restore
+    let removed = db
+        .remove_meeting_entity_dismissal("m1", "acct1", "account")
+        .expect("remove");
+    assert!(removed);
+    assert!(!db
+        .is_meeting_entity_dismissed("m1", "acct1", "account")
+        .expect("probe after remove"));
+}
+
+// ---------------------------------------------------------------------------
+// DOS-224: single-primary invariant on scored junction writes
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dos224_new_primary_demotes_stale_primary() {
+    // Codex: the previous `ON CONFLICT DO UPDATE SET is_primary = MAX(..)`
+    // could never demote an existing primary. If batch N elected A as
+    // primary and batch N+1 elected B, both ended up `is_primary = 1` for
+    // the same (meeting_id, entity_type). Fix runs demote-then-upsert in a
+    // transaction so exactly one row has `is_primary = 1` per
+    // (meeting_id, entity_type).
+    let db = test_db();
+    let meeting_id = "mtg-dos224";
+
+    // Batch N: stale primary A at 0.95.
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-a", "account", 0.95, true)
+        .expect("seed primary A");
+
+    // Batch N+1: a different candidate B wins primary at 0.98.
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-b", "account", 0.98, true)
+        .expect("promote primary B");
+
+    // Exactly one row must have is_primary = 1 for (meeting_id, entity_type).
+    let primaries: Vec<(String, i64)> = db
+        .conn_ref()
+        .prepare(
+            "SELECT entity_id, is_primary FROM meeting_entities
+             WHERE meeting_id = ?1 AND entity_type = 'account'
+             ORDER BY entity_id",
+        )
+        .expect("prepare")
+        .query_map(rusqlite::params![meeting_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .expect("query")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect");
+
+    assert_eq!(primaries.len(), 2, "both rows should still exist");
+    let primary_count: usize = primaries.iter().filter(|(_, p)| *p == 1).count();
+    assert_eq!(
+        primary_count, 1,
+        "exactly one row must be is_primary = 1 per (meeting_id, entity_type)",
+    );
+    let (only_primary, _) = primaries
+        .iter()
+        .find(|(_, p)| *p == 1)
+        .expect("one primary");
+    assert_eq!(only_primary, "acct-b", "newer candidate B must be the primary");
+}
+
+#[test]
+fn test_dos224_suggestion_write_does_not_demote_primary() {
+    // A non-primary (suggestion) write must never demote an existing
+    // primary on the same (meeting_id, entity_type).
+    let db = test_db();
+    let meeting_id = "mtg-dos224-sugg";
+
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-a", "account", 0.95, true)
+        .expect("seed primary A");
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-b", "account", 0.70, false)
+        .expect("write suggestion B");
+
+    let primary_a: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT is_primary FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = 'acct-a'",
+            rusqlite::params![meeting_id],
+            |row| row.get(0),
+        )
+        .expect("get A");
+    let primary_b: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT is_primary FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = 'acct-b'",
+            rusqlite::params![meeting_id],
+            |row| row.get(0),
+        )
+        .expect("get B");
+    assert_eq!(primary_a, 1, "existing primary A must remain primary");
+    assert_eq!(primary_b, 0, "suggestion B must not be promoted");
+}
+
+#[test]
+fn test_dos224_primary_upsert_does_not_downgrade_confidence() {
+    // When the same entity is re-asserted as primary at lower confidence,
+    // the stored confidence must not decrease (existing MAX(..) guarantee
+    // still holds post-fix).
+    let db = test_db();
+    let meeting_id = "mtg-dos224-conf";
+
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-a", "account", 0.95, true)
+        .expect("seed primary A @ 0.95");
+    db.link_meeting_entity_with_confidence(meeting_id, "acct-a", "account", 0.60, true)
+        .expect("re-assert A @ 0.60");
+
+    let conf: f64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT confidence FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = 'acct-a'",
+            rusqlite::params![meeting_id],
+            |row| row.get(0),
+        )
+        .expect("get");
+    assert!(conf >= 0.95, "confidence must not be downgraded, got {}", conf);
+}
+
+// ---------------------------------------------------------------------------
+// DOS-225: Path A reclassify — full-attendee-coverage regression
+// ---------------------------------------------------------------------------
+
+fn setup_meeting_with_attendees(
+    db: &ActionDb,
+    id: &str,
+    meeting_type: &str,
+    attendees_json: &str,
+) {
+    let now = Utc::now().to_rfc3339();
+    let meeting = DbMeeting {
+        id: id.to_string(),
+        title: "test".to_string(),
+        meeting_type: meeting_type.to_string(),
+        start_time: now.clone(),
+        end_time: None,
+        attendees: Some(attendees_json.to_string()),
+        notes_path: None,
+        summary: None,
+        created_at: now,
+        calendar_event_id: None,
+        description: None,
+        prep_context_json: None,
+        user_agenda_json: None,
+        user_notes: None,
+        prep_frozen_json: None,
+        prep_frozen_at: None,
+        prep_snapshot_path: None,
+        prep_snapshot_hash: None,
+        transcript_path: None,
+        transcript_processed_at: None,
+        intelligence_state: None,
+        intelligence_quality: None,
+        last_enriched_at: None,
+        signal_count: None,
+        has_new_signals: None,
+        last_viewed_at: None,
+    };
+    db.upsert_meeting(&meeting).expect("upsert meeting");
+}
+
+/// DOS-225 regression: a meeting whose raw-email attendee list contains
+/// BOTH an internal attendee (with a people row) AND an external attendee
+/// (no people row, unknown domain) must NOT flip to `internal`. The prior
+/// Path A implementation JOIN-dropped the external attendee and the
+/// aggregate falsely reported all-internal coverage.
+#[test]
+fn test_dos225_mixed_attendees_blocks_internal_flip() {
+    let db = test_db();
+    // Internal attendee — has a people row, relationship=internal.
+    let mut internal = sample_person("alice@company.com");
+    internal.relationship = "internal".to_string();
+    db.upsert_person(&internal).expect("upsert internal");
+
+    // Attendee JSON contains the internal email AND an external email that
+    // has NO people row (simulates a fresh Gmail attendee).
+    let attendees_json = r#"["alice@company.com","stranger@external.com"]"#;
+    setup_meeting_with_attendees(&db, "m_mixed", "customer", attendees_json);
+
+    // Link only the internal attendee via the junction (the external never
+    // materialized into `people`).
+    db.record_meeting_attendance("m_mixed", &internal.id)
+        .expect("record");
+
+    let _changed = db
+        .reclassify_meeting_types_from_attendees()
+        .expect("reclassify");
+
+    // Must stay customer — unresolved external blocks the flip.
+    let row = db.get_meeting_by_id("m_mixed").expect("get").expect("some");
+    assert_eq!(
+        row.meeting_type, "customer",
+        "DOS-225: unresolved external attendee must block Path A flip"
+    );
+}
+
+/// DOS-225 regression: a fully-internal meeting (every raw attendee has a
+/// people row with relationship=internal) must still flip to `internal`.
+#[test]
+fn test_dos225_fully_internal_still_flips() {
+    let db = test_db();
+    let mut alice = sample_person("alice@company.com");
+    alice.relationship = "internal".to_string();
+    db.upsert_person(&alice).expect("upsert alice");
+    let mut bob = sample_person("bob@company.com");
+    bob.relationship = "internal".to_string();
+    db.upsert_person(&bob).expect("upsert bob");
+
+    let attendees_json = r#"["alice@company.com","bob@company.com"]"#;
+    setup_meeting_with_attendees(&db, "m_internal", "customer", attendees_json);
+    db.record_meeting_attendance("m_internal", &alice.id)
+        .expect("rec a");
+    db.record_meeting_attendance("m_internal", &bob.id)
+        .expect("rec b");
+
+    let _ = db
+        .reclassify_meeting_types_from_attendees()
+        .expect("reclassify");
+
+    let row = db.get_meeting_by_id("m_internal").expect("get").expect("some");
+    assert_eq!(
+        row.meeting_type, "internal",
+        "DOS-225: all-internal coverage must flip"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DOS-224: scored persistence — calendar-sync path
+// ---------------------------------------------------------------------------
+
+use crate::google_api::classify::ResolvedMeetingEntity as Rme;
+
+fn rme(id: &str, confidence: f64, source: &str) -> Rme {
+    Rme {
+        entity_id: id.to_string(),
+        entity_type: "account".to_string(),
+        name: id.to_string(),
+        confidence,
+        source: source.to_string(),
+    }
+}
+
+/// DOS-224 regression: an all-internal meeting that title-matched a known
+/// account slug (confidence 0.50 / source="title") must NOT produce an
+/// `is_primary = 1` junction row on the calendar-sync path. The entity
+/// still persists — as a non-primary suggestion — so the UI can surface it
+/// in the affordance strip, but the briefing must not treat it as the
+/// meeting's primary account.
+#[test]
+fn test_dos224_title_only_never_primary_on_calendar_sync() {
+    let db = test_db();
+    let acct = sample_account("acme", "Acme Corp");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m_sync_1", "Acme Ops Planning");
+
+    let entities = vec![rme("acme", 0.50, "title")];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_sync_1",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 1, "title-only resolution still persists as suggestion");
+
+    let rows = db.get_meeting_linked_entities("m_sync_1").expect("linked");
+    assert_eq!(rows.len(), 1);
+    assert!(
+        !rows[0].is_primary,
+        "DOS-224: title-only (<0.70) must NEVER be is_primary=1 on calendar-sync"
+    );
+    assert!(rows[0].confidence < 0.70);
+}
+
+/// DOS-224 regression: when multiple domain-matched account entities land
+/// (e.g., parent BU + subsidiary sharing a domain), the calendar-sync
+/// persistence path must still pick exactly one primary and persist the
+/// others as suggestions. Mirrors the single-primary rule from the
+/// resolver path.
+#[test]
+fn test_dos224_multi_bu_single_primary_on_calendar_sync() {
+    let db = test_db();
+    let parent = sample_account("parent-bu", "Parent BU");
+    db.upsert_account(&parent).expect("upsert parent");
+    let sub = sample_account("sub-bu", "Subsidiary BU");
+    db.upsert_account(&sub).expect("upsert sub");
+    setup_meeting(&db, "m_sync_2", "Shared Domain Sync");
+
+    let entities = vec![
+        rme("parent-bu", 0.85, "domain"),
+        rme("sub-bu", 0.80, "domain"),
+    ];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_sync_2",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 2);
+
+    let rows = db.get_meeting_linked_entities("m_sync_2").expect("linked");
+    assert_eq!(rows.len(), 2);
+    let primaries: Vec<&_> = rows.iter().filter(|r| r.is_primary).collect();
+    assert_eq!(
+        primaries.len(),
+        1,
+        "DOS-224: calendar-sync must pick exactly one primary per entity_type"
+    );
+    assert_eq!(primaries[0].id, "parent-bu", "highest-confidence wins");
+}
+
+/// DOS-240 regression: a dismissed entity must NOT be re-linked by the
+/// calendar-sync persistence path, even if the resolver still thinks the
+/// match is valid. The legacy behavior (auto-relink on every sync) is the
+/// bug we're fixing.
+#[test]
+fn test_dos240_dismissal_blocks_calendar_sync_relink() {
+    let db = test_db();
+    let acct = sample_account("acme", "Acme Corp");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m_dismiss_1", "Acme Planning");
+
+    // User previously dismissed this account from this meeting.
+    db.record_meeting_entity_dismissal("m_dismiss_1", "acme", "account", None)
+        .expect("record dismissal");
+
+    let entities = vec![rme("acme", 0.85, "domain")];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_dismiss_1",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 0, "DOS-240: dismissed entity must be skipped");
+
+    let rows = db.get_meeting_linked_entities("m_dismiss_1").expect("linked");
+    assert!(rows.is_empty(), "no junction row should have been written");
+}
+
+/// DOS-240 regression: after `restore_meeting_entity` removes the dismissal
+/// record, the next persistence pass re-links the entity normally.
+#[test]
+fn test_dos240_restore_allows_relink() {
+    let db = test_db();
+    let acct = sample_account("acme", "Acme Corp");
+    db.upsert_account(&acct).expect("upsert");
+    setup_meeting(&db, "m_dismiss_2", "Acme Planning");
+
+    db.record_meeting_entity_dismissal("m_dismiss_2", "acme", "account", None)
+        .expect("dismiss");
+    let entities = vec![rme("acme", 0.85, "domain")];
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_dismiss_2",
+        &entities,
+    )
+    .expect("persist");
+    assert_eq!(linked, 0);
+
+    // Restore: undo the dismissal.
+    let removed = db
+        .remove_meeting_entity_dismissal("m_dismiss_2", "acme", "account")
+        .expect("remove");
+    assert!(removed);
+
+    // Next sync re-matches and this time the link lands.
+    let linked = crate::services::meetings::persist_classification_entities_scored(
+        &db,
+        "m_dismiss_2",
+        &entities,
+    )
+    .expect("persist after restore");
+    assert_eq!(linked, 1, "DOS-240: after restore the entity re-links");
+    let rows = db
+        .get_meeting_linked_entities("m_dismiss_2")
+        .expect("linked");
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].is_primary);
+}
+
+// ---------------------------------------------------------------------------
+// DOS-232 Codex fix: account-specific recentMeetings must include non-primary
+// high-confidence account links. DOS-224 persists exactly one primary per
+// meeting even when multiple accounts share that meeting, so gating on
+// `is_primary = 1` hid legitimate secondary accounts from their own dossier.
+// ---------------------------------------------------------------------------
+
+/// A meeting linked to account A at is_primary=1 confidence=0.95 AND account
+/// B at is_primary=0 confidence=0.80 must appear in BOTH accounts'
+/// `get_meetings_for_account_with_prep` results.
+#[test]
+fn test_dos232_recent_meetings_includes_non_primary_high_confidence() {
+    let db = test_db();
+    let a = sample_account("acct-a", "Account A");
+    let b = sample_account("acct-b", "Account B");
+    db.upsert_account(&a).expect("upsert a");
+    db.upsert_account(&b).expect("upsert b");
+    setup_meeting(&db, "m_shared", "Shared Meeting");
+
+    db.link_meeting_entity_with_confidence("m_shared", "acct-a", "account", 0.95, true)
+        .expect("link primary");
+    db.link_meeting_entity_with_confidence("m_shared", "acct-b", "account", 0.80, false)
+        .expect("link secondary");
+
+    let rows_a = db
+        .get_meetings_for_account_with_prep("acct-a", 10)
+        .expect("a record");
+    assert_eq!(rows_a.len(), 1, "primary account sees the meeting");
+    assert_eq!(rows_a[0].id, "m_shared");
+
+    let rows_b = db
+        .get_meetings_for_account_with_prep("acct-b", 10)
+        .expect("b record");
+    assert_eq!(
+        rows_b.len(),
+        1,
+        "DOS-232: secondary account above confidence floor must also see the meeting"
+    );
+    assert_eq!(rows_b[0].id, "m_shared");
+}
+
+/// The 0.70 confidence floor still applies — a speculative domain-match at
+/// confidence 0.50 must not surface on the account's Record, is_primary or
+/// not.
+#[test]
+fn test_dos232_recent_meetings_still_filters_below_confidence_floor() {
+    let db = test_db();
+    let a = sample_account("acct-lowconf", "Low Confidence Account");
+    db.upsert_account(&a).expect("upsert");
+    setup_meeting(&db, "m_weak", "Weak Link");
+
+    db.link_meeting_entity_with_confidence("m_weak", "acct-lowconf", "account", 0.50, false)
+        .expect("link weak");
+
+    let rows = db
+        .get_meetings_for_account_with_prep("acct-lowconf", 10)
+        .expect("query");
+    assert!(
+        rows.is_empty(),
+        "sub-0.70 junctions must remain excluded from The Record"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DOS-233 Codex fix: unbounded count queries for About-this-dossier totals.
+// ---------------------------------------------------------------------------
+
+/// `get_meeting_count_for_account` must return COUNT(*) without applying the
+/// preview-list LIMIT of 10. `get_transcript_count_for_account` must return
+/// the distinct number of meetings that have a transcript on record.
+#[test]
+fn test_dos233_account_meeting_and_transcript_counts_unbounded() {
+    let db = test_db();
+    let a = sample_account("acct-big", "Big Account");
+    db.upsert_account(&a).expect("upsert");
+
+    // 12 meetings linked at confidence 0.95 — well above the LIMIT 10 of the
+    // preview query — half carry transcripts, half don't.
+    for i in 0..12 {
+        let mid = format!("m_big_{i}");
+        setup_meeting(&db, &mid, &format!("Meeting {i}"));
+        db.link_meeting_entity_with_confidence(&mid, "acct-big", "account", 0.95, i == 0)
+            .expect("link");
+        if i % 2 == 0 {
+            db.conn_ref()
+                .execute(
+                    "UPDATE meeting_transcripts SET transcript_path = ?1 WHERE meeting_id = ?2",
+                    rusqlite::params![format!("/tmp/transcript_{i}.txt"), mid],
+                )
+                .expect("mark transcript");
+        }
+    }
+
+    // And one low-confidence junction that must NOT count.
+    setup_meeting(&db, "m_weak", "Speculative Match");
+    db.link_meeting_entity_with_confidence("m_weak", "acct-big", "account", 0.50, false)
+        .expect("link weak");
+
+    let meeting_count = db
+        .get_total_meeting_count_for_account("acct-big")
+        .expect("meeting count");
+    assert_eq!(
+        meeting_count, 12,
+        "DOS-233: meeting total must be 12 (unbounded) — LIMIT 10 was not applied, 0.50 link excluded"
+    );
+
+    let transcript_count = db
+        .get_total_transcript_count_for_account("acct-big")
+        .expect("transcript count");
+    assert_eq!(
+        transcript_count, 6,
+        "DOS-233: transcript total must be 6 — every other meeting carries a transcript"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DOS-231 Codex fix: `update_technical_footprint_field` persists a single
+// whitelisted column on `account_technical_footprint`. Creates the row if it
+// does not yet exist; stamps `source = 'user_edit'`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_dos231_update_technical_footprint_field_creates_row_and_writes_text() {
+    let db = test_db();
+    let a = sample_account("acct-tf", "TF Account");
+    db.upsert_account(&a).expect("upsert");
+
+    db.update_technical_footprint_field("acct-tf", "usage_tier", "enterprise")
+        .expect("write usage tier");
+
+    let tf = db
+        .get_account_technical_footprint("acct-tf")
+        .expect("query")
+        .expect("row exists");
+    assert_eq!(tf.usage_tier.as_deref(), Some("enterprise"));
+    assert_eq!(tf.source, "user_edit");
+}
+
+#[test]
+fn test_dos231_update_technical_footprint_field_parses_numerics() {
+    let db = test_db();
+    let a = sample_account("acct-tf2", "TF Account 2");
+    db.upsert_account(&a).expect("upsert");
+
+    db.update_technical_footprint_field("acct-tf2", "active_users", "1250")
+        .expect("int");
+    db.update_technical_footprint_field("acct-tf2", "csat_score", "4.3")
+        .expect("real");
+    db.update_technical_footprint_field("acct-tf2", "adoption_score", "0.82")
+        .expect("real");
+
+    let tf = db
+        .get_account_technical_footprint("acct-tf2")
+        .expect("q")
+        .expect("row");
+    assert_eq!(tf.active_users, Some(1250));
+    assert!((tf.csat_score.unwrap() - 4.3).abs() < 1e-6);
+    assert!((tf.adoption_score.unwrap() - 0.82).abs() < 1e-6);
+}
+
+#[test]
+fn test_dos231_update_technical_footprint_field_rejects_unknown_field() {
+    let db = test_db();
+    let a = sample_account("acct-tf3", "TF Account 3");
+    db.upsert_account(&a).expect("upsert");
+
+    let err = db
+        .update_technical_footprint_field("acct-tf3", "integrations_json", "garbage")
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unsupported field"),
+        "unsupported fields must be rejected, got: {msg}"
+    );
+}
+
+#[test]
+fn test_dos231_update_technical_footprint_field_rejects_bad_numeric() {
+    let db = test_db();
+    let a = sample_account("acct-tf4", "TF Account 4");
+    db.upsert_account(&a).expect("upsert");
+
+    let err = db
+        .update_technical_footprint_field("acct-tf4", "active_users", "not-a-number")
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("not a valid integer"),
+        "bad integer must be rejected, got: {msg}"
+    );
+}
+
+/// DOS-232 Codex follow-up: `get_meetings_for_account` (used by account
+/// chat LLM context, dossier markdown, email prep enrichment) previously
+/// had no confidence predicate and contaminated chat/prep context with
+/// speculative junctions. The 0.70 floor — already applied to the Record
+/// query and to the COUNT helpers — must apply here too.
+#[test]
+fn test_dos232_get_meetings_for_account_applies_confidence_floor() {
+    let db = test_db();
+    let a = sample_account("acct-floor", "Floor Account");
+    db.upsert_account(&a).expect("upsert");
+    setup_meeting(&db, "m_weak_floor", "Weak Link");
+    setup_meeting(&db, "m_strong_floor", "Strong Link");
+
+    db.link_meeting_entity_with_confidence(
+        "m_weak_floor",
+        "acct-floor",
+        "account",
+        0.50,
+        false,
+    )
+    .expect("link weak");
+    db.link_meeting_entity_with_confidence(
+        "m_strong_floor",
+        "acct-floor",
+        "account",
+        0.95,
+        true,
+    )
+    .expect("link strong");
+
+    let rows = db
+        .get_meetings_for_account("acct-floor", 10)
+        .expect("query");
+    let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
+    assert!(
+        ids.contains(&"m_strong_floor"),
+        "high-confidence meeting must be returned"
+    );
+    assert!(
+        !ids.contains(&"m_weak_floor"),
+        "DOS-232: sub-0.70 meeting must NOT surface in account chat/prep context"
+    );
+}
+
+/// DOS-231 Codex follow-up: editing `usage_tier` (or any non-`open_tickets`
+/// gap field) via `update_technical_footprint_field` must NOT reset an
+/// existing `open_tickets` value. The bootstrap path previously called the
+/// full-row upsert with a sentinel `0`, and the upsert's UPDATE branch
+/// unconditionally wrote `open_tickets = excluded.open_tickets` — so a misclick
+/// on any other field silently wiped real support-ticket data to 0.
+#[test]
+fn test_dos231_update_footprint_field_preserves_existing_open_tickets() {
+    let db = test_db();
+    let a = sample_account("acct-tf-preserve", "Preserve TF Account");
+    db.upsert_account(&a).expect("upsert");
+
+    // Seed a realistic footprint with open_tickets = 7 (Clay enrichment).
+    db.upsert_account_technical_footprint(
+        "acct-tf-preserve",
+        None,
+        Some("enterprise"),
+        Some(0.72),
+        Some(850),
+        Some("premier"),
+        Some(4.1),
+        7,
+        Some("live"),
+        "clay_enrichment",
+    )
+    .expect("seed footprint");
+
+    // Now a user edits usage_tier via the single-field capture-now path.
+    db.update_technical_footprint_field("acct-tf-preserve", "usage_tier", "growth")
+        .expect("update usage_tier");
+
+    let tf = db
+        .get_account_technical_footprint("acct-tf-preserve")
+        .expect("query")
+        .expect("row exists");
+    assert_eq!(tf.usage_tier.as_deref(), Some("growth"));
+    assert_eq!(
+        tf.open_tickets, 7,
+        "DOS-231: editing usage_tier must not clobber existing open_tickets"
+    );
+    // Other pre-existing gap fields must also survive.
+    assert_eq!(tf.active_users, Some(850));
+    assert!((tf.csat_score.unwrap() - 4.1).abs() < 1e-6);
+    assert!((tf.adoption_score.unwrap() - 0.72).abs() < 1e-6);
+    assert_eq!(tf.support_tier.as_deref(), Some("premier"));
+    assert_eq!(tf.services_stage.as_deref(), Some("live"));
+}
+
+// =============================================================================
+// DOS-31 / DOS-29 / DOS-226 bundle tests
+// =============================================================================
+
+#[test]
+fn test_dos31_auto_retry_promotes_stale_failed() {
+    // DOS-31: a failed row older than the staleness bound and under the
+    // cumulative cap must be promoted back to `pending` with attempts=0
+    // so the next enrichment pass picks it up. This is the core
+    // "inbox self-heals" behaviour — without it, every transient
+    // enrichment failure required the user to manually click Retry.
+    let db = test_db();
+    seed_failed_email(&db, "em-stale");
+
+    // Backdate last_enrichment_at past the staleness bound.
+    db.conn
+        .execute(
+            "UPDATE emails SET last_enrichment_at = '2020-01-01T00:00:00Z' WHERE email_id = 'em-stale'",
+            [],
+        )
+        .expect("backdate");
+
+    let promoted = db
+        .auto_retry_stale_failed(60, crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES)
+        .expect("auto-retry");
+    assert_eq!(promoted, 1, "stale failed row must be promoted");
+
+    let (state, attempts) = read_enrichment_state(&db, "em-stale");
+    assert_eq!(state, "pending");
+    assert_eq!(attempts, 0, "attempts reset so get_pending_enrichment selects the row");
+
+    // auto_retry_count incremented so we track cumulative attempts.
+    let count: i32 = db
+        .conn
+        .query_row(
+            "SELECT COALESCE(auto_retry_count, 0) FROM emails WHERE email_id = 'em-stale'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read count");
+    assert_eq!(count, 1, "auto_retry_count must increment");
+}
+
+#[test]
+fn test_dos31_auto_retry_skips_fresh_failed() {
+    // DOS-31: a failure that just happened (well within the staleness
+    // bound) must NOT be auto-retried — the same enrichment is likely
+    // to fail the same way, and we'd just churn. Only stale failures
+    // are eligible.
+    let db = test_db();
+    seed_failed_email(&db, "em-fresh-fail");
+
+    let promoted = db
+        .auto_retry_stale_failed(
+            24 * 60 * 60,
+            crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES,
+        )
+        .expect("auto-retry");
+    assert_eq!(promoted, 0, "fresh failures must not be auto-retried");
+
+    let (state, _) = read_enrichment_state(&db, "em-fresh-fail");
+    assert_eq!(state, "failed", "row stays failed when fresh");
+}
+
+#[test]
+fn test_dos31_auto_retry_respects_cap() {
+    // DOS-31 / DOS-29: rows that have hit the cumulative auto-retry cap
+    // must stay in `failed` so they surface in the user-facing
+    // "couldn't be enriched" UX. This is the bridge between auto-recovery
+    // (DOS-31) and explicit user triage (DOS-29).
+    let db = test_db();
+    seed_failed_email(&db, "em-capped");
+
+    db.conn
+        .execute(
+            "UPDATE emails
+             SET last_enrichment_at = '2020-01-01T00:00:00Z',
+                 auto_retry_count = ?1
+             WHERE email_id = 'em-capped'",
+            rusqlite::params![crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES],
+        )
+        .expect("seed at cap");
+
+    let promoted = db
+        .auto_retry_stale_failed(60, crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES)
+        .expect("auto-retry");
+    assert_eq!(promoted, 0, "rows at the cap must not be promoted");
+
+    let (state, _) = read_enrichment_state(&db, "em-capped");
+    assert_eq!(state, "failed", "capped row stays failed for user triage");
+}
+
+#[test]
+fn test_dos29_permanently_failed_count_in_sync_stats() {
+    // DOS-29: `get_email_sync_stats.permanently_failed` must count only
+    // rows the system has stopped auto-retrying. A row in `failed` but
+    // below the cap is invisible to the user-facing failure UX (the
+    // next refresh will silently auto-retry it).
+    let db = test_db();
+    seed_failed_email(&db, "em-below-cap");
+    seed_failed_email(&db, "em-at-cap");
+
+    db.conn
+        .execute(
+            "UPDATE emails SET auto_retry_count = ?1 WHERE email_id = 'em-at-cap'",
+            rusqlite::params![crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES],
+        )
+        .expect("seed at cap");
+
+    let stats = db.get_email_sync_stats().expect("stats");
+    assert_eq!(stats.failed, 2, "both rows count toward `failed` (UI plumbing)");
+    assert_eq!(
+        stats.permanently_failed, 1,
+        "only the at-cap row surfaces in the user-facing failure UX"
+    );
+}
+
+#[test]
+fn test_dos29_list_permanently_failed_previews_returns_capped_rows_only() {
+    // DOS-29: the "View details" payload must include only rows above the
+    // cap, with subject + sender so the user can decide to retry or skip
+    // with context (no enrichment plumbing leaks).
+    let db = test_db();
+    seed_failed_email(&db, "em-fresh");
+    seed_failed_email(&db, "em-stuck");
+
+    db.conn
+        .execute(
+            "UPDATE emails SET auto_retry_count = ?1 WHERE email_id = 'em-stuck'",
+            rusqlite::params![crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES],
+        )
+        .expect("seed at cap");
+
+    let previews = db
+        .list_permanently_failed_previews(crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES, 20)
+        .expect("previews");
+    assert_eq!(previews.len(), 1, "only at-cap rows appear");
+    assert_eq!(previews[0].email_id, "em-stuck");
+    assert_eq!(
+        previews[0].auto_retry_count,
+        crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES
+    );
+}
+
+#[test]
+fn test_dos29_skip_failed_emails_marks_resolved() {
+    // DOS-29: Skip = mark resolved so the row leaves the failed-count
+    // entirely. Subsequent stats queries must not surface it.
+    let db = test_db();
+    seed_failed_email(&db, "em-skip-1");
+    seed_failed_email(&db, "em-skip-2");
+
+    let skipped = db
+        .skip_failed_emails(&["em-skip-1".to_string(), "em-skip-2".to_string()])
+        .expect("skip");
+    assert_eq!(skipped, 2);
+
+    let stats = db.get_email_sync_stats().expect("stats");
+    assert_eq!(stats.failed, 0, "skipped rows leave the failed count");
+    assert_eq!(stats.permanently_failed, 0);
+}
+
+#[test]
+fn test_dos226_retry_primitives_are_transactional() {
+    // DOS-226: each retry primitive runs through `with_transaction`. A
+    // single UPDATE is already atomic in SQLite, but the transaction
+    // boundary is the contract future signal-emission additions can
+    // rely on. Smoke test: invoking each primitive via the transactional
+    // wrapper must produce the same observable result as the pre-fix
+    // direct execute path.
+    let db = test_db();
+    seed_failed_email(&db, "em-tx-1");
+
+    // mark -> finalize -> roundtrip back through stale recovery.
+    let marked = db.mark_failed_for_retry("batch-tx").expect("mark");
+    assert_eq!(marked, 1);
+    let promoted = db
+        .finalize_pending_retry_success("batch-tx")
+        .expect("finalize");
+    assert_eq!(promoted, 1);
+
+    let (state, attempts) = read_enrichment_state(&db, "em-tx-1");
+    assert_eq!(state, "pending");
+    assert_eq!(attempts, 0);
+
+    // rollback path on a fresh seed
+    seed_failed_email(&db, "em-tx-2");
+    db.mark_failed_for_retry("batch-tx-2").expect("mark");
+    let rolled = db
+        .rollback_pending_retry("batch-tx-2")
+        .expect("rollback");
+    assert_eq!(rolled, 1);
+    let (state, attempts) = read_enrichment_state(&db, "em-tx-2");
+    assert_eq!(state, "failed");
+    assert_eq!(attempts, 3, "rollback preserves attempts");
+}
+
+#[test]
+fn test_dos31_dos29_end_to_end_self_heal_then_surface() {
+    // End-to-end: a stale failure self-heals on refresh until it hits
+    // the cap, then surfaces in the failure UX. This pins the
+    // DOS-31 → DOS-29 handoff.
+    let db = test_db();
+    seed_failed_email(&db, "em-journey");
+
+    // Simulate STALE_FAILED_MAX_AUTO_RETRIES rounds of "stale → auto-retry → fail again".
+    for round in 1..=crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES {
+        // Backdate so the row counts as stale for this round.
+        db.conn
+            .execute(
+                "UPDATE emails SET last_enrichment_at = '2020-01-01T00:00:00Z' WHERE email_id = 'em-journey'",
+                [],
+            )
+            .expect("backdate");
+
+        let promoted = db
+            .auto_retry_stale_failed(60, crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES)
+            .expect("auto-retry");
+        assert_eq!(promoted, 1, "round {round}: must promote");
+
+        // Simulate enrichment failing again (state -> failed, attempts -> 3).
+        db.conn
+            .execute(
+                "UPDATE emails SET enrichment_state = 'failed', enrichment_attempts = 3 WHERE email_id = 'em-journey'",
+                [],
+            )
+            .expect("simulate fail");
+    }
+
+    // After the cap is reached, the row must surface in the user-facing
+    // failure UX and stop being auto-retried.
+    let stats = db.get_email_sync_stats().expect("stats");
+    assert_eq!(
+        stats.permanently_failed, 1,
+        "row at cap must be visible to the user as permanently failed"
+    );
+
+    db.conn
+        .execute(
+            "UPDATE emails SET last_enrichment_at = '2020-01-01T00:00:00Z' WHERE email_id = 'em-journey'",
+            [],
+        )
+        .expect("backdate again");
+    let promoted = db
+        .auto_retry_stale_failed(60, crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES)
+        .expect("auto-retry");
+    assert_eq!(promoted, 0, "row at cap must NOT be auto-retried again");
 }

@@ -113,26 +113,79 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
             Some(embedding_ref),
         );
 
+        // DOS-240 (Codex): dismissed outcomes must be filtered BEFORE
+        // selection, not after. Previously the resolver persistence path
+        // filtered dismissals inside `persist_and_invalidate_entity_links_sync_scored`
+        // — which meant a dismissed top candidate would win
+        // `select_auto_link_candidates`, then get filtered at the persist
+        // edge, leaving the second-best candidate unpromoted and the
+        // meeting with no primary. Filtering here lets the runner-up
+        // correctly take over as primary on the next resolver pass.
+        let dismissed = db
+            .list_dismissed_meeting_entities(&meeting.id)
+            .unwrap_or_default();
+        let outcomes: Vec<crate::prepare::entity_resolver::ResolutionOutcome> = if dismissed
+            .is_empty()
+        {
+            outcomes
+        } else {
+            outcomes
+                .into_iter()
+                .filter(|outcome| {
+                    let entity = match outcome {
+                        crate::prepare::entity_resolver::ResolutionOutcome::Resolved(e)
+                        | crate::prepare::entity_resolver::ResolutionOutcome::ResolvedWithFlag(e)
+                        | crate::prepare::entity_resolver::ResolutionOutcome::Suggestion(e) => e,
+                        _ => return true,
+                    };
+                    !dismissed.contains(&(
+                        entity.entity_id.clone(),
+                        entity.entity_type.as_str().to_string(),
+                    ))
+                })
+                .collect()
+        };
+
         // Auto-link only high-confidence `Resolved` outcomes and pick at most
         // one entity per type to avoid multi-account contamination.
         let selected = select_auto_link_candidates(&outcomes);
 
-        // I653 AC4: Use centralized service function for entity linking.
-        // Collects selected entities as (id, type) pairs for the service layer.
-        let selected_pairs: Vec<(String, String)> = selected
-            .iter()
-            .map(|e| (e.entity_id.clone(), e.entity_type.as_str().to_string()))
-            .collect();
+        // DOS-74: Gather primary IDs so suggestion candidates don't duplicate
+        // entities we already auto-linked as primaries.
+        let primary_ids: std::collections::HashSet<String> =
+            selected.iter().map(|e| e.entity_id.clone()).collect();
+        let suggestions = select_suggestion_candidates(&outcomes, &primary_ids);
 
         let linked_account_id: Option<String> = selected
             .iter()
             .find(|e| e.entity_type.as_str() == "account")
             .map(|e| e.entity_id.clone());
 
-        let linked = crate::services::meetings::persist_and_invalidate_entity_links_sync(
+        // DOS-74: Persist scored candidates so junction rows carry confidence
+        // + is_primary. Primaries auto-link at full confidence; suggestions
+        // write at their signal confidence with is_primary = false.
+        let mut candidates: Vec<crate::services::meetings::EntityLinkCandidate> = Vec::new();
+        for entity in &selected {
+            candidates.push(crate::services::meetings::EntityLinkCandidate {
+                entity_id: entity.entity_id.clone(),
+                entity_type: entity.entity_type.as_str().to_string(),
+                confidence: entity.confidence.max(0.95),
+                is_primary: true,
+            });
+        }
+        for entity in &suggestions {
+            candidates.push(crate::services::meetings::EntityLinkCandidate {
+                entity_id: entity.entity_id.clone(),
+                entity_type: entity.entity_type.as_str().to_string(),
+                confidence: entity.confidence,
+                is_primary: false,
+            });
+        }
+
+        let linked = crate::services::meetings::persist_and_invalidate_entity_links_sync_scored(
             &db,
             &meeting.id,
-            &selected_pairs,
+            &candidates,
             &state.meeting_prep_queue,
             &state.integrations.prep_queue_wake,
         )
@@ -248,6 +301,29 @@ fn select_auto_link_candidates(
     }
 
     best_by_type.into_values().collect()
+}
+
+/// DOS-74: Select suggestion-tier outcomes that should be persisted as
+/// non-primary junction rows. These render as muted "suggested" chips in the
+/// UI rather than co-equal primary entities. Suggestions never cross to
+/// auto-linked — they exist purely for disambiguation affordance.
+fn select_suggestion_candidates(
+    outcomes: &[crate::prepare::entity_resolver::ResolutionOutcome],
+    primary_ids: &std::collections::HashSet<String>,
+) -> Vec<crate::prepare::entity_resolver::ResolvedEntity> {
+    outcomes
+        .iter()
+        .filter_map(|outcome| match outcome {
+            crate::prepare::entity_resolver::ResolutionOutcome::Suggestion(e) => {
+                if primary_ids.contains(&e.entity_id) {
+                    None
+                } else {
+                    Some(e.clone())
+                }
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Extract unique domains from attendee email addresses.
@@ -441,6 +517,80 @@ mod tests {
 
         let selected = select_auto_link_candidates(&outcomes);
         assert!(selected.is_empty());
+    }
+
+    /// DOS-240 (Codex): when the top-confidence resolver candidate is
+    /// dismissed, filtering BEFORE `select_auto_link_candidates` must let
+    /// the runner-up be selected and persisted as primary. Filtering
+    /// AFTER selection (the pre-fix behavior) would pick the dismissed
+    /// top candidate, then drop it at the persist edge, leaving the
+    /// meeting with no primary for that type.
+    #[test]
+    fn dismissed_top_candidate_promotes_runner_up_after_pre_filter() {
+        let outcomes = vec![
+            // Top candidate — will be dismissed.
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "acct-top".to_string(),
+                entity_type: EntityType::Account,
+                confidence: 0.98,
+                source: "keyword".to_string(),
+            }),
+            // Runner-up — must become primary after filter.
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "acct-runner-up".to_string(),
+                entity_type: EntityType::Account,
+                confidence: 0.90,
+                source: "keyword".to_string(),
+            }),
+        ];
+
+        // Dismissed set: only the top candidate.
+        let dismissed: std::collections::HashSet<(String, String)> =
+            [("acct-top".to_string(), "account".to_string())]
+                .into_iter()
+                .collect();
+
+        // Pre-filter (mirrors the production path in `run_entity_resolution`).
+        let filtered: Vec<ResolutionOutcome> = outcomes
+            .into_iter()
+            .filter(|outcome| match outcome {
+                ResolutionOutcome::Resolved(e)
+                | ResolutionOutcome::ResolvedWithFlag(e)
+                | ResolutionOutcome::Suggestion(e) => !dismissed.contains(&(
+                    e.entity_id.clone(),
+                    e.entity_type.as_str().to_string(),
+                )),
+                _ => true,
+            })
+            .collect();
+
+        let selected = select_auto_link_candidates(&filtered);
+        assert_eq!(selected.len(), 1, "one primary per type after pre-filter");
+        assert_eq!(
+            selected[0].entity_id, "acct-runner-up",
+            "runner-up must be promoted when top candidate is dismissed",
+        );
+
+        // Sanity check: without the pre-filter, the dismissed top would
+        // still win selection — this is the bug we're fixing. Only after
+        // persistence-level filtering would it be dropped, stranding the
+        // runner-up.
+        let unfiltered_outcomes = vec![
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "acct-top".to_string(),
+                entity_type: EntityType::Account,
+                confidence: 0.98,
+                source: "keyword".to_string(),
+            }),
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "acct-runner-up".to_string(),
+                entity_type: EntityType::Account,
+                confidence: 0.90,
+                source: "keyword".to_string(),
+            }),
+        ];
+        let pre_fix = select_auto_link_candidates(&unfiltered_outcomes);
+        assert_eq!(pre_fix[0].entity_id, "acct-top");
     }
 
     #[test]

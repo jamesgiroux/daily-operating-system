@@ -132,6 +132,11 @@ pub fn run() {
                         log::warn!("DbService init failed: {e}. Falling back to sync mutex.");
                     } else {
                         log::info!("DbService initialized (1 writer + 2 readers)");
+                        // DOS-228 Wave 0e Fix 3: drain persisted
+                        // health_recompute_pending markers that survived a
+                        // prior crash. Runs once on startup; failures leave
+                        // markers in place for the next attempt.
+                        crate::services::health_debouncer::drain_pending(&init_state).await;
                     }
                 });
             } else {
@@ -440,6 +445,12 @@ pub fn run() {
             commands::get_emails_enriched,
             commands::get_email_sync_status,
             commands::update_email_entity,
+            // DOS-258: entity linking read + manual overrides + admin
+            commands::get_linked_entities_for_owner,
+            commands::rebuild_account_domains,
+            commands::set_entity_link_primary,
+            commands::dismiss_entity_link,
+            commands::restore_entity_link,
             commands::dismiss_email_signal,
             commands::get_entity_emails,
             commands::get_inbox_files,
@@ -470,6 +481,7 @@ pub fn run() {
             commands::dismiss_gone_quiet,
             commands::archive_email,
             commands::unarchive_email,
+            commands::unsuppress_email,
             commands::pin_email,
             commands::promote_commitment_to_action,
             commands::dismiss_email_item,
@@ -477,6 +489,10 @@ pub fn run() {
             commands::reset_email_preferences,
             commands::resolve_decision,
             commands::get_suggested_actions,
+            // DOS Work-tab Phase 3: per-account Work chapter reads
+            commands::get_account_commitments,
+            commands::get_account_suggestions,
+            commands::get_account_recently_landed,
             commands::get_meeting_history,
             commands::get_meeting_history_detail,
             commands::search_meetings,
@@ -521,6 +537,10 @@ pub fn run() {
             commands::sync_email_inbox_presence,
             // I144: Archive low-priority emails
             commands::archive_low_priority_emails,
+            commands::retry_failed_emails,
+            // DOS-29: actionable failure UX
+            commands::list_permanently_failed_emails,
+            commands::skip_failed_emails,
             // Onboarding / Demo / App State (I56/I57)
             commands::install_demo_data,
             commands::clear_demo_data,
@@ -566,6 +586,9 @@ pub fn run() {
             // I52: Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,
+            // DOS-240: meeting entity dismissal dictionary
+            commands::dismiss_meeting_entity,
+            commands::restore_meeting_entity,
             commands::get_meeting_entities,
             commands::update_meeting_entity,
             // I184: Additive multi-entity link/unlink
@@ -608,6 +631,12 @@ pub fn run() {
             commands::get_account_detail,
             commands::get_account_team,
             commands::update_account_field,
+            commands::update_technical_footprint_field,
+            commands::set_user_health_sentiment,
+            commands::update_latest_sentiment_note,
+            commands::snooze_triage_item,
+            commands::resolve_triage_item,
+            commands::list_triage_snoozes,
             commands::confirm_lifecycle_change,
             commands::correct_lifecycle_change,
             commands::correct_account_product,
@@ -627,6 +656,10 @@ pub fn run() {
             commands::get_stakeholder_suggestions,
             commands::accept_stakeholder_suggestion,
             commands::dismiss_stakeholder_suggestion,
+            // DOS-258 Lane F: pending stakeholder review queue
+            commands::get_pending_stakeholder_suggestions,
+            commands::confirm_pending_stakeholder,
+            commands::dismiss_pending_stakeholder,
             commands::create_account,
             commands::create_child_account,
             commands::create_team,
@@ -703,6 +736,8 @@ pub fn run() {
             // Risk Briefing
             commands::generate_risk_briefing,
             commands::get_risk_briefing,
+            // DOS-228 Fix 3: Risk briefing retry (surfaces failed jobs)
+            commands::retry_risk_briefing,
             // Reports (v0.15.0)
             commands::generate_report,
             commands::get_report,
@@ -715,6 +750,7 @@ pub fn run() {
             // DOS-13: Recommended Actions from Intelligence
             commands::track_recommendation,
             commands::dismiss_recommendation,
+            commands::mark_commitment_done,
             commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
@@ -855,6 +891,9 @@ pub fn run() {
             // I529: Intelligence Quality Feedback
             commands::submit_intelligence_feedback,
             commands::get_entity_feedback,
+            commands::get_entity_suppressions,
+            // DOS-41: Consolidated intelligence correction
+            commands::submit_intelligence_correction,
             // I645: Feedback & Suppression Diagnostics
             commands::get_feedback_diagnostics,
         ])

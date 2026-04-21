@@ -6,8 +6,20 @@ import { useEffect, useRef } from "react";
  * IntersectionObserver fade-in system (600ms ease, 16px translateY).
  *
  * Pass a boolean `ready` flag — the observer sets up when content is rendered.
- * Optional `revision` value forces re-observation when data reloads (e.g. after
- * a workflow refresh) even though `ready` stays true.
+ *
+ * Optional `revision` value forces re-observation when the DOM surface
+ * changes shape without the consumer remounting:
+ *   - A workflow refresh that swaps new content into the same reveals.
+ *   - A tab/view switch where the other view's elements were in the DOM
+ *     but `display: none` at initial observe time (IntersectionObserver
+ *     can't fire on a non-laid-out subtree, so they'd stay invisible
+ *     forever). Pass the active view key as `revision` — changing it
+ *     tears down the prior observer and queries the DOM fresh, picking
+ *     up the now-displayed reveals.
+ *
+ * Already-`.visible` elements are excluded from the fresh query, so
+ * re-observation doesn't re-trigger fades on content the user has
+ * already seen.
  */
 export function useRevealObserver(ready: boolean, revision?: unknown) {
   const observerRef = useRef<IntersectionObserver | null>(null);
