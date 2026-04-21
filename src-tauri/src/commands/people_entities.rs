@@ -608,6 +608,92 @@ pub async fn get_entity_feedback(
         .await
 }
 
+// =========================================================================
+// DOS-258: read linked entities from the new view
+// =========================================================================
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkedEntityDto {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub role: String,   // "primary" | "related" | "auto_suggested"
+    pub confidence: Option<f64>,
+    pub applied_rule: Option<String>,
+}
+
+/// Read linked entities from the DOS-258 linked_entities view.
+///
+/// Returns primary + related entities from `linked_entities_raw` (excluding
+/// user_dismissed rows). Falls back to empty when no entries exist yet.
+/// The meeting chip uses the `role` field directly to render primary vs related.
+#[tauri::command]
+pub async fn get_linked_entities_for_owner(
+    owner_type: String,
+    owner_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<LinkedEntityDto>, String> {
+    state
+        .db_read(move |db| {
+            let conn = db.conn_ref();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT lr.entity_id, lr.entity_type, lr.role,
+                            lr.confidence, lr.rule_id,
+                            COALESCE(acc.name, proj.name, p.name, lr.entity_id) as name
+                     FROM linked_entities lr
+                     LEFT JOIN accounts acc
+                          ON lr.entity_type = 'account' AND acc.id = lr.entity_id
+                     LEFT JOIN projects proj
+                          ON lr.entity_type = 'project' AND proj.id = lr.entity_id
+                     LEFT JOIN people p
+                          ON lr.entity_type = 'person' AND p.id = lr.entity_id
+                     WHERE lr.owner_type = ?1 AND lr.owner_id = ?2
+                     ORDER BY
+                       CASE lr.role WHEN 'primary' THEN 0
+                                    WHEN 'related' THEN 1
+                                    ELSE 2 END",
+                )
+                .map_err(|e| format!("prepare get_linked_entities_for_owner: {e}"))?;
+            let mut rows = stmt
+                .query(rusqlite::params![owner_type, owner_id])
+                .map_err(|e| format!("get_linked_entities_for_owner query: {e}"))?;
+            let mut results = Vec::new();
+            while let Some(row) = rows
+                .next()
+                .map_err(|e| format!("get_linked_entities_for_owner row: {e}"))?
+            {
+                results.push(LinkedEntityDto {
+                    id: row.get(0).unwrap_or_default(),
+                    entity_type: row.get(1).unwrap_or_default(),
+                    role: row.get(2).unwrap_or_default(),
+                    confidence: row.get(3).ok(),
+                    applied_rule: row.get(4).ok(),
+                    name: row.get(5).unwrap_or_default(),
+                });
+            }
+            Ok(results)
+        })
+        .await
+}
+
+/// Purge inferred account_domains before DOS-258 flag flip (admin/devtools).
+///
+/// Removes all rows where source='inferred'. User-entered ('user') and
+/// enrichment-sourced ('enrichment') domains are preserved.
+#[tauri::command]
+pub async fn rebuild_account_domains(
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    state
+        .db_write(|db| {
+            crate::services::entity_linking::repository::raw_rebuild_account_domains(db)
+                .map(|_| "account_domains rebuild complete".to_string())
+        })
+        .await
+}
+
 /// Get all active suppression tombstones for an entity.
 #[tauri::command]
 pub async fn get_entity_suppressions(
