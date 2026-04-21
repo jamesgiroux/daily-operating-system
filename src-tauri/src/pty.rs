@@ -723,19 +723,36 @@ impl PtyManager {
             cmd.env_remove(key);
         }
 
-        // Explicitly forward Anthropic API auth env vars so the CLI can
-        // authenticate without relying on the Keychain. PTY-spawned children
-        // inherit the parent env by default, so this is technically
-        // redundant — but macOS Keychain ACLs silently block non-interactive
-        // children from reading Claude Code's stored credentials under
-        // API-key mode, so an explicit env-var path is the only reliable
-        // source. If the parent DailyOS process has these set (launched
-        // from a shell that exports them), the CLI will pick the env
-        // credential first and skip the Keychain lookup entirely.
+        // Handle Anthropic API auth env vars. Three cases:
+        //
+        // 1. Parent has a non-empty value → forward it. CLI uses the env
+        //    credential first, skips Keychain lookup (which would otherwise
+        //    fail under PTY ACLs on macOS).
+        //
+        // 2. Parent has an empty value (e.g. set by Claude Code's harness
+        //    shell, or an incomplete `export ANTHROPIC_API_KEY=` line in a
+        //    shell rc) → the child would inherit the empty string via
+        //    portable-pty's default-inherit behaviour, *and* the CLI would
+        //    trust that empty value, send an empty bearer, and hit 401. We
+        //    must explicitly `env_remove` to force the child's env to have
+        //    no value at all, so the CLI falls back to its Keychain path.
+        //    This is the case that broke risk_briefing and transcript
+        //    extraction when DailyOS was launched from a Claude Code shell.
+        //
+        // 3. Parent has no such var → nothing to do; default inheritance
+        //    passes nothing.
         for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
-            if let Ok(value) = std::env::var(key) {
-                if !value.is_empty() {
+            match std::env::var(key) {
+                Ok(value) if !value.is_empty() => {
                     cmd.env(key, value);
+                }
+                Ok(_) => {
+                    // Empty parent value — strip so the child can fall back
+                    // to Keychain. Without this, CLI fails 401.
+                    cmd.env_remove(key);
+                }
+                Err(_) => {
+                    // Not set — nothing to forward, nothing to strip.
                 }
             }
         }
