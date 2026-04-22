@@ -47,4 +47,14 @@ Some will stay internal. Some will become P2 posts. Some will become external gi
 
 ## Current entries
 
+Written:
+
 - [Where code ends and AI begins](2026-04-21-where-code-ends-and-ai-begins.md). The deterministic/probabilistic boundary, how we hit it, how the contract between the two sides emerged.
+
+Stubbed (synopsis + outline; drafting in progress):
+
+- [Why user corrections have to stick](2026-04-22-why-user-corrections-have-to-stick.md). Ghost-resurrection as the bug that kills AI assistants, and why tombstones make it structurally impossible.
+- [Trust as a visible band, not a hidden number](2026-04-22-trust-as-a-visible-band.md). Compiling six factors into three labels, and why the UX discipline around three labels is the actual work.
+- [Provenance as a first-class output](2026-04-22-provenance-as-a-first-class-output.md). The envelope shape, click-to-source, the 64 KB size cap, field-level attribution.
+- [Privacy as an architectural constraint, not a policy](2026-04-22-privacy-as-architecture-not-policy.md). What choosing local-first on day one did to every other decision downstream.
+- [The harness matters more than the model](2026-04-22-the-harness-matters-more-than-the-model.md). Why harness work compounds while prompt work evaporates, and how we test which is which.
