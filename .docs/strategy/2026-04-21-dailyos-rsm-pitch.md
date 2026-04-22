@@ -53,16 +53,42 @@ I want to validate a loop: **real daily use → substrate holds → primitives d
 
 ## What success looks like
 
-**Product:**
-- Me, plus at least one curious Automattician, using DailyOS daily by end of month.
-- Trust-band calibration strong on the high-confidence band (no silent errors where the app says "trust this").
-- Zero silent overwrites of user corrections.
-- Zero content-boundary violations (architectural, not just observed).
+The end-of-RSM slide needs a number on it. Here's the number I want to be defending.
 
-**Substrate:**
-- A few learning one-pagers written and shared internally.
-- One cross-team conversation completed with a concrete next step (adopt a primitive, rule out fit, schedule another meeting).
+**North star: trust calibration score.** On a sampled 100 claims from my own briefings, hand-rated for correctness, the app's trust bands should match reality:
+
+- `likely_current` ≥ 90% accuracy. No silent errors in the high-confidence band is the non-negotiable one.
+- `use_with_caution` in the 50-75% range. It should genuinely mean "go verify."
+- `needs_verification` < 40% accuracy. If it's confident here, we've mis-calibrated.
+
+This is the single chart that says "the substrate works." If it holds, everything else in the product is credible. If it doesn't, nothing else matters.
+
+**Product leading indicators:**
+
+- Days DailyOS opened before 9am out of 30. Target: ≥ 22 for me, ≥ 15 for each additional daily driver.
+- Briefings generated per day. Target: 1 per weekday, reliable.
+- Ghost-resurrection incidents. Target: 0. Counted, instrumented number.
+- Content-boundary violations. Target: 0. Architectural, not just observed.
+- Crashes per week. Target: < 1 on my machine, tolerable on partner machines.
+- Runtime evaluator agreement with human judgment on sampled Transform outputs. Target: ≥ 75%.
+
+**Retrieval benchmark (BrainBench-style, [DOS-261](https://linear.app/a8c/issue/DOS-261) permitting):**
+
+- Precision@5 and Recall@5 on a fixed corpus of real queries. Numbers before and after a focused tuning pass mid-month.
+- Graph-only vs hybrid F1 ablation. GBrain saw 86.6% vs 57.8%. I want to see the same order-of-magnitude lift once claim edges are populated.
+
+**Substrate extraction:**
+
+- 4 of 6 learning one-pagers written (1 drafted, 5 stubbed today). Publishable quality, internally.
+- ≥ 1 cross-team conversation completed with a named next step (adopt a primitive, schedule a second meeting, rule out fit).
 - End-of-month decision: standalone product, shared infrastructure, both, or neither. Any clear answer is a useful answer.
+
+**Aspirational (self-reported, honest):**
+
+- Meetings I walked into prepared because of DailyOS vs meetings I prepped manually. Rough tally, kept in a log I actually keep.
+- Commitments caught and closed because DailyOS surfaced them before I forgot. Same tally.
+
+These last two are anecdotal. Keeping them on the slide anyway. If the first eight numbers are green and these two are green, that's the story. If the first eight are green and these two aren't, that's an honest "the substrate works but the product isn't yet load-bearing on my day," which is also useful.
 
 ## Team: who I'm looking for
 
