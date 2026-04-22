@@ -393,7 +393,6 @@ pub fn gather_weekly_impact_input(
         prompt,
         ai_models,
         intel_hash,
-        extra_data: None,
     })
 }
 

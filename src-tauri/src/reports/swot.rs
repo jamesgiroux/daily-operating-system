@@ -222,7 +222,6 @@ pub fn gather_swot_input(
         prompt: gathered.context_prompt,
         ai_models: gathered.ai_models,
         intel_hash: gathered.intel_hash,
-        extra_data: None,
     })
 }
 

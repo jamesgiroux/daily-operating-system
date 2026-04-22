@@ -19,9 +19,6 @@ pub struct ReportGeneratorInput {
     pub prompt: String,
     pub ai_models: AiModelConfig,
     pub intel_hash: String,
-    /// Optional serialized extra data for multi-phase reports (e.g. BookMetrics).
-    #[allow(dead_code)]
-    pub extra_data: Option<String>,
 }
 
 /// Phase 2: Run the PTY call for report generation.

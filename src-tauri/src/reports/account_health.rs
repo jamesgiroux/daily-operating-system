@@ -302,7 +302,6 @@ pub fn gather_account_health_input(
         prompt,
         ai_models,
         intel_hash,
-        extra_data: None,
     })
 }
 

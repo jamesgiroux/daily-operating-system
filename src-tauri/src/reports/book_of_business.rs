@@ -1049,9 +1049,6 @@ pub fn gather_to_report_input(gather: &BookGatherOutput) -> Result<ReportGenerat
         },
     );
 
-    let extra_data = serde_json::to_string(&gather.metrics)
-        .map_err(|e| format!("Failed to serialize BookMetrics: {}", e))?;
-
     Ok(ReportGeneratorInput {
         entity_id: gather.user_entity_id.clone(),
         entity_type: "user".to_string(),
@@ -1061,7 +1058,6 @@ pub fn gather_to_report_input(gather: &BookGatherOutput) -> Result<ReportGenerat
         prompt,
         ai_models: gather.ai_models.clone(),
         intel_hash: gather.intel_hash.clone(),
-        extra_data: Some(extra_data),
     })
 }
 
@@ -1383,68 +1379,6 @@ fn build_spotlight_detail_block(
     }
 
     prompt
-}
-
-/// Append activity context (actions, emails, captures) to a prompt.
-fn append_activity_context(prompt: &mut String, gather: &BookGatherOutput) {
-    if !gather.open_actions.is_empty() {
-        prompt.push_str("## Open Actions (top 20)\n");
-        prompt.push_str(&crate::util::wrap_user_data(&gather.open_actions));
-        prompt.push_str("\n\n");
-    }
-
-    if !gather.email_signals.is_empty() {
-        prompt.push_str("## Email Activity (90d)\n");
-        prompt.push_str(&crate::util::wrap_user_data(&gather.email_signals));
-        prompt.push_str("\n\n");
-    }
-
-    if !gather.captures.is_empty() {
-        prompt.push_str("## Portfolio Captures (urgency-sorted, 90d)\n");
-        prompt.push_str(&crate::util::wrap_user_data(&gather.captures));
-        prompt.push_str("\n\n");
-    }
-}
-
-/// Append spotlight account instructions to a prompt.
-/// Section-aware: gives per-section prioritization rules matching the monolithic path.
-fn append_spotlight_instructions(prompt: &mut String, gather: &BookGatherOutput, section: &str) {
-    if gather.spotlight_ids.is_empty() {
-        return;
-    }
-    prompt.push_str("## Spotlight Accounts (User-Selected)\n\n");
-    prompt.push_str(
-        "The user has selected these accounts as the focus of this review. \
-         They are the accounts the user plans to discuss with leadership.\n",
-    );
-
-    // Per-section spotlight prioritization rules
-    let section_rule = match section {
-        "topRisks" => "Lead with risks from these accounts (add others only if critical).",
-        "topOpportunities" => "Lead with opportunities from these accounts.",
-        "deepDives" => "You MUST include a deepDive for each selected account.",
-        "valueDelivered" => "Prioritize outcomes from these accounts.",
-        "keyThemes" => "Themes should be grounded in patterns across these accounts.",
-        "leadershipAsks" => "Asks should relate to these accounts where applicable.",
-        "executiveSummary" => "Ground the summary in these accounts' collective story.",
-        _ => "Prioritize these accounts in your output.",
-    };
-    prompt.push_str(&format!(
-        "For this section: {}\n\
-         You may include other accounts where warranted, but the selected accounts are the narrative center.\n\n",
-        section_rule,
-    ));
-
-    for id in &gather.spotlight_ids {
-        if let Some(snap) = gather.snapshot.iter().find(|s| s.account_id == *id) {
-            prompt.push_str(&format!(
-                "- {} (ID: {})\n",
-                crate::util::sanitize_external_field(&snap.account_name),
-                id,
-            ));
-        }
-    }
-    prompt.push('\n');
 }
 
 // =============================================================================

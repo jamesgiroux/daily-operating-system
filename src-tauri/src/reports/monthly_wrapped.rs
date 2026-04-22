@@ -7,7 +7,6 @@ use chrono::{Datelike, NaiveDate, Utc};
 
 use crate::db::ActionDb;
 use crate::reports::generator::ReportGeneratorInput;
-use crate::reports::prompts::build_report_preamble;
 use crate::types::AiModelConfig;
 
 // =============================================================================
@@ -606,11 +605,6 @@ pub fn gather_monthly_wrapped_input(
         )
         .unwrap_or_else(|_| "1".to_string());
 
-    // Override the generic preamble — monthly wrapped uses its own framing built above.
-    // build_report_preamble is called here for consistency but the prompt already
-    // has the correct framing as its first section.
-    let _ = build_report_preamble("you", "monthly_wrapped", "user");
-
     Ok(ReportGeneratorInput {
         entity_id: user_entity_id,
         entity_type: "user".to_string(),
@@ -620,7 +614,6 @@ pub fn gather_monthly_wrapped_input(
         prompt,
         ai_models,
         intel_hash,
-        extra_data: None,
     })
 }
 
