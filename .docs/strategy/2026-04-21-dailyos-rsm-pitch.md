@@ -2,42 +2,47 @@
 
 **By James Giroux. Status: Planning / looking for partners.**
 
-**TL;DR:** DailyOS is a working prototype AI chief of staff I've been building since the last week of January. Local-first macOS app, encrypted on device, BYO LLM key, every claim provenanced and trust-scored. For Radical Speed Month I want to make it stable enough to hand to one or two curious Automatticians, write down the substrate primitives (memory, trust, provenance, corrections, the boundary between deterministic code and probabilistic AI) as one-pagers other product teams could adopt, and open a cross-team conversation about whether those primitives could become a shared personal-intelligence layer across Automattic's products.
+**TL;DR:** DailyOS is a working prototype AI chief of staff I've been iterating on for a while. It started as a CLI tool and has become a local-first macOS app. For Radical Speed Month I want to make it stable enough to hand to a few curious Automatticians, validate a few AI primitives (memory, trust, provenance, corrections, etc.), and open a cross-team conversation about whether those primitives could become a shared personal-intelligence layer across Automattic's products.
 
-The longer-form founder note is [here](2026-04-21-rsm-note.md). The first learning (the determinism boundary story) is [here](../learnings/2026-04-21-where-code-ends-and-ai-begins.md).
+## What DailyOS is today
 
-**Team:** @giroux + 1-2 partners TBD.
+You sync your calendar and email, connect to Glean, Mesh, Gravatar, Linear, Quill, and Granola (with your Claude Code subscription), and the app produces high-quality meeting briefings about your customers and projects. It builds profiles on the people in your network, keeps a dossier for each customer (or partner, affiliate, lead), and suggests and tracks actions from your meetings.
+
+It's admittedly flaky. Typical bugs, and a healthy amount of AI bluster. The substrate underneath is the bet.
 
 ## Problem
 
-Every knowledge worker at Automattic starts each morning rebuilding the mental model they had yesterday. Who's on the calendar. Who we promised what. Which threads are about to slip. The rebuild happens by hand, is mostly lost on context-switch, and takes the first half-hour of every day.
+Parts of this are specific to my day as a CSM. I think most of it generalizes to anyone whose work depends on reasoning about people, accounts, and commitments over time (AM, sales, SE, PM, support, project leads). If your work is deep focus on a single codebase or canvas, this pitch probably isn't for you.
 
-AI tools help a little. They also start from zero every session. You type the context back in, the AI replies, the AI forgets by tomorrow. The person is still the integration layer across ten apps.
+Every morning I rebuild the mental model I had yesterday. Who's on the calendar, who I promised what, which threads are about to slip. The rebuild happens by hand, is mostly lost on context-switch, and takes the first half-hour of the day.
 
-The AI-for-work tools actually shipping today skip the hard parts:
+AI tools help with pieces of this, and they've come a long way. ChatGPT remembers things across sessions now. Claude Projects hold persistent context. Copilot reads my email. Perplexity cites sources. Glean indexes the company corpus. Each of these does something real. None of them does all of it, and none of them does it on my device.
 
-- **No persistent memory.** What the AI learned yesterday is gone today.
-- **No trust signal.** Every output looks equally confident whether it's right or a hallucination.
-- **No provenance.** You can't ask "why did you say that" and get a source.
-- **No durable corrections.** You fix something, the next enrichment cycle quietly reverts it. Trust dies around week three.
-- **No privacy posture.** Customer content ships to vendor servers; at Automattic that's a non-starter for anything real.
+The gap I keep hitting is integration, not absence. No single tool combines:
 
-Karpathy's LLM Wiki gist last week, GBrain, OpenClaw, Hermes are all wrestling with the same problems. None have shipped answers for users who don't live in a terminal.
+- **Persistent structured memory** that survives sessions, upgrades, and vendor changes
+- **Trust calibration**, not just citation. Confidence as a visible band, not a hidden number or a footnote
+- **Field-level provenance**: which specific claim in a synthesized paragraph came from which source sentence
+- **Durable user corrections** that survive re-enrichment. You fix it once, it stays fixed
+- **Architectural privacy**: content never leaves the device. Not "we promise not to train." A literal architectural guarantee
+- **A native UI** a non-engineer can use without opening a terminal
+
+Individually, each of those is in some shipped product today. Together, in one tool, for a non-engineer user, is what I haven't found. Karpathy's LLM Wiki gist, GBrain, OpenClaw, and Hermes are all wrestling with variants of the same integration problem. They're all shipping for engineers in terminals. That's the gap I've been trying to close in DailyOS.
 
 ## Hypothesis
 
-The harness around the model matters more than the model. If we get persistent memory, trust, provenance, and correction durability right as a shared substrate, every Automattic product that puts AI in front of a user can inherit them without rebuilding the trust infrastructure from scratch.
+The harness around the model matters as much as the model. If we get persistent memory, trust, provenance, and correction durability right, those become primitives that could support every Automattic product putting AI in front of a user.
 
-DailyOS has been the vehicle for working this out in a greenfield codebase for the last three months. The substrate is largely designed (120+ ADRs, v1.4.0 implementation underway). RSM is about proving it holds up in real use and making it adoptable by other teams.
+I've got theories on how to tackle them. RSM is about proving the theories hold up in real use and making the thinking available to other teams.
 
-## What we want to build
+## What I want to build
 
-Not a product launch. Validate a loop: **real daily use → substrate holds → primitives documented → one other team evaluates → we know what's next.**
+I want to validate a loop: **real daily use → substrate holds → primitives documented → we know what's next.**
 
-1. **Ship the v1.4.0 substrate end-to-end on two real abilities** (entity context, meeting prep), so trust, provenance, and correction durability are load-bearing on a real workday.
+1. **Ship the theory end-to-end on two real abilities** (entity context, meeting prep), so trust, provenance, and correction durability are load-bearing on a real workday.
 2. **Harden install and onboarding** so a curious Automattician can try DailyOS without me hand-holding.
-3. **Write primitive one-pagers in `.docs/learnings/`.** Five started, one drafted, shareable internally, optionally external after RSM.
-4. **Open one cross-team conversation.** me.sh has asked to meet. One more from Jetpack AI, WooCommerce admin AI, VIP tooling, Beeper, or Day One would ideally happen during the month.
+3. **Document the learnings** so others can lean in.
+4. **Open a cross-team conversation** as I think Cosmos is a place the learnings could land and I'm keen to chat.
 
 ## What we'll validate first
 
@@ -55,7 +60,7 @@ Not a product launch. Validate a loop: **real daily use → substrate holds → 
 - Zero content-boundary violations (architectural, not just observed).
 
 **Substrate:**
-- Five learning one-pagers written and shared internally.
+- A few learning one-pagers written and shared internally.
 - One cross-team conversation completed with a concrete next step (adopt a primitive, rule out fit, schedule another meeting).
 - End-of-month decision: standalone product, shared infrastructure, both, or neither. Any clear answer is a useful answer.
 
@@ -63,25 +68,23 @@ Not a product launch. Validate a loop: **real daily use → substrate holds → 
 
 One or two partners for the month. Any of:
 
-- **Rust / Tauri engineer.** The v1.4.0 substrate lanes are explicitly parallelizable. Two Phase 0 blockers (ADR-0104 `ServiceContext`, ADR-0106 `IntelligenceProvider`) can land in separate worktrees without conflict.
-- **Designer.** The trust / provenance UX is a genuinely unsolved problem. How do you show "this is current, this is uncertain, this is stale, and here's where each claim came from" without turning the briefing into a wall of footnotes?
-- **First curious user.** Someone who wants to be the second daily driver and tell me where the product hurts.
+- **Engineer.** I could use a colleague to challenge the thinking, poke holes in the code and push it to be better.
+- **Designer.** Pretty apps are more fun to use and this app is, well, in need of some help.
+- **A few curious users.** Some folks who want to be the first few daily drivers and tell me where the product hurts.
 
 Any of those three makes the month count.
 
 ## Immediate next steps
 
-- **Slack:** find us at `#rsm-dailyos`.
-- **Read the founder note** at `.docs/strategy/2026-04-21-rsm-note.md` for the longer-form thinking.
-- **Read the first learning** at `.docs/learnings/2026-04-21-where-code-ends-and-ai-begins.md` for what the substrate work feels like in practice.
-- **Sync with me** if you have a product team that's running into "how do we make the AI trustworthy" problems right now. me.sh is the first conversation; there's room for one more.
+- **Slack:** find us at `#dailyos`.
+- **Sync with me** if you have a product team that's running into "how do we make the AI trustworthy" problems right now. 
 
 ## Beyond RSM
 
 Depends on what the month proves. Three honest possible outcomes:
 
 - **Substrate holds, users stick.** Real conversation about DailyOS as a professional tool with work as the commercial wedge and local-first privacy as the moat.
-- **Substrate holds, another team adopts primitives.** Different conversation about a shared personal-intelligence layer across the Automattic constellation (me.sh, Day One, Gravatar, Jetpack AI, WooCommerce admin AI, Beeper).
+- **Substrate holds, another team adopts primitives.** Different conversation about a shared personal-intelligence layer across the Automattic constellation.
 - **First contact with a real user reveals big gaps.** Also useful. Tells us where three months of effort went to the wrong place, faster than any other method.
 
 The goal of RSM is to learn which of those is most real. Pre-deciding is worse than finding out.
@@ -91,6 +94,4 @@ The goal of RSM is to learn which of those is most real. Pre-deciding is worse t
 - **Karpathy's LLM Wiki gist.** Validated a lot of what we'd independently built. We've solved several problems the gist comments are still asking about; documenting the answers is half the RSM writing work.
 - **GBrain (Garry Tan).** Same shape for a userbase of one, without privacy constraints. We've been making the choices he hasn't had to.
 - **OpenClaw, Hermes.** Proactive harnesses for engineer audiences. What they don't solve is the 80% of users who aren't going to live in a terminal.
-- **Inside Automattic.** Teams building ad-hoc versions of "AI that knows your work." Everyone is solving trust and memory and corrections independently. The substrate is the part that could compose across.
-
-Feedback welcome, especially if you're building something in this space or you're on a product team with a live AI bottleneck. The point of RSM is to find out things we don't know alone.
+- **Inside Automattic.** Teams building ad-hoc versions of "AI that knows your work." Everyone is solving for this independently. A primitive everyone could start from is a neat outcome.
