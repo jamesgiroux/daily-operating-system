@@ -72,6 +72,53 @@
       "scope_creep_detected"
     ]
   },
+  "intelligence": {
+    "systemRole": "agency client delivery intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.18,
+      "email_engagement": 0.15,
+      "stakeholder_coverage": 0.17,
+      "key_advocate_health": 0.15,
+      "financial_proximity": 0.15,
+      "signal_momentum": 0.20
+    },
+    "signalKeywords": [
+      { "keyword": "scope", "weight": 0.13 },
+      { "keyword": "deliverable", "weight": 0.12 },
+      { "keyword": "approval", "weight": 0.11 },
+      { "keyword": "feedback", "weight": 0.10 },
+      { "keyword": "revision", "weight": 0.10 },
+      { "keyword": "deadline", "weight": 0.10 },
+      { "keyword": "retainer", "weight": 0.09 },
+      { "keyword": "budget", "weight": 0.08 }
+    ],
+    "emailSignalTypes": [
+      "scope_risk",
+      "approval_blocker",
+      "client_satisfaction_decline",
+      "deadline_risk",
+      "retainer_change",
+      "feedback_signal"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Client Cadence",
+      "email_engagement": "Client Responsiveness",
+      "stakeholder_coverage": "Client Coverage",
+      "key_advocate_health": "Client Lead Health",
+      "financial_proximity": "Contract Proximity",
+      "signal_momentum": "Delivery Momentum"
+    },
+    "closeConcept": "contract renewal",
+    "keyAdvocateLabel": "client lead",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether client reviews, delivery syncs, and approval checkpoints are happening on schedule.",
+      "email_engagement": "Read responsiveness, feedback tone, and approval latency as client satisfaction signals.",
+      "stakeholder_coverage": "Assess coverage across client lead, approver, brand, subject matter experts, and procurement.",
+      "key_advocate_health": "Assess whether the client lead is responsive, empowered, and clearing approvals internally.",
+      "financial_proximity": "Focus on retainer status, contract end, budget, change orders, and scope economics.",
+      "signal_momentum": "Weigh deliverable progress, revision loops, scope changes, satisfaction, and blocked approvals."
+    }
+  },
   "briefingEmphasis": "Focus on deliverable deadlines, client satisfaction trends, and scope status. Prioritize at-risk client relationships and overdue deliverables.",
   "emailPriorityKeywords": [
     "retainer", "scope", "deliverable", "milestone", "sprint", "review", "approval", "feedback",

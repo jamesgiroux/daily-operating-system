@@ -69,6 +69,53 @@
       "stakeholder_review_pending"
     ]
   },
+  "intelligence": {
+    "systemRole": "marketing campaign intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.15,
+      "email_engagement": 0.15,
+      "stakeholder_coverage": 0.18,
+      "key_advocate_health": 0.12,
+      "financial_proximity": 0.15,
+      "signal_momentum": 0.25
+    },
+    "signalKeywords": [
+      { "keyword": "launch", "weight": 0.14 },
+      { "keyword": "campaign", "weight": 0.12 },
+      { "keyword": "deadline", "weight": 0.12 },
+      { "keyword": "creative", "weight": 0.10 },
+      { "keyword": "approval", "weight": 0.10 },
+      { "keyword": "budget", "weight": 0.09 },
+      { "keyword": "pipeline", "weight": 0.09 },
+      { "keyword": "attribution", "weight": 0.08 }
+    ],
+    "emailSignalTypes": [
+      "launch_risk",
+      "campaign_deadline",
+      "approval_blocker",
+      "budget_change",
+      "pipeline_signal",
+      "creative_review"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Review Cadence",
+      "email_engagement": "Stakeholder Responsiveness",
+      "stakeholder_coverage": "Cross-Functional Coverage",
+      "key_advocate_health": "Sponsor Health",
+      "financial_proximity": "Budget Proximity",
+      "signal_momentum": "Campaign Momentum"
+    },
+    "closeConcept": "launch",
+    "keyAdvocateLabel": "sponsor",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether campaign reviews, stakeholder syncs, and launch checkpoints are happening on time.",
+      "email_engagement": "Read responsiveness and decision latency around creative, budget, launch, and attribution work.",
+      "stakeholder_coverage": "Assess coverage across demand gen, product marketing, content, design, ops, and executive sponsors.",
+      "key_advocate_health": "Assess whether the campaign sponsor is clearing approvals and protecting scope.",
+      "financial_proximity": "Focus on budget allocation, spend changes, vendor commitments, and pipeline impact.",
+      "signal_momentum": "Weigh launch readiness, creative completion, channel readiness, blockers, and performance signals."
+    }
+  },
   "briefingEmphasis": "Focus on upcoming launch dates, content pipeline status, and cross-functional dependencies. Prioritize campaigns approaching deadlines with unresolved blockers.",
   "emailPriorityKeywords": [
     "campaign", "launch", "press release", "media", "analyst", "briefing", "webinar", "event",

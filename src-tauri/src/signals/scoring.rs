@@ -30,7 +30,7 @@ pub struct ScoredItem {
 }
 
 /// Business keywords and their relevance weights.
-const KEYWORD_WEIGHTS: &[(&str, f64)] = &[
+pub const KEYWORD_WEIGHTS: &[(&str, f64)] = &[
     ("renewal", 0.15),
     ("contract", 0.12),
     ("expansion", 0.12),

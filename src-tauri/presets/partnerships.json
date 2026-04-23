@@ -71,6 +71,53 @@
       "co_sell_pipeline_stalled"
     ]
   },
+  "intelligence": {
+    "systemRole": "partnerships intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.18,
+      "email_engagement": 0.15,
+      "stakeholder_coverage": 0.20,
+      "key_advocate_health": 0.17,
+      "financial_proximity": 0.15,
+      "signal_momentum": 0.15
+    },
+    "signalKeywords": [
+      { "keyword": "partner", "weight": 0.12 },
+      { "keyword": "co-sell", "weight": 0.12 },
+      { "keyword": "integration", "weight": 0.11 },
+      { "keyword": "referral", "weight": 0.10 },
+      { "keyword": "mdf", "weight": 0.09 },
+      { "keyword": "enablement", "weight": 0.09 },
+      { "keyword": "agreement", "weight": 0.09 },
+      { "keyword": "pipeline", "weight": 0.08 }
+    ],
+    "emailSignalTypes": [
+      "partner_engagement_decline",
+      "agreement_renewal",
+      "co_sell_pipeline",
+      "integration_blocker",
+      "referral_signal",
+      "enablement_gap"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Partner Cadence",
+      "email_engagement": "Partner Engagement",
+      "stakeholder_coverage": "Partner Coverage",
+      "key_advocate_health": "Partner Advocate Health",
+      "financial_proximity": "Agreement Proximity",
+      "signal_momentum": "Partner Momentum"
+    },
+    "closeConcept": "agreement renewal",
+    "keyAdvocateLabel": "partner advocate",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether partner reviews, enablement sessions, and pipeline syncs are happening often enough.",
+      "email_engagement": "Read partner responsiveness and urgency around joint pipeline, referrals, and integrations.",
+      "stakeholder_coverage": "Assess coverage across partner manager, executive sponsor, technical lead, sales, and marketing.",
+      "key_advocate_health": "Assess whether a partner-side advocate is actively moving joint work forward.",
+      "financial_proximity": "Focus on agreement dates, MDF, referral economics, pipeline value, and commercial blockers.",
+      "signal_momentum": "Weigh joint pipeline, enablement progress, integration activity, referrals, and cooling engagement."
+    }
+  },
   "briefingEmphasis": "Focus on partner engagement trends, joint pipeline health, and upcoming agreement renewals. Prioritize strategic partners with declining activity or stalled co-sell deals.",
   "emailPriorityKeywords": [
     "partner", "co-sell", "co-marketing", "referral", "commission", "mdf", "joint", "alliance",

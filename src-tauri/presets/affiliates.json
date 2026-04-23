@@ -1,0 +1,131 @@
+{
+  "id": "affiliates",
+  "name": "Affiliates",
+  "description": "For affiliate and creator partnership teams managing influencer relationships, campaign cycles, attribution, and performance-based collaboration.",
+  "defaultEntityMode": "account",
+  "vocabulary": {
+    "entityNoun": "creator",
+    "entityNounPlural": "creators",
+    "primaryMetric": "Attributed Revenue",
+    "healthLabel": "Creator Fit",
+    "riskLabel": "Campaign Risk",
+    "successVerb": "activated",
+    "cadenceNoun": "campaign check-in"
+  },
+  "vitals": {
+    "account": [
+      { "key": "arr", "label": "Attributed Revenue", "fieldType": "currency", "source": "column", "columnMapping": "arr" },
+      { "key": "health", "label": "Creator Fit", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["excellent", "strong", "developing", "at_risk", "inactive"] },
+      { "key": "lifecycle", "label": "Creator Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["prospect", "outreach", "negotiating", "onboarding", "active", "renewing", "paused", "ended"] },
+      { "key": "contract_end", "label": "Campaign End", "fieldType": "date", "source": "column", "columnMapping": "contract_end" },
+      { "key": "nps", "label": "Performance Score", "fieldType": "number", "source": "column", "columnMapping": "nps" }
+    ],
+    "project": [
+      { "key": "status", "label": "Campaign Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["planning", "briefed", "content_review", "live", "optimizing", "complete", "paused", "cancelled"] },
+      { "key": "target_date", "label": "Go-Live Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "Campaign Owner", "fieldType": "text", "source": "column", "columnMapping": "owner" },
+      { "key": "milestone", "label": "Current Step", "fieldType": "text", "source": "column", "columnMapping": "milestone" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [
+      { "key": "channel", "label": "Primary Channel", "fieldType": "select", "options": ["youtube", "tiktok", "instagram", "newsletter", "podcast", "blog", "twitch", "other"], "required": false },
+      { "key": "commission_model", "label": "Commission Model", "fieldType": "select", "options": ["cpa", "rev_share", "flat_fee", "hybrid", "gifted"], "required": false },
+      { "key": "audience_size", "label": "Audience Size", "fieldType": "number", "required": false }
+    ],
+    "project": [
+      { "key": "campaign_type", "label": "Campaign Type", "fieldType": "select", "options": ["launch", "evergreen", "seasonal", "review", "giveaway", "ambassador"], "required": false },
+      { "key": "tracking_link", "label": "Tracking Link", "fieldType": "text", "required": false }
+    ],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "creator_lead", "label": "Creator Lead", "description": "Primary creator or influencer driving the audience relationship" },
+    { "id": "manager", "label": "Manager / Agent", "description": "Represents the creator commercially and handles negotiation" },
+    { "id": "content_producer", "label": "Content Producer", "description": "Helps create, edit, or schedule campaign content" },
+    { "id": "brand_contact", "label": "Brand Contact", "description": "Internal or external stakeholder approving brand fit and creative direction" },
+    { "id": "analytics_contact", "label": "Analytics Contact", "description": "Owns attribution, reporting, and conversion analysis" },
+    { "id": "finance_contact", "label": "Finance Contact", "description": "Handles invoices, payouts, and commission questions" }
+  ],
+  "internalTeamRoles": [
+    { "id": "affiliate_manager", "label": "Affiliate Manager", "description": "Owns creator relationship and performance plan" },
+    { "id": "creator_ops", "label": "Creator Ops", "description": "Handles onboarding, tracking links, codes, and payouts" },
+    { "id": "brand_marketing", "label": "Brand Marketing", "description": "Reviews creative fit and messaging" },
+    { "id": "performance_marketing", "label": "Performance Marketing", "description": "Owns CAC, conversion, and channel performance" },
+    { "id": "legal", "label": "Legal", "description": "Reviews contracts, disclosures, and usage rights" }
+  ],
+  "lifecycleEvents": [
+    "outreach_started",
+    "creator_replied",
+    "terms_agreed",
+    "brief_sent",
+    "content_submitted",
+    "content_approved",
+    "campaign_live",
+    "first_conversion",
+    "payout_processed",
+    "campaign_renewed"
+  ],
+  "prioritization": {
+    "primarySignal": "arr",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "campaign_launch_within_14d",
+      "content_approval_blocked",
+      "performance_declining"
+    ]
+  },
+  "intelligence": {
+    "systemRole": "affiliate creator partnership intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.14,
+      "email_engagement": 0.18,
+      "stakeholder_coverage": 0.16,
+      "key_advocate_health": 0.17,
+      "financial_proximity": 0.15,
+      "signal_momentum": 0.20
+    },
+    "signalKeywords": [
+      { "keyword": "creator", "weight": 0.12 },
+      { "keyword": "affiliate", "weight": 0.12 },
+      { "keyword": "tracking link", "weight": 0.11 },
+      { "keyword": "commission", "weight": 0.10 },
+      { "keyword": "payout", "weight": 0.10 },
+      { "keyword": "content approval", "weight": 0.10 },
+      { "keyword": "conversion", "weight": 0.09 },
+      { "keyword": "go-live", "weight": 0.08 }
+    ],
+    "emailSignalTypes": [
+      "creator_engagement",
+      "content_approval_blocker",
+      "tracking_issue",
+      "payout_issue",
+      "performance_signal",
+      "campaign_renewal"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Campaign Cadence",
+      "email_engagement": "Creator Responsiveness",
+      "stakeholder_coverage": "Creator Team Coverage",
+      "key_advocate_health": "Creator Lead Health",
+      "financial_proximity": "Campaign Cycle Proximity",
+      "signal_momentum": "Performance Momentum"
+    },
+    "closeConcept": "campaign cycle",
+    "keyAdvocateLabel": "creator lead",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether creator check-ins, launch reviews, and campaign retros are happening at the right cadence.",
+      "email_engagement": "Read creator and manager responsiveness around briefs, content, tracking, and payout issues.",
+      "stakeholder_coverage": "Assess coverage across creator, manager, producer, brand, analytics, and finance contacts.",
+      "key_advocate_health": "Assess whether the creator lead is engaged, aligned with the brand, and actively promoting the campaign.",
+      "financial_proximity": "Focus on campaign end dates, commission terms, payout friction, attributed revenue, and renewal potential.",
+      "signal_momentum": "Weigh content progress, conversion trend, tracking quality, launch readiness, and creator enthusiasm."
+    }
+  },
+  "briefingEmphasis": "Focus on creator responsiveness, content approval status, attribution quality, and upcoming campaign moments. Prioritize creators with blocked launches or performance shifts.",
+  "emailPriorityKeywords": [
+    "creator", "affiliate", "influencer", "tracking link", "promo code", "commission", "payout",
+    "utm", "conversion", "content approval", "go-live", "campaign live"
+  ]
+}

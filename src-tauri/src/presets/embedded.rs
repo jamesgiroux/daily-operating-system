@@ -2,6 +2,7 @@ const CS_PRESET: &str = include_str!("../../presets/customer-success.json");
 const SALES_PRESET: &str = include_str!("../../presets/sales.json");
 const MARKETING_PRESET: &str = include_str!("../../presets/marketing.json");
 const PARTNERSHIPS_PRESET: &str = include_str!("../../presets/partnerships.json");
+const AFFILIATES_PRESET: &str = include_str!("../../presets/affiliates.json");
 const AGENCY_PRESET: &str = include_str!("../../presets/agency.json");
 const CONSULTING_PRESET: &str = include_str!("../../presets/consulting.json");
 const PRODUCT_PRESET: &str = include_str!("../../presets/product.json");
@@ -14,6 +15,7 @@ const ALL_PRESETS: &[(&str, &str)] = &[
     ("sales", SALES_PRESET),
     ("marketing", MARKETING_PRESET),
     ("partnerships", PARTNERSHIPS_PRESET),
+    ("affiliates", AFFILIATES_PRESET),
     ("agency", AGENCY_PRESET),
     ("consulting", CONSULTING_PRESET),
     ("product", PRODUCT_PRESET),

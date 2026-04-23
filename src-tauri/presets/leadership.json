@@ -71,6 +71,53 @@
       "board_meeting_within_14d"
     ]
   },
+  "intelligence": {
+    "systemRole": "leadership operating intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.15,
+      "email_engagement": 0.12,
+      "stakeholder_coverage": 0.18,
+      "key_advocate_health": 0.10,
+      "financial_proximity": 0.20,
+      "signal_momentum": 0.25
+    },
+    "signalKeywords": [
+      { "keyword": "board", "weight": 0.13 },
+      { "keyword": "strategy", "weight": 0.12 },
+      { "keyword": "headcount", "weight": 0.11 },
+      { "keyword": "budget", "weight": 0.10 },
+      { "keyword": "okr", "weight": 0.10 },
+      { "keyword": "blocked", "weight": 0.10 },
+      { "keyword": "reorg", "weight": 0.09 },
+      { "keyword": "runway", "weight": 0.09 }
+    ],
+    "emailSignalTypes": [
+      "board_readiness",
+      "initiative_blocked",
+      "team_health_decline",
+      "budget_change",
+      "headcount_signal",
+      "strategic_decision"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Operating Cadence",
+      "email_engagement": "Leadership Responsiveness",
+      "stakeholder_coverage": "Leadership Coverage",
+      "key_advocate_health": "Sponsor Health",
+      "financial_proximity": "Business Proximity",
+      "signal_momentum": "Execution Momentum"
+    },
+    "closeConcept": "decision window",
+    "keyAdvocateLabel": "sponsor",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether staff meetings, board prep, and initiative reviews are happening at the right operating rhythm.",
+      "email_engagement": "Read executive responsiveness and escalation patterns as signals of attention and urgency.",
+      "stakeholder_coverage": "Assess whether owners, finance, people, and cross-functional leaders are represented.",
+      "key_advocate_health": "Assess whether an accountable sponsor is clearing decisions and maintaining executive alignment.",
+      "financial_proximity": "Focus on budget, revenue, runway, headcount, board timelines, and strategic tradeoffs.",
+      "signal_momentum": "Weigh blocked initiatives, decision latency, organizational changes, risk escalation, and OKR progress."
+    }
+  },
   "briefingEmphasis": "Focus on cross-team risks, key decisions requiring attention, and strategic initiative progress. Surface blocked work and escalations that need executive intervention.",
   "emailPriorityKeywords": [
     "board", "investor", "fundraise", "runway", "headcount", "reorg", "strategy", "all hands",

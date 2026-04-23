@@ -70,6 +70,53 @@
       "champion_change"
     ]
   },
+  "intelligence": {
+    "systemRole": "customer success intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.15,
+      "email_engagement": 0.15,
+      "stakeholder_coverage": 0.20,
+      "key_advocate_health": 0.20,
+      "financial_proximity": 0.15,
+      "signal_momentum": 0.15
+    },
+    "signalKeywords": [
+      { "keyword": "renewal", "weight": 0.15 },
+      { "keyword": "contract", "weight": 0.12 },
+      { "keyword": "expansion", "weight": 0.12 },
+      { "keyword": "escalation", "weight": 0.12 },
+      { "keyword": "churn", "weight": 0.12 },
+      { "keyword": "adoption", "weight": 0.10 },
+      { "keyword": "qbr", "weight": 0.10 },
+      { "keyword": "health score", "weight": 0.09 }
+    ],
+    "emailSignalTypes": [
+      "renewal_approaching",
+      "engagement_warning",
+      "champion_risk",
+      "churn_risk",
+      "escalation",
+      "expansion_opportunity"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Meeting Cadence",
+      "email_engagement": "Email Engagement",
+      "stakeholder_coverage": "Stakeholder Coverage",
+      "key_advocate_health": "Champion Health",
+      "financial_proximity": "Renewal Proximity",
+      "signal_momentum": "Signal Momentum"
+    },
+    "closeConcept": "renewal",
+    "keyAdvocateLabel": "champion",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether recurring customer touchpoints are happening at the right executive and operating cadence.",
+      "email_engagement": "Read responsiveness, tone, urgency, and follow-through as leading indicators of account attention.",
+      "stakeholder_coverage": "Assess whether the account has enough executive, buyer, technical, and user coverage for retention.",
+      "key_advocate_health": "Assess whether a credible champion is active, influential, and willing to advocate internally.",
+      "financial_proximity": "Focus on renewal timing, contract risk, expansion potential, budget signals, and procurement friction.",
+      "signal_momentum": "Weigh recent wins, risks, escalations, product adoption, and stakeholder changes."
+    }
+  },
   "briefingEmphasis": "Focus on retention metrics, upcoming renewals, and health score changes. Prioritize at-risk accounts by ARR.",
   "emailPriorityKeywords": [
     "nps", "health score", "qbr", "ebr", "business review",

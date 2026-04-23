@@ -267,6 +267,8 @@ pub struct AppState {
     pub audit_log: Arc<Mutex<crate::audit_log::AuditLogger>>,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
+    /// Cached base + active-preset signal keywords for relevance scoring.
+    pub merged_signal_keywords: RwLock<Vec<(String, f64)>>,
     /// Background meeting prep queue for future meetings.
     pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
     /// Typed resource permits for concurrent background work (I565).
@@ -436,6 +438,8 @@ impl AppState {
                 crate::presets::loader::load_preset(&c.role).ok()
             }
         });
+        let merged_signal_keywords =
+            crate::presets::loader::merged_signal_keywords(active_preset.as_ref());
 
         // Build the prep invalidation queue and signal engine together so
         // the engine can push invalidated meeting IDs into the shared queue.
@@ -566,6 +570,7 @@ impl AppState {
             database_recovery_status: Mutex::new(database_recovery_status),
             audit_log,
             active_preset: RwLock::new(active_preset),
+            merged_signal_keywords: RwLock::new(merged_signal_keywords),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             permits: ResourcePermits::new(),
             context_provider: RwLock::new(context_provider),

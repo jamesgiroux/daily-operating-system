@@ -74,6 +74,53 @@
       "champion_disengaged"
     ]
   },
+  "intelligence": {
+    "systemRole": "sales pipeline intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.15,
+      "email_engagement": 0.18,
+      "stakeholder_coverage": 0.22,
+      "key_advocate_health": 0.20,
+      "financial_proximity": 0.15,
+      "signal_momentum": 0.10
+    },
+    "signalKeywords": [
+      { "keyword": "close date", "weight": 0.15 },
+      { "keyword": "proposal", "weight": 0.13 },
+      { "keyword": "procurement", "weight": 0.12 },
+      { "keyword": "legal", "weight": 0.10 },
+      { "keyword": "budget", "weight": 0.10 },
+      { "keyword": "champion", "weight": 0.10 },
+      { "keyword": "competitor", "weight": 0.09 },
+      { "keyword": "forecast", "weight": 0.08 }
+    ],
+    "emailSignalTypes": [
+      "close_date_risk",
+      "deal_stage_stalled",
+      "champion_risk",
+      "procurement_blocker",
+      "competitor_threat",
+      "expansion_opportunity"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Buyer Cadence",
+      "email_engagement": "Buyer Engagement",
+      "stakeholder_coverage": "Buying Committee Coverage",
+      "key_advocate_health": "Champion Health",
+      "financial_proximity": "Close Proximity",
+      "signal_momentum": "Deal Momentum"
+    },
+    "closeConcept": "close",
+    "keyAdvocateLabel": "champion",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether buyer meetings are frequent enough for the deal stage and close date.",
+      "email_engagement": "Read buyer responsiveness, urgency, and depth of replies as momentum or stall signals.",
+      "stakeholder_coverage": "Assess coverage across economic buyer, decision maker, technical evaluator, procurement, and users.",
+      "key_advocate_health": "Assess whether an internal advocate is selling the case when the seller is not present.",
+      "financial_proximity": "Focus on close date, budget, procurement, legal, pricing, and signature readiness.",
+      "signal_momentum": "Weigh stage movement, next steps, objections, competitive pressure, and mutual action progress."
+    }
+  },
   "briefingEmphasis": "Focus on pipeline movement, stalled deals, and upcoming close dates. Prioritize high-value deals approaching deadlines. Flag stage regressions and champion disengagement.",
   "emailPriorityKeywords": [
     "pipeline", "forecast", "quota", "commission", "deal", "opportunity", "close", "won", "lost",
