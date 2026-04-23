@@ -5,6 +5,8 @@
 
 use crate::db::types::DbAccount;
 use crate::db::ActionDb;
+use crate::presets::loader::canonical_role_id;
+use crate::presets::schema::{PresetIntelligenceConfig, RolePreset};
 use crate::signals::fusion;
 
 use super::io::{
@@ -26,6 +28,16 @@ pub fn compute_account_health(
     account: &DbAccount,
     org_health: Option<&OrgHealthData>,
 ) -> AccountHealth {
+    compute_account_health_with_preset(db, account, org_health, None)
+}
+
+/// Compute algorithmic health with an optional role preset.
+pub fn compute_account_health_with_preset(
+    db: &ActionDb,
+    account: &DbAccount,
+    org_health: Option<&OrgHealthData>,
+    preset: Option<&RolePreset>,
+) -> AccountHealth {
     let meeting_cadence = compute_meeting_cadence(db, &account.id);
     let email_engagement = compute_email_engagement(db, &account.id);
     let stakeholder_coverage = compute_stakeholder_coverage(db, &account.id);
@@ -43,7 +55,9 @@ pub fn compute_account_health(
     };
 
     let lifecycle = account.lifecycle.as_deref();
-    let raw_weights = apply_lifecycle_weights(lifecycle);
+    let preset_id = preset.map(|p| p.id.as_str()).unwrap_or("core");
+    let raw_weights =
+        compose_dimension_weights(preset_id, preset.map(|p| &p.intelligence), lifecycle);
     let weights = redistribute_weights(&dims, raw_weights);
     let confidence = compute_confidence(&dims);
 
@@ -1165,9 +1179,7 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
             }
 
             let age_days = chrono::DateTime::parse_from_rfc3339(latest_created_at)
-                .map(|d| {
-                    (chrono::Utc::now() - d.with_timezone(&chrono::Utc)).num_days()
-                })
+                .map(|d| (chrono::Utc::now() - d.with_timezone(&chrono::Utc)).num_days())
                 .unwrap_or(30);
             evidence.push(format!(
                 "Zendesk velocity signal {}d ago ({:.0}% confidence)",
@@ -1194,9 +1206,53 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
     }
 }
 
+const HEALTH_DIMENSION_WEIGHT_KEYS: [&str; 6] = [
+    "meeting_cadence",
+    "email_engagement",
+    "stakeholder_coverage",
+    "key_advocate_health",
+    "financial_proximity",
+    "signal_momentum",
+];
+
+/// Compose preset base weights with lifecycle-stage multipliers.
+/// Order: [meeting, email, stakeholder, champion, financial, signal]
+pub fn compose_dimension_weights(
+    preset_id: &str,
+    intelligence: Option<&PresetIntelligenceConfig>,
+    lifecycle: Option<&str>,
+) -> [f64; 6] {
+    let base_weights = intelligence
+        .map(dimension_weights_from_config)
+        .unwrap_or([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+    let multipliers = apply_lifecycle_weights(preset_id, lifecycle);
+    [
+        base_weights[0] * multipliers[0],
+        base_weights[1] * multipliers[1],
+        base_weights[2] * multipliers[2],
+        base_weights[3] * multipliers[3],
+        base_weights[4] * multipliers[4],
+        base_weights[5] * multipliers[5],
+    ]
+}
+
+fn dimension_weights_from_config(intelligence: &PresetIntelligenceConfig) -> [f64; 6] {
+    HEALTH_DIMENSION_WEIGHT_KEYS.map(|key| {
+        intelligence
+            .dimension_weights
+            .get(key)
+            .copied()
+            .unwrap_or(1.0)
+    })
+}
+
 /// Apply lifecycle-stage weight multipliers to each dimension.
 /// Order: [meeting, email, stakeholder, champion, financial, signal]
-fn apply_lifecycle_weights(lifecycle: Option<&str>) -> [f64; 6] {
+pub fn apply_lifecycle_weights(preset_id: &str, lifecycle: Option<&str>) -> [f64; 6] {
+    if canonical_role_id(preset_id) != "customer-success" {
+        return [1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    }
+
     match lifecycle {
         Some("onboarding") => [1.5, 1.0, 1.5, 1.0, 0.7, 1.0],
         Some("adoption") => [1.0, 1.0, 1.0, 1.5, 1.0, 1.5],
@@ -1422,13 +1478,32 @@ mod tests {
 
     #[test]
     fn test_lifecycle_weights_renewal() {
-        let weights = apply_lifecycle_weights(Some("renewal"));
+        let weights = apply_lifecycle_weights("customer-success", Some("renewal"));
         // Financial proximity (index 4) should have highest weight in renewal
         assert!(
             weights[4] > weights[0],
             "financial_proximity should be highest in renewal"
         );
         assert!((weights[4] - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_lifecycle_weights_non_cs_are_flat() {
+        let weights = apply_lifecycle_weights("affiliates-partnerships", Some("renewal"));
+        assert_eq!(weights, [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_preset_dimension_weights_feed_raw_weights() {
+        let preset = crate::presets::loader::load_preset("affiliates-partnerships").unwrap();
+        let raw =
+            compose_dimension_weights(&preset.id, Some(&preset.intelligence), Some("renewal"));
+        let expected = preset.intelligence.dimension_weights["financial_proximity"];
+        assert!((raw[4] - expected).abs() < 1e-9);
+
+        let cs = crate::presets::loader::load_preset("customer-success").unwrap();
+        let cs_raw = compose_dimension_weights(&cs.id, Some(&cs.intelligence), Some("renewal"));
+        assert!(cs_raw[4] > cs_raw[0]);
     }
 
     #[test]
@@ -1654,7 +1729,7 @@ mod tests {
             signal_momentum: active_dim(55.0),
         };
 
-        let raw_weights = apply_lifecycle_weights(None); // equal weights
+        let raw_weights = apply_lifecycle_weights("customer-success", None); // equal weights
         let weights = redistribute_weights(&dims, raw_weights);
         let confidence = compute_confidence(&dims);
 
@@ -1697,7 +1772,7 @@ mod tests {
             signal_momentum: active_dim(50.0),     // neutral
         };
 
-        let raw_weights = apply_lifecycle_weights(None);
+        let raw_weights = apply_lifecycle_weights("customer-success", None);
         let weights = redistribute_weights(&dims, raw_weights);
         let confidence = compute_confidence(&dims);
 
@@ -1745,7 +1820,7 @@ mod tests {
             },
         };
 
-        let raw_weights = apply_lifecycle_weights(None);
+        let raw_weights = apply_lifecycle_weights("customer-success", None);
         let weights = redistribute_weights(&dims, raw_weights);
         let confidence = compute_confidence(&dims);
 
@@ -1786,11 +1861,11 @@ mod tests {
     #[test]
     fn test_lifecycle_weights_change_scoring() {
         // Renewal lifecycle should weight financial_proximity (index 4) at 2.0
-        let weights = apply_lifecycle_weights(Some("renewal"));
+        let weights = apply_lifecycle_weights("customer-success", Some("renewal"));
         assert!((weights[4] - 2.0).abs() < f64::EPSILON);
 
         // Onboarding should weight meeting_cadence (index 0) higher
-        let onboard = apply_lifecycle_weights(Some("onboarding"));
+        let onboard = apply_lifecycle_weights("customer-success", Some("onboarding"));
         assert!((onboard[0] - 1.5).abs() < f64::EPSILON);
         assert!((onboard[2] - 1.5).abs() < f64::EPSILON); // stakeholder_coverage
     }
@@ -1808,7 +1883,7 @@ mod tests {
             signal_momentum: active_dim(50.0),
         };
 
-        let raw = apply_lifecycle_weights(Some("renewal"));
+        let raw = apply_lifecycle_weights("customer-success", Some("renewal"));
         let redistributed = redistribute_weights(&dims, raw);
 
         // Financial proximity (index 4) should get 0 weight

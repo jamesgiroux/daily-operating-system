@@ -898,11 +898,13 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let db_guard_owned = crate::db::ActionDb::open().ok();
     let db_ref = db_guard_owned.as_ref();
     let embedding_ref = state.embedding_model.as_ref();
+    let active_preset = state.active_preset.read().clone();
     let mut meeting_contexts = meeting_context::gather_all_meeting_contexts(
         &classified,
         workspace,
         db_ref,
         Some(embedding_ref),
+        active_preset.as_ref(),
     );
 
     // I331: Assembly model — inject pre-computed AI intelligence into meeting contexts.
@@ -1329,11 +1331,13 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Meeting contexts (I305: thread embedding model for entity resolution)
     let embedding_ref_week = state.embedding_model.as_ref();
+    let active_preset_week = state.active_preset.read().clone();
     let meeting_contexts = meeting_context::gather_all_meeting_contexts(
         &classified,
         workspace,
         db_ref,
         Some(embedding_ref_week),
+        active_preset_week.as_ref(),
     );
 
     // Gap analysis — resolve user timezone from schedule config for accurate UTC→local conversion

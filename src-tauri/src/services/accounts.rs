@@ -1744,8 +1744,12 @@ pub fn set_user_health_sentiment(
         .get_account(account_id)
         .map_err(|e| e.to_string())?
         .map(|acct| {
-            let health = crate::intelligence::health_scoring::compute_account_health(
-                db, &acct, None,
+            let preset_guard = state.active_preset.read();
+            let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
+                db,
+                &acct,
+                None,
+                preset_guard.as_ref(),
             );
             (Some(health.band), Some(health.score))
         })
@@ -1837,8 +1841,12 @@ pub fn update_latest_sentiment_note(
             .get_account(account_id)
             .map_err(|e| e.to_string())?
             .map(|acct| {
-                let health = crate::intelligence::health_scoring::compute_account_health(
-                    db, &acct, None,
+                let preset_guard = state.active_preset.read();
+                let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
+                    db,
+                    &acct,
+                    None,
+                    preset_guard.as_ref(),
                 );
                 (Some(health.band), Some(health.score))
             })

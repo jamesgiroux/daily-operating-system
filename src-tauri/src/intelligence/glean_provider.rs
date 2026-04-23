@@ -20,6 +20,7 @@ use super::dimension_prompts::{self, DIMENSION_NAMES};
 use super::io::{IntelligenceJson, SourceManifestEntry};
 use super::prompts::{parse_intelligence_response, IntelligenceContext};
 use crate::context_provider::glean::GleanMcpClient;
+use crate::presets::schema::RolePreset;
 
 use serde::{Deserialize, Serialize};
 
@@ -98,6 +99,7 @@ impl GleanIntelligenceProvider {
         relationship: Option<&str>,
         app_handle: Option<&AppHandle>,
         is_background: bool,
+        preset: Option<&RolePreset>,
     ) -> Result<IntelligenceJson, String> {
         // Try parallel dimension fan-out first
         match self
@@ -109,6 +111,7 @@ impl GleanIntelligenceProvider {
                 relationship,
                 app_handle,
                 is_background,
+                preset,
             )
             .await
         {
@@ -119,8 +122,15 @@ impl GleanIntelligenceProvider {
                     entity_name,
                     e
                 );
-                self.enrich_entity_legacy(entity_id, entity_type, entity_name, ctx, relationship)
-                    .await
+                self.enrich_entity_legacy(
+                    entity_id,
+                    entity_type,
+                    entity_name,
+                    ctx,
+                    relationship,
+                    preset,
+                )
+                .await
             }
         }
     }
@@ -144,6 +154,7 @@ impl GleanIntelligenceProvider {
         relationship: Option<&str>,
         app_handle: Option<&AppHandle>,
         is_background: bool,
+        preset: Option<&RolePreset>,
     ) -> Result<IntelligenceJson, String> {
         use crate::intel_queue::{EnrichmentComplete, EnrichmentProgress};
 
@@ -162,6 +173,7 @@ impl GleanIntelligenceProvider {
                     relationship,
                     ctx,
                     is_incremental,
+                    preset,
                 );
                 (dim.to_string(), prompt)
             })
@@ -210,7 +222,8 @@ impl GleanIntelligenceProvider {
                 // of glean_*. 240s matches GLEAN_CHAT_TIMEOUT so slow-but-
                 // valid responses complete before either timeout fires.
                 let response_result =
-                    tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt, None)).await;
+                    tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt, None))
+                        .await;
 
                 let elapsed_ms = start.elapsed().as_millis();
 
@@ -549,6 +562,7 @@ impl GleanIntelligenceProvider {
         entity_name: &str,
         ctx: &IntelligenceContext,
         relationship: Option<&str>,
+        preset: Option<&RolePreset>,
     ) -> Result<IntelligenceJson, String> {
         let is_incremental = ctx.prior_intelligence.is_some();
 
@@ -559,6 +573,7 @@ impl GleanIntelligenceProvider {
             relationship,
             ctx,
             is_incremental,
+            preset,
         );
 
         log::info!(
@@ -732,11 +747,12 @@ impl GleanIntelligenceProvider {
         let response_text =
             tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt, None))
                 .await
-                .map_err(|_| {
-                    format!("Glean leading-signals chat timed out for {}", entity_name)
-                })?
+                .map_err(|_| format!("Glean leading-signals chat timed out for {}", entity_name))?
                 .map_err(|e| {
-                    format!("Glean leading-signals chat failed for {}: {}", entity_name, e)
+                    format!(
+                        "Glean leading-signals chat failed for {}: {}",
+                        entity_name, e
+                    )
                 })?;
 
         log::info!(
@@ -829,6 +845,7 @@ pub fn emit_glean_signals(
     entity_type: &str,
     entity_id: &str,
     intel: &IntelligenceJson,
+    preset: Option<&RolePreset>,
 ) {
     use crate::signals::bus::{emit_signal, emit_signal_and_propagate};
 
@@ -1113,9 +1130,9 @@ pub fn emit_glean_signals(
     // Recompute health after Glean signals are emitted so that new CRM/Gong/Zendesk
     // data flows immediately into the 6 health dimensions.
     if entity_type == "account" {
-        if let Err(e) =
-            crate::services::intelligence::recompute_entity_health(db, entity_id, "account")
-        {
+        if let Err(e) = crate::services::intelligence::recompute_entity_health_with_preset(
+            db, entity_id, "account", preset,
+        ) {
             log::warn!(
                 "Health recompute failed for {} after Glean signals: {}",
                 entity_id,

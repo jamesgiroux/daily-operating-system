@@ -619,34 +619,37 @@ async fn mutate_meeting_entities_and_refresh_briefing(
     }
 
     let prep_rebuilt_sync = match crate::meeting_prep_queue::meeting_prep_blocking_inputs(state) {
-        Ok((workspace, embedding_model)) => match tauri::async_runtime::spawn_blocking({
-            let meeting_id = meeting_id_s.clone();
-            move || {
-                crate::meeting_prep_queue::generate_mechanical_prep_now_blocking(
-                    workspace,
-                    embedding_model,
-                    meeting_id,
-                )
-            }
-        })
-        .await
-        {
-            Ok(Ok(())) => true,
-            Ok(Err(err)) => {
-                log::warn!(
-                    "mutate_meeting_entities_and_refresh_briefing: immediate prep rebuild failed for {}: {}",
-                    meeting_id_s,
-                    err
-                );
-                false
-            }
-            Err(err) => {
-                log::warn!(
-                    "mutate_meeting_entities_and_refresh_briefing: prep rebuild task panicked for {}: {}",
-                    meeting_id_s,
-                    err
-                );
-                false
+        Ok((workspace, embedding_model, active_preset)) => {
+            match tauri::async_runtime::spawn_blocking({
+                let meeting_id = meeting_id_s.clone();
+                move || {
+                    crate::meeting_prep_queue::generate_mechanical_prep_now_blocking(
+                        workspace,
+                        embedding_model,
+                        active_preset,
+                        meeting_id,
+                    )
+                }
+            })
+            .await
+            {
+                Ok(Ok(())) => true,
+                Ok(Err(err)) => {
+                    log::warn!(
+                        "mutate_meeting_entities_and_refresh_briefing: immediate prep rebuild failed for {}: {}",
+                        meeting_id_s,
+                        err
+                    );
+                    false
+                }
+                Err(err) => {
+                    log::warn!(
+                        "mutate_meeting_entities_and_refresh_briefing: prep rebuild task panicked for {}: {}",
+                        meeting_id_s,
+                        err
+                    );
+                    false
+                }
             }
         },
         Err(err) => {
@@ -1548,19 +1551,57 @@ pub async fn get_meeting_intelligence(
             let actions = db
                 .get_actions_for_meeting(&meeting.id)
                 .map_err(|e| e.to_string())?;
-            let linked_entities = db
-                .get_meeting_entities(&meeting.id)
-                .map_err(|e| e.to_string())?
-                .into_iter()
-                .map(|e| crate::types::LinkedEntity {
-                    id: e.id,
-                    name: e.name,
-                    entity_type: e.entity_type.as_str().to_string(),
-                    confidence: 0.95,
-                    is_primary: true,
-                    suggested: false,
-                })
-                .collect::<Vec<_>>();
+            // DOS-258: read from the linked_entities view so the briefing UI
+            // sees the new engine's output, not the legacy `meeting_entities`
+            // table that accumulated false positives from the old fuzzy/
+            // keyword resolver. Internal-only meetings (no external domain
+            // match) correctly produce zero rows here rather than falling
+            // back to the polluted junction table.
+            let linked_entities = {
+                let mut stmt = db
+                    .conn_ref()
+                    .prepare(
+                        "SELECT lr.entity_id, lr.entity_type, lr.role, \
+                                lr.confidence, lr.rule_id, \
+                                COALESCE(acc.name, proj.name, p.name, lr.entity_id) AS name \
+                         FROM linked_entities lr \
+                         LEFT JOIN accounts acc \
+                              ON lr.entity_type = 'account' AND acc.id = lr.entity_id \
+                         LEFT JOIN projects proj \
+                              ON lr.entity_type = 'project' AND proj.id = lr.entity_id \
+                         LEFT JOIN people p \
+                              ON lr.entity_type = 'person' AND p.id = lr.entity_id \
+                         WHERE lr.owner_type = 'meeting' AND lr.owner_id = ?1 \
+                         ORDER BY \
+                           CASE lr.role WHEN 'primary' THEN 0 \
+                                        WHEN 'related' THEN 1 \
+                                        ELSE 2 END",
+                    )
+                    .map_err(|e| format!("prepare linked_entities read: {e}"))?;
+                let mut rows = stmt
+                    .query(rusqlite::params![meeting.id])
+                    .map_err(|e| format!("linked_entities query: {e}"))?;
+                let mut out: Vec<crate::types::LinkedEntity> = Vec::new();
+                while let Some(row) = rows
+                    .next()
+                    .map_err(|e| format!("linked_entities row: {e}"))?
+                {
+                    let role: String = row.get(2).unwrap_or_default();
+                    let confidence: Option<f64> = row.get(3).ok();
+                    let rule_id: Option<String> = row.get(4).ok();
+                    out.push(crate::types::LinkedEntity {
+                        id: row.get(0).unwrap_or_default(),
+                        name: row.get(5).unwrap_or_default(),
+                        entity_type: row.get(1).unwrap_or_default(),
+                        confidence: confidence.unwrap_or(0.95),
+                        is_primary: role == "primary",
+                        suggested: role == "auto_suggested",
+                        role: Some(role),
+                        applied_rule: rule_id,
+                    });
+                }
+                out
+            };
 
             // Build outcomes from already-fetched captures + actions (no duplicate queries)
             let outcomes = build_outcomes_from_data(&meeting, &captures, &actions);
@@ -2986,34 +3027,37 @@ pub async fn refresh_meeting_briefing_full(
     );
 
     let prep_rebuilt_sync = match crate::meeting_prep_queue::meeting_prep_blocking_inputs(state) {
-        Ok((workspace, embedding_model)) => match tauri::async_runtime::spawn_blocking({
-            let meeting_id = meeting_id_owned.clone();
-            move || {
-                crate::meeting_prep_queue::regenerate_mechanical_prep_now_blocking(
-                    workspace,
-                    embedding_model,
-                    meeting_id,
-                )
-            }
-        })
-        .await
-        {
-            Ok(Ok(wrote)) => wrote,
-            Ok(Err(err)) => {
-                log::warn!(
-                    "refresh_meeting_briefing_full: immediate prep rebuild failed for {}: {}",
-                    meeting_id_owned,
-                    err
-                );
-                false
-            }
-            Err(err) => {
-                log::warn!(
-                    "refresh_meeting_briefing_full: prep rebuild task panicked for {}: {}",
-                    meeting_id_owned,
-                    err
-                );
-                false
+        Ok((workspace, embedding_model, active_preset)) => {
+            match tauri::async_runtime::spawn_blocking({
+                let meeting_id = meeting_id_owned.clone();
+                move || {
+                    crate::meeting_prep_queue::regenerate_mechanical_prep_now_blocking(
+                        workspace,
+                        embedding_model,
+                        active_preset,
+                        meeting_id,
+                    )
+                }
+            })
+            .await
+            {
+                Ok(Ok(wrote)) => wrote,
+                Ok(Err(err)) => {
+                    log::warn!(
+                        "refresh_meeting_briefing_full: immediate prep rebuild failed for {}: {}",
+                        meeting_id_owned,
+                        err
+                    );
+                    false
+                }
+                Err(err) => {
+                    log::warn!(
+                        "refresh_meeting_briefing_full: prep rebuild task panicked for {}: {}",
+                        meeting_id_owned,
+                        err
+                    );
+                    false
+                }
             }
         },
         Err(err) => {

@@ -78,6 +78,7 @@ fn build_enrichment_prompt(
     email: &DbEmail,
     entity_id: Option<&str>,
     entity_type: Option<&str>,
+    preset: Option<&crate::presets::schema::RolePreset>,
 ) -> String {
     let sender =
         crate::util::sanitize_external_field(email.sender_email.as_deref().unwrap_or("unknown"));
@@ -89,14 +90,29 @@ fn build_enrichment_prompt(
 
     // I369: Gather relationship context for the resolved entity
     let relationship_context = build_relationship_context(db, entity_id, entity_type);
+    let system_role = preset
+        .map(|p| p.intelligence.system_role.as_str())
+        .filter(|role| !role.trim().is_empty())
+        .unwrap_or("core work intelligence system");
+    let entity_noun = preset
+        .map(|p| p.vocabulary.entity_noun.as_str())
+        .unwrap_or("entity");
+    let close_concept = preset
+        .map(|p| p.intelligence.close_concept.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("deadline");
 
     let mut prompt = format!(
-        "{}You are a chief of staff reading an email for your executive. \
-         Analyze this email and connect it to what you know about the relationship.\n\n\
+        "{}You are a {} reading an email for the user. \
+         Analyze this email and connect it to what you know about the {} relationship. \
+         Treat {} timing, engagement changes, and concrete commitments as signal.\n\n\
          From: {} {}\n\
          Subject: {}\n\
          Preview: {}\n",
         crate::util::INJECTION_PREAMBLE,
+        system_role,
+        entity_noun,
+        close_concept,
         sender,
         sender_name,
         subject,
@@ -111,11 +127,11 @@ fn build_enrichment_prompt(
 
     prompt.push_str(
         "\nReturn ONLY a JSON object with these fields:\n\
-         - contextual_summary: string (1-2 sentence chief-of-staff analysis connecting this email to what's known about the relationship. Reference specific meetings or signals when relevant.)\n\
+         - contextual_summary: string (1-2 sentence role-aware analysis connecting this email to what's known about the relationship. Reference specific meetings or signals when relevant.)\n\
          - sentiment: \"positive\" | \"neutral\" | \"negative\" | \"mixed\"\n\
          - urgency: \"high\" | \"medium\" | \"low\"\n\
-         - is_noise: boolean (true if this email is noise that should NOT appear in a Customer Success exec's inbox: marketing, newsletters, automated transactional/system notifications, internal-org distribution-list posts, registration confirmations, calendar/tool notifications, social-network alerts. false if it's signal: 1:1 correspondence, customer/prospect outreach, internal team discussion, anything requiring the user's attention or context. When uncertain, prefer false — false negatives are recoverable via user dismissal, false positives hide real work.)\n\
-         - noise_reason: string (one short phrase explaining the is_noise verdict, e.g. \"customer reply re renewal\" or \"automated registration confirmation\")\n\n\
+         - is_noise: boolean (true if this email is noise that should NOT appear in the user's work inbox: marketing, newsletters, automated transactional/system notifications, internal-org distribution-list posts, registration confirmations, calendar/tool notifications, social-network alerts. false if it's signal: 1:1 correspondence, external stakeholder outreach, internal team discussion, anything requiring the user's attention or context. When uncertain, prefer false — false negatives are recoverable via user dismissal, false positives hide real work.)\n\
+         - noise_reason: string (one short phrase explaining the is_noise verdict, e.g. \"stakeholder reply re decision\" or \"automated registration confirmation\")\n\n\
          Do not include any text outside the JSON object.",
     );
 
@@ -294,6 +310,7 @@ pub fn enrich_pending_emails_two_phase(
     log::info!("email_enrich: {} emails pending enrichment", pending.len());
     let mut enriched_count = 0usize;
     let total_pending = pending.len();
+    let active_preset = state.active_preset.read().clone();
 
     // Step 2: AI enrichment via PTY (no DB lock held)
     for (email, entity_id, entity_type) in &pending {
@@ -320,7 +337,13 @@ pub fn enrich_pending_emails_two_phase(
                 Ok(d) => d,
                 Err(_) => continue,
             };
-            build_enrichment_prompt(&db, email, entity_id.as_deref(), entity_type.as_deref())
+            build_enrichment_prompt(
+                &db,
+                email,
+                entity_id.as_deref(),
+                entity_type.as_deref(),
+                active_preset.as_ref(),
+            )
         };
 
         let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)

@@ -18,6 +18,7 @@
 
 use super::io::IntelligenceJson;
 use super::prompts::IntelligenceContext;
+use crate::presets::schema::RolePreset;
 
 /// Canonical dimension group names used by fan-out orchestration.
 pub const DIMENSION_NAMES: &[&str] = &[
@@ -45,11 +46,12 @@ pub fn build_dimension_prompt(
     relationship: Option<&str>,
     ctx: &IntelligenceContext,
     is_incremental: bool,
+    preset: Option<&RolePreset>,
 ) -> String {
     let mut prompt = String::with_capacity(4096);
 
     // System role — dimension-specific framing
-    let role_desc = dimension_role_description(dimension);
+    let role_desc = dimension_role_description(dimension, preset);
     let entity_label = entity_label_for(entity_type, relationship);
     prompt.push_str(&format!(
         "You are {} for the {} \"{}\".\n\n",
@@ -128,10 +130,11 @@ pub fn build_glean_dimension_prompt(
     relationship: Option<&str>,
     ctx: &IntelligenceContext,
     is_incremental: bool,
+    preset: Option<&RolePreset>,
 ) -> String {
     let mut prompt = String::with_capacity(4096);
 
-    let role_desc = dimension_role_description(dimension);
+    let role_desc = dimension_role_description(dimension, preset);
     let entity_label = entity_label_for(entity_type, relationship);
 
     // System role — Glean-specific with entity grounding
@@ -411,28 +414,45 @@ fn entity_label_for(entity_type: &str, relationship: Option<&str>) -> &'static s
 }
 
 /// Role description for the system prompt, per dimension group.
-fn dimension_role_description(dimension: &str) -> &'static str {
+fn dimension_role_description(dimension: &str, preset: Option<&RolePreset>) -> String {
+    let guidance_key = match dimension {
+        "core_assessment" => "signal_momentum",
+        "stakeholder_champion" => "key_advocate_health",
+        "commercial_financial" => "financial_proximity",
+        "strategic_context" => "stakeholder_coverage",
+        "value_success" => "signal_momentum",
+        "engagement_signals" => "meeting_cadence",
+        _ => "",
+    };
+    if let Some(guidance) = preset
+        .and_then(|p| p.intelligence.dimension_guidance.get(guidance_key))
+        .filter(|value| !value.trim().is_empty())
+    {
+        return guidance.to_string();
+    }
+
     match dimension {
         "core_assessment" => {
             "analyzing the overall health and trajectory, producing an executive assessment"
         }
         "stakeholder_champion" => {
-            "analyzing stakeholder relationships, champion strength, and organizational coverage"
+            "analyzing stakeholder relationships, key advocate strength, and organizational coverage"
         }
         "commercial_financial" => {
-            "analyzing commercial health, contract status, renewal outlook, and expansion signals"
+            "analyzing commercial health, agreement status, deadline proximity, and growth signals"
         }
         "strategic_context" => {
             "analyzing strategic context, competitive landscape, and business priorities"
         }
         "value_success" => {
-            "analyzing value delivered, success metrics, success plan signals, and commitments"
+            "analyzing value delivered, success metrics, plan signals, and commitments"
         }
         "engagement_signals" => {
-            "analyzing engagement patterns: meeting cadence, email responsiveness, product adoption, and support health"
+            "analyzing engagement patterns: meeting cadence, email responsiveness, adoption, and support health"
         }
         _ => "building an intelligence assessment",
     }
+    .to_string()
 }
 
 /// Human-readable dimension name for task descriptions.
@@ -1126,7 +1146,8 @@ mod tests {
     fn pty_prompt_contains_dimension_schema() {
         let ctx = make_ctx();
         for dim in DIMENSION_NAMES {
-            let prompt = build_dimension_prompt(dim, "Acme Corp", "account", None, &ctx, false);
+            let prompt =
+                build_dimension_prompt(dim, "Acme Corp", "account", None, &ctx, false, None);
             assert!(
                 prompt.contains("```json"),
                 "Dimension {} missing JSON schema",
@@ -1145,7 +1166,7 @@ mod tests {
         let ctx = make_ctx();
         for dim in DIMENSION_NAMES {
             let prompt =
-                build_glean_dimension_prompt(dim, "Acme Corp", "account", None, &ctx, false);
+                build_glean_dimension_prompt(dim, "Acme Corp", "account", None, &ctx, false, None);
             assert!(
                 prompt.contains("Search ALL available data sources"),
                 "Dimension {} missing Glean search instruction",
@@ -1162,8 +1183,15 @@ mod tests {
     #[test]
     fn core_assessment_prompt_includes_facts_not_stakeholders() {
         let ctx = make_ctx();
-        let prompt =
-            build_dimension_prompt("core_assessment", "Acme Corp", "account", None, &ctx, false);
+        let prompt = build_dimension_prompt(
+            "core_assessment",
+            "Acme Corp",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(prompt.contains("ARR: $120K"), "Missing facts_block");
         assert!(
             !prompt.contains("Jane Doe — VP Engineering"),
@@ -1181,6 +1209,7 @@ mod tests {
             None,
             &ctx,
             false,
+            None,
         );
         assert!(
             prompt.contains("Jane Doe — VP Engineering"),
@@ -1202,6 +1231,7 @@ mod tests {
             None,
             &ctx,
             false,
+            None,
         );
         assert!(
             prompt.contains("3 emails last week"),
@@ -1248,7 +1278,7 @@ mod eval_tests {
     fn eval_dimension_prompt_includes_evidence_guidance() {
         let ctx = make_ctx();
         for dim in DIMENSION_NAMES {
-            let prompt = build_dimension_prompt(dim, "TestCo", "account", None, &ctx, false);
+            let prompt = build_dimension_prompt(dim, "TestCo", "account", None, &ctx, false, None);
             assert!(
                 prompt.contains("itemSource") || prompt.contains("source"),
                 "Dimension '{}' prompt must request source attribution",
@@ -1265,8 +1295,15 @@ mod eval_tests {
     #[test]
     fn eval_dimension_prompt_core_assessment_includes_risk_schema() {
         let ctx = make_ctx();
-        let prompt =
-            build_dimension_prompt("core_assessment", "TestCo", "account", None, &ctx, false);
+        let prompt = build_dimension_prompt(
+            "core_assessment",
+            "TestCo",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(
             prompt.contains("executiveAssessment"),
             "Core assessment must include executiveAssessment"
@@ -1285,7 +1322,7 @@ mod eval_tests {
     fn eval_glean_prompt_includes_confidence_tiers() {
         let ctx = make_ctx();
         let prompt = super::super::glean_prompts::build_glean_enrichment_prompt(
-            "TestCo", "account", None, &ctx, false,
+            "TestCo", "account", None, &ctx, false, None,
         );
         assert!(
             prompt.contains("CRM") || prompt.contains("Salesforce"),
@@ -1501,5 +1538,47 @@ mod eval_tests {
         let partial = empty_intel();
         let result = merge_dimension_into(&mut existing, "nonexistent_dimension", &partial);
         assert!(result.is_err(), "Unknown dimension must return an error");
+    }
+
+    #[test]
+    fn glean_prompt_uses_preset_system_role() {
+        let ctx = make_ctx();
+        let cs = crate::presets::loader::load_preset("customer-success").unwrap();
+        let prompt = super::super::glean_prompts::build_glean_enrichment_prompt(
+            "Acme Corp",
+            "account",
+            None,
+            &ctx,
+            false,
+            Some(&cs),
+        );
+        assert!(prompt.contains("customer success intelligence system"));
+
+        let affiliates = crate::presets::loader::load_preset("affiliates-partnerships").unwrap();
+        let prompt = super::super::glean_prompts::build_glean_enrichment_prompt(
+            "Creator Co",
+            "account",
+            None,
+            &ctx,
+            false,
+            Some(&affiliates),
+        );
+        assert!(prompt.contains("affiliate and partnership intelligence system"));
+    }
+
+    #[test]
+    fn dimension_prompt_uses_preset_guidance() {
+        let ctx = make_ctx();
+        let preset = crate::presets::loader::load_preset("product-marketing").unwrap();
+        let prompt = build_dimension_prompt(
+            "commercial_financial",
+            "Launch Plan",
+            "project",
+            None,
+            &ctx,
+            false,
+            Some(&preset),
+        );
+        assert!(prompt.contains("launch"));
     }
 }
