@@ -291,6 +291,14 @@ pub fn process_transcript_with_kind(
                 meeting.title,
                 e
             );
+            if e.requires_user_action() {
+                return TranscriptResult {
+                    status: "error".to_string(),
+                    destination: Some(destination.display().to_string()),
+                    message: Some(e.to_string()),
+                    ..TranscriptResult::default()
+                };
+            }
             return TranscriptResult {
                 status: "success".to_string(),
                 summary: None,

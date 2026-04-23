@@ -300,8 +300,46 @@
   color: var(--color-text-primary);
   padding: 4px 0;
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 10px;
+}
+
+.prepItemText {
+  min-width: 0;
+}
+
+.prepImpactBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 5px;
+  border: 1px solid rgba(37, 32, 27, 0.1);
+  border-radius: 4px;
+  color: var(--color-text-tertiary);
+  background: rgba(255, 255, 255, 0.7);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.prepImpactBadge[data-impact="high"] {
+  color: var(--color-spice-terracotta);
+  border-color: rgba(196, 101, 74, 0.3);
+  background: var(--color-spice-terracotta-8);
+}
+
+.prepImpactBadge[data-impact="medium"] {
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric-30);
+  background: var(--color-spice-turmeric-8);
+}
+
+.prepImpactBadge[data-impact="low"] {
+  color: var(--color-garden-sage);
+  border-color: rgba(126, 170, 123, 0.3);
+  background: var(--color-garden-sage-8);
 }
 
 .prepDot {
