@@ -220,15 +220,7 @@ export default function MeetingDetailPage() {
       setMeetingMeta(intel.meeting);
       setOutcomes(intel.outcomes ?? null);
       setCanEditUserLayer(intel.canEditUserLayer);
-      // DOS-258: prefer the new linked_entities view; fall back to intelligence
-      // data for meetings not yet evaluated by the new engine.
-      const dos258Entities = await invoke<LinkedEntity[]>(
-        "get_linked_entities_for_owner",
-        { ownerType: "meeting", ownerId: meetingId },
-      ).catch(() => [] as LinkedEntity[]);
-      setLinkedEntities(
-        dos258Entities.length > 0 ? dos258Entities : (intel.linkedEntities ?? []),
-      );
+      setLinkedEntities(intel.linkedEntities ?? []);
       setEntityHealthMap(intel.entityHealthMap ?? {});
       setIntelligenceQuality(intel.intelligenceQuality);
       const formatRange = (startRaw?: string, endRaw?: string) => {
