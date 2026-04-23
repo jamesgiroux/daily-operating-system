@@ -24,11 +24,13 @@ use crate::types::{
 fn extract_dashboard_prep(prep_json: &str) -> Option<MeetingPrep> {
     // Format 1: direct FullMeetingPrep deserialization
     if let Ok(full) = serde_json::from_str::<crate::types::FullMeetingPrep>(prep_json) {
+        let wins = full.recent_wins;
+        let actions = dedupe_prep_items_against(full.talking_points, wins.as_ref());
         let prep = MeetingPrep {
             context: full.meeting_context.or(full.intelligence_summary),
             risks: full.risks,
-            wins: full.recent_wins,
-            actions: full.talking_points,
+            wins,
+            actions,
             stakeholders: full.attendees,
             questions: full.questions,
             ..Default::default()
@@ -82,6 +84,43 @@ fn extract_dashboard_prep(prep_json: &str) -> Option<MeetingPrep> {
     }
 
     None
+}
+
+fn dedupe_prep_items_against(
+    items: Option<Vec<String>>,
+    existing: Option<&Vec<String>>,
+) -> Option<Vec<String>> {
+    let mut seen: HashSet<String> = existing
+        .into_iter()
+        .flat_map(|items| items.iter())
+        .map(|item| normalize_prep_card_item(item))
+        .collect();
+
+    let filtered: Vec<String> = items
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|item| {
+            let key = normalize_prep_card_item(item);
+            !key.is_empty() && seen.insert(key)
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        None
+    } else {
+        Some(filtered)
+    }
+}
+
+fn normalize_prep_card_item(item: &str) -> String {
+    let mut value = item.trim().to_lowercase();
+    for suffix in [" — high", " — medium", " — low", " - high", " - medium", " - low"] {
+        if value.ends_with(suffix) {
+            value.truncate(value.len() - suffix.len());
+            break;
+        }
+    }
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Result type for dashboard data loading

@@ -20,7 +20,7 @@ export function FolderTree({ entityMode, rootPath }: FolderTreeProps) {
   const folders: FolderEntry[] = [
     {
       name: "_today/",
-      annotation: "Your daily briefing — updated automatically each morning",
+      annotation: "Your daily briefing, updated automatically as your day changes",
       icon: FileText,
       iconColorClass: styles.accentColor,
     },

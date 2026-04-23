@@ -20,12 +20,12 @@ export function Welcome({ onNext, onDemoMode, onSkipSetup }: WelcomeProps) {
       {/* Hero headline — serif, left-aligned */}
       <div className={`${styles.flexCol} ${styles.gap16}`}>
         <h1 className={styles.heroHeadline}>
-          Open the app. Your day is ready.
+          Your day, ready as it changes.
         </h1>
         <p className={styles.bodyTextConstrained}>
-          DailyOS prepares your day while you sleep — meeting prep,
-          email triage, actions due, and a morning summary. You open it,
-          read, and get to work.
+          DailyOS keeps your day in view: meeting prep, email triage,
+          actions due, and context that updates as work changes. Open it
+          whenever you need the thread.
         </p>
       </div>
 
@@ -37,26 +37,26 @@ export function Welcome({ onNext, onDemoMode, onSkipSetup }: WelcomeProps) {
         <div className={`${styles.flexCol} ${styles.gap8}`}>
           <div className={styles.flexRowBaseline}>
             <span className={styles.timestamp}>
-              6:00 AM
+              Before work
             </span>
             <span className={styles.timelineEntry}>
-              Your briefing generates automatically
+              DailyOS prepares the first pass automatically
             </span>
           </div>
           <div className={styles.flexRowBaseline}>
             <span className={styles.timestamp}>
-              8:00 AM
+              All day
             </span>
             <span className={styles.timelineEntry}>
-              You open the app. Everything's there.
+              Meetings, email, and actions stay connected
             </span>
           </div>
           <div className={styles.flexRowBaseline}>
             <span className={styles.timestampAccent}>
-              8:15 AM
+              Whenever
             </span>
             <span className={styles.timelineHighlight}>
-              You're prepared. Close the app. Do your work.
+              You know what changed and what needs attention
             </span>
           </div>
         </div>

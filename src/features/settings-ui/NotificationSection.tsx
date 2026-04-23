@@ -108,7 +108,7 @@ export default function NotificationSection() {
         <div className={s.toggleInfo}>
           <span className={s.toggleLabel}>Daily briefing alerts</span>
           <span className={s.toggleDescription}>
-            Notifies when your morning briefing is ready
+            Notifies when your daily briefing is ready
           </span>
         </div>
         <Toggle
