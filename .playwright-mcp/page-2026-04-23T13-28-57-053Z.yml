@@ -1,0 +1,37 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic:
+      - generic:
+        - img
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - link [ref=e6] [cursor=pointer]:
+          - /url: /
+          - img [ref=e7]
+        - generic [ref=e9]: Setup
+      - button "Open search (⌘K)" [ref=e11] [cursor=pointer]: ⌘K
+    - generic [ref=e13]:
+      - img [ref=e15]
+      - generic [ref=e17]:
+        - heading "Open the app. Your day is ready." [level=1] [ref=e18]
+        - paragraph [ref=e19]: DailyOS prepares your day while you sleep — meeting prep, email triage, actions due, and a morning summary. You open it, read, and get to work.
+      - generic [ref=e20]:
+        - generic [ref=e21]: What it looks like
+        - generic [ref=e22]:
+          - generic [ref=e23]:
+            - generic [ref=e24]: 6:00 AM
+            - generic [ref=e25]: Your briefing generates automatically
+          - generic [ref=e26]:
+            - generic [ref=e27]: 8:00 AM
+            - generic [ref=e28]: You open the app. Everything's there.
+          - generic [ref=e29]:
+            - generic [ref=e30]: 8:15 AM
+            - generic [ref=e31]: You're prepared. Close the app. Do your work.
+      - paragraph [ref=e32]: No setup to maintain. No inbox to clear. Skip a day, skip a week — it picks up where you are.
+      - generic [ref=e33]:
+        - button "Get started" [ref=e35]:
+          - text: Get started
+          - img
+        - button "Explore with demo data" [ref=e36] [cursor=pointer]
+      - button "Skip setup" [ref=e38] [cursor=pointer]
+  - region "Notifications alt+T"
