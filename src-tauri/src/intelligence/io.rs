@@ -2174,6 +2174,7 @@ impl ActionDb {
                     intel.apply_dimensions_blob(&blob);
                 }
             }
+            normalize_legacy_intelligence_refs(&mut intel);
             Ok(intel)
         });
 
