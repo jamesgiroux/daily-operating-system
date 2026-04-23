@@ -925,6 +925,13 @@ pub struct LinkedEntity {
     /// "suggested" affordance rather than as a primary chip.
     #[serde(default)]
     pub suggested: bool,
+    /// DOS-258: deterministic link role from the new engine.
+    /// Supersedes is_primary/suggested when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// DOS-258: rule identifier that produced this link (e.g. "P5", "P9").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied_rule: Option<String>,
 }
 
 fn default_linked_entity_confidence() -> f64 {

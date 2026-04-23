@@ -1,7 +1,7 @@
 # Module Map
 
 > Rust backend module inventory (`src-tauri/src/`).
-> **Auto-generated:** 2026-04-21 by `.docs/generators/gen-module-map.sh`
+> **Auto-generated:** 2026-04-23 by `.docs/generators/gen-module-map.sh`
 
 **265** Rust files across **31** module directories and **44** standalone modules.
 
@@ -12,7 +12,7 @@
 | Module | Files | Public Fns | Purpose |
 |--------|-------|-----------|---------|
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment (I228). |
-| `commands/` | 10 | 392 | Tauri IPC command handlers |
+| `commands/` | 10 | 394 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
 | `db/` | 23 | 25 | SQLite database modules |
 | `devtools/` | 1 | 11 | Dev tools for scenario switching and mock data. |
@@ -22,20 +22,20 @@
 | `granola/` | 4 | 8 | Granola integration for local cache transcript sync (I226). |
 | `gravatar/` | 4 | 11 | Gravatar MCP server integration for avatar and profile enrichment (I229). |
 | `hygiene/` | 6 | 12 | Proactive intelligence maintenance (I145 -- ADR-0058). |
-| `intelligence/` | 16 | 59 | Intelligence lifecycle, enrichment orchestration |
+| `intelligence/` | 16 | 62 | Intelligence lifecycle, enrichment orchestration |
 | `linear/` | 4 | 3 | Linear issue tracker integration (I346). |
 | `mcp/` | 1 | 0 | — |
 | `migrations/` | 0 | 0 | SQL schema migrations |
 | `oauth/` | 1 | 11 | Shared OAuth2 primitives used by Google and Glean consent flows. |
 | `prepare/` | 9 | 24 | Phase 1 preparation operations (ADR-0049: Eliminate Python runtime). |
-| `presets/` | 4 | 6 | — |
+| `presets/` | 4 | 8 | — |
 | `proactive/` | 4 | 12 | Proactive surfacing engine (I260). |
 | `processor/` | 11 | 35 | Inbox file processing pipeline. |
 | `queries/` | 4 | 8 | — |
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0 (I397). |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (I406–I410). |
-| `services/` | 46 | 298 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 46 | 299 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 20 | 53 | Universal signal bus for intelligence fusion (I306 / ADR-0080 Phase 2). |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
@@ -70,11 +70,11 @@
 | `focus_prioritization.rs` | 398 | 1 | — |
 | `google.rs` | 1733 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 492 | 12 | — |
-| `intel_queue.rs` | 2951 | 4 | Background intelligence enrichment queue (I132). |
+| `intel_queue.rs` | 2970 | 4 | Background intelligence enrichment queue (I132). |
 | `json_loader.rs` | 615 | 3 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
-| `lib.rs` | 903 | 1 | App setup, command registration, plugin init |
-| `meeting_prep_queue.rs` | 984 | 7 | Background meeting prep queue. |
+| `lib.rs` | 905 | 1 | App setup, command registration, plugin init |
+| `meeting_prep_queue.rs` | 986 | 7 | Background meeting prep queue. |
 | `migrations.rs` | 1930 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
@@ -84,9 +84,9 @@
 | `pty.rs` | 1028 | 2 | PTY Manager for Claude Code subprocess management |
 | `risk_briefing.rs` | 596 | 5 | Risk Briefing generation for at-risk accounts. |
 | `scheduler.rs` | 748 | 2 | Scheduler for cron-based workflow execution |
-| `state.rs` | 1420 | 12 | AppState — DB, PTY, config |
+| `state.rs` | 1425 | 12 | AppState — DB, PTY, config |
 | `task_supervisor.rs` | 34 | 1 | — |
-| `types.rs` | 3257 | 7 | Shared type definitions |
+| `types.rs` | 3269 | 7 | Shared type definitions |
 | `util.rs` | 1267 | 28 | — |
 | `watcher.rs` | 882 | 1 | File watcher for _inbox/ directory |
 
@@ -97,8 +97,8 @@
 | `commands/` |                     intel_queue,         intel_queue,     context_provider,     db,     glean,     intelligence,     processor, services, types |
 | `services/` |         intelligence,     db,     google_api,     intel_queue,     intelligence,     reports,     signals,     state, action_status, commands, db, embeddings, intelligence, json_loader, linear, parser, pty, reports, signals, state, types |
 | `signals/` |             db,     db,     entity,     google_api,     prepare, db, embeddings, entity, helpers, prepare, state, types |
-| `intelligence/` |         intel_queue,     db,     signals,     types, accounts, context_provider, db, embeddings, error, helpers, signals, state, types, util |
-| `prepare/` |     db,     entity,     helpers, db, embeddings, entity, error, google_api, helpers, pty, signals, state, types |
+| `intelligence/` |         intel_queue,     db,     signals,     types, accounts, context_provider, db, embeddings, error, helpers, presets, signals, state, types, util |
+| `prepare/` |     db,     entity,     helpers, db, embeddings, entity, error, google_api, helpers, presets, pty, signals, state, types |
 | `reports/` | context_provider, db, embeddings, intelligence, pty, types |
 | `db/` | entity, google_api, pub(crate) entity, pub(crate) types, types |
 
