@@ -64,7 +64,7 @@ export function PostMeetingIntelligence({
   onToggleAction: _onToggleAction,
   onCyclePriority: _onCyclePriority,
 }: PostMeetingIntelligenceProps) {
-  const { interactionDynamics, championHealth, roleChanges, enrichedCaptures } = data;
+  const { interactionDynamics, keyAdvocateHealth, roleChanges, enrichedCaptures } = data;
 
   // Pair each capture with its original index for stable feedback field paths
   const indexed = enrichedCaptures.map((c, i) => ({ capture: c, originalIndex: i }));
@@ -76,7 +76,7 @@ export function PostMeetingIntelligence({
   const commitments = indexed.filter((c) => c.capture.captureType === "commitment");
 
   const hasEngagement = !!interactionDynamics;
-  const hasChampion = !!championHealth && championHealth.championStatus !== "none";
+  const hasChampion = !!keyAdvocateHealth && keyAdvocateHealth.championStatus !== "none";
   const hasWins = wins.length > 0;
   const hasRisks = risks.length > 0;
   const hasDecisions = decisions.length > 0;
@@ -344,22 +344,22 @@ export function PostMeetingIntelligence({
       )}
 
       {/* ═══════ CHAMPION HEALTH ═══════ */}
-      {hasChampion && championHealth && (
+      {hasChampion && keyAdvocateHealth && (
         <section className={styles.chapter}>
           <ChapterHeading title="Champion Health" />
           <div className={styles.championHeader}>
-            {championHealth.championName && (
-              <span className={styles.championName}>{championHealth.championName}</span>
+            {keyAdvocateHealth.championName && (
+              <span className={styles.championName}>{keyAdvocateHealth.championName}</span>
             )}
-            <span className={championStatusBadgeClass(championHealth.championStatus)}>
-              {championHealth.championStatus}
+            <span className={championStatusBadgeClass(keyAdvocateHealth.championStatus)}>
+              {keyAdvocateHealth.championStatus}
             </span>
           </div>
-          {championHealth.championEvidence && (
-            <p className={styles.championEvidence}>{cleanTranscriptDisplayText(championHealth.championEvidence)}</p>
+          {keyAdvocateHealth.championEvidence && (
+            <p className={styles.championEvidence}>{cleanTranscriptDisplayText(keyAdvocateHealth.championEvidence)}</p>
           )}
-          {championHealth.championRisk && (
-            <p className={styles.championRisk}>{cleanTranscriptDisplayText(championHealth.championRisk)}</p>
+          {keyAdvocateHealth.championRisk && (
+            <p className={styles.championRisk}>{cleanTranscriptDisplayText(keyAdvocateHealth.championRisk)}</p>
           )}
         </section>
       )}

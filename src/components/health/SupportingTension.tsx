@@ -56,7 +56,7 @@ const DIMENSION_LABELS: Array<{ key: keyof RelationshipDimensions; label: string
   { key: "meetingCadence", label: "Meeting Cadence" },
   { key: "emailEngagement", label: "Engagement" },
   { key: "stakeholderCoverage", label: "Stakeholder Coverage" },
-  { key: "championHealth", label: "Champion Health" },
+  { key: "keyAdvocateHealth", label: "Champion Health" },
   { key: "financialProximity", label: "Financial Proximity" },
   { key: "signalMomentum", label: "Update Momentum" },
 ];

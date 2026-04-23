@@ -26,7 +26,7 @@ const DIMENSIONS: DimensionConfig[] = [
   { key: "meetingCadence", label: "Meeting Cadence" },
   { key: "emailEngagement", label: "Email Engagement" },
   { key: "stakeholderCoverage", label: "Stakeholder Coverage" },
-  { key: "championHealth", label: "Champion Health" },
+  { key: "keyAdvocateHealth", label: "Champion Health" },
   { key: "financialProximity", label: "Financial Proximity" },
   { key: "signalMomentum", label: "Momentum" },
 ];

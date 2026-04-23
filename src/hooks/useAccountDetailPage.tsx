@@ -112,7 +112,7 @@ export function useAccountDetailPage(accountId: string | undefined) {
       const showDivergence = hasDivergenceContent(findings, glean);
       const fineState = !!intel && !showTriage && !showDivergence;
       const hasOutlook = !!(
-        intel?.renewalOutlook ||
+        intel?.agreementOutlook ||
         intel?.expansionSignals?.length ||
         intel?.contractContext
       );

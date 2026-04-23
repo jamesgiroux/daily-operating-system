@@ -161,7 +161,7 @@ export default function AccountDetailEditorial() {
         )}
       </section>
 
-      {intelligence && (intelligence.renewalOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
+      {intelligence && (intelligence.agreementOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
         <MarginSection id="outlook" label="Outlook">
           <ChapterHeading title="Outlook" />
           <AccountOutlook intelligence={intelligence} onUpdateField={handleUpdateIntelField} getItemFeedback={fb.get} onItemFeedback={fb.submit} />
