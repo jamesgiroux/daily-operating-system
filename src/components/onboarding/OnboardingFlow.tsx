@@ -359,9 +359,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               if (rolePresetsEnabled) {
                 goToChapter("role");
               } else {
-                // Auto-set CS preset and "both" entity mode as defaults
-                await invoke("set_role", { role: "customer-success" }).catch(() => {});
-                await invoke("set_entity_mode", { mode: "both" }).catch(() => {});
+                await invoke("set_role", { role: "core" }).catch(() => {});
+                await invoke("set_entity_mode", { mode: "project" }).catch(() => {});
                 await invoke("set_wizard_step", { step: "role" }).catch(() => {});
                 goToChapter("prime");
               }
@@ -370,8 +369,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               if (rolePresetsEnabled) {
                 goToChapter("role");
               } else {
-                await invoke("set_role", { role: "customer-success" }).catch(() => {});
-                await invoke("set_entity_mode", { mode: "both" }).catch(() => {});
+                await invoke("set_role", { role: "core" }).catch(() => {});
+                await invoke("set_entity_mode", { mode: "project" }).catch(() => {});
                 await invoke("set_wizard_step", { step: "role" }).catch(() => {});
                 goToChapter("prime");
               }

@@ -1,26 +1,15 @@
+const CORE_PRESET: &str = include_str!("../../presets/core.json");
 const CS_PRESET: &str = include_str!("../../presets/customer-success.json");
-const SALES_PRESET: &str = include_str!("../../presets/sales.json");
-const MARKETING_PRESET: &str = include_str!("../../presets/marketing.json");
-const PARTNERSHIPS_PRESET: &str = include_str!("../../presets/partnerships.json");
-const AFFILIATES_PRESET: &str = include_str!("../../presets/affiliates.json");
-const AGENCY_PRESET: &str = include_str!("../../presets/agency.json");
-const CONSULTING_PRESET: &str = include_str!("../../presets/consulting.json");
-const PRODUCT_PRESET: &str = include_str!("../../presets/product.json");
-const LEADERSHIP_PRESET: &str = include_str!("../../presets/leadership.json");
-const DESK_PRESET: &str = include_str!("../../presets/the-desk.json");
+const AFFILIATES_PARTNERSHIPS_PRESET: &str =
+    include_str!("../../presets/affiliates-partnerships.json");
+const PRODUCT_MARKETING_PRESET: &str = include_str!("../../presets/product-marketing.json");
 
 /// All embedded presets in display order.
 const ALL_PRESETS: &[(&str, &str)] = &[
+    ("core", CORE_PRESET),
     ("customer-success", CS_PRESET),
-    ("sales", SALES_PRESET),
-    ("marketing", MARKETING_PRESET),
-    ("partnerships", PARTNERSHIPS_PRESET),
-    ("affiliates", AFFILIATES_PRESET),
-    ("agency", AGENCY_PRESET),
-    ("consulting", CONSULTING_PRESET),
-    ("product", PRODUCT_PRESET),
-    ("leadership", LEADERSHIP_PRESET),
-    ("the-desk", DESK_PRESET),
+    ("affiliates-partnerships", AFFILIATES_PARTNERSHIPS_PRESET),
+    ("product-marketing", PRODUCT_MARKETING_PRESET),
 ];
 
 /// Look up an embedded preset by role ID.

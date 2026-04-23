@@ -1955,7 +1955,7 @@ pub async fn set_role(
     let preset = crate::presets::loader::load_preset(&role)?;
 
     crate::state::create_or_update_config(&state, |c| {
-        c.role = role.clone();
+        c.role = preset.id.clone();
         c.custom_preset_path = None;
         c.entity_mode = preset.default_entity_mode.clone();
         c.profile = crate::types::profile_for_entity_mode(&c.entity_mode);

@@ -180,13 +180,13 @@ function PrioritySection({
 export default function MePage() {
   const me = useMe();
   const navigate = useNavigate();
-  const [activePreset, setActivePreset] = useState<string>("customer-success");
+  const [activePreset, setActivePreset] = useState<string>("core");
   const [bobEnabled, setBobEnabled] = useState(false);
   useRevealObserver(!me.loading && !!me.userEntity);
 
   useEffect(() => {
     invoke<{ role?: string }>("get_config")
-      .then((c) => setActivePreset(c.role ?? "customer-success"))
+      .then((c) => setActivePreset(c.role ?? "core"))
       .catch(() => {});
     invoke<FeatureFlags>("get_feature_flags")
       .then((flags) => setBobEnabled(flags.book_of_business_enabled))

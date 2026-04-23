@@ -81,7 +81,7 @@ pub struct Config {
     /// Embedding model/runtime configuration for semantic retrieval (Sprint 26).
     #[serde(default)]
     pub embeddings: EmbeddingConfig,
-    /// Active role preset ID (I309). Defaults to "customer-success".
+    /// Active role preset ID (I309). Defaults to "core".
     #[serde(default = "default_role")]
     pub role: String,
     /// Optional path to a custom preset JSON file (I309).
@@ -178,7 +178,7 @@ fn default_history_count() -> u32 {
 }
 
 fn default_profile() -> String {
-    "customer-success".to_string()
+    "general".to_string()
 }
 
 fn default_personality() -> String {
@@ -252,11 +252,11 @@ fn default_ai_model_routing_version() -> u32 {
 }
 
 fn default_entity_mode() -> String {
-    "account".to_string()
+    "project".to_string()
 }
 
 fn default_role() -> String {
-    "customer-success".to_string()
+    "core".to_string()
 }
 
 /// Embedding runtime configuration.
@@ -2915,7 +2915,7 @@ mod tests {
             ai_models: AiModelConfig::default(),
             ai_model_routing_version: AI_MODEL_ROUTING_VERSION,
             embeddings: EmbeddingConfig::default(),
-            role: "customer-success".to_string(),
+            role: "core".to_string(),
             custom_preset_path: None,
             app_lock_timeout_minutes: Some(15),
             icloud_warning_dismissed: None,

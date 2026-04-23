@@ -1,7 +1,7 @@
 {
-  "id": "the-desk",
-  "name": "The Desk",
-  "description": "A minimal, general-purpose preset for individual contributors and knowledge workers. No assumptions about your industry or role. Tracks projects, meetings, and actions without role-specific assumptions.",
+  "id": "core",
+  "name": "Core",
+  "description": "The default DailyOS operating mode for project-centered work. Tracks projects, meetings, decisions, and follow-through without assuming a specific department or go-to-market motion.",
   "defaultEntityMode": "project",
   "vocabulary": {
     "entityNoun": "project",
@@ -55,7 +55,7 @@
     ]
   },
   "intelligence": {
-    "systemRole": "general work intelligence system",
+    "systemRole": "core work intelligence system",
     "dimensionWeights": {
       "meeting_cadence": 0.18,
       "email_engagement": 0.15,

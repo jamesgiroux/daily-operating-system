@@ -120,25 +120,19 @@ fn personality_types_for_preset(preset: &str) -> &'static str {
              - The Deliverable Driver: action completion, milestone-focused, outcomes-oriented\n\
              - The Scope Expander: identifies expansion opportunities, growth signals across clients"
         }
-        "marketing" => {
-            "- The Campaign Orchestrator: many parallel programs, high coordination, launch-focused\n\
-             - The Account Advocate: ABM focus, deep account relationships, relationship-first\n\
-             - The Market Signal Tracker: signal-heavy, intelligence-driven, always reading the room\n\
-             - The Relationship Marketer: nurtures relationships over volume, trust-building"
-        }
-        "partnerships" => {
+        "affiliates-partnerships" | "affiliates" | "partnerships" => {
             "- The Alliance Builder: new partnerships initiated, relationship-first, introductions\n\
-             - The Ecosystem Architect: broad partner network development, strategic mapping\n\
+             - The Creator Operator: high follow-through on creator campaigns, performance-focused\n\
              - The Co-Sell Champion: cross-functional deal collaboration, joint-selling focused\n\
              - The Integration Connector: technical depth, product-partner alignment"
         }
-        "product" => {
+        "product-marketing" | "product" | "marketing" => {
             "- The Voice Amplifier: high customer meeting count, carries customer voice internally\n\
              - The Signal Synthesizer: translates customer signals into clear product insights\n\
-             - The Velocity Driver: high action completion, ships things, bias toward done\n\
-             - The Discovery Expert: exploration-focused, new use cases, uncharted territory"
+             - The Campaign Orchestrator: many parallel programs, high coordination, launch-focused\n\
+             - The Velocity Driver: high action completion, ships things, bias toward done"
         }
-        "the-desk" => {
+        "core" | "the-desk" => {
             "- The Connector: broad relationship diversity, bridges people and contexts\n\
              - The Finisher: high follow-through rate, commits and delivers\n\
              - The Knowledge Builder: heavy context and signal capture, builds the knowledge base\n\
@@ -156,11 +150,9 @@ fn personality_types_for_preset(preset: &str) -> &'static str {
 
 fn entity_noun_for_preset(preset: &str) -> &'static str {
     match preset {
-        "sales" => "deal",
-        "agency" | "consulting" => "client",
-        "partnerships" => "partner",
-        "product" => "initiative",
-        "the-desk" => "project",
+        "affiliates-partnerships" | "affiliates" | "partnerships" => "partner",
+        "product-marketing" | "product" | "marketing" => "initiative",
+        "core" | "the-desk" => "project",
         _ => "account",
     }
 }

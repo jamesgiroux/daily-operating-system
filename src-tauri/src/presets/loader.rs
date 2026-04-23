@@ -13,13 +13,24 @@ pub const INTELLIGENCE_DIMENSION_KEYS: [&str; 6] = [
 
 /// Load an embedded preset by role ID.
 pub fn load_preset(role: &str) -> Result<RolePreset, String> {
-    if let Some(json) = embedded::get_embedded(role) {
+    let canonical = canonical_role_id(role);
+    if let Some(json) = embedded::get_embedded(canonical) {
         let preset: RolePreset = serde_json::from_str(json)
-            .map_err(|e| format!("Failed to parse embedded preset '{}': {}", role, e))?;
+            .map_err(|e| format!("Failed to parse embedded preset '{}': {}", canonical, e))?;
         validate_preset(&preset)?;
         return Ok(preset);
     }
     Err(format!("Unknown preset role: {}", role))
+}
+
+pub fn canonical_role_id(role: &str) -> &str {
+    match role {
+        "the-desk" => "core",
+        "affiliates" | "partnerships" => "affiliates-partnerships",
+        "product" | "marketing" => "product-marketing",
+        "sales" | "agency" | "consulting" | "leadership" => "core",
+        _ => role,
+    }
 }
 
 /// Load a custom preset from a file path.
@@ -182,26 +193,20 @@ mod tests {
     #[test]
     fn test_get_available_presets() {
         let presets = get_available_presets();
-        assert_eq!(presets.len(), 10, "should have 10 embedded presets");
+        assert_eq!(presets.len(), 4, "should have 4 embedded presets");
         let (id, name, desc) = &presets[0];
-        assert_eq!(id, "customer-success");
-        assert_eq!(name, "Customer Success");
+        assert_eq!(id, "core");
+        assert_eq!(name, "Core");
         assert!(!desc.is_empty());
     }
 
     #[test]
     fn test_all_presets_load_and_validate() {
         let all_ids = [
+            "core",
             "customer-success",
-            "sales",
-            "marketing",
-            "partnerships",
-            "agency",
-            "consulting",
-            "product",
-            "leadership",
-            "the-desk",
-            "affiliates",
+            "affiliates-partnerships",
+            "product-marketing",
         ];
         for id in all_ids {
             let preset =
@@ -220,6 +225,16 @@ mod tests {
                 id
             );
         }
+    }
+
+    #[test]
+    fn test_legacy_role_ids_alias_to_canonical_presets() {
+        assert_eq!(load_preset("the-desk").unwrap().id, "core");
+        assert_eq!(load_preset("affiliates").unwrap().id, "affiliates-partnerships");
+        assert_eq!(load_preset("partnerships").unwrap().id, "affiliates-partnerships");
+        assert_eq!(load_preset("product").unwrap().id, "product-marketing");
+        assert_eq!(load_preset("marketing").unwrap().id, "product-marketing");
+        assert_eq!(load_preset("sales").unwrap().id, "core");
     }
 
     #[test]

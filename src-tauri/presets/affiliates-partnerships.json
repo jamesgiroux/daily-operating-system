@@ -1,23 +1,23 @@
 {
-  "id": "affiliates",
-  "name": "Affiliates",
-  "description": "For affiliate and creator partnership teams managing influencer relationships, campaign cycles, attribution, and performance-based collaboration.",
+  "id": "affiliates-partnerships",
+  "name": "Affiliates & Partnerships",
+  "description": "For affiliate, creator, partnership, and alliance teams managing account-centric external relationships, campaign cycles, joint pipeline, attribution, and performance-based collaboration.",
   "defaultEntityMode": "account",
   "vocabulary": {
-    "entityNoun": "creator",
-    "entityNounPlural": "creators",
-    "primaryMetric": "Attributed Revenue",
-    "healthLabel": "Creator Fit",
-    "riskLabel": "Campaign Risk",
+    "entityNoun": "partner",
+    "entityNounPlural": "partners",
+    "primaryMetric": "Partner Revenue",
+    "healthLabel": "Partner Health",
+    "riskLabel": "Partnership Risk",
     "successVerb": "activated",
     "cadenceNoun": "campaign check-in"
   },
   "vitals": {
     "account": [
-      { "key": "arr", "label": "Attributed Revenue", "fieldType": "currency", "source": "column", "columnMapping": "arr" },
-      { "key": "health", "label": "Creator Fit", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["excellent", "strong", "developing", "at_risk", "inactive"] },
-      { "key": "lifecycle", "label": "Creator Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["prospect", "outreach", "negotiating", "onboarding", "active", "renewing", "paused", "ended"] },
-      { "key": "contract_end", "label": "Campaign End", "fieldType": "date", "source": "column", "columnMapping": "contract_end" },
+      { "key": "arr", "label": "Partner Revenue", "fieldType": "currency", "source": "column", "columnMapping": "arr" },
+      { "key": "health", "label": "Partner Health", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["thriving", "strong", "developing", "at_risk", "inactive"] },
+      { "key": "lifecycle", "label": "Partner Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["prospect", "outreach", "negotiating", "onboarding", "active", "renewing", "paused", "ended"] },
+      { "key": "contract_end", "label": "Agreement End", "fieldType": "date", "source": "column", "columnMapping": "contract_end" },
       { "key": "nps", "label": "Performance Score", "fieldType": "number", "source": "column", "columnMapping": "nps" }
     ],
     "project": [
@@ -30,9 +30,9 @@
   },
   "metadata": {
     "account": [
-      { "key": "channel", "label": "Primary Channel", "fieldType": "select", "options": ["youtube", "tiktok", "instagram", "newsletter", "podcast", "blog", "twitch", "other"], "required": false },
-      { "key": "commission_model", "label": "Commission Model", "fieldType": "select", "options": ["cpa", "rev_share", "flat_fee", "hybrid", "gifted"], "required": false },
-      { "key": "audience_size", "label": "Audience Size", "fieldType": "number", "required": false }
+      { "key": "partner_type", "label": "Partner Type", "fieldType": "select", "options": ["creator", "affiliate", "technology", "channel", "agency", "co_sell", "marketplace"], "required": false },
+      { "key": "commercial_model", "label": "Commercial Model", "fieldType": "select", "options": ["cpa", "rev_share", "referral", "reseller", "flat_fee", "hybrid"], "required": false },
+      { "key": "audience_size", "label": "Audience / Reach", "fieldType": "number", "required": false }
     ],
     "project": [
       { "key": "campaign_type", "label": "Campaign Type", "fieldType": "select", "options": ["launch", "evergreen", "seasonal", "review", "giveaway", "ambassador"], "required": false },
@@ -42,7 +42,10 @@
   },
   "stakeholderRoles": [
     { "id": "creator_lead", "label": "Creator Lead", "description": "Primary creator or influencer driving the audience relationship" },
+    { "id": "partner_manager", "label": "Partner Manager", "description": "Business owner on the partner side" },
+    { "id": "executive_sponsor", "label": "Executive Sponsor", "description": "Senior leader backing the partnership" },
     { "id": "manager", "label": "Manager / Agent", "description": "Represents the creator commercially and handles negotiation" },
+    { "id": "technical_lead", "label": "Technical Lead", "description": "Owns integration, tracking, or implementation details" },
     { "id": "content_producer", "label": "Content Producer", "description": "Helps create, edit, or schedule campaign content" },
     { "id": "brand_contact", "label": "Brand Contact", "description": "Internal or external stakeholder approving brand fit and creative direction" },
     { "id": "analytics_contact", "label": "Analytics Contact", "description": "Owns attribution, reporting, and conversion analysis" },
@@ -50,6 +53,7 @@
   ],
   "internalTeamRoles": [
     { "id": "affiliate_manager", "label": "Affiliate Manager", "description": "Owns creator relationship and performance plan" },
+    { "id": "partnerships_manager", "label": "Partnerships Manager", "description": "Owns partner strategy, joint pipeline, and relationship health" },
     { "id": "creator_ops", "label": "Creator Ops", "description": "Handles onboarding, tracking links, codes, and payouts" },
     { "id": "brand_marketing", "label": "Brand Marketing", "description": "Reviews creative fit and messaging" },
     { "id": "performance_marketing", "label": "Performance Marketing", "description": "Owns CAC, conversion, and channel performance" },
@@ -64,20 +68,24 @@
     "content_approved",
     "campaign_live",
     "first_conversion",
+    "first_co_sell_deal",
+    "integration_live",
     "payout_processed",
+    "agreement_renewed",
     "campaign_renewed"
   ],
   "prioritization": {
     "primarySignal": "arr",
     "secondarySignal": "health",
     "urgencyDrivers": [
+      "agreement_expiring_90d",
       "campaign_launch_within_14d",
       "content_approval_blocked",
       "performance_declining"
     ]
   },
   "intelligence": {
-    "systemRole": "affiliate creator partnership intelligence system",
+    "systemRole": "affiliate and partnership intelligence system",
     "dimensionWeights": {
       "meeting_cadence": 0.14,
       "email_engagement": 0.18,
@@ -89,6 +97,8 @@
     "signalKeywords": [
       { "keyword": "creator", "weight": 0.12 },
       { "keyword": "affiliate", "weight": 0.12 },
+      { "keyword": "partner", "weight": 0.12 },
+      { "keyword": "co-sell", "weight": 0.11 },
       { "keyword": "tracking link", "weight": 0.11 },
       { "keyword": "commission", "weight": 0.10 },
       { "keyword": "payout", "weight": 0.10 },
@@ -98,7 +108,9 @@
     ],
     "emailSignalTypes": [
       "creator_engagement",
+      "partner_engagement_decline",
       "content_approval_blocker",
+      "co_sell_pipeline",
       "tracking_issue",
       "payout_issue",
       "performance_signal",
@@ -107,25 +119,26 @@
     "dimensionLabels": {
       "meeting_cadence": "Campaign Cadence",
       "email_engagement": "Creator Responsiveness",
-      "stakeholder_coverage": "Creator Team Coverage",
-      "key_advocate_health": "Creator Lead Health",
-      "financial_proximity": "Campaign Cycle Proximity",
-      "signal_momentum": "Performance Momentum"
+      "stakeholder_coverage": "Partner Coverage",
+      "key_advocate_health": "Partner Lead Health",
+      "financial_proximity": "Agreement Proximity",
+      "signal_momentum": "Partnership Momentum"
     },
-    "closeConcept": "campaign cycle",
-    "keyAdvocateLabel": "creator lead",
+    "closeConcept": "agreement or campaign cycle",
+    "keyAdvocateLabel": "partner lead",
     "dimensionGuidance": {
       "meeting_cadence": "Evaluate whether creator check-ins, launch reviews, and campaign retros are happening at the right cadence.",
       "email_engagement": "Read creator and manager responsiveness around briefs, content, tracking, and payout issues.",
-      "stakeholder_coverage": "Assess coverage across creator, manager, producer, brand, analytics, and finance contacts.",
-      "key_advocate_health": "Assess whether the creator lead is engaged, aligned with the brand, and actively promoting the campaign.",
-      "financial_proximity": "Focus on campaign end dates, commission terms, payout friction, attributed revenue, and renewal potential.",
-      "signal_momentum": "Weigh content progress, conversion trend, tracking quality, launch readiness, and creator enthusiasm."
+      "stakeholder_coverage": "Assess coverage across creator or partner lead, manager, sponsor, technical, analytics, and finance contacts.",
+      "key_advocate_health": "Assess whether the partner lead is engaged, aligned with the business case, and actively moving work forward.",
+      "financial_proximity": "Focus on agreement dates, commission terms, payout friction, attributed revenue, joint pipeline, and renewal potential.",
+      "signal_momentum": "Weigh content progress, conversion trend, co-sell movement, integration status, launch readiness, and partner enthusiasm."
     }
   },
-  "briefingEmphasis": "Focus on creator responsiveness, content approval status, attribution quality, and upcoming campaign moments. Prioritize creators with blocked launches or performance shifts.",
+  "briefingEmphasis": "Focus on partner responsiveness, campaign or co-sell progress, attribution quality, and upcoming agreement moments. Prioritize partners with blocked launches, stalled joint pipeline, or performance shifts.",
   "emailPriorityKeywords": [
-    "creator", "affiliate", "influencer", "tracking link", "promo code", "commission", "payout",
-    "utm", "conversion", "content approval", "go-live", "campaign live"
+    "creator", "affiliate", "influencer", "partner", "co-sell", "referral", "tracking link",
+    "promo code", "commission", "payout", "utm", "conversion", "content approval", "go-live",
+    "campaign live", "integration"
   ]
 }
