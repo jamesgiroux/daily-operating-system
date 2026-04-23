@@ -7,9 +7,9 @@
 //!
 //! Dimension groups:
 //! 1. core_assessment      — executiveAssessment, currentState, risks, recentWins
-//! 2. stakeholder_champion — stakeholderInsights, championHealth, coverageAssessment,
+//! 2. stakeholder_champion — stakeholderInsights, keyAdvocateHealth, coverageAssessment,
 //!    organizationalChanges, internalTeam (roleChanges mapped to orgChanges)
-//! 3. commercial_financial — health, contractContext, renewalOutlook, expansionSignals, blockers
+//! 3. commercial_financial — health, contractContext, agreementOutlook, expansionSignals, blockers
 //! 4. strategic_context    — companyContext, competitiveContext, strategicPriorities
 //! 5. value_success        — valueDelivered, successMetrics, successPlanSignals,
 //!    openCommitments (the `open_commitments` field on IntelligenceJson)
@@ -314,8 +314,8 @@ pub fn merge_dimension_into(
             if partial.contract_context.is_some() {
                 existing.contract_context = partial.contract_context.clone();
             }
-            if partial.renewal_outlook.is_some() {
-                existing.renewal_outlook = partial.renewal_outlook.clone();
+            if partial.agreement_outlook.is_some() {
+                existing.agreement_outlook = partial.agreement_outlook.clone();
             }
             if !partial.expansion_signals.is_empty() {
                 existing.expansion_signals = partial.expansion_signals.clone();
@@ -783,7 +783,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
             }
             s.push_str(
                 r#"  "contractContext": {"contractType": "annual|multi_year|month_to_month", "autoRenew": true, "renewalDate": "ISO date", "currentArr": 0.0},
-  "renewalOutlook": {"confidence": "high|moderate|low", "riskFactors": ["..."], "expansionPotential": "...", "recommendedStart": "ISO date"},
+  "agreementOutlook": {"confidence": "high|moderate|low", "riskFactors": ["..."], "expansionPotential": "...", "recommendedStart": "ISO date"},
   "expansionSignals": [{"opportunity": "...", "arrImpact": 0.0, "stage": "exploring|evaluating|committed|blocked", "strength": "strong|moderate|early", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "blockers": [{"description": "...", "owner": "...", "since": "ISO date", "impact": "critical|high|moderate|low"}],
   "productClassification": {

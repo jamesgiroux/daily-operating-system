@@ -2169,10 +2169,10 @@ pub struct EscalationSignal {
     pub speaker: Option<String>,
 }
 
-/// I554: Champion health assessment from transcript analysis.
+/// I554: Key advocate health assessment from transcript analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChampionHealth {
+pub struct KeyAdvocateHealth {
     /// Name of the primary champion/advocate
     pub champion_name: String,
     /// strong|weak|lost|none
@@ -2264,9 +2264,14 @@ pub struct TranscriptResult {
     /// Interaction dynamics from transcript (I509)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interaction_dynamics: Option<InteractionDynamics>,
-    /// I554: Champion health assessment
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub champion_health: Option<ChampionHealth>,
+    /// I554: Key advocate health assessment
+    #[serde(
+        default,
+        alias = "championHealth",
+        alias = "champion_health",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub key_advocate_health: Option<KeyAdvocateHealth>,
     /// I554: Stakeholder role changes detected
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub role_changes: Vec<RoleChange>,

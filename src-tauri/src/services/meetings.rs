@@ -3423,7 +3423,7 @@ pub async fn attach_meeting_transcript(
                     .map(|v| v == "no")
                     .unwrap_or(false);
                 // I555: Capture champion health, role changes, and risks for signal emissions
-                let champion_health = result.champion_health.clone();
+                let key_advocate_health = result.key_advocate_health.clone();
                 let role_changes_data: Vec<(String, Option<String>, Option<String>)> = result
                     .role_changes
                     .iter()
@@ -3492,7 +3492,7 @@ pub async fn attach_meeting_transcript(
                             }
 
                             // I555: Champion health → person-level signal
-                            if let Some(ref ch) = champion_health {
+                            if let Some(ref ch) = key_advocate_health {
                                 if let Ok(Some(champion_pid)) = db.get_champion_person_id(aid) {
                                     match ch.champion_status.as_str() {
                                         "weak" | "lost" => {

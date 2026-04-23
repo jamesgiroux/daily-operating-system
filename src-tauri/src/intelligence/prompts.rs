@@ -1948,7 +1948,7 @@ fn build_intelligence_prompt_inner(
         "FIELD SCOPING RULES (critical — avoid redundancy across fields):\n\
          Each item should appear in exactly ONE field. Do not repeat the same event, \
          commitment, or concern across multiple fields. Cross-reference when relevant \
-         (e.g., renewalOutlook.riskFactors can say \"champion transition\" without \
+         (e.g., agreementOutlook.riskFactors can say \"champion transition\" without \
          duplicating the full description from organizationalChanges).\n\
          - risks[]: Account-level THREATS to the relationship. Not blockers (those have owners), \
            not commitments (those have due dates), not current-state observations.\n\
@@ -1962,7 +1962,7 @@ fn build_intelligence_prompt_inner(
            do NOT re-extract the same items. Supplement only with new commitments not already listed.\n\
          - strategicPriorities[]: The customer's stated BUSINESS OBJECTIVES for the engagement. \
            High-level goals, not tactical commitments or individual blockers.\n\
-         - renewalOutlook.riskFactors[]: Factors that could affect the CONTRACT DECISION \
+         - agreementOutlook.riskFactors[]: Factors that could affect the CONTRACT DECISION \
            specifically. Brief references to items detailed elsewhere — not full duplicates.\n\
          - valueDelivered[]: OUTCOMES already achieved. Past tense. Not promises or goals.\n\
          - expansionSignals[]: GROWTH opportunities not yet closed. Not existing commitments.\n\n",
@@ -2059,7 +2059,7 @@ fn build_intelligence_prompt_inner(
             mc = computed.dimensions.meeting_cadence.score,
             em = computed.dimensions.email_engagement.score,
             sc = computed.dimensions.stakeholder_coverage.score,
-            ch = computed.dimensions.champion_health.score,
+            ch = computed.dimensions.key_advocate_health.score,
             fp = computed.dimensions.financial_proximity.score,
             sm = computed.dimensions.signal_momentum.score,
         ));
@@ -2194,7 +2194,7 @@ fn build_intelligence_prompt_inner(
                    \"meetingCadence\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
                    \"emailEngagement\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
                    \"stakeholderCoverage\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
-                   \"championHealth\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"keyAdvocateHealth\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
                    \"financialProximity\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
                    \"signalMomentum\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"}\n\
                  },\n\
@@ -2246,7 +2246,7 @@ fn build_intelligence_prompt_inner(
                // organizational growth (hiring, acquisitions), questions about roadmap/pricing,\n\
                // budget increase mentions. Each must cite specific evidence.\n\
                {\"opportunity\": \"...\", \"arrImpact\": 0.0, \"stage\": \"exploring|evaluating|committed|blocked\", \"strength\": \"strong|moderate|early\"}],\n\
-               \"renewalOutlook\": {\"confidence\": \"high|moderate|low\", \"riskFactors\": [\"...\"], \"expansionPotential\": \"...\", \"recommendedStart\": \"ISO date\"},\n\
+               \"agreementOutlook\": {\"confidence\": \"high|moderate|low\", \"riskFactors\": [\"...\"], \"expansionPotential\": \"...\", \"recommendedStart\": \"ISO date\"},\n\
                \"supportHealth\": {\"openTickets\": 0, \"criticalTickets\": 0, \"trend\": \"improving|stable|degrading\", \"csat\": 0.0},\n\
                \"productAdoption\": {\"adoptionRate\": 0.0, \"trend\": \"growing|stable|declining\", \"featureAdoption\": [\"...\"], \"lastActive\": \"ISO date\"},\n\
                \"npsCsat\": {\"nps\": 0, \"csat\": 0.0, \"surveyDate\": \"ISO date\", \"verbatim\": \"quote\"},\n\
@@ -2412,7 +2412,7 @@ struct AiIntelResponse {
     #[serde(default)]
     expansion_signals: Vec<super::io::ExpansionSignal>,
     #[serde(default)]
-    renewal_outlook: Option<super::io::RenewalOutlook>,
+    agreement_outlook: Option<super::io::AgreementOutlook>,
     #[serde(default)]
     support_health: Option<super::io::SupportHealth>,
     #[serde(default)]
@@ -3077,7 +3077,7 @@ fn try_parse_json_response(
         blockers: ai_resp.blockers,
         contract_context: ai_resp.contract_context,
         expansion_signals: ai_resp.expansion_signals,
-        renewal_outlook: ai_resp.renewal_outlook,
+        agreement_outlook: ai_resp.agreement_outlook,
         product_classification: None,
         support_health: ai_resp.support_health,
         product_adoption: ai_resp.product_adoption,

@@ -29,7 +29,7 @@ pub fn compute_account_health(
     let meeting_cadence = compute_meeting_cadence(db, &account.id);
     let email_engagement = compute_email_engagement(db, &account.id);
     let stakeholder_coverage = compute_stakeholder_coverage(db, &account.id);
-    let champion_health = compute_champion_health(db, &account.id);
+    let key_advocate_health = compute_key_advocate_health(db, &account.id);
     let financial_proximity = compute_financial_proximity(db, account);
     let signal_momentum = compute_signal_momentum(db, &account.id);
 
@@ -37,7 +37,7 @@ pub fn compute_account_health(
         meeting_cadence,
         email_engagement,
         stakeholder_coverage,
-        champion_health,
+        key_advocate_health,
         financial_proximity,
         signal_momentum,
     };
@@ -56,7 +56,7 @@ pub fn compute_account_health(
         &dims.meeting_cadence,
         &dims.email_engagement,
         &dims.stakeholder_coverage,
-        &dims.champion_health,
+        &dims.key_advocate_health,
         &dims.financial_proximity,
         &dims.signal_momentum,
     ];
@@ -95,7 +95,7 @@ pub fn compute_account_health(
 
     // Build recommended actions from dimension evidence
     let mut recommended_actions = Vec::new();
-    for ev in &dims.champion_health.evidence {
+    for ev in &dims.key_advocate_health.evidence {
         if ev.contains("Consider tagging") || ev.contains("champion candidate") {
             recommended_actions.push(ev.clone());
         }
@@ -257,14 +257,14 @@ pub enum AccountBucket {
 /// Classify an account into an operating bucket with a concise rationale.
 pub fn classify_account_bucket(health: &AccountHealth) -> (AccountBucket, String) {
     let cadence = health.dimensions.meeting_cadence.score;
-    let champion = health.dimensions.champion_health.score;
+    let champion = health.dimensions.key_advocate_health.score;
     let cadence_present = health.dimensions.meeting_cadence.weight > 0.0;
-    let champion_present = health.dimensions.champion_health.weight > 0.0;
+    let champion_present = health.dimensions.key_advocate_health.weight > 0.0;
     let any_declining = [
         &health.dimensions.meeting_cadence,
         &health.dimensions.email_engagement,
         &health.dimensions.stakeholder_coverage,
-        &health.dimensions.champion_health,
+        &health.dimensions.key_advocate_health,
         &health.dimensions.financial_proximity,
         &health.dimensions.signal_momentum,
     ]
@@ -698,7 +698,7 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
     }
 }
 
-fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
+fn compute_key_advocate_health(db: &ActionDb, account_id: &str) -> DimensionScore {
     // I652: Query account_stakeholder_roles directly for champion designation
     let champion_rows: Vec<(String, String)> = db
         .conn
@@ -1213,7 +1213,7 @@ fn redistribute_weights(dims: &RelationshipDimensions, raw: [f64; 6]) -> [f64; 6
         dims.meeting_cadence.weight > 0.0,
         dims.email_engagement.weight > 0.0,
         dims.stakeholder_coverage.weight > 0.0,
-        dims.champion_health.weight > 0.0,
+        dims.key_advocate_health.weight > 0.0,
         dims.financial_proximity.weight > 0.0,
         dims.signal_momentum.weight > 0.0,
     ];
@@ -1245,7 +1245,7 @@ fn has_sufficient_data(dims: &RelationshipDimensions) -> bool {
         &dims.meeting_cadence,
         &dims.email_engagement,
         &dims.stakeholder_coverage,
-        &dims.champion_health,
+        &dims.key_advocate_health,
         &dims.financial_proximity,
         &dims.signal_momentum,
     ]
@@ -1282,7 +1282,7 @@ fn compute_confidence(dims: &RelationshipDimensions) -> f64 {
         &dims.meeting_cadence,
         &dims.email_engagement,
         &dims.stakeholder_coverage,
-        &dims.champion_health,
+        &dims.key_advocate_health,
         &dims.financial_proximity,
         &dims.signal_momentum,
     ]
@@ -1361,7 +1361,7 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: active_dim(60.0),
             stakeholder_coverage: active_dim(80.0),
-            champion_health: active_dim(50.0),
+            key_advocate_health: active_dim(50.0),
             financial_proximity: active_dim(40.0),
             signal_momentum: active_dim(50.0),
         };
@@ -1375,7 +1375,7 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: null_dim(),
             stakeholder_coverage: active_dim(80.0),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: active_dim(50.0), // not a placeholder (evidence != "No recent signals")
         };
@@ -1389,7 +1389,7 @@ mod tests {
             meeting_cadence: null_dim(),
             email_engagement: null_dim(),
             stakeholder_coverage: null_dim(),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: DimensionScore {
                 score: 50.0,
@@ -1408,7 +1408,7 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: null_dim(),
             stakeholder_coverage: null_dim(),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: active_dim(50.0),
         };
@@ -1533,7 +1533,7 @@ mod tests {
                 meeting_cadence: active_dim(70.0),
                 email_engagement: active_dim(55.0),
                 stakeholder_coverage: active_dim(60.0),
-                champion_health: active_dim(75.0),
+                key_advocate_health: active_dim(75.0),
                 financial_proximity: active_dim(45.0),
                 signal_momentum: active_dim(60.0),
             },
@@ -1561,7 +1561,7 @@ mod tests {
                 meeting_cadence: if n >= 1 { active.clone() } else { null.clone() },
                 email_engagement: if n >= 2 { active.clone() } else { null.clone() },
                 stakeholder_coverage: if n >= 3 { active.clone() } else { null.clone() },
-                champion_health: if n >= 4 { active.clone() } else { null.clone() },
+                key_advocate_health: if n >= 4 { active.clone() } else { null.clone() },
                 financial_proximity: if n >= 5 { active.clone() } else { null.clone() },
                 signal_momentum: if n >= 6 { active.clone() } else { null.clone() },
             }
@@ -1598,7 +1598,7 @@ mod tests {
                 meeting_cadence: if n >= 1 { active.clone() } else { null.clone() },
                 email_engagement: if n >= 2 { active.clone() } else { null.clone() },
                 stakeholder_coverage: if n >= 3 { active.clone() } else { null.clone() },
-                champion_health: if n >= 4 { active.clone() } else { null.clone() },
+                key_advocate_health: if n >= 4 { active.clone() } else { null.clone() },
                 financial_proximity: if n >= 5 { active.clone() } else { null.clone() },
                 signal_momentum: if n >= 6 { active.clone() } else { null.clone() },
             }
@@ -1622,7 +1622,7 @@ mod tests {
             meeting_cadence: null_dim(),
             email_engagement: null_dim(),
             stakeholder_coverage: null_dim(),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: null_dim(),
         };
@@ -1634,7 +1634,7 @@ mod tests {
             meeting_cadence: active_dim(60.0),
             email_engagement: active_dim(60.0),
             stakeholder_coverage: active_dim(60.0),
-            champion_health: active_dim(60.0),
+            key_advocate_health: active_dim(60.0),
             financial_proximity: active_dim(60.0),
             signal_momentum: active_dim(60.0),
         };
@@ -1649,7 +1649,7 @@ mod tests {
             meeting_cadence: active_dim(80.0),
             email_engagement: active_dim(65.0),
             stakeholder_coverage: active_dim(70.0),
-            champion_health: active_dim(75.0),
+            key_advocate_health: active_dim(75.0),
             financial_proximity: active_dim(90.0), // recently renewed
             signal_momentum: active_dim(55.0),
         };
@@ -1662,7 +1662,7 @@ mod tests {
             &dims.meeting_cadence,
             &dims.email_engagement,
             &dims.stakeholder_coverage,
-            &dims.champion_health,
+            &dims.key_advocate_health,
             &dims.financial_proximity,
             &dims.signal_momentum,
         ];
@@ -1692,7 +1692,7 @@ mod tests {
             meeting_cadence: active_dim(20.0),
             email_engagement: null_dim(),
             stakeholder_coverage: active_dim(30.0),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: active_dim(40.0), // approaching, no outcome
             signal_momentum: active_dim(50.0),     // neutral
         };
@@ -1705,7 +1705,7 @@ mod tests {
             &dims.meeting_cadence,
             &dims.email_engagement,
             &dims.stakeholder_coverage,
-            &dims.champion_health,
+            &dims.key_advocate_health,
             &dims.financial_proximity,
             &dims.signal_momentum,
         ];
@@ -1735,7 +1735,7 @@ mod tests {
             meeting_cadence: active_dim(80.0),
             email_engagement: null_dim(),
             stakeholder_coverage: null_dim(),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: DimensionScore {
                 score: 50.0,
@@ -1761,7 +1761,7 @@ mod tests {
             &dims.meeting_cadence,
             &dims.email_engagement,
             &dims.stakeholder_coverage,
-            &dims.champion_health,
+            &dims.key_advocate_health,
             &dims.financial_proximity,
             &dims.signal_momentum,
         ];
@@ -1803,7 +1803,7 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: active_dim(60.0),
             stakeholder_coverage: active_dim(80.0),
-            champion_health: active_dim(65.0),
+            key_advocate_health: active_dim(65.0),
             financial_proximity: null_dim(),
             signal_momentum: active_dim(50.0),
         };
@@ -1852,7 +1852,7 @@ mod tests {
                 meeting_cadence: active_dim(20.0),
                 email_engagement: active_dim(45.0),
                 stakeholder_coverage: active_dim(30.0),
-                champion_health: active_dim(15.0),
+                key_advocate_health: active_dim(15.0),
                 financial_proximity: active_dim(50.0),
                 signal_momentum: active_dim(40.0),
             },
@@ -1878,7 +1878,7 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: active_dim(60.0),
             stakeholder_coverage: null_dim(),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: DimensionScore {
                 score: 50.0,
@@ -1901,7 +1901,7 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: active_dim(60.0),
             stakeholder_coverage: active_dim(50.0),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: DimensionScore {
                 score: 50.0,

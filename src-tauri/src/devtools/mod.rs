@@ -17,7 +17,7 @@ use crate::intelligence::io::{
     ContractContext, CoverageAssessment, CurrentState, DimensionScore, DismissedItem,
     ExpansionSignal, GongCallSummary, HealthSource, HealthTrend, IntelRisk, IntelWin,
     IntelligenceJson, InternalTeamMember, ItemSource, NetworkIntelligence, NetworkKeyRelationship,
-    OpenCommitment, OrgChange, RelationshipDepth, RelationshipDimensions, RenewalOutlook,
+    OpenCommitment, OrgChange, RelationshipDepth, RelationshipDimensions, AgreementOutlook,
     ResponsivenessAssessment, SatisfactionData, StakeholderInsight, StrategicPriority,
     RecommendedAction, SuccessMetric, SupportHealth, ValueItem,
 };
@@ -4760,7 +4760,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
                 meeting_cadence: DimensionScore { score: 85.0, weight: 0.15, evidence: vec!["4 meetings/month, consistent cadence".into()], trend: "stable".into() },
                 email_engagement: DimensionScore { score: 80.0, weight: 0.10, evidence: vec!["Same-day replies from Sarah Chen".into(), "Active thread on Phase 2 scoping".into()], trend: "stable".into() },
                 stakeholder_coverage: DimensionScore { score: 70.0, weight: 0.20, evidence: vec!["3 of 4 key roles covered".into(), "Technical lead gap after Alex departs".into()], trend: "declining".into() },
-                champion_health: DimensionScore { score: 90.0, weight: 0.25, evidence: vec!["Sarah Chen secured Phase 2 budget independently".into()], trend: "stable".into() },
+                key_advocate_health: DimensionScore { score: 90.0, weight: 0.25, evidence: vec!["Sarah Chen secured Phase 2 budget independently".into()], trend: "stable".into() },
                 financial_proximity: DimensionScore { score: 75.0, weight: 0.15, evidence: vec!["Phase 2 SOW in legal review".into(), "ARR expansion on track".into()], trend: "stable".into() },
                 signal_momentum: DimensionScore { score: 72.0, weight: 0.15, evidence: vec!["NPS detractors offsetting positive delivery signals".into()], trend: "declining".into() },
             },
@@ -4837,7 +4837,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             ExpansionSignal { opportunity: "Phase 2 platform expansion".into(), arr_impact: Some(200_000.0), source: Some("meeting".into()), stage: Some("evaluating".into()), strength: Some("strong".into()), item_source: None, discrepancy: None },
             ExpansionSignal { opportunity: "APAC Singapore pilot".into(), arr_impact: Some(150_000.0), source: Some("meeting".into()), stage: Some("exploring".into()), strength: Some("moderate".into()), item_source: None, discrepancy: None },
         ],
-        renewal_outlook: Some(RenewalOutlook {
+        agreement_outlook: Some(AgreementOutlook {
             confidence: Some("high".into()),
             risk_factors: vec!["NPS detractors could surface in QBR".into()],
             expansion_potential: Some("Phase 2 + APAC = $350K potential".into()),
@@ -4978,7 +4978,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
                 meeting_cadence: DimensionScore { score: 60.0, weight: 0.15, evidence: vec!["2 meetings/month, declining from 3".into()], trend: "declining".into() },
                 email_engagement: DimensionScore { score: 45.0, weight: 0.10, evidence: vec!["Casey Lee response times increasing".into()], trend: "declining".into() },
                 stakeholder_coverage: DimensionScore { score: 40.0, weight: 0.20, evidence: vec!["Exec sponsor departing".into(), "No successor identified".into()], trend: "declining".into() },
-                champion_health: DimensionScore { score: 65.0, weight: 0.25, evidence: vec!["Jamie strong but can't compensate for Casey's skepticism".into()], trend: "stable".into() },
+                key_advocate_health: DimensionScore { score: 65.0, weight: 0.25, evidence: vec!["Jamie strong but can't compensate for Casey's skepticism".into()], trend: "stable".into() },
                 financial_proximity: DimensionScore { score: 35.0, weight: 0.15, evidence: vec!["Renewal in 45 days, no commitment signal".into()], trend: "declining".into() },
                 signal_momentum: DimensionScore { score: 30.0, weight: 0.15, evidence: vec!["Competitive threat + usage decline = negative momentum".into()], trend: "declining".into() },
             },
@@ -5051,7 +5051,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         expansion_signals: vec![
             ExpansionSignal { opportunity: "3 new team deployments".into(), arr_impact: Some(120_000.0), source: Some("deployment tracker".into()), stage: Some("committed".into()), strength: Some("strong".into()), item_source: None, discrepancy: None },
         ],
-        renewal_outlook: Some(RenewalOutlook {
+        agreement_outlook: Some(AgreementOutlook {
             confidence: Some("low".into()),
             risk_factors: vec!["Executive sponsor departing".into(), "Team B decline".into(), "Active competitive evaluation".into()],
             expansion_potential: Some("New team deployments could offset Team B if stabilized".into()),
@@ -5181,7 +5181,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
                 meeting_cadence: DimensionScore { score: 50.0, weight: 0.15, evidence: vec!["1 meeting/month, new relationship".into()], trend: "stable".into() },
                 email_engagement: DimensionScore { score: 55.0, weight: 0.10, evidence: vec!["Responsive but infrequent".into()], trend: "stable".into() },
                 stakeholder_coverage: DimensionScore { score: 60.0, weight: 0.20, evidence: vec!["2 key contacts identified".into()], trend: "stable".into() },
-                champion_health: DimensionScore { score: 65.0, weight: 0.25, evidence: vec!["Dana Patel supportive but constrained by finance".into()], trend: "stable".into() },
+                key_advocate_health: DimensionScore { score: 65.0, weight: 0.25, evidence: vec!["Dana Patel supportive but constrained by finance".into()], trend: "stable".into() },
                 financial_proximity: DimensionScore { score: 40.0, weight: 0.15, evidence: vec!["Budget approval pending".into()], trend: "stable".into() },
                 signal_momentum: DimensionScore { score: 50.0, weight: 0.15, evidence: vec!["Limited signal history, Phase 1 success is primary data point".into()], trend: "stable".into() },
             },
@@ -5245,7 +5245,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         expansion_signals: vec![
             ExpansionSignal { opportunity: "Phase 2 platform expansion".into(), arr_impact: Some(150_000.0), source: Some("meeting".into()), stage: Some("exploring".into()), strength: Some("early".into()), item_source: None, discrepancy: None },
         ],
-        renewal_outlook: Some(RenewalOutlook {
+        agreement_outlook: Some(AgreementOutlook {
             confidence: Some("moderate".into()),
             risk_factors: vec!["Budget approval uncertainty".into()],
             expansion_potential: Some("Phase 2 adds $150K if approved".into()),
@@ -5871,7 +5871,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         id: "mock-fb-globex-renewal-neg",
         entity_id: "mock-globex-industries",
         entity_type: "account",
-        field: "renewal_outlook",
+        field: "agreement_outlook",
         feedback_type: "negative",
         previous_value: None,
         context: Some("User disagrees with renewal confidence"),

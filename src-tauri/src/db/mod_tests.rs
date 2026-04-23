@@ -5663,7 +5663,7 @@ fn test_dos228_w0f_drain_recovers_after_simulated_shutdown() {
 //
 // Regression for the Wave 0g HIGH finding: stakeholder mutations
 // (engagement/assessment updates, role add/remove, suggestion accept) are
-// inputs to the `stakeholder_coverage` and `champion_health` scoring
+// inputs to the `stakeholder_coverage` and `key_advocate_health` scoring
 // dimensions, but the pre-fix service path returned refreshed account detail
 // without persisting the durable `health_recompute_pending` marker. A crash
 // between the mutation commit and any future recompute would leave
