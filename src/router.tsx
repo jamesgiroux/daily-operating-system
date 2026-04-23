@@ -75,6 +75,7 @@ import { ClaudeStatusCtx, useClaudeStatusProvider } from "@/hooks/useClaudeStatu
 import { useDatabaseRecoveryStatus } from "@/hooks/useDatabaseRecoveryStatus";
 import { TourTips } from "@/components/tour/TourTips";
 import { resolveStartupGate } from "@/routerStartupGate";
+import { StartupBriefingScreen } from "@/components/startup/StartupBriefingScreen";
 
 const settingsTabs = new Set([
   "you",
@@ -99,73 +100,6 @@ const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionI
 const WELCOME_MIN_MS = 1500;
 const WELCOME_MAX_MS = 5000;
 const CALENDAR_SETTLE_GRACE_MS = 450;
-
-function StartupWelcomeOverlay({ fading }: { fading: boolean }) {
-  const formattedDate = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "var(--color-paper-cream, #f5f2ef)",
-        opacity: fading ? 0 : 1,
-        transition: "opacity 300ms ease-out",
-        pointerEvents: fading ? "none" : "auto",
-      }}
-    >
-      <div style={{ width: 48, height: 1, background: "var(--color-rule-heavy, rgba(30,37,48,0.12))", marginBottom: 32 }} />
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width={36} height={36} aria-hidden="true">
-        <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="var(--color-spice-turmeric, #c9a227)" />
-      </svg>
-      <span
-        style={{
-          fontFamily: "var(--font-display, Newsreader), serif",
-          fontSize: 22,
-          fontWeight: 400,
-          letterSpacing: "0.06em",
-          color: "var(--color-text-primary, #1e2530)",
-          marginTop: 20,
-        }}
-      >
-        DailyOS
-      </span>
-      <span
-        style={{
-          fontFamily: "var(--font-body, DM Sans), sans-serif",
-          fontSize: 11,
-          fontWeight: 400,
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-          color: "var(--color-text-tertiary, #6b7280)",
-          marginTop: 8,
-        }}
-      >
-        {formattedDate}
-      </span>
-      <span
-        style={{
-          fontFamily: "var(--font-body, DM Sans), sans-serif",
-          fontSize: 12,
-          color: "var(--color-text-secondary, #4b5563)",
-          marginTop: 10,
-        }}
-      >
-        Preparing your briefing
-      </span>
-      <div style={{ width: 48, height: 1, background: "var(--color-rule-heavy, rgba(30,37,48,0.12))", marginTop: 32 }} />
-    </div>
-  );
-}
 
 // Root layout that wraps all pages
 function RootLayout() {
@@ -378,7 +312,7 @@ function RootLayout() {
   if (showWelcomeShellOnly) {
     return (
       <ThemeProvider>
-        <StartupWelcomeOverlay fading={false} />
+        <StartupBriefingScreen />
         <DevToolsPanelStandalone />
       </ThemeProvider>
     );
@@ -447,7 +381,7 @@ function RootLayout() {
             <ICloudWarningModal />
             <TourTips />
             <Toaster position="bottom-right" />
-            {showWelcomeOverlay && <StartupWelcomeOverlay fading={welcomeFading} />}
+            {showWelcomeOverlay && <StartupBriefingScreen fading={welcomeFading} />}
           </ClaudeStatusCtx.Provider>
           </AppStateCtx.Provider>
         </PersonalityProvider>
@@ -475,7 +409,7 @@ function RootLayout() {
           <TourTips />
           <Toaster position="bottom-right" />
           <DevToolsPanelStandalone />
-          {showWelcomeOverlay && <StartupWelcomeOverlay fading={welcomeFading} />}
+          {showWelcomeOverlay && <StartupBriefingScreen fading={welcomeFading} />}
         </ClaudeStatusCtx.Provider>
         </AppStateCtx.Provider>
       </PersonalityProvider>

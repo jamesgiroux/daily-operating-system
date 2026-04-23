@@ -343,7 +343,7 @@ function PersonalitySection() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DayStartSection — user-friendly time picker for morning briefing schedule
+// DayStartSection — user-friendly time picker for daily briefing schedule
 // ═══════════════════════════════════════════════════════════════════════════
 
 function DayStartSection({
@@ -387,12 +387,12 @@ function DayStartSection({
     <div>
       <p className={s.subsectionLabel}>Your Day</p>
       <p className={s.description}>
-        When does your workday start? DailyOS prepares your briefing before this time.
+        When does your workday start? DailyOS prepares the first pass before this time.
       </p>
       <div className={s.settingRow}>
         <div>
           <span className={s.dayStartLabel}>
-            Morning briefing at{" "}
+            First briefing pass at{" "}
             <span className={s.dayStartBold}>{displayTime}</span>
           </span>
           {schedule?.timezone && (

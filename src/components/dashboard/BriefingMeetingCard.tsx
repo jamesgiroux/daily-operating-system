@@ -255,9 +255,12 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
   const prep = meeting.prep;
   if (!prep) return null;
 
-  const discuss = prep.actions ?? prep.questions ?? [];
-  const watch = prep.risks ?? [];
-  const wins = prep.wins ?? [];
+  const wins = (prep.wins ?? []).map(parsePrepGridItem).filter((item) => item.text);
+  const winKeys = new Set(wins.map((item) => normalizePrepGridText(item.text)));
+  const discuss = (prep.actions ?? prep.questions ?? [])
+    .map(parsePrepGridItem)
+    .filter((item) => item.text && !winKeys.has(normalizePrepGridText(item.text)));
+  const watch = (prep.risks ?? []).map(parsePrepGridItem).filter((item) => item.text);
 
   const hasSections = discuss.length > 0 || watch.length > 0 || wins.length > 0;
   if (!hasSections) return null;
@@ -270,7 +273,7 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
           {discuss.slice(0, 1).map((item, i) => (
             <div key={i} className={s.prepItem}>
               <span className={clsx(s.prepDot, s.prepDotTurmeric)} />
-              <span>{stripMarkdown(item)}</span>
+              <PrepItemContent item={item} />
             </div>
           ))}
         </div>
@@ -282,7 +285,7 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
           {watch.slice(0, 1).map((item, i) => (
             <div key={i} className={s.prepItem}>
               <span className={clsx(s.prepDot, s.prepDotTerracotta)} />
-              <span>{stripMarkdown(item)}</span>
+              <PrepItemContent item={item} />
             </div>
           ))}
         </div>
@@ -294,13 +297,49 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
           {wins.slice(0, 1).map((item, i) => (
             <div key={i} className={s.prepItem}>
               <span className={clsx(s.prepDot, s.prepDotSage)} />
-              <span>{stripMarkdown(item)}</span>
+              <PrepItemContent item={item} />
             </div>
           ))}
         </div>
       )}
 
     </div>
+  );
+}
+
+type PrepImpact = "high" | "medium" | "low";
+
+interface ParsedPrepGridItem {
+  text: string;
+  impact?: PrepImpact;
+}
+
+const PREP_IMPACT_TAIL_RE = /\s+[—-]\s*(high|medium|low)\s*$/i;
+
+export function parsePrepGridItem(raw: string): ParsedPrepGridItem {
+  const cleaned = stripMarkdown(raw).trim();
+  const impactMatch = cleaned.match(PREP_IMPACT_TAIL_RE);
+  if (!impactMatch) return { text: cleaned };
+  return {
+    text: cleaned.replace(PREP_IMPACT_TAIL_RE, "").trim(),
+    impact: impactMatch[1].toLowerCase() as PrepImpact,
+  };
+}
+
+function normalizePrepGridText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function PrepItemContent({ item }: { item: ParsedPrepGridItem }) {
+  return (
+    <>
+      <span className={s.prepItemText}>{item.text}</span>
+      {item.impact && (
+        <span className={s.prepImpactBadge} data-impact={item.impact}>
+          {item.impact}
+        </span>
+      )}
+    </>
   );
 }
 
