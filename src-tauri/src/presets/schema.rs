@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// A role preset defining vocabulary, vitals, metadata, and prioritization
@@ -22,11 +24,33 @@ pub struct RolePreset {
     pub internal_team_roles: Vec<PresetRoleDefinition>,
     pub lifecycle_events: Vec<String>,
     pub prioritization: PresetPrioritization,
+    #[serde(default)]
+    pub intelligence: PresetIntelligenceConfig,
     pub briefing_emphasis: String,
     /// Role-specific email subject keywords that trigger high-priority classification.
     /// Added to the hardcoded base list in `constants.rs`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub email_priority_keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetIntelligenceConfig {
+    pub system_role: String,
+    pub dimension_weights: HashMap<String, f64>,
+    pub signal_keywords: Vec<SignalKeywordEntry>,
+    pub email_signal_types: Vec<String>,
+    pub dimension_labels: HashMap<String, String>,
+    pub close_concept: String,
+    pub key_advocate_label: String,
+    pub dimension_guidance: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignalKeywordEntry {
+    pub keyword: String,
+    pub weight: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,6 +142,8 @@ mod tests {
         assert_eq!(preset.internal_team_roles.len(), 6);
         assert_eq!(preset.lifecycle_events.len(), 10);
         assert_eq!(preset.prioritization.primary_signal, "arr");
+        assert_eq!(preset.intelligence.close_concept, "renewal");
+        assert_eq!(preset.intelligence.key_advocate_label, "champion");
     }
 
     #[test]

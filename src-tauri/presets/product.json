@@ -67,6 +67,53 @@
       "stakeholder_misalignment"
     ]
   },
+  "intelligence": {
+    "systemRole": "product initiative intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.16,
+      "email_engagement": 0.12,
+      "stakeholder_coverage": 0.20,
+      "key_advocate_health": 0.12,
+      "financial_proximity": 0.15,
+      "signal_momentum": 0.25
+    },
+    "signalKeywords": [
+      { "keyword": "roadmap", "weight": 0.12 },
+      { "keyword": "release", "weight": 0.12 },
+      { "keyword": "blocker", "weight": 0.12 },
+      { "keyword": "beta", "weight": 0.10 },
+      { "keyword": "customer feedback", "weight": 0.10 },
+      { "keyword": "launch", "weight": 0.10 },
+      { "keyword": "scope", "weight": 0.08 },
+      { "keyword": "incident", "weight": 0.08 }
+    ],
+    "emailSignalTypes": [
+      "ship_date_risk",
+      "blocker_unresolved",
+      "stakeholder_misalignment",
+      "customer_feedback",
+      "beta_signal",
+      "launch_readiness"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Execution Cadence",
+      "email_engagement": "Stakeholder Responsiveness",
+      "stakeholder_coverage": "Cross-Functional Coverage",
+      "key_advocate_health": "Design Partner Health",
+      "financial_proximity": "Impact Proximity",
+      "signal_momentum": "Delivery Momentum"
+    },
+    "closeConcept": "ship date",
+    "keyAdvocateLabel": "design partner",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether discovery, design, engineering, and launch checkpoints are happening at the right pace.",
+      "email_engagement": "Read responsiveness from engineering, design, GTM, and customer stakeholders as alignment signals.",
+      "stakeholder_coverage": "Assess coverage across PM, engineering, design, data, product marketing, and customer voices.",
+      "key_advocate_health": "Assess whether a design partner or internal sponsor is giving useful feedback and maintaining urgency.",
+      "financial_proximity": "Focus on expected business impact, launch timing, customer value, and opportunity cost.",
+      "signal_momentum": "Weigh blockers, scope changes, beta feedback, launch readiness, and delivery confidence."
+    }
+  },
   "briefingEmphasis": "Focus on initiative timelines, blockers, and cross-functional dependencies. Prioritize initiatives approaching ship dates with unresolved blockers or stakeholder misalignment.",
   "emailPriorityKeywords": [
     "roadmap", "release", "launch", "blocker", "p0", "p1", "incident", "outage", "feature request",

@@ -74,6 +74,53 @@
       "scope_creep_detected"
     ]
   },
+  "intelligence": {
+    "systemRole": "consulting engagement intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.18,
+      "email_engagement": 0.14,
+      "stakeholder_coverage": 0.20,
+      "key_advocate_health": 0.16,
+      "financial_proximity": 0.16,
+      "signal_momentum": 0.16
+    },
+    "signalKeywords": [
+      { "keyword": "milestone", "weight": 0.12 },
+      { "keyword": "deliverable", "weight": 0.12 },
+      { "keyword": "steering committee", "weight": 0.11 },
+      { "keyword": "scope", "weight": 0.10 },
+      { "keyword": "sow", "weight": 0.10 },
+      { "keyword": "change order", "weight": 0.09 },
+      { "keyword": "recommendation", "weight": 0.08 },
+      { "keyword": "escalation", "weight": 0.08 }
+    ],
+    "emailSignalTypes": [
+      "milestone_risk",
+      "scope_change",
+      "client_escalation",
+      "steering_committee",
+      "change_order",
+      "follow_on_opportunity"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Governance Cadence",
+      "email_engagement": "Client Responsiveness",
+      "stakeholder_coverage": "Stakeholder Coverage",
+      "key_advocate_health": "Change Agent Health",
+      "financial_proximity": "Engagement Proximity",
+      "signal_momentum": "Delivery Momentum"
+    },
+    "closeConcept": "engagement close",
+    "keyAdvocateLabel": "change agent",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether steering committees, workstream syncs, and sponsor checkpoints are active.",
+      "email_engagement": "Read client responsiveness and decision latency around deliverables, data, and approvals.",
+      "stakeholder_coverage": "Assess coverage across sponsor, steering committee, project lead, SMEs, and budget owner.",
+      "key_advocate_health": "Assess whether a client-side change agent is helping recommendations land internally.",
+      "financial_proximity": "Focus on SOW timing, milestone payments, change orders, budget owner signals, and follow-on work.",
+      "signal_momentum": "Weigh milestone delivery, scope changes, escalations, data access, and stakeholder alignment."
+    }
+  },
   "briefingEmphasis": "Focus on milestone delivery, client escalations, and engagement health. Prioritize engagements with overdue deliverables or upcoming steering committees.",
   "emailPriorityKeywords": [
     "engagement", "deliverable", "milestone", "scope", "statement of work", "sow", "phase",
