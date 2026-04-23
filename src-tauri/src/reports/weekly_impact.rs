@@ -75,11 +75,9 @@ pub fn prior_work_week() -> (NaiveDate, NaiveDate) {
 
 fn entity_noun_for_preset(preset: &str) -> &'static str {
     match preset {
-        "sales" => "deal",
-        "agency" | "consulting" => "client",
-        "partnerships" => "partner",
-        "product" => "initiative",
-        "the-desk" => "project",
+        "affiliates-partnerships" | "affiliates" | "partnerships" => "partner",
+        "product-marketing" | "product" | "marketing" => "initiative",
+        "core" | "the-desk" => "project",
         _ => "account",
     }
 }

@@ -1,0 +1,126 @@
+{
+  "id": "product-marketing",
+  "name": "Product & Marketing",
+  "description": "For product and marketing teams coordinating initiatives, launches, campaigns, stakeholder feedback, and cross-functional delivery.",
+  "defaultEntityMode": "project",
+  "vocabulary": {
+    "entityNoun": "initiative",
+    "entityNounPlural": "initiatives",
+    "primaryMetric": "Delivery Confidence",
+    "healthLabel": "Execution Health",
+    "riskLabel": "Launch Risk",
+    "successVerb": "launched",
+    "cadenceNoun": "launch review"
+  },
+  "vitals": {
+    "account": [
+      { "key": "health", "label": "Alignment", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["aligned", "mixed", "misaligned"] },
+      { "key": "lifecycle", "label": "Relationship Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["prospect", "beta", "ga", "strategic", "sunset"] }
+    ],
+    "project": [
+      { "key": "status", "label": "Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["idea", "discovery", "planning", "building", "review", "scheduled", "live", "measuring", "on_hold", "cancelled"] },
+      { "key": "target_date", "label": "Launch Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "Owner", "fieldType": "text", "source": "column", "columnMapping": "owner" },
+      { "key": "milestone", "label": "Current Milestone", "fieldType": "text", "source": "column", "columnMapping": "milestone" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [],
+    "project": [
+      { "key": "initiative_type", "label": "Initiative Type", "fieldType": "select", "options": ["feature", "campaign", "launch", "experiment", "content", "platform"], "required": false },
+      { "key": "target_audience", "label": "Target Audience", "fieldType": "text", "required": false },
+      { "key": "customer_impact", "label": "Customer Impact", "fieldType": "select", "options": ["high", "medium", "low"], "required": false }
+    ],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "design_partner", "label": "Design Partner", "description": "Customer or stakeholder co-developing an initiative" },
+    { "id": "beta_tester", "label": "Beta Tester", "description": "Customer or user providing pre-release feedback" },
+    { "id": "executive_sponsor", "label": "Executive Sponsor", "description": "Leader providing direction, budget, or launch approval" },
+    { "id": "customer_advocate", "label": "Customer Advocate", "description": "Customer participating in reference, case study, or launch validation" },
+    { "id": "agency_partner", "label": "Agency Partner", "description": "External agency executing creative, media, or campaign work" }
+  ],
+  "internalTeamRoles": [
+    { "id": "pm", "label": "PM", "description": "Product Manager owning the initiative" },
+    { "id": "em", "label": "Engineering Manager", "description": "Owns delivery planning and engineering execution" },
+    { "id": "designer", "label": "Designer", "description": "Owns UX, creative, or visual execution" },
+    { "id": "pmm", "label": "Product Marketing", "description": "Owns positioning, messaging, and go-to-market" },
+    { "id": "campaign_manager", "label": "Campaign Manager", "description": "Coordinates campaign execution and channel readiness" },
+    { "id": "mops", "label": "Marketing Ops", "description": "Owns automation, attribution, and reporting setup" }
+  ],
+  "lifecycleEvents": [
+    "discovery_started",
+    "brief_approved",
+    "spec_approved",
+    "creative_complete",
+    "stakeholder_review",
+    "beta_launched",
+    "launch",
+    "ga_shipped",
+    "impact_measured",
+    "retrospective"
+  ],
+  "prioritization": {
+    "primarySignal": "deadline",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "launch_within_14d",
+      "blocker_unresolved",
+      "stakeholder_review_pending"
+    ]
+  },
+  "intelligence": {
+    "systemRole": "product and marketing intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.16,
+      "email_engagement": 0.14,
+      "stakeholder_coverage": 0.19,
+      "key_advocate_health": 0.12,
+      "financial_proximity": 0.14,
+      "signal_momentum": 0.25
+    },
+    "signalKeywords": [
+      { "keyword": "launch", "weight": 0.14 },
+      { "keyword": "roadmap", "weight": 0.12 },
+      { "keyword": "campaign", "weight": 0.12 },
+      { "keyword": "blocker", "weight": 0.12 },
+      { "keyword": "customer feedback", "weight": 0.10 },
+      { "keyword": "approval", "weight": 0.10 },
+      { "keyword": "beta", "weight": 0.09 },
+      { "keyword": "attribution", "weight": 0.08 }
+    ],
+    "emailSignalTypes": [
+      "launch_risk",
+      "ship_date_risk",
+      "blocker_unresolved",
+      "stakeholder_misalignment",
+      "customer_feedback",
+      "campaign_deadline",
+      "approval_blocker"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Execution Cadence",
+      "email_engagement": "Stakeholder Responsiveness",
+      "stakeholder_coverage": "Cross-Functional Coverage",
+      "key_advocate_health": "Sponsor Health",
+      "financial_proximity": "Impact Proximity",
+      "signal_momentum": "Launch Momentum"
+    },
+    "closeConcept": "launch",
+    "keyAdvocateLabel": "sponsor",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether discovery, delivery, campaign, and launch checkpoints are happening at the right pace.",
+      "email_engagement": "Read responsiveness from product, engineering, design, marketing, customer, and agency stakeholders as alignment signals.",
+      "stakeholder_coverage": "Assess coverage across PM, engineering, design, product marketing, campaign owners, ops, and customer voices.",
+      "key_advocate_health": "Assess whether a sponsor or design partner is clearing decisions and maintaining urgency.",
+      "financial_proximity": "Focus on expected business impact, launch timing, campaign budget, opportunity cost, and measurement readiness.",
+      "signal_momentum": "Weigh blockers, scope changes, creative readiness, beta feedback, launch readiness, and delivery confidence."
+    }
+  },
+  "briefingEmphasis": "Focus on initiative timelines, launch readiness, blockers, customer feedback, and cross-functional dependencies. Prioritize initiatives approaching launch with unresolved decisions or stakeholder misalignment.",
+  "emailPriorityKeywords": [
+    "roadmap", "release", "launch", "campaign", "blocker", "p0", "p1", "feature request",
+    "customer feedback", "beta", "creative", "approval", "attribution"
+  ]
+}

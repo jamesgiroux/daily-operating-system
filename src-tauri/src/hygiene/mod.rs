@@ -515,7 +515,7 @@ pub(crate) mod tests_common {
             ai_models: crate::types::AiModelConfig::default(),
             ai_model_routing_version: crate::types::AI_MODEL_ROUTING_VERSION,
             embeddings: crate::types::EmbeddingConfig::default(),
-            role: "customer-success".to_string(),
+            role: "core".to_string(),
             custom_preset_path: None,
             app_lock_timeout_minutes: Some(15),
             icloud_warning_dismissed: None,

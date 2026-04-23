@@ -1142,7 +1142,7 @@ pub fn create_or_update_config(
                 internal_team_setup_completed: false,
                 internal_team_setup_version: 0,
                 internal_org_account_id: None,
-                role: "customer-success".to_string(),
+                role: "core".to_string(),
                 custom_preset_path: None,
                 icloud_warning_dismissed: None,
                 app_lock_timeout_minutes: Some(15),

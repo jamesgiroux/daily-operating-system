@@ -80,19 +80,19 @@ const PRESET_ME_CONFIGS: Record<string, PresetMeConfig> = {
       "context-entries": "featured",
     },
   },
-  "partnerships": {
+  "affiliates-partnerships": {
     playbooks: [
-      { key: "partner_qbr", label: "Partner QBR", placeholder: "How do you run quarterly reviews with partners?" },
-      { key: "co_sell_motion", label: "Co-Sell Motion", placeholder: "How do you structure co-selling motions?" },
-      { key: "partner_onboarding", label: "Partner Onboarding", placeholder: "How do you onboard new partners?" },
+      { key: "partner_review", label: "Partner Review", placeholder: "How do you review partner, creator, or affiliate performance?" },
+      { key: "activation_motion", label: "Activation Motion", placeholder: "How do you onboard and activate new partners?" },
+      { key: "commercial_motion", label: "Commercial Motion", placeholder: "How do you structure referrals, commissions, co-sell, or payouts?" },
     ],
     placeholders: {
-      value_proposition: "What value does your partnership program deliver to partners?",
-      success_definition: "What does a thriving partner relationship look like? Revenue, co-sell, integrations?",
-      product_context: "Products, integrations, and joint solutions with partners.",
-      pricing_model: "Partner pricing, referral fees, and revenue share structure.",
-      competitive_context: "Competing partnership ecosystems and what makes yours win.",
-      priorities: "Which partnerships need attention right now?",
+      value_proposition: "What value does your partner, affiliate, or creator program deliver?",
+      success_definition: "What does a thriving partner relationship look like? Revenue, attribution, co-sell, integrations?",
+      product_context: "Products, integrations, offers, and assets partners need to represent you well.",
+      pricing_model: "Referral fees, commission, revenue share, reseller terms, or payout structure.",
+      competitive_context: "Competing partner ecosystems, affiliate programs, or creator offers.",
+      priorities: "Which partners, creators, or campaigns need attention right now?",
     },
     prominence: {
       "what-i-deliver": "shown",
@@ -143,19 +143,19 @@ const PRESET_ME_CONFIGS: Record<string, PresetMeConfig> = {
       "context-entries": "featured",
     },
   },
-  "product": {
+  "product-marketing": {
     playbooks: [
-      { key: "discovery_sprint", label: "Discovery Sprint", placeholder: "How do you run discovery sprints?" },
-      { key: "launch_checklist", label: "Launch Checklist", placeholder: "What's your launch checklist process?" },
-      { key: "feature_retrospective", label: "Feature Retrospective", placeholder: "How do you evaluate shipped features?" },
+      { key: "discovery_sprint", label: "Discovery Sprint", placeholder: "How do you run discovery or campaign planning?" },
+      { key: "launch_checklist", label: "Launch Checklist", placeholder: "What's your launch readiness process?" },
+      { key: "retrospective", label: "Retrospective", placeholder: "How do you evaluate shipped features or completed campaigns?" },
     ],
     placeholders: {
-      value_proposition: "What problem does your product solve? Who for?",
-      success_definition: "What adoption or usage metrics define success for a shipped feature?",
-      product_context: "Your product area, tech stack, and key integrations.",
-      pricing_model: "How your product is packaged and priced.",
+      value_proposition: "What problem does your product or campaign solve? Who for?",
+      success_definition: "What adoption, launch, pipeline, or usage metrics define success?",
+      product_context: "Your product area, campaign surface, channels, and key integrations.",
+      pricing_model: "How packaging, pricing, or campaign economics affect the work.",
       competitive_context: "Direct and indirect competitors. Where you win and where you're vulnerable.",
-      priorities: "What features or initiatives are your focus?",
+      priorities: "What launches, campaigns, or initiatives are your focus?",
     },
     prominence: {
       "what-i-deliver": "featured",
@@ -185,7 +185,7 @@ const PRESET_ME_CONFIGS: Record<string, PresetMeConfig> = {
       "context-entries": "shown",
     },
   },
-  "the-desk": {
+  "core": {
     playbooks: [
       { key: "weekly_review", label: "Weekly Review", placeholder: "How do you run your weekly review?" },
       { key: "project_retrospective", label: "Project Retrospective", placeholder: "How do you reflect on completed projects?" },
@@ -209,5 +209,19 @@ const PRESET_ME_CONFIGS: Record<string, PresetMeConfig> = {
 };
 
 export function getPresetMeConfig(presetId: string): PresetMeConfig {
-  return PRESET_ME_CONFIGS[presetId] ?? PRESET_ME_CONFIGS["the-desk"];
+  const canonical = (() => {
+    switch (presetId) {
+      case "the-desk":
+        return "core";
+      case "affiliates":
+      case "partnerships":
+        return "affiliates-partnerships";
+      case "product":
+      case "marketing":
+        return "product-marketing";
+      default:
+        return presetId;
+    }
+  })();
+  return PRESET_ME_CONFIGS[canonical] ?? PRESET_ME_CONFIGS["core"];
 }

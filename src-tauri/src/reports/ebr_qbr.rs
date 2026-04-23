@@ -74,27 +74,21 @@ fn build_ebr_qbr_prompt(
     context_provider: &dyn ContextProvider,
 ) -> String {
     let entity_noun = match active_preset {
-        "sales" => "deal",
-        "agency" | "consulting" => "client",
-        "partnerships" => "partner",
-        "product" => "initiative",
-        "the-desk" => "project",
+        "affiliates-partnerships" | "affiliates" | "partnerships" => "partner",
+        "product-marketing" | "product" | "marketing" => "initiative",
+        "core" | "the-desk" => "project",
         _ => "account",
     };
     let review_name = match active_preset {
-        "agency" => "Client Business Review",
-        "consulting" => "Executive Review",
-        "partnerships" => "Partner Business Review",
-        "sales" => "Business Review",
-        "leadership" => "Executive Briefing",
+        "affiliates-partnerships" | "affiliates" | "partnerships" => "Partner Review",
+        "product-marketing" | "product" | "marketing" => "Launch Review",
+        "core" | "the-desk" => "Project Review",
         _ => "Executive Business Review",
     };
     let audience_framing = match active_preset {
-        "agency" => "client-facing",
-        "consulting" => "executive/steering committee-facing",
-        "partnerships" => "partner-facing",
-        "sales" => "customer-facing",
-        "leadership" => "executive-facing",
+        "affiliates-partnerships" | "affiliates" | "partnerships" => "partner-facing",
+        "product-marketing" | "product" | "marketing" => "cross-functional",
+        "core" | "the-desk" => "project-facing",
         _ => "customer-facing",
     };
     let prior = db.get_entity_intelligence(entity_id).ok().flatten();
