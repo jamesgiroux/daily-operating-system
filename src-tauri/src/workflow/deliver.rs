@@ -307,7 +307,8 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
         }
     }
 
-    // Discuss: talking_points first, fall back to account_data.recent_wins
+    // Discuss: only explicit talking points. Recent wins have their own lane
+    // in the expanded briefing card and must not be mirrored here.
     let discuss: Vec<String> = ctx
         .talking_points
         .as_ref()
@@ -317,17 +318,6 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
                 .take(4)
                 .map(|s| sanitize_inline_markdown(s))
                 .collect()
-        })
-        .or_else(|| {
-            account_data
-                .and_then(|d| d.get("recent_wins"))
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .take(4)
-                        .filter_map(|v| v.as_str().map(sanitize_inline_markdown))
-                        .collect()
-                })
         })
         .unwrap_or_default();
 
@@ -351,7 +341,7 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
         })
         .unwrap_or_default();
 
-    // Wins: ctx.wins first, fall back to account_data.recent_wins (if not already used for discuss)
+    // Wins: ctx.wins first, fall back to account_data.recent_wins.
     let wins: Vec<String> = ctx
         .wins
         .as_ref()
@@ -361,6 +351,27 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
                 .take(3)
                 .map(|s| sanitize_inline_markdown(s))
                 .collect()
+        })
+        .or_else(|| {
+            account_data
+                .and_then(|d| d.get("recent_wins"))
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .take(3)
+                        .filter_map(|v| {
+                            v.as_str()
+                                .map(sanitize_inline_markdown)
+                                .or_else(|| {
+                                    v.get("text")
+                                        .or_else(|| v.get("win"))
+                                        .or_else(|| v.get("summary"))
+                                        .and_then(|text| text.as_str())
+                                        .map(sanitize_inline_markdown)
+                                })
+                        })
+                        .collect()
+                })
         })
         .unwrap_or_default();
 
@@ -1641,7 +1652,8 @@ fn build_prep_json(
                 obj.insert("risks".to_string(), json!(risks));
             }
 
-            // Recent wins are canonical. Keep talkingPoints as legacy compatibility.
+            // Recent wins are canonical and render in their own briefing-card lane.
+            // Do not mirror them into talkingPoints; that duplicates Wins as Discuss.
             let (recent_wins, recent_win_sources) = derive_recent_wins_and_sources(ctx);
             if !recent_wins.is_empty() {
                 obj.insert("recentWins".to_string(), json!(recent_wins));
@@ -1650,7 +1662,7 @@ fn build_prep_json(
                 obj.insert("recentWinSources".to_string(), json!(recent_win_sources));
             }
 
-            let mut talking_points: Vec<String> = ctx
+            let talking_points: Vec<String> = ctx
                 .talking_points
                 .as_ref()
                 .map(|items| {
@@ -1668,15 +1680,6 @@ fn build_prep_json(
                     out
                 })
                 .unwrap_or_default();
-            if talking_points.is_empty() {
-                if let Some(wins) = obj.get("recentWins").and_then(|v| v.as_array()).map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(ToString::to_string))
-                        .collect::<Vec<_>>()
-                }) {
-                    talking_points = wins;
-                }
-            }
             if !talking_points.is_empty() {
                 obj.insert("talkingPoints".to_string(), json!(talking_points));
             }
@@ -3991,9 +3994,7 @@ pub fn enrich_preps(
                     obj.insert("proposedAgenda".to_string(), json!(agenda_json));
                 }
                 if !wins_json.is_empty() {
-                    obj.insert("recentWins".to_string(), json!(wins_json.clone()));
-                    // Keep legacy field in sync for older consumers.
-                    obj.insert("talkingPoints".to_string(), json!(wins_json));
+                    obj.insert("recentWins".to_string(), json!(wins_json));
                 }
                 if !win_sources_json.is_empty() {
                     obj.insert("recentWinSources".to_string(), json!(win_sources_json));
@@ -4265,8 +4266,7 @@ pub fn enrich_single_prep(
             obj.insert("proposedAgenda".to_string(), json!(agenda_json));
         }
         if !wins_json.is_empty() {
-            obj.insert("recentWins".to_string(), json!(wins_json.clone()));
-            obj.insert("talkingPoints".to_string(), json!(wins_json));
+            obj.insert("recentWins".to_string(), json!(wins_json));
         }
         if !win_sources_json.is_empty() {
             obj.insert("recentWinSources".to_string(), json!(win_sources_json));

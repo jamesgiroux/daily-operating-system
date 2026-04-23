@@ -45,16 +45,6 @@ function makePreset(healthOptions: string[]): RolePreset {
       secondarySignal: "renewal",
       urgencyDrivers: [],
     },
-    intelligence: {
-      systemRole: "",
-      dimensionWeights: {},
-      signalKeywords: [],
-      emailSignalTypes: [],
-      dimensionLabels: {},
-      closeConcept: "",
-      keyAdvocateLabel: "",
-      dimensionGuidance: {},
-    },
     briefingEmphasis: "",
   };
 }

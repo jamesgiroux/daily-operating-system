@@ -583,6 +583,17 @@ fn is_model_unavailable_output(output: &str) -> bool {
         || (lower.contains("model") && lower.contains("not found"))
 }
 
+fn is_auth_failure_output(output: &str) -> bool {
+    let lower = output.to_lowercase();
+    lower.contains("not authenticated")
+        || lower.contains("please login")
+        || lower.contains("login required")
+        || lower.contains("failed to authenticate")
+        || lower.contains("authentication_error")
+        || lower.contains("invalid authentication credentials")
+        || (lower.contains("api error: 401") && lower.contains("authentication"))
+}
+
 impl Default for PtyManager {
     fn default() -> Self {
         Self::new()
@@ -824,10 +835,7 @@ impl PtyManager {
         );
 
         // Check for known error patterns in output
-        if output.contains("not authenticated")
-            || output.contains("please login")
-            || output.contains("login required")
-        {
+        if is_auth_failure_output(&output) {
             record_ai_usage(
                 &self.usage_context,
                 self.model.as_deref(),
@@ -926,9 +934,9 @@ pub struct ClaudeOutput {
 #[cfg(test)]
 mod tests {
     use super::{
-        background_pause_reason, build_background_pause_status, is_model_unavailable_output,
-        strip_ansi, AiRecentUsageCall, AiRecentUsageLedger, BackgroundAiGuardState,
-        ESTIMATED_DAILY_TOKEN_BUDGET,
+        background_pause_reason, build_background_pause_status, is_auth_failure_output,
+        is_model_unavailable_output, strip_ansi, AiRecentUsageCall, AiRecentUsageLedger,
+        BackgroundAiGuardState, ESTIMATED_DAILY_TOKEN_BUDGET,
     };
     use chrono::{Duration as ChronoDuration, Utc};
 
@@ -941,6 +949,17 @@ mod tests {
             "unknown model: custom-model-name"
         ));
         assert!(!is_model_unavailable_output("rate limit exceeded"));
+    }
+
+    #[test]
+    fn detects_claude_api_auth_failure_output() {
+        assert!(is_auth_failure_output(
+            r#"Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}"#
+        ));
+        assert!(is_auth_failure_output(
+            "Claude Code not authenticated. Run claude login"
+        ));
+        assert!(!is_auth_failure_output("rate limit exceeded"));
     }
 
     #[test]
