@@ -798,7 +798,7 @@ export interface InteractionDynamics {
   escalationLanguage: EscalationQuote[];
 }
 
-export interface ChampionHealthAssessment {
+export interface KeyAdvocateAssessment {
   meetingId: string;
   championName?: string;
   championStatus: string;
@@ -832,7 +832,7 @@ export interface EnrichedCapture {
 
 export interface MeetingPostIntelligence {
   interactionDynamics?: InteractionDynamics;
-  championHealth?: ChampionHealthAssessment;
+  keyAdvocateHealth?: KeyAdvocateAssessment;
   roleChanges: RoleChange[];
   enrichedCaptures: EnrichedCapture[];
 }
@@ -2097,7 +2097,7 @@ export interface RelationshipDimensions {
   meetingCadence: DimensionScore;
   emailEngagement: DimensionScore;
   stakeholderCoverage: DimensionScore;
-  championHealth: DimensionScore;
+  keyAdvocateHealth: DimensionScore;
   financialProximity: DimensionScore;
   signalMomentum: DimensionScore;
 }
@@ -2256,7 +2256,7 @@ export interface ExpansionSignal {
   discrepancy?: boolean;
 }
 
-export interface RenewalOutlook {
+export interface AgreementOutlook {
   confidence?: string;
   riskFactors?: string[];
   expansionPotential?: string;
@@ -2362,7 +2362,7 @@ export interface EntityIntelligence {
   /** Dimension 5: Expansion signals. */
   expansionSignals?: ExpansionSignal[];
   /** Dimension 5: Renewal outlook. */
-  renewalOutlook?: RenewalOutlook | null;
+  agreementOutlook?: AgreementOutlook | null;
 
   /** Dimension 6: Support ticket health. */
   supportHealth?: SupportHealth | null;

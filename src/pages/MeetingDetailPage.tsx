@@ -267,7 +267,7 @@ export default function MeetingDetailPage() {
             const pi = postIntelResult.value;
             const hasPostIntelData =
               pi.interactionDynamics != null ||
-              pi.championHealth != null ||
+              pi.keyAdvocateHealth != null ||
               pi.roleChanges.length > 0 ||
               pi.enrichedCaptures.length > 0;
             setPostIntel(hasPostIntelData ? pi : null);

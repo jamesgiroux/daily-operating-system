@@ -4,7 +4,7 @@
  * Compact 3-cell grid per mockup: Confidence / Benchmark / Recommended start.
  * Matches `.docs/mockups/account-health-outlook-globex.html` lines 888-913.
  *
- * Data sources (all from `intelligence.renewalOutlook` + contractContext):
+ * Data sources (all from `intelligence.agreementOutlook` + contractContext):
  *   - Confidence cell: `outlook.confidence` ("high"/"moderate"/"low"), detail
  *     summarises up to three `outlook.riskFactors`.
  *   - Benchmark cell: peer-cohort renewal rate — NOT wired yet. Cell is
@@ -20,7 +20,7 @@
  * `expansionPotential` nor `confidence` is populated, the entire panel
  * returns null rather than showing a dead frame.
  */
-import type { EntityIntelligence, RenewalOutlook } from "@/types";
+import type { EntityIntelligence, AgreementOutlook } from "@/types";
 import styles from "./health.module.css";
 
 const RENEWAL_RUNWAY_DAYS = 120;
@@ -39,7 +39,7 @@ const RENEWAL_RUNWAY_DAYS = 120;
  * threshold the signal is stable enough to name the call "Expansion"
  * rather than default "Renewal".
  */
-export function renewalCallVerdict(outlook: RenewalOutlook | null | undefined): string {
+export function renewalCallVerdict(outlook: AgreementOutlook | null | undefined): string {
   const conf = (outlook?.confidence ?? "").toLowerCase();
   if (conf === "low") return "Churn risk";
   const expansion = (outlook?.expansionPotential ?? "").trim();
@@ -67,7 +67,7 @@ function confidenceColorClass(c?: string): string {
  * inline. Per the mockup: "Moderate. Risk factors: X, Y, Z." One-line-ish
  * synthesis rather than dumping the first riskFactor in full.
  */
-function confidenceCell(ro: RenewalOutlook): { label: string; detail: string } {
+function confidenceCell(ro: AgreementOutlook): { label: string; detail: string } {
   const raw = (ro.confidence ?? "").trim();
   if (!raw) return { label: "—", detail: "Confidence not yet captured." };
   const cap = raw[0].toUpperCase() + raw.slice(1);
@@ -196,7 +196,7 @@ interface OutlookPanelProps {
 }
 
 export function OutlookPanel({ intelligence }: OutlookPanelProps) {
-  const outlook = intelligence?.renewalOutlook;
+  const outlook = intelligence?.agreementOutlook;
   if (!outlook) return null;
 
   const conf = confidenceCell(outlook);

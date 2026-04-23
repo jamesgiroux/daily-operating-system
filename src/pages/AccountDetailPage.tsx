@@ -178,11 +178,11 @@ export default function AccountDetailPage() {
 
         {/* Chapter 4: Outlook — the chapter title IS the verdict
             ("The Call: Renewal" / "Churn risk" / "Expansion"), computed
-            from renewalOutlook.confidence + expansionPotential. The gutter
+            from agreementOutlook.confidence + expansionPotential. The gutter
             "Outlook" stays as the orientation marker. */}
-        {intelligence && (intelligence.renewalOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
+        {intelligence && (intelligence.agreementOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
           <MarginSection id="outlook" label="Outlook">
-            <ChapterHeading title={`The Call: ${renewalCallVerdict(intelligence.renewalOutlook)}`} />
+            <ChapterHeading title={`The Call: ${renewalCallVerdict(intelligence.agreementOutlook)}`} />
             <OutlookPanel intelligence={intelligence} />
           </MarginSection>
         ) : null}
