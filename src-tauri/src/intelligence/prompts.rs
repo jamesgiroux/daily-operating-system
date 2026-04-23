@@ -1645,6 +1645,7 @@ pub fn build_intelligence_prompt(
         relationship,
         vocabulary,
         None,
+        None,
     )
 }
 
@@ -1657,6 +1658,7 @@ pub fn build_intelligence_prompt_with_preset(
     preset: Option<&crate::presets::schema::RolePreset>,
 ) -> String {
     let vocabulary = preset.map(|p| &p.vocabulary);
+    let intelligence = preset.map(|p| &p.intelligence);
     let briefing_emphasis = preset.map(|p| p.briefing_emphasis.as_str());
     build_intelligence_prompt_inner(
         entity_name,
@@ -1664,6 +1666,7 @@ pub fn build_intelligence_prompt_with_preset(
         ctx,
         relationship,
         vocabulary,
+        intelligence,
         briefing_emphasis,
     )
 }
@@ -1674,6 +1677,7 @@ fn build_intelligence_prompt_inner(
     ctx: &IntelligenceContext,
     relationship: Option<&str>,
     vocabulary: Option<&crate::presets::schema::PresetVocabulary>,
+    intelligence: Option<&crate::presets::schema::PresetIntelligenceConfig>,
     briefing_emphasis: Option<&str>,
 ) -> String {
     let is_incremental = ctx.prior_intelligence.is_some();
@@ -1695,6 +1699,14 @@ fn build_intelligence_prompt_inner(
     };
 
     let mut prompt = String::with_capacity(4096);
+    let close_concept = intelligence
+        .map(|i| i.close_concept.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("decision");
+    let key_advocate_label = intelligence
+        .map(|i| i.key_advocate_label.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("key advocate");
 
     // I468: Injection resistance preamble
     prompt.push_str(INJECTION_PREAMBLE);
@@ -1732,6 +1744,10 @@ fn build_intelligence_prompt_inner(
         if let Some(emphasis) = briefing_emphasis {
             prompt.push_str(&format!("Assessment emphasis: {}\n", emphasis,));
         }
+        prompt.push_str(&format!(
+            "Intelligence language: close/decision moments are framed as \"{}\"; the primary internal advocate is the \"{}\".\n",
+            close_concept, key_advocate_label
+        ));
         prompt.push('\n');
     }
 
@@ -1944,11 +1960,11 @@ fn build_intelligence_prompt_inner(
     }
 
     // Field-level deduplication rules
-    prompt.push_str(
+    prompt.push_str(&format!(
         "FIELD SCOPING RULES (critical — avoid redundancy across fields):\n\
          Each item should appear in exactly ONE field. Do not repeat the same event, \
          commitment, or concern across multiple fields. Cross-reference when relevant \
-         (e.g., agreementOutlook.riskFactors can say \"champion transition\" without \
+         (e.g., agreementOutlook.riskFactors can say \"{key_advocate_label} transition\" without \
          duplicating the full description from organizationalChanges).\n\
          - risks[]: Account-level THREATS to the relationship. Not blockers (those have owners), \
            not commitments (those have due dates), not current-state observations.\n\
@@ -1962,11 +1978,11 @@ fn build_intelligence_prompt_inner(
            do NOT re-extract the same items. Supplement only with new commitments not already listed.\n\
          - strategicPriorities[]: The customer's stated BUSINESS OBJECTIVES for the engagement. \
            High-level goals, not tactical commitments or individual blockers.\n\
-         - agreementOutlook.riskFactors[]: Factors that could affect the CONTRACT DECISION \
+         - agreementOutlook.riskFactors[]: Factors that could affect the {close_concept} decision \
            specifically. Brief references to items detailed elsewhere — not full duplicates.\n\
          - valueDelivered[]: OUTCOMES already achieved. Past tense. Not promises or goals.\n\
          - expansionSignals[]: GROWTH opportunities not yet closed. Not existing commitments.\n\n",
-    );
+    ));
 
     // Writing style instructions
     prompt.push_str(&format!(
@@ -2002,7 +2018,7 @@ fn build_intelligence_prompt_inner(
                  - Focus on relationship health, engagement signals, and influence.\n\
                  - WORKING items = strong engagement, responsiveness, advocacy, trust signals.\n\
                  - NOT_WORKING items = disengagement, unresponsiveness, misalignment, risk of churn.\n\
-                 - Risks should focus on relationship risks — champion departure, sentiment shifts.\n\
+                 - Risks should focus on relationship risks — key advocate departure, sentiment shifts.\n\
                  - Assessment should answer: 'What does this person need and how do I navigate them?'\n\n",
             ),
             _ => prompt.push_str(
@@ -2048,7 +2064,7 @@ fn build_intelligence_prompt_inner(
             "## Pre-Computed Account Health (Algorithmic — ADR-0097)\n\
              Score: {score:.0}/100 ({band}) | Confidence: {conf:.0}%\n\
              Dimensions: meeting_cadence={mc:.0} email={em:.0} stakeholder={sc:.0} \
-             champion={ch:.0} financial={fp:.0} signal={sm:.0}\n\n\
+             {key_advocate_label}={ch:.0} financial={fp:.0} signal={sm:.0}\n\n\
              Given the pre-computed health above, for the \"health\" field return ONLY \
              \"narrative\" (2-3 sentences explaining the score in business context) and \
              \"recommendedActions\" (3 specific next actions). Do NOT return score, band, \
@@ -2222,7 +2238,7 @@ fn build_intelligence_prompt_inner(
            \"openCommitments\": [{\"description\": \"what was committed\", \"owner\": \"who owns it\", \
          \"dueDate\": \"ISO date or null\", \"source\": \"meeting/email where committed\", \
          \"status\": \"open|in_progress|overdue|completed\"}],\n\
-           \"relationshipDepth\": {\"championStrength\": \"strong|moderate|weak|none\", \
+               \"relationshipDepth\": {\"championStrength\": \"strong|moderate|weak|none (key advocate strength)\", \
          \"executiveAccess\": \"direct|indirect|none\", \
          \"stakeholderCoverage\": \"broad|narrow|single_threaded\", \
          \"coverageGaps\": [\"role or team with no relationship\"]}",
@@ -2246,7 +2262,7 @@ fn build_intelligence_prompt_inner(
                // organizational growth (hiring, acquisitions), questions about roadmap/pricing,\n\
                // budget increase mentions. Each must cite specific evidence.\n\
                {\"opportunity\": \"...\", \"arrImpact\": 0.0, \"stage\": \"exploring|evaluating|committed|blocked\", \"strength\": \"strong|moderate|early\"}],\n\
-               \"agreementOutlook\": {\"confidence\": \"high|moderate|low\", \"riskFactors\": [\"...\"], \"expansionPotential\": \"...\", \"recommendedStart\": \"ISO date\"},\n\
+               \"agreementOutlook\": {\"confidence\": \"high|moderate|low\", \"riskFactors\": [\"...\"], \"expansionPotential\": \"...\", \"recommendedStart\": \"ISO date for when to start close/decision work\"},\n\
                \"supportHealth\": {\"openTickets\": 0, \"criticalTickets\": 0, \"trend\": \"improving|stable|degrading\", \"csat\": 0.0},\n\
                \"productAdoption\": {\"adoptionRate\": 0.0, \"trend\": \"growing|stable|declining\", \"featureAdoption\": [\"...\"], \"lastActive\": \"ISO date\"},\n\
                \"npsCsat\": {\"nps\": 0, \"csat\": 0.0, \"surveyDate\": \"ISO date\", \"verbatim\": \"quote\"},\n\
@@ -2707,9 +2723,8 @@ pub fn parse_intelligence_response(
     // companies unrelated to this entity. Cross-entity contamination from
     // Glean's unbounded search can produce stats about other companies.
     if !intel.value_delivered.is_empty() {
-        let entity_key = crate::helpers::normalize_key(
-            entity_id.split("--").last().unwrap_or(entity_id),
-        );
+        let entity_key =
+            crate::helpers::normalize_key(entity_id.split("--").last().unwrap_or(entity_id));
         let before = intel.value_delivered.len();
         intel.value_delivered.retain(|v| {
             let stmt_lower = v.statement.to_lowercase();
@@ -2717,12 +2732,8 @@ pub fn parse_intelligence_response(
             // a known-bad external source. Only reject items from "web" or empty
             // sources that don't mention the entity — everything else (meeting,
             // email, file, QBR deck, etc.) is trusted first-party context.
-            let mentions_entity = stmt_lower.contains(&entity_key)
-                || entity_key.len() < 4; // skip check for very short slugs
-            let is_untrusted_source = matches!(
-                v.source.as_deref(),
-                Some("web") | None
-            );
+            let mentions_entity = stmt_lower.contains(&entity_key) || entity_key.len() < 4; // skip check for very short slugs
+            let is_untrusted_source = matches!(v.source.as_deref(), Some("web") | None);
             mentions_entity || !is_untrusted_source
         });
         let filtered = before - intel.value_delivered.len();

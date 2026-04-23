@@ -14,6 +14,9 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use serde_json::{json, Value};
 
+use crate::presets::loader::canonical_role_id;
+use crate::presets::schema::RolePreset;
+
 // ---------------------------------------------------------------------------
 // Entity context match (I337)
 // ---------------------------------------------------------------------------
@@ -39,6 +42,7 @@ pub fn gather_all_meeting_contexts(
     workspace: &Path,
     db: Option<&crate::db::ActionDb>,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+    preset: Option<&RolePreset>,
 ) -> Vec<Value> {
     let mut contexts = Vec::new();
     for meeting in classified {
@@ -59,6 +63,7 @@ pub fn gather_all_meeting_contexts(
             workspace,
             db,
             embedding_model,
+            preset,
         ));
     }
     contexts
@@ -233,6 +238,7 @@ fn gather_account_context(
     _workspace: &Path,
     entity_match: &EntityContextMatch,
     ctx: &mut Value,
+    preset: Option<&RolePreset>,
 ) {
     let account_path = &entity_match.workspace_path;
 
@@ -242,7 +248,7 @@ fn gather_account_context(
     // File references
     if let Some(dashboard) = find_file_in_dir(account_path, "dashboard.md") {
         ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
-        if let Some(data) = parse_dashboard(&dashboard) {
+        if let Some(data) = parse_dashboard(&dashboard, preset) {
             ctx["account_data"] = data;
         }
     }
@@ -548,8 +554,9 @@ pub fn gather_meeting_context_single(
     workspace: &Path,
     db: Option<&crate::db::ActionDb>,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+    preset: Option<&RolePreset>,
 ) -> Value {
-    gather_meeting_context(meeting, workspace, db, embedding_model)
+    gather_meeting_context(meeting, workspace, db, embedding_model, preset)
 }
 
 /// Build rich context for a single meeting prep.
@@ -562,6 +569,7 @@ fn gather_meeting_context(
     workspace: &Path,
     db: Option<&crate::db::ActionDb>,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+    preset: Option<&RolePreset>,
 ) -> Value {
     let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
     let event_id = meeting.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -621,7 +629,7 @@ fn gather_meeting_context(
         if let Some(db) = db {
             match em.entity_type {
                 crate::entity::EntityType::Account => {
-                    gather_account_context(db, workspace, em, &mut ctx);
+                    gather_account_context(db, workspace, em, &mut ctx, preset);
                 }
                 crate::entity::EntityType::Project => {
                     gather_project_context(db, workspace, em, &mut ctx);
@@ -673,7 +681,7 @@ fn gather_meeting_context(
                     let account_path = accounts_dir.join(&matched.relative_path);
                     if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
                         ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
-                        if let Some(data) = parse_dashboard(&dashboard) {
+                        if let Some(data) = parse_dashboard(&dashboard, preset) {
                             ctx["account_data"] = data;
                         }
                     }
@@ -1503,11 +1511,12 @@ fn search_archive(query: &str, archive_dir: &Path, max_results: usize) -> Vec<st
 // ---------------------------------------------------------------------------
 
 /// Best-effort extraction of Quick View data from account dashboard markdown.
-fn parse_dashboard(dashboard_path: &Path) -> Option<Value> {
+fn parse_dashboard(dashboard_path: &Path, preset: Option<&RolePreset>) -> Option<Value> {
     let content = std::fs::read_to_string(dashboard_path).ok()?;
     let mut data = serde_json::Map::new();
+    let owner_pattern = build_dashboard_owner_pattern(preset);
 
-    let patterns = [
+    let mut patterns = vec![
         (
             r"(?i)(?:ARR|Annual Revenue|MRR)\s*[:\|]\s*\$?([\d,\.]+[KMB]?)",
             "arr",
@@ -1521,11 +1530,10 @@ fn parse_dashboard(dashboard_path: &Path) -> Option<Value> {
             r"(?i)(?:Lifecycle|Stage)\s*[:\|]\s*(.+?)(?:\n|\|)",
             "lifecycle",
         ),
-        (
-            r"(?i)(?:CSM|Account Manager)\s*[:\|]\s*(.+?)(?:\n|\|)",
-            "csm",
-        ),
     ];
+    if !owner_pattern.is_empty() {
+        patterns.push((owner_pattern.as_str(), "csm"));
+    }
 
     for (pattern, key) in &patterns {
         if let Ok(re) = Regex::new(pattern) {
@@ -1559,6 +1567,74 @@ fn parse_dashboard(dashboard_path: &Path) -> Option<Value> {
         None
     } else {
         Some(Value::Object(data))
+    }
+}
+
+fn build_dashboard_owner_pattern(preset: Option<&RolePreset>) -> String {
+    let mut labels = Vec::new();
+
+    if let Some(preset) = preset {
+        for role in &preset.internal_team_roles {
+            push_unique_label(&mut labels, &role.label);
+            if role.id.contains('_') {
+                push_unique_label(&mut labels, &role.id.replace('_', " "));
+            }
+        }
+
+        match canonical_role_id(&preset.id) {
+            "core" => {
+                push_unique_label(&mut labels, "Owner");
+                push_unique_label(&mut labels, "Lead");
+            }
+            "customer-success" => {
+                push_unique_label(&mut labels, "Account Manager");
+            }
+            "affiliates-partnerships" => {
+                push_unique_label(&mut labels, "Partner Manager");
+                push_unique_label(&mut labels, "Partnership Lead");
+            }
+            "product-marketing" => {
+                push_unique_label(&mut labels, "Project Lead");
+                push_unique_label(&mut labels, "Project Owner");
+                push_unique_label(&mut labels, "Marketing Lead");
+            }
+            _ => {}
+        }
+    } else {
+        for label in [
+            "CSM",
+            "Account Manager",
+            "Project Lead",
+            "Project Owner",
+            "Partner Manager",
+            "Partnership Lead",
+            "Product Manager",
+            "Marketing Lead",
+            "Campaign Owner",
+        ] {
+            push_unique_label(&mut labels, label);
+        }
+    }
+
+    if labels.is_empty() {
+        return String::new();
+    }
+
+    let alternation = labels
+        .into_iter()
+        .map(|label| regex::escape(&label))
+        .collect::<Vec<_>>()
+        .join("|");
+    format!(r"(?i)(?:{})\s*[:\|]\s*(.+?)(?:\n|\|)", alternation)
+}
+
+fn push_unique_label(labels: &mut Vec<String>, label: &str) {
+    let trimmed = label.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    if !labels.iter().any(|existing| existing.eq_ignore_ascii_case(trimmed)) {
+        labels.push(trimmed.to_string());
     }
 }
 
@@ -1894,7 +1970,8 @@ mod tests {
     fn test_guess_account_name_child_bu() {
         let dir = tempfile::tempdir().unwrap();
         // Parent with numbered internal dir + BU child
-        std::fs::create_dir_all(dir.path().join("Crestview Media/01-Customer-Information")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Crestview Media/01-Customer-Information"))
+            .unwrap();
         std::fs::create_dir_all(dir.path().join("Crestview Media/BrandsCo")).unwrap();
 
         // Match by domain (most common for BU meetings)
@@ -2039,7 +2116,7 @@ mod tests {
             json!({"id": "1", "type": "personal", "title": "Lunch"}),
             json!({"id": "2", "type": "customer", "title": "Acme Call", "start": "2026-02-08T10:00:00"}),
         ];
-        let contexts = gather_all_meeting_contexts(&classified, dir.path(), None, None);
+        let contexts = gather_all_meeting_contexts(&classified, dir.path(), None, None, None);
         assert_eq!(contexts.len(), 1);
         assert_eq!(contexts[0]["event_id"], "2");
     }
@@ -2203,7 +2280,7 @@ mod tests {
             "start": "2026-02-18T10:00:00Z",
         });
 
-        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None);
+        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None, None);
 
         // Should have account set for backward compat
         assert_eq!(ctx["account"].as_str(), Some("Acme"));
@@ -2240,7 +2317,7 @@ mod tests {
             "start": "2026-02-18T14:00:00Z",
         });
 
-        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None);
+        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None, None);
 
         // Should have primary_entity with project type
         assert!(ctx.get("primary_entity").is_some());
@@ -2276,7 +2353,7 @@ mod tests {
             "start": "2026-02-18T15:00:00Z",
         });
 
-        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None);
+        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None, None);
 
         // Should have primary_entity with person type
         assert!(ctx.get("primary_entity").is_some());
@@ -2306,11 +2383,27 @@ mod tests {
         });
 
         // No DB → no entity resolution → should still produce base context
-        let ctx = gather_meeting_context(&meeting, dir.path(), None, None);
+        let ctx = gather_meeting_context(&meeting, dir.path(), None, None, None);
 
         assert_eq!(ctx["event_id"].as_str(), Some("evt-unknown"));
         assert_eq!(ctx["title"].as_str(), Some("Random Sync"));
         // No primary_entity should be set
         assert!(ctx.get("primary_entity").is_none());
+    }
+
+    #[test]
+    fn test_parse_dashboard_uses_active_preset_role_labels() {
+        let dir = tempfile::tempdir().unwrap();
+        let dashboard = dir.path().join("dashboard.md");
+        std::fs::write(
+            &dashboard,
+            "# Launch Plan\n## Quick View\nPM: Alex Kim\nStage: In Flight\n",
+        )
+        .unwrap();
+
+        let preset = crate::presets::loader::load_preset("product-marketing").unwrap();
+        let parsed = parse_dashboard(&dashboard, Some(&preset)).expect("dashboard should parse");
+        assert_eq!(parsed["csm"].as_str(), Some("Alex Kim"));
+        assert_eq!(parsed["lifecycle"].as_str(), Some("In Flight"));
     }
 }

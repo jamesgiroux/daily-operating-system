@@ -485,6 +485,7 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
 fn generate_mechanical_prep_with_inputs(
     workspace: std::path::PathBuf,
     embedding_model: Arc<crate::embeddings::EmbeddingModel>,
+    active_preset: Option<crate::presets::schema::RolePreset>,
     meeting_id: &str,
     overwrite_existing: bool,
 ) -> Result<bool, String> {
@@ -528,12 +529,12 @@ fn generate_mechanical_prep_with_inputs(
     } else {
         None
     };
-
     let ctx = crate::prepare::meeting_context::gather_meeting_context_single(
         &classified,
         &workspace,
         Some(&db),
         embedding_model,
+        active_preset.as_ref(),
     );
 
     // Phase 5: Build FullMeetingPrep JSON via deliver.rs
@@ -626,10 +627,12 @@ fn generate_mechanical_prep(
         let config = config_guard.as_ref().ok_or("No config")?;
         std::path::PathBuf::from(&config.workspace_path)
     };
+    let active_preset = state.active_preset.read().clone();
 
     generate_mechanical_prep_with_inputs(
         workspace,
         Arc::clone(&state.embedding_model),
+        active_preset,
         meeting_id,
         overwrite_existing,
     )
@@ -654,29 +657,52 @@ pub fn regenerate_mechanical_prep_now(state: &AppState, meeting_id: &str) -> Res
 /// Gather the owned inputs needed to regenerate meeting prep on a blocking thread.
 pub fn meeting_prep_blocking_inputs(
     state: &AppState,
-) -> Result<(std::path::PathBuf, Arc<crate::embeddings::EmbeddingModel>), String> {
+) -> Result<
+    (
+        std::path::PathBuf,
+        Arc<crate::embeddings::EmbeddingModel>,
+        Option<crate::presets::schema::RolePreset>,
+    ),
+    String,
+> {
     let workspace = {
         let config_guard = state.config_read_or_recover()?;
         let config = config_guard.as_ref().ok_or("No config")?;
         std::path::PathBuf::from(&config.workspace_path)
     };
-    Ok((workspace, Arc::clone(&state.embedding_model)))
+    let active_preset = state.active_preset.read().clone();
+    Ok((workspace, Arc::clone(&state.embedding_model), active_preset))
 }
 
 pub fn generate_mechanical_prep_now_blocking(
     workspace: std::path::PathBuf,
     embedding_model: Arc<crate::embeddings::EmbeddingModel>,
+    active_preset: Option<crate::presets::schema::RolePreset>,
     meeting_id: String,
 ) -> Result<(), String> {
-    generate_mechanical_prep_with_inputs(workspace, embedding_model, &meeting_id, false).map(|_| ())
+    generate_mechanical_prep_with_inputs(
+        workspace,
+        embedding_model,
+        active_preset,
+        &meeting_id,
+        false,
+    )
+    .map(|_| ())
 }
 
 pub fn regenerate_mechanical_prep_now_blocking(
     workspace: std::path::PathBuf,
     embedding_model: Arc<crate::embeddings::EmbeddingModel>,
+    active_preset: Option<crate::presets::schema::RolePreset>,
     meeting_id: String,
 ) -> Result<bool, String> {
-    generate_mechanical_prep_with_inputs(workspace, embedding_model, &meeting_id, true)
+    generate_mechanical_prep_with_inputs(
+        workspace,
+        embedding_model,
+        active_preset,
+        &meeting_id,
+        true,
+    )
 }
 
 /// PTY enrichment timeout for a single meeting (90 seconds).

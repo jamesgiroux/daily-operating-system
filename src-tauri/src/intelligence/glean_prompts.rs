@@ -5,6 +5,7 @@
 //! same parser used for PTY output. Both paths produce identical types.
 
 use super::prompts::IntelligenceContext;
+use crate::presets::schema::RolePreset;
 
 /// Build the Glean enrichment prompt for an entity.
 ///
@@ -16,11 +17,18 @@ pub fn build_glean_enrichment_prompt(
     relationship: Option<&str>,
     ctx: &IntelligenceContext,
     is_incremental: bool,
+    preset: Option<&RolePreset>,
 ) -> String {
     let mut prompt = String::with_capacity(8192);
 
     // System role
-    prompt.push_str("You are a customer success intelligence system. Analyze the ");
+    let system_role = preset
+        .map(|p| p.intelligence.system_role.as_str())
+        .filter(|role| !role.trim().is_empty())
+        .unwrap_or("core work intelligence system");
+    prompt.push_str("You are a ");
+    prompt.push_str(system_role);
+    prompt.push_str(". Analyze the ");
     prompt.push_str(match entity_type {
         "account" => "customer account",
         "project" => "project",

@@ -73,12 +73,12 @@
   "intelligence": {
     "systemRole": "customer success intelligence system",
     "dimensionWeights": {
-      "meeting_cadence": 0.15,
-      "email_engagement": 0.15,
-      "stakeholder_coverage": 0.20,
-      "key_advocate_health": 0.20,
-      "financial_proximity": 0.15,
-      "signal_momentum": 0.15
+      "meeting_cadence": 0.1666666667,
+      "email_engagement": 0.1666666667,
+      "stakeholder_coverage": 0.1666666667,
+      "key_advocate_health": 0.1666666667,
+      "financial_proximity": 0.1666666667,
+      "signal_momentum": 0.1666666667
     },
     "signalKeywords": [
       { "keyword": "renewal", "weight": 0.15 },

@@ -236,6 +236,7 @@ pub async fn enrich_entity(
                     input.relationship.as_deref(),
                     app_handle,
                     false,
+                    input.active_preset.as_ref(),
                 )
                 .await
             {
@@ -1191,6 +1192,16 @@ pub fn recompute_entity_health(
     entity_id: &str,
     entity_type: &str,
 ) -> Result<(), String> {
+    recompute_entity_health_with_preset(db, entity_id, entity_type, None)
+}
+
+/// Recompute health dimensions with active preset weights when available.
+pub fn recompute_entity_health_with_preset(
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    preset: Option<&crate::presets::schema::RolePreset>,
+) -> Result<(), String> {
     if entity_type != "account" {
         return Ok(()); // Health scoring is account-only for now
     }
@@ -1210,8 +1221,12 @@ pub fn recompute_entity_health(
     // I633: Pass org_health from existing intelligence so the 40/60 baseline
     // blend fires consistently (previously passed None, diverging from enrichment scores)
     let org_health_ref = intel.org_health.as_ref();
-    let health =
-        crate::intelligence::health_scoring::compute_account_health(db, &account, org_health_ref);
+    let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
+        db,
+        &account,
+        org_health_ref,
+        preset,
+    );
 
     intel.health = Some(health.clone());
 
@@ -1603,9 +1618,10 @@ pub async fn mark_commitment_done(
                 })?;
 
             let commitment = {
-                let list = intel.open_commitments.as_mut().ok_or_else(|| {
-                    format!("Entity {} has no open commitments", entity_id)
-                })?;
+                let list = intel
+                    .open_commitments
+                    .as_mut()
+                    .ok_or_else(|| format!("Entity {} has no open commitments", entity_id))?;
                 if index >= list.len() {
                     return Err(format!("Commitment index {} out of bounds", index));
                 }
@@ -2279,6 +2295,7 @@ mod live_acceptance_tests {
             entity_name: String::new(),
             relationship: None,
             intelligence_context: None,
+            active_preset: None,
         };
 
         let first = write_enrichment_results(&state, &input, &contradictory, None)

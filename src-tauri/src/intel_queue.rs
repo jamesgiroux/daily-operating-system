@@ -5,10 +5,10 @@
 //! and runs enrichment with split DB locking so the UI stays responsive
 //! during the 30-120s PTY operation.
 
+use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use parking_lot::Mutex;
 use std::time::Instant;
 
 use chrono::Utc;
@@ -21,6 +21,7 @@ use crate::intelligence::{
     parse_intelligence_response, write_intelligence_json, InferredRelationship, IntelligenceJson,
     SourceManifestEntry,
 };
+use crate::presets::schema::RolePreset;
 use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::AiModelConfig;
@@ -392,6 +393,8 @@ pub struct EnrichmentInput {
     /// I535: Intelligence context for Glean-first enrichment.
     /// Preserved from gather phase so Glean can inject local context into its prompt.
     pub intelligence_context: Option<crate::intelligence::prompts::IntelligenceContext>,
+    /// DOS-178: Active role preset captured during the gather phase.
+    pub active_preset: Option<RolePreset>,
 }
 
 /// Parsed enrichment output from one model response section.
@@ -661,7 +664,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         .entry(original.entity_id.clone())
                         .or_insert("schema_validation");
                     {
-            let mut audit = state.audit_log.lock();
+                        let mut audit = state.audit_log.lock();
                         let _ = audit.append(
                             "anomaly",
                             "schema_validation_failed",
@@ -678,7 +681,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             let failed_count = original_requests.len() - succeeded_count;
             if succeeded_count > 0 {
                 {
-            let mut audit = state.audit_log.lock();
+                    let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "ai",
                         "entity_enrichment_completed",
@@ -696,7 +699,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     "pty_error"
                 };
                 {
-            let mut audit = state.audit_log.lock();
+                    let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "ai",
                         "entity_enrichment_failed",
@@ -717,7 +720,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 let anomalies = crate::intelligence::validation::detect_anomalies(&serialized);
                 if !anomalies.is_empty() {
                     {
-            let mut audit = state.audit_log.lock();
+                        let mut audit = state.audit_log.lock();
                         let _ = audit.append(
                             "anomaly",
                             "injection_instruction_in_output",
@@ -760,6 +763,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         &request.entity_type,
                         &request.entity_id,
                         &written_intel,
+                        input.active_preset.as_ref(),
                     );
                 }
             }
@@ -786,7 +790,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     // user-visible toast on scheduled work, keep audit log.
                     let is_background = is_background_priority(request.priority);
                     tauri::async_runtime::spawn(async move {
-                        let provider = crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
+                        let provider =
+                            crate::intelligence::glean_provider::GleanIntelligenceProvider::new(
+                                &endpoint,
+                            );
                         let ls_start = std::time::Instant::now();
                         match provider.enrich_leading_signals(&entity_name).await {
                             Ok(signals) => {
@@ -1057,7 +1064,7 @@ pub fn gather_enrichment_input(
                     crate::context_provider::ContextError::Other(_) => "other",
                 };
                 {
-            let mut audit = state.audit_log.lock();
+                    let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "data_access",
                         "glean_connection_failed",
@@ -1088,15 +1095,19 @@ pub fn gather_enrichment_input(
         }
     }
 
+    // Read active preset once for prompt language and preset-aware health scoring.
+    let active_preset = state.active_preset.read().clone();
+
     // I499: Compute algorithmic health for accounts before prompt building.
     // This populates ctx.computed_health so the prompt uses narrative-only health schema.
     let mut ctx = ctx;
     let computed_health = if request.entity_type == "account" {
         account.as_ref().map(|acct| {
-            crate::intelligence::health_scoring::compute_account_health(
+            crate::intelligence::health_scoring::compute_account_health_with_preset(
                 &db,
                 acct,
                 ctx.org_health.as_ref(),
+                active_preset.as_ref(),
             )
         })
     } else {
@@ -1148,13 +1159,12 @@ pub fn gather_enrichment_input(
         .map(|p| p.relationship.as_str())
         .or_else(|| account.as_ref().map(|a| a.account_type.as_db_str()));
     // Read active preset for domain-specific prompt language (I313)
-    let preset_guard = state.active_preset.read();
     let prompt = build_intelligence_prompt_with_preset(
         &entity_name,
         &request.entity_type,
         &ctx,
         relationship,
-        preset_guard.as_ref(),
+        active_preset.as_ref(),
     );
 
     let file_manifest = ctx.file_manifest.clone();
@@ -1177,6 +1187,7 @@ pub fn gather_enrichment_input(
         entity_name: entity_name.clone(),
         relationship: relationship.map(|s| s.to_string()),
         intelligence_context: preserved_ctx,
+        active_preset,
     })
 }
 
@@ -1249,6 +1260,7 @@ async fn run_glean_enrichment_with_fallback(
                     input.relationship.as_deref(),
                     Some(app_handle),
                     is_background,
+                    input.active_preset.as_ref(),
                 )
                 .await
             {
@@ -1412,6 +1424,7 @@ fn run_parallel_enrichment(
             input.relationship.as_deref(),
             ctx,
             is_incremental,
+            input.active_preset.as_ref(),
         );
 
         let workspace = input.workspace.clone();
@@ -1861,9 +1874,7 @@ pub fn write_enrichment_results(
                                 existing.as_ref().and_then(|(ds, _)| ds.as_deref()),
                                 Some("user")
                             );
-                            let is_dismissed = existing
-                                .as_ref()
-                                .is_some_and(|(_, d)| d.is_some());
+                            let is_dismissed = existing.as_ref().is_some_and(|(_, d)| d.is_some());
                             if !is_user_owned && !is_dismissed {
                                 let _ = db_sh.conn_ref().execute(
                                     "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
@@ -2506,8 +2517,16 @@ fn dual_write_enrichment_products(
             continue;
         }
 
-        match db.upsert_account_product(entity_id, &name, None, "active", adoption_pct, source, 0.55, None)
-        {
+        match db.upsert_account_product(
+            entity_id,
+            &name,
+            None,
+            "active",
+            adoption_pct,
+            source,
+            0.55,
+            None,
+        ) {
             Ok(_) => upserted += 1,
             Err(e) => {
                 log::warn!(
