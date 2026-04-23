@@ -263,8 +263,8 @@ pub struct RelationshipDimensions {
     pub email_engagement: DimensionScore,
     #[serde(default)]
     pub stakeholder_coverage: DimensionScore,
-    #[serde(default)]
-    pub champion_health: DimensionScore,
+    #[serde(default, alias = "championHealth", alias = "champion_health")]
+    pub key_advocate_health: DimensionScore,
     #[serde(default)]
     pub financial_proximity: DimensionScore,
     #[serde(default)]
@@ -682,10 +682,10 @@ pub struct ExpansionSignal {
     pub discrepancy: Option<bool>,
 }
 
-/// Renewal outlook assessment for an account.
+/// Agreement outlook assessment for an account.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct RenewalOutlook {
+pub struct AgreementOutlook {
     /// high | moderate | low — AI-assessed confidence in successful renewal.
     pub confidence: Option<String>,
     /// Specific risk factors for THIS renewal.
@@ -941,8 +941,13 @@ pub struct IntelligenceJson {
     pub contract_context: Option<ContractContext>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expansion_signals: Vec<ExpansionSignal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub renewal_outlook: Option<RenewalOutlook>,
+    #[serde(
+        default,
+        alias = "renewalOutlook",
+        alias = "renewal_outlook",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agreement_outlook: Option<AgreementOutlook>,
     /// I651: Product classification from Salesforce (Glean-only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_classification: Option<ProductClassification>,
@@ -1014,8 +1019,13 @@ pub(crate) struct DimensionsBlob {
     pub contract_context: Option<ContractContext>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expansion_signals: Vec<ExpansionSignal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub renewal_outlook: Option<RenewalOutlook>,
+    #[serde(
+        default,
+        alias = "renewalOutlook",
+        alias = "renewal_outlook",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agreement_outlook: Option<AgreementOutlook>,
     /// I651: Product classification from Salesforce (Glean-only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_classification: Option<ProductClassification>,
@@ -1048,7 +1058,7 @@ impl IntelligenceJson {
             blockers: self.blockers.clone(),
             contract_context: self.contract_context.clone(),
             expansion_signals: self.expansion_signals.clone(),
-            renewal_outlook: self.renewal_outlook.clone(),
+            agreement_outlook: self.agreement_outlook.clone(),
             product_classification: self.product_classification.clone(),
             support_health: self.support_health.clone(),
             product_adoption: self.product_adoption.clone(),
@@ -1072,7 +1082,7 @@ impl IntelligenceJson {
         self.blockers = blob.blockers.clone();
         self.contract_context = blob.contract_context.clone();
         self.expansion_signals = blob.expansion_signals.clone();
-        self.renewal_outlook = blob.renewal_outlook.clone();
+        self.agreement_outlook = blob.agreement_outlook.clone();
         self.product_classification = blob.product_classification.clone();
         self.support_health = blob.support_health.clone();
         self.product_adoption = blob.product_adoption.clone();
@@ -1353,7 +1363,7 @@ pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
                     "meetingCadence": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
                     "emailEngagement": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
                     "stakeholderCoverage": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
-                    "championHealth": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
+                    "keyAdvocateHealth": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
                     "financialProximity": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
                     "signalMomentum": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"}
                 },
@@ -1365,7 +1375,10 @@ pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
         }
     }
 
-    serde_json::from_value(value).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
+    let mut intel: IntelligenceJson =
+        serde_json::from_value(value).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
+    normalize_legacy_intelligence_refs(&mut intel);
+    Ok(intel)
 }
 
 /// Write intelligence.json atomically to an entity directory.
@@ -1465,6 +1478,44 @@ fn parse_path_segments(path: &str) -> Result<Vec<PathSegment>, String> {
     Ok(segments)
 }
 
+fn normalize_legacy_intelligence_path(path: &str) -> String {
+    const RENAMES: &[(&str, &str)] = &[
+        ("renewalOutlook", "agreementOutlook"),
+        ("renewal_outlook", "agreement_outlook"),
+        (
+            "health.dimensions.championHealth",
+            "health.dimensions.keyAdvocateHealth",
+        ),
+        (
+            "health.dimensions.champion_health",
+            "health.dimensions.key_advocate_health",
+        ),
+    ];
+
+    for (old, new) in RENAMES {
+        if path == *old {
+            return (*new).to_string();
+        }
+        if let Some(rest) = path.strip_prefix(&format!("{old}.")) {
+            return format!("{new}.{rest}");
+        }
+        if let Some(rest) = path.strip_prefix(&format!("{old}[")) {
+            return format!("{new}[{rest}");
+        }
+    }
+
+    path.to_string()
+}
+
+fn normalize_legacy_intelligence_refs(intel: &mut IntelligenceJson) {
+    for edit in &mut intel.user_edits {
+        edit.field_path = normalize_legacy_intelligence_path(&edit.field_path);
+    }
+    for dismissed in &mut intel.dismissed_items {
+        dismissed.field = normalize_legacy_intelligence_path(&dismissed.field);
+    }
+}
+
 /// Apply a field update to an intelligence.json on disk.
 ///
 /// Reads the file, applies the update via JSON path navigation,
@@ -1474,6 +1525,8 @@ pub fn apply_intelligence_field_update(
     field_path: &str,
     value: &str,
 ) -> Result<IntelligenceJson, String> {
+    let field_path = normalize_legacy_intelligence_path(field_path);
+    let field_path = field_path.as_str();
     let intel_path = dir.join(INTEL_FILENAME);
     let content = std::fs::read_to_string(&intel_path)
         .map_err(|e| format!("Failed to read {}: {}", intel_path.display(), e))?;
@@ -1542,6 +1595,8 @@ pub fn apply_intelligence_field_update_in_memory(
     field_path: &str,
     value: &str,
 ) -> Result<IntelligenceJson, String> {
+    let field_path = normalize_legacy_intelligence_path(field_path);
+    let field_path = field_path.as_str();
     let mut json_val = serde_json::to_value(&existing)
         .map_err(|e| format!("Failed to serialize existing intelligence: {}", e))?;
 
@@ -1680,13 +1735,14 @@ pub fn preserve_user_edits(new_intel: &mut IntelligenceJson, existing: &Intellig
     let mut updated_edits = Vec::new();
 
     for edit in &existing.user_edits {
+        let field_path = normalize_legacy_intelligence_path(&edit.field_path);
         // I633: Array-indexed paths like "stakeholderInsights[0].role" break when
         // enrichment reorders the array. Match by identity ("name") instead of index.
         if let Some(resolved) =
-            resolve_array_path_by_identity(&existing_val, &new_val, &edit.field_path)
+            resolve_array_path_by_identity(&existing_val, &new_val, &field_path)
         {
             // Read the user-edited value from existing at the original path
-            if let Some(val) = get_json_path(&existing_val, &edit.field_path) {
+            if let Some(val) = get_json_path(&existing_val, &field_path) {
                 if set_json_path(&mut new_val, &resolved, val.clone()).is_ok() {
                     // Update the stored path to the new index
                     updated_edits.push(crate::intelligence::io::UserEdit {
@@ -1699,15 +1755,19 @@ pub fn preserve_user_edits(new_intel: &mut IntelligenceJson, existing: &Intellig
         }
 
         // Fallback: direct path restoration (non-array or identity match failed)
-        if let Some(val) = get_json_path(&existing_val, &edit.field_path) {
-            let _ = set_json_path(&mut new_val, &edit.field_path, val.clone());
+        if let Some(val) = get_json_path(&existing_val, &field_path) {
+            let _ = set_json_path(&mut new_val, &field_path, val.clone());
         }
-        updated_edits.push(edit.clone());
+        updated_edits.push(crate::intelligence::io::UserEdit {
+            field_path,
+            edited_at: edit.edited_at.clone(),
+        });
     }
 
     // Re-parse and carry forward user_edits (with updated paths)
     if let Ok(mut restored) = serde_json::from_value::<IntelligenceJson>(new_val) {
         restored.user_edits = updated_edits;
+        normalize_legacy_intelligence_refs(&mut restored);
         *new_intel = restored;
     }
 }
@@ -3169,7 +3229,7 @@ mod tests {
             item_source: None,
             discrepancy: None,
         }];
-        intel.renewal_outlook = Some(RenewalOutlook {
+        intel.agreement_outlook = Some(AgreementOutlook {
             confidence: Some("high".to_string()),
             risk_factors: vec!["Budget freeze possible".to_string()],
             expansion_potential: Some("$30k APAC".to_string()),
@@ -3246,9 +3306,9 @@ mod tests {
             Some(120_000.0)
         );
         assert_eq!(fetched.expansion_signals.len(), 1);
-        assert!(fetched.renewal_outlook.is_some());
+        assert!(fetched.agreement_outlook.is_some());
         assert_eq!(
-            fetched.renewal_outlook.as_ref().unwrap().confidence,
+            fetched.agreement_outlook.as_ref().unwrap().confidence,
             Some("high".to_string())
         );
         assert!(fetched.support_health.is_some());

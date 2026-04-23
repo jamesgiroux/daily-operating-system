@@ -973,10 +973,10 @@ impl ActionDb {
     }
 
     /// Store champion health assessment for a meeting.
-    pub fn upsert_champion_health(
+    pub fn upsert_key_advocate_health(
         &self,
         meeting_id: &str,
-        assessment: &super::types::ChampionHealthAssessment,
+        assessment: &super::types::KeyAdvocateAssessment,
     ) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT OR REPLACE INTO meeting_champion_health
@@ -994,16 +994,16 @@ impl ActionDb {
     }
 
     /// Get champion health for a meeting.
-    pub fn get_champion_health(
+    pub fn get_key_advocate_health(
         &self,
         meeting_id: &str,
-    ) -> Result<Option<super::types::ChampionHealthAssessment>, DbError> {
+    ) -> Result<Option<super::types::KeyAdvocateAssessment>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT meeting_id, champion_name, champion_status, champion_evidence, champion_risk
              FROM meeting_champion_health WHERE meeting_id = ?1",
         )?;
         let result = stmt.query_row(rusqlite::params![meeting_id], |row| {
-            Ok(super::types::ChampionHealthAssessment {
+            Ok(super::types::KeyAdvocateAssessment {
                 meeting_id: row.get(0)?,
                 champion_name: row.get(1)?,
                 champion_status: row.get(2)?,
@@ -1319,12 +1319,12 @@ impl ActionDb {
         meeting_id: &str,
     ) -> Result<super::types::MeetingPostIntelligence, DbError> {
         let dynamics = self.get_interaction_dynamics(meeting_id)?;
-        let champion = self.get_champion_health(meeting_id)?;
+        let champion = self.get_key_advocate_health(meeting_id)?;
         let role_changes = self.get_role_changes(meeting_id)?;
         let captures = self.get_enriched_captures(meeting_id)?;
         Ok(super::types::MeetingPostIntelligence {
             interaction_dynamics: dynamics,
-            champion_health: champion,
+            key_advocate_health: champion,
             role_changes,
             enriched_captures: captures,
         })

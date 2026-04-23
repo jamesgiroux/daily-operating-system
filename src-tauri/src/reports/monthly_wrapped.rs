@@ -452,7 +452,7 @@ fn build_monthly_wrapped_prompt(
     }
 
     // Champion health assessments from the month
-    let champion_health: String = db
+    let key_advocate_health: String = db
         .conn_ref()
         .prepare(
             "SELECT m.title, mch.champion_name, mch.champion_status, mch.champion_evidence
@@ -475,9 +475,9 @@ fn build_monthly_wrapped_prompt(
         })
         .unwrap_or_default();
 
-    if !champion_health.is_empty() {
+    if !key_advocate_health.is_empty() {
         prompt.push_str("### Champion Health Trends\n");
-        prompt.push_str(&crate::util::wrap_user_data(&champion_health));
+        prompt.push_str(&crate::util::wrap_user_data(&key_advocate_health));
         prompt.push_str("\n\n");
     }
 

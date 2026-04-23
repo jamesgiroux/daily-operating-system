@@ -987,7 +987,7 @@ pub async fn update_stakeholders(
                 }
 
                 // Recompute health immediately so stakeholder changes reflect
-                // in champion_health + stakeholder_coverage dimensions without
+                // in key_advocate_health + stakeholder_coverage dimensions without
                 // waiting for a full enrichment cycle.
                 if entity_type == "account" && !scoring_roles.is_empty() {
                     if let Some(acct) = account.as_ref() {
@@ -2472,7 +2472,7 @@ mod live_acceptance_tests {
                     },
                     email_engagement: DimensionScore::default(),
                     stakeholder_coverage: DimensionScore::default(),
-                    champion_health: DimensionScore::default(),
+                    key_advocate_health: DimensionScore::default(),
                     financial_proximity: DimensionScore::default(),
                     signal_momentum: DimensionScore::default(),
                 },

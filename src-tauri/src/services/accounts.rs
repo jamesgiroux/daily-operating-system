@@ -2982,7 +2982,7 @@ fn update_stakeholder_engagement_inner(
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
         // DOS-228 Wave 0g: stakeholder engagement feeds the `stakeholder_coverage`
-        // and `champion_health` health dimensions. Persist the durable marker
+        // and `key_advocate_health` health dimensions. Persist the durable marker
         // co-committed with the mutation so a crash between here and the debounce
         // flush leaves a trail for startup drain. See `update_account_field_inner`.
         tx.mark_health_recompute_pending(account_id)
@@ -3032,7 +3032,7 @@ fn update_stakeholder_assessment_inner(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        // DOS-228 Wave 0g: assessment edits change champion_health inputs —
+        // DOS-228 Wave 0g: assessment edits change key_advocate_health inputs —
         // co-commit the marker with the mutation, then debounce a recompute.
         tx.mark_health_recompute_pending(account_id)
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
@@ -3096,7 +3096,7 @@ fn add_stakeholder_role_inner(
             0.9,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        // DOS-228 Wave 0g: champion_health reads account_stakeholder_roles
+        // DOS-228 Wave 0g: key_advocate_health reads account_stakeholder_roles
         // directly. Adding a role (especially 'champion') is load-bearing for
         // the health dimension — co-commit the pending marker.
         tx.mark_health_recompute_pending(account_id)
@@ -3157,7 +3157,7 @@ fn remove_stakeholder_role_inner(
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
         // DOS-228 Wave 0g: removing a role (e.g. champion) downgrades
-        // champion_health and stakeholder_coverage — co-commit the marker.
+        // key_advocate_health and stakeholder_coverage — co-commit the marker.
         tx.mark_health_recompute_pending(account_id)
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())

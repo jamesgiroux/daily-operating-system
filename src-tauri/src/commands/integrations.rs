@@ -3850,7 +3850,7 @@ fn completed_onboarding_dimensions(intel: &crate::intelligence::IntelligenceJson
 
     if intel.contract_context.is_some()
         || !intel.expansion_signals.is_empty()
-        || intel.renewal_outlook.is_some()
+        || intel.agreement_outlook.is_some()
         || intel.org_health.is_some()
     {
         completed += 1;

@@ -1083,7 +1083,7 @@ pub fn emit_glean_signals(
         let dims = &health.dimensions;
         {
             // Check champion dimension for concerning score
-            if dims.champion_health.score < 40.0 && dims.champion_health.weight > 0.0 {
+            if dims.key_advocate_health.score < 40.0 && dims.key_advocate_health.weight > 0.0 {
                 let _ = emit_signal_and_propagate(
                     db,
                     engine,
@@ -1093,8 +1093,8 @@ pub fn emit_glean_signals(
                     "glean_chat",
                     Some(
                         &serde_json::json!({
-                            "score": dims.champion_health.score,
-                            "evidence": dims.champion_health.evidence,
+                            "score": dims.key_advocate_health.score,
+                            "evidence": dims.key_advocate_health.evidence,
                         })
                         .to_string(),
                     ),
@@ -1203,8 +1203,8 @@ fn promote_glean_facts_to_accounts(
         }
     }
 
-    // --- Financial dimension: renewal_outlook ---
-    if let Some(ref outlook) = intel.renewal_outlook {
+    // --- Financial dimension: agreement_outlook ---
+    if let Some(ref outlook) = intel.agreement_outlook {
         if let Some(ref confidence) = outlook.confidence {
             // Map "high"/"moderate"/"low" to numeric likelihood
             let likelihood = match confidence.to_lowercase().as_str() {
@@ -1223,7 +1223,7 @@ fn promote_glean_facts_to_accounts(
             promote_fact!("support_tier", tier, "zendesk", "fact");
         }
         if let Some(ref likelihood) = org.renewal_likelihood {
-            // Only promote if renewal_outlook didn't already set it —
+            // Only promote if agreement_outlook didn't already set it —
             // both are "salesforce" priority so upsert_account_fact
             // keeps the first write (same priority = overwrite).
             promote_fact!("renewal_likelihood", likelihood, "salesforce", "fact");
@@ -1475,7 +1475,7 @@ pub fn reconcile_enrichment(
     reconcile_option!(meeting_cadence, "meetingCadence");
     reconcile_option!(email_responsiveness, "emailResponsiveness");
     reconcile_option!(contract_context, "contractContext");
-    reconcile_option!(renewal_outlook, "renewalOutlook");
+    reconcile_option!(agreement_outlook, "agreementOutlook");
     reconcile_option!(support_health, "supportHealth");
     reconcile_option!(product_adoption, "productAdoption");
     reconcile_option!(nps_csat, "npsCsat");
