@@ -1460,6 +1460,218 @@ pub async fn bulk_recompute_health(state: State<'_, Arc<AppState>>) -> Result<us
 }
 
 // =============================================================================
+// DOS-287: Devtools audit — cross-entity contamination scan
+// =============================================================================
+
+/// One field's contamination hits within a single account.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldContamination {
+    /// Which narrative field produced the hits (e.g. "executive_assessment").
+    pub field: String,
+    pub hits: Vec<crate::intelligence::contamination::ContaminationHit>,
+}
+
+/// Contamination summary for one account.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountContaminationSummary {
+    pub account_id: String,
+    pub account_name: String,
+    pub enriched_at: Option<String>,
+    pub fields_with_hits: Vec<FieldContamination>,
+}
+
+/// Result shape for `devtools_audit_cross_contamination`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrossContaminationAuditReport {
+    pub accounts_scanned: usize,
+    pub accounts_with_hits: usize,
+    pub hits: Vec<AccountContaminationSummary>,
+}
+
+/// DOS-287: Pure audit core — iterate non-archived accounts, collect
+/// contamination hits across narrative fields. Factored out so tests can
+/// exercise it with an in-memory DB without spinning up `AppState`.
+pub fn run_cross_contamination_audit(
+    db: &crate::db::ActionDb,
+) -> Result<CrossContaminationAuditReport, String> {
+    let accounts = db
+        .get_all_accounts()
+        .map_err(|e| format!("failed to load accounts: {e}"))?;
+
+    let mut report = CrossContaminationAuditReport {
+        accounts_scanned: 0,
+        accounts_with_hits: 0,
+        hits: Vec::new(),
+    };
+
+    for acct in &accounts {
+        report.accounts_scanned += 1;
+
+        let target_domains: Vec<String> = db
+            .conn_ref()
+            .prepare("SELECT domain FROM account_domains WHERE account_id = ?1")
+            .ok()
+            .and_then(|mut stmt| {
+                stmt.query_map(rusqlite::params![&acct.id], |row| row.get::<_, String>(0))
+                    .ok()
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+            })
+            .unwrap_or_default();
+
+        // Collect the (field_name, text) tuples for this account.
+        let mut field_inputs: Vec<(&'static str, String)> = Vec::new();
+
+        if let Ok(Some(intel)) = db.get_entity_intelligence(&acct.id) {
+            if let Some(ref ea) = intel.executive_assessment {
+                field_inputs.push(("executive_assessment", ea.clone()));
+            }
+        }
+        if let Some(ref co) = acct.company_overview {
+            field_inputs.push(("company_overview", co.clone()));
+        }
+        if let Some(ref sp) = acct.strategic_programs {
+            field_inputs.push(("strategic_programs", sp.clone()));
+        }
+        if let Some(ref notes) = acct.notes {
+            field_inputs.push(("notes", notes.clone()));
+        }
+
+        let mut fields_with_hits: Vec<FieldContamination> = Vec::new();
+        for (field, text) in &field_inputs {
+            let hits = crate::intelligence::contamination::detect_cross_entity_contamination(
+                text,
+                &acct.id,
+                &target_domains,
+                &[],
+                db,
+            );
+            if !hits.is_empty() {
+                fields_with_hits.push(FieldContamination {
+                    field: (*field).to_string(),
+                    hits,
+                });
+            }
+        }
+
+        if !fields_with_hits.is_empty() {
+            report.accounts_with_hits += 1;
+
+            // Pull enriched_at from entity_assessment (best-effort).
+            let enriched_at: Option<String> = db
+                .conn_ref()
+                .query_row(
+                    "SELECT enriched_at FROM entity_assessment WHERE entity_id = ?1",
+                    rusqlite::params![&acct.id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .ok()
+                .flatten();
+
+            log::warn!(
+                "[DOS-287 audit] {} ({}) — {} field(s) with contamination: {}",
+                acct.name,
+                acct.id,
+                fields_with_hits.len(),
+                fields_with_hits
+                    .iter()
+                    .map(|f| format!(
+                        "{}={}",
+                        f.field,
+                        f.hits
+                            .iter()
+                            .map(|h| h.foreign_token.as_str())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
+
+            report.hits.push(AccountContaminationSummary {
+                account_id: acct.id.clone(),
+                account_name: acct.name.clone(),
+                enriched_at,
+                fields_with_hits,
+            });
+        }
+    }
+
+    log::info!(
+        "[DOS-287 audit] complete: {}/{} accounts have contamination",
+        report.accounts_with_hits,
+        report.accounts_scanned,
+    );
+
+    Ok(report)
+}
+
+/// DOS-287 Tier 4: Sweep every non-archived account and flag any whose
+/// stored narrative mentions another customer's identifiers.
+///
+/// Scans:
+///   - `entity_assessment.executive_assessment`
+///   - `accounts.company_overview`
+///   - `accounts.strategic_programs`
+///   - `accounts.notes`
+///
+/// Invoke from the devtools console — no UI is wired up intentionally. A
+/// structured log summary is emitted on completion so results are easy to
+/// scan in the terminal.
+#[tauri::command]
+pub async fn devtools_audit_cross_contamination(
+    state: State<'_, Arc<AppState>>,
+) -> Result<CrossContaminationAuditReport, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    state.db_read(run_cross_contamination_audit).await
+}
+
+/// DOS-287: Null the enriched narrative fields for a single account so the
+/// next enrichment pass rewrites them cleanly. There is NO bulk variant —
+/// that's explicitly out of scope.
+#[tauri::command]
+pub async fn devtools_clear_contaminated_enrichment(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    let aid = account_id.clone();
+    state
+        .db_write(move |db| {
+            db.conn_ref()
+                .execute(
+                    "UPDATE entity_assessment SET executive_assessment = NULL WHERE entity_id = ?1",
+                    rusqlite::params![&aid],
+                )
+                .map_err(|e| format!("clear executive_assessment: {e}"))?;
+            db.conn_ref()
+                .execute(
+                    "UPDATE accounts SET company_overview = NULL, \
+                     strategic_programs = NULL, notes = NULL WHERE id = ?1",
+                    rusqlite::params![&aid],
+                )
+                .map_err(|e| format!("clear account narrative fields: {e}"))?;
+            log::warn!(
+                "[DOS-287] cleared contaminated enrichment fields for account {}",
+                aid
+            );
+            Ok(format!(
+                "cleared executive_assessment, company_overview, strategic_programs, notes for {}",
+                aid
+            ))
+        })
+        .await
+}
+
+// =============================================================================
 // People Commands (I51)
 // =============================================================================
 
@@ -1476,6 +1688,157 @@ mod tests {
         assert!(INSTALL_IN_PROGRESS.load(Ordering::SeqCst));
         // Reset for other tests
         INSTALL_IN_PROGRESS.store(false, Ordering::SeqCst);
+    }
+
+    // -----------------------------------------------------------------------
+    // DOS-287: Cross-contamination audit tests
+    // -----------------------------------------------------------------------
+    use crate::db::test_utils::test_db;
+    use crate::db::ActionDb;
+
+    fn insert_customer_account(
+        db: &ActionDb,
+        id: &str,
+        name: &str,
+        domains: &[&str],
+        company_overview: Option<&str>,
+        strategic_programs: Option<&str>,
+        notes: Option<&str>,
+    ) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, account_type, updated_at, archived, \
+                 company_overview, strategic_programs, notes) \
+                 VALUES (?1, ?2, 'customer', '2026-04-23T00:00:00Z', 0, ?3, ?4, ?5)",
+                rusqlite::params![id, name, company_overview, strategic_programs, notes],
+            )
+            .unwrap();
+        for d in domains {
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO account_domains (account_id, domain, source) \
+                     VALUES (?1, ?2, 'user')",
+                    rusqlite::params![id, d.to_lowercase()],
+                )
+                .unwrap();
+        }
+    }
+
+    fn set_executive_assessment(db: &ActionDb, entity_id: &str, text: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entity_assessment (entity_id, entity_type, enriched_at, \
+                 source_file_count, executive_assessment) \
+                 VALUES (?1, 'account', '2026-04-23T00:00:00Z', 0, ?2) \
+                 ON CONFLICT(entity_id) DO UPDATE SET executive_assessment = excluded.executive_assessment",
+                rusqlite::params![entity_id, text],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn audit_returns_empty_when_no_contamination() {
+        let db = test_db();
+        insert_customer_account(&db, "a", "Alpha", &["alpha.com"], None, None, None);
+        insert_customer_account(&db, "b", "Beta", &["beta.com"], None, None, None);
+        set_executive_assessment(&db, "a", "Alpha's team is doing great with alpha.com.");
+        set_executive_assessment(&db, "b", "Beta's growth on beta.com is strong.");
+
+        let report = run_cross_contamination_audit(&db).unwrap();
+        assert_eq!(report.accounts_scanned, 2);
+        assert_eq!(report.accounts_with_hits, 0);
+        assert!(report.hits.is_empty());
+    }
+
+    #[test]
+    fn audit_finds_cross_contamination_in_executive_assessment() {
+        let db = test_db();
+        insert_customer_account(&db, "target", "Jane", &["example.com"], None, None, None);
+        insert_customer_account(
+            &db,
+            "acme",
+            "Acme Sharp",
+            &["acme.com", "vip-test.com"],
+            None,
+            None,
+            None,
+        );
+        set_executive_assessment(
+            &db,
+            "target",
+            "WordPress VIP performance at vip-test.com remains healthy.",
+        );
+
+        let report = run_cross_contamination_audit(&db).unwrap();
+        assert_eq!(report.accounts_scanned, 2);
+        assert_eq!(report.accounts_with_hits, 1);
+        let summary = &report.hits[0];
+        assert_eq!(summary.account_id, "target");
+        assert!(summary
+            .fields_with_hits
+            .iter()
+            .any(|f| f.field == "executive_assessment"));
+    }
+
+    #[test]
+    fn audit_aggregates_multiple_fields_for_one_account() {
+        let db = test_db();
+        insert_customer_account(
+            &db,
+            "target",
+            "Jane",
+            &["example.com"],
+            Some("We work closely with vip-test.com teams."),
+            Some("Q2 program references acme.com scaling."),
+            None,
+        );
+        insert_customer_account(
+            &db,
+            "acme",
+            "Acme",
+            &["acme.com", "vip-test.com", "acme.com"],
+            None,
+            None,
+            None,
+        );
+        set_executive_assessment(
+            &db,
+            "target",
+            "Migration progress on vip-test.com is stable.",
+        );
+
+        let report = run_cross_contamination_audit(&db).unwrap();
+        assert_eq!(report.accounts_with_hits, 1);
+        let summary = &report.hits[0];
+        // Three contaminated fields expected.
+        let fields: std::collections::HashSet<_> = summary
+            .fields_with_hits
+            .iter()
+            .map(|f| f.field.as_str())
+            .collect();
+        assert!(fields.contains("executive_assessment"));
+        assert!(fields.contains("company_overview"));
+        assert!(fields.contains("strategic_programs"));
+    }
+
+    #[test]
+    fn audit_scans_all_non_archived_customer_accounts() {
+        let db = test_db();
+        insert_customer_account(&db, "a1", "Alpha", &["alpha.com"], None, None, None);
+        insert_customer_account(&db, "a2", "Beta", &["beta.com"], None, None, None);
+        insert_customer_account(&db, "a3", "Gamma", &["gamma.com"], None, None, None);
+        // Archived account — must not be scanned or contribute to hits.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, account_type, updated_at, archived) \
+                 VALUES ('a4', 'ArchivedCo', 'customer', '2026-04-23T00:00:00Z', 1)",
+                [],
+            )
+            .unwrap();
+
+        let report = run_cross_contamination_audit(&db).unwrap();
+        assert_eq!(report.accounts_scanned, 3, "archived accounts excluded");
+        assert_eq!(report.accounts_with_hits, 0);
     }
 
     #[test]
