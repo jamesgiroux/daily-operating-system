@@ -523,6 +523,9 @@ mod tests {
                 urgency: "watch".into(),
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             recent_wins: vec![IntelWin {
                 text: "Saved $50K".into(),
