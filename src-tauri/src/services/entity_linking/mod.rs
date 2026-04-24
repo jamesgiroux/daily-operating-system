@@ -219,33 +219,27 @@ pub async fn confirm_stakeholder_suggestion(
     account_id: String,
     person_id: String,
 ) -> Result<(), String> {
-    // Snapshot user domains once outside the DB closure so we don't hold a
-    // state lock across the write.
+    // DOS-258: after confirming, sweep the whole account's stakeholder graph
+    // for domains that aren't yet registered. Catches sibling stakeholders
+    // whose domain wasn't registered by an earlier confirmation that
+    // predated this code. Supersedes the per-person backfill — the
+    // account-wide scan includes the just-confirmed person.
     let user_domains: Vec<String> = state
         .config
         .read()
         .as_ref()
         .map(|c| c.resolved_user_domains())
         .unwrap_or_default();
-
     state
         .db_write(move |db| {
             db.confirm_stakeholder(&account_id, &person_id)?;
-            // DOS-258 Tier 3 self-healing: after confirmation, backfill the
-            // person's email domain into account_domains so the next meeting
-            // or email from the same domain resolves via P4 domain evidence
-            // without a second manual step.
-            let email_opt = db
-                .get_person(&person_id)
-                .ok()
-                .flatten()
-                .map(|p| p.email);
-            if let Some(email) = email_opt {
-                cascade::backfill_account_domain_from_person(
-                    db,
-                    &account_id,
-                    &email,
-                    &user_domains,
+            if let Err(e) = stakeholder_domains::backfill_domains_for_account(
+                db,
+                &account_id,
+                &user_domains,
+            ) {
+                log::warn!(
+                    "stakeholder_domains: confirm backfill for {account_id} failed: {e}"
                 );
             }
             Ok(())
