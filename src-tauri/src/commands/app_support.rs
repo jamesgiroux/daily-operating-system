@@ -1373,10 +1373,29 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
 // Feature Flags (I537)
 // =============================================================================
 
-/// Returns current feature flags. Role presets are gated off for GA.
+/// Returns current feature flags. Reads from `config.features` so operators can
+/// opt individual installations in via the TOML config file. Falls back to the
+/// struct Default (all false) for any key not present in config.
 #[tauri::command]
-pub async fn get_feature_flags() -> Result<crate::types::FeatureFlags, String> {
-    Ok(crate::types::FeatureFlags::default())
+pub async fn get_feature_flags(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::types::FeatureFlags, String> {
+    let guard = state.config.read();
+    let Some(config) = guard.as_ref() else {
+        return Ok(crate::types::FeatureFlags::default());
+    };
+    let flags = crate::types::FeatureFlags {
+        role_presets_enabled: *config.features.get("role_presets_enabled").unwrap_or(&false),
+        book_of_business_enabled: *config
+            .features
+            .get("book_of_business_enabled")
+            .unwrap_or(&false),
+        glean_discovery_enabled: *config
+            .features
+            .get("glean_discovery_enabled")
+            .unwrap_or(&false),
+    };
+    Ok(flags)
 }
 
 // =============================================================================
