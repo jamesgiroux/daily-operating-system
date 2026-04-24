@@ -741,7 +741,22 @@ impl GleanIntelligenceProvider {
         &self,
         entity_name: &str,
     ) -> Result<super::glean_leading_signals::HealthOutlookSignals, String> {
-        let prompt = super::glean_leading_signals::build_leading_signals_prompt(entity_name);
+        self.enrich_leading_signals_with_disambiguators(entity_name, None)
+            .await
+    }
+
+    /// DOS-287: Leading-signals enrichment with optional structured
+    /// disambiguators. Callers that have an `IntelligenceContext` handy
+    /// should prefer this variant so Glean retrieval is biased correctly.
+    pub async fn enrich_leading_signals_with_disambiguators(
+        &self,
+        entity_name: &str,
+        disambiguators: Option<&super::prompts::EntityDisambiguators>,
+    ) -> Result<super::glean_leading_signals::HealthOutlookSignals, String> {
+        let prompt = super::glean_leading_signals::build_leading_signals_prompt(
+            entity_name,
+            disambiguators,
+        );
         let client = GleanMcpClient::new(&self.endpoint);
 
         let response_text =

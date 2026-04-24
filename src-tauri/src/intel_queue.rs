@@ -809,6 +809,13 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     let engine = std::sync::Arc::clone(&state.signals.engine);
                     let state_for_spawn = std::sync::Arc::clone(&state);
                     let app_for_spawn = app.clone();
+                    // DOS-287: Pass disambiguators through so Glean's retrieval is
+                    // biased toward this account's known identifiers. Cloned from
+                    // the intelligence_context populated by build_intelligence_context.
+                    let disambiguators_for_spawn = input
+                        .intelligence_context
+                        .as_ref()
+                        .map(|c| c.disambiguators.clone());
                     // Same is_background gate as main enrichment: suppress
                     // user-visible toast on scheduled work, keep audit log.
                     let is_background = is_background_priority(request.priority);
@@ -818,7 +825,13 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                                 &endpoint,
                             );
                         let ls_start = std::time::Instant::now();
-                        match provider.enrich_leading_signals(&entity_name).await {
+                        match provider
+                            .enrich_leading_signals_with_disambiguators(
+                                &entity_name,
+                                disambiguators_for_spawn.as_ref(),
+                            )
+                            .await
+                        {
                             Ok(signals) => {
                                 if let Ok(db) = crate::db::ActionDb::open() {
                                     if let Err(e) =
