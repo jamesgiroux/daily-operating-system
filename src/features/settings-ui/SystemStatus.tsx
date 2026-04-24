@@ -267,6 +267,8 @@ interface AiBackgroundConfig {
     emailPollIntervalMinutes?: number;
   };
   hygienePreMeetingHours?: number;
+  /** Daily AI token budget (DOS-279). */
+  dailyAiTokenBudget?: number;
 }
 
 interface BackgroundPauseStatusView {
@@ -281,11 +283,18 @@ interface BackgroundDiagnostics {
   backgroundPause: BackgroundPauseStatusView;
 }
 
+const dailyBudgetTiers = [
+  { value: 50_000, label: "50k", description: "Light use — a few briefings or enrichments per day" },
+  { value: 100_000, label: "100k", description: "Moderate use — daily briefings plus background enrichment" },
+  { value: 250_000, label: "250k", description: "Heavy use — full background enrichment, frequent prep, manual refreshes" },
+] as const;
+
 export function AiBackgroundWorkSection() {
   const [aiModels, setAiModels] = useState<AiModelConfig | null>(null);
   const [calendarPollInterval, setCalendarPollInterval] = useState(5);
   const [emailPollInterval, setEmailPollInterval] = useState(15);
   const [preMeetingHours, setPreMeetingHours] = useState(12);
+  const [dailyAiTokenBudget, setDailyAiTokenBudget] = useState(50_000);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [backgroundPause, setBackgroundPause] = useState<BackgroundPauseStatusView | null>(null);
 
@@ -303,8 +312,19 @@ export function AiBackgroundWorkSection() {
       setCalendarPollInterval(config.google?.calendarPollIntervalMinutes ?? 5);
       setEmailPollInterval(config.google?.emailPollIntervalMinutes ?? 15);
       setPreMeetingHours(config.hygienePreMeetingHours ?? 12);
+      setDailyAiTokenBudget(config.dailyAiTokenBudget ?? 50_000);
     } catch (err) {
       console.error("Settings load failed:", err); // Expected: background settings fetch
+    }
+  }
+
+  async function handleDailyBudgetChange(budget: number) {
+    try {
+      await invoke("set_daily_ai_budget", { budget });
+      setDailyAiTokenBudget(budget);
+      toast.success("Daily AI budget updated");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to update daily AI budget");
     }
   }
 
@@ -523,6 +543,36 @@ export function AiBackgroundWorkSection() {
 
         <div style={styles.settingRow}>
           <div>
+            <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Daily AI Budget</span>
+            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              Estimated tokens per day, shared across background enrichment, meeting prep, briefings, and manual refreshes.
+              Resets at local midnight. When exhausted, no new AI calls start until the next reset.
+            </p>
+            {dailyBudgetTiers.find((t) => t.value === dailyAiTokenBudget) && (
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 4, fontStyle: "italic" }}>
+                {dailyBudgetTiers.find((t) => t.value === dailyAiTokenBudget)!.description}
+              </p>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {dailyBudgetTiers.map((tier) => (
+              <button
+                key={tier.value}
+                style={{
+                  ...styles.btn,
+                  ...(dailyAiTokenBudget === tier.value ? styles.btnPrimary : styles.btnGhost),
+                  padding: "3px 10px",
+                }}
+                onClick={() => handleDailyBudgetChange(tier.value)}
+              >
+                {tier.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={styles.settingRow}>
+          <div>
             <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Background AI Guard</span>
             <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
               {backgroundPause?.paused
@@ -559,12 +609,10 @@ export function AiBackgroundWorkSection() {
 
 interface HygieneConfig {
   hygieneScanIntervalHours: number;
-  hygieneAiBudget: number;
   hygienePreMeetingHours: number;
 }
 
 const scanIntervalOptions = [1, 2, 4, 8] as const;
-const aiBudgetOptions = [5, 10, 20, 50] as const;
 const preMeetingOptions = [2, 4, 12, 24] as const;
 
 function HygieneSection() {
@@ -575,7 +623,6 @@ function HygieneSection() {
   const [runningNow, setRunningNow] = useState(false);
   const [hygieneConfig, setHygieneConfig] = useState<HygieneConfig>({
     hygieneScanIntervalHours: 4,
-    hygieneAiBudget: 10,
     hygienePreMeetingHours: 12,
   });
 
@@ -599,7 +646,6 @@ function HygieneSection() {
       .then((config) => {
         setHygieneConfig({
           hygieneScanIntervalHours: config.hygieneScanIntervalHours ?? 4,
-          hygieneAiBudget: config.hygieneAiBudget ?? 10,
           hygienePreMeetingHours: config.hygienePreMeetingHours ?? 12,
         });
       })
@@ -623,21 +669,16 @@ function HygieneSection() {
   }
 
   async function handleHygieneConfigChange(
-    field: "scanIntervalHours" | "aiBudget" | "preMeetingHours",
+    field: "scanIntervalHours" | "preMeetingHours",
     value: number,
   ) {
     try {
       await invoke("set_hygiene_config", {
-        [field === "scanIntervalHours"
-          ? "scanIntervalHours"
-          : field === "aiBudget"
-            ? "aiBudget"
-            : "preMeetingHours"]: value,
+        [field === "scanIntervalHours" ? "scanIntervalHours" : "preMeetingHours"]: value,
       });
       setHygieneConfig((prev) => ({
         ...prev,
         ...(field === "scanIntervalHours" && { hygieneScanIntervalHours: value }),
-        ...(field === "aiBudget" && { hygieneAiBudget: value }),
         ...(field === "preMeetingHours" && { hygienePreMeetingHours: value }),
       }));
       toast.success("Hygiene configuration updated");
@@ -928,39 +969,6 @@ function HygieneSection() {
                   onClick={() => handleHygieneConfigChange("scanIntervalHours", v)}
                 >
                   {v}hr
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={styles.settingRow}>
-            <div>
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 14,
-                  color: "var(--color-text-primary)",
-                }}
-              >
-                Daily AI Budget
-              </span>
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                Max AI enrichments per day
-              </p>
-            </div>
-            <div style={{ display: "flex", gap: 4 }}>
-              {aiBudgetOptions.map((v) => (
-                <button
-                  key={v}
-                  style={{
-                    ...styles.btn,
-                    ...(hygieneConfig.hygieneAiBudget === v
-                      ? styles.btnPrimary
-                      : styles.btnGhost),
-                    padding: "3px 10px",
-                  }}
-                  onClick={() => handleHygieneConfigChange("aiBudget", v)}
-                >
-                  {v}
                 </button>
               ))}
             </div>

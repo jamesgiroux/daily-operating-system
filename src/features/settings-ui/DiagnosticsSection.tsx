@@ -485,10 +485,16 @@ interface AiUsageDiagnostics {
   today: AiUsageTrendPoint;
   operationCounts: AiUsageBreakdownCount[];
   modelCounts: AiUsageBreakdownCount[];
-  budgetLimit: number;
-  budgetRemaining: number;
-  estimatedDailyTokenBudget: number;
-  estimatedTokenBudgetRemaining: number;
+  /** Configured daily token budget (50k / 100k / 250k). */
+  dailyTokenBudget: number;
+  /** Tokens consumed today (local day). */
+  tokensUsedToday: number;
+  /** Tokens remaining before next local-day reset. */
+  tokensRemaining: number;
+  /** True when budget is exhausted and new AI calls are blocked. */
+  budgetExhausted: boolean;
+  /** Local YYYY-MM-DD key — resets at local midnight. */
+  budgetResetDate: string;
   backgroundPause: {
     paused: boolean;
     pausedUntil?: string | null;
@@ -644,6 +650,12 @@ function DatabaseStorageCard() {
   );
 }
 
+function formatBudgetTier(budget: number): string {
+  if (budget >= 1_000_000) return `${(budget / 1_000_000).toFixed(1)}M`;
+  if (budget >= 1_000) return `${Math.round(budget / 1_000)}k`;
+  return budget.toLocaleString();
+}
+
 function AiUsageCard() {
   const [usage, setUsage] = useState<AiUsageDiagnostics | null>(null);
 
@@ -655,53 +667,87 @@ function AiUsageCard() {
 
   if (!usage) return null;
 
+  const usedPct = usage.dailyTokenBudget > 0
+    ? Math.min(100, (usage.tokensUsedToday / usage.dailyTokenBudget) * 100)
+    : 0;
+
   return (
     <div className={ds.aiCard}>
       <p style={styles.subsectionLabel}>AI Usage</p>
       <div className={ds.aiStatGrid}>
         <div className={ds.aiStatCard}>
-          <div style={styles.monoLabel}>Today</div>
+          <div style={styles.monoLabel}>Used Today</div>
           <div className={ds.aiStatNumber}>
-            {usage.today.estimatedTotalTokens.toLocaleString()}
+            {usage.tokensUsedToday.toLocaleString()}
           </div>
           <p className={ds.aiStatDescription}>
-            estimated tokens across {usage.today.callCount} calls
+            est. tokens across {usage.today.callCount} calls
           </p>
         </div>
         <div className={ds.aiStatCard}>
-          <div style={styles.monoLabel}>Budget</div>
-          <div className={ds.aiStatNumber}>
-            {usage.estimatedTokenBudgetRemaining.toLocaleString()}
+          <div style={styles.monoLabel}>Remaining</div>
+          <div className={ds.aiStatNumber} style={usage.budgetExhausted ? { color: "var(--color-spice-terracotta)" } : undefined}>
+            {usage.budgetExhausted ? "Exhausted" : usage.tokensRemaining.toLocaleString()}
           </div>
           <p className={ds.aiStatDescription}>
-            est. tokens remaining today
+            of {formatBudgetTier(usage.dailyTokenBudget)} daily budget
           </p>
         </div>
         <div className={ds.aiStatCard}>
-          <div style={styles.monoLabel}>Hygiene Budget</div>
-          <div className={ds.aiStatNumber}>
-            {usage.budgetRemaining}/{usage.budgetLimit}
+          <div style={styles.monoLabel}>Status</div>
+          <div className={ds.aiStatNumber} style={{ fontSize: 14, paddingTop: 4 }}>
+            {usage.budgetExhausted ? "Blocked" : "Active"}
           </div>
           <p className={ds.aiStatDescription}>
-            background AI calls left today
+            resets at local midnight
           </p>
         </div>
+      </div>
+
+      {/* Budget progress bar */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{
+          height: 4,
+          background: "var(--color-rule-light)",
+          borderRadius: 2,
+          overflow: "hidden",
+        }}>
+          <div style={{
+            height: "100%",
+            width: `${usedPct}%`,
+            background: usage.budgetExhausted
+              ? "var(--color-spice-terracotta)"
+              : usedPct > 80
+                ? "var(--color-spice-turmeric)"
+                : "var(--color-garden-sage)",
+            borderRadius: 2,
+            transition: "width 0.3s ease",
+          }} />
+        </div>
+        <p className={ds.aiStatDescription} style={{ marginTop: 4 }}>
+          {usedPct.toFixed(0)}% of daily budget used
+          {usage.budgetExhausted && " — new AI calls are blocked until midnight"}
+        </p>
       </div>
 
       <div className={ds.aiSectionBlock}>
         <div className={ds.aiSectionLabel}>Background Guard</div>
         <div className={ds.aiGuardCard}>
           <div className={ds.aiGuardStatus}>
-            {usage.backgroundPause.paused ? "Paused" : "Running"}
+            {usage.budgetExhausted ? "Budget Exhausted" : usage.backgroundPause.paused ? "Paused" : "Running"}
           </div>
           <p className={ds.aiGuardDescription}>
-            {usage.backgroundPause.paused
-              ? usage.backgroundPause.reason ?? "Background AI is temporarily paused"
-              : `${usage.backgroundPause.rolling4hTokens.toLocaleString()} tokens in the last 4 hours`}
+            {usage.budgetExhausted
+              ? "Daily AI budget exhausted. All AI calls blocked until local midnight."
+              : usage.backgroundPause.paused
+                ? usage.backgroundPause.reason ?? "Background AI is temporarily paused"
+                : `${usage.backgroundPause.rolling4hTokens.toLocaleString()} tokens in the last 4 hours`}
           </p>
-          <p className={ds.aiGuardDescription}>
-            Timeout rate: {(usage.backgroundPause.timeoutRateLast20 * 100).toFixed(0)}% across recent background calls
-          </p>
+          {!usage.budgetExhausted && (
+            <p className={ds.aiGuardDescription}>
+              Timeout rate: {(usage.backgroundPause.timeoutRateLast20 * 100).toFixed(0)}% across recent background calls
+            </p>
+          )}
         </div>
       </div>
 
