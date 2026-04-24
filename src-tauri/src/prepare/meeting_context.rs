@@ -414,6 +414,60 @@ fn gather_account_context(
             "sourcedAt": tf.sourced_at,
         });
     }
+
+    // DOS-15 IL-check-3: Inject Glean leading signals into meeting prep context.
+    // Champion risk, channel divergence, and commercial signals inform pre-meeting
+    // positioning — include only high-signal fields to stay within token budget.
+    if let Ok(Some(signals_json)) = db.conn_ref().query_row(
+        "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+        [&entity_match.entity_id],
+        |row| row.get::<_, Option<String>>(0),
+    ) {
+        if let Ok(signals) = serde_json::from_str::<
+            crate::intelligence::glean_leading_signals::HealthOutlookSignals,
+        >(&signals_json)
+        {
+            let mut leading: serde_json::Map<String, serde_json::Value> =
+                serde_json::Map::new();
+
+            if let Some(cr) = &signals.champion_risk {
+                leading.insert(
+                    "championRisk".to_string(),
+                    json!({
+                        "atRisk": cr.at_risk,
+                        "level": cr.risk_level,
+                        "champion": cr.champion_name,
+                    }),
+                );
+            }
+
+            if let Some(cs) = &signals.channel_sentiment {
+                if cs.divergence_detected {
+                    leading.insert(
+                        "channelDivergence".to_string(),
+                        json!({
+                            "detected": true,
+                            "summary": cs.divergence_summary,
+                        }),
+                    );
+                }
+            }
+
+            if let Some(comm) = &signals.commercial_signals {
+                leading.insert(
+                    "commercialSignals".to_string(),
+                    json!({
+                        "arrDirection": comm.arr_direction,
+                        "paymentBehavior": comm.payment_behavior,
+                    }),
+                );
+            }
+
+            if !leading.is_empty() {
+                ctx["leadingSignals"] = serde_json::Value::Object(leading);
+            }
+        }
+    }
 }
 
 /// Gather project-specific context into the meeting context JSON (I337).
