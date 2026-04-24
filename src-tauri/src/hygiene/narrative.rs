@@ -572,10 +572,20 @@ pub fn build_intelligence_hygiene_status(
         fixes,
         fix_details,
         gaps,
-        budget: HygieneBudgetView {
-            used_today: state.hygiene.budget.used_today(),
-            daily_limit: state.hygiene.budget.daily_limit,
-            queued_for_next_budget,
+        // DOS-279: budget view now reflects token budget, not call count.
+        budget: {
+            let (used_today, daily_limit) = if let Ok(db) = crate::db::ActionDb::open() {
+                let budget = crate::pty::read_configured_daily_budget(&db);
+                let usage = crate::pty::DailyTokenUsage::load(&db);
+                (usage.tokens_used, budget)
+            } else {
+                (0, crate::pty::DEFAULT_DAILY_AI_TOKEN_BUDGET)
+            };
+            HygieneBudgetView {
+                used_today,
+                daily_limit,
+                queued_for_next_budget,
+            }
         },
         scan_duration_ms: report.map(|r| r.scan_duration_ms),
     }
@@ -588,12 +598,11 @@ pub fn run_overnight_scan(
     workspace: &Path,
     queue: &crate::intel_queue::IntelligenceQueue,
 ) -> OvernightReport {
-    // Use expanded overnight budget (2x daytime from config)
-    let overnight_limit = config
-        .hygiene_ai_budget
-        .saturating_mul(2)
-        .max(OVERNIGHT_AI_BUDGET);
-    let overnight_budget = crate::state::HygieneBudget::new(overnight_limit);
+    // DOS-279: Call-count budget replaced by token budget enforced at PTY time.
+    // Use an unlimited enqueue budget so overnight doesn't self-throttle; the
+    // token budget gate handles actual enforcement.
+    let _ = OVERNIGHT_AI_BUDGET; // kept to avoid unused-const warning
+    let overnight_budget = crate::state::HygieneBudget::unlimited();
 
     let report = super::run_hygiene_scan(
         db,
@@ -719,10 +728,11 @@ mod tests {
     }
 
     #[test]
-    fn test_overnight_budget_higher_than_daytime() {
-        assert_eq!(OVERNIGHT_AI_BUDGET, 20);
-        // Daytime default is 10 (from HygieneBudget::default())
-        let daytime = crate::state::HygieneBudget::default();
-        assert!(OVERNIGHT_AI_BUDGET > daytime.daily_limit);
+    fn test_overnight_budget_uses_unlimited_enqueue() {
+        // DOS-279: Overnight scan uses unlimited enqueue budget;
+        // token enforcement happens at PTY call time.
+        let unlimited = crate::state::HygieneBudget::unlimited();
+        assert_eq!(unlimited.daily_limit, u32::MAX);
+        assert!(unlimited.try_consume()); // Always permits
     }
 }
