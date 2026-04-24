@@ -21,9 +21,13 @@ pub const PERSONAL_EMAIL_DOMAINS: &[&str] = &[
     "live.com",
 ];
 
-/// High-priority email subject keywords.
+/// High-priority email subject keywords (role-neutral base list).
+///
+/// CS-specific keywords (`churn`, `cancellation`, `cancel`) have been moved to the
+/// CS preset's `intelligence.emailPriorityKeywords` (DOS-176). This base list
+/// contains only terms that are high-signal across all roles.
 pub const HIGH_PRIORITY_SUBJECT_KEYWORDS: &[&str] = &[
-    // Urgency signals
+    // Urgency signals (universal)
     "urgent",
     "asap",
     "action required",
@@ -31,16 +35,13 @@ pub const HIGH_PRIORITY_SUBJECT_KEYWORDS: &[&str] = &[
     "deadline",
     "escalation",
     "critical",
-    // Business/revenue signals — renewals, contracts, commercial activity
+    // Business/revenue signals (universal — not CS-specific)
     "renewal",
     "order form",
     "contract",
     "proposal",
     "invoice",
     "expansion",
-    "churn",
-    "cancellation",
-    "cancel",
     "sow",
     "msa",
     "amendment",

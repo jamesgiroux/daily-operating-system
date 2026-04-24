@@ -1961,9 +1961,8 @@ pub async fn set_role(
         c.profile = crate::types::profile_for_entity_mode(&c.entity_mode);
     })?;
 
-    *state.merged_signal_keywords.write() =
-        crate::presets::loader::merged_signal_keywords(Some(&preset));
-    *state.active_preset.write() = Some(preset);
+    // DOS-176: update active preset and recompute merged signal/email config cache.
+    state.set_active_preset(preset);
 
     let _ = app_handle.emit("config-updated", ());
     Ok("ok".to_string())
