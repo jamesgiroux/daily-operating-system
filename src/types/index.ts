@@ -2086,11 +2086,21 @@ export interface IntelligenceAccountHealth {
   recommendedActions?: string[];
 }
 
+/** DOS-249: Structured signal tag for the trend meta line. */
+export interface HealthTrendTag {
+  label: string;
+  direction: "up" | "down" | "stable";
+}
+
 export interface IntelligenceHealthTrend {
   direction: "improving" | "stable" | "declining" | "volatile";
   rationale?: string | null;
   timeframe?: string;
   confidence?: number;
+  /** DOS-249: Integer score delta over the trend window. Positive = improving. */
+  delta?: number | null;
+  /** DOS-249: Structured signal tags for the trend meta line. */
+  tags?: HealthTrendTag[];
 }
 
 export interface RelationshipDimensions {
@@ -2260,6 +2270,8 @@ export interface AgreementOutlook {
   confidence?: string;
   riskFactors?: string[];
   expansionPotential?: string;
+  /** DOS-249: One-paragraph editorial read on the renewal, rendered as pull-quote. */
+  renewalNarrative?: string;
   recommendedStart?: string;
   negotiationLeverage?: string[];
   negotiationRisk?: string[];
@@ -2404,6 +2416,12 @@ export interface IntelRisk {
   text: string;
   source?: string;
   urgency: string;
+  /** DOS-249: Punchy 1-liner headline for the triage card (≤80 chars). */
+  headline?: string;
+  /** DOS-249: Evidence body — multi-sentence supporting detail. */
+  evidence?: string;
+  /** DOS-249: Specific kind label emitted by AI (e.g. "Renewal drag · compliance gap"). */
+  kindLabel?: string;
   /** I576: Structured source attribution with confidence. */
   itemSource?: ItemSource;
   /** I576: True if multiple sources disagree on this item. */

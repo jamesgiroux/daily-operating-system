@@ -92,10 +92,8 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
   const bandLabel = health.band ? health.band[0].toUpperCase() + health.band.slice(1) : "Unknown";
   const dir = health.trend?.direction;
   const timeframe = health.trend?.timeframe ?? "";
-  // `health.trend.delta` isn't in the typed surface today; reach via a
-  // permissive cast so we can render the "▲ +12" meta when backend emits it,
-  // and render nothing when it doesn't — no fabrication.
-  const delta = (health.trend as { delta?: number | null } | undefined)?.delta ?? null;
+  // DOS-249: `delta` is now a typed field on `IntelligenceHealthTrend`.
+  const delta = health.trend?.delta ?? null;
   const deltaStr = formatScoreDelta(delta);
   const rationale =
     health.trend?.rationale && health.trend.rationale.trim().length > 0
@@ -115,11 +113,19 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
   }
   const scoreMeta = sufficient ? scoreMetaParts.join(" · ") : "Insufficient data";
 
-  // Trend meta: stays empty when we only have prose rationale — prose
-  // renders as the tension note below, not duplicated into the meta line.
-  // If the backend ever emits a structured short-tag list (mockup style:
-  // "Infra drift ▲ · Defensive Mode unsettled · …"), render it here.
-  const trendMeta = "";
+  // Trend meta: render structured tags when the backend emits them (DOS-249).
+  // Format: "Label ▲ · Label · Label ▼" — matches mockup style.
+  // Falls back to empty string when no tags are present.
+  const tags = health.trend?.tags ?? [];
+  const trendMeta =
+    tags.length > 0
+      ? tags
+          .map((t) => {
+            const arrow = t.direction === "up" ? " ▲" : t.direction === "down" ? " ▼" : "";
+            return `${t.label}${arrow}`;
+          })
+          .join(" · ")
+      : "";
 
   const dims = health.dimensions;
 

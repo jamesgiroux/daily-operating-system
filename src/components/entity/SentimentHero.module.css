@@ -111,10 +111,21 @@
   height: 20px;
 }
 
+/* DOS-249: Placeholder sparkline bars rendered when no computed history exists.
+ * Reserves the layout slot so the row geometry doesn't collapse, and reassures
+ * the user the graph slot isn't broken — it just has no data yet. */
 .sparklineEmpty {
-  display: inline-block;
-  width: 0;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
   height: 20px;
+  opacity: 0.2;
+}
+
+.sparklineEmptyBar {
+  width: 4px;
+  border-radius: 1px 1px 0 0;
+  background: var(--color-text-tertiary, #8b95a2);
 }
 
 .sparklineLabel {

@@ -212,9 +212,10 @@ export function OutlookPanel({ intelligence }: OutlookPanelProps) {
 
   const gridClassName = `${styles.outlookGrid} ${hasBenchmark ? "" : styles.outlookGridTwoCol}`;
 
-  // Pull-quote narrative — `expansionPotential` is the renewal essay the
-  // AI emits today. Not fabricated: rendered only when present.
-  const pullQuote = (outlook.expansionPotential ?? "").trim();
+  // DOS-249: Pull-quote narrative — prefer `renewalNarrative` (dedicated field
+  // added in DOS-249). Fall back to `expansionPotential` for backward compat with
+  // accounts enriched before the field was added.
+  const pullQuote = (outlook.renewalNarrative ?? outlook.expansionPotential ?? "").trim();
 
   return (
     <>
