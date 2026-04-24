@@ -549,6 +549,38 @@ pub struct MarketContextItem {
     pub discrepancy: Option<bool>,
 }
 
+/// DOS-207: Regulatory context item (DORA, SOC 2, HIPAA, GDPR, etc).
+///
+/// Emitted by the `strategic_context` dimension prompt when the AI detects
+/// a compliance requirement from transcripts, emails, or Glean output.
+/// Feeds `financial_proximity` risk scoring via the
+/// `regulatory_gap_detected` signal when `status == "gap"`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RegulatoryItem {
+    /// Standard name — typically one of: "DORA" | "SOC_2_TYPE_II" |
+    /// "HIPAA" | "GDPR" | "CUSTOM". Free-text so new standards don't
+    /// require a schema migration.
+    pub standard: String,
+    /// Lifecycle status — one of: "required" | "in_progress" | "met" | "gap".
+    /// UI renders per-status chip color.
+    pub status: String,
+    /// Short evidence line from the source material (one sentence).
+    pub evidence: String,
+    /// Optional reference to the underlying source (meeting id, email id,
+    /// Glean document URI).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_reference: Option<String>,
+    /// RFC3339 timestamp of first detection.
+    pub detected_at: String,
+    /// I576: structured source attribution + confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: true if multiple sources disagree on status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
+}
+
 // -- Dimension 2: Relationship Health --
 
 /// Coverage assessment of stakeholder roles for an account.
@@ -952,6 +984,12 @@ pub struct IntelligenceJson {
     /// did that; this field replaces the hijack).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub market_context: Vec<MarketContextItem>,
+    /// DOS-207: Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR, ...).
+    /// Emitted by `strategic_context` dimension; items with `status: "gap"`
+    /// emit `regulatory_gap_detected` signals on enrichment write, which
+    /// feed `financial_proximity` dimension scoring.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regulatory_context: Vec<RegulatoryItem>,
 
     // Dimension 2: Relationship Health
     #[serde(default, skip_serializing_if = "Option::is_none")]
