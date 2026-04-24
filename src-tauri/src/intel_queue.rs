@@ -2081,6 +2081,90 @@ pub fn write_enrichment_results(
         }
     }
 
+    // DOS-287: Cross-entity contamination check — second-line defense against
+    // Glean/PTY bleeding a different customer's content into this account's
+    // narrative fields. Runs before any persistence. On hit + RejectOnHit, we
+    // emit a signal + Tauri event and refuse to write. Shadow mode logs only.
+    if input.entity_type == "account" {
+        let policy = crate::intelligence::contamination::ContaminationValidation::from_env();
+        if policy.is_enabled() {
+            let narrative =
+                crate::intelligence::contamination::collect_narrative_text(&final_intel);
+            let target_domains: Vec<String> = db
+                .conn_ref()
+                .prepare("SELECT domain FROM account_domains WHERE account_id = ?1")
+                .and_then(|mut stmt| {
+                    stmt.query_map(rusqlite::params![&input.entity_id], |row| {
+                        row.get::<_, String>(0)
+                    })
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+                })
+                .unwrap_or_default();
+
+            let hits = crate::intelligence::contamination::detect_cross_entity_contamination(
+                &narrative,
+                &input.entity_id,
+                &target_domains,
+                &[],
+                &db,
+            );
+
+            if !hits.is_empty() {
+                let payload = serde_json::json!({
+                    "entity_id": input.entity_id,
+                    "entity_type": input.entity_type,
+                    "hits": hits,
+                    "rejected": policy.rejects(),
+                })
+                .to_string();
+
+                log::warn!(
+                    "[DOS-287] contamination detected for {} ({} hit{}): {:?} — policy={:?}",
+                    input.entity_id,
+                    hits.len(),
+                    if hits.len() == 1 { "" } else { "s" },
+                    hits,
+                    policy,
+                );
+
+                // Emit a signal for the propagation engine + audit trail.
+                let _ = crate::signals::bus::emit_signal(
+                    &db,
+                    &input.entity_type,
+                    &input.entity_id,
+                    "enrichment_contamination_rejected",
+                    "dos_287_contamination",
+                    Some(&payload),
+                    0.95,
+                );
+
+                // Emit a Tauri event so the frontend can surface a toast.
+                if let Some(handle) = _state.app_handle() {
+                    let _ = handle.emit(
+                        "enrichment-contamination-rejected",
+                        serde_json::json!({
+                            "entity_id": input.entity_id,
+                            "entity_type": input.entity_type,
+                            "hits": hits,
+                            "rejected": policy.rejects(),
+                        }),
+                    );
+                }
+
+                if policy.rejects() {
+                    return Err(format!(
+                        "enrichment rejected: {} cross-entity contamination hit{} for {} \
+                         (set DAILYOS_CONTAMINATION_VALIDATION=shadow to run in log-only mode)",
+                        hits.len(),
+                        if hits.len() == 1 { "" } else { "s" },
+                        input.entity_id,
+                    ));
+                }
+                // ShadowMode: fall through and persist anyway.
+            }
+        }
+    }
+
     // Write intelligence.json to disk
     write_intelligence_json(&input.entity_dir, &final_intel)?;
     crate::services::intelligence::upsert_assessment_from_enrichment(
