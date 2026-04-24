@@ -2103,10 +2103,19 @@ export interface IntelligenceHealthTrend {
   tags?: HealthTrendTag[];
 }
 
+/**
+ * Six health scoring dimensions. Field names mirror the Rust serde output
+ * (camelCase via `rename_all = "camelCase"`).
+ *
+ * DOS-179: `keyAdvocateHealth` replaced the former `championHealth` field name.
+ * The preset label for this dimension varies by role (CS: "Champion Health";
+ * affiliates-partnerships: "Partner Lead Health") — see DOS-177.
+ */
 export interface RelationshipDimensions {
   meetingCadence: DimensionScore;
   emailEngagement: DimensionScore;
   stakeholderCoverage: DimensionScore;
+  /** DOS-179: renamed from championHealth. Preset label is role-specific. */
   keyAdvocateHealth: DimensionScore;
   financialProximity: DimensionScore;
   signalMomentum: DimensionScore;
