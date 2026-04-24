@@ -2827,6 +2827,14 @@ struct AiStakeholder {
     assessment: Option<String>,
     #[serde(default)]
     engagement: Option<String>,
+    /// DOS-207: verified from actual customer-conversation transcript
+    /// (true) vs inferred from meeting attendance only (false).
+    #[serde(default)]
+    verified: bool,
+    #[serde(default)]
+    verified_source: Option<String>,
+    #[serde(default)]
+    verified_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3182,6 +3190,9 @@ fn try_parse_json_response(
                 source: None,
                 person_id: None,
                 suggested_person_id: None,
+                verified: s.verified,
+                verified_source: s.verified_source,
+                verified_at: s.verified_at,
                 item_source: None,
                 discrepancy: None,
             })
@@ -3528,6 +3539,7 @@ fn parse_stakeholder_line(rest: &str) -> Option<StakeholderInsight> {
         suggested_person_id: None,
         item_source: None,
         discrepancy: None,
+        ..Default::default()
     })
 }
 
