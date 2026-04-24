@@ -26,7 +26,7 @@ pub struct HygieneBudget {
 
 impl Default for HygieneBudget {
     fn default() -> Self {
-        Self::new(10) // Daytime default: 10 AI calls/day
+        Self::unlimited()
     }
 }
 
@@ -37,6 +37,15 @@ impl HygieneBudget {
             daily_limit: limit,
             last_reset: Mutex::new(chrono::Local::now().format("%Y-%m-%d").to_string()),
         }
+    }
+
+    /// Create an effectively unlimited hygiene budget.
+    ///
+    /// DOS-279: The call-count hygiene budget is replaced by the token budget
+    /// enforced at PTY call time. Hygiene uses `unlimited()` so it can enqueue
+    /// freely; the PTY gate handles actual enforcement.
+    pub fn unlimited() -> Self {
+        Self::new(u32::MAX)
     }
 
     /// Check if budget allows another AI call, resetting counter if day changed.
@@ -427,7 +436,15 @@ impl AppState {
         // Load transcript records from disk
         let transcript_processed = load_transcript_records().unwrap_or_default();
 
-        let hygiene_budget_limit = config.as_ref().map(|c| c.hygiene_ai_budget).unwrap_or(10);
+        // Deprecated: hygiene call-count budget replaced by token budget (DOS-279).
+        let _hygiene_budget_limit = 0u32;
+
+        // DOS-279: Sync the daily AI token budget from config to KV store so
+        // the preflight gate (running in a sync context) can read it without
+        // going through AppState.
+        if let (Some(cfg), Some(db)) = (config.as_ref(), startup_db.as_ref()) {
+            crate::pty::sync_budget_config_to_kv(db, cfg.daily_ai_token_budget);
+        }
 
         // I309: Load active role preset from config
         let active_preset = config.as_ref().and_then(|c| {
@@ -544,7 +561,9 @@ impl AppState {
                 scan_running: AtomicBool::new(false),
                 last_scan_at: Mutex::new(None),
                 next_scan_at: Mutex::new(None),
-                budget: HygieneBudget::new(hygiene_budget_limit),
+                // DOS-279: Hygiene call-count budget is deprecated. Use unlimited
+                // so hygiene can enqueue freely; token budget enforced at PTY call time.
+                budget: HygieneBudget::unlimited(),
                 full_orphan_scan_done: AtomicBool::new(false),
             },
             pre_dev_workspace: Mutex::new(None),
@@ -1145,7 +1164,8 @@ pub fn create_or_update_config(
                 icloud_warning_dismissed: None,
                 app_lock_timeout_minutes: Some(15),
                 hygiene_scan_interval_hours: 4,
-                hygiene_ai_budget: 10,
+                hygiene_ai_budget: 0,
+                daily_ai_token_budget: crate::pty::DEFAULT_DAILY_AI_TOKEN_BUDGET,
                 hygiene_pre_meeting_hours: 12,
                 email_enrichment_timeout_seconds: 90,
                 notifications: crate::types::NotificationConfig::default(),

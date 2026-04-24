@@ -96,9 +96,15 @@ pub struct Config {
     /// Hygiene scan interval in hours (default: 4). Options: 1, 2, 4, 8.
     #[serde(default = "default_hygiene_scan_interval_hours")]
     pub hygiene_scan_interval_hours: u32,
-    /// Daily AI enrichment budget (default: 10). Options: 5, 10, 20, 50.
-    #[serde(default = "default_hygiene_ai_budget")]
+    /// Deprecated: was a call-count budget for hygiene enrichments.
+    /// Kept for config backwards-compatibility only. No longer enforced.
+    /// New installs will omit this field; existing configs continue to deserialize.
+    #[serde(default, skip_serializing_if = "skip_zero")]
     pub hygiene_ai_budget: u32,
+    /// Daily AI token budget (DOS-279). Covers all AI calls: background enrichment,
+    /// meeting prep, briefing generation, manual refresh. Options: 50_000, 100_000, 250_000.
+    #[serde(default = "default_daily_ai_token_budget")]
+    pub daily_ai_token_budget: u32,
     /// Pre-meeting refresh window in hours (default: 12). Options: 2, 4, 12, 24.
     #[serde(default = "default_hygiene_pre_meeting_hours")]
     pub hygiene_pre_meeting_hours: u32,
@@ -315,12 +321,17 @@ fn default_hygiene_scan_interval_hours() -> u32 {
     4
 }
 
-fn default_hygiene_ai_budget() -> u32 {
-    10
-}
-
 fn default_hygiene_pre_meeting_hours() -> u32 {
     12
+}
+
+fn default_daily_ai_token_budget() -> u32 {
+    crate::pty::DEFAULT_DAILY_AI_TOKEN_BUDGET
+}
+
+/// Skip serializing deprecated `hygiene_ai_budget` when it is 0 (new installs).
+fn skip_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 fn default_email_enrichment_timeout_seconds() -> u32 {
@@ -2927,7 +2938,8 @@ mod tests {
             app_lock_timeout_minutes: Some(15),
             icloud_warning_dismissed: None,
             hygiene_scan_interval_hours: 4,
-            hygiene_ai_budget: 10,
+            hygiene_ai_budget: 0,
+            daily_ai_token_budget: crate::pty::DEFAULT_DAILY_AI_TOKEN_BUDGET,
             hygiene_pre_meeting_hours: 12,
             email_enrichment_timeout_seconds: 90,
             notifications: NotificationConfig::default(),
