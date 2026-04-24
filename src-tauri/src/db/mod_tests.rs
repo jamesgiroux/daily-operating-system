@@ -1654,6 +1654,118 @@ fn test_get_stale_accounts() {
 }
 
 #[test]
+fn test_get_stale_accounts_excludes_archived() {
+    // DOS-286: archived accounts must never be returned by the stale query,
+    // because the stale query is the primary input to ProactiveHygiene enrichment.
+    let db = test_db();
+
+    let archived_stale = DbAccount {
+        id: "archived-stale".to_string(),
+        name: "Archived Corp".to_string(),
+        lifecycle: Some("ramping".to_string()),
+        arr: None,
+        health: None,
+        contract_start: None,
+        contract_end: None,
+        nps: None,
+        tracker_path: None,
+        parent_id: None,
+        account_type: crate::db::AccountType::Customer,
+        updated_at: "2020-01-01T00:00:00Z".to_string(),
+        archived: true,
+        keywords: None,
+        keywords_extracted_at: None,
+        metadata: None,
+        ..Default::default()
+    };
+    db.upsert_account(&archived_stale).expect("insert");
+
+    let results = db.get_stale_accounts(30).expect("query");
+    assert!(
+        results.iter().all(|a| a.id != "archived-stale"),
+        "archived account must not appear in stale sweep"
+    );
+}
+
+#[test]
+fn test_get_renewal_alerts_excludes_archived() {
+    // DOS-286: archived accounts must never be returned by renewal alerts,
+    // otherwise they get enqueued for enrichment by the hygiene sweep.
+    let db = test_db();
+    let soon = (Utc::now() + chrono::Duration::days(10))
+        .format("%Y-%m-%d")
+        .to_string();
+
+    let archived_renewing = DbAccount {
+        id: "archived-renewing".to_string(),
+        name: "Archived Renewing Corp".to_string(),
+        lifecycle: Some("steady-state".to_string()),
+        arr: None,
+        health: None,
+        contract_start: None,
+        contract_end: Some(soon),
+        nps: None,
+        tracker_path: None,
+        parent_id: None,
+        account_type: crate::db::AccountType::Customer,
+        updated_at: Utc::now().to_rfc3339(),
+        archived: true,
+        keywords: None,
+        keywords_extracted_at: None,
+        metadata: None,
+        ..Default::default()
+    };
+    db.upsert_account(&archived_renewing).expect("insert");
+
+    let results = db.get_renewal_alerts(30).expect("query");
+    assert!(
+        results.iter().all(|a| a.id != "archived-renewing"),
+        "archived account must not appear in renewal alerts"
+    );
+}
+
+#[test]
+fn test_is_entity_archived() {
+    // DOS-286: the helper must report archive state accurately so enqueue
+    // paths can guard against enriching archived entities.
+    let db = test_db();
+
+    let active = DbAccount {
+        id: "active-acct".to_string(),
+        name: "Active Corp".to_string(),
+        lifecycle: Some("steady-state".to_string()),
+        arr: None,
+        health: None,
+        contract_start: None,
+        contract_end: None,
+        nps: None,
+        tracker_path: None,
+        parent_id: None,
+        account_type: crate::db::AccountType::Customer,
+        updated_at: Utc::now().to_rfc3339(),
+        archived: false,
+        keywords: None,
+        keywords_extracted_at: None,
+        metadata: None,
+        ..Default::default()
+    };
+    let archived = DbAccount {
+        id: "archived-acct".to_string(),
+        archived: true,
+        ..active.clone()
+    };
+    db.upsert_account(&active).expect("insert active");
+    db.upsert_account(&archived).expect("insert archived");
+
+    assert!(!db.is_entity_archived("active-acct", "account"));
+    assert!(db.is_entity_archived("archived-acct", "account"));
+    // Unknown entities are not archived (don't block on missing data).
+    assert!(!db.is_entity_archived("does-not-exist", "account"));
+    // Unsupported entity types return false (don't block on unknown types).
+    assert!(!db.is_entity_archived("whatever", "unsupported-type"));
+}
+
+#[test]
 fn test_needs_decision_migration() {
     // Verify the needs_decision column exists after opening a fresh DB
     let db = test_db();
