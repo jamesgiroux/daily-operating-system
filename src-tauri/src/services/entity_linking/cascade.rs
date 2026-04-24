@@ -4,6 +4,89 @@ use crate::db::ActionDb;
 
 use super::types::{Candidate, EntityRef, LinkTier, LinkOutcome, LinkingContext, OwnerType};
 
+/// Personal-email providers whose domains must never be merged into
+/// account_domains. A stakeholder confirmation for jane@gmail.com doesn't
+/// prove gmail.com is Jane-Corp's domain.
+const PERSONAL_EMAIL_DOMAINS: &[&str] = &[
+    "gmail.com",
+    "googlemail.com",
+    "yahoo.com",
+    "outlook.com",
+    "hotmail.com",
+    "live.com",
+    "icloud.com",
+    "me.com",
+    "proton.me",
+    "protonmail.com",
+];
+
+/// Shared self-healing helper: when a stakeholder is confirmed on an account,
+/// merge the person's email domain into `account_domains` provided the domain
+/// is external (not user-owned, not a personal-email provider). Idempotent —
+/// re-runs for an already-registered domain emit no new signal.
+///
+/// Returns true when a new domain was actually inserted (so callers can emit
+/// a one-shot `account_domains_updated` audit signal).
+pub(crate) fn backfill_account_domain_from_person(
+    db: &ActionDb,
+    account_id: &str,
+    person_email: &str,
+    user_domains: &[String],
+) -> bool {
+    let domain = match person_email.rsplit_once('@') {
+        Some((_, d)) => d.to_lowercase(),
+        None => return false,
+    };
+    if domain.is_empty() {
+        return false;
+    }
+    // Skip user's own domains — these should never land in account_domains.
+    if user_domains
+        .iter()
+        .any(|ud| ud.eq_ignore_ascii_case(&domain))
+    {
+        return false;
+    }
+    // Skip personal-email providers.
+    if PERSONAL_EMAIL_DOMAINS.iter().any(|p| *p == domain) {
+        return false;
+    }
+
+    // Already registered? Skip to avoid double-emitting the audit signal
+    // (merge_account_domains itself is idempotent via INSERT OR IGNORE,
+    // but emit_signal is not — we gate the signal here).
+    let already: Option<i64> = db
+        .conn_ref()
+        .query_row(
+            "SELECT 1 FROM account_domains WHERE account_id = ?1 AND domain = ?2 LIMIT 1",
+            rusqlite::params![account_id, domain],
+            |row| row.get(0),
+        )
+        .ok();
+    if already.is_some() {
+        return false;
+    }
+
+    if let Err(e) = db.merge_account_domains(account_id, std::slice::from_ref(&domain)) {
+        log::warn!(
+            "backfill_account_domain_from_person: merge failed for {account_id} / {domain}: {e}"
+        );
+        return false;
+    }
+
+    // Emit audit signal mirroring the C6 path.
+    let _ = crate::signals::bus::emit_signal(
+        db,
+        "account",
+        account_id,
+        "account_domains_updated",
+        "stakeholder_confirmation",
+        Some(&domain),
+        0.9,
+    );
+    true
+}
+
 /// Run all cascade steps and return the final LinkOutcome.
 pub fn run_cascade(
     ctx: &LinkingContext,
@@ -245,6 +328,12 @@ fn c3_promote_trusted_stakeholders(ctx: &LinkingContext, account_id: &str, db: &
         // Insert directly as active (trusted because user chose the account).
         let _ = db.suggest_stakeholder_pending(account_id, person_id, "user_set_primary", 1.0);
         let _ = db.confirm_stakeholder(account_id, person_id);
+
+        // DOS-258 Tier 3: self-healing — a confirmed stakeholder's external
+        // domain is evidence the account owns that domain. Merge it into
+        // account_domains so future P4 domain evidence fires without a
+        // second manual confirmation.
+        let _ = backfill_account_domain_from_person(db, account_id, &p.email, &ctx.user_domains);
     }
 }
 
@@ -478,5 +567,119 @@ mod tests {
             "C6 must only run for meeting owners, got {:?}",
             domains
         );
+    }
+}
+
+#[cfg(test)]
+mod backfill_tests {
+    use super::*;
+    use crate::db::test_utils::test_db;
+
+    fn seed_account(db: &ActionDb, id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at, archived) VALUES (?1, ?1, '2026-04-20', 0)",
+                rusqlite::params![id],
+            )
+            .expect("seed account");
+    }
+
+    fn count_domains(db: &ActionDb, account_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_domains WHERE account_id = ?1",
+                rusqlite::params![account_id],
+                |row| row.get(0),
+            )
+            .expect("count")
+    }
+
+    fn count_signal(db: &ActionDb, account_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE entity_id = ?1 \
+                 AND signal_type = 'account_domains_updated'",
+                rusqlite::params![account_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn confirm_stakeholder_backfills_external_domain() {
+        let db = test_db();
+        seed_account(&db, "acc-jane");
+
+        let inserted = backfill_account_domain_from_person(
+            &db,
+            "acc-jane",
+            "jane@example.test",
+            &["company.com".to_string()],
+        );
+        assert!(inserted, "expected domain insert");
+        assert_eq!(count_domains(&db, "acc-jane"), 1, "example.test should be registered");
+        assert_eq!(count_signal(&db, "acc-jane"), 1, "one audit signal expected");
+    }
+
+    #[test]
+    fn confirm_stakeholder_skips_personal_email() {
+        let db = test_db();
+        seed_account(&db, "acc-jane");
+
+        let inserted = backfill_account_domain_from_person(
+            &db,
+            "acc-jane",
+            "jane@gmail.com",
+            &["company.com".to_string()],
+        );
+        assert!(!inserted, "personal email must not backfill");
+        assert_eq!(count_domains(&db, "acc-jane"), 0, "no domain registered");
+    }
+
+    #[test]
+    fn c3_promote_backfills_external_domain() {
+        // End-to-end style: c3_promote path uses the shared helper, so we
+        // exercise the helper with the same arguments c3 would pass for a
+        // confirmed stakeholder on a domain-matched external attendee.
+        let db = test_db();
+        seed_account(&db, "acc-acme");
+
+        // Simulate c3: attendee domain matched, now we backfill.
+        let inserted = backfill_account_domain_from_person(
+            &db,
+            "acc-acme",
+            "alice@acme.com",
+            &["company.com".to_string()],
+        );
+        assert!(inserted, "c3 promote path should backfill");
+        assert_eq!(count_domains(&db, "acc-acme"), 1);
+    }
+
+    #[test]
+    fn domain_merge_idempotent_no_double_signal() {
+        let db = test_db();
+        seed_account(&db, "acc-x");
+
+        // First call: should insert and emit.
+        let first = backfill_account_domain_from_person(
+            &db,
+            "acc-x",
+            "alice@acme.com",
+            &["company.com".to_string()],
+        );
+        assert!(first);
+        let signals_after_first = count_signal(&db, "acc-x");
+        assert_eq!(signals_after_first, 1);
+
+        // Second call: domain already present, no signal should fire.
+        let second = backfill_account_domain_from_person(
+            &db,
+            "acc-x",
+            "alice@acme.com",
+            &["company.com".to_string()],
+        );
+        assert!(!second, "re-run must report nothing inserted");
+        let signals_after_second = count_signal(&db, "acc-x");
+        assert_eq!(signals_after_second, 1, "idempotent — signal must not double-emit");
     }
 }
