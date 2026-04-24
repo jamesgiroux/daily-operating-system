@@ -73,72 +73,106 @@ pub fn gather_all_meeting_contexts(
 // Primary entity resolution (I337)
 // ---------------------------------------------------------------------------
 
-/// Resolve the primary entity for a meeting by merging I336 classification
-/// entities with the entity resolver's signal cascade.
+/// Resolve the primary entity for a meeting by reading the DOS-258
+/// `linked_entities` view.
 ///
-/// Returns the highest-confidence entity above threshold with meeting-type
-/// aware preference for account/project entities on external meetings.
+/// Replaces the legacy fuzzy/keyword signal cascade with a direct lookup of
+/// rows written by the deterministic entity linking engine
+/// (`services::entity_linking`). Returns the highest-confidence entity above
+/// threshold with meeting-type aware preference for account/project entities
+/// on external meetings.
 fn resolve_primary_entity(
     db: Option<&crate::db::ActionDb>,
     event_id: &str,
     meeting: &Value,
     workspace: &Path,
-    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+    _embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> Option<EntityContextMatch> {
-    use super::entity_resolver::{resolve_meeting_entities, ResolutionOutcome};
     use crate::entity::EntityType;
 
     const PRIMARY_ENTITY_MIN_CONFIDENCE: f64 = 0.75;
 
     let db = db?;
-    let accounts_dir = workspace.join("Accounts");
     let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
-    // Entity resolver handles junction-is-definitive gate internally.
-    // If junction table has entries, it returns those immediately
-    // without running attendee/keyword/embedding resolution.
-    let resolver_outcomes =
-        resolve_meeting_entities(db, event_id, meeting, &accounts_dir, embedding_model);
+    // DOS-258: read from the `linked_entities` view (a filtered view over
+    // `linked_entities_raw`, excluding user_dismissed rows). The calendar
+    // adapter writes links keyed by the meeting DB id, which is the event id
+    // with '@' substituted — mirror that derivation here.
+    let meeting_db_id = if event_id.is_empty() {
+        return None;
+    } else {
+        event_id.replace('@', "_at_")
+    };
 
-    // Build candidates from resolver outcomes only.
-    // Classification entities are NOT merged — the resolver already
-    // incorporates junction signals which are definitive. Merging
-    // classification entities would reintroduce attendee-domain-based
-    // entities that compete with the manual link.
+    #[derive(Debug)]
+    struct LinkRow {
+        entity_id: String,
+        entity_type: EntityType,
+        role: String,
+        confidence: f64,
+        source: String,
+    }
+
+    let link_rows: Vec<LinkRow> = {
+        let conn = db.conn_ref();
+        conn.prepare(
+            "SELECT entity_id, entity_type, role, confidence, rule_id, source \
+                 FROM linked_entities \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1",
+        )
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map(rusqlite::params![meeting_db_id], |row| {
+                let et: String = row.get(1)?;
+                let confidence: Option<f64> = row.get(3)?;
+                let rule_id: Option<String> = row.get(4)?;
+                let source: String = row.get(5)?;
+                Ok(LinkRow {
+                    entity_id: row.get(0)?,
+                    entity_type: EntityType::from_str_lossy(&et),
+                    role: row.get(2)?,
+                    // DOS-258: engine rows always carry confidence; default
+                    // high if any legacy backfill row is missing it so we
+                    // don't spuriously drop links below threshold.
+                    confidence: confidence.unwrap_or(0.95),
+                    // Prefer the rule_id for provenance; fall back to source.
+                    source: rule_id.unwrap_or(source),
+                })
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+        })
+        .unwrap_or_default()
+    };
+
+    // Build candidates: id -> (confidence, source, name).
     let mut candidates: HashMap<(String, EntityType), (f64, String, String)> = HashMap::new();
-
-    for outcome in &resolver_outcomes {
-        let entity = match outcome {
-            ResolutionOutcome::Resolved(e) => e,
-            ResolutionOutcome::ResolvedWithFlag(e) => {
-                if e.confidence >= PRIMARY_ENTITY_MIN_CONFIDENCE
-                    && matches!(e.source.as_str(), "junction" | "keyword" | "group_pattern")
-                {
-                    e
-                } else {
-                    continue;
-                }
-            }
-            _ => continue,
+    for row in link_rows {
+        // Primary rows anchor the decision regardless of the raw confidence
+        // score — the engine already earned the primary designation via a
+        // deterministic rule. Related rows stay in the pool for tie-breaking.
+        let effective_confidence = if row.role == "primary" {
+            row.confidence.max(PRIMARY_ENTITY_MIN_CONFIDENCE)
+        } else {
+            row.confidence
         };
         let name = db
-            .get_entity(&entity.entity_id)
+            .get_entity(&row.entity_id)
             .ok()
             .flatten()
             .map(|e| e.name)
-            .or_else(|| match entity.entity_type {
+            .or_else(|| match row.entity_type {
                 EntityType::Account => db
-                    .get_account(&entity.entity_id)
+                    .get_account(&row.entity_id)
                     .ok()
                     .flatten()
                     .map(|a| a.name),
                 EntityType::Project => db
-                    .get_project(&entity.entity_id)
+                    .get_project(&row.entity_id)
                     .ok()
                     .flatten()
                     .map(|p| p.name),
                 EntityType::Person => db
-                    .get_person(&entity.entity_id)
+                    .get_person(&row.entity_id)
                     .ok()
                     .flatten()
                     .map(|p| p.name),
@@ -146,8 +180,8 @@ fn resolve_primary_entity(
             })
             .unwrap_or_default();
         candidates.insert(
-            (entity.entity_id.clone(), entity.entity_type),
-            (entity.confidence, entity.source.clone(), name),
+            (row.entity_id.clone(), row.entity_type),
+            (effective_confidence, row.source, name),
         );
     }
 
@@ -2225,7 +2259,7 @@ mod tests {
             attendees: None,
             notes_path: None,
             summary: None,
-            created_at: now,
+            created_at: now.clone(),
             calendar_event_id: Some(event_id.to_string()),
             description: None,
             prep_context_json: None,
@@ -2248,6 +2282,18 @@ mod tests {
 
         db.link_meeting_entity(event_id, entity_id, entity_type.as_str())
             .expect("link meeting entity");
+
+        // DOS-258: resolve_primary_entity reads from the linked_entities view.
+        // Seed a primary row so the deterministic reader finds the entity.
+        db.conn_ref()
+            .execute(
+                "INSERT OR REPLACE INTO linked_entities_raw \
+                 (owner_type, owner_id, entity_id, entity_type, role, source, \
+                  rule_id, confidence, graph_version, created_at) \
+                 VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, 0, ?4)",
+                rusqlite::params![event_id, entity_id, entity_type.as_str(), now],
+            )
+            .expect("seed linked_entities_raw");
 
         db
     }
