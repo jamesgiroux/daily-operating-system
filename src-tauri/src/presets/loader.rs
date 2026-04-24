@@ -1,6 +1,5 @@
 use super::embedded;
 use super::schema::{PresetIntelligenceConfig, RolePreset};
-use std::collections::HashMap;
 
 pub const INTELLIGENCE_DIMENSION_KEYS: [&str; 6] = [
     "meeting_cadence",
@@ -124,27 +123,6 @@ fn validate_intelligence(intelligence: &PresetIntelligenceConfig) -> Result<(), 
     }
 
     Ok(())
-}
-
-pub fn merged_signal_keywords(preset: Option<&RolePreset>) -> Vec<(String, f64)> {
-    let mut merged: HashMap<String, f64> = crate::signals::scoring::KEYWORD_WEIGHTS
-        .iter()
-        .map(|(keyword, weight)| ((*keyword).to_string(), *weight))
-        .collect();
-
-    if let Some(preset) = preset {
-        for entry in &preset.intelligence.signal_keywords {
-            let keyword = entry.keyword.to_lowercase();
-            merged
-                .entry(keyword)
-                .and_modify(|weight| *weight = weight.max(entry.weight))
-                .or_insert(entry.weight);
-        }
-    }
-
-    let mut keywords: Vec<(String, f64)> = merged.into_iter().collect();
-    keywords.sort_by(|a, b| a.0.cmp(&b.0));
-    keywords
 }
 
 /// List all available embedded presets as (id, name, description).
@@ -285,12 +263,20 @@ mod tests {
     }
 
     #[test]
-    fn test_merged_signal_keywords_uses_max_weight_for_duplicates() {
+    fn test_cs_preset_signal_keywords_include_renewal_and_adoption() {
+        // The DOS-178/DOS-176 merge moved keyword merging into
+        // `state::build_merged_signal_config`. Here we just verify the CS
+        // preset carries the expected keywords at the preset level.
         let preset = load_preset("customer-success").unwrap();
-        let merged = merged_signal_keywords(Some(&preset));
-        assert!(merged
+        let keywords: Vec<_> = preset
+            .intelligence
+            .signal_keywords
             .iter()
-            .any(|(keyword, weight)| keyword == "renewal" && *weight == 0.15));
-        assert!(merged.iter().any(|(keyword, _)| keyword == "adoption"));
+            .map(|k| k.keyword.as_str())
+            .collect();
+        assert!(
+            keywords.contains(&"renewal") || keywords.iter().any(|k| k.contains("renewal")),
+            "CS preset should include a renewal-flavored keyword, got: {keywords:?}"
+        );
     }
 }

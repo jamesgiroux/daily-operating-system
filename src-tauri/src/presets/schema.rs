@@ -2,6 +2,54 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+/// Role-specific intelligence configuration: AI system role framing, dimension
+/// weights and vocabulary (DOS-178), signal keywords, email signal types, and
+/// email priority keywords (DOS-176). Merged with base lists at `set_role` time.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetIntelligenceConfig {
+    /// AI system role framing (e.g. "customer success intelligence system").
+    #[serde(default)]
+    pub system_role: String,
+    /// Per-dimension base weights (sum ~1.0).
+    #[serde(default)]
+    pub dimension_weights: HashMap<String, f64>,
+    /// Role-specific signal keywords with relevance weights.
+    /// Merged with base `KEYWORD_WEIGHTS` at `set_role` time (max-wins on duplicates).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signal_keywords: Vec<PresetSignalKeyword>,
+    /// Role-specific email signal types for boost classification.
+    /// Merged with the generic base `BOOST_SIGNAL_TYPES` list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub email_signal_types: Vec<String>,
+    /// Role-specific email subject keywords for high-priority classification.
+    /// Merged with base `HIGH_PRIORITY_SUBJECT_KEYWORDS` from `constants.rs`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub email_priority_keywords: Vec<String>,
+    /// Per-dimension display labels for health scoring UI.
+    #[serde(default)]
+    pub dimension_labels: HashMap<String, String>,
+    /// Preset-specific word for the "renewal/agreement close" concept
+    /// (e.g. "renewal" for CS, "contract" for consulting).
+    #[serde(default)]
+    pub close_concept: String,
+    /// Preset-specific label for the key advocate role
+    /// (e.g. "champion" for CS, "executive sponsor" for sales).
+    #[serde(default)]
+    pub key_advocate_label: String,
+    /// Per-dimension guidance strings surfaced in intelligence prompts.
+    #[serde(default)]
+    pub dimension_guidance: HashMap<String, String>,
+}
+
+/// A single keyword with its relevance weight for signal scoring.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetSignalKeyword {
+    pub keyword: String,
+    pub weight: f64,
+}
+
 /// A role preset defining vocabulary, vitals, metadata, and prioritization
 /// for a specific user persona (e.g. Customer Success, Sales, Product).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +72,9 @@ pub struct RolePreset {
     pub internal_team_roles: Vec<PresetRoleDefinition>,
     pub lifecycle_events: Vec<String>,
     pub prioritization: PresetPrioritization,
+    /// Role-specific intelligence configuration: system role framing, dimension
+    /// weights, signal keywords, email signal types, and prompt vocabulary.
+    /// Merged with base lists at `set_role` time (DOS-176).
     #[serde(default)]
     pub intelligence: PresetIntelligenceConfig,
     pub briefing_emphasis: String,
@@ -31,26 +82,6 @@ pub struct RolePreset {
     /// Added to the hardcoded base list in `constants.rs`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub email_priority_keywords: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PresetIntelligenceConfig {
-    pub system_role: String,
-    pub dimension_weights: HashMap<String, f64>,
-    pub signal_keywords: Vec<SignalKeywordEntry>,
-    pub email_signal_types: Vec<String>,
-    pub dimension_labels: HashMap<String, String>,
-    pub close_concept: String,
-    pub key_advocate_label: String,
-    pub dimension_guidance: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SignalKeywordEntry {
-    pub keyword: String,
-    pub weight: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

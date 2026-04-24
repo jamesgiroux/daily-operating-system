@@ -16,6 +16,23 @@ use crate::types::{
 /// Maximum number of execution records to keep in memory
 const MAX_HISTORY_SIZE: usize = 100;
 
+/// Cached merged signal/email classification config for the active preset (DOS-176).
+///
+/// Computed once at `set_role` time by merging base lists with preset-specific
+/// overrides (max-wins for duplicate keywords, additive for new ones).
+/// Stored here so `score_item` / `score_single_email` can use it without
+/// reaching into global state.
+#[derive(Debug, Clone, Default)]
+pub struct MergedSignalConfig {
+    /// Merged (keyword, weight) pairs: base list + preset additions.
+    /// Duplicates resolved with max-wins on weight.
+    pub signal_keywords: Vec<(String, f64)>,
+    /// Merged email boost signal types: base list + preset additions.
+    pub email_signal_types: Vec<String>,
+    /// Merged email high-priority subject keywords: base list + preset additions.
+    pub email_priority_keywords: Vec<String>,
+}
+
 /// Daily AI call budget for proactive hygiene (I146 — ADR-0058).
 pub struct HygieneBudget {
     pub daily_ai_calls: AtomicU32,
@@ -275,8 +292,11 @@ pub struct AppState {
     pub audit_log: Arc<Mutex<crate::audit_log::AuditLogger>>,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
-    /// Cached base + active-preset signal keywords for relevance scoring.
-    pub merged_signal_keywords: RwLock<Vec<(String, f64)>>,
+    /// Cached merged signal/email config for the active preset (DOS-176).
+    /// Recomputed at `set_role` time and on startup preset load. Supersedes
+    /// the earlier `merged_signal_keywords` field (DOS-178) by also caching
+    /// email signal types and priority keywords alongside signal keywords.
+    pub merged_signal_config: RwLock<MergedSignalConfig>,
     /// Background meeting prep queue for future meetings.
     pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
     /// Typed resource permits for concurrent background work (I565).
@@ -287,6 +307,99 @@ pub struct AppState {
     context_provider: RwLock<Arc<dyn crate::context_provider::ContextProvider>>,
     /// Shared app handle for service-layer Tauri event emission.
     app_handle: RwLock<Option<tauri::AppHandle>>,
+}
+
+/// Base signal keywords applicable to any role (generic, role-neutral).
+///
+/// CS-specific keywords (`churn`, `cancellation`, etc.) live in the CS preset's
+/// `intelligence.signal_keywords` and are merged in at `set_role` time (DOS-176).
+pub const BASE_SIGNAL_KEYWORDS: &[(&str, f64)] = &[
+    ("renewal", 0.15),
+    ("contract", 0.12),
+    ("expansion", 0.12),
+    ("escalation", 0.12),
+    ("qbr", 0.10),
+    ("order form", 0.10),
+    ("deadline", 0.08),
+    ("budget", 0.08),
+    ("executive", 0.06),
+];
+
+/// Base email boost signal types applicable to any role (generic, role-neutral).
+///
+/// CS-specific types (`churn_risk`, `renewal_approaching`, `champion_risk`) live in
+/// the CS preset's `intelligence.email_signal_types` (DOS-176).
+pub const BASE_EMAIL_SIGNAL_TYPES: &[&str] = &[
+    "engagement_warning",
+    "escalation",
+    "expansion_opportunity",
+    "cadence_anomaly",
+    "email_cadence_drop",
+    "project_health_warning",
+];
+
+/// Build a `MergedSignalConfig` from a preset by merging its intelligence config
+/// with the base lists. Called at `set_role` time and on startup (DOS-176).
+///
+/// Merge semantics:
+/// - Additive: preset keywords appended to base list.
+/// - Max-wins for duplicates: if preset keyword matches base keyword, higher weight wins.
+/// - Email signal types and priority keywords are additive (deduped).
+pub fn build_merged_signal_config(
+    preset: &crate::presets::schema::RolePreset,
+) -> MergedSignalConfig {
+    // --- signal_keywords ---
+    // Start with base list as (String, f64).
+    let mut kw_map: std::collections::HashMap<String, f64> = BASE_SIGNAL_KEYWORDS
+        .iter()
+        .map(|&(k, w)| (k.to_string(), w))
+        .collect();
+
+    // Merge preset keywords: max-wins on duplicate keys.
+    for sk in &preset.intelligence.signal_keywords {
+        let entry = kw_map.entry(sk.keyword.clone()).or_insert(0.0);
+        if sk.weight > *entry {
+            *entry = sk.weight;
+        }
+    }
+
+    // Produce deterministic order: base keywords first (in original order), then extras.
+    let mut signal_keywords: Vec<(String, f64)> = BASE_SIGNAL_KEYWORDS
+        .iter()
+        .filter_map(|&(k, _)| {
+            kw_map.remove(k).map(|w| (k.to_string(), w))
+        })
+        .collect();
+    // Remaining are preset-only keywords (not in base).
+    let mut extras: Vec<(String, f64)> = kw_map.into_iter().collect();
+    extras.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    signal_keywords.extend(extras);
+
+    // --- email_signal_types ---
+    let mut email_signal_types: Vec<String> =
+        BASE_EMAIL_SIGNAL_TYPES.iter().map(|s| s.to_string()).collect();
+    for t in &preset.intelligence.email_signal_types {
+        if !email_signal_types.iter().any(|e| e == t) {
+            email_signal_types.push(t.clone());
+        }
+    }
+
+    // --- email_priority_keywords ---
+    // Merge both top-level emailPriorityKeywords and intelligence.emailPriorityKeywords.
+    // Top-level field is kept for backward compat and also merged here.
+    let mut email_priority_keywords: Vec<String> = Vec::new();
+    for kw in preset.email_priority_keywords.iter().chain(preset.intelligence.email_priority_keywords.iter()) {
+        let lower = kw.to_lowercase();
+        if !email_priority_keywords.iter().any(|e: &String| e.to_lowercase() == lower) {
+            email_priority_keywords.push(kw.clone());
+        }
+    }
+
+    MergedSignalConfig {
+        signal_keywords,
+        email_signal_types,
+        email_priority_keywords,
+    }
 }
 
 fn recovery_status_from_db_error(err: &crate::db::DbError) -> DatabaseRecoveryStatus {
@@ -454,8 +567,11 @@ impl AppState {
                 crate::presets::loader::load_preset(&c.role).ok()
             }
         });
-        let merged_signal_keywords =
-            crate::presets::loader::merged_signal_keywords(active_preset.as_ref());
+        // DOS-176: Compute merged signal config from the startup preset.
+        let startup_merged_config = active_preset
+            .as_ref()
+            .map(build_merged_signal_config)
+            .unwrap_or_default();
 
         // Build the prep invalidation queue and signal engine together so
         // the engine can push invalidated meeting IDs into the shared queue.
@@ -587,12 +703,30 @@ impl AppState {
             database_recovery_status: Mutex::new(database_recovery_status),
             audit_log,
             active_preset: RwLock::new(active_preset),
-            merged_signal_keywords: RwLock::new(merged_signal_keywords),
+            merged_signal_config: RwLock::new(startup_merged_config),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             permits: ResourcePermits::new(),
             context_provider: RwLock::new(context_provider),
             app_handle: RwLock::new(None),
         }
+    }
+
+    /// Get a snapshot of the merged signal config for the active preset (DOS-176).
+    ///
+    /// Returns the cached `MergedSignalConfig` — cheap clone, no recomputation.
+    pub fn get_merged_signal_config(&self) -> MergedSignalConfig {
+        self.merged_signal_config.read().clone()
+    }
+
+    /// Update the active preset and recompute the cached merged signal config (DOS-176).
+    ///
+    /// Called by the `set_role` command after loading the new preset so downstream
+    /// callers (`score_item`, `score_single_email`, `boost_with_entity_context`) always
+    /// get the current merged config without reaching into global state.
+    pub fn set_active_preset(&self, preset: crate::presets::schema::RolePreset) {
+        let merged = build_merged_signal_config(&preset);
+        *self.active_preset.write() = Some(preset);
+        *self.merged_signal_config.write() = merged;
     }
 
     /// I573: Read config (parking_lot — no poison possible).

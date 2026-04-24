@@ -114,7 +114,8 @@
       "tracking_issue",
       "payout_issue",
       "performance_signal",
-      "campaign_renewal"
+      "campaign_renewal",
+      "campaign_deadline_approaching"
     ],
     "dimensionLabels": {
       "meeting_cadence": "Campaign Cadence",

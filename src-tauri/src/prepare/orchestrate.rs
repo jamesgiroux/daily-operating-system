@@ -113,10 +113,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4: Fetch and classify emails
     let customer_domains = extract_customer_domains(&meetings_by_type);
-    let preset_email_keywords: Vec<String> = {
-        let guard = state.active_preset.read();
-        guard.as_ref().map(|p| p.email_priority_keywords.clone()).unwrap_or_default()
-    };
+    // DOS-176: use merged email priority keywords (base + preset) from cached config
+    let preset_email_keywords: Vec<String> = state.get_merged_signal_config().email_priority_keywords;
     // I374: Load dismissed domains for relevance learning penalty
     let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
@@ -155,6 +153,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 4a2: Signal-context boosting (I320 — boost medium emails with entity signals)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
+            let merged_signal_types = state.get_merged_signal_config().email_signal_types;
             let mut boosted_count = 0u32;
             let mut new_high = Vec::new();
             let mut new_all = Vec::new();
@@ -169,9 +168,12 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
 
-                if let Some(boost) =
-                    email_classify::boost_with_entity_context(from_email, priority, &db)
-                {
+                if let Some(boost) = email_classify::boost_with_entity_context(
+                    from_email,
+                    priority,
+                    &db,
+                    &merged_signal_types,
+                ) {
                     // Clone and update priority
                     let mut boosted = email_val.clone();
                     if let Some(obj) = boosted.as_object_mut() {
@@ -350,7 +352,13 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             match crate::db::ActionDb::open() {
                 Ok(scoring_db) => {
                     let model = state.embedding_model.clone();
-                    crate::signals::email_scoring::score_emails(&scoring_db, Some(&model), &active)
+                    let merged_kws = state.get_merged_signal_config().signal_keywords;
+                    crate::signals::email_scoring::score_emails(
+                        &scoring_db,
+                        Some(&model),
+                        &active,
+                        &merged_kws,
+                    )
                 }
                 Err(e) => {
                     log::warn!("prepare_today: failed to open scoring DB: {}", e);
@@ -1426,10 +1434,8 @@ pub async fn refresh_emails_with_retry_batch(
         }
     }
 
-    let preset_email_keywords: Vec<String> = {
-        let guard = state.active_preset.read();
-        guard.as_ref().map(|p| p.email_priority_keywords.clone()).unwrap_or_default()
-    };
+    // DOS-176: use merged email priority keywords (base + preset) from cached config
+    let preset_email_keywords: Vec<String> = state.get_merged_signal_config().email_priority_keywords;
     // I374: Load dismissed domains for relevance learning penalty
     let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
@@ -1673,7 +1679,13 @@ pub async fn refresh_emails_with_retry_batch(
             match crate::db::ActionDb::open() {
                 Ok(scoring_db) => {
                     let model = state.embedding_model.clone();
-                    crate::signals::email_scoring::score_emails(&scoring_db, Some(&model), &active)
+                    let merged_kws = state.get_merged_signal_config().signal_keywords;
+                    crate::signals::email_scoring::score_emails(
+                        &scoring_db,
+                        Some(&model),
+                        &active,
+                        &merged_kws,
+                    )
                 }
                 Err(e) => {
                     log::warn!("refresh_emails: failed to open scoring DB: {}", e);

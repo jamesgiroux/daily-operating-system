@@ -88,6 +88,10 @@
       { "keyword": "churn", "weight": 0.12 },
       { "keyword": "adoption", "weight": 0.10 },
       { "keyword": "qbr", "weight": 0.10 },
+      { "keyword": "renewal_approaching", "weight": 0.10 },
+      { "keyword": "cancellation", "weight": 0.10 },
+      { "keyword": "health decline", "weight": 0.09 },
+      { "keyword": "at risk", "weight": 0.09 },
       { "keyword": "health score", "weight": 0.09 }
     ],
     "emailSignalTypes": [
@@ -97,6 +101,14 @@
       "churn_risk",
       "escalation",
       "expansion_opportunity"
+    ],
+    "emailPriorityKeywords": [
+      "churn",
+      "cancellation",
+      "cancel",
+      "renewal approaching",
+      "at risk",
+      "health score"
     ],
     "dimensionLabels": {
       "meeting_cadence": "Meeting Cadence",

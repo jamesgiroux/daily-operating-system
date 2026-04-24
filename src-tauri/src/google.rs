@@ -1418,10 +1418,13 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                         match crate::db::ActionDb::open() {
                                             Ok(scoring_db) => {
                                                 let model = state.embedding_model.clone();
+                                                let merged_kws =
+                                                    state.get_merged_signal_config().signal_keywords;
                                                 crate::signals::email_scoring::score_emails(
                                                     &scoring_db,
                                                     Some(&model),
                                                     &active,
+                                                    &merged_kws,
                                                 )
                                             }
                                             Err(e) => {
