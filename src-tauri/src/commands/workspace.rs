@@ -1007,7 +1007,10 @@ pub fn set_google_poll_settings(
     )
 }
 
-/// Set hygiene configuration (I271)
+/// Set hygiene configuration (I271).
+///
+/// Note: the `ai_budget` parameter is deprecated and silently ignored.
+/// Use `set_daily_ai_budget` to configure the daily AI token budget.
 #[tauri::command]
 pub fn set_hygiene_config(
     scan_interval_hours: Option<u32>,
@@ -1021,6 +1024,17 @@ pub fn set_hygiene_config(
         pre_meeting_hours,
         &state,
     )
+}
+
+/// Set the daily AI token budget (DOS-279).
+///
+/// Valid tiers: 50000, 100000, 250000.
+#[tauri::command]
+pub fn set_daily_ai_budget(
+    budget: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Config, String> {
+    crate::services::settings::set_daily_ai_budget(budget, &state)
 }
 
 /// Set schedule for a workflow

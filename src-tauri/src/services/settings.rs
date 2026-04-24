@@ -150,9 +150,13 @@ pub fn set_google_poll_settings(
 }
 
 /// Set hygiene configuration (I271).
+///
+/// `ai_budget` is accepted but ignored — the hygiene call-count budget has been
+/// replaced by the single daily AI token budget (DOS-279). Callers should use
+/// `set_daily_ai_budget` instead.
 pub fn set_hygiene_config(
     scan_interval_hours: Option<u32>,
-    ai_budget: Option<u32>,
+    _ai_budget: Option<u32>,
     pre_meeting_hours: Option<u32>,
     state: &AppState,
 ) -> Result<Config, String> {
@@ -160,14 +164,6 @@ pub fn set_hygiene_config(
         if ![1, 2, 4, 8].contains(&v) {
             return Err(format!(
                 "Invalid scan interval: {}. Must be 1, 2, 4, or 8.",
-                v
-            ));
-        }
-    }
-    if let Some(v) = ai_budget {
-        if ![5, 10, 20, 50].contains(&v) {
-            return Err(format!(
-                "Invalid AI budget: {}. Must be 5, 10, 20, or 50.",
                 v
             ));
         }
@@ -185,13 +181,44 @@ pub fn set_hygiene_config(
         if let Some(v) = scan_interval_hours {
             config.hygiene_scan_interval_hours = v;
         }
-        if let Some(v) = ai_budget {
-            config.hygiene_ai_budget = v;
-        }
         if let Some(v) = pre_meeting_hours {
             config.hygiene_pre_meeting_hours = v;
         }
     })
+}
+
+/// Validate a daily AI budget value.
+///
+/// Exported for unit-test use only; production callers use `set_daily_ai_budget`.
+#[cfg(test)]
+pub(super) fn set_daily_ai_budget_validate(budget: u32) -> bool {
+    const VALID_TIERS: &[u32] = &[50_000, 100_000, 250_000];
+    VALID_TIERS.contains(&budget)
+}
+
+/// Set the daily AI token budget (DOS-279).
+///
+/// Valid tiers: 50_000, 100_000, 250_000.
+/// Persists to config and syncs to KV store for the preflight gate.
+pub fn set_daily_ai_budget(budget: u32, state: &AppState) -> Result<Config, String> {
+    const VALID_TIERS: &[u32] = &[50_000, 100_000, 250_000];
+    if !VALID_TIERS.contains(&budget) {
+        return Err(format!(
+            "Invalid daily AI budget: {}. Must be one of: 50000, 100000, 250000.",
+            budget
+        ));
+    }
+
+    let config = crate::state::create_or_update_config(state, |config| {
+        config.daily_ai_token_budget = budget;
+    })?;
+
+    // Sync to KV store so the preflight gate (sync path) sees the update immediately.
+    if let Ok(db) = crate::db::ActionDb::open() {
+        crate::pty::sync_budget_config_to_kv(&db, budget);
+    }
+
+    Ok(config)
 }
 
 /// Update notification preferences.
@@ -370,6 +397,45 @@ mod tests {
     fn rejects_invalid_ai_model_choice() {
         assert!(validate_ai_model_choice("background", "unknown").is_err());
         assert!(validate_ai_model_choice("invalid", "haiku").is_err());
+    }
+
+    // DOS-279: Daily AI budget settings validation
+    #[test]
+    fn daily_ai_budget_accepts_valid_tiers() {
+        // These are the only valid tiers
+        for budget in [50_000u32, 100_000, 250_000] {
+            assert!(
+                super::set_daily_ai_budget_validate(budget),
+                "Expected {} to be valid",
+                budget
+            );
+        }
+    }
+
+    #[test]
+    fn daily_ai_budget_rejects_invalid_values() {
+        for budget in [0u32, 10, 1000, 50_001, 99_999, 500_000] {
+            assert!(
+                !super::set_daily_ai_budget_validate(budget),
+                "Expected {} to be invalid",
+                budget
+            );
+        }
+    }
+
+    #[test]
+    fn migration_existing_config_with_old_hygiene_budget_deserializes() {
+        // Simulate a config JSON from before DOS-279: has hygiene_ai_budget=10
+        // but no daily_ai_token_budget. Should deserialize with the serde default.
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "hygieneAiBudget": 10
+        }"#;
+        let config: crate::types::Config = serde_json::from_str(json).unwrap();
+        // Old field is preserved (serde default 0 if missing, or actual value if present)
+        assert_eq!(config.hygiene_ai_budget, 10);
+        // New field should use the serde default (50_000)
+        assert_eq!(config.daily_ai_token_budget, crate::pty::DEFAULT_DAILY_AI_TOKEN_BUDGET);
     }
 }
 
