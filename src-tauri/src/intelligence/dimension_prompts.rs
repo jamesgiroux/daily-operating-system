@@ -358,6 +358,10 @@ pub fn merge_dimension_into(
             if !partial.market_context.is_empty() {
                 existing.market_context = partial.market_context.clone();
             }
+            // DOS-207: Merge regulatory items emitted by strategic_context.
+            if !partial.regulatory_context.is_empty() {
+                existing.regulatory_context = partial.regulatory_context.clone();
+            }
         }
 
         "value_success" => {
@@ -913,7 +917,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
         }
         "stakeholder_champion" => {
             s.push_str(
-                r#"  "stakeholderInsights": [{"name": "full name", "role": "job title", "assessment": "1-2 sentences about engagement", "engagement": "high|medium|low|unknown", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
+                r#"  "stakeholderInsights": [{"name": "full name", "role": "job title", "assessment": "1-2 sentences about engagement", "engagement": "high|medium|low|unknown", "verified": "true ONLY when the assessment is grounded in an actual customer-conversation transcript; false when the assessment is inferred from meeting attendance or metadata alone", "verifiedSource": "meeting|glean|user or null when verified=false", "verifiedAt": "ISO date of verification or null when verified=false", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "coverageAssessment": {"roleFillRate": 0.0, "gaps": ["missing role"], "covered": ["filled role"], "level": "strong|adequate|thin|critical"},
   "organizationalChanges": [{"changeType": "departure|hire|promotion|reorg|role_change", "person": "name", "from": "...", "to": "...", "detectedAt": "ISO date", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "internalTeam": [{"name": "...", "role": "RM|AE|TAM|Division Lead|etc", "source": "glean|user|crm"}],
@@ -969,7 +973,8 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
                     r#"
   "competitiveContext": [{"competitor": "name", "threatLevel": "displacement|evaluation|mentioned|incumbent", "context": "1 sentence", "detectedAt": "ISO date or null", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "strategicPriorities": [{"priority": "short name, ≤80 chars", "status": "active|exploring|evaluating|paused|completed|at_risk", "owner": "short party name only — e.g. 'Chris Anderson & Diego Martinez' or 'Globex commercial team'. NOT a rationale.", "timeline": "short phrase only — e.g. 'Ongoing', 'Q2 2026', 'Beta March 2026'. NOT a rationale.", "context": "optional one sentence (≤180 chars) of rationale explaining why this matters or how it's evolving; leave null if you'd have nothing new to add beyond the priority name"}],
-  "marketContext": [{"title": "short title (e.g. 'DORA compliance + SOC 2 Type II')", "body": "1-3 sentence narrative explaining why this regulatory/market/compliance force shapes this account's buying, renewal, or usage decisions", "category": "regulatory|market|geopolitical|compliance|industry|other", "effectiveDate": "ISO date or null", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}]
+  "marketContext": [{"title": "short title (e.g. 'DORA compliance + SOC 2 Type II')", "body": "1-3 sentence narrative explaining why this regulatory/market/compliance force shapes this account's buying, renewal, or usage decisions", "category": "regulatory|market|geopolitical|compliance|industry|other", "effectiveDate": "ISO date or null", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
+  "regulatoryContext": [{"standard": "DORA|SOC_2_TYPE_II|HIPAA|GDPR|CUSTOM (or other framework name)", "status": "required|in_progress|met|gap — use 'gap' when the customer has signalled a compliance need that is not yet satisfied", "evidence": "one sentence of concrete evidence from the transcript/email/Glean source", "sourceReference": "meeting id, email id, or Glean document URI — null if not available", "detectedAt": "ISO date of first detection", "itemSource": {"source": "...", "confidence": 0.85, "sourcedAt": "...", "reference": "..."}}]
 "#,
                 );
             } else {
