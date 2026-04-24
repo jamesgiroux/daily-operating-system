@@ -357,6 +357,38 @@ pub fn run() {
                 }
             });
 
+            // DOS-258: stakeholder-derived domain backfill runs on every boot so
+            // new users AND existing users self-heal any account whose stakeholder
+            // graph has domains that aren't yet registered. Idempotent — repeat
+            // runs on unchanged data are cheap. Spawned ~40s after init to avoid
+            // UI contention while still fronting the first calendar poll.
+            let stakeholder_domains_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(40)).await;
+                let user_domains = crate::state::load_config()
+                    .map(|c| c.resolved_user_domains())
+                    .unwrap_or_default();
+                let result = stakeholder_domains_state
+                    .db_write(move |db| {
+                        crate::services::entity_linking::stakeholder_domains::backfill_domains_for_all_accounts(
+                            db,
+                            &user_domains,
+                        )
+                    })
+                    .await;
+                match result {
+                    Ok((touched, new)) if new > 0 => log::info!(
+                        "stakeholder_domains boot sweep: {} new domains across {} accounts",
+                        new,
+                        touched
+                    ),
+                    Ok(_) => log::debug!(
+                        "stakeholder_domains boot sweep: no new domains to register"
+                    ),
+                    Err(e) => log::warn!("stakeholder_domains boot sweep failed: {e}"),
+                }
+            });
+
             // Create tray menu
             let open_item = MenuItem::with_id(app, "open", "Open DailyOS", true, None::<&str>)?;
             let run_now_item =

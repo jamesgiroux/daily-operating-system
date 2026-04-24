@@ -234,6 +234,48 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// DOS-258: Return all distinct active external stakeholder emails for an account,
+    /// excluding internal-relationship people. Used to derive account_domains from
+    /// the stakeholder graph.
+    pub fn get_active_external_stakeholder_emails(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<String>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT LOWER(p.email) \
+             FROM account_stakeholders asa \
+             JOIN people p ON p.id = asa.person_id \
+             WHERE asa.account_id = ?1 \
+               AND asa.status = 'active' \
+               AND p.email IS NOT NULL AND p.email != '' \
+               AND (p.relationship IS NULL OR p.relationship != 'internal')",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// DOS-258: Return every (account_id, email) tuple for active external stakeholders
+    /// across all non-archived customer/partner accounts. Used by the boot sweep.
+    pub fn get_all_active_external_stakeholder_emails(
+        &self,
+    ) -> Result<Vec<(String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT asa.account_id, LOWER(p.email) \
+             FROM account_stakeholders asa \
+             JOIN people p ON p.id = asa.person_id \
+             JOIN accounts a ON a.id = asa.account_id \
+             WHERE asa.status = 'active' \
+               AND p.email IS NOT NULL AND p.email != '' \
+               AND (p.relationship IS NULL OR p.relationship != 'internal') \
+               AND a.archived = 0 \
+               AND a.account_type IN ('customer', 'partner')",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Get all accounts with their domains in a single JOIN query.
     ///
     /// Eliminates N+1 queries when callers need domains for many accounts.
