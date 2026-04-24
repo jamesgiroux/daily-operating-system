@@ -13,13 +13,13 @@ use serde::Serialize;
 
 use crate::db::ActionDb;
 use crate::intelligence::io::{
-    AccountHealth, AdoptionSignals, Blocker, CadenceAssessment, CompanyContext, CompetitiveInsight,
-    ContractContext, CoverageAssessment, CurrentState, DimensionScore, DismissedItem,
-    ExpansionSignal, GongCallSummary, HealthSource, HealthTrend, IntelRisk, IntelWin,
-    IntelligenceJson, InternalTeamMember, ItemSource, NetworkIntelligence, NetworkKeyRelationship,
-    OpenCommitment, OrgChange, RelationshipDepth, RelationshipDimensions, AgreementOutlook,
-    ResponsivenessAssessment, SatisfactionData, StakeholderInsight, StrategicPriority,
-    RecommendedAction, SuccessMetric, SupportHealth, ValueItem,
+    AccountHealth, AdoptionSignals, AgreementOutlook, Blocker, CadenceAssessment, CompanyContext,
+    CompetitiveInsight, ContractContext, CoverageAssessment, CurrentState, DimensionScore,
+    DismissedItem, ExpansionSignal, GongCallSummary, HealthSource, HealthTrend, IntelRisk,
+    IntelWin, IntelligenceJson, InternalTeamMember, ItemSource, NetworkIntelligence,
+    NetworkKeyRelationship, OpenCommitment, OrgChange, RecommendedAction, RegulatoryItem,
+    RelationshipDepth, RelationshipDimensions, ResponsivenessAssessment, SatisfactionData,
+    StakeholderInsight, StrategicPriority, SuccessMetric, SupportHealth, ValueItem,
 };
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType, TranscriptRecord};
@@ -4881,8 +4881,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             IntelRisk { text: "Legal review of MSA amendment stalled for 10 days".into(), source: Some("email signal".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(2), reference: Some("you edited this".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
-            IntelWin { text: "Phase 1 migration completed ahead of schedule".into(), source: Some("project tracker".into()), impact: Some("High — demonstrates execution capability for Phase 2".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(14), reference: Some("meeting Mar 1".into()) }), discrepancy: None },
-            IntelWin { text: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("Strong ROI narrative for expansion".into()), item_source: Some(ItemSource { source: "glean_zendesk".into(), confidence: 0.85, sourced_at: days_ago_rfc(10), reference: Some("Zendesk ticket #4821".into()) }), discrepancy: None },
+            IntelWin { text: "Phase 1 migration completed ahead of schedule".into(), source: Some("project tracker".into()), impact: Some("High — demonstrates execution capability for Phase 2".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(14), reference: Some("meeting Mar 1".into()) }), discrepancy: None, ..Default::default() },
+            IntelWin { text: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("Strong ROI narrative for expansion".into()), item_source: Some(ItemSource { source: "glean_zendesk".into(), confidence: 0.85, sourced_at: days_ago_rfc(10), reference: Some("Zendesk ticket #4821".into()) }), discrepancy: None, ..Default::default() },
         ],
         current_state: Some(CurrentState {
             working: vec!["Executive sponsorship strong — Sarah Chen fully bought in".into(), "Phase 1 delivered on time and above benchmark".into(), "Platform adoption across engineering team is solid".into()],
@@ -4890,12 +4890,12 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             unknowns: vec!["APAC expansion viability — Singapore pilot not yet scoped".into(), "Replacement for Alex Torres not yet identified".into()],
         }),
         stakeholder_insights: vec![
-            StakeholderInsight { name: "Sarah Chen".into(), role: Some("VP Engineering".into()), assessment: Some("Strong champion. Secured Phase 2 budget independently.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-sarah-chen".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(3), reference: Some("Glean AI synthesis".into()) }), discrepancy: None },
-            StakeholderInsight { name: "Alex Torres".into(), role: Some("Tech Lead".into()), assessment: Some("Technical backbone of Phase 1. Departing March — urgency around KT.".into()), engagement: Some("transitioning".into()), source: None, person_id: Some("mock-alex-torres".into()), suggested_person_id: None, item_source: None, discrepancy: None },
-            StakeholderInsight { name: "Pat Kim".into(), role: Some("CTO".into()), assessment: Some("Strategic decision maker. Focused on APAC and cost consolidation.".into()), engagement: Some("periodic".into()), source: None, person_id: Some("mock-pat-kim".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(5), reference: Some("Glean AI synthesis".into()) }), discrepancy: None },
+            StakeholderInsight { name: "Sarah Chen".into(), role: Some("VP Engineering".into()), assessment: Some("Strong champion. Secured Phase 2 budget independently.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-sarah-chen".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(3), reference: Some("Glean AI synthesis".into()) }), discrepancy: None, ..Default::default() },
+            StakeholderInsight { name: "Alex Torres".into(), role: Some("Tech Lead".into()), assessment: Some("Technical backbone of Phase 1. Departing March — urgency around KT.".into()), engagement: Some("transitioning".into()), source: None, person_id: Some("mock-alex-torres".into()), suggested_person_id: None, item_source: None, discrepancy: None, ..Default::default() },
+            StakeholderInsight { name: "Pat Kim".into(), role: Some("CTO".into()), assessment: Some("Strategic decision maker. Focused on APAC and cost consolidation.".into()), engagement: Some("periodic".into()), source: None, person_id: Some("mock-pat-kim".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(5), reference: Some("Glean AI synthesis".into()) }), discrepancy: None, ..Default::default() },
         ],
         value_delivered: vec![
-            ValueItem { date: Some(days_ago_rfc(90)), statement: "Phase 1 deployment drove $200K ARR expansion".into(), source: Some("contract".into()), impact: Some("High".into()), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(90), reference: Some("Salesforce".into()) }), discrepancy: None },
+            ValueItem { date: Some(days_ago_rfc(90)), statement: "Phase 1 deployment drove $200K ARR expansion".into(), source: Some("contract".into()), impact: Some("High".into()), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(90), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
             ValueItem { date: Some(days_ago_rfc(60)), statement: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("Strong ROI narrative".into()), item_source: None, discrepancy: None },
         ],
         company_context: Some(CompanyContext {
@@ -5100,8 +5100,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             IntelRisk { text: "Contoso actively pitching to Globex leadership".into(), source: Some("email intel from Jamie Morrison".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(1), reference: Some("you edited this".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
-            IntelWin { text: "Expanded to 3 new teams this quarter".into(), source: Some("deployment tracker".into()), impact: Some("Demonstrates platform value at scale".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(7), reference: Some("QBR prep call".into()) }), discrepancy: None },
-            IntelWin { text: "Team A usage up 40% since January".into(), source: Some("usage analytics".into()), impact: Some("Strong adoption proof point".into()), item_source: Some(ItemSource { source: "glean_zendesk".into(), confidence: 0.85, sourced_at: days_ago_rfc(5), reference: Some("Zendesk ticket #7032".into()) }), discrepancy: None },
+            IntelWin { text: "Expanded to 3 new teams this quarter".into(), source: Some("deployment tracker".into()), impact: Some("Demonstrates platform value at scale".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(7), reference: Some("QBR prep call".into()) }), discrepancy: None, ..Default::default() },
+            IntelWin { text: "Team A usage up 40% since January".into(), source: Some("usage analytics".into()), impact: Some("Strong adoption proof point".into()), item_source: Some(ItemSource { source: "glean_zendesk".into(), confidence: 0.85, sourced_at: days_ago_rfc(5), reference: Some("Zendesk ticket #7032".into()) }), discrepancy: None, ..Default::default() },
             IntelWin { text: "CSAT improved from 7.2 to 8.1".into(), source: Some("survey results".into()), impact: Some("Customer satisfaction trending positive".into()), item_source: None, discrepancy: None },
         ],
         current_state: Some(CurrentState {
@@ -5110,9 +5110,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             unknowns: vec!["Root cause of Team B decline".into(), "Who will replace Pat Reynolds".into(), "Impact of Contoso pitch on renewal decision".into()],
         }),
         stakeholder_insights: vec![
-            StakeholderInsight { name: "Pat Reynolds".into(), role: Some("VP Product".into()), assessment: Some("Departing Q2 but still engaged. Will influence successor choice.".into()), engagement: Some("transitioning".into()), source: None, person_id: Some("mock-pat-reynolds".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(10), reference: Some("Glean AI synthesis".into()) }), discrepancy: None },
-            StakeholderInsight { name: "Jamie Morrison".into(), role: Some("Eng Director".into()), assessment: Some("Strongest champion. Could be elevated to executive sponsor.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-jamie-morrison".into()), suggested_person_id: None, item_source: None, discrepancy: None },
-            StakeholderInsight { name: "Casey Lee".into(), role: Some("Head of Ops".into()), assessment: Some("Skeptical about Team B ROI. Evaluating Contoso.".into()), engagement: Some("at_risk".into()), source: None, person_id: Some("mock-casey-lee".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(4), reference: Some("Glean AI synthesis".into()) }), discrepancy: None },
+            StakeholderInsight { name: "Pat Reynolds".into(), role: Some("VP Product".into()), assessment: Some("Departing Q2 but still engaged. Will influence successor choice.".into()), engagement: Some("transitioning".into()), source: None, person_id: Some("mock-pat-reynolds".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(10), reference: Some("Glean AI synthesis".into()) }), discrepancy: None, ..Default::default() },
+            StakeholderInsight { name: "Jamie Morrison".into(), role: Some("Eng Director".into()), assessment: Some("Strongest champion. Could be elevated to executive sponsor.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-jamie-morrison".into()), suggested_person_id: None, item_source: None, discrepancy: None, ..Default::default() },
+            StakeholderInsight { name: "Casey Lee".into(), role: Some("Head of Ops".into()), assessment: Some("Skeptical about Team B ROI. Evaluating Contoso.".into()), engagement: Some("at_risk".into()), source: None, person_id: Some("mock-casey-lee".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(4), reference: Some("Glean AI synthesis".into()) }), discrepancy: None, ..Default::default() },
         ],
         value_delivered: vec![
             ValueItem { date: Some(days_ago_rfc(30)), statement: "3 new team deployments in Q1".into(), source: Some("deployment tracker".into()), impact: Some("Scale validation".into()), item_source: None, discrepancy: None },
@@ -5310,7 +5310,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             IntelRisk { text: "Editor performance: Current solution has bottlenecks under peak load".into(), source: Some("technical assessment".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.8, sourced_at: days_ago_rfc(14), reference: Some("Glean AI synthesis".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
-            IntelWin { text: "Defensive Mode launched — enabling up to $60K in security cost avoidance".into(), source: Some("deployment".into()), impact: Some("Demonstrates value delivery on compliance initiatives".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(2), reference: Some("Feb 17 check-in".into()) }), discrepancy: None },
+            IntelWin { text: "Defensive Mode launched — enabling up to $60K in security cost avoidance".into(), source: Some("deployment".into()), impact: Some("Demonstrates value delivery on compliance initiatives".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(2), reference: Some("Feb 17 check-in".into()) }), discrepancy: None, ..Default::default() },
             IntelWin { text: "Collaborative editing adoption strong across editorial team".into(), source: Some("usage analytics".into()), impact: Some("Foundation for headless expansion".into()), item_source: None, discrepancy: None },
             IntelWin { text: "Trust Center access enabling compliance team self-service".into(), source: Some("product".into()), impact: Some("Risk reduction for renewal".into()), item_source: None, discrepancy: None },
         ],
@@ -5320,13 +5320,13 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             unknowns: vec!["Exact timeline for headless CMS decision".into(), "Competitive evaluation scope (Webflow vs Drupal)".into(), "Domain consolidation implementation complexity".into()],
         }),
         stakeholder_insights: vec![
-            StakeholderInsight { name: "Chris Anderson".into(), role: Some("Technical/Business Stakeholder".into()), assessment: Some("Champion-adjacent. High engagement on compliance and editor performance. Strong advocate for platform expansion.".into()), engagement: Some("high".into()), source: None, person_id: Some("mock-chris-anderson".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(2), reference: Some("Feb 17 meeting".into()) }), discrepancy: None },
-            StakeholderInsight { name: "Diego Martinez".into(), role: Some("Technical Lead".into()), assessment: Some("Recently promoted to Technical Lead (Feb 2026). Leading headless CMS evaluation and POC phase. High technical credibility.".into()), engagement: Some("high".into()), source: None, person_id: Some("mock-diego-martinez".into()), suggested_person_id: None, item_source: None, discrepancy: None },
+            StakeholderInsight { name: "Chris Anderson".into(), role: Some("Technical/Business Stakeholder".into()), assessment: Some("Champion-adjacent. High engagement on compliance and editor performance. Strong advocate for platform expansion.".into()), engagement: Some("high".into()), source: None, person_id: Some("mock-chris-anderson".into()), suggested_person_id: None, verified: true, verified_source: Some("meeting".into()), verified_at: Some(days_ago_rfc(75)), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(2), reference: Some("Feb 17 meeting".into()) }), discrepancy: None },
+            StakeholderInsight { name: "Diego Martinez".into(), role: Some("Technical Lead".into()), assessment: Some("Recently promoted to Technical Lead (Feb 2026). Leading headless CMS evaluation and POC phase. High technical credibility.".into()), engagement: Some("high".into()), source: None, person_id: Some("mock-diego-martinez".into()), suggested_person_id: None, verified: false, verified_source: None, verified_at: None, item_source: None, discrepancy: None },
         ],
         value_delivered: vec![
-            ValueItem { date: Some(days_ago_rfc(2)), statement: "Defensive Mode enabled $60K cost savings vs third-party security spend".into(), source: Some("internal assessment".into()), impact: Some("High — demonstrates clear ROI".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(2), reference: Some("Feb 17 meeting".into()) }), discrepancy: None },
-            ValueItem { date: Some(days_ago_rfc(30)), statement: "Collaborative editing adoption strong across editorial team".into(), source: Some("usage analytics".into()), impact: Some("Medium — improves team velocity".into()), item_source: None, discrepancy: None },
-            ValueItem { date: Some(days_ago_rfc(14)), statement: "Trust Center access enabling compliance team self-service".into(), source: Some("product deployment".into()), impact: Some("High — reduces support burden, improves risk posture".into()), item_source: None, discrepancy: None },
+            ValueItem { date: Some(days_ago_rfc(2)), statement: "Defensive Mode enabled $60K cost savings vs third-party security spend".into(), source: Some("internal assessment".into()), impact: Some("cost".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(2), reference: Some("Feb 17 meeting".into()) }), discrepancy: None, ..Default::default() },
+            ValueItem { date: Some(days_ago_rfc(30)), statement: "Collaborative editing adoption strong across editorial team".into(), source: Some("usage analytics".into()), impact: Some("speed".into()), item_source: None, discrepancy: None, ..Default::default() },
+            ValueItem { date: Some(days_ago_rfc(14)), statement: "Trust Center access enabling compliance team self-service".into(), source: Some("product deployment".into()), impact: Some("risk".into()), item_source: None, discrepancy: None, ..Default::default() },
         ],
         company_context: Some(CompanyContext {
             description: Some("Financial services company with digital-first publishing platform".into()),
@@ -5391,6 +5391,26 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             StrategicPriority { priority: "Unified analytics platform".into(), status: Some("active".into()), owner: None, source: Some("technical".into()), timeline: Some(date_only(180)), context: None },
             StrategicPriority { priority: "Safe Publisher beta participation".into(), status: Some("planned".into()), owner: Some("Editorial team".into()), source: Some("product".into()), timeline: Some(date_only(60)), context: None },
             StrategicPriority { priority: "Cost reduction and consolidation".into(), status: Some("active".into()), owner: Some("Finance".into()), source: Some("leadership".into()), timeline: Some(date_only(120)), context: None },
+        ],
+        regulatory_context: vec![
+            RegulatoryItem {
+                standard: "DORA".into(),
+                status: "in_progress".into(),
+                evidence: "Chris Anderson flagged DORA compliance as a Q2 priority during Feb 17 check-in.".into(),
+                source_reference: Some("meeting:2026-02-17-globex-wpvip-checkin".into()),
+                detected_at: days_ago_rfc(75),
+                item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(75), reference: Some("Feb 17 meeting".into()) }),
+                discrepancy: None,
+            },
+            RegulatoryItem {
+                standard: "SOC_2_TYPE_II".into(),
+                status: "gap".into(),
+                evidence: "Required for FinServ expansion; no current artifact identified by procurement.".into(),
+                source_reference: None,
+                detected_at: days_ago_rfc(45),
+                item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.85, sourced_at: days_ago_rfc(45), reference: Some("Globex procurement thread".into()) }),
+                discrepancy: None,
+            },
         ],
         coverage_assessment: Some(CoverageAssessment {
             role_fill_rate: Some(0.6),
@@ -5531,7 +5551,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             IntelRisk { text: "Team bandwidth constraints for Q2 — Priya Sharma flagged".into(), source: Some("meeting notes".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(5), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
-            IntelWin { text: "Phase 1 delivered on time and under budget".into(), source: Some("project tracker".into()), impact: Some("Strong proof point for Phase 2 business case".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(10), reference: Some("kickoff meeting".into()) }), discrepancy: None },
+            IntelWin { text: "Phase 1 delivered on time and under budget".into(), source: Some("project tracker".into()), impact: Some("Strong proof point for Phase 2 business case".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(10), reference: Some("kickoff meeting".into()) }), discrepancy: None, ..Default::default() },
         ],
         current_state: Some(CurrentState {
             working: vec!["Phase 1 execution was flawless — strong credibility".into(), "Dana Patel is championing Phase 2 internally".into(), "Technical integration is stable and performant".into()],
@@ -5539,8 +5559,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             unknowns: vec!["When finance will approve Phase 2 budget".into(), "Exact scope of Phase 2".into()],
         }),
         stakeholder_insights: vec![
-            StakeholderInsight { name: "Dana Patel".into(), role: Some("CTO".into()), assessment: Some("Data-driven decision maker. Phase 1 ROI is the key argument.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-dana-patel".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(6), reference: Some("Glean AI synthesis".into()) }), discrepancy: None },
-            StakeholderInsight { name: "Priya Sharma".into(), role: Some("VP Product".into()), assessment: Some("Concerned about Q2 capacity. Needs phased rollout plan.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-priya-sharma".into()), suggested_person_id: None, item_source: None, discrepancy: None },
+            StakeholderInsight { name: "Dana Patel".into(), role: Some("CTO".into()), assessment: Some("Data-driven decision maker. Phase 1 ROI is the key argument.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-dana-patel".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(6), reference: Some("Glean AI synthesis".into()) }), discrepancy: None, ..Default::default() },
+            StakeholderInsight { name: "Priya Sharma".into(), role: Some("VP Product".into()), assessment: Some("Concerned about Q2 capacity. Needs phased rollout plan.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-priya-sharma".into()), suggested_person_id: None, item_source: None, discrepancy: None, ..Default::default() },
         ],
         value_delivered: vec![
             ValueItem { date: Some(days_ago_rfc(10)), statement: "Phase 1 delivered on time and under budget".into(), source: Some("project tracker".into()), impact: Some("Strong ROI proof".into()), item_source: None, discrepancy: None },
@@ -5715,7 +5735,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             unknowns: vec!["Her stance on APAC expansion timeline".into()],
         }),
         stakeholder_insights: vec![
-            StakeholderInsight { name: "Sarah Chen".into(), role: Some("VP Engineering".into()), assessment: Some("Strongest champion in the portfolio. Data-driven, decisive.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-sarah-chen".into()), suggested_person_id: None, item_source: None, discrepancy: None },
+            StakeholderInsight { name: "Sarah Chen".into(), role: Some("VP Engineering".into()), assessment: Some("Strongest champion in the portfolio. Data-driven, decisive.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-sarah-chen".into()), suggested_person_id: None, item_source: None, discrepancy: None, ..Default::default() },
         ],
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("strong".into()),
@@ -5793,6 +5813,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             suggested_person_id: None,
             item_source: None,
             discrepancy: None,
+            ..Default::default()
         }],
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("strong".into()),
@@ -5875,6 +5896,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             suggested_person_id: None,
             item_source: None,
             discrepancy: None,
+            ..Default::default()
         }],
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("developing".into()),

@@ -57,6 +57,7 @@ import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { AddToRecord } from "@/components/entity/AddToRecord";
 import { FileListSection } from "@/components/entity/FileListSection";
 import { CommercialShape } from "@/components/context/CommercialShape";
+import { RegulatoryContextCard } from "@/components/context/RegulatoryContextCard";
 import { RelationshipFabric } from "@/components/context/RelationshipFabric";
 // View 3 — The Work (DOS-13: workbench, not todo list)
 import {
@@ -199,7 +200,7 @@ export default function AccountDetailPage() {
               entityType="account"
               field="renewal_outlook"
               variant="correct"
-              currentValue={intelligence.renewalOutlook?.expansionPotential ?? null}
+              currentValue={intelligence.agreementOutlook?.expansionPotential ?? null}
               onCorrected={acct.silentRefresh}
             />
           </MarginSection>
@@ -421,6 +422,7 @@ export default function AccountDetailPage() {
             }
           />
           <CommercialShape detail={detail} onUpdateField={page.saveAccountField} />
+          <RegulatoryContextCard items={intelligence?.regulatoryContext} />
         </MarginSection>
 
         {/* Chapter 7: Technical shape — promoted footprint + feature list (reference weight). */}

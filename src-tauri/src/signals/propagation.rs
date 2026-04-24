@@ -182,6 +182,8 @@ pub fn default_engine() -> PropagationEngine {
         "rule_glean_champion_departed",
         super::rules::rule_glean_champion_departed,
     );
+    // DOS-207: Regulatory gap → account_risk propagation
+    engine.register("rule_regulatory_gap", super::rules::rule_regulatory_gap);
 
     engine
 }
