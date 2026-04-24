@@ -5,6 +5,14 @@ const AFFILIATES_PARTNERSHIPS_PRESET: &str =
 const PRODUCT_MARKETING_PRESET: &str = include_str!("../../presets/product-marketing.json");
 
 /// All embedded presets in display order.
+///
+/// DOS-177 curation note: The list is intentionally curated to 4 presets that
+/// cover the initial GA audience (general professional, CS, partner/affiliate-
+/// facing, and marketing roles). Legacy IDs (sales, partnerships, marketing,
+/// product, etc.) are aliased to these 4 via `loader::canonical_role_id`.
+/// Adding a new preset requires: a new JSON file, an entry here, a canonical
+/// alias in loader.rs, and a pass through the 5-question Intelligence Loop
+/// gate in CLAUDE.md.
 const ALL_PRESETS: &[(&str, &str)] = &[
     ("core", CORE_PRESET),
     ("customer-success", CS_PRESET),
