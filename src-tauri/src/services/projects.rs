@@ -472,7 +472,32 @@ pub fn bulk_create_projects(
 }
 
 /// Archive or restore a project with signal emission.
-pub fn archive_project(db: &ActionDb, id: &str, archived: bool) -> Result<(), String> {
+///
+/// DOS-286: when archiving, drops any pending intel queue entries for this
+/// project and its cascaded children so already-queued enrichments don't run
+/// against a now-archived target.
+pub fn archive_project(
+    db: &ActionDb,
+    state: &crate::state::AppState,
+    id: &str,
+    archived: bool,
+) -> Result<(), String> {
+    // DOS-286: collect child project IDs before archiving so we can drop their
+    // queued enrichments too (cascade archives children).
+    let child_ids: Vec<String> = if archived {
+        db.conn_ref()
+            .prepare("SELECT id FROM projects WHERE parent_id = ?1")
+            .ok()
+            .and_then(|mut stmt| {
+                stmt.query_map(rusqlite::params![id], |row| row.get::<_, String>(0))
+                    .ok()
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     db.archive_project(id, archived)
         .map_err(|e| e.to_string())?;
 
@@ -483,6 +508,14 @@ pub fn archive_project(db: &ActionDb, id: &str, archived: bool) -> Result<(), St
     };
     let _ =
         crate::services::signals::emit(db, "project", id, signal_type, "user_action", None, 0.9);
+
+    // DOS-286: drop any in-flight enrichments for the archived project and its children.
+    if archived {
+        state.intel_queue.remove_by_entity_id(id);
+        for child_id in &child_ids {
+            state.intel_queue.remove_by_entity_id(child_id);
+        }
+    }
 
     Ok(())
 }
