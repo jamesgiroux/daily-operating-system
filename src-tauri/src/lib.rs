@@ -304,12 +304,9 @@ pub fn run() {
                 async move { google_drive::poller::run_drive_poller(s).await }
             });
 
-            // Spawn event-driven entity resolution trigger (I308) — supervised (I616)
-            let entity_res_state = state.clone();
-            task_supervisor::spawn_supervised("EntityResolutionTrigger", move || {
-                let s = entity_res_state.clone();
-                async move { signals::event_trigger::run_entity_resolution_trigger(s).await }
-            });
+            // DOS-258: legacy entity resolution trigger removed. Entity
+            // linking now runs on every calendar poll via
+            // `services::entity_linking::calendar_adapter::evaluate_meeting`.
 
             // Create tray menu
             let open_item = MenuItem::with_id(app, "open", "Open DailyOS", true, None::<&str>)?;

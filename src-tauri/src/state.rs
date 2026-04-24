@@ -145,7 +145,6 @@ impl Default for AppLockState {
 /// Signal bus state (I405).
 pub struct SignalState {
     pub engine: Arc<crate::signals::propagation::PropagationEngine>,
-    pub entity_resolution_wake: Arc<tokio::sync::Notify>,
     pub prep_invalidation_queue: Arc<Mutex<Vec<String>>>,
 }
 
@@ -551,7 +550,6 @@ impl AppState {
             pre_dev_workspace: Mutex::new(None),
             signals: SignalState {
                 engine: Arc::new(signal_engine),
-                entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
                 prep_invalidation_queue: prep_queue,
             },
             integrations: IntegrationState {

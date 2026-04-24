@@ -1392,6 +1392,9 @@ fn detect_divergence(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::test_db;
+    use crate::db::{AccountType, DbAccount, DbMeeting};
+    use chrono::{Duration, Utc};
 
     fn null_dim() -> DimensionScore {
         DimensionScore {
@@ -1409,6 +1412,68 @@ mod tests {
             evidence: vec!["test".to_string()],
             trend: "stable".to_string(),
         }
+    }
+
+    fn make_account(id: &str, lifecycle: Option<&str>, contract_end: Option<String>) -> DbAccount {
+        DbAccount {
+            id: id.to_string(),
+            name: format!("Account {id}"),
+            lifecycle: lifecycle.map(|value| value.to_string()),
+            arr: Some(100_000.0),
+            health: None,
+            contract_start: Some("2025-01-01".to_string()),
+            contract_end,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            account_type: AccountType::Customer,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
+            metadata: None,
+            ..Default::default()
+        }
+    }
+
+    fn seed_linked_meeting(
+        db: &crate::db::ActionDb,
+        meeting_id: &str,
+        account_id: &str,
+        days_ago: i64,
+    ) {
+        let start_time = (Utc::now() - Duration::days(days_ago)).to_rfc3339();
+        let meeting = DbMeeting {
+            id: meeting_id.to_string(),
+            title: format!("Meeting {meeting_id}"),
+            meeting_type: "customer".to_string(),
+            start_time,
+            end_time: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
+        };
+        db.upsert_meeting(&meeting).expect("seed meeting");
+        db.link_meeting_entity_if_absent(meeting_id, account_id, "account")
+            .expect("link meeting to account");
     }
 
     #[test]
@@ -1504,6 +1569,100 @@ mod tests {
         let cs = crate::presets::loader::load_preset("customer-success").unwrap();
         let cs_raw = compose_dimension_weights(&cs.id, Some(&cs.intelligence), Some("renewal"));
         assert!(cs_raw[4] > cs_raw[0]);
+    }
+
+    #[test]
+    fn test_customer_success_preset_matches_legacy_health_output() {
+        let db = test_db();
+        let contract_end = (Utc::now().date_naive() + Duration::days(45)).to_string();
+        let account = make_account("acc-cs-baseline", Some("renewal"), Some(contract_end));
+        db.upsert_account(&account).expect("upsert account");
+        seed_linked_meeting(&db, "mtg-cs-baseline-1", &account.id, 7);
+        seed_linked_meeting(&db, "mtg-cs-baseline-2", &account.id, 20);
+        seed_linked_meeting(&db, "mtg-cs-baseline-3", &account.id, 50);
+
+        let customer_success = crate::presets::loader::load_preset("customer-success")
+            .expect("load customer-success preset");
+        let preset_health = compute_account_health_with_preset(
+            &db,
+            &account,
+            None,
+            Some(&customer_success),
+        );
+
+        let dims = RelationshipDimensions {
+            meeting_cadence: compute_meeting_cadence(&db, &account.id),
+            email_engagement: compute_email_engagement(&db, &account.id),
+            stakeholder_coverage: compute_stakeholder_coverage(&db, &account.id),
+            key_advocate_health: compute_key_advocate_health(&db, &account.id),
+            financial_proximity: compute_financial_proximity(&db, &account),
+            signal_momentum: compute_signal_momentum(&db, &account.id),
+        };
+        let legacy_raw = apply_lifecycle_weights("customer-success", account.lifecycle.as_deref());
+        let legacy_weights = redistribute_weights(&dims, legacy_raw);
+        let confidence = compute_confidence(&dims);
+        let dim_arr = [
+            &dims.meeting_cadence,
+            &dims.email_engagement,
+            &dims.stakeholder_coverage,
+            &dims.key_advocate_health,
+            &dims.financial_proximity,
+            &dims.signal_momentum,
+        ];
+        let mut weighted_sum = 0.0f64;
+        let mut weight_total = 0.0f64;
+        for (i, dim) in dim_arr.iter().enumerate() {
+            if dim.weight > 0.0 {
+                weighted_sum += dim.score * legacy_weights[i];
+                weight_total += legacy_weights[i];
+            }
+        }
+        let raw_avg = if weight_total > 0.0 {
+            weighted_sum / weight_total
+        } else {
+            50.0
+        };
+        let legacy_score = confidence * raw_avg + (1.0 - confidence) * 50.0;
+
+        assert!(
+            (legacy_score - preset_health.score).abs() < 1e-9,
+            "customer-success preset should preserve legacy score"
+        );
+        assert_eq!(
+            score_to_band(legacy_score),
+            preset_health.band,
+            "customer-success preset should preserve legacy band"
+        );
+        assert_eq!(
+            confidence, preset_health.confidence,
+            "customer-success preset should preserve legacy confidence"
+        );
+    }
+
+    #[test]
+    fn test_affiliates_preset_changes_health_output_for_same_account() {
+        let db = test_db();
+        let contract_end = (Utc::now().date_naive() + Duration::days(45)).to_string();
+        let account = make_account("acc-preset-diff", Some("renewal"), Some(contract_end));
+        db.upsert_account(&account).expect("upsert account");
+        seed_linked_meeting(&db, "mtg-preset-diff-1", &account.id, 7);
+        seed_linked_meeting(&db, "mtg-preset-diff-2", &account.id, 20);
+        seed_linked_meeting(&db, "mtg-preset-diff-3", &account.id, 50);
+
+        let customer_success = crate::presets::loader::load_preset("customer-success")
+            .expect("load customer-success preset");
+        let affiliates = crate::presets::loader::load_preset("affiliates-partnerships")
+            .expect("load affiliates preset");
+
+        let cs_health =
+            compute_account_health_with_preset(&db, &account, None, Some(&customer_success));
+        let affiliates_health =
+            compute_account_health_with_preset(&db, &account, None, Some(&affiliates));
+
+        assert_ne!(
+            cs_health.score, affiliates_health.score,
+            "different preset weights should change the final health score"
+        );
     }
 
     #[test]

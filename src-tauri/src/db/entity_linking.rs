@@ -4,6 +4,8 @@
 //! use these directly; nothing in this module should be called from
 //! outside that service.
 
+use std::collections::HashMap;
+
 use rusqlite::params;
 
 use super::ActionDb;
@@ -76,6 +78,85 @@ impl ActionDb {
                 |row| row.get(0),
             )
             .map_err(|e| format!("get_entity_graph_version: {e}"))
+    }
+
+    /// Batch read linked entities for a list of meetings from the `linked_entities`
+    /// view (DOS-258). Mirrors the single-owner query used by the meeting detail
+    /// page so the three list/dashboard surfaces no longer read stale rows from
+    /// the legacy `meeting_entities` junction table.
+    ///
+    /// The `linked_entities` view already hides `user_dismissed` tombstones.
+    /// Returns a map `meeting_id -> Vec<LinkedEntity>` sorted by role
+    /// (primary, related, auto_suggested) then name ASC. Legacy `is_primary`
+    /// and `suggested` fields are derived from `role` for back-compat with the
+    /// frontend chip renderer, while the new `role` and `applied_rule` fields
+    /// carry the engine's deterministic output.
+    pub fn get_linked_entities_map_for_meetings(
+        &self,
+        meeting_ids: &[String],
+    ) -> Result<HashMap<String, Vec<crate::types::LinkedEntity>>, String> {
+        if meeting_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let placeholders: Vec<String> = (0..meeting_ids.len())
+            .map(|i| format!("?{}", i + 1))
+            .collect();
+        let sql = format!(
+            "SELECT lr.owner_id, lr.entity_id, lr.entity_type, lr.role, \
+                    lr.confidence, lr.rule_id, \
+                    COALESCE(acc.name, proj.name, p.name, lr.entity_id) AS name \
+             FROM linked_entities lr \
+             LEFT JOIN accounts acc \
+                  ON lr.entity_type = 'account' AND acc.id = lr.entity_id \
+             LEFT JOIN projects proj \
+                  ON lr.entity_type = 'project' AND proj.id = lr.entity_id \
+             LEFT JOIN people p \
+                  ON lr.entity_type = 'person' AND p.id = lr.entity_id \
+             WHERE lr.owner_type = 'meeting' AND lr.owner_id IN ({}) \
+             ORDER BY lr.owner_id ASC, \
+               CASE lr.role WHEN 'primary' THEN 0 \
+                            WHEN 'related' THEN 1 \
+                            ELSE 2 END, \
+               name ASC",
+            placeholders.join(", ")
+        );
+        let conn = self.conn_ref();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| format!("prepare get_linked_entities_map_for_meetings: {e}"))?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = meeting_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+        let mut rows = stmt
+            .query(params.as_slice())
+            .map_err(|e| format!("get_linked_entities_map_for_meetings query: {e}"))?;
+        let mut map: HashMap<String, Vec<crate::types::LinkedEntity>> = HashMap::new();
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("get_linked_entities_map_for_meetings row: {e}"))?
+        {
+            let meeting_id: String = row.get(0).unwrap_or_default();
+            let entity_id: String = row.get(1).unwrap_or_default();
+            let entity_type: String = row.get(2).unwrap_or_default();
+            let role: String = row.get(3).unwrap_or_default();
+            let confidence: Option<f64> = row.get(4).ok();
+            let rule_id: Option<String> = row.get(5).ok();
+            let name: String = row.get(6).unwrap_or_default();
+            map.entry(meeting_id)
+                .or_default()
+                .push(crate::types::LinkedEntity {
+                    id: entity_id,
+                    name,
+                    entity_type,
+                    confidence: confidence.unwrap_or(0.95),
+                    is_primary: role == "primary",
+                    suggested: role == "auto_suggested",
+                    role: Some(role),
+                    applied_rule: rule_id,
+                });
+        }
+        Ok(map)
     }
 
     /// Return (entity_id, entity_type) pairs that the user has dismissed for this owner.
