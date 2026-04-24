@@ -410,8 +410,11 @@ pub async fn archive_project(
     archived: bool,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let app_state = state.inner().clone();
     state
-        .db_write(move |db| crate::services::projects::archive_project(db, &id, archived))
+        .db_write(move |db| {
+            crate::services::projects::archive_project(db, &app_state, &id, archived)
+        })
         .await
 }
 
