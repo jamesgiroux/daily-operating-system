@@ -386,6 +386,9 @@ pub fn create_person(
 }
 
 /// Archive or unarchive a person with signal emission.
+///
+/// DOS-286: when archiving, drops any pending intel queue entries for this
+/// person so already-queued enrichments don't run against a now-archived target.
 pub fn archive_person(
     db: &ActionDb,
     state: &AppState,
@@ -409,6 +412,11 @@ pub fn archive_person(
         None,
         0.9,
     );
+
+    // DOS-286: drop any in-flight enrichments for the archived person.
+    if archived {
+        state.intel_queue.remove_by_entity_id(id);
+    }
 
     Ok(())
 }

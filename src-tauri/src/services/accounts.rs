@@ -2274,6 +2274,10 @@ pub fn create_account(
 }
 
 /// Archive or unarchive an account with signal emission. Cascades to children when archiving.
+///
+/// DOS-286: when archiving, drops any pending intel queue entries for this
+/// account and its cascaded children so already-queued enrichments don't run
+/// against a now-archived target.
 pub fn archive_account(
     db: &ActionDb,
     state: &crate::state::AppState,
@@ -2285,6 +2289,23 @@ pub fn archive_account(
     } else {
         "entity_unarchived"
     };
+
+    // DOS-286: collect child IDs before archiving so we can drop their queued
+    // enrichments too (cascade archives children in the same transaction).
+    let child_ids: Vec<String> = if archived {
+        db.conn_ref()
+            .prepare("SELECT id FROM accounts WHERE parent_id = ?1")
+            .ok()
+            .and_then(|mut stmt| {
+                stmt.query_map(rusqlite::params![id], |row| row.get::<_, String>(0))
+                    .ok()
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     db.with_transaction(|tx| {
         tx.archive_account(id, archived)
             .map_err(|e| e.to_string())?;
@@ -2300,7 +2321,17 @@ pub fn archive_account(
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
         Ok(())
-    })
+    })?;
+
+    // DOS-286: drop any in-flight enrichments for the archived account and its children.
+    if archived {
+        state.intel_queue.remove_by_entity_id(id);
+        for child_id in &child_ids {
+            state.intel_queue.remove_by_entity_id(child_id);
+        }
+    }
+
+    Ok(())
 }
 
 /// Merge source account into target account with signal emission.

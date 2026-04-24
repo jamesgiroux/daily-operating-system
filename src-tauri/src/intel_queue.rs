@@ -211,6 +211,29 @@ impl IntelligenceQueue {
         self.len() == 0
     }
 
+    /// Remove all queued requests for a given entity (DOS-286).
+    ///
+    /// Called when an entity is archived so pending enrichments don't run
+    /// against a now-archived target. Also clears the debounce tracker so
+    /// an unarchive → re-enqueue works without the debounce delay. Returns
+    /// the number of queue entries removed.
+    pub fn remove_by_entity_id(&self, entity_id: &str) -> usize {
+        let mut queue = self.queue.lock();
+        let before = queue.len();
+        queue.retain(|r| r.entity_id != entity_id);
+        let removed = before - queue.len();
+        drop(queue);
+
+        self.last_enqueued.lock().remove(entity_id);
+
+        if removed > 0 {
+            log::info!(
+                "IntelQueue: removed {removed} pending entries for archived entity {entity_id}"
+            );
+        }
+        removed
+    }
+
     /// Remove stale entries from the `last_enqueued` debounce tracker.
     ///
     /// Entries older than `CONTENT_DEBOUNCE_SECS * 10` (5 minutes) are pruned
@@ -2624,6 +2647,73 @@ mod tests {
         assert_eq!(req.entity_id, "acme");
         assert_eq!(req.priority, IntelPriority::ContentChange);
         assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn test_intel_queue_remove_by_entity_id() {
+        // DOS-286: archiving an entity should drop all of its pending queue
+        // entries regardless of priority, and should not touch other entities.
+        let queue = IntelligenceQueue::new();
+
+        queue.enqueue(IntelRequest {
+            entity_id: "archived-acct".to_string(),
+            entity_type: "account".to_string(),
+            priority: IntelPriority::ProactiveHygiene,
+            requested_at: Instant::now(),
+            retry_count: 0,
+        });
+        queue.enqueue(IntelRequest {
+            entity_id: "other-acct".to_string(),
+            entity_type: "account".to_string(),
+            priority: IntelPriority::Manual,
+            requested_at: Instant::now(),
+            retry_count: 0,
+        });
+
+        assert_eq!(queue.len(), 2);
+
+        let removed = queue.remove_by_entity_id("archived-acct");
+        assert_eq!(removed, 1);
+        assert_eq!(queue.len(), 1);
+
+        let req = queue.dequeue().unwrap();
+        assert_eq!(req.entity_id, "other-acct");
+
+        // Removing an unknown entity is a safe no-op.
+        assert_eq!(queue.remove_by_entity_id("never-queued"), 0);
+    }
+
+    #[test]
+    fn test_intel_queue_remove_clears_debounce_tracker() {
+        // DOS-286: removal must clear the debounce tracker so an
+        // unarchive → re-enqueue can proceed without the debounce delay.
+        let queue = IntelligenceQueue::new();
+
+        queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
+            entity_type: "account".to_string(),
+            priority: IntelPriority::ContentChange,
+            requested_at: Instant::now(),
+            retry_count: 0,
+        });
+        // Drain so the queue is empty but the debounce tracker still holds "acme".
+        let _ = queue.dequeue();
+        assert!(queue.is_empty());
+        assert!(queue.last_enqueued.lock().contains_key("acme"));
+
+        queue.remove_by_entity_id("acme");
+        assert!(!queue.last_enqueued.lock().contains_key("acme"));
+
+        // A fresh ContentChange enqueue for the same entity should now go through
+        // instead of being debounced.
+        queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
+            entity_type: "account".to_string(),
+            priority: IntelPriority::ContentChange,
+            requested_at: Instant::now(),
+            retry_count: 0,
+        });
+        assert_eq!(queue.len(), 1);
     }
 
     #[test]
