@@ -320,7 +320,46 @@ impl ActionDb {
             .map_err(|e| format!("get_series_primary_link: {e}"))
     }
 
-    /// True if person is a stakeholder on 2+ accounts (multi-account-active check for P4a).
+    /// Return all non-archived account_ids on which `person_id` is an **active**
+    /// stakeholder. Drives the P4a stakeholder-inference rule: stakeholder
+    /// membership is stronger evidence than attendee-domain matching.
+    ///
+    /// Only `status='active'` rows count. Pending, dismissed and archived
+    /// stakeholders are excluded because they do not represent a confirmed
+    /// relationship.
+    pub fn lookup_active_stakeholder_accounts_for_person(
+        &self,
+        person_id: &str,
+    ) -> Result<Vec<String>, String> {
+        let conn = self.conn_ref();
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT as_.account_id \
+                 FROM account_stakeholders as_ \
+                 JOIN accounts a ON a.id = as_.account_id \
+                 WHERE as_.person_id = ?1 \
+                   AND as_.status = 'active' \
+                   AND a.archived = 0 \
+                 ORDER BY as_.account_id",
+            )
+            .map_err(|e| format!("prepare lookup_active_stakeholder_accounts_for_person: {e}"))?;
+        let mut rows = stmt
+            .query(params![person_id])
+            .map_err(|e| format!("lookup_active_stakeholder_accounts_for_person query: {e}"))?;
+        let mut out = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("lookup_active_stakeholder_accounts_for_person row: {e}"))?
+        {
+            out.push(
+                row.get::<_, String>(0)
+                    .map_err(|e| format!("stakeholder_accounts col0: {e}"))?,
+            );
+        }
+        Ok(out)
+    }
+
+    /// True if person is a stakeholder on 2+ accounts (multi-account-active check for P4b).
     pub fn is_person_multi_account_active(&self, person_id: &str) -> Result<bool, String> {
         let count: i64 = self
             .conn_ref()

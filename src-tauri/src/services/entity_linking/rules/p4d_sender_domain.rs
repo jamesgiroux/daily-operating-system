@@ -1,12 +1,14 @@
-//! P4c — Email surface: sender domain maps to exactly one account_of.
+//! P4d — Email surface: sender domain maps to exactly one account_of.
+//!
+//! DOS-258 evidence-hierarchy fix: renamed from P4c.
 
 use crate::db::ActionDb;
 use super::super::{evidence, primitives, types::{Candidate, EntityRef, LinkRole, LinkingContext, OwnerType, RuleOutcome}};
 
-pub struct P4cSenderDomain;
+pub struct P4dSenderDomain;
 
-impl super::super::phases::Rule for P4cSenderDomain {
-    fn id(&self) -> &'static str { "P4c" }
+impl super::super::phases::Rule for P4dSenderDomain {
+    fn id(&self) -> &'static str { "P4d" }
 
     fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
         if ctx.owner.owner_type != OwnerType::Email {
@@ -30,7 +32,7 @@ impl super::super::phases::Rule for P4cSenderDomain {
         let accounts = match primitives::lookup_account_candidates_by_domain(db, &domain) {
             Ok(a) => a,
             Err(e) => {
-                log::warn!("P4c domain lookup error: {e}");
+                log::warn!("P4d domain lookup error: {e}");
                 return RuleOutcome::Skip;
             }
         };
@@ -46,7 +48,7 @@ impl super::super::phases::Rule for P4cSenderDomain {
                 entity: EntityRef { entity_id: account.id.clone(), entity_type: "account".to_string() },
                 role: LinkRole::Primary,
                 confidence: 0.95,
-                rule_id: "P4c".to_string(),
+                rule_id: "P4d".to_string(),
                 evidence: serde_json::json!({}),
             },
             &[],
@@ -56,7 +58,7 @@ impl super::super::phases::Rule for P4cSenderDomain {
             entity: EntityRef { entity_id: account.id.clone(), entity_type: "account".to_string() },
             role: LinkRole::Primary,
             confidence: 0.95,
-            rule_id: "P4c".to_string(),
+            rule_id: "P4d".to_string(),
             evidence: ev,
         })
     }
