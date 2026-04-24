@@ -4876,9 +4876,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         ),
         pull_quote: Some("Acme is expanding — new department rollout signals 40% ARR growth opportunity if we land the technical win.".into()),
         risks: vec![
-            IntelRisk { text: "Alex Torres departing March — critical knowledge transfer gap".into(), source: Some("meeting notes".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(5), reference: Some("meeting Mar 10".into()) }), discrepancy: None },
-            IntelRisk { text: "NPS trending down: 3 detractors in engineering team".into(), source: Some("NPS survey".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(7), reference: Some("Salesforce".into()) }), discrepancy: None },
-            IntelRisk { text: "Legal review of MSA amendment stalled for 10 days".into(), source: Some("email signal".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(2), reference: Some("you edited this".into()) }), discrepancy: None },
+            IntelRisk { text: "Alex Torres departing March — critical knowledge transfer gap".into(), source: Some("meeting notes".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(5), reference: Some("meeting Mar 10".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { text: "NPS trending down: 3 detractors in engineering team".into(), source: Some("NPS survey".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(7), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { text: "Legal review of MSA amendment stalled for 10 days".into(), source: Some("email signal".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(2), reference: Some("you edited this".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
             IntelWin { text: "Phase 1 migration completed ahead of schedule".into(), source: Some("project tracker".into()), impact: Some("High — demonstrates execution capability for Phase 2".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(14), reference: Some("meeting Mar 1".into()) }), discrepancy: None },
@@ -4916,6 +4916,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
                 rationale: Some("Strong Phase 1 execution offset by NPS concerns and Alex Torres departure".into()),
                 timeframe: "90d".into(),
                 confidence: 0.8,
+                ..Default::default()
             },
             dimensions: RelationshipDimensions {
                 meeting_cadence: DimensionScore { score: 85.0, weight: 0.15, evidence: vec!["4 meetings/month, consistent cadence".into()], trend: "stable".into() },
@@ -5005,6 +5006,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             recommended_start: Some(date_only(-30)),
             negotiation_leverage: vec!["Phase 1 exceeded benchmarks".into(), "Strong champion in Sarah Chen".into()],
             negotiation_risk: vec!["NPS trending down".into(), "Alex Torres departure creates uncertainty".into()],
+            ..Default::default()
         }),
         // Dimension 6: External Health Signals
         support_health: Some(SupportHealth {
@@ -5093,9 +5095,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         ),
         pull_quote: Some("Globex is at risk — champion departed, no executive sponsor identified, and renewal is 90 days out.".into()),
         risks: vec![
-            IntelRisk { text: "Pat Reynolds (executive sponsor) departing Q2 — successor unknown".into(), source: Some("direct communication".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(10), reference: Some("meeting Mar 5".into()) }), discrepancy: Some(true) },
-            IntelRisk { text: "Team B usage declining 20% month-over-month".into(), source: Some("usage analytics".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(3), reference: Some("Salesforce".into()) }), discrepancy: None },
-            IntelRisk { text: "Contoso actively pitching to Globex leadership".into(), source: Some("email intel from Jamie Morrison".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(1), reference: Some("you edited this".into()) }), discrepancy: None },
+            IntelRisk { text: "Pat Reynolds (executive sponsor) departing Q2 — successor unknown".into(), source: Some("direct communication".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(10), reference: Some("meeting Mar 5".into()) }), discrepancy: Some(true), ..Default::default() },
+            IntelRisk { text: "Team B usage declining 20% month-over-month".into(), source: Some("usage analytics".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(3), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { text: "Contoso actively pitching to Globex leadership".into(), source: Some("email intel from Jamie Morrison".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(1), reference: Some("you edited this".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
             IntelWin { text: "Expanded to 3 new teams this quarter".into(), source: Some("deployment tracker".into()), impact: Some("Demonstrates platform value at scale".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(7), reference: Some("QBR prep call".into()) }), discrepancy: None },
@@ -5134,6 +5136,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
                 rationale: Some("Team B decline and executive sponsor departure offsetting expansion wins".into()),
                 timeframe: "90d".into(),
                 confidence: 0.75,
+                ..Default::default()
             },
             dimensions: RelationshipDimensions {
                 meeting_cadence: DimensionScore { score: 60.0, weight: 0.15, evidence: vec!["2 meetings/month, declining from 3".into()], trend: "declining".into() },
@@ -5219,6 +5222,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             recommended_start: Some(days_ago_rfc(0)),
             negotiation_leverage: vec!["Team A 40% growth".into(), "3 new team deployments".into(), "CSAT improvement".into()],
             negotiation_risk: vec!["Team B narrative".into(), "Contoso alternative".into(), "Sponsor departure".into()],
+            ..Default::default()
         }),
         support_health: Some(SupportHealth {
             open_tickets: Some(7),
@@ -5302,8 +5306,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         ),
         pull_quote: Some("Globex Holdings' editor performance bottlenecks and compliance demands are the critical levers for deepening trust and unlocking expansion.".into()),
         risks: vec![
-            IntelRisk { text: "Compliance: DORA requirements and SOC 2 Type II-style reporting not yet met".into(), source: Some("Mar 10, 2025 conversation".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.85, sourced_at: days_ago_rfc(30), reference: Some("meeting Mar 10".into()) }), discrepancy: None },
-            IntelRisk { text: "Editor performance: Current solution has bottlenecks under peak load".into(), source: Some("technical assessment".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.8, sourced_at: days_ago_rfc(14), reference: Some("Glean AI synthesis".into()) }), discrepancy: None },
+            IntelRisk { text: "Compliance: DORA requirements and SOC 2 Type II-style reporting not yet met".into(), source: Some("Mar 10, 2025 conversation".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.85, sourced_at: days_ago_rfc(30), reference: Some("meeting Mar 10".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { text: "Editor performance: Current solution has bottlenecks under peak load".into(), source: Some("technical assessment".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.8, sourced_at: days_ago_rfc(14), reference: Some("Glean AI synthesis".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
             IntelWin { text: "Defensive Mode launched — enabling up to $60K in security cost avoidance".into(), source: Some("deployment".into()), impact: Some("Demonstrates value delivery on compliance initiatives".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(2), reference: Some("Feb 17 check-in".into()) }), discrepancy: None },
@@ -5342,6 +5346,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
                 rationale: Some("Steady engagement, clear expansion signals, strategic alignment on digital consolidation".into()),
                 timeframe: "90d".into(),
                 confidence: 0.85,
+                ..Default::default()
             },
             dimensions: RelationshipDimensions {
                 meeting_cadence: DimensionScore { score: 75.0, weight: 0.15, evidence: vec!["3 meetings/month, consistent check-ins".into()], trend: "stable".into() },
@@ -5438,6 +5443,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             recommended_start: Some(days_ago_rfc(0)),
             negotiation_leverage: vec!["Defensive Mode cost savings ($60K)".into(), "Strong adoption metrics".into(), "Strategic alignment on digital consolidation".into()],
             negotiation_risk: vec![],
+            ..Default::default()
         }),
         support_health: Some(SupportHealth {
             open_tickets: Some(1),
@@ -5521,8 +5527,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         ),
         pull_quote: Some("Initech is stable but autopilot — usage is flat, engagement is minimal, and we have no expansion signals.".into()),
         risks: vec![
-            IntelRisk { text: "Phase 2 budget approval pending from finance — 7 days with no response".into(), source: Some("email from Dana Patel".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(7), reference: Some("meeting Mar 8".into()) }), discrepancy: None },
-            IntelRisk { text: "Team bandwidth constraints for Q2 — Priya Sharma flagged".into(), source: Some("meeting notes".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(5), reference: Some("Salesforce".into()) }), discrepancy: None },
+            IntelRisk { text: "Phase 2 budget approval pending from finance — 7 days with no response".into(), source: Some("email from Dana Patel".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(7), reference: Some("meeting Mar 8".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { text: "Team bandwidth constraints for Q2 — Priya Sharma flagged".into(), source: Some("meeting notes".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(5), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
             IntelWin { text: "Phase 1 delivered on time and under budget".into(), source: Some("project tracker".into()), impact: Some("Strong proof point for Phase 2 business case".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(10), reference: Some("kickoff meeting".into()) }), discrepancy: None },
@@ -5557,6 +5563,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
                 rationale: Some("Phase 1 success builds credibility but limited engagement history".into()),
                 timeframe: "60d".into(),
                 confidence: 0.6,
+                ..Default::default()
             },
             dimensions: RelationshipDimensions {
                 meeting_cadence: DimensionScore { score: 50.0, weight: 0.15, evidence: vec!["1 meeting/month, new relationship".into()], trend: "stable".into() },
@@ -5633,6 +5640,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             recommended_start: None,
             negotiation_leverage: vec!["Phase 1 on time and under budget".into()],
             negotiation_risk: vec!["Conservative finance team".into()],
+            ..Default::default()
         }),
         support_health: Some(SupportHealth {
             open_tickets: Some(1),
@@ -5695,7 +5703,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
              Acme's leadership team.".into()
         ),
         risks: vec![
-            IntelRisk { text: "May face internal pressure if NPS detractors aren't addressed".into(), source: Some("inferred from NPS trend".into()), urgency: "watch".into(), item_source: None, discrepancy: None },
+            IntelRisk { text: "May face internal pressure if NPS detractors aren't addressed".into(), source: Some("inferred from NPS trend".into()), urgency: "watch".into(), item_source: None, discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
             IntelWin { text: "Secured Phase 2 budget approval independently".into(), source: Some("meeting notes".into()), impact: Some("Removed the biggest Phase 2 blocker".into()), item_source: None, discrepancy: None },
@@ -5749,6 +5757,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             urgency: "watch".into(),
             item_source: None,
             discrepancy: None,
+            ..Default::default()
         }],
         recent_wins: vec![
             IntelWin {
@@ -5839,6 +5848,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             urgency: "watch".into(),
             item_source: None,
             discrepancy: None,
+            ..Default::default()
         }],
         recent_wins: vec![IntelWin {
             text: "Phase 1 success validates her technology bet".into(),

@@ -192,6 +192,7 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
             rationale: Some("Insufficient history for trend".to_string()),
             timeframe: "30d".to_string(),
             confidence: 0.1,
+            ..Default::default()
         };
     }
 
@@ -237,6 +238,7 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
         rationale: Some(rationale),
         timeframe: "30d".to_string(),
         confidence: trend_confidence,
+        ..Default::default()
     }
 }
 

@@ -900,7 +900,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
         "core_assessment" => {
             s.push_str(
                 r#"  "executiveAssessment": "2-4 paragraphs. P1: one-sentence verdict. P2: top risk. P3: biggest opportunity. P4 (optional): key unknowns. Max 250 words.",
-  "risks": [{"text": "specific risk with named people/timelines", "urgency": "critical|watch|low", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
+  "risks": [{"text": "full risk paragraph (multi-sentence)", "headline": "punchy 1-liner ≤80 chars — the triage card heading", "evidence": "supporting detail: named people, timelines, data points (optional)", "urgency": "critical|watch|low", "kindLabel": "specific label like 'Renewal drag · compliance gap' or 'Active friction · unresolved' or 'Expansion window · question unanswered'", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "recentWins": [{"text": "verifiable win", "impact": "high|medium|low", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "pullQuote": "One impactful sentence — the single most important thing about this account right now. Written as an editorial pull quote, not a summary. Max 30 words.",
   "currentState": {
@@ -944,7 +944,11 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
             }
             s.push_str(
                 r#"  "contractContext": {"contractType": "annual|multi_year|month_to_month", "autoRenew": true, "renewalDate": "ISO date", "currentArr": 0.0},
+<<<<<<< HEAD
   "agreementOutlook": {"confidence": "high|moderate|low", "riskFactors": ["..."], "expansionPotential": "...", "recommendedStart": "ISO date"},
+=======
+  "renewalOutlook": {"confidence": "high|moderate|low", "riskFactors": ["..."], "expansionPotential": "...", "renewalNarrative": "One-paragraph editorial read on the renewal outlook — the single most important thing to know about this account's next commercial moment. 2-4 sentences. Rendered as a pull-quote below the grid.", "recommendedStart": "ISO date"},
+>>>>>>> dc45a795 (DOS-249: Extend health + renewal schema with accuracy fields)
   "expansionSignals": [{"opportunity": "...", "arrImpact": 0.0, "stage": "exploring|evaluating|committed|blocked", "strength": "strong|moderate|early", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "blockers": [{"description": "...", "owner": "...", "since": "ISO date", "impact": "critical|high|moderate|low"}],
   "productClassification": {
@@ -1062,6 +1066,9 @@ mod tests {
             source: None,
             urgency: "watch".to_string(),
             item_source: None,
+            headline: None,
+            evidence: None,
+            kind_label: None,
             discrepancy: None,
         }];
         // Partial has empty stakeholder_insights — should NOT wipe existing
@@ -1162,6 +1169,9 @@ mod tests {
             source: None,
             urgency: "watch".to_string(),
             item_source: None,
+            headline: None,
+            evidence: None,
+            kind_label: None,
             discrepancy: None,
         }];
 
@@ -1258,6 +1268,9 @@ mod tests {
             source: None,
             urgency: "critical".to_string(),
             item_source: None,
+            headline: None,
+            evidence: None,
+            kind_label: None,
             discrepancy: None,
         }];
 
@@ -1687,6 +1700,9 @@ mod eval_tests {
             source: Some("meeting".to_string()),
             urgency: "critical".to_string(),
             item_source: None,
+            headline: None,
+            evidence: None,
+            kind_label: None,
             discrepancy: None,
         }];
         partial.recent_wins = vec![super::super::io::IntelWin {
@@ -1729,6 +1745,9 @@ mod eval_tests {
             source: None,
             urgency: "watch".to_string(),
             item_source: None,
+            headline: None,
+            evidence: None,
+            kind_label: None,
             discrepancy: None,
         }];
 
@@ -1774,6 +1793,9 @@ mod eval_tests {
             source: None,
             urgency: "watch".to_string(),
             item_source: None,
+            headline: None,
+            evidence: None,
+            kind_label: None,
             discrepancy: None,
         }];
         merge_dimension_into(&mut existing, "core_assessment", &p1).unwrap();

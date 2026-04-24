@@ -125,19 +125,18 @@ pub fn is_personal_email_domain(domain: &str) -> bool {
         .any(|&p| p == d)
 }
 
-/// DOS-287: Bot email hosts whose presence in a document says nothing about
-/// the account — e.g. shared Gong note-taker bot. Tracked here as the
-/// single source of truth; the spec anticipated a `stakeholder_domains`
-/// module, but one does not exist yet.
-pub const BOT_EMAIL_HOSTS: &[&str] = &[
-    "assistant.gong.io",
-    "group-calendar.resource.calendar.google.com",
-    "resource.calendar.google.com",
-    "noreply.google.com",
-];
-
 /// DOS-287: True when the email host is a known bot/noreply host.
+///
+/// Single source of truth for the bot host list lives in
+/// `crate::services::entity_linking::stakeholder_domains::BOT_EMAIL_HOSTS`
+/// (exact-match, used as a strict filter when deriving account_domains).
+/// Here we apply a looser semantic: suffix match (so a subdomain like
+/// `x.assistant.gong.io` is also rejected) plus a catch-all for any host
+/// containing `noreply`. This context needs broader exclusion because its
+/// downstream use is "should this email be part of the prompt's trusted
+/// contacts block" — a weaker gate.
 pub fn is_bot_email_host(email: &str) -> bool {
+    use crate::services::entity_linking::stakeholder_domains::BOT_EMAIL_HOSTS;
     let host = match email.rsplit_once('@') {
         Some((_, h)) => h.to_lowercase(),
         None => return false,
@@ -2651,6 +2650,7 @@ fn legacy_health_to_account_health(
             rationale: health_trend.and_then(|t| t.rationale),
             timeframe: "30d".to_string(),
             confidence: 0.3,
+            ..Default::default()
         },
         dimensions: super::io::RelationshipDimensions::default(),
         divergence: None,
@@ -2782,6 +2782,15 @@ struct AiRisk {
     source: Option<String>,
     #[serde(default = "default_urgency")]
     urgency: String,
+    /// DOS-249: Punchy 1-liner headline for the triage card.
+    #[serde(default)]
+    headline: Option<String>,
+    /// DOS-249: Evidence body with named people/timelines.
+    #[serde(default)]
+    evidence: Option<String>,
+    /// DOS-249: Specific kind label (e.g. "Renewal drag · compliance gap").
+    #[serde(default)]
+    kind_label: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3140,6 +3149,9 @@ fn try_parse_json_response(
                 text: r.text,
                 source: r.source,
                 urgency: r.urgency,
+                headline: r.headline,
+                evidence: r.evidence,
+                kind_label: r.kind_label,
                 item_source: None,
                 discrepancy: None,
             })
@@ -3464,6 +3476,9 @@ fn parse_risk_line(rest: &str) -> Option<IntelRisk> {
         text,
         source,
         urgency,
+        headline: None,
+        evidence: None,
+        kind_label: None,
         item_source: None,
         discrepancy: None,
     })

@@ -239,6 +239,21 @@ pub struct AccountHealth {
     pub recommended_actions: Vec<String>,
 }
 
+/// A short directional tag for the health trend signal line.
+///
+/// DOS-249: The mockup's Signal-trend meta renders as a bullet list like
+/// "Infra drift ▲ · Defensive Mode unsettled · Headless ▲ · Compliance persistent".
+/// These are populated by `compute_trend_from_history` and emitted as structured
+/// data so the frontend renders bullets instead of leaving the meta line empty.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthTrendTag {
+    /// Short human label (e.g. "Infra drift", "Defensive Mode unsettled").
+    pub label: String,
+    /// Direction indicator: "up" | "down" | "stable".
+    pub direction: String,
+}
+
 /// ADR-0097: Health trend direction with rationale, timeframe, and confidence.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -251,6 +266,15 @@ pub struct HealthTrend {
     pub timeframe: String,
     #[serde(default)]
     pub confidence: f64,
+    /// DOS-249: Integer score delta over the trend window. Positive = improving,
+    /// negative = declining. Used by SupportingTension to render "▲ +12 in 30d".
+    /// Computed from health score history; `None` when fewer than 2 data points exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta: Option<i32>,
+    /// DOS-249: Structured signal tags for the trend meta line. Derived from
+    /// dimension evidence; frontend renders as "Label ▲ · Label · Label ▼".
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<HealthTrendTag>,
 }
 
 /// ADR-0097: Six-dimension relationship health breakdown.
@@ -682,7 +706,13 @@ pub struct ExpansionSignal {
     pub discrepancy: Option<bool>,
 }
 
-/// Agreement outlook assessment for an account.
+/// Agreement outlook assessment for an account (renamed from RenewalOutlook
+/// in DOS-179; serde alias preserves backward compat).
+///
+/// DOS-249: `renewal_narrative` is the one-paragraph editorial read that
+/// appears as a pull-quote below the Confidence/Recommended-start grid in
+/// the Health tab. Previously the UI overloaded `expansion_potential` for
+/// this; the dedicated field removes that coupling.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AgreementOutlook {
@@ -693,6 +723,11 @@ pub struct AgreementOutlook {
     pub risk_factors: Vec<String>,
     /// Is there upsell/expansion potential tied to the renewal conversation?
     pub expansion_potential: Option<String>,
+    /// DOS-249: One-paragraph editorial read on the renewal — rendered as a
+    /// pull-quote below the outlook grid. Distinct from `expansion_potential`.
+    /// The AI emits this from the commercial_financial dimension prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renewal_narrative: Option<String>,
     /// When to start the renewal conversation.
     pub recommended_start: Option<String>,
     /// What strengthens our position.
@@ -1190,7 +1225,7 @@ fn is_true(v: &bool) -> bool {
     *v
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct IntelRisk {
     pub text: String,
@@ -1198,6 +1233,20 @@ pub struct IntelRisk {
     pub source: Option<String>,
     #[serde(default = "default_urgency")]
     pub urgency: String,
+    /// DOS-249: Punchy 1-liner headline for the triage card (≤80 chars).
+    /// When present, the frontend renders this in the 21px serif slot rather
+    /// than splitting `text` on punctuation. Falls back to client-side split
+    /// of `text` when absent (backward compat with existing enriched accounts).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headline: Option<String>,
+    /// DOS-249: Evidence body — multi-sentence supporting detail.
+    /// When present, rendered as the sans-serif paragraph below the headline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+    /// DOS-249: Specific kind label emitted by the AI (e.g. "Renewal drag · compliance gap").
+    /// When present, replaces the generic urgency-derived label in the triage card spine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind_label: Option<String>,
     /// I576: Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
@@ -2835,6 +2884,9 @@ mod tests {
                 source: Some("qbr-notes.md".to_string()),
                 urgency: "critical".to_string(),
                 item_source: None,
+                headline: None,
+                evidence: None,
+                kind_label: None,
                 discrepancy: None,
             }],
             recent_wins: vec![IntelWin {
@@ -3131,6 +3183,9 @@ mod tests {
             source: None,
             urgency: "watch".to_string(),
             item_source: None,
+            headline: None,
+            evidence: None,
+            kind_label: None,
             discrepancy: None,
         });
 
@@ -3237,6 +3292,7 @@ mod tests {
             recommended_start: Some("2026-01-15".to_string()),
             negotiation_leverage: vec!["Multi-year discount".to_string()],
             negotiation_risk: vec!["Competitor POC".to_string()],
+            ..Default::default()
         });
         intel.support_health = Some(SupportHealth {
             open_tickets: Some(3),
@@ -3351,6 +3407,9 @@ mod tests {
                 source: Some("QBR notes".to_string()),
                 urgency: "critical".to_string(),
                 item_source: None,
+                headline: None,
+                evidence: None,
+                kind_label: None,
                 discrepancy: None,
             }],
             recent_wins: vec![IntelWin {
