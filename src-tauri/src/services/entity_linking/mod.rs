@@ -7,6 +7,7 @@ pub mod primitives;
 pub mod repository;
 pub mod rescan;
 pub mod rules;
+pub mod stakeholder_domains;
 pub mod types;
 
 pub use types::{
