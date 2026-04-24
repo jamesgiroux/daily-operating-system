@@ -46,6 +46,21 @@ pub enum ExecutionError {
 
     #[error("Claude subscription limit reached. Try again later")]
     ClaudeSubscriptionLimit,
+
+    /// DOS-279: Daily AI token budget exhausted.
+    ///
+    /// Emitted by the preflight gate in `PtyManager::spawn_claude` when the
+    /// configured daily token budget has been consumed. No new AI calls start
+    /// until the budget resets at local midnight.
+    #[error(
+        "Daily AI budget exhausted ({used} / {budget} estimated tokens used today). \
+         Budget resets at {reset_at}."
+    )]
+    DailyBudgetExhausted {
+        used: u32,
+        budget: u32,
+        reset_at: String,
+    },
 }
 
 impl ExecutionError {
@@ -66,6 +81,7 @@ impl ExecutionError {
             ExecutionError::ClaudeCodeNotFound
                 | ExecutionError::ClaudeCodeNotAuthenticated
                 | ExecutionError::ClaudeSubscriptionLimit
+                | ExecutionError::DailyBudgetExhausted { .. }
         )
     }
 
@@ -90,6 +106,10 @@ impl ExecutionError {
             }
             ExecutionError::ClaudeSubscriptionLimit => {
                 "Your Claude subscription limit was reached. Wait or upgrade your plan."
+            }
+            ExecutionError::DailyBudgetExhausted { .. } => {
+                "Your daily AI budget is exhausted. Increase your budget in Settings, \
+                 or wait for it to reset at local midnight."
             }
         }
     }
