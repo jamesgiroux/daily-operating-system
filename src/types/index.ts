@@ -2185,6 +2185,26 @@ export interface MarketContextItem {
   discrepancy?: boolean;
 }
 
+/**
+ * DOS-207: Regulatory / compliance item (DORA, SOC 2, HIPAA, GDPR, CUSTOM).
+ * Populated by the strategic_context enrichment. Items with status='gap'
+ * emit regulatory_gap_detected signals on enrichment write.
+ */
+export interface RegulatoryItem {
+  /** Standard name — typically 'DORA' | 'SOC_2_TYPE_II' | 'HIPAA' | 'GDPR' | 'CUSTOM'. */
+  standard: string;
+  /** Lifecycle status — 'required' | 'in_progress' | 'met' | 'gap'. */
+  status: string;
+  /** Short evidence line. */
+  evidence: string;
+  /** Optional reference into the source material. */
+  sourceReference?: string;
+  /** RFC3339 timestamp of first detection. */
+  detectedAt: string;
+  itemSource?: ItemSource;
+  discrepancy?: boolean;
+}
+
 // -- Dimension 2: Relationship Health --
 
 export interface CoverageAssessment {
@@ -2353,6 +2373,8 @@ export interface EntityIntelligence {
   strategicPriorities?: StrategicPriority[];
   /** Dimension 1: Market / regulatory context items. */
   marketContext?: MarketContextItem[];
+  /** DOS-207: Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR). */
+  regulatoryContext?: RegulatoryItem[];
 
   /** Dimension 2: Stakeholder coverage assessment. */
   coverageAssessment?: CoverageAssessment | null;
@@ -2454,6 +2476,17 @@ export interface StakeholderInsight {
   personId?: string;
   /** Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420). */
   suggestedPersonId?: string;
+  /**
+   * DOS-207: Whether this assessment was grounded in an actual
+   * customer-conversation transcript (true) or inferred from meeting
+   * attendance alone (false). Frontend renders a "needs assessment" pill
+   * when false.
+   */
+  verified?: boolean;
+  /** DOS-207: How verification was established — 'meeting' | 'glean' | 'user'. */
+  verifiedSource?: string;
+  /** DOS-207: RFC3339 timestamp when verification was established. */
+  verifiedAt?: string;
   /** I576: Structured source attribution with confidence. */
   itemSource?: ItemSource;
   /** I576: True if multiple sources disagree on this item. */

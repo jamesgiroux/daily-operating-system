@@ -199,7 +199,7 @@ export default function AccountDetailPage() {
               entityType="account"
               field="renewal_outlook"
               variant="correct"
-              currentValue={intelligence.renewalOutlook?.expansionPotential ?? null}
+              currentValue={intelligence.agreementOutlook?.expansionPotential ?? null}
               onCorrected={acct.silentRefresh}
             />
           </MarginSection>
