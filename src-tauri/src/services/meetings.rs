@@ -473,6 +473,29 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                                 .map_err(|e| e.to_string())?;
                         }
 
+                        // DOS-258 dual-write: mirror the user's override into
+                        // linked_entities_raw so the briefing (which now reads
+                        // the view) sees the selection. Preserves user
+                        // dismissals so the next engine pass won't resurrect
+                        // them.
+                        let now = chrono::Utc::now().to_rfc3339();
+                        let version = db.get_entity_graph_version().unwrap_or(0);
+                        let _ = db.conn_ref().execute(
+                            "DELETE FROM linked_entities_raw \
+                             WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                               AND source != 'user_dismissed'",
+                            rusqlite::params![&meeting_id],
+                        );
+                        if let Some(ref eid) = entity_id {
+                            let _ = db.conn_ref().execute(
+                                "INSERT OR REPLACE INTO linked_entities_raw \
+                                 (owner_type, owner_id, entity_id, entity_type, role, source, \
+                                  rule_id, confidence, graph_version, created_at) \
+                                 VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, ?4, ?5)",
+                                rusqlite::params![&meeting_id, eid, &entity_type, version, &now],
+                            );
+                        }
+
                         let (cascade_account, cascade_project) =
                             cascade_targets(entity_id.as_deref(), &entity_type);
                         db.cascade_meeting_entity_to_actions(
@@ -531,6 +554,26 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         db.link_meeting_entity(&meeting_id, &entity_id, &entity_type)
                             .map_err(|e| e.to_string())?;
 
+                        // DOS-258 dual-write: set this entity as the user
+                        // primary (P1) so the DOS-258 read path surfaces the
+                        // user's pick. Replaces any existing auto-resolved
+                        // primary; preserves user dismissals.
+                        let now = chrono::Utc::now().to_rfc3339();
+                        let version = db.get_entity_graph_version().unwrap_or(0);
+                        let _ = db.conn_ref().execute(
+                            "DELETE FROM linked_entities_raw \
+                             WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                               AND role = 'primary' AND source != 'user_dismissed'",
+                            rusqlite::params![&meeting_id],
+                        );
+                        let _ = db.conn_ref().execute(
+                            "INSERT OR REPLACE INTO linked_entities_raw \
+                             (owner_type, owner_id, entity_id, entity_type, role, source, \
+                              rule_id, confidence, graph_version, created_at) \
+                             VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, ?4, ?5)",
+                            rusqlite::params![&meeting_id, &entity_id, &entity_type, version, &now],
+                        );
+
                         let (cascade_account, cascade_project) =
                             cascade_targets(Some(entity_id.as_str()), &entity_type);
                         db.cascade_meeting_entity_to_people(
@@ -554,6 +597,25 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         );
                         db.unlink_meeting_entity(&meeting_id, &entity_id)
                             .map_err(|e| e.to_string())?;
+
+                        // DOS-258 dual-write: persistent dismissal so the
+                        // engine won't re-link this entity on the next pass,
+                        // and mark the raw row user_dismissed so the view
+                        // filters it out immediately.
+                        let now = chrono::Utc::now().to_rfc3339();
+                        let _ = db.conn_ref().execute(
+                            "INSERT OR IGNORE INTO linking_dismissals \
+                             (owner_type, owner_id, entity_id, entity_type, created_at) \
+                             VALUES ('meeting', ?1, ?2, ?3, ?4)",
+                            rusqlite::params![&meeting_id, &entity_id, &entity_type, &now],
+                        );
+                        let _ = db.conn_ref().execute(
+                            "UPDATE linked_entities_raw SET source = 'user_dismissed' \
+                             WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                               AND entity_id = ?2 AND entity_type = ?3",
+                            rusqlite::params![&meeting_id, &entity_id, &entity_type],
+                        );
+
                         result.entities_to_refresh.push((entity_id, entity_type));
                     }
                 }
