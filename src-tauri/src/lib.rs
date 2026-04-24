@@ -662,6 +662,9 @@ pub fn run() {
             commands::dev_clean_artifacts,
             commands::dev_set_auth_override,
             commands::dev_onboarding_scenario,
+            // DOS-287: Cross-entity contamination audit + cleanup
+            commands::devtools_audit_cross_contamination,
+            commands::devtools_clear_contaminated_enrichment,
             // I52: Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,
