@@ -13,13 +13,13 @@ use serde::Serialize;
 
 use crate::db::ActionDb;
 use crate::intelligence::io::{
-    AccountHealth, AdoptionSignals, Blocker, CadenceAssessment, CompanyContext, CompetitiveInsight,
-    ContractContext, CoverageAssessment, CurrentState, DimensionScore, DismissedItem,
-    ExpansionSignal, GongCallSummary, HealthSource, HealthTrend, IntelRisk, IntelWin,
-    IntelligenceJson, InternalTeamMember, ItemSource, NetworkIntelligence, NetworkKeyRelationship,
-    OpenCommitment, OrgChange, RelationshipDepth, RelationshipDimensions, AgreementOutlook,
-    ResponsivenessAssessment, SatisfactionData, StakeholderInsight, StrategicPriority,
-    RecommendedAction, SuccessMetric, SupportHealth, ValueItem,
+    AccountHealth, AdoptionSignals, AgreementOutlook, Blocker, CadenceAssessment, CompanyContext,
+    CompetitiveInsight, ContractContext, CoverageAssessment, CurrentState, DimensionScore,
+    DismissedItem, ExpansionSignal, GongCallSummary, HealthSource, HealthTrend, IntelRisk,
+    IntelWin, IntelligenceJson, InternalTeamMember, ItemSource, NetworkIntelligence,
+    NetworkKeyRelationship, OpenCommitment, OrgChange, RecommendedAction, RegulatoryItem,
+    RelationshipDepth, RelationshipDimensions, ResponsivenessAssessment, SatisfactionData,
+    StakeholderInsight, StrategicPriority, SuccessMetric, SupportHealth, ValueItem,
 };
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType, TranscriptRecord};
@@ -5320,8 +5320,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             unknowns: vec!["Exact timeline for headless CMS decision".into(), "Competitive evaluation scope (Webflow vs Drupal)".into(), "Domain consolidation implementation complexity".into()],
         }),
         stakeholder_insights: vec![
-            StakeholderInsight { name: "Chris Anderson".into(), role: Some("Technical/Business Stakeholder".into()), assessment: Some("Champion-adjacent. High engagement on compliance and editor performance. Strong advocate for platform expansion.".into()), engagement: Some("high".into()), source: None, person_id: Some("mock-chris-anderson".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(2), reference: Some("Feb 17 meeting".into()) }), discrepancy: None, ..Default::default() },
-            StakeholderInsight { name: "Diego Martinez".into(), role: Some("Technical Lead".into()), assessment: Some("Recently promoted to Technical Lead (Feb 2026). Leading headless CMS evaluation and POC phase. High technical credibility.".into()), engagement: Some("high".into()), source: None, person_id: Some("mock-diego-martinez".into()), suggested_person_id: None, item_source: None, discrepancy: None, ..Default::default() },
+            StakeholderInsight { name: "Chris Anderson".into(), role: Some("Technical/Business Stakeholder".into()), assessment: Some("Champion-adjacent. High engagement on compliance and editor performance. Strong advocate for platform expansion.".into()), engagement: Some("high".into()), source: None, person_id: Some("mock-chris-anderson".into()), suggested_person_id: None, verified: true, verified_source: Some("meeting".into()), verified_at: Some(days_ago_rfc(75)), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(2), reference: Some("Feb 17 meeting".into()) }), discrepancy: None },
+            StakeholderInsight { name: "Diego Martinez".into(), role: Some("Technical Lead".into()), assessment: Some("Recently promoted to Technical Lead (Feb 2026). Leading headless CMS evaluation and POC phase. High technical credibility.".into()), engagement: Some("high".into()), source: None, person_id: Some("mock-diego-martinez".into()), suggested_person_id: None, verified: false, verified_source: None, verified_at: None, item_source: None, discrepancy: None },
         ],
         value_delivered: vec![
             ValueItem { date: Some(days_ago_rfc(2)), statement: "Defensive Mode enabled $60K cost savings vs third-party security spend".into(), source: Some("internal assessment".into()), impact: Some("High — demonstrates clear ROI".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(2), reference: Some("Feb 17 meeting".into()) }), discrepancy: None, ..Default::default() },
@@ -5391,6 +5391,26 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             StrategicPriority { priority: "Unified analytics platform".into(), status: Some("active".into()), owner: None, source: Some("technical".into()), timeline: Some(date_only(180)), context: None },
             StrategicPriority { priority: "Safe Publisher beta participation".into(), status: Some("planned".into()), owner: Some("Editorial team".into()), source: Some("product".into()), timeline: Some(date_only(60)), context: None },
             StrategicPriority { priority: "Cost reduction and consolidation".into(), status: Some("active".into()), owner: Some("Finance".into()), source: Some("leadership".into()), timeline: Some(date_only(120)), context: None },
+        ],
+        regulatory_context: vec![
+            RegulatoryItem {
+                standard: "DORA".into(),
+                status: "in_progress".into(),
+                evidence: "Chris Anderson flagged DORA compliance as a Q2 priority during Feb 17 check-in.".into(),
+                source_reference: Some("meeting:2026-02-17-globex-wpvip-checkin".into()),
+                detected_at: days_ago_rfc(75),
+                item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.9, sourced_at: days_ago_rfc(75), reference: Some("Feb 17 meeting".into()) }),
+                discrepancy: None,
+            },
+            RegulatoryItem {
+                standard: "SOC_2_TYPE_II".into(),
+                status: "gap".into(),
+                evidence: "Required for FinServ expansion; no current artifact identified by procurement.".into(),
+                source_reference: None,
+                detected_at: days_ago_rfc(45),
+                item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.85, sourced_at: days_ago_rfc(45), reference: Some("Globex procurement thread".into()) }),
+                discrepancy: None,
+            },
         ],
         coverage_assessment: Some(CoverageAssessment {
             role_fill_rate: Some(0.6),
