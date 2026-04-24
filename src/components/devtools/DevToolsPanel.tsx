@@ -374,6 +374,17 @@ function DevToolsPanelInner({
                     await applyScenarioAndNavigate("acct_hierarchy", "full", "/accounts/mock-contoso");
                   }}
                 />
+                <ScenarioButton
+                  icon={Database}
+                  label="Financial Services"
+                  description="Globex Holdings — steady-state with expansion signals"
+                  variant="outline"
+                  loading={loading === "acct_globex_holdings"}
+                  disabled={loading !== null}
+                  onClick={async () => {
+                    await applyScenarioAndNavigate("acct_globex_holdings", "full", "/accounts/mock-globex-holdings");
+                  }}
+                />
               </div>
             </section>
 
