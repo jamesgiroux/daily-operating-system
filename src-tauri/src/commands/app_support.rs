@@ -25,10 +25,16 @@ pub struct AiUsageDiagnostics {
     pub today: AiUsageTrendPoint,
     pub operation_counts: Vec<AiUsageBreakdownCount>,
     pub model_counts: Vec<AiUsageBreakdownCount>,
-    pub budget_limit: u32,
-    pub budget_remaining: u32,
-    pub estimated_daily_token_budget: u32,
-    pub estimated_token_budget_remaining: u32,
+    /// Configured daily token budget (user-defined, e.g. 50k/100k/250k).
+    pub daily_token_budget: u32,
+    /// Tokens consumed today (local day).
+    pub tokens_used_today: u32,
+    /// Tokens remaining today. Zero means budget is exhausted.
+    pub tokens_remaining: u32,
+    /// True when the budget is exhausted and new AI calls are blocked.
+    pub budget_exhausted: bool,
+    /// Local ISO date key for today (YYYY-MM-DD). Resets at local midnight.
+    pub budget_reset_date: String,
     pub background_pause: crate::pty::BackgroundAiPauseStatus,
     pub trend: Vec<AiUsageTrendPoint>,
 }
@@ -524,9 +530,8 @@ pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
 pub async fn get_ai_usage_diagnostics(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AiUsageDiagnostics, String> {
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let budget_limit = state.hygiene.budget.daily_limit;
-    let budget_remaining = budget_limit.saturating_sub(state.hygiene.budget.used_today());
+    // Use local day key (DOS-279: budget tracks local day, not UTC).
+    let today_local = crate::pty::DailyTokenUsage::today_key();
     let background_pause = crate::pty::current_background_ai_pause_status();
 
     state
@@ -565,7 +570,8 @@ pub async fn get_ai_usage_diagnostics(
                 trend
             };
 
-            let today_usage = ledger.days.get(&today).cloned().unwrap_or_default();
+            // Today's ledger entry — keyed by local day (matches DailyTokenUsage).
+            let today_usage = ledger.days.get(&today_local).cloned().unwrap_or_default();
             let mut operation_counts = today_usage
                 .operation_counts
                 .iter()
@@ -597,14 +603,16 @@ pub async fn get_ai_usage_diagnostics(
                 .collect::<Vec<_>>();
             model_counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.label.cmp(&b.label)));
 
-            let estimated_budget_remaining = crate::pty::ESTIMATED_DAILY_TOKEN_BUDGET
-                .saturating_sub(
-                    today_usage.estimated_prompt_tokens + today_usage.estimated_output_tokens,
-                );
+            // DOS-279: Read configured budget and current daily token usage.
+            let daily_budget = crate::pty::read_configured_daily_budget(db);
+            let daily_usage = crate::pty::DailyTokenUsage::load(db);
+            let tokens_used = daily_usage.tokens_used;
+            let tokens_remaining = daily_budget.saturating_sub(tokens_used);
+            let budget_exhausted = tokens_remaining == 0 && tokens_used > 0;
 
             Ok(AiUsageDiagnostics {
                 today: AiUsageTrendPoint {
-                    date: today,
+                    date: today_local.clone(),
                     call_count: today_usage.call_count,
                     estimated_prompt_tokens: today_usage.estimated_prompt_tokens,
                     estimated_output_tokens: today_usage.estimated_output_tokens,
@@ -614,10 +622,11 @@ pub async fn get_ai_usage_diagnostics(
                 },
                 operation_counts,
                 model_counts,
-                budget_limit,
-                budget_remaining,
-                estimated_daily_token_budget: crate::pty::ESTIMATED_DAILY_TOKEN_BUDGET,
-                estimated_token_budget_remaining: estimated_budget_remaining,
+                daily_token_budget: daily_budget,
+                tokens_used_today: tokens_used,
+                tokens_remaining,
+                budget_exhausted,
+                budget_reset_date: today_local,
                 background_pause,
                 trend,
             })
