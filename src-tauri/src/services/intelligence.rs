@@ -886,6 +886,7 @@ pub async fn update_stakeholders(
     let config = state.config.read().clone();
     let config = config.ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
+    let active_preset = state.active_preset.read().clone();
 
     let engine = state.signals.engine.clone();
     let entity_id = entity_id.to_string();
@@ -992,7 +993,12 @@ pub async fn update_stakeholders(
                 // waiting for a full enrichment cycle.
                 if entity_type == "account" && !scoring_roles.is_empty() {
                     if let Some(acct) = account.as_ref() {
-                        let health = crate::intelligence::health_scoring::compute_account_health(tx, acct, None);
+                        let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
+                            tx,
+                            acct,
+                            intel.org_health.as_ref(),
+                            active_preset.as_ref(),
+                        );
                         let health_json = serde_json::to_string(&health).ok();
                         tx.conn.execute(
                             "UPDATE entity_assessment SET health_json = ?1 WHERE entity_id = ?2",
