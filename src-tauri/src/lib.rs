@@ -333,6 +333,30 @@ pub fn run() {
                 }
             });
 
+            // DOS-258: meeting-type reclassification runs on every boot so
+            // existing meetings get re-labelled whenever attendee evidence
+            // changes (stakeholder added, domain registered, relationship
+            // flipped). Ungated — the entity-linking one-shot sweep above
+            // only handles primary-entity drift, not meeting_type, and the
+            // function is idempotent + cheap. Fire-and-forget.
+            let reclassify_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(35)).await;
+                let result = reclassify_state
+                    .db_write(|db| {
+                        db.reclassify_meeting_types_from_attendees()
+                            .map_err(|e| e.to_string())
+                    })
+                    .await;
+                match result {
+                    Ok(n) if n > 0 => log::info!(
+                        "reclassify_meeting_types_from_attendees: re-labelled {n} meetings"
+                    ),
+                    Ok(_) => {}
+                    Err(e) => log::warn!("reclassify_meeting_types_from_attendees failed: {e}"),
+                }
+            });
+
             // Create tray menu
             let open_item = MenuItem::with_id(app, "open", "Open DailyOS", true, None::<&str>)?;
             let run_now_item =
