@@ -1422,7 +1422,7 @@ mod tests {
         };
         let ctx = ctx_with_disambiguators(d);
         let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("## Entity disambiguation"));
         assert!(p.contains("Known domains: acme.com, acme.io"));
         assert!(p.contains("allowed domain set is exactly: acme.com, acme.io"));
@@ -1432,7 +1432,7 @@ mod tests {
     fn glean_prompt_omits_domains_section_when_empty_rather_than_writing_none() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
         let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("## Entity disambiguation"));
         // Must NOT emit empty "Known domains:" or "(none)" lines.
         assert!(!p.contains("Known domains:"));
@@ -1459,7 +1459,7 @@ mod tests {
         };
         let ctx = ctx_with_disambiguators(d);
         let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("Known contacts: alice@acme.com"));
     }
 
@@ -1485,7 +1485,7 @@ mod tests {
         };
         let ctx = ctx_with_disambiguators(d);
         let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("external@customer.com"));
         // The `assistant.gong.io` shared-bot note must always appear so Glean
         // knows not to anchor on that signal.
@@ -1503,7 +1503,7 @@ mod tests {
         };
         let ctx = ctx_with_disambiguators(d);
         let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("Parent company: Parent Co (domains: parent.com)"));
     }
 
@@ -1515,7 +1515,7 @@ mod tests {
         };
         let ctx = ctx_with_disambiguators(d);
         let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("Salesforce account ID: 001Abc000012345"));
     }
 
@@ -1523,7 +1523,7 @@ mod tests {
     fn glean_prompt_sfdc_id_not_provided_when_absent() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
         let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("Salesforce account ID: not provided"));
     }
 
@@ -1531,7 +1531,7 @@ mod tests {
     fn glean_prompt_grounding_rule_text_present() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
         let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("## Grounding rule"));
         assert!(p.contains("OMIT the claim"));
         assert!(p.contains("cross-customer contamination"));
@@ -1541,7 +1541,7 @@ mod tests {
     fn glean_prompt_retrieval_scope_present() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
         let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("## Retrieval scope"));
         assert!(p.contains("vip-*.com"));
         assert!(p.contains("wordpress-test@assistant.gong.io"));
@@ -1557,7 +1557,7 @@ mod tests {
             ..Default::default()
         };
         let ctx = ctx_with_disambiguators(d);
-        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("## Entity disambiguation"));
         assert!(p.contains("Known domains: acme.com"));
         assert!(p.contains("Salesforce account ID: 001xyz"));
@@ -1568,7 +1568,7 @@ mod tests {
     #[test]
     fn pty_prompt_omits_empty_lines() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
-        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(!p.contains("Known domains:"));
         assert!(!p.contains("Known contacts:"));
         assert!(!p.contains("Parent company:"));
@@ -1578,7 +1578,7 @@ mod tests {
     #[test]
     fn pty_prompt_grounding_rule_text_present() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
-        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
         assert!(p.contains("OMIT the claim"));
     }
 }

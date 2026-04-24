@@ -829,6 +829,9 @@ mod tests {
                 urgency: "watch".to_string(),
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             ..Default::default()
         };
