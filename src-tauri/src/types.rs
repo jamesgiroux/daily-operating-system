@@ -3278,4 +3278,98 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(config.email_enrichment_timeout_seconds, 90);
     }
+
+    // -----------------------------------------------------------------------
+    // DOS-177: Feature flag construction from config.features HashMap
+    // -----------------------------------------------------------------------
+
+    /// Simulates the logic inside `get_feature_flags` — construct FeatureFlags
+    /// from a Config's features HashMap. Extracted as a helper so it can be
+    /// unit-tested without a Tauri State mock.
+    fn build_feature_flags_from_config(config: &Config) -> FeatureFlags {
+        FeatureFlags {
+            role_presets_enabled: *config
+                .features
+                .get("role_presets_enabled")
+                .unwrap_or(&false),
+            book_of_business_enabled: *config
+                .features
+                .get("book_of_business_enabled")
+                .unwrap_or(&false),
+            glean_discovery_enabled: *config
+                .features
+                .get("glean_discovery_enabled")
+                .unwrap_or(&false),
+        }
+    }
+
+    #[test]
+    fn feature_flag_reads_from_config_when_set() {
+        let mut config = test_config("customer-success");
+        config
+            .features
+            .insert("role_presets_enabled".to_string(), true);
+        config
+            .features
+            .insert("book_of_business_enabled".to_string(), true);
+        config
+            .features
+            .insert("glean_discovery_enabled".to_string(), true);
+
+        let flags = build_feature_flags_from_config(&config);
+
+        assert!(flags.role_presets_enabled, "role_presets_enabled should be true when set in config");
+        assert!(flags.book_of_business_enabled, "book_of_business_enabled should be true when set in config");
+        assert!(flags.glean_discovery_enabled, "glean_discovery_enabled should be true when set in config");
+    }
+
+    #[test]
+    fn feature_flag_defaults_to_false_when_not_in_config() {
+        let config = test_config("customer-success");
+        // Empty features HashMap — no keys inserted
+        assert!(config.features.is_empty());
+
+        let flags = build_feature_flags_from_config(&config);
+
+        assert!(!flags.role_presets_enabled, "role_presets_enabled should default to false");
+        assert!(!flags.book_of_business_enabled, "book_of_business_enabled should default to false");
+        assert!(!flags.glean_discovery_enabled, "glean_discovery_enabled should default to false");
+    }
+
+    #[test]
+    fn feature_flag_partial_config_does_not_affect_other_flags() {
+        let mut config = test_config("customer-success");
+        // Only set one flag
+        config
+            .features
+            .insert("role_presets_enabled".to_string(), true);
+
+        let flags = build_feature_flags_from_config(&config);
+
+        assert!(flags.role_presets_enabled);
+        assert!(!flags.book_of_business_enabled, "un-set flags should remain false");
+        assert!(!flags.glean_discovery_enabled, "un-set flags should remain false");
+    }
+
+    #[test]
+    fn affiliates_partnerships_preset_appears_in_available_presets() {
+        // DOS-177: confirm affiliates-partnerships is in the curated 4
+        let presets = crate::presets::loader::get_available_presets();
+        assert_eq!(presets.len(), 4, "should have exactly 4 curated presets");
+        let ids: Vec<&str> = presets.iter().map(|(id, _, _)| id.as_str()).collect();
+        assert!(
+            ids.contains(&"affiliates-partnerships"),
+            "affiliates-partnerships must be in the preset list; got: {:?}",
+            ids
+        );
+        assert!(ids.contains(&"core"), "core must be in the preset list");
+        assert!(
+            ids.contains(&"customer-success"),
+            "customer-success must be in the preset list"
+        );
+        assert!(
+            ids.contains(&"product-marketing"),
+            "product-marketing must be in the preset list"
+        );
+    }
 }
