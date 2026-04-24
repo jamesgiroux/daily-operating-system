@@ -10,8 +10,8 @@ use crate::presets::schema::{PresetIntelligenceConfig, RolePreset};
 use crate::signals::fusion;
 
 use super::io::{
-    AccountHealth, DimensionScore, HealthDivergence, HealthSource, HealthTrend, OrgHealthData,
-    RelationshipDimensions,
+    AccountHealth, DimensionScore, HealthDivergence, HealthSource, HealthTrend, HealthTrendTag,
+    OrgHealthData, RelationshipDimensions,
 };
 
 // DOS-53: Pushing actions to Linear could feed the engagement health dimension
@@ -192,38 +192,41 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
             rationale: Some("Insufficient history for trend".to_string()),
             timeframe: "30d".to_string(),
             confidence: 0.1,
-            ..Default::default()
+            delta: None,
+            tags: Vec::new(),
         };
     }
 
     // Compare current score to oldest in window
     let oldest_score = history.last().map(|(s, _)| *s).unwrap_or(current_score);
-    let delta = current_score - oldest_score;
+    let delta_f = current_score - oldest_score;
+    // DOS-249: integer delta for the "▲ +12 in 30d" meta line
+    let delta_i = delta_f.round() as i32;
 
-    let (direction, rationale) = if delta > 10.0 {
+    let (direction, rationale) = if delta_f > 10.0 {
         (
             "improving",
-            format!("Score up {delta:.0} points from {oldest_score:.0}"),
+            format!("Score up {delta_f:.0} points from {oldest_score:.0}"),
         )
-    } else if delta > 5.0 {
-        ("improving", format!("Score trending up {delta:.0} points"))
-    } else if delta < -10.0 {
+    } else if delta_f > 5.0 {
+        ("improving", format!("Score trending up {delta_f:.0} points"))
+    } else if delta_f < -10.0 {
         (
             "declining",
             format!(
                 "Score down {:.0} points from {oldest_score:.0}",
-                delta.abs()
+                delta_f.abs()
             ),
         )
-    } else if delta < -5.0 {
+    } else if delta_f < -5.0 {
         (
             "declining",
-            format!("Score trending down {:.0} points", delta.abs()),
+            format!("Score trending down {:.0} points", delta_f.abs()),
         )
     } else {
         (
             "stable",
-            format!("Score stable (±{:.0} points)", delta.abs()),
+            format!("Score stable (±{:.0} points)", delta_f.abs()),
         )
     };
 
@@ -233,13 +236,105 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
         _ => 0.3,
     };
 
+    // DOS-249: Build structured signal tags for the trend meta line.
+    // Derived from dimension evidence in the DB — one tag per declining or
+    // improving dimension with a non-trivial trend signal.
+    let tags = build_trend_tags(db, account_id, direction);
+
     HealthTrend {
         direction: direction.to_string(),
         rationale: Some(rationale),
         timeframe: "30d".to_string(),
         confidence: trend_confidence,
-        ..Default::default()
+        delta: Some(delta_i),
+        tags,
     }
+}
+
+/// DOS-249: Build structured tags for the trend meta line from dimension
+/// evidence evidence. Emits up to 4 tags (matching mockup style) derived from
+/// dimension trends stored in the most-recent health_json column.
+fn build_trend_tags(db: &ActionDb, account_id: &str, trend_direction: &str) -> Vec<HealthTrendTag> {
+    // Pull health_json from the last enriched assessment to read dimension trends
+    let health_json: Option<String> = db
+        .conn
+        .query_row(
+            "SELECT health_json FROM entity_assessment WHERE entity_id = ?1",
+            rusqlite::params![account_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
+    let Some(json) = health_json else {
+        return Vec::new();
+    };
+
+    let health: crate::intelligence::io::AccountHealth =
+        match serde_json::from_str(&json) {
+            Ok(h) => h,
+            Err(_) => return Vec::new(),
+        };
+
+    let mut tags: Vec<HealthTrendTag> = Vec::new();
+
+    let dim_labels: &[(&str, &str)] = &[
+        ("meeting_cadence", "Meeting cadence"),
+        ("email_engagement", "Email engagement"),
+        ("stakeholder_coverage", "Stakeholder coverage"),
+        ("champion_health", "Champion health"),
+        ("financial_proximity", "Financial proximity"),
+        ("signal_momentum", "Signal momentum"),
+    ];
+
+    let dim_arr: [(&str, &crate::intelligence::io::DimensionScore); 6] = [
+        ("meeting_cadence", &health.dimensions.meeting_cadence),
+        ("email_engagement", &health.dimensions.email_engagement),
+        ("stakeholder_coverage", &health.dimensions.stakeholder_coverage),
+        ("key_advocate_health", &health.dimensions.key_advocate_health),
+        ("financial_proximity", &health.dimensions.financial_proximity),
+        ("signal_momentum", &health.dimensions.signal_momentum),
+    ];
+
+    // Emit tags for dimensions whose trend aligns with the account trend direction
+    // or that are declining (always worth surfacing). Cap at 4.
+    for ((dim_key, _dim_label), (_, dim)) in dim_labels.iter().zip(dim_arr.iter()) {
+        if tags.len() >= 4 {
+            break;
+        }
+        if dim.weight == 0.0 {
+            continue;
+        }
+        let direction = match dim.trend.as_str() {
+            "improving" => "up",
+            "declining" => "down",
+            _ => {
+                // Only include stable dims when the overall trend is changing
+                if trend_direction != "stable" { "stable" } else { continue; }
+            }
+        };
+        // Build a human label from the first evidence item (capped to 25 chars)
+        // or fall back to the dimension label.
+        let label = dim.evidence.first()
+            .map(|e| {
+                let e = e.trim();
+                if e.len() > 35 {
+                    e[..35].trim_end_matches(|c: char| !c.is_alphanumeric()).to_string()
+                } else {
+                    e.to_string()
+                }
+            })
+            .unwrap_or_else(|| dim_labels.iter()
+                .find(|(k, _)| *k == *dim_key)
+                .map(|(_, l)| l.to_string())
+                .unwrap_or_default());
+        tags.push(HealthTrendTag {
+            label,
+            direction: direction.to_string(),
+        });
+    }
+
+    tags
 }
 
 fn band_to_score(band: &str) -> f64 {

@@ -1617,6 +1617,18 @@ fn run_parallel_enrichment(
         }
     }
 
+    // DOS-249: Stamp enriched_at and source_manifest on the combined result.
+    // The parallel fan-out initialises `combined` as IntelligenceJson::default(),
+    // and `merge_dimension_into` only copies dimension-specific fields — it never
+    // propagates the manifest or enrichment timestamp.  Without this, every account
+    // enriched via the parallel path ends up with an empty source_manifest_json
+    // column even when the context builder collected dozens of source files.
+    combined.enriched_at = chrono::Utc::now().to_rfc3339();
+    combined.source_file_count = input.file_manifest.len();
+    combined.source_manifest = input.file_manifest.clone();
+    combined.entity_id = input.entity_id.clone();
+    combined.entity_type = input.entity_type.clone();
+
     Ok(EnrichmentParseResult {
         intel: combined,
         inferred_relationships,
@@ -2702,6 +2714,9 @@ mod tests {
                 text: "Renewal owner unresolved".to_string(),
                 source: None,
                 urgency: "high".to_string(),
+                headline: None,
+                evidence: None,
+                kind_label: None,
                 item_source: None,
                 discrepancy: None,
             }],
