@@ -597,6 +597,16 @@ pub fn upsert_health_outlook_signals(
         .map_err(|e| format!("Failed to serialize health_outlook_signals: {e}"))?;
 
     db.with_transaction(|tx| {
+        // DOS-249: INSERT OR IGNORE ensures a row exists before the UPDATE so
+        // that Glean leading-signals writes that race the main enrichment write
+        // are not silently dropped. entity_type is required NOT NULL.
+        tx.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO entity_assessment (entity_id, entity_type) VALUES (?1, ?2)",
+                rusqlite::params![entity_id, entity_type],
+            )
+            .map_err(|e| format!("Failed to ensure entity_assessment row: {e}"))?;
+
         tx.conn_ref()
             .execute(
                 "UPDATE entity_assessment SET health_outlook_signals_json = ?1 WHERE entity_id = ?2",
@@ -2284,6 +2294,9 @@ mod live_acceptance_tests {
                 source: Some("live-acceptance-test".to_string()),
                 urgency: "critical".to_string(),
                 item_source: None,
+                headline: None,
+                evidence: None,
+                kind_label: None,
                 discrepancy: None,
             }],
             ..Default::default()
@@ -2485,6 +2498,7 @@ mod live_acceptance_tests {
                     rationale: Some("Usage and expansion improved".to_string()),
                     timeframe: "30d".to_string(),
                     confidence: 0.7,
+                    ..Default::default()
                 },
                 dimensions: RelationshipDimensions {
                     meeting_cadence: DimensionScore {
