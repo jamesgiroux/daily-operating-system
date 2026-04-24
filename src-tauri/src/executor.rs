@@ -651,8 +651,8 @@ impl Executor {
         if let Ok(db) = crate::db::ActionDb::open() {
             reconcile::persist_meetings(&db, &recon, workspace);
         }
-        // I308: Wake entity resolution trigger for newly-persisted meetings
-        self.state.signals.entity_resolution_wake.notify_one();
+        // DOS-258: legacy entity resolution wake removed. Entity linking
+        // runs on calendar poll via `services::entity_linking::calendar_adapter`.
 
         // Step 3: Archive (move files, clean data/)
         let result = run_archive(workspace)

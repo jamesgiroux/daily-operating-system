@@ -1164,9 +1164,14 @@ pub async fn get_meeting_timeline(
                 return Ok(Vec::new());
             }
 
-            // Batch fetch linked entities for all meetings
+            // Batch fetch linked entities for all meetings.
+            // DOS-258: read from the linked_entities view rather than the legacy
+            // meeting_entities junction table so the meetings list chips match
+            // the meeting detail page.
             let meeting_ids: Vec<String> = raw_meetings.iter().map(|m| m.id.clone()).collect();
-            let entity_map = db.get_meeting_entity_map(&meeting_ids).unwrap_or_default();
+            let entity_map = db
+                .get_linked_entities_map_for_meetings(&meeting_ids)
+                .unwrap_or_default();
 
             // Check for captures per meeting (batch)
             let capture_placeholders: Vec<String> = (0..meeting_ids.len())

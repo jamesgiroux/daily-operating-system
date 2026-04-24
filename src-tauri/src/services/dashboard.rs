@@ -345,7 +345,12 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
 
             // 3. Get entity map and intelligence qualities
             let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-            let entity_map = db.get_meeting_entity_map(&meeting_ids).unwrap_or_default();
+            // DOS-258: read from the linked_entities view rather than the legacy
+            // meeting_entities junction table so dashboard prep chips match the
+            // meeting detail page.
+            let entity_map = db
+                .get_linked_entities_map_for_meetings(&meeting_ids)
+                .unwrap_or_default();
             let mut iq_map = HashMap::new();
             for mid in &meeting_ids {
                 let q = crate::intelligence::assess_intelligence_quality(db, mid);
@@ -803,7 +808,12 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             }
             Ok(DashboardDbSnapshot {
                 reviewed: db.get_reviewed_preps().ok(),
-                entity_map: db.get_meeting_entity_map(&meeting_ids_clone).ok(),
+                // DOS-258: read from the linked_entities view rather than the legacy
+                // meeting_entities junction table so dashboard snapshot chips match
+                // the meeting detail page.
+                entity_map: db
+                    .get_linked_entities_map_for_meetings(&meeting_ids_clone)
+                    .ok(),
                 accounts_with_domains: db.get_all_accounts_with_domains(true).ok(),
                 non_briefing_actions: db.get_due_actions(90).ok(),
                 focus_candidates: db.get_focus_candidate_actions(7).ok(),
