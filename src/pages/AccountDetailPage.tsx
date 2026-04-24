@@ -155,6 +155,15 @@ export default function AccountDetailPage() {
         {isFineState ? (
           <MarginSection id="on-track" label={<>On<br/>Track</>}>
             <OnTrackChapter intelligence={intelligence} accountSizeLabel={detail.lifecycle ?? detail.accountType ?? null} />
+            {/* DOS-41: "Is this accurate?" after the AI fine-state summary. */}
+            <IntelligenceCorrection
+              entityId={detail.id}
+              entityType="account"
+              field="on_track_assessment"
+              variant="correct"
+              currentValue={intelligence?.executiveAssessment ?? null}
+              onCorrected={acct.silentRefresh}
+            />
           </MarginSection>
         ) : (
           <MarginSection id="needs-attention" label={<>Needs<br/>attention</>}>
@@ -184,6 +193,15 @@ export default function AccountDetailPage() {
           <MarginSection id="outlook" label="Outlook">
             <ChapterHeading title={`The Call: ${renewalCallVerdict(intelligence.agreementOutlook)}`} />
             <OutlookPanel intelligence={intelligence} />
+            {/* DOS-41: "Is this accurate?" after the AI renewal assessment. */}
+            <IntelligenceCorrection
+              entityId={detail.id}
+              entityType="account"
+              field="renewal_outlook"
+              variant="correct"
+              currentValue={intelligence.renewalOutlook?.expansionPotential ?? null}
+              onCorrected={acct.silentRefresh}
+            />
           </MarginSection>
         ) : null}
 
