@@ -203,23 +203,29 @@ fn phase3(ctx: &LinkingContext, db: &ActionDb) -> Phase3Result {
     }
 }
 
-/// Run all P4 domain rules and collect every match.
-/// Returns 0 items (no domain evidence), 1 item (normal P4), or ≥2 items (P9).
+/// Run all P4 rules (stakeholder + domain) and collect every distinct match.
+/// Returns 0 items (no P4 evidence), 1 item (normal P4), or ≥2 items (P9).
+///
+/// Includes P4a stakeholder-inference alongside P4b/P4c/P4d domain rules
+/// so a stakeholder match + domain match on the same account dedupes to
+/// one candidate, while stakeholder(Jane) + domain(Acme) produces two
+/// distinct candidates and triggers the P9 picker.
 fn collect_p4_candidates(ctx: &LinkingContext, db: &ActionDb) -> Vec<super::types::Candidate> {
     use rules::{
-        p4a_one_on_one::P4aOneOnOne, p4b_group_shared::P4bGroupShared,
-        p4c_sender_domain::P4cSenderDomain,
+        p4a_stakeholder::P4aStakeholder, p4b_one_on_one::P4bOneOnOne,
+        p4c_group_shared::P4cGroupShared, p4d_sender_domain::P4dSenderDomain,
     };
     let mut candidates = Vec::new();
     for rule in [
-        &P4aOneOnOne as &dyn Rule,
-        &P4bGroupShared as &dyn Rule,
-        &P4cSenderDomain as &dyn Rule,
+        &P4aStakeholder as &dyn Rule,
+        &P4bOneOnOne as &dyn Rule,
+        &P4cGroupShared as &dyn Rule,
+        &P4dSenderDomain as &dyn Rule,
     ] {
         if let RuleOutcome::Matched(c) = rule.evaluate(ctx, db) {
             if !rules::is_no_primary_sentinel(&c) {
-                // Deduplicate by entity_id — P4b and P4c could both match
-                // the same account for a given email.
+                // Deduplicate by entity_id — stakeholder + domain rules could
+                // both match the same account for the same participant.
                 if !candidates
                     .iter()
                     .any(|existing: &super::types::Candidate| {

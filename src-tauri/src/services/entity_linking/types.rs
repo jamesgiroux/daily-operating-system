@@ -170,6 +170,15 @@ impl LinkingContext {
     pub fn is_one_on_one(&self) -> bool {
         self.participants.len() == 2
     }
+
+    /// True when at least one external (non-user-domain) participant exists.
+    ///
+    /// Used by P5 (title evidence): when external attendees exist and P4 found
+    /// no domain or stakeholder evidence connecting them to the title-matched
+    /// account, the title becomes a Related chip at most — never Primary.
+    pub fn has_external_participant(&self) -> bool {
+        self.external_participants().next().is_some()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +214,7 @@ pub struct LinkOutcome {
     pub primary: Option<EntityRef>,
     pub related: Vec<EntityRef>,
     pub tier: LinkTier,
-    /// Rule id that produced the primary, e.g. "P4a". None when primary = none.
+    /// Rule id that produced the primary, e.g. "P4a"/"P4b"/"P4c"/"P4d". None when primary = none.
     pub applied_rule: Option<String>,
 }
 

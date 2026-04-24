@@ -1,14 +1,16 @@
-//! P4b — Group meeting where ≥2 external participants share exactly one account_of.
+//! P4c — Group meeting where ≥2 external participants share exactly one account_of.
+//!
+//! DOS-258 evidence-hierarchy fix: renamed from P4b.
 
 use std::collections::HashMap;
 
 use crate::db::ActionDb;
 use super::super::{evidence, primitives, types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome}};
 
-pub struct P4bGroupShared;
+pub struct P4cGroupShared;
 
-impl super::super::phases::Rule for P4bGroupShared {
-    fn id(&self) -> &'static str { "P4b" }
+impl super::super::phases::Rule for P4cGroupShared {
+    fn id(&self) -> &'static str { "P4c" }
 
     fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
         let external: Vec<_> = ctx.external_participants().collect();
@@ -47,7 +49,7 @@ impl super::super::phases::Rule for P4bGroupShared {
                 entity: EntityRef { entity_id: account_id.clone(), entity_type: "account".to_string() },
                 role: LinkRole::Primary,
                 confidence: 0.90,
-                rule_id: "P4b".to_string(),
+                rule_id: "P4c".to_string(),
                 evidence: serde_json::json!({}),
             },
             &[],
@@ -58,7 +60,7 @@ impl super::super::phases::Rule for P4bGroupShared {
             entity: EntityRef { entity_id: account_id.clone(), entity_type: "account".to_string() },
             role: LinkRole::Primary,
             confidence: 0.90,
-            rule_id: "P4b".to_string(),
+            rule_id: "P4c".to_string(),
             evidence: ev,
         })
     }

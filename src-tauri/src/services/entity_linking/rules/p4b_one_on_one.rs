@@ -1,13 +1,16 @@
-//! P4a — 1:1 internal × external with a unique account_of.
+//! P4b — 1:1 internal × external with a unique account_of.
 //! Domain evidence outranks title evidence (design principle 5).
+//!
+//! DOS-258 evidence-hierarchy fix: renamed from P4a so the stakeholder-inference
+//! rule (`P4aStakeholder`) can take the P4a slot.
 
 use crate::db::ActionDb;
 use super::super::{evidence, primitives, types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome}};
 
-pub struct P4aOneOnOne;
+pub struct P4bOneOnOne;
 
-impl super::super::phases::Rule for P4aOneOnOne {
-    fn id(&self) -> &'static str { "P4a" }
+impl super::super::phases::Rule for P4bOneOnOne {
+    fn id(&self) -> &'static str { "P4b" }
 
     fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
         if !ctx.is_one_on_one() {
@@ -30,7 +33,7 @@ impl super::super::phases::Rule for P4aOneOnOne {
         let candidates = match primitives::lookup_account_candidates_by_domain(db, &domain) {
             Ok(c) => c,
             Err(e) => {
-                log::warn!("P4a domain lookup error: {e}");
+                log::warn!("P4b domain lookup error: {e}");
                 return RuleOutcome::Skip;
             }
         };
@@ -46,7 +49,7 @@ impl super::super::phases::Rule for P4aOneOnOne {
         if let Some(person_id) = &ext.person_id {
             match db.is_person_multi_account_active(person_id) {
                 Ok(true) => return RuleOutcome::Skip,
-                Err(e) => log::warn!("P4a multi-account-active check error: {e}"),
+                Err(e) => log::warn!("P4b multi-account-active check error: {e}"),
                 Ok(false) => {}
             }
         }
@@ -57,7 +60,7 @@ impl super::super::phases::Rule for P4aOneOnOne {
                 entity: EntityRef { entity_id: account.id.clone(), entity_type: "account".to_string() },
                 role: LinkRole::Primary,
                 confidence: 0.95,
-                rule_id: "P4a".to_string(),
+                rule_id: "P4b".to_string(),
                 evidence: serde_json::json!({}),
             },
             &[],
@@ -67,7 +70,7 @@ impl super::super::phases::Rule for P4aOneOnOne {
             entity: EntityRef { entity_id: account.id.clone(), entity_type: "account".to_string() },
             role: LinkRole::Primary,
             confidence: 0.95,
-            rule_id: "P4a".to_string(),
+            rule_id: "P4b".to_string(),
             evidence: ev,
         })
     }

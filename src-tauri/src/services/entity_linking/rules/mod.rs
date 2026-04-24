@@ -1,9 +1,10 @@
 pub mod p1_user_override;
 pub mod p2_thread_inheritance;
 pub mod p3_series_inheritance;
-pub mod p4a_one_on_one;
-pub mod p4b_group_shared;
-pub mod p4c_sender_domain;
+pub mod p4a_stakeholder;
+pub mod p4b_one_on_one;
+pub mod p4c_group_shared;
+pub mod p4d_sender_domain;
 pub mod p5_title_evidence;
 pub mod p6_internal_internal;
 pub mod p7_internal_external;
@@ -25,9 +26,10 @@ pub fn ordered_rules(p4_entity_id: Option<String>) -> Vec<Box<dyn Rule>> {
         Box::new(p1_user_override::P1UserOverride),
         Box::new(p2_thread_inheritance::P2ThreadInheritance),
         Box::new(p3_series_inheritance::P3SeriesInheritance),
-        Box::new(p4a_one_on_one::P4aOneOnOne),
-        Box::new(p4b_group_shared::P4bGroupShared),
-        Box::new(p4c_sender_domain::P4cSenderDomain),
+        Box::new(p4a_stakeholder::P4aStakeholder),
+        Box::new(p4b_one_on_one::P4bOneOnOne),
+        Box::new(p4c_group_shared::P4cGroupShared),
+        Box::new(p4d_sender_domain::P4dSenderDomain),
         Box::new(p5_title_evidence::P5TitleEvidence { p4_entity_id }),
         Box::new(p6_internal_internal::P6InternalInternal),
         Box::new(p7_internal_external::P7InternalExternal),
