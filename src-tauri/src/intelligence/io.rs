@@ -1297,7 +1297,7 @@ pub(crate) fn default_urgency() -> String {
     "watch".to_string()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct IntelWin {
     pub text: String,
@@ -1324,7 +1324,7 @@ pub struct CurrentState {
     pub unknowns: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct StakeholderInsight {
     pub name: String,
@@ -1342,6 +1342,18 @@ pub struct StakeholderInsight {
     /// Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested_person_id: Option<String>,
+    /// DOS-207: Whether this assessment was verified from an actual
+    /// customer-conversation transcript (vs inferred from meeting attendance).
+    /// Set by the `stakeholder_champion` dimension prompt; user corrections
+    /// via the DOS-41 correction UX override.
+    #[serde(default)]
+    pub verified: bool,
+    /// DOS-207: How the verification was established — "meeting" | "glean" | "user".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_source: Option<String>,
+    /// DOS-207: RFC3339 timestamp when verification was established.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<String>,
     /// I576: Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
@@ -1350,7 +1362,7 @@ pub struct StakeholderInsight {
     pub discrepancy: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ValueItem {
     #[serde(skip_serializing_if = "Option::is_none")]
