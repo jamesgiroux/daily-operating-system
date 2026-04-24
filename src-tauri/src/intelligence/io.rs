@@ -1076,6 +1076,9 @@ pub(crate) struct DimensionsBlob {
     pub strategic_priorities: Vec<StrategicPriority>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub market_context: Vec<MarketContextItem>,
+    /// DOS-207: Regulatory / compliance items.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regulatory_context: Vec<RegulatoryItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coverage_assessment: Option<CoverageAssessment>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1123,6 +1126,7 @@ impl IntelligenceJson {
             competitive_context: self.competitive_context.clone(),
             strategic_priorities: self.strategic_priorities.clone(),
             market_context: self.market_context.clone(),
+            regulatory_context: self.regulatory_context.clone(),
             coverage_assessment: self.coverage_assessment.clone(),
             organizational_changes: self.organizational_changes.clone(),
             internal_team: self.internal_team.clone(),
@@ -1147,6 +1151,7 @@ impl IntelligenceJson {
         self.competitive_context = blob.competitive_context.clone();
         self.strategic_priorities = blob.strategic_priorities.clone();
         self.market_context = blob.market_context.clone();
+        self.regulatory_context = blob.regulatory_context.clone();
         self.coverage_assessment = blob.coverage_assessment.clone();
         self.organizational_changes = blob.organizational_changes.clone();
         self.internal_team = blob.internal_team.clone();
@@ -2165,6 +2170,69 @@ impl ActionDb {
                     serde_json::to_string(&health.trend).ok(),
                 ],
             )?;
+        }
+
+        // DOS-207: Emit regulatory_gap_detected and stakeholder_verified
+        // signals so the Intelligence Loop (callouts, propagation rules,
+        // health scoring) can react without waiting for the next enrichment.
+        // The 24-hour callout window dedupes repeat emissions of the same gap.
+        for item in &intel.regulatory_context {
+            if item.status == "gap" {
+                let value = serde_json::json!({
+                    "standard": item.standard,
+                    "evidence": item.evidence,
+                })
+                .to_string();
+                let _ = crate::signals::bus::emit_signal(
+                    self,
+                    &intel.entity_type,
+                    &intel.entity_id,
+                    "regulatory_gap_detected",
+                    "enrichment_write",
+                    Some(&value),
+                    0.9,
+                );
+            } else if item.status == "required" || item.status == "in_progress" {
+                let value = serde_json::json!({
+                    "standard": item.standard,
+                    "status": item.status,
+                })
+                .to_string();
+                let _ = crate::signals::bus::emit_signal(
+                    self,
+                    &intel.entity_type,
+                    &intel.entity_id,
+                    "regulatory_requirement_detected",
+                    "enrichment_write",
+                    Some(&value),
+                    0.85,
+                );
+            }
+        }
+
+        for insight in &intel.stakeholder_insights {
+            if let Some(ref person_id) = insight.person_id {
+                let (signal_type, confidence) = if insight.verified {
+                    ("stakeholder_verified", 0.9)
+                } else {
+                    ("stakeholder_unverified", 0.7)
+                };
+                let value = serde_json::json!({
+                    "person_id": person_id,
+                    "name": insight.name,
+                    "verified_source": insight.verified_source,
+                })
+                .to_string();
+                let _ = crate::signals::bus::emit_signal(
+                    self,
+                    &intel.entity_type,
+                    &intel.entity_id,
+                    signal_type,
+                    "enrichment_write",
+                    Some(&value),
+                    confidence,
+                );
+            }
         }
 
         Ok(())
