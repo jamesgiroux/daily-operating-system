@@ -119,6 +119,21 @@ pub fn run_cascade(
                 // C3 — User-set primary: promote domain-matching attendees directly.
                 c3_promote_trusted_stakeholders(ctx, &primary.entity_id, db);
             }
+
+            // DOS-258: after any account-primary resolution, sweep the
+            // account's stakeholder graph for domains not yet registered.
+            // Closes the loop alongside C2/C3 so meeting → primary-account
+            // paths self-heal account_domains on every pass.
+            if let Err(e) = super::stakeholder_domains::backfill_domains_for_account(
+                db,
+                &primary.entity_id,
+                &ctx.user_domains,
+            ) {
+                log::warn!(
+                    "stakeholder_domains: cascade backfill for {} failed: {e}",
+                    primary.entity_id
+                );
+            }
         }
     }
 
