@@ -806,7 +806,8 @@ impl ActionDb {
                         snippet, priority, is_unread, received_at,
                         enrichment_state, entity_id, entity_type,
                         user_is_last_sender, last_sender_email,
-                        message_count, created_at, updated_at
+                        message_count, created_at, updated_at,
+                        to_recipients, cc_recipients
                  FROM emails WHERE email_id = ?1",
                 params![email_id],
                 |row| {
@@ -842,8 +843,12 @@ impl ActionDb {
                         commitments:         None,
                         questions:           None,
                         is_noise:            false,
-                        to_recipients:       None,
-                        cc_recipients:       None,
+                        // DOS-258: populated so manual_set_primary can rebuild a
+                        // LinkingContext with real email participants (P4b/P4c/P4d
+                        // fire, and the stakeholder-domain backfill sees real
+                        // attendee domains).
+                        to_recipients:       row.get(17).ok(),
+                        cc_recipients:       row.get(18).ok(),
                     })
                 },
             )
