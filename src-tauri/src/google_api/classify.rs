@@ -212,16 +212,25 @@ pub fn classify_meeting_multi(
     resolve_entities(&mut result, entity_hints, user_domains, &external_domains);
 
     // ---- Entity-aware type override ----
-    // If the title matched a known account entity with high confidence,
-    // treat this as an account meeting regardless of attendee domains.
+    // If the title matched a known account entity backed by strong evidence
+    // (domain match OR stakeholder attendance), treat this as an account
+    // meeting regardless of attendee domains.
     //
-    // DOS-206: Title-slug matches alone (source="title", confidence=0.50)
-    // are too weak to promote an all-internal meeting to customer tier.
-    // Require either a stronger source (domain/keyword) OR confidence ≥ 0.70.
-    // Otherwise a word like "acme" appearing in an internal meeting title
-    // misclassifies the entire meeting as a customer call.
+    // DOS-206 + DOS-258 evidence hierarchy: Title-slug AND title-keyword
+    // matches are too weak to promote an all-internal meeting to customer
+    // tier, because a meeting mentioning an account in the title doesn't
+    // prove that account is the subject of the meeting. Only direct
+    // relationship evidence (the attendee domain maps to account_domains,
+    // or an attendee is an active stakeholder) justifies the promotion.
+    //
+    // "stakeholder" source is emitted below by the attendee-vote boost
+    // when at least one attendee's linked_account_ids contains the account
+    // that also matched via title.
     let has_account_entity = result.resolved_entities.iter().any(|e| {
-        e.entity_type == "account" && (e.confidence >= 0.70 || e.source != "title")
+        e.entity_type == "account"
+            && (e.source == "domain"
+                || e.source == "stakeholder"
+                || e.source == "stakeholder_attendee")
     });
 
     // Resolve the best-matched account hint for type checks (I382, DOS-206).
@@ -529,17 +538,27 @@ fn resolve_entities(
         }
     }
     // Apply attendee vote boosts to account entities that ALREADY matched
-    // via title/domain/keyword. Stakeholder chaining only boosts existing
-    // resolutions — it never introduces new accounts from nothing.
-    // Without this guard, every account any attendee is linked to would
-    // get resolved, flooding the meeting with unrelated accounts.
+    // via title/domain/keyword. Stakeholder chaining boosts existing
+    // resolutions and — when the title ALSO matched the same account —
+    // relabels the source as "stakeholder" so the DOS-258 entity-aware
+    // promotion check treats it as strong evidence. Stakeholder attendance
+    // alone never introduces new accounts from nothing (to avoid flooding
+    // a meeting with every unrelated account an attendee happens to be
+    // linked to).
     for (account_id, votes) in &account_boosts {
         let attendee_confidence = (0.5 + 0.4 * (votes / total_attendees)).min(0.90);
         best.entry(account_id.clone()).and_modify(|existing| {
-            if attendee_confidence > existing.confidence {
-                existing.confidence = attendee_confidence;
-                existing.source = "stakeholder_attendee".to_string();
-            }
+            // Stakeholder attendance confirms the account regardless of
+            // whether the confidence number changes — relabel the source
+            // to "stakeholder" so the customer-promotion guard fires.
+            //
+            // Prior: only updated when attendee_confidence > existing.confidence,
+            // which meant a 0.50 title-slug match stayed labelled "title"
+            // even when a known stakeholder was in the room. That blocked
+            // the guard from firing and, in the all-internal case, left
+            // the meeting classified as internal when it should be entity.
+            existing.confidence = existing.confidence.max(attendee_confidence);
+            existing.source = "stakeholder".to_string();
         });
         // Note: no or_insert — intentional. If the account had zero signal
         // from title/domain/keyword, stakeholder attendance alone is not
@@ -1133,22 +1152,75 @@ mod tests {
         assert_eq!(result.intelligence_tier, IntelligenceTier::Person);
     }
 
-    /// DOS-206 regression: stronger signals (keyword match, domain match)
-    /// should still promote to entity tier even for all-internal meetings.
-    /// The fix narrows only the weakest source ("title"), not the others.
+    /// DOS-258 evidence-hierarchy tightening: a keyword-only signal in an
+    /// all-internal meeting is NOT strong enough to promote to entity tier.
+    /// Only direct relationship evidence (attendee domain maps to the
+    /// account OR an attendee is an active stakeholder) justifies the
+    /// promotion. A meeting mentioning "Acme Corp" by keyword with zero
+    /// external attendees and zero stakeholder attendance may still be
+    /// about Acme — but it might just as easily be an internal planning
+    /// session. Without evidence, the meeting stays internal.
     #[test]
-    fn test_dos206_internal_keyword_match_still_promotes() {
+    fn test_classify_all_internal_title_slug_stays_internal() {
         let mut hint = account_hint_with_domain("acme-id", "Acme Corp", &["acme.com"]);
         hint.keywords = vec!["acme corp".to_string()];
         let hints = vec![hint];
-        // Keyword match gives confidence 0.70 / source="keyword" — above the
-        // 0.70 threshold, so the override still fires.
         let event = make_event(
             "Acme Corp Strategy Review",
             vec!["me@company.com", "a@company.com", "b@company.com"],
             false,
         );
         let result = classify_meeting(&event, "company.com", &hints);
+        assert_eq!(
+            result.meeting_type, "internal",
+            "keyword-only match on all-internal meeting must not promote to customer"
+        );
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Person);
+    }
+
+    /// DOS-258 evidence-hierarchy tightening: stakeholder attendance IS
+    /// strong enough to promote an all-internal meeting to entity tier.
+    /// The linked_account_ids chaining surfaces the stakeholder signal, and
+    /// the classifier relabels the account's entity-match source to
+    /// "stakeholder" so the customer-promotion guard fires.
+    #[test]
+    fn test_classify_all_internal_stakeholder_evidence_promotes_to_customer() {
+        let mut acct = account_hint_with_domain("acme-id", "Acme Corp", &["acme.com"]);
+        acct.keywords = vec!["acme corp".to_string()];
+        let mut person = person_hint("p-ally", "Ally Stakeholder", &["ally@company.com"]);
+        person.linked_account_ids = vec!["acme-id".to_string()];
+        let hints = vec![acct, person];
+        // Three internal attendees; one of them is an active stakeholder on
+        // Acme. Title also matches Acme. Without stakeholder evidence this
+        // would be "keyword-only" and stay internal. With the stakeholder
+        // signal, the source flips to "stakeholder" and promotion fires.
+        let event = make_event(
+            "Acme Corp Strategy Review",
+            vec!["me@company.com", "ally@company.com", "b@company.com"],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &hints);
+        assert_eq!(
+            result.intelligence_tier,
+            IntelligenceTier::Entity,
+            "stakeholder evidence promotes all-internal meeting to entity tier"
+        );
+    }
+
+    /// DOS-258 evidence hierarchy: domain match promotes to entity tier.
+    /// Three+ attendees including at least one external on the account's
+    /// domain → customer + Entity tier.
+    #[test]
+    fn test_classify_domain_match_promotes_to_customer() {
+        let hint = account_hint_with_domain("acme-id", "Acme Corp", &["acme.com"]);
+        let hints = vec![hint];
+        let event = make_event(
+            "Acme Corp Sync",
+            vec!["me@company.com", "a@company.com", "alice@acme.com"],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &hints);
+        assert_eq!(result.meeting_type, "customer");
         assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
     }
 
