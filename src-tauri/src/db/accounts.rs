@@ -290,6 +290,18 @@ impl ActionDb {
     }
 
     /// Lookup non-archived account candidates by email domain.
+    ///
+    /// DOS-258 Tier 4 domain hierarchy: if the domain matches an account that
+    /// has `parent_id` set (i.e. a subsidiary), the parent account is
+    /// surfaced alongside it as a second candidate. P9 then lets the user
+    /// pick between "Subsidiary BU" and "Parent Corp" rather than blindly
+    /// picking the subsidiary. When the attendee meant the parent (e.g.,
+    /// a group-wide stakeholder attending a subsidiary-domain email thread),
+    /// the picker now offers both.
+    ///
+    /// Schema choice: reuses the existing `accounts.parent_id` column
+    /// (migration 001_baseline.sql). No new hierarchy table needed — the
+    /// parent walk is a single indexed lookup per direct hit.
     pub fn lookup_account_candidates_by_domain(
         &self,
         domain: &str,
@@ -308,7 +320,37 @@ impl ActionDb {
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![normalized], Self::map_account_row)?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        let mut direct: Vec<DbAccount> = rows.collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+
+        // Walk parent_id for each direct hit and surface the parent as an
+        // additional candidate (dedup by id). P9 will see multiple candidates
+        // and prompt the user when ambiguous; if the parent ALSO has a
+        // direct domain match, the dedup keeps a single entry.
+        let parent_ids: Vec<String> = direct
+            .iter()
+            .filter_map(|a| a.parent_id.clone())
+            .collect();
+        if parent_ids.is_empty() {
+            return Ok(direct);
+        }
+
+        let parent_sql = format!(
+            "SELECT {} FROM accounts a WHERE a.id = ?1 AND a.archived = 0",
+            Self::account_columns_aliased("a")
+        );
+        let mut parent_stmt = self.conn.prepare(&parent_sql)?;
+        for pid in parent_ids {
+            if direct.iter().any(|a| a.id == pid) {
+                continue;
+            }
+            let mut rows = parent_stmt.query_map(params![pid], Self::map_account_row)?;
+            if let Some(Ok(parent)) = rows.next() {
+                direct.push(parent);
+            }
+        }
+
+        Ok(direct)
     }
 
     /// Copy domains from parent to child (idempotent).
