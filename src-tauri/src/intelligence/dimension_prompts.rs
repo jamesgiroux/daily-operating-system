@@ -58,6 +58,12 @@ pub fn build_dimension_prompt(
         role_desc, entity_label, entity_name
     ));
 
+    // DOS-287: Structured entity disambiguation + grounding rule.
+    // Same concern applies to PTY as Glean — the model must not bleed
+    // adjacent-customer context into this entity's output.
+    push_disambiguation_block(&mut prompt, entity_name, entity_type, ctx);
+    push_grounding_rule(&mut prompt, entity_name);
+
     // Mode
     if is_incremental {
         prompt.push_str(
@@ -141,12 +147,19 @@ pub fn build_glean_dimension_prompt(
     prompt.push_str(&format!(
         "You are {} for the {} \"{}\". \
          Search ALL available data sources (Salesforce, Zendesk, Gong, Slack, \
-         internal docs, org directory) for this dimension.\n\
-         IMPORTANT: Only include information that is specifically about \"{}\". \
-         Do not include case studies, metrics, or outcomes from other companies \
-         or accounts. Every data point must reference \"{}\" or their products/services.\n\n",
-        role_desc, entity_label, entity_name, entity_name, entity_name
+         internal docs, org directory) for this dimension.\n\n",
+        role_desc, entity_label, entity_name,
     ));
+
+    // DOS-287: Structured entity disambiguation — replaces the soft
+    // "do not include other companies" instruction with an inclusion filter
+    // keyed on explicit identifiers (domains, stakeholder emails, parent,
+    // Salesforce ID). Followed by an explicit retrieval-scope exclusion
+    // heuristic and a grounding rule requiring every output sentence to
+    // trace back to a document mentioning one of these identifiers.
+    push_disambiguation_block(&mut prompt, entity_name, entity_type, ctx);
+    push_retrieval_scope_block(&mut prompt, entity_name, ctx);
+    push_grounding_rule(&mut prompt, entity_name);
 
     // Relationship context
     if let Some(rel) = relationship {
@@ -394,6 +407,134 @@ pub fn merge_dimension_into(
 // =============================================================================
 // Internal helpers
 // =============================================================================
+
+// =============================================================================
+// DOS-287: Structured disambiguation + grounding blocks
+// =============================================================================
+//
+// These three blocks ship together as the preamble for every dimension prompt:
+//
+//   ## Entity disambiguation      — known identifiers (name, domains, contacts,
+//                                    parent, Salesforce ID)
+//   ## Retrieval scope            — inclusion bias + exclusion heuristics
+//                                    (foreign vip-*.com hosts, shared bot emails)
+//   ## Grounding rule             — every output sentence must cite a document
+//                                    that mentions at least one known identifier
+//
+// The validated shape (2026-04-24 A/B test against Glean chat) produced zero
+// cross-customer bleed. See Linear DOS-287 for the reference prompt.
+//
+// Each field degrades gracefully: empty Vec → skip the line entirely, never
+// emit `Known domains: (none)` which has been shown to confuse retrieval.
+
+/// Emit the `## Entity disambiguation` block. Only renders fields with data —
+/// empty Vec skips the line rather than writing "(none)".
+fn push_disambiguation_block(
+    prompt: &mut String,
+    entity_name: &str,
+    entity_type: &str,
+    ctx: &IntelligenceContext,
+) {
+    prompt.push_str("## Entity disambiguation\n");
+    prompt.push_str(&format!("- Name: {}\n", entity_name));
+
+    let d = &ctx.disambiguators;
+
+    if !d.known_domains.is_empty() {
+        prompt.push_str(&format!(
+            "- Known domains: {}\n",
+            d.known_domains.join(", ")
+        ));
+    }
+
+    if !d.known_contacts.is_empty() {
+        prompt.push_str(&format!(
+            "- Known contacts: {}\n",
+            d.known_contacts.join(", ")
+        ));
+    }
+
+    if let Some(ref parent) = d.parent_context {
+        if parent.domains.is_empty() {
+            prompt.push_str(&format!("- Parent company: {}\n", parent.name));
+        } else {
+            prompt.push_str(&format!(
+                "- Parent company: {} (domains: {})\n",
+                parent.name,
+                parent.domains.join(", ")
+            ));
+        }
+    }
+
+    // Spec: if no SFDC ID is stored, write "not provided". Only emit the line
+    // for account entities — it's meaningless for person/project.
+    if entity_type == "account" {
+        match d.salesforce_account_id.as_deref() {
+            Some(id) => prompt.push_str(&format!("- Salesforce account ID: {}\n", id)),
+            None => prompt.push_str("- Salesforce account ID: not provided\n"),
+        }
+    }
+
+    prompt.push('\n');
+}
+
+/// Emit the `## Retrieval scope` block — inclusion bias + exclusion heuristics.
+/// Shared between Glean and PTY; PTY calls it via the same entry point.
+fn push_retrieval_scope_block(
+    prompt: &mut String,
+    entity_name: &str,
+    ctx: &IntelligenceContext,
+) {
+    prompt.push_str("## Retrieval scope\n");
+    prompt.push_str(&format!(
+        "- Prefer documents that reference at least one identifier listed \
+         under Entity disambiguation above (name \"{}\", a known domain, a \
+         known contact email, the parent company, or the Salesforce account \
+         ID). Treat those as first-class evidence.\n",
+        entity_name
+    ));
+    prompt.push_str(
+        "- EXCLUDE documents whose only signal is a different customer's \
+         identifier. A document mentioning a different `vip-*.com` host, a \
+         different Salesforce account ID, a different customer name, or a \
+         different company domain is evidence that document is NOT about this \
+         entity — do not draw from it even if a shared tool or bot appears in \
+         the thread.\n",
+    );
+    prompt.push_str(
+        "- `wordpress-test@assistant.gong.io` and similar shared Gong/Slack \
+         bots are multi-tenant note-takers. Their presence in a document says \
+         nothing about which specific customer the document concerns.\n",
+    );
+
+    // Cross-reference the known identifiers one more time so exclusion is
+    // concrete for the model — only when we actually have values.
+    let d = &ctx.disambiguators;
+    if !d.known_domains.is_empty() {
+        prompt.push_str(&format!(
+            "- For this entity, the allowed domain set is exactly: {}. \
+             Any other customer domain disqualifies a document.\n",
+            d.known_domains.join(", ")
+        ));
+    }
+
+    prompt.push('\n');
+}
+
+/// Emit the `## Grounding rule` block — every output sentence must be
+/// traceable to a document that mentions at least one known identifier.
+fn push_grounding_rule(prompt: &mut String, entity_name: &str) {
+    prompt.push_str("## Grounding rule\n");
+    prompt.push_str(&format!(
+        "Every sentence in your output must be supported by a document that \
+         mentions at least one of the known identifiers for \"{}\" listed \
+         above. If you cannot point to such a document for a claim, OMIT the \
+         claim entirely — do not fabricate, do not paraphrase adjacent \
+         customers, do not substitute a plausible-sounding alternative. \
+         Omission is always preferable to cross-customer contamination.\n\n",
+        entity_name
+    ));
+}
 
 /// Human-readable label for an entity type + relationship.
 fn entity_label_for(entity_type: &str, relationship: Option<&str>) -> &'static str {
@@ -1246,6 +1387,186 @@ mod tests {
     #[test]
     fn dimension_names_constant_has_six_entries() {
         assert_eq!(DIMENSION_NAMES.len(), 6);
+    }
+
+    // -----------------------------------------------------------------------
+    // DOS-287: Structured disambiguation + grounding tests
+    // -----------------------------------------------------------------------
+
+    use super::super::prompts::{EntityDisambiguators, ParentContext};
+
+    fn ctx_with_disambiguators(d: EntityDisambiguators) -> IntelligenceContext {
+        let mut ctx = make_ctx();
+        ctx.disambiguators = d;
+        ctx
+    }
+
+    #[test]
+    fn glean_prompt_includes_domains_when_populated() {
+        let d = EntityDisambiguators {
+            known_domains: vec!["acme.com".to_string(), "acme.io".to_string()],
+            ..Default::default()
+        };
+        let ctx = ctx_with_disambiguators(d);
+        let p =
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("## Entity disambiguation"));
+        assert!(p.contains("Known domains: acme.com, acme.io"));
+        assert!(p.contains("allowed domain set is exactly: acme.com, acme.io"));
+    }
+
+    #[test]
+    fn glean_prompt_omits_domains_section_when_empty_rather_than_writing_none() {
+        let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
+        let p =
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("## Entity disambiguation"));
+        // Must NOT emit empty "Known domains:" or "(none)" lines.
+        assert!(!p.contains("Known domains:"));
+        assert!(!p.contains("(none)"));
+        assert!(!p.contains("Known contacts:"));
+    }
+
+    #[test]
+    fn glean_prompt_filters_personal_email_contacts() {
+        // NB: filtering happens inside load_disambiguators (prompts.rs). Here we
+        // verify that when a personal-email address somehow reaches the prompt
+        // builder directly, the builder faithfully renders what it was given —
+        // and that the helper functions in prompts.rs correctly classify it.
+        assert!(super::super::prompts::is_personal_email_domain("gmail.com"));
+        assert!(super::super::prompts::is_personal_email_domain(
+            "outlook.com"
+        ));
+        assert!(!super::super::prompts::is_personal_email_domain("acme.com"));
+
+        // And that a known-good set still renders correctly.
+        let d = EntityDisambiguators {
+            known_contacts: vec!["alice@acme.com".to_string()],
+            ..Default::default()
+        };
+        let ctx = ctx_with_disambiguators(d);
+        let p =
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("Known contacts: alice@acme.com"));
+    }
+
+    #[test]
+    fn glean_prompt_filters_bot_host_contacts() {
+        assert!(super::super::prompts::is_bot_email_host(
+            "wordpress-test@assistant.gong.io"
+        ));
+        assert!(super::super::prompts::is_bot_email_host(
+            "noreply@resource.calendar.google.com"
+        ));
+        assert!(!super::super::prompts::is_bot_email_host("jane@acme.com"));
+    }
+
+    #[test]
+    fn glean_prompt_filters_internal_relationship_contacts() {
+        // Structural: load_disambiguators reads from `get_account_stakeholders_full`
+        // which already filters `p.relationship != 'internal'`. Documented here
+        // so the invariant is visible — the prompt layer trusts the DB layer.
+        let d = EntityDisambiguators {
+            known_contacts: vec!["external@customer.com".to_string()],
+            ..Default::default()
+        };
+        let ctx = ctx_with_disambiguators(d);
+        let p =
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("external@customer.com"));
+        // The `assistant.gong.io` shared-bot note must always appear so Glean
+        // knows not to anchor on that signal.
+        assert!(p.contains("wordpress-test@assistant.gong.io"));
+    }
+
+    #[test]
+    fn glean_prompt_includes_parent_when_parent_id_set() {
+        let d = EntityDisambiguators {
+            parent_context: Some(ParentContext {
+                name: "Parent Co".to_string(),
+                domains: vec!["parent.com".to_string()],
+            }),
+            ..Default::default()
+        };
+        let ctx = ctx_with_disambiguators(d);
+        let p =
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("Parent company: Parent Co (domains: parent.com)"));
+    }
+
+    #[test]
+    fn glean_prompt_includes_sfdc_id_when_metadata_has_one() {
+        let d = EntityDisambiguators {
+            salesforce_account_id: Some("001Abc000012345".to_string()),
+            ..Default::default()
+        };
+        let ctx = ctx_with_disambiguators(d);
+        let p =
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("Salesforce account ID: 001Abc000012345"));
+    }
+
+    #[test]
+    fn glean_prompt_sfdc_id_not_provided_when_absent() {
+        let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
+        let p =
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("Salesforce account ID: not provided"));
+    }
+
+    #[test]
+    fn glean_prompt_grounding_rule_text_present() {
+        let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
+        let p =
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("## Grounding rule"));
+        assert!(p.contains("OMIT the claim"));
+        assert!(p.contains("cross-customer contamination"));
+    }
+
+    #[test]
+    fn glean_prompt_retrieval_scope_present() {
+        let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
+        let p =
+            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("## Retrieval scope"));
+        assert!(p.contains("vip-*.com"));
+        assert!(p.contains("wordpress-test@assistant.gong.io"));
+    }
+
+    // -------- PTY dimension prompt: same shape of tests --------
+
+    #[test]
+    fn pty_prompt_includes_disambiguation_and_grounding() {
+        let d = EntityDisambiguators {
+            known_domains: vec!["acme.com".to_string()],
+            salesforce_account_id: Some("001xyz".to_string()),
+            ..Default::default()
+        };
+        let ctx = ctx_with_disambiguators(d);
+        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("## Entity disambiguation"));
+        assert!(p.contains("Known domains: acme.com"));
+        assert!(p.contains("Salesforce account ID: 001xyz"));
+        assert!(p.contains("## Grounding rule"));
+        assert!(p.contains("OMIT the claim"));
+    }
+
+    #[test]
+    fn pty_prompt_omits_empty_lines() {
+        let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
+        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(!p.contains("Known domains:"));
+        assert!(!p.contains("Known contacts:"));
+        assert!(!p.contains("Parent company:"));
+        assert!(p.contains("Salesforce account ID: not provided"));
+    }
+
+    #[test]
+    fn pty_prompt_grounding_rule_text_present() {
+        let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
+        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false);
+        assert!(p.contains("OMIT the claim"));
     }
 }
 

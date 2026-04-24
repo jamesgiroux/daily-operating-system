@@ -80,6 +80,171 @@ pub struct IntelligenceContext {
     pub source_verified_facts: String,
     /// I649: Technical footprint block for prompt injection.
     pub technical_footprint_block: String,
+    /// DOS-287: Structured entity disambiguators for Glean/PTY prompt grounding.
+    ///
+    /// Populated at context build time so prompt builders remain pure.
+    /// Each field degrades gracefully when empty — the prompt builder
+    /// omits the line rather than injecting "(none)".
+    pub disambiguators: EntityDisambiguators,
+}
+
+/// DOS-287: Structured identifiers used to disambiguate Glean retrieval
+/// and enforce grounding. Populated by `load_disambiguators` from the DB.
+///
+/// All fields degrade gracefully when empty — the prompt builder skips
+/// empty lines rather than emitting `Known domains: (none)` which would
+/// confuse the model.
+#[derive(Debug, Clone, Default)]
+pub struct EntityDisambiguators {
+    /// `account_domains.domain` for the target account (lowercased, deduped).
+    pub known_domains: Vec<String>,
+    /// Active external stakeholder emails — filtered to exclude
+    /// `people.relationship = 'internal'`, `PERSONAL_EMAIL_DOMAINS`,
+    /// and bot hosts like `assistant.gong.io`.
+    pub known_contacts: Vec<String>,
+    /// Parent company name + its known domains, when `accounts.parent_id` is set.
+    pub parent_context: Option<ParentContext>,
+    /// Salesforce account ID from `accounts.metadata.salesforce_id`
+    /// (or `salesforceAccountId` / `sfdc_id`), when present.
+    pub salesforce_account_id: Option<String>,
+}
+
+/// DOS-287: Parent-account context for disambiguation.
+#[derive(Debug, Clone, Default)]
+pub struct ParentContext {
+    pub name: String,
+    pub domains: Vec<String>,
+}
+
+/// DOS-287: Personal-email hosts shouldn't leak into the disambiguation list —
+/// pulled from `google_api::classify::PERSONAL_EMAIL_DOMAINS`.
+pub fn is_personal_email_domain(domain: &str) -> bool {
+    let d = domain.to_lowercase();
+    crate::google_api::classify::PERSONAL_EMAIL_DOMAINS
+        .iter()
+        .any(|&p| p == d)
+}
+
+/// DOS-287: Bot email hosts whose presence in a document says nothing about
+/// the account — e.g. shared Gong note-taker bot. Tracked here as the
+/// single source of truth; the spec anticipated a `stakeholder_domains`
+/// module, but one does not exist yet.
+pub const BOT_EMAIL_HOSTS: &[&str] = &[
+    "assistant.gong.io",
+    "group-calendar.resource.calendar.google.com",
+    "resource.calendar.google.com",
+    "noreply.google.com",
+];
+
+/// DOS-287: True when the email host is a known bot/noreply host.
+pub fn is_bot_email_host(email: &str) -> bool {
+    let host = match email.rsplit_once('@') {
+        Some((_, h)) => h.to_lowercase(),
+        None => return false,
+    };
+    BOT_EMAIL_HOSTS
+        .iter()
+        .any(|b| host == *b || host.ends_with(b))
+        || host.contains("noreply")
+}
+
+/// DOS-287: Load disambiguation identifiers from the DB for a given entity.
+///
+/// Only meaningful for `entity_type == "account"`; other entity types return
+/// empty defaults. Any DB error produces an empty field rather than an
+/// error — disambiguation is additive, never load-bearing.
+pub fn load_disambiguators(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+) -> EntityDisambiguators {
+    if entity_type != "account" {
+        return EntityDisambiguators::default();
+    }
+
+    let mut out = EntityDisambiguators::default();
+
+    // Known domains — from account_domains table.
+    if let Ok(mut stmt) = db
+        .conn_ref()
+        .prepare("SELECT DISTINCT LOWER(domain) FROM account_domains WHERE account_id = ?1")
+    {
+        if let Ok(rows) = stmt.query_map(rusqlite::params![entity_id], |row| row.get::<_, String>(0)) {
+            out.known_domains = rows
+                .filter_map(|r| r.ok())
+                .filter(|d| !d.is_empty())
+                .collect();
+        }
+    }
+
+    // Known contacts — active external stakeholders, filtered.
+    // `get_account_stakeholders_full` already filters
+    // `p.relationship != 'internal'` and `%assistant.gong%` at the SQL layer;
+    // the Rust layer additionally drops personal-email hosts and any
+    // `BOT_EMAIL_HOSTS` entries not yet covered by the SQL clause.
+    if let Ok(stakeholders) = db.get_account_stakeholders_full(entity_id) {
+        for s in &stakeholders {
+            let email = match s.person_email.as_deref() {
+                Some(e) => e.trim().to_lowercase(),
+                None => continue,
+            };
+            if email.is_empty() {
+                continue;
+            }
+            let domain = match email.rsplit_once('@') {
+                Some((_, d)) => d.to_string(),
+                None => continue,
+            };
+            if is_personal_email_domain(&domain) {
+                continue;
+            }
+            if is_bot_email_host(&email) {
+                continue;
+            }
+            out.known_contacts.push(email);
+        }
+        out.known_contacts.sort();
+        out.known_contacts.dedup();
+    }
+
+    // Parent context — if accounts.parent_id is set.
+    if let Ok(Some(acct)) = db.get_account(entity_id) {
+        if let Some(ref parent_id) = acct.parent_id {
+            if let Ok(Some(parent)) = db.get_account(parent_id) {
+                let mut parent_domains: Vec<String> = Vec::new();
+                if let Ok(mut stmt) = db.conn_ref().prepare(
+                    "SELECT DISTINCT LOWER(domain) FROM account_domains WHERE account_id = ?1",
+                ) {
+                    if let Ok(rows) =
+                        stmt.query_map(rusqlite::params![parent_id], |row| row.get::<_, String>(0))
+                    {
+                        parent_domains = rows.filter_map(|r| r.ok()).collect();
+                    }
+                }
+                out.parent_context = Some(ParentContext {
+                    name: parent.name,
+                    domains: parent_domains,
+                });
+            }
+        }
+
+        // Salesforce account ID from metadata JSON (accepts several key spellings).
+        if let Some(ref meta) = acct.metadata {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(meta) {
+                for key in &["salesforce_id", "salesforceAccountId", "sfdc_id", "salesforceId"] {
+                    if let Some(v) = json.get(*key).and_then(|v| v.as_str()) {
+                        let s = v.trim();
+                        if !s.is_empty() {
+                            out.salesforce_account_id = Some(s.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    out
 }
 
 /// I508c structured gap query item used for local ranking + remote fan-out.
@@ -103,7 +268,13 @@ pub fn build_intelligence_context(
     prior: Option<&IntelligenceJson>,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> IntelligenceContext {
-    let mut ctx = IntelligenceContext::default();
+    // DOS-287: Load structured disambiguators (domains, contacts, parent, SFDC).
+    // Must happen before any early-return paths so Glean prompt builders can rely
+    // on this being populated whenever the entity is an account.
+    let mut ctx = IntelligenceContext {
+        disambiguators: load_disambiguators(db, entity_type, entity_id),
+        ..Default::default()
+    };
 
     // --- Facts block ---
     match entity_type {
@@ -3458,6 +3629,7 @@ mod tests {
             signal_weights_block: String::new(),
             source_verified_facts: String::new(),
             technical_footprint_block: String::new(),
+            disambiguators: EntityDisambiguators::default(),
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
