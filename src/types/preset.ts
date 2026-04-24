@@ -82,7 +82,7 @@ export interface RolePreset {
   internalTeamRoles?: PresetRoleDefinition[];
   lifecycleEvents: string[];
   prioritization: PresetPrioritization;
-  intelligence: PresetIntelligenceConfig;
+  intelligence?: PresetIntelligenceConfig;
   briefingEmphasis: string;
   relationshipVocabulary?: Record<string, string>;
 }
