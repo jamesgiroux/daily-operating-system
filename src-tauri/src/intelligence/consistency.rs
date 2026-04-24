@@ -906,6 +906,9 @@ mod tests {
                 suggested_person_id: None,
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             ..Default::default()
         };

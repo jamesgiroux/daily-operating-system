@@ -1062,6 +1062,9 @@ mod tests {
             suggested_person_id: None,
             item_source: None,
             discrepancy: None,
+
+            ..Default::default()
+
         }];
 
         let mut partial = empty_intel();
@@ -1113,6 +1116,9 @@ mod tests {
             suggested_person_id: None,
             item_source: None,
             discrepancy: None,
+
+            ..Default::default()
+
         }];
 
         merge_dimension_into(&mut existing, "stakeholder_champion", &partial).unwrap();
@@ -1692,6 +1698,9 @@ mod eval_tests {
             suggested_person_id: None,
             item_source: None,
             discrepancy: None,
+
+            ..Default::default()
+
         }];
         existing.contract_context = Some(super::super::io::ContractContext {
             contract_type: Some("annual".to_string()),
@@ -1817,6 +1826,9 @@ mod eval_tests {
             suggested_person_id: None,
             item_source: None,
             discrepancy: None,
+
+            ..Default::default()
+
         }];
         merge_dimension_into(&mut existing, "stakeholder_champion", &p2).unwrap();
 

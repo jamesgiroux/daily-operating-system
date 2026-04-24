@@ -3029,6 +3029,9 @@ mod tests {
                 suggested_person_id: None,
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),
@@ -3552,6 +3555,9 @@ mod tests {
                 suggested_person_id: None,
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),
