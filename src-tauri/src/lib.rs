@@ -308,6 +308,31 @@ pub fn run() {
             // linking now runs on every calendar poll via
             // `services::entity_linking::calendar_adapter::evaluate_meeting`.
 
+            // DOS-258 Tier 4: one-shot post-upgrade sweep that self-corrects
+            // weak-primary entity links (rule:P5 / rule:P11) whose graph
+            // version has drifted since the evidence-hierarchy fix shipped.
+            // Gated by entity_graph_version.last_migration_sweep_at so it
+            // runs at most once per upgrade. Fire-and-forget — failures
+            // just log a warning, the periodic graph-drift pass handles
+            // anything this sweep missed.
+            let sweep_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                // Tiny delay so the app UI lands first.
+                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+                match services::entity_linking::rescan::run_one_shot_upgrade_sweep(
+                    sweep_state,
+                )
+                .await
+                {
+                    Ok(n) => {
+                        if n > 0 {
+                            log::info!("entity_linking one-shot sweep: re-evaluated {n} weak primaries");
+                        }
+                    }
+                    Err(e) => log::warn!("entity_linking one-shot sweep failed: {e}"),
+                }
+            });
+
             // Create tray menu
             let open_item = MenuItem::with_id(app, "open", "Open DailyOS", true, None::<&str>)?;
             let run_now_item =

@@ -555,6 +555,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 121,
         sql: include_str!("migrations/120_dos_258_rule_rename.sql"),
     },
+    // DOS-258 Tier 4: add last_migration_sweep_at to entity_graph_version so
+    // the startup rescan can self-correct existing weak primaries once per
+    // upgrade without re-running on every boot.
+    Migration {
+        version: 122,
+        sql: include_str!("migrations/121_entity_graph_sweep_state.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

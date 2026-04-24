@@ -5,6 +5,7 @@ pub mod evidence;
 pub mod phases;
 pub mod primitives;
 pub mod repository;
+pub mod rescan;
 pub mod rules;
 pub mod types;
 
