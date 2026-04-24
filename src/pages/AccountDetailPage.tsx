@@ -194,13 +194,16 @@ export default function AccountDetailPage() {
           <MarginSection id="outlook" label="Outlook">
             <ChapterHeading title={`The Call: ${renewalCallVerdict(intelligence.agreementOutlook)}`} />
             <OutlookPanel intelligence={intelligence} />
-            {/* DOS-41: "Is this accurate?" after the AI renewal assessment. */}
+            {/* DOS-41 / DOS-203 Ch.4: "Is this accurate?" wraps the renewal
+                narrative pull-quote. Field is renewal_narrative (the dedicated
+                DOS-249 column); falls back to expansionPotential for accounts
+                enriched before the migration. */}
             <IntelligenceCorrection
               entityId={detail.id}
               entityType="account"
-              field="renewal_outlook"
+              field="renewal_narrative"
               variant="correct"
-              currentValue={intelligence.agreementOutlook?.expansionPotential ?? null}
+              currentValue={intelligence.agreementOutlook?.renewalNarrative ?? intelligence.agreementOutlook?.expansionPotential ?? null}
               onCorrected={acct.silentRefresh}
             />
           </MarginSection>
@@ -229,7 +232,21 @@ export default function AccountDetailPage() {
             it sits alongside Technical shape / Commercial shape. Products are
             a contractual/technical surface, not a health signal. */}
 
-        {/* Chapter 6: About this intelligence */}
+        {/* DOS-203 Ch.6: Regulatory context — appears on Health tab as
+            supporting context when present. RegulatoryContextCard returns
+            null when items is empty or undefined, so this section only
+            renders when the account has regulatory signals. Mirrors the
+            same card rendered on the Context tab (Commercial shape chapter)
+            per DOS-207. Regulatory gaps feed financial_proximity scoring
+            and should be visible without navigating away from the health
+            view. */}
+        {intelligence?.regulatoryContext && intelligence.regulatoryContext.length > 0 && (
+          <MarginSection id="regulatory-context" label={<>Regulatory<br/>context</>}>
+            <RegulatoryContextCard items={intelligence.regulatoryContext} />
+          </MarginSection>
+        )}
+
+        {/* Chapter 7: About this intelligence */}
         <MarginSection id="about-intelligence" label={<>About this<br/>intelligence</>} reveal={false}>
           <ChapterHeading
             title="About this intelligence"
