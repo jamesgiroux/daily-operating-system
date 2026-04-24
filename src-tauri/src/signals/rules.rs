@@ -906,6 +906,31 @@ pub fn rule_glean_champion_departed(signal: &SignalEvent, _db: &ActionDb) -> Vec
 }
 
 // ---------------------------------------------------------------------------
+// Rule: Regulatory gap → Account risk (DOS-207)
+// ---------------------------------------------------------------------------
+
+/// When the strategic_context enrichment detects a regulatory gap
+/// (DORA, SOC 2, HIPAA, GDPR, etc), emit an `account_risk` signal so the
+/// risk-aware surfaces (triage, callouts) can react immediately rather
+/// than waiting for the next full enrichment pass.
+pub fn rule_regulatory_gap(signal: &SignalEvent, _db: &ActionDb) -> Vec<DerivedSignal> {
+    if signal.signal_type != "regulatory_gap_detected" {
+        return Vec::new();
+    }
+
+    vec![DerivedSignal {
+        entity_type: signal.entity_type.clone(),
+        entity_id: signal.entity_id.clone(),
+        signal_type: "account_risk".to_string(),
+        source: "propagation:regulatory_gap".to_string(),
+        value: signal.value.clone(),
+        // Regulatory gaps are structured evidence — keep most of the source
+        // confidence. 0.9 matches other Glean-derived propagations.
+        confidence: (signal.confidence * 0.9).clamp(0.0, 1.0),
+    }]
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

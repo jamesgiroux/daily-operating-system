@@ -549,6 +549,38 @@ pub struct MarketContextItem {
     pub discrepancy: Option<bool>,
 }
 
+/// DOS-207: Regulatory context item (DORA, SOC 2, HIPAA, GDPR, etc).
+///
+/// Emitted by the `strategic_context` dimension prompt when the AI detects
+/// a compliance requirement from transcripts, emails, or Glean output.
+/// Feeds `financial_proximity` risk scoring via the
+/// `regulatory_gap_detected` signal when `status == "gap"`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RegulatoryItem {
+    /// Standard name — typically one of: "DORA" | "SOC_2_TYPE_II" |
+    /// "HIPAA" | "GDPR" | "CUSTOM". Free-text so new standards don't
+    /// require a schema migration.
+    pub standard: String,
+    /// Lifecycle status — one of: "required" | "in_progress" | "met" | "gap".
+    /// UI renders per-status chip color.
+    pub status: String,
+    /// Short evidence line from the source material (one sentence).
+    pub evidence: String,
+    /// Optional reference to the underlying source (meeting id, email id,
+    /// Glean document URI).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_reference: Option<String>,
+    /// RFC3339 timestamp of first detection.
+    pub detected_at: String,
+    /// I576: structured source attribution + confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: true if multiple sources disagree on status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
+}
+
 // -- Dimension 2: Relationship Health --
 
 /// Coverage assessment of stakeholder roles for an account.
@@ -952,6 +984,12 @@ pub struct IntelligenceJson {
     /// did that; this field replaces the hijack).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub market_context: Vec<MarketContextItem>,
+    /// DOS-207: Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR, ...).
+    /// Emitted by `strategic_context` dimension; items with `status: "gap"`
+    /// emit `regulatory_gap_detected` signals on enrichment write, which
+    /// feed `financial_proximity` dimension scoring.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regulatory_context: Vec<RegulatoryItem>,
 
     // Dimension 2: Relationship Health
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1038,6 +1076,9 @@ pub(crate) struct DimensionsBlob {
     pub strategic_priorities: Vec<StrategicPriority>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub market_context: Vec<MarketContextItem>,
+    /// DOS-207: Regulatory / compliance items.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regulatory_context: Vec<RegulatoryItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coverage_assessment: Option<CoverageAssessment>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1085,6 +1126,7 @@ impl IntelligenceJson {
             competitive_context: self.competitive_context.clone(),
             strategic_priorities: self.strategic_priorities.clone(),
             market_context: self.market_context.clone(),
+            regulatory_context: self.regulatory_context.clone(),
             coverage_assessment: self.coverage_assessment.clone(),
             organizational_changes: self.organizational_changes.clone(),
             internal_team: self.internal_team.clone(),
@@ -1109,6 +1151,7 @@ impl IntelligenceJson {
         self.competitive_context = blob.competitive_context.clone();
         self.strategic_priorities = blob.strategic_priorities.clone();
         self.market_context = blob.market_context.clone();
+        self.regulatory_context = blob.regulatory_context.clone();
         self.coverage_assessment = blob.coverage_assessment.clone();
         self.organizational_changes = blob.organizational_changes.clone();
         self.internal_team = blob.internal_team.clone();
@@ -1259,7 +1302,7 @@ pub(crate) fn default_urgency() -> String {
     "watch".to_string()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct IntelWin {
     pub text: String,
@@ -1286,7 +1329,7 @@ pub struct CurrentState {
     pub unknowns: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct StakeholderInsight {
     pub name: String,
@@ -1304,6 +1347,18 @@ pub struct StakeholderInsight {
     /// Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested_person_id: Option<String>,
+    /// DOS-207: Whether this assessment was verified from an actual
+    /// customer-conversation transcript (vs inferred from meeting attendance).
+    /// Set by the `stakeholder_champion` dimension prompt; user corrections
+    /// via the DOS-41 correction UX override.
+    #[serde(default)]
+    pub verified: bool,
+    /// DOS-207: How the verification was established — "meeting" | "glean" | "user".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_source: Option<String>,
+    /// DOS-207: RFC3339 timestamp when verification was established.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<String>,
     /// I576: Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
@@ -1312,7 +1367,7 @@ pub struct StakeholderInsight {
     pub discrepancy: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ValueItem {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2117,6 +2172,69 @@ impl ActionDb {
             )?;
         }
 
+        // DOS-207: Emit regulatory_gap_detected and stakeholder_verified
+        // signals so the Intelligence Loop (callouts, propagation rules,
+        // health scoring) can react without waiting for the next enrichment.
+        // The 24-hour callout window dedupes repeat emissions of the same gap.
+        for item in &intel.regulatory_context {
+            if item.status == "gap" {
+                let value = serde_json::json!({
+                    "standard": item.standard,
+                    "evidence": item.evidence,
+                })
+                .to_string();
+                let _ = crate::signals::bus::emit_signal(
+                    self,
+                    &intel.entity_type,
+                    &intel.entity_id,
+                    "regulatory_gap_detected",
+                    "enrichment_write",
+                    Some(&value),
+                    0.9,
+                );
+            } else if item.status == "required" || item.status == "in_progress" {
+                let value = serde_json::json!({
+                    "standard": item.standard,
+                    "status": item.status,
+                })
+                .to_string();
+                let _ = crate::signals::bus::emit_signal(
+                    self,
+                    &intel.entity_type,
+                    &intel.entity_id,
+                    "regulatory_requirement_detected",
+                    "enrichment_write",
+                    Some(&value),
+                    0.85,
+                );
+            }
+        }
+
+        for insight in &intel.stakeholder_insights {
+            if let Some(ref person_id) = insight.person_id {
+                let (signal_type, confidence) = if insight.verified {
+                    ("stakeholder_verified", 0.9)
+                } else {
+                    ("stakeholder_unverified", 0.7)
+                };
+                let value = serde_json::json!({
+                    "person_id": person_id,
+                    "name": insight.name,
+                    "verified_source": insight.verified_source,
+                })
+                .to_string();
+                let _ = crate::signals::bus::emit_signal(
+                    self,
+                    &intel.entity_type,
+                    &intel.entity_id,
+                    signal_type,
+                    "enrichment_write",
+                    Some(&value),
+                    confidence,
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -2911,6 +3029,9 @@ mod tests {
                 suggested_person_id: None,
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),
@@ -3434,6 +3555,9 @@ mod tests {
                 suggested_person_id: None,
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),

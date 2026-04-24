@@ -2581,6 +2581,9 @@ struct AiIntelResponse {
     strategic_priorities: Vec<super::io::StrategicPriority>,
     #[serde(default)]
     market_context: Vec<super::io::MarketContextItem>,
+    /// DOS-207: Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR, ...).
+    #[serde(default)]
+    regulatory_context: Vec<super::io::RegulatoryItem>,
     #[serde(default)]
     coverage_assessment: Option<super::io::CoverageAssessment>,
     #[serde(default)]
@@ -2824,6 +2827,14 @@ struct AiStakeholder {
     assessment: Option<String>,
     #[serde(default)]
     engagement: Option<String>,
+    /// DOS-207: verified from actual customer-conversation transcript
+    /// (true) vs inferred from meeting attendance only (false).
+    #[serde(default)]
+    verified: bool,
+    #[serde(default)]
+    verified_source: Option<String>,
+    #[serde(default)]
+    verified_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3179,6 +3190,9 @@ fn try_parse_json_response(
                 source: None,
                 person_id: None,
                 suggested_person_id: None,
+                verified: s.verified,
+                verified_source: s.verified_source,
+                verified_at: s.verified_at,
                 item_source: None,
                 discrepancy: None,
             })
@@ -3263,6 +3277,7 @@ fn try_parse_json_response(
         competitive_context: ai_resp.competitive_context,
         strategic_priorities: ai_resp.strategic_priorities,
         market_context: ai_resp.market_context,
+        regulatory_context: ai_resp.regulatory_context,
         coverage_assessment: ai_resp.coverage_assessment,
         organizational_changes: ai_resp.organizational_changes,
         internal_team: ai_resp.internal_team,
@@ -3524,6 +3539,7 @@ fn parse_stakeholder_line(rest: &str) -> Option<StakeholderInsight> {
         suggested_person_id: None,
         item_source: None,
         discrepancy: None,
+        ..Default::default()
     })
 }
 

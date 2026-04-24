@@ -1168,6 +1168,52 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
         }
     }
 
+    // DOS-207: Active regulatory gaps penalize financial proximity.
+    // Count recent regulatory_gap_detected signals (last 30 days) and
+    // subtract 5 points each, capped at 15 total. The surface forms the
+    // risk side of the dimension — compliance gaps are procurement-side
+    // friction that materially affects renewal outcome.
+    let reg_gaps: Vec<String> = db
+        .conn
+        .prepare(
+            "SELECT DISTINCT value FROM signal_events
+             WHERE entity_id = ?1
+               AND signal_type = 'regulatory_gap_detected'
+               AND created_at > datetime('now', '-30 days')",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![&account.id], |row| {
+                row.get::<_, Option<String>>(0)
+            })
+            .map(|rows| rows.filter_map(|r| r.ok().flatten()).collect())
+        })
+        .unwrap_or_default();
+
+    if !reg_gaps.is_empty() {
+        let penalty = ((reg_gaps.len() as f64) * 5.0).min(15.0);
+        score -= penalty;
+        let standards: Vec<String> = reg_gaps
+            .iter()
+            .filter_map(|v| serde_json::from_str::<serde_json::Value>(v).ok())
+            .filter_map(|v| {
+                v.get("standard")
+                    .and_then(|s| s.as_str())
+                    .map(str::to_string)
+            })
+            .collect();
+        if standards.is_empty() {
+            evidence.push(format!(
+                "Active regulatory gap ({}x) — -{penalty:.0} pts",
+                reg_gaps.len()
+            ));
+        } else {
+            evidence.push(format!(
+                "Active regulatory gap: {} — -{penalty:.0} pts",
+                standards.join(", ")
+            ));
+        }
+    }
+
     DimensionScore {
         score: score.clamp(0.0, 100.0),
         weight: 1.0,
