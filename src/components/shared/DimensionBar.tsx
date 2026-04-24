@@ -1,8 +1,9 @@
 /**
  * DimensionBar — Renders 6 relationship health dimensions as horizontal bars.
  *
- * Labels use product vocabulary (ADR-0083): "Meeting Cadence", "Email Engagement",
- * "Stakeholder Coverage", "Champion Health", "Financial Proximity", "Momentum".
+ * Labels are resolved from the active preset's intelligence.dimensionLabels
+ * (DOS-177), falling back to hardcoded ADR-0083 vocabulary when no preset
+ * is configured or the key is absent.
  *
  * Each bar shows: label, score, colored fill, trend arrow, expandable evidence.
  *
@@ -11,6 +12,7 @@
 import { useState } from "react";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import type { RelationshipDimensions, DimensionScore } from "@/types";
+import { useActivePreset } from "@/hooks/useActivePreset";
 import styles from "./DimensionBar.module.css";
 
 interface DimensionBarProps {
@@ -18,17 +20,21 @@ interface DimensionBarProps {
 }
 
 interface DimensionConfig {
+  /** camelCase key on RelationshipDimensions */
   key: keyof RelationshipDimensions;
-  label: string;
+  /** snake_case key matching preset intelligence.dimensionLabels */
+  presetKey: string;
+  /** Hardcoded fallback label (ADR-0083 vocabulary) */
+  defaultLabel: string;
 }
 
 const DIMENSIONS: DimensionConfig[] = [
-  { key: "meetingCadence", label: "Meeting Cadence" },
-  { key: "emailEngagement", label: "Email Engagement" },
-  { key: "stakeholderCoverage", label: "Stakeholder Coverage" },
-  { key: "keyAdvocateHealth", label: "Champion Health" },
-  { key: "financialProximity", label: "Financial Proximity" },
-  { key: "signalMomentum", label: "Momentum" },
+  { key: "meetingCadence", presetKey: "meeting_cadence", defaultLabel: "Meeting Cadence" },
+  { key: "emailEngagement", presetKey: "email_engagement", defaultLabel: "Email Engagement" },
+  { key: "stakeholderCoverage", presetKey: "stakeholder_coverage", defaultLabel: "Stakeholder Coverage" },
+  { key: "keyAdvocateHealth", presetKey: "key_advocate_health", defaultLabel: "Champion Health" },
+  { key: "financialProximity", presetKey: "financial_proximity", defaultLabel: "Financial Proximity" },
+  { key: "signalMomentum", presetKey: "signal_momentum", defaultLabel: "Momentum" },
 ];
 
 function getBarColorClass(score: number): string {
@@ -62,7 +68,15 @@ function TrendIcon({ trend }: { trend: string }) {
   }
 }
 
-function DimensionRow({ config, dimension }: { config: DimensionConfig; dimension: DimensionScore }) {
+function DimensionRow({
+  label,
+  dimension,
+  dimKey,
+}: {
+  label: string;
+  dimension: DimensionScore;
+  dimKey: string;
+}) {
   const [showEvidence, setShowEvidence] = useState(false);
   const hasEvidence = dimension.evidence && dimension.evidence.length > 0;
   const fillPct = Math.min(100, Math.max(0, dimension.score));
@@ -71,7 +85,7 @@ function DimensionRow({ config, dimension }: { config: DimensionConfig; dimensio
     <div className={styles.dimension}>
       <div className={styles.dimensionHeader}>
         <span className={styles.dimensionLabel}>
-          {config.label}
+          {label}
           <span className={`${styles.trend} ${getTrendClass(dimension.trend)}`}>
             <TrendIcon trend={dimension.trend} />
           </span>
@@ -109,13 +123,17 @@ function DimensionRow({ config, dimension }: { config: DimensionConfig; dimensio
 }
 
 export function DimensionBar({ dimensions }: DimensionBarProps) {
+  const preset = useActivePreset();
+  const presetLabels = preset?.intelligence?.dimensionLabels ?? {};
+
   return (
     <div className={styles.container}>
       {DIMENSIONS.map((config) => {
         const dimension = dimensions[config.key];
         if (!dimension) return null;
+        const label = presetLabels[config.presetKey] ?? config.defaultLabel;
         return (
-          <DimensionRow key={config.key} config={config} dimension={dimension} />
+          <DimensionRow key={config.key} dimKey={config.key} label={label} dimension={dimension} />
         );
       })}
     </div>
