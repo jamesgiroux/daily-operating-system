@@ -307,8 +307,7 @@ impl ActionDb {
 
         let mut result: Vec<(DbAccount, Vec<String>)> = Vec::new();
         let mut current_id: Option<String> = None;
-        // Domain column follows all ACCOUNT_COLUMNS (41 columns, 0-indexed → index 41).
-        let domain_idx = 41;
+        let domain_idx = Self::ACCOUNT_COLUMNS.split(',').count();
 
         while let Some(row) = rows.next()? {
             let account_id: String = row.get(0)?;
@@ -369,10 +368,7 @@ impl ActionDb {
         // additional candidate (dedup by id). P9 will see multiple candidates
         // and prompt the user when ambiguous; if the parent ALSO has a
         // direct domain match, the dedup keeps a single entry.
-        let parent_ids: Vec<String> = direct
-            .iter()
-            .filter_map(|a| a.parent_id.clone())
-            .collect();
+        let parent_ids: Vec<String> = direct.iter().filter_map(|a| a.parent_id.clone()).collect();
         if parent_ids.is_empty() {
             return Ok(direct);
         }
@@ -1952,15 +1948,14 @@ impl ActionDb {
             .prepare("UPDATE meetings SET meeting_type = 'internal' WHERE id = ?1")?;
 
         for (meeting_id, attendees_str) in path_a_rows {
-            let attendees: Vec<String> =
-                match serde_json::from_str::<Vec<String>>(&attendees_str) {
-                    Ok(arr) => arr,
-                    Err(_) => attendees_str
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect(),
-                };
+            let attendees: Vec<String> = match serde_json::from_str::<Vec<String>>(&attendees_str) {
+                Ok(arr) => arr,
+                Err(_) => attendees_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+            };
 
             // Only parseable emails participate in the coverage check.
             let emails: Vec<String> = attendees
@@ -2889,9 +2884,7 @@ impl ActionDb {
         // sentinel `0` passed here would silently wipe real support data
         // whenever a user edits `usage_tier`, `csat_score`, or any other
         // non-`open_tickets` gap field — DOS-231 Codex follow-up).
-        let bootstrap_now = chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
+        let bootstrap_now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
         self.conn.execute(
             "INSERT OR IGNORE INTO account_technical_footprint
                 (account_id, integrations_json, usage_tier, adoption_score, active_users,
@@ -2919,8 +2912,7 @@ impl ActionDb {
                         "update_technical_footprint_field: '{value}' is not a valid integer for {column}"
                     )))
                 })?;
-                self.conn
-                    .execute(&sql, params![parsed, now, account_id])?;
+                self.conn.execute(&sql, params![parsed, now, account_id])?;
             }
             Kind::Real => {
                 let parsed: f64 = value.parse().map_err(|_| {
@@ -2928,8 +2920,7 @@ impl ActionDb {
                         "update_technical_footprint_field: '{value}' is not a valid number for {column}"
                     )))
                 })?;
-                self.conn
-                    .execute(&sql, params![parsed, now, account_id])?;
+                self.conn.execute(&sql, params![parsed, now, account_id])?;
             }
         }
         Ok(())
@@ -3162,7 +3153,13 @@ impl ActionDb {
             "INSERT INTO user_sentiment_history
                 (account_id, sentiment, note, computed_band, computed_score)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![account_id, sentiment, note_clean, computed_band, computed_score],
+            params![
+                account_id,
+                sentiment,
+                note_clean,
+                computed_band,
+                computed_score
+            ],
         )?;
         Ok(())
     }
@@ -3275,7 +3272,11 @@ impl ActionDb {
         };
         let note_clean = note.and_then(|n| {
             let trimmed = n.trim();
-            if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
         });
         self.conn.execute(
             "UPDATE user_sentiment_history SET note = ?1 WHERE rowid = ?2",
@@ -3555,9 +3556,9 @@ impl ActionDb {
     /// List all account_ids with a pending health recompute. Ordered by
     /// requested_at so startup drains oldest-first.
     pub fn list_health_recompute_pending(&self) -> Result<Vec<String>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT account_id FROM health_recompute_pending ORDER BY requested_at ASC",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT account_id FROM health_recompute_pending ORDER BY requested_at ASC")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }

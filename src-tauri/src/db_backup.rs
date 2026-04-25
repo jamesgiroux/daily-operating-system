@@ -1,7 +1,8 @@
 //! SQLite backup and rebuild-from-filesystem (I76 / ADR-0048)
 //!
-//! **Backup**: Uses `rusqlite::backup::Backup` API to create a hot copy at
-//! `~/.dailyos/dailyos.db.bak`. Runs on app startup and after daily archive.
+//! **Backup**: Uses `rusqlite::backup::Backup` API to create a hot copy next
+//! to the active database (`<active-db>.bak`). Runs on app startup and after
+//! daily archive.
 //!
 //! **Rebuild**: Scans `Accounts/` and `People/` workspace directories,
 //! re-populates SQLite from JSON files. Known gap: email enrichment state
@@ -45,15 +46,43 @@ fn active_db_path() -> Result<PathBuf, String> {
     ActionDb::db_path_public().map_err(|e| format!("Failed to resolve database path: {e}"))
 }
 
+fn active_db_path_for_connection(db: &ActionDb) -> Result<PathBuf, String> {
+    let path: String = db
+        .conn_ref()
+        .query_row("PRAGMA database_list", [], |row| row.get(2))
+        .map_err(|e| format!("Failed to resolve database path from connection: {e}"))?;
+
+    if path.is_empty() || path == ":memory:" {
+        return active_db_path();
+    }
+
+    Ok(PathBuf::from(path))
+}
+
+fn manual_backup_path(db_path: &Path) -> Result<PathBuf, String> {
+    let parent = db_path
+        .parent()
+        .ok_or_else(|| "Database path has no parent directory".to_string())?;
+    let mut file_name = db_path
+        .file_name()
+        .ok_or_else(|| "Database path has no filename".to_string())?
+        .to_os_string();
+    file_name.push(MANUAL_BACKUP_SUFFIX);
+    Ok(parent.join(file_name))
+}
+
 /// Read schema version (PRAGMA user_version) from a SQLite file.
 /// Returns None if the file cannot be opened or read.
 fn read_schema_version(path: &Path) -> Option<i64> {
     let conn =
         rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .ok()?;
-    // Apply encryption key if configured
-    if let Ok(hex_key) = crate::db::encryption::get_or_create_db_key(path) {
-        let _ = conn.execute_batch(&crate::db::encryption::key_to_pragma(&hex_key));
+    // Apply an existing encryption key only for encrypted-looking files.
+    // Schema reads must not create Keychain entries as a side effect.
+    if !crate::db::encryption::is_database_plaintext(path) {
+        if let Ok(hex_key) = crate::db::encryption::get_existing_db_key() {
+            let _ = conn.execute_batch(&crate::db::encryption::key_to_pragma(&hex_key));
+        }
     }
     conn.pragma_query_value(None, "user_version", |row| row.get(0))
         .ok()
@@ -161,13 +190,13 @@ fn prune_restore_snapshots(db_path: &Path, keep: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// Back up the live database to `~/.dailyos/dailyos.db.bak`.
+/// Back up the live database to `<active-db>.bak`.
 ///
 /// Uses SQLite's online backup API so the source DB can remain open and
 /// in use during the backup. Returns the backup file path on success.
 pub fn backup_database(db: &ActionDb) -> Result<String, String> {
-    let home = dirs::home_dir().ok_or("Home directory not found")?;
-    let backup_path = home.join(".dailyos").join("dailyos.db.bak");
+    let db_path = active_db_path_for_connection(db)?;
+    let backup_path = manual_backup_path(&db_path)?;
 
     let mut backup_conn = rusqlite::Connection::open(&backup_path)
         .map_err(|e| format!("Failed to open backup file: {}", e))?;
@@ -434,9 +463,9 @@ mod tests {
         let db_path = dir.path().join("test.db");
         let db = ActionDb::open_at_unencrypted(db_path).expect("open db");
 
-        // The backup function uses a hardcoded path (~/.dailyos/dailyos.db.bak),
-        // so we test the Backup API directly with a custom path.
-        let backup_path = dir.path().join("test.db.bak");
+        let backup_path =
+            manual_backup_path(&active_db_path_for_connection(&db).expect("active path"))
+                .expect("backup path");
         let mut backup_conn = rusqlite::Connection::open(&backup_path).expect("open backup");
         let backup =
             rusqlite::backup::Backup::new(db.conn_ref(), &mut backup_conn).expect("init backup");
@@ -445,6 +474,33 @@ mod tests {
         drop(backup_conn);
 
         assert!(backup_path.exists());
+    }
+
+    #[test]
+    fn test_manual_backup_path_uses_active_db_filename() {
+        let live = Path::new("/tmp/.dailyos/dailyos.db");
+        let dev = Path::new("/tmp/.dailyos/dailyos-dev.db");
+
+        assert_eq!(
+            manual_backup_path(live).expect("live backup path"),
+            Path::new("/tmp/.dailyos/dailyos.db.bak")
+        );
+        assert_eq!(
+            manual_backup_path(dev).expect("dev backup path"),
+            Path::new("/tmp/.dailyos/dailyos-dev.db.bak")
+        );
+    }
+
+    #[test]
+    fn test_read_schema_version_plaintext_has_no_keychain_dependency() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("dailyos.db.bak");
+        let conn = rusqlite::Connection::open(&db_path).expect("open db");
+        conn.pragma_update(None, "user_version", 42)
+            .expect("set user_version");
+        drop(conn);
+
+        assert_eq!(read_schema_version(&db_path), Some(42));
     }
 
     #[test]

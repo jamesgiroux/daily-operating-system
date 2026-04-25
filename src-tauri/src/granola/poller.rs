@@ -63,8 +63,29 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 continue;
             }
         };
-        if let Err(e) = poll_once(&state, &app_handle, &cache_path) {
-            log::warn!("Granola poller: {}", e);
+        match poll_once(&state, &app_handle, &cache_path) {
+            Ok(events) => {
+                // Re-run entity linking with the post-transcript context for
+                // each meeting we successfully ingested. The calendar poller
+                // already ran the engine when the meeting was created, but
+                // the transcript may refine attendees/account inference.
+                for event in events {
+                    if let Err(e) = crate::services::entity_linking::calendar_adapter::evaluate_meeting(
+                        state.clone(),
+                        &event,
+                        crate::services::entity_linking::Trigger::TranscriptIngest,
+                    )
+                    .await
+                    {
+                        log::warn!(
+                            "entity_linking after Granola ingest failed (non-fatal) for {}: {}",
+                            event.id,
+                            e
+                        );
+                    }
+                }
+            }
+            Err(e) => log::warn!("Granola poller: {}", e),
         }
 
         tokio::select! {
@@ -77,14 +98,18 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
 }
 
 /// Single poll cycle: read cache, match documents, sync new ones.
+///
+/// Returns the calendar events for meetings whose transcripts were
+/// successfully ingested in this cycle, so the async caller can re-run
+/// entity linking on each.
 fn poll_once(
     state: &AppState,
     app_handle: &AppHandle,
     cache_path: &std::path::Path,
-) -> Result<(), String> {
+) -> Result<Vec<crate::types::CalendarEvent>, String> {
     let documents = cache::read_cache(cache_path)?;
     if documents.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     // Get recent meetings from DB for matching (last 90 days)
@@ -94,6 +119,7 @@ fn poll_once(
     };
 
     let mut synced = 0;
+    let mut linkable_events: Vec<crate::types::CalendarEvent> = Vec::new();
 
     for doc in &documents {
         // Match to a meetings row
@@ -156,7 +182,7 @@ fn poll_once(
         );
 
         match &result {
-            Ok(dest) => {
+            Ok((dest, _)) => {
                 log::info!(
                     "Granola sync: processed '{}' → {} ({} chars, {:?})",
                     doc.title,
@@ -174,9 +200,14 @@ fn poll_once(
         // Notify frontend with normalized payload (fallback to meeting ID if unavailable).
         emit_transcript_processed(state, app_handle, &matched.meeting_id);
 
-        if result.is_ok() {
-            let _ =
-                crate::notification::notify_transcript_ready(app_handle, &doc.title, None, state);
+        if let Ok((_, calendar_event)) = result {
+            let _ = crate::notification::notify_transcript_ready(
+                app_handle,
+                &doc.title,
+                None,
+                state,
+            );
+            linkable_events.push(calendar_event);
         }
     }
 
@@ -184,7 +215,7 @@ fn poll_once(
         log::info!("Granola poller: synced {} documents", synced);
     }
 
-    Ok(())
+    Ok(linkable_events)
 }
 
 /// Process a Granola document through the shared transcript pipeline.
@@ -194,13 +225,15 @@ fn poll_once(
 ///   Phase 1 (with lock): Read meeting data, config, build calendar_event
 ///   Phase 2 (no lock): Run AI pipeline via process_fetched_transcript_without_db
 ///   Phase 3 (with lock): Write results back to DB
+/// Returns (destination_path, calendar_event) on success so the async
+/// caller can re-run entity linking with the post-transcript context.
 fn process_granola_document(
     state: &AppState,
     sync_id: &str,
     meeting_id: &str,
     content: &str,
     content_kind: crate::processor::transcript::TranscriptContentKind,
-) -> Result<String, String> {
+) -> Result<(String, crate::types::CalendarEvent), String> {
     // Phase 1: Read data with lock, then drop
     let (calendar_event, workspace, profile, ai_config) = {
         let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
@@ -384,7 +417,7 @@ fn process_granola_document(
                 None,
             );
 
-            Ok(dest.to_string())
+            Ok((dest.to_string(), calendar_event))
         }
         Err(error) => {
             if let Ok(db) = crate::db::ActionDb::open() {

@@ -107,21 +107,16 @@ fn query_emails(conn: &Connection, days: u32) -> Result<Vec<EntityRow>, String> 
 }
 
 fn parse_arg(args: &[String], flag: &str) -> Option<String> {
-    args.windows(2)
-        .find(|w| w[0] == flag)
-        .map(|w| w[1].clone())
+    args.windows(2).find(|w| w[0] == flag).map(|w| w[1].clone())
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    let db_path = PathBuf::from(
-        parse_arg(&args, "--db")
-            .unwrap_or_else(|| {
-                let home = std::env::var("HOME").unwrap_or_default();
-                format!("{home}/.dailyos/dailyos.db")
-            }),
-    );
+    let db_path = PathBuf::from(parse_arg(&args, "--db").unwrap_or_else(|| {
+        let home = std::env::var("HOME").unwrap_or_default();
+        format!("{home}/.dailyos/dailyos.db")
+    }));
     let days_meetings: u32 = parse_arg(&args, "--days-meetings")
         .and_then(|v| v.parse().ok())
         .unwrap_or(90);

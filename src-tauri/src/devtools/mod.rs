@@ -868,6 +868,11 @@ fn reset_all(state: &AppState) -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
     let dailyos_dir = home.join(".dailyos");
 
+    // Reset deletes the active DB file. Drop the process-wide sync routing
+    // first so subsequent ActionDb::open() calls cannot go through a stale
+    // DbService pool that still points at the removed file.
+    crate::db_service::uninstall_global();
+
     // 1. Read workspace path before deleting config
     let workspace_path = {
         let g = state.config.read();
@@ -932,7 +937,9 @@ fn reset_all(state: &AppState) -> Result<(), String> {
 
     // 4. Reset all AppState mutexes in-place
     *state.config.write() = None;
-    // (I609) No sync DB handle to reset — ActionDb::open() handles reconnection.
+    // DbService is reinitialized by the async command wrapper after the
+    // scenario finishes. Until then, sync ActionDb::open() uses the direct
+    // open path and rebuilds the dev schema before mock inserts run.
     *state.calendar.google_auth.lock() = GoogleAuthStatus::NotConfigured;
     state.workflow.status.write().clear();
     state.workflow.history.lock().clear();

@@ -88,7 +88,7 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
         log::info!("Quill poller: processing {} pending syncs", pending.len());
 
         for row in pending {
-            process_sync_row(&state, &app_handle, &config.bridge_path, &row).await;
+            process_sync_row(state.clone(), &app_handle, &config.bridge_path, &row).await;
             // Rate limit: 60 seconds between MCP connections
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
@@ -100,7 +100,7 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
 /// Process a single quill_sync_state row through the state machine.
 async fn process_sync_row(
-    state: &AppState,
+    state: Arc<AppState>,
     app_handle: &AppHandle,
     bridge_path: &str,
     row: &DbQuillSyncState,
@@ -472,12 +472,33 @@ async fn process_sync_row(
     }
 
     // Notify frontend with normalized payload (fallback to meeting ID if unavailable).
-    emit_transcript_processed(state, app_handle, &row.meeting_id);
+    emit_transcript_processed(&state, app_handle, &row.meeting_id);
 
     // Send native notification on success
     if result.is_ok() {
         let _ =
-            crate::notification::notify_transcript_ready(app_handle, &meeting.title, None, state);
+            crate::notification::notify_transcript_ready(app_handle, &meeting.title, None, &state);
+    }
+
+    // Re-run entity linking with the post-transcript context (DOS-258).
+    // The calendar poller already linked entities at meeting creation, but
+    // the transcript can refine attendee/title context. Best-effort —
+    // never fails the sync.
+    if result.is_ok() {
+        match crate::services::entity_linking::calendar_adapter::evaluate_meeting(
+            state.clone(),
+            &calendar_event,
+            crate::services::entity_linking::Trigger::TranscriptIngest,
+        )
+        .await
+        {
+            Ok(_) => {}
+            Err(e) => log::warn!(
+                "entity_linking after Quill ingest failed (non-fatal) for {}: {}",
+                calendar_event.id,
+                e
+            ),
+        }
     }
 }
 

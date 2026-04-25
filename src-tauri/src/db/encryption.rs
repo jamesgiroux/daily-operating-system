@@ -42,11 +42,7 @@ static CACHED_KEY: OnceLock<String> = OnceLock::new();
 /// A new key would silently fail to decrypt the existing data. The caller must
 /// surface this as a recovery screen, not swallow it.
 pub fn get_or_create_db_key(db_path: &std::path::Path) -> Result<String, String> {
-    if let Some(key) = CACHED_KEY.get() {
-        return Ok(key.clone());
-    }
-
-    let key = match get_key_from_keychain() {
+    let key = match get_existing_db_key() {
         Ok(key) => key,
         Err(_e) => {
             // DB exists and is not plaintext → encrypted with a lost key.
@@ -64,6 +60,17 @@ pub fn get_or_create_db_key(db_path: &std::path::Path) -> Result<String, String>
     };
 
     // Cache for all future callers (race-safe: OnceLock ignores duplicate sets)
+    let _ = CACHED_KEY.set(key.clone());
+    Ok(key)
+}
+
+/// Retrieve the existing DB key without creating a Keychain entry.
+pub fn get_existing_db_key() -> Result<String, String> {
+    if let Some(key) = CACHED_KEY.get() {
+        return Ok(key.clone());
+    }
+
+    let key = get_key_from_keychain()?;
     let _ = CACHED_KEY.set(key.clone());
     Ok(key)
 }
@@ -230,4 +237,66 @@ fn store_key_in_keychain(key: &str) -> Result<(), String> {
         return Err(format!("Keychain write failed: {}", stderr.trim()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_database_plaintext, key_to_pragma};
+    use std::fs;
+
+    #[test]
+    fn key_to_pragma_formats_raw_hex_key_for_sqlcipher() {
+        assert_eq!(
+            key_to_pragma("0123456789abcdef"),
+            "PRAGMA key = \"x'0123456789abcdef'\""
+        );
+    }
+
+    #[test]
+    fn is_database_plaintext_returns_true_for_valid_sqlite_header() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let db_path = temp_dir.path().join("plain.db");
+
+        fs::write(&db_path, b"SQLite format 3\0remaining bytes").expect("write sqlite header");
+
+        assert!(is_database_plaintext(&db_path));
+    }
+
+    #[test]
+    fn is_database_plaintext_returns_false_for_non_sqlite_file() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let db_path = temp_dir.path().join("encrypted.db");
+
+        fs::write(&db_path, b"not sqlite header and likely encrypted").expect("write non-sqlite");
+
+        assert!(!is_database_plaintext(&db_path));
+    }
+
+    #[test]
+    fn is_database_plaintext_returns_false_for_empty_file() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let db_path = temp_dir.path().join("empty.db");
+
+        fs::write(&db_path, []).expect("write empty file");
+
+        assert!(!is_database_plaintext(&db_path));
+    }
+
+    #[test]
+    fn is_database_plaintext_returns_false_for_missing_file() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let db_path = temp_dir.path().join("missing.db");
+
+        assert!(!is_database_plaintext(&db_path));
+    }
+
+    #[test]
+    fn is_database_plaintext_returns_false_for_file_shorter_than_sqlite_header() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let db_path = temp_dir.path().join("short.db");
+
+        fs::write(&db_path, b"SQLite format 3").expect("write short header");
+
+        assert!(!is_database_plaintext(&db_path));
+    }
 }
