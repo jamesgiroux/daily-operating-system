@@ -11,6 +11,10 @@ export interface AccountReportItem {
 
 /** Reports shown for each preset, in display order. */
 const PRESET_REPORTS: Record<string, AccountReportItem[]> = {
+  'core': [
+    { label: 'SWOT',          reportType: 'swot' },
+    { label: 'Risk Briefing', reportType: 'risk_briefing' },
+  ],
   'customer-success': [
     { label: 'Account Health',  reportType: 'account_health' },
     { label: 'EBR / QBR',       reportType: 'ebr_qbr' },
@@ -35,7 +39,7 @@ const PRESET_REPORTS: Record<string, AccountReportItem[]> = {
     { label: 'SWOT',              reportType: 'swot' },
     { label: 'Risk Briefing',     reportType: 'risk_briefing' },
   ],
-  'partnerships': [
+  'affiliates-partnerships': [
     { label: 'Partner Health',  reportType: 'account_health' },
     { label: 'Partner Review',  reportType: 'ebr_qbr' },
     { label: 'SWOT',            reportType: 'swot' },
@@ -47,42 +51,47 @@ const PRESET_REPORTS: Record<string, AccountReportItem[]> = {
     { label: 'SWOT',               reportType: 'swot' },
     { label: 'Risk Briefing',      reportType: 'risk_briefing' },
   ],
-  'marketing': [
-    // Account health and EBR/QBR don't fit a marketing workflow
-    { label: 'SWOT',          reportType: 'swot' },
-    { label: 'Risk Briefing', reportType: 'risk_briefing' },
-  ],
-  'product': [
+  'product-marketing': [
     // EBR/QBR and account health don't fit a product workflow
-    { label: 'SWOT',          reportType: 'swot' },
-    { label: 'Risk Briefing', reportType: 'risk_briefing' },
-  ],
-  'the-desk': [
     { label: 'SWOT',          reportType: 'swot' },
     { label: 'Risk Briefing', reportType: 'risk_briefing' },
   ],
 };
 
-/** Fallback to customer-success if preset unknown. */
+function canonicalPresetId(presetId: string | null | undefined): string {
+  switch (presetId) {
+    case 'the-desk':
+      return 'core';
+    case 'affiliates':
+    case 'partnerships':
+      return 'affiliates-partnerships';
+    case 'product':
+    case 'marketing':
+      return 'product-marketing';
+    default:
+      return presetId ?? 'core';
+  }
+}
+
+/** Fallback to core if preset unknown. */
 export function getAccountReports(presetId: string | null | undefined): AccountReportItem[] {
-  return PRESET_REPORTS[presetId ?? 'customer-success'] ?? PRESET_REPORTS['customer-success'];
+  return PRESET_REPORTS[canonicalPresetId(presetId)] ?? PRESET_REPORTS['core'];
 }
 
 /** Preset-aware label for the cross-account portfolio report. */
 export function getPortfolioReportLabel(presetId: string | null | undefined): string {
   switch (presetId) {
     case 'customer-success':
-    case 'sales':
       return 'Book of Business';
-    case 'agency':
-      return 'Client Portfolio Review';
-    case 'consulting':
-      return 'Engagement Portfolio';
+    case 'affiliates-partnerships':
+    case 'affiliates':
     case 'partnerships':
       return 'Partner Portfolio';
-    case 'leadership':
-      return 'Portfolio Review';
+    case 'product-marketing':
+    case 'product':
+    case 'marketing':
+      return 'Initiative Portfolio';
     default:
-      return 'Book of Business';
+      return 'Project Portfolio';
   }
 }

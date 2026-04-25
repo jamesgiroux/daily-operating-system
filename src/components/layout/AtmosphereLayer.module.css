@@ -5,7 +5,7 @@
    breathing animation. Fixed position, covers entire viewport.
    ============================================================================= */
 
-@import '../../styles/design-tokens.css';
+@import "../../styles/design-tokens.css";
 
 /* ─────────────────────────────────────────────────────────────────────────
    ATMOSPHERE — Main container

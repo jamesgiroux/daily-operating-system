@@ -41,6 +41,14 @@ export interface UseAccountWorkDataResult {
   handleDismissCommitment: (actionId: string) => Promise<void>;
   handleAcceptSuggestion: (actionId: string) => Promise<void>;
   handleDismissSuggestion: (actionId: string) => Promise<void>;
+  /**
+   * Preference-based dismissal — "I don't want this." Tombstones the
+   * suggestion (so enrichment doesn't re-propose it) but does NOT penalize
+   * Bayesian source weights. Distinct from `handleDismissSuggestion`,
+   * which is wired to "Is this accurate? No" and means the suggestion
+   * is wrong.
+   */
+  handleArchiveSuggestion: (actionId: string) => Promise<void>;
   handleUpdateCommitment: (
     actionId: string,
     patch: { title?: string; context?: string; dueDate?: string },
@@ -233,6 +241,27 @@ export function useAccountWorkData(
     [suggestions, silentRefresh],
   );
 
+  const handleArchiveSuggestion = useCallback(
+    async (actionId: string) => {
+      toggleKey(setSuggestionDismissInFlight, actionId, true);
+      const prev = suggestions;
+      setSuggestions((list) => list.filter((a) => a.id !== actionId));
+      try {
+        await invoke("dismiss_suggested_action", {
+          id: actionId,
+          source: "actions_page",
+        });
+        await silentRefresh();
+      } catch (err) {
+        setSuggestions(prev);
+        toast.error(`Could not dismiss: ${String(err)}`);
+      } finally {
+        toggleKey(setSuggestionDismissInFlight, actionId, false);
+      }
+    },
+    [suggestions, silentRefresh],
+  );
+
   const handleUpdateCommitment = useCallback(
     async (
       actionId: string,
@@ -274,6 +303,7 @@ export function useAccountWorkData(
     handleDismissCommitment,
     handleAcceptSuggestion,
     handleDismissSuggestion,
+    handleArchiveSuggestion,
     handleUpdateCommitment,
     handlePushToLinear,
     refresh,

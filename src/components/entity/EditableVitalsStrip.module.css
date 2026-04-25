@@ -1,0 +1,131 @@
+@import '../../styles/design-tokens.css';
+
+.inlineInputRoot {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.inputPrefix {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.inlineInput {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-text-tertiary);
+  outline: none;
+  padding: 0 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.inlineInputNumber {
+  width: 80px;
+}
+
+.inlineInputText {
+  width: 120px;
+}
+
+.inlineSelect {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  outline: none;
+  padding: 2px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.sourceAttribution {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+  display: block;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.fieldStack {
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.fieldRow {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.fieldRowGap {
+  gap: 4px;
+}
+
+.fieldValue {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.clickableFieldValue {
+  composes: fieldValue;
+  cursor: pointer;
+}
+
+.emptyFieldValue {
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+  border-bottom: 1px dashed var(--color-text-tertiary);
+}
+
+.datePickerShell {
+  display: inline-block;
+  width: 160px;
+}
+
+.strip {
+  margin-top: var(--space-lg);
+  margin-bottom: var(--space-lg);
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  padding: 14px 0;
+}
+
+.stripItems {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
+.itemWithSeparator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.separatorDot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  flex-shrink: 0;
+}

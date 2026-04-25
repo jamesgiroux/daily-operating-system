@@ -33,11 +33,16 @@ const NOISE_SUBJECT_PREFIXES: &[&str] = &[
 ];
 
 /// Score a single email. Returns (score, reason).
+///
+/// `merged_signal_keywords` is the pre-merged keyword list from
+/// `AppState::get_merged_signal_config().signal_keywords`. Passed explicitly
+/// so this function does not reach into global state (DOS-176).
 pub fn score_single_email(
     db: &ActionDb,
     model: Option<&EmbeddingModel>,
     email: &DbEmail,
     meeting_context: &str,
+    merged_signal_keywords: &[(String, f64)],
 ) -> (f64, String) {
     // Check noise sender
     if let Some(sender) = &email.sender_email {
@@ -72,15 +77,19 @@ pub fn score_single_email(
         created_at: created,
     };
 
-    let result = score_item(db, model, &ctx, meeting_context);
+    let result = score_item(db, model, &ctx, meeting_context, merged_signal_keywords);
     (result.total, result.reason)
 }
 
 /// Score all enriched active emails. Returns (email_id, score, reason) tuples.
+///
+/// `merged_signal_keywords` is the pre-merged keyword list from
+/// `AppState::get_merged_signal_config().signal_keywords` (DOS-176).
 pub fn score_emails(
     db: &ActionDb,
     model: Option<&EmbeddingModel>,
     emails: &[DbEmail],
+    merged_signal_keywords: &[(String, f64)],
 ) -> Vec<(String, f64, String)> {
     let meeting_context = build_meeting_context(db);
 
@@ -88,7 +97,8 @@ pub fn score_emails(
         .iter()
         .filter(|e| e.enrichment_state == "enriched")
         .map(|email| {
-            let (score, reason) = score_single_email(db, model, email, &meeting_context);
+            let (score, reason) =
+                score_single_email(db, model, email, &meeting_context, merged_signal_keywords);
             (email.email_id.clone(), score, reason)
         })
         .collect()
@@ -123,6 +133,14 @@ pub fn build_meeting_context(db: &ActionDb) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::BASE_SIGNAL_KEYWORDS;
+
+    fn base_keywords() -> Vec<(String, f64)> {
+        BASE_SIGNAL_KEYWORDS
+            .iter()
+            .map(|&(k, w)| (k.to_string(), w))
+            .collect()
+    }
 
     fn make_test_email(sender: &str, subject: &str) -> DbEmail {
         DbEmail {
@@ -166,7 +184,8 @@ mod tests {
     fn test_noise_sender_gets_low_score() {
         let db = crate::db::test_utils::test_db();
         let email = make_test_email("noreply@company.com", "Your report is ready");
-        let (score, reason) = score_single_email(&db, None, &email, "");
+        let kws = base_keywords();
+        let (score, reason) = score_single_email(&db, None, &email, "", &kws);
         assert!(
             score < 0.05,
             "noise sender should score near zero, got {}",
@@ -179,7 +198,8 @@ mod tests {
     fn test_calendar_notification_gets_low_score() {
         let db = crate::db::test_utils::test_db();
         let email = make_test_email("alice@company.com", "Accepted: Weekly standup");
-        let (score, reason) = score_single_email(&db, None, &email, "");
+        let kws = base_keywords();
+        let (score, reason) = score_single_email(&db, None, &email, "", &kws);
         assert!(
             score < 0.05,
             "calendar notification should score near zero, got {}",
@@ -192,7 +212,8 @@ mod tests {
     fn test_normal_email_scores_above_noise() {
         let db = crate::db::test_utils::test_db();
         let email = make_test_email("alice@customer.com", "Re: Contract renewal discussion");
-        let (score, _reason) = score_single_email(&db, None, &email, "");
+        let kws = base_keywords();
+        let (score, _reason) = score_single_email(&db, None, &email, "", &kws);
         assert!(
             score > 0.05,
             "normal email with keyword should score above noise, got {}",

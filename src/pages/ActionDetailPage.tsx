@@ -61,7 +61,10 @@ export default function ActionDetailPage() {
       folioLabel: detail?.title ? (detail.title.length > 30 ? detail.title.slice(0, 30) + "…" : detail.title) : "Action",
       atmosphereColor: "terracotta" as const,
       activePage: "actions" as const,
-      backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/actions", search: { search: undefined } }) },
+      breadcrumbs: [
+        { label: "Actions", onClick: () => navigate({ to: "/actions", search: { search: undefined } }) },
+        { label: detail?.title ?? "Action" },
+      ],
       folioStatusText: saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : undefined,
     }),
     [detail?.title, navigate, saveStatus],
@@ -479,4 +482,3 @@ export default function ActionDetailPage() {
     </div>
   );
 }
-

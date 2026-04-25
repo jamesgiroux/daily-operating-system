@@ -997,13 +997,15 @@ impl ActionDb {
     /// Get accounts with `contract_end` within `days_ahead` days.
     ///
     /// Returns accounts approaching renewal, ordered by soonest first.
+    /// Archived accounts are excluded (DOS-286).
     pub fn get_renewal_alerts(&self, days_ahead: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts
-             WHERE contract_end IS NOT NULL
+             WHERE archived = 0
+               AND contract_end IS NOT NULL
                AND contract_end >= date('now')
                AND contract_end <= date('now', ?1 || ' days')
              ORDER BY contract_end ASC",
@@ -1018,19 +1020,40 @@ impl ActionDb {
     ///
     /// Represents accounts that haven't been touched (via meetings, captures,
     /// or manual updates) in a while — a signal to check in.
+    /// Archived accounts are excluded (DOS-286).
     pub fn get_stale_accounts(&self, stale_days: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts
-             WHERE updated_at <= datetime('now', ?1 || ' days')
+             WHERE archived = 0
+               AND updated_at <= datetime('now', ?1 || ' days')
              ORDER BY updated_at ASC",
         )?;
 
         let days_param = format!("-{stale_days}");
         let rows = stmt.query_map(params![days_param], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Check whether an entity is archived (DOS-286).
+    ///
+    /// Returns `true` only if the entity exists and is archived. Unknown entities
+    /// or unsupported entity types return `false` — callers should not treat a
+    /// missing entity as archived. Used by enrichment enqueue paths to avoid
+    /// spending AI budget on accounts the user has explicitly archived.
+    pub fn is_entity_archived(&self, entity_id: &str, entity_type: &str) -> bool {
+        let table = match entity_type {
+            "account" => "accounts",
+            "person" => "people",
+            "project" => "projects",
+            _ => return false,
+        };
+        let query = format!("SELECT archived FROM {table} WHERE id = ?1");
+        self.conn
+            .query_row(&query, params![entity_id], |row| row.get::<_, bool>(0))
+            .unwrap_or(false)
     }
 
     /// Flag an action as needing a decision. Called by AI enrichment during

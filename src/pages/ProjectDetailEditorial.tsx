@@ -54,7 +54,6 @@ import { RecommendedActions } from "@/components/entity/RecommendedActions";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { AddToRecord } from "@/components/entity/AddToRecord";
-import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
@@ -197,12 +196,31 @@ export default function ProjectDetailEditorial() {
     }
   };
 
+  // I388: Fetch ancestor projects for FolioBar breadcrumb navigation.
+  const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!projectId) return;
+    invoke<{ id: string; name: string }[]>("get_project_ancestors", { projectId })
+      .then(setAncestors)
+      .catch((err) => {
+        console.error("get_project_ancestors failed:", err); // Expected: background data fetch on mount
+        setAncestors([]);
+      });
+  }, [projectId]);
+
   const shellConfig = useMemo(
     () => ({
       folioLabel: "Project",
       atmosphereColor: "olive" as const,
       activePage: "projects" as const,
-      backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/projects" }) },
+      breadcrumbs: [
+        { label: "Projects", onClick: () => navigate({ to: "/projects" }) },
+        ...ancestors.map((ancestor) => ({
+          label: ancestor.name,
+          onClick: () => navigate({ to: "/projects/$projectId", params: { projectId: ancestor.id } }),
+        })),
+        { label: proj.detail?.name ?? "Project" },
+      ],
       chapters: buildChapters(proj.detail?.isParent ?? false),
       folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: proj.detail?.isParent ? (
@@ -214,7 +232,7 @@ export default function ProjectDetailEditorial() {
         </button>
       ) : undefined,
     }),
-    [navigate, proj.detail, proj.setCreateChildOpen, saveStatus],
+    [ancestors, navigate, proj.detail, proj.setCreateChildOpen, saveStatus],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -234,18 +252,6 @@ export default function ProjectDetailEditorial() {
       });
   }, [projectId]);
 
-  // I388: Fetch ancestor projects for breadcrumb navigation
-  const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
-  useEffect(() => {
-    if (!projectId) return;
-    invoke<{ id: string; name: string }[]>("get_project_ancestors", { projectId })
-      .then(setAncestors)
-      .catch((err) => {
-        console.error("get_project_ancestors failed:", err); // Expected: background data fetch on mount
-        setAncestors([]);
-      });
-  }, [projectId]);
-
   // I529: Intelligence quality feedback
   const feedback = useIntelligenceFeedback(projectId, "project");
 
@@ -262,36 +268,6 @@ export default function ProjectDetailEditorial() {
 
   return (
     <>
-      {/* I388: Ancestor breadcrumbs for nested projects */}
-      {ancestors.length > 0 && (
-        <nav className={shared.breadcrumbNav}>
-          <button
-            onClick={() => navigate({ to: "/projects" })}
-            className={shared.breadcrumbButton}
-          >
-            Projects
-          </button>
-          {ancestors.map((anc) => (
-            <React.Fragment key={anc.id}>
-              <span className={shared.breadcrumbSeparator}>/</span>
-              <button
-                onClick={() =>
-                  navigate({
-                    to: "/projects/$projectId",
-                    params: { projectId: anc.id },
-                  })
-                }
-                className={styles.breadcrumbAncestorLink}
-              >
-                {anc.name}
-              </button>
-            </React.Fragment>
-          ))}
-          <span className={shared.breadcrumbSeparator}>/</span>
-          <span className={shared.breadcrumbCurrent}>{detail?.name ?? ""}</span>
-        </nav>
-      )}
-
       {/* Chapter 1: The Mission (Hero) */}
       <section id="headline" className={shared.chapterSection}>
         <ProjectHero
@@ -313,6 +289,7 @@ export default function ProjectDetailEditorial() {
           {preset ? (
             <EditableVitalsStrip
               fields={preset.vitals.project}
+              metadataFields={preset.metadata.project}
               entityData={detail}
               metadata={metadataValues}
               onFieldChange={(key, columnMapping, source, value) => {
@@ -332,22 +309,6 @@ export default function ProjectDetailEditorial() {
             <VitalsStrip vitals={buildProjectVitals(detail)} />
           )}
         </div>
-        {/* I312: Preset metadata fields */}
-        {preset && preset.metadata.project.length > 0 && (
-          <div className={`editorial-reveal ${shared.presetFieldsReveal}`}>
-            <PresetFieldsEditor
-              fields={preset.metadata.project}
-              values={metadataValues}
-              onChange={(key, value) => {
-                setMetadataValues((prev) => {
-                  const updated = { ...prev, [key]: value };
-                  void saveMetadata(updated);
-                  return updated;
-                });
-              }}
-            />
-          </div>
-        )}
       </section>
 
       {/* I388: Portfolio chapter — only for parent projects */}

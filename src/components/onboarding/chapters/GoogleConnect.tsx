@@ -31,7 +31,7 @@ export function GoogleConnect({ onNext }: GoogleConnectProps) {
           Calendar Intelligence
         </div>
         <p className={styles.bodyText}>
-          DailyOS reads your calendar overnight. For each meeting, it builds a prep: relationship
+          DailyOS reads your calendar and keeps meeting context current. For each meeting, it builds a prep: relationship
           history, open action items, talking points, risks. The lifecycle:{" "}
           <span className={styles.monoAccent}>
             Prep &rarr; Meeting &rarr; Capture &rarr; Next Prep

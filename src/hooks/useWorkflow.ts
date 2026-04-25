@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { useTauriEvent } from "./useTauriEvent";
 
 /**
  * Workflow phase during execution
@@ -166,34 +166,23 @@ export function useWorkflow(options: UseWorkflowOptions = {}): UseWorkflowReturn
     refresh();
   }, [refresh]);
 
+  const handleWorkflowStatus = useCallback(
+    (nextStatus: WorkflowStatus) => {
+      setStatus(nextStatus);
+
+      // Refresh history when completed or failed
+      if (nextStatus.status === "completed" || nextStatus.status === "failed") {
+        fetchHistory();
+      }
+    },
+    [fetchHistory],
+  );
+
   // Listen for status events
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-
-    const setupListener = async () => {
-      // Listen for workflow-specific status events
-      unlisten = await listen<WorkflowStatus>(
-        `workflow-status-${workflow}`,
-        (event) => {
-          setStatus(event.payload);
-
-          // Refresh history when completed or failed
-          if (
-            event.payload.status === "completed" ||
-            event.payload.status === "failed"
-          ) {
-            fetchHistory();
-          }
-        }
-      );
-    };
-
-    setupListener();
-
-    return () => {
-      unlisten?.();
-    };
-  }, [workflow, fetchHistory]);
+  useTauriEvent<WorkflowStatus>(
+    `workflow-status-${workflow}`,
+    handleWorkflowStatus,
+  );
 
   // Re-fetch status when window regains focus (covers app resume from background).
   // Replaces the previous 5-second polling loop — the event listener above

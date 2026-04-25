@@ -1,5 +1,11 @@
 use super::*;
 
+impl From<String> for DbError {
+    fn from(message: String) -> Self {
+        DbError::Migration(message)
+    }
+}
+
 /// DOS-31 / DOS-29: Cumulative cap on automatic stale-failed retries. Defined
 /// at the DB layer because `get_email_sync_stats` needs it to compute the
 /// `permanently_failed` subset, but the actual retry call lives in
@@ -33,7 +39,7 @@ impl ActionDb {
     /// Wrapped in `with_transaction` so the per-row write + sibling sync
     /// commit atomically; a partial commit would leave the new row with stale
     /// auto-classifier values that the user would then see as a revert.
-    pub fn upsert_email(&self, email: &DbEmail) -> Result<(), String> {
+    pub fn upsert_email(&self, email: &DbEmail) -> Result<(), DbError> {
         self.with_transaction(|tx| {
             let now = Utc::now().to_rfc3339();
             tx.conn
@@ -188,12 +194,13 @@ impl ActionDb {
 
             Ok(())
         })
+        .map_err(Into::into)
     }
 
     /// DOS-242 rescue: clear the noise flag on an email so it surfaces again in
     /// inbox / Records. Used by the user-facing "this isn't noise" affordance
     /// (DOS-41 will wire the UI). Idempotent.
-    pub fn unsuppress_email(&self, email_id: &str) -> Result<(), String> {
+    pub fn unsuppress_email(&self, email_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn
             .execute(
@@ -206,7 +213,7 @@ impl ActionDb {
 
     /// Mark emails as resolved (vanished from inbox). Sets `resolved_at` to now.
     /// Returns the number of rows updated.
-    pub fn mark_emails_resolved(&self, vanished_ids: &[String]) -> Result<usize, String> {
+    pub fn mark_emails_resolved(&self, vanished_ids: &[String]) -> Result<usize, DbError> {
         if vanished_ids.is_empty() {
             return Ok(0);
         }
@@ -230,7 +237,7 @@ impl ActionDb {
 
     /// Unmark resolved emails that reappeared in inbox. Sets `resolved_at` to NULL.
     /// Returns the number of rows updated.
-    pub fn unmark_resolved(&self, reappeared_ids: &[String]) -> Result<usize, String> {
+    pub fn unmark_resolved(&self, reappeared_ids: &[String]) -> Result<usize, DbError> {
         if reappeared_ids.is_empty() {
             return Ok(0);
         }
@@ -255,7 +262,7 @@ impl ActionDb {
     }
 
     /// Get emails pending enrichment (state = 'pending' or 'failed', attempts < 3).
-    pub fn get_pending_enrichment(&self, limit: usize) -> Result<Vec<DbEmail>, String> {
+    pub fn get_pending_enrichment(&self, limit: usize) -> Result<Vec<DbEmail>, DbError> {
         let mut stmt = self
             .conn
             .prepare(
@@ -292,7 +299,7 @@ impl ActionDb {
         email_id: &str,
         state: &str,
         enrichment: EmailEnrichmentUpdate<'_>,
-    ) -> Result<(), String> {
+    ) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         // DOS-249: is_noise gets COALESCE-style "only update if AI gave a
         // verdict" semantics via a CASE expression — Some(bool) -> 0/1,
@@ -329,7 +336,7 @@ impl ActionDb {
     }
 
     /// Get all active (non-resolved) emails.
-    pub fn get_all_active_emails(&self) -> Result<Vec<DbEmail>, String> {
+    pub fn get_all_active_emails(&self) -> Result<Vec<DbEmail>, DbError> {
         let mut stmt = self
             .conn
             .prepare(
@@ -359,7 +366,7 @@ impl ActionDb {
     }
 
     /// Get emails linked to a specific entity (for entity detail pages).
-    pub fn get_emails_for_entity(&self, entity_id: &str) -> Result<Vec<DbEmail>, String> {
+    pub fn get_emails_for_entity(&self, entity_id: &str) -> Result<Vec<DbEmail>, DbError> {
         let mut stmt = self
             .conn
             .prepare(
@@ -392,7 +399,7 @@ impl ActionDb {
         &self,
         thread_id: &str,
         user_is_last_sender: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn
             .execute(
@@ -405,7 +412,7 @@ impl ActionDb {
     }
 
     /// Get email sync statistics for the sync status indicator.
-    pub fn get_email_sync_stats(&self) -> Result<EmailSyncStats, String> {
+    pub fn get_email_sync_stats(&self) -> Result<EmailSyncStats, DbError> {
         let last_fetch_at: Option<String> = self
             .conn
             .query_row("SELECT MAX(last_seen_at) FROM emails", [], |row| row.get(0))
@@ -502,7 +509,7 @@ impl ActionDb {
     /// seed state, and assert exactly one row was written as a defense in
     /// depth against a future schema change (e.g. losing the `id = 1`
     /// singleton PK check).
-    pub fn set_last_successful_fetch_at(&self) -> Result<(), String> {
+    pub fn set_last_successful_fetch_at(&self) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let rows = self
             .conn
@@ -518,7 +525,8 @@ impl ActionDb {
         if rows != 1 {
             return Err(format!(
                 "email_sync_meta upsert affected {rows} rows; expected 1 (schema drift?)"
-            ));
+            )
+            .into());
         }
         Ok(())
     }
@@ -526,7 +534,7 @@ impl ActionDb {
     /// DOS-31: Read the last successful Gmail fetch timestamp. `Ok(None)` means
     /// we've never completed a successful fetch (fresh install or the meta row
     /// was never seeded — which shouldn't happen post-migration-094).
-    pub fn get_last_successful_fetch_at(&self) -> Result<Option<String>, String> {
+    pub fn get_last_successful_fetch_at(&self) -> Result<Option<String>, DbError> {
         let result: Result<Option<String>, rusqlite::Error> = self.conn.query_row(
             "SELECT last_successful_fetch_at FROM email_sync_meta WHERE id = 1",
             [],
@@ -535,7 +543,7 @@ impl ActionDb {
         match result {
             Ok(ts) => Ok(ts),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(format!("Failed to query last_successful_fetch_at: {e}")),
+            Err(e) => Err(format!("Failed to query last_successful_fetch_at: {e}").into()),
         }
     }
 
@@ -563,7 +571,7 @@ impl ActionDb {
         email_id: &str,
         entity_id: Option<&str>,
         entity_type: Option<&str>,
-    ) -> Result<(), String> {
+    ) -> Result<(), DbError> {
         self.with_transaction(|tx| {
             let now = chrono::Utc::now().to_rfc3339();
 
@@ -681,6 +689,7 @@ impl ActionDb {
 
             Ok(())
         })
+        .map_err(Into::into)
     }
 
     /// DOS-229: Update the sentiment of an email and cascade the same value to
@@ -692,7 +701,7 @@ impl ActionDb {
         &self,
         email_id: &str,
         sentiment: Option<&str>,
-    ) -> Result<(), String> {
+    ) -> Result<(), DbError> {
         self.with_transaction(|tx| {
             let now = chrono::Utc::now().to_rfc3339();
 
@@ -729,12 +738,13 @@ impl ActionDb {
 
             Ok(())
         })
+        .map_err(Into::into)
     }
 
     /// Mark an email as replied to by the user (I577 reply debt).
     /// Sets `user_is_last_sender = 1` on the email row and the corresponding
     /// email_threads row (if any).
-    pub fn mark_reply_sent(&self, email_id: &str) -> Result<Option<(String, String)>, String> {
+    pub fn mark_reply_sent(&self, email_id: &str) -> Result<Option<(String, String)>, DbError> {
         let now = chrono::Utc::now().to_rfc3339();
 
         let entity_info: Option<(String, String)> = self
@@ -772,7 +782,7 @@ impl ActionDb {
     /// Archive an email thread by setting resolved_at on every row in the thread.
     /// The inbox UI is thread-collapsed, so archiving only one message can let an
     /// older unresolved message in the same thread leak back into view.
-    pub fn archive_email(&self, email_id: &str) -> Result<(), String> {
+    pub fn archive_email(&self, email_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let thread_id = self.get_thread_id(email_id)?;
 
@@ -789,7 +799,7 @@ impl ActionDb {
     }
 
     /// Unarchive an email thread by clearing resolved_at on every row in the thread.
-    pub fn unarchive_email(&self, email_id: &str) -> Result<(), String> {
+    pub fn unarchive_email(&self, email_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let thread_id = self.get_thread_id(email_id)?;
 
@@ -807,7 +817,7 @@ impl ActionDb {
 
     /// Return all known email IDs in the same thread as the given email.
     /// Falls back to the single email ID when thread metadata is absent.
-    pub fn get_thread_email_ids(&self, email_id: &str) -> Result<Vec<String>, String> {
+    pub fn get_thread_email_ids(&self, email_id: &str) -> Result<Vec<String>, DbError> {
         let thread_id = self.get_thread_id(email_id)?;
         let Some(thread_id) = thread_id.filter(|id| !id.trim().is_empty()) else {
             return Ok(vec![email_id.to_string()]);
@@ -837,19 +847,19 @@ impl ActionDb {
         Ok(ids)
     }
 
-    fn get_thread_id(&self, email_id: &str) -> Result<Option<String>, String> {
+    fn get_thread_id(&self, email_id: &str) -> Result<Option<String>, DbError> {
         self.conn
             .query_row(
                 "SELECT thread_id FROM emails WHERE email_id = ?1",
                 params![email_id],
                 |row| row.get(0),
             )
-            .map_err(|e| format!("Failed to load thread for {email_id}: {e}"))
+            .map_err(|e| format!("Failed to load thread for {email_id}: {e}").into())
     }
 
     /// Toggle pin on an email (I579). If pinned, clears; if not pinned, sets to now.
     /// Returns the new pinned state (true = pinned).
-    pub fn toggle_pin_email(&self, email_id: &str) -> Result<bool, String> {
+    pub fn toggle_pin_email(&self, email_id: &str) -> Result<bool, DbError> {
         let now = Utc::now().to_rfc3339();
         let current_pinned: Option<String> = self
             .conn
@@ -885,7 +895,7 @@ impl ActionDb {
         email_id: &str,
         score: f64,
         reason: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn
             .execute(
@@ -901,7 +911,7 @@ impl ActionDb {
         &self,
         min_score: f64,
         limit: usize,
-    ) -> Result<Vec<DbEmail>, String> {
+    ) -> Result<Vec<DbEmail>, DbError> {
         let mut stmt = self
             .conn
             .prepare(
@@ -934,7 +944,7 @@ impl ActionDb {
 
     /// Get threads awaiting reply (not resolved, user is not last sender).
     /// Does NOT require is_unread — a thread can be read but still awaiting reply.
-    pub fn get_emails_awaiting_reply(&self) -> Result<Vec<DbEmail>, String> {
+    pub fn get_emails_awaiting_reply(&self) -> Result<Vec<DbEmail>, DbError> {
         let mut stmt = self
             .conn
             .prepare(
@@ -977,7 +987,7 @@ impl ActionDb {
     /// until the refresh outcome is known.
     ///
     /// Returns the number of rows transitioned.
-    pub fn mark_failed_for_retry(&self, batch_id: &str) -> Result<usize, String> {
+    pub fn mark_failed_for_retry(&self, batch_id: &str) -> Result<usize, DbError> {
         // DOS-226: wrap in `with_transaction` so the state flip + batch_id stamp
         // + started_at stamp commit atomically. Today this is a single UPDATE so
         // SQLite's implicit transaction is sufficient, but the retry primitive
@@ -998,6 +1008,7 @@ impl ActionDb {
                 )
                 .map_err(|e| format!("Failed to mark emails for retry: {e}"))
         })
+        .map_err(Into::into)
     }
 
     /// DOS-226 (Codex finding 1): Promote this batch's `pending_retry` rows
@@ -1012,7 +1023,7 @@ impl ActionDb {
     /// cannot accidentally adopt rows owned by refresh B.
     ///
     /// Returns the number of rows transitioned.
-    pub fn finalize_pending_retry_success(&self, batch_id: &str) -> Result<usize, String> {
+    pub fn finalize_pending_retry_success(&self, batch_id: &str) -> Result<usize, DbError> {
         // DOS-226: transactional so the state flip + attempts reset + batch_id
         // clear commit together. Splitting these would let a crash mid-finalize
         // leave a row at state=pending with a stale batch_id pointing at this
@@ -1034,6 +1045,7 @@ impl ActionDb {
                 )
                 .map_err(|e| format!("Failed to finalize retry (success): {e}"))
         })
+        .map_err(Into::into)
     }
 
     /// DOS-226: Roll this batch's `pending_retry` rows back to `failed` after
@@ -1043,7 +1055,7 @@ impl ActionDb {
     /// finding 2) so concurrent refreshes cannot clobber each other.
     ///
     /// Returns the number of rows transitioned.
-    pub fn rollback_pending_retry(&self, batch_id: &str) -> Result<usize, String> {
+    pub fn rollback_pending_retry(&self, batch_id: &str) -> Result<usize, DbError> {
         // DOS-226: transactional rollback. If we're going to surface the
         // rollback error to the caller (Codex finding 2), the rollback itself
         // must be atomic — a partial rollback that reports failure would leave
@@ -1065,6 +1077,7 @@ impl ActionDb {
                 )
                 .map_err(|e| format!("Failed to roll back retry: {e}"))
         })
+        .map_err(Into::into)
     }
 
     /// DOS-226 (Codex finding 2): Roll back `pending_retry` rows stranded by
@@ -1078,7 +1091,7 @@ impl ActionDb {
     /// - its `retry_started_at` is older than `stale_after_seconds`.
     ///
     /// Returns the number of rows rolled back to `failed`.
-    pub fn rollback_stale_pending_retry(&self, stale_after_seconds: i64) -> Result<usize, String> {
+    pub fn rollback_stale_pending_retry(&self, stale_after_seconds: i64) -> Result<usize, DbError> {
         let now = Utc::now();
         let cutoff = now - chrono::Duration::seconds(stale_after_seconds);
         let now_iso = now.to_rfc3339();
@@ -1095,7 +1108,7 @@ impl ActionDb {
                    AND (retry_batch_id IS NULL OR retry_started_at IS NULL OR retry_started_at < ?2)",
                 params![now_iso, cutoff_iso],
             )
-            .map_err(|e| format!("Failed to roll back stale retries: {e}"))
+            .map_err(|e| format!("Failed to roll back stale retries: {e}").into())
     }
 
     /// DOS-31: Auto-retry stale `failed` emails on every refresh.
@@ -1127,7 +1140,7 @@ impl ActionDb {
         &self,
         stale_after_seconds: i64,
         max_auto_retries: i32,
-    ) -> Result<usize, String> {
+    ) -> Result<usize, DbError> {
         self.with_transaction(|tx| {
             let now = Utc::now();
             let cutoff = now - chrono::Duration::seconds(stale_after_seconds);
@@ -1148,6 +1161,7 @@ impl ActionDb {
                 )
                 .map_err(|e| format!("Failed to auto-retry stale failed emails: {e}"))
         })
+        .map_err(Into::into)
     }
 
     /// DOS-29: Count failed rows that have exhausted automatic retries
@@ -1156,7 +1170,7 @@ impl ActionDb {
     /// trying to fix on its own. Distinct from the broader failed-count
     /// which still includes rows eligible for the next refresh's
     /// auto-retry pass (and shouldn't bother the user yet).
-    pub fn count_permanently_failed_emails(&self, max_auto_retries: i32) -> Result<usize, String> {
+    pub fn count_permanently_failed_emails(&self, max_auto_retries: i32) -> Result<usize, DbError> {
         self.conn
             .query_row(
                 "SELECT COUNT(*) FROM emails
@@ -1167,7 +1181,7 @@ impl ActionDb {
                 |row| row.get::<_, i64>(0),
             )
             .map(|n| n as usize)
-            .map_err(|e| format!("Failed to count permanently failed emails: {e}"))
+            .map_err(|e| format!("Failed to count permanently failed emails: {e}").into())
     }
 
     /// DOS-29: Return a small preview of permanently-failed emails so the
@@ -1177,7 +1191,7 @@ impl ActionDb {
         &self,
         max_auto_retries: i32,
         limit: usize,
-    ) -> Result<Vec<FailedEmailPreview>, String> {
+    ) -> Result<Vec<FailedEmailPreview>, DbError> {
         let mut stmt = self
             .conn
             .prepare(
@@ -1214,14 +1228,15 @@ impl ActionDb {
     /// they leave the failed-count entirely. The Gmail message stays in
     /// the inbox; we just stop trying to enrich it and stop surfacing it
     /// as a failure. Returns rows affected.
-    pub fn skip_failed_emails(&self, email_ids: &[String]) -> Result<usize, String> {
+    pub fn skip_failed_emails(&self, email_ids: &[String]) -> Result<usize, DbError> {
         if email_ids.is_empty() {
             return Ok(0);
         }
         self.with_transaction(|tx| {
             let now = Utc::now().to_rfc3339();
-            let placeholders: Vec<String> =
-                (2..=(email_ids.len() + 1)).map(|i| format!("?{i}")).collect();
+            let placeholders: Vec<String> = (2..=(email_ids.len() + 1))
+                .map(|i| format!("?{i}"))
+                .collect();
             let sql = format!(
                 "UPDATE emails
                  SET resolved_at = ?1, updated_at = ?1
@@ -1239,6 +1254,7 @@ impl ActionDb {
                 .execute(&sql, params_vec.as_slice())
                 .map_err(|e| format!("Failed to skip failed emails: {e}"))
         })
+        .map_err(Into::into)
     }
 
     /// DOS-226 (Codex finding 2): Count rows that are either `failed` or
@@ -1246,7 +1262,7 @@ impl ActionDb {
     /// clicking Retry still triggers a refresh even if all their rows
     /// were orphaned by a prior crashed refresh (the pre-fix count
     /// matched only `failed` and silently returned 0 in this case).
-    pub fn count_retriable_emails(&self) -> Result<usize, String> {
+    pub fn count_retriable_emails(&self) -> Result<usize, DbError> {
         self.conn
             .query_row(
                 "SELECT COUNT(*) FROM emails
@@ -1256,12 +1272,12 @@ impl ActionDb {
                 |row| row.get::<_, i64>(0),
             )
             .map(|n| n as usize)
-            .map_err(|e| format!("Failed to count retriable emails: {e}"))
+            .map_err(|e| format!("Failed to count retriable emails: {e}").into())
     }
 
     /// Mark an email as enriched, setting `enriched_at` to now (I652 Phase 5).
     /// Used after successful enrichment to support Gate 0 deduplication.
-    pub fn mark_email_enriched(&self, email_id: &str) -> Result<(), String> {
+    pub fn mark_email_enriched(&self, email_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn
             .execute(
@@ -1277,7 +1293,7 @@ impl ActionDb {
     pub fn get_email_snapshots(
         &self,
         email_ids: &[String],
-    ) -> Result<HashMap<String, crate::workflow::email_filter::PriorEmailSnapshot>, String> {
+    ) -> Result<HashMap<String, crate::workflow::email_filter::PriorEmailSnapshot>, DbError> {
         if email_ids.is_empty() {
             return Ok(HashMap::new());
         }

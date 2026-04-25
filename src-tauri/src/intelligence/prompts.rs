@@ -80,6 +80,170 @@ pub struct IntelligenceContext {
     pub source_verified_facts: String,
     /// I649: Technical footprint block for prompt injection.
     pub technical_footprint_block: String,
+    /// DOS-287: Structured entity disambiguators for Glean/PTY prompt grounding.
+    ///
+    /// Populated at context build time so prompt builders remain pure.
+    /// Each field degrades gracefully when empty — the prompt builder
+    /// omits the line rather than injecting "(none)".
+    pub disambiguators: EntityDisambiguators,
+}
+
+/// DOS-287: Structured identifiers used to disambiguate Glean retrieval
+/// and enforce grounding. Populated by `load_disambiguators` from the DB.
+///
+/// All fields degrade gracefully when empty — the prompt builder skips
+/// empty lines rather than emitting `Known domains: (none)` which would
+/// confuse the model.
+#[derive(Debug, Clone, Default)]
+pub struct EntityDisambiguators {
+    /// `account_domains.domain` for the target account (lowercased, deduped).
+    pub known_domains: Vec<String>,
+    /// Active external stakeholder emails — filtered to exclude
+    /// `people.relationship = 'internal'`, `PERSONAL_EMAIL_DOMAINS`,
+    /// and bot hosts like `assistant.gong.io`.
+    pub known_contacts: Vec<String>,
+    /// Parent company name + its known domains, when `accounts.parent_id` is set.
+    pub parent_context: Option<ParentContext>,
+    /// Salesforce account ID from `accounts.metadata.salesforce_id`
+    /// (or `salesforceAccountId` / `sfdc_id`), when present.
+    pub salesforce_account_id: Option<String>,
+}
+
+/// DOS-287: Parent-account context for disambiguation.
+#[derive(Debug, Clone, Default)]
+pub struct ParentContext {
+    pub name: String,
+    pub domains: Vec<String>,
+}
+
+/// DOS-287: Personal-email hosts shouldn't leak into the disambiguation list —
+/// pulled from `google_api::classify::PERSONAL_EMAIL_DOMAINS`.
+pub fn is_personal_email_domain(domain: &str) -> bool {
+    let d = domain.to_lowercase();
+    crate::google_api::classify::PERSONAL_EMAIL_DOMAINS
+        .iter()
+        .any(|&p| p == d)
+}
+
+/// DOS-287: True when the email host is a known bot/noreply host.
+///
+/// Single source of truth for the bot host list lives in
+/// `crate::services::entity_linking::stakeholder_domains::BOT_EMAIL_HOSTS`
+/// (exact-match, used as a strict filter when deriving account_domains).
+/// Here we apply a looser semantic: suffix match (so a subdomain like
+/// `x.assistant.gong.io` is also rejected) plus a catch-all for any host
+/// containing `noreply`. This context needs broader exclusion because its
+/// downstream use is "should this email be part of the prompt's trusted
+/// contacts block" — a weaker gate.
+pub fn is_bot_email_host(email: &str) -> bool {
+    use crate::services::entity_linking::stakeholder_domains::BOT_EMAIL_HOSTS;
+    let host = match email.rsplit_once('@') {
+        Some((_, h)) => h.to_lowercase(),
+        None => return false,
+    };
+    BOT_EMAIL_HOSTS
+        .iter()
+        .any(|b| host == *b || host.ends_with(b))
+        || host.contains("noreply")
+}
+
+/// DOS-287: Load disambiguation identifiers from the DB for a given entity.
+///
+/// Only meaningful for `entity_type == "account"`; other entity types return
+/// empty defaults. Any DB error produces an empty field rather than an
+/// error — disambiguation is additive, never load-bearing.
+pub fn load_disambiguators(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+) -> EntityDisambiguators {
+    if entity_type != "account" {
+        return EntityDisambiguators::default();
+    }
+
+    let mut out = EntityDisambiguators::default();
+
+    // Known domains — from account_domains table.
+    if let Ok(mut stmt) = db
+        .conn_ref()
+        .prepare("SELECT DISTINCT LOWER(domain) FROM account_domains WHERE account_id = ?1")
+    {
+        if let Ok(rows) = stmt.query_map(rusqlite::params![entity_id], |row| row.get::<_, String>(0)) {
+            out.known_domains = rows
+                .filter_map(|r| r.ok())
+                .filter(|d| !d.is_empty())
+                .collect();
+        }
+    }
+
+    // Known contacts — active external stakeholders, filtered.
+    // `get_account_stakeholders_full` already filters
+    // `p.relationship != 'internal'` and `%assistant.gong%` at the SQL layer;
+    // the Rust layer additionally drops personal-email hosts and any
+    // `BOT_EMAIL_HOSTS` entries not yet covered by the SQL clause.
+    if let Ok(stakeholders) = db.get_account_stakeholders_full(entity_id) {
+        for s in &stakeholders {
+            let email = match s.person_email.as_deref() {
+                Some(e) => e.trim().to_lowercase(),
+                None => continue,
+            };
+            if email.is_empty() {
+                continue;
+            }
+            let domain = match email.rsplit_once('@') {
+                Some((_, d)) => d.to_string(),
+                None => continue,
+            };
+            if is_personal_email_domain(&domain) {
+                continue;
+            }
+            if is_bot_email_host(&email) {
+                continue;
+            }
+            out.known_contacts.push(email);
+        }
+        out.known_contacts.sort();
+        out.known_contacts.dedup();
+    }
+
+    // Parent context — if accounts.parent_id is set.
+    if let Ok(Some(acct)) = db.get_account(entity_id) {
+        if let Some(ref parent_id) = acct.parent_id {
+            if let Ok(Some(parent)) = db.get_account(parent_id) {
+                let mut parent_domains: Vec<String> = Vec::new();
+                if let Ok(mut stmt) = db.conn_ref().prepare(
+                    "SELECT DISTINCT LOWER(domain) FROM account_domains WHERE account_id = ?1",
+                ) {
+                    if let Ok(rows) =
+                        stmt.query_map(rusqlite::params![parent_id], |row| row.get::<_, String>(0))
+                    {
+                        parent_domains = rows.filter_map(|r| r.ok()).collect();
+                    }
+                }
+                out.parent_context = Some(ParentContext {
+                    name: parent.name,
+                    domains: parent_domains,
+                });
+            }
+        }
+
+        // Salesforce account ID from metadata JSON (accepts several key spellings).
+        if let Some(ref meta) = acct.metadata {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(meta) {
+                for key in &["salesforce_id", "salesforceAccountId", "sfdc_id", "salesforceId"] {
+                    if let Some(v) = json.get(*key).and_then(|v| v.as_str()) {
+                        let s = v.trim();
+                        if !s.is_empty() {
+                            out.salesforce_account_id = Some(s.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    out
 }
 
 /// I508c structured gap query item used for local ranking + remote fan-out.
@@ -103,7 +267,13 @@ pub fn build_intelligence_context(
     prior: Option<&IntelligenceJson>,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> IntelligenceContext {
-    let mut ctx = IntelligenceContext::default();
+    // DOS-287: Load structured disambiguators (domains, contacts, parent, SFDC).
+    // Must happen before any early-return paths so Glean prompt builders can rely
+    // on this being populated whenever the entity is an account.
+    let mut ctx = IntelligenceContext {
+        disambiguators: load_disambiguators(db, entity_type, entity_id),
+        ..Default::default()
+    };
 
     // --- Facts block ---
     match entity_type {
@@ -1645,6 +1815,7 @@ pub fn build_intelligence_prompt(
         relationship,
         vocabulary,
         None,
+        None,
     )
 }
 
@@ -1657,6 +1828,7 @@ pub fn build_intelligence_prompt_with_preset(
     preset: Option<&crate::presets::schema::RolePreset>,
 ) -> String {
     let vocabulary = preset.map(|p| &p.vocabulary);
+    let intelligence = preset.map(|p| &p.intelligence);
     let briefing_emphasis = preset.map(|p| p.briefing_emphasis.as_str());
     build_intelligence_prompt_inner(
         entity_name,
@@ -1664,6 +1836,7 @@ pub fn build_intelligence_prompt_with_preset(
         ctx,
         relationship,
         vocabulary,
+        intelligence,
         briefing_emphasis,
     )
 }
@@ -1674,6 +1847,7 @@ fn build_intelligence_prompt_inner(
     ctx: &IntelligenceContext,
     relationship: Option<&str>,
     vocabulary: Option<&crate::presets::schema::PresetVocabulary>,
+    intelligence: Option<&crate::presets::schema::PresetIntelligenceConfig>,
     briefing_emphasis: Option<&str>,
 ) -> String {
     let is_incremental = ctx.prior_intelligence.is_some();
@@ -1695,6 +1869,14 @@ fn build_intelligence_prompt_inner(
     };
 
     let mut prompt = String::with_capacity(4096);
+    let close_concept = intelligence
+        .map(|i| i.close_concept.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("decision");
+    let key_advocate_label = intelligence
+        .map(|i| i.key_advocate_label.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("key advocate");
 
     // I468: Injection resistance preamble
     prompt.push_str(INJECTION_PREAMBLE);
@@ -1732,6 +1914,10 @@ fn build_intelligence_prompt_inner(
         if let Some(emphasis) = briefing_emphasis {
             prompt.push_str(&format!("Assessment emphasis: {}\n", emphasis,));
         }
+        prompt.push_str(&format!(
+            "Intelligence language: close/decision moments are framed as \"{}\"; the primary internal advocate is the \"{}\".\n",
+            close_concept, key_advocate_label
+        ));
         prompt.push('\n');
     }
 
@@ -1944,11 +2130,11 @@ fn build_intelligence_prompt_inner(
     }
 
     // Field-level deduplication rules
-    prompt.push_str(
+    prompt.push_str(&format!(
         "FIELD SCOPING RULES (critical — avoid redundancy across fields):\n\
          Each item should appear in exactly ONE field. Do not repeat the same event, \
          commitment, or concern across multiple fields. Cross-reference when relevant \
-         (e.g., renewalOutlook.riskFactors can say \"champion transition\" without \
+         (e.g., agreementOutlook.riskFactors can say \"{key_advocate_label} transition\" without \
          duplicating the full description from organizationalChanges).\n\
          - risks[]: Account-level THREATS to the relationship. Not blockers (those have owners), \
            not commitments (those have due dates), not current-state observations.\n\
@@ -1962,11 +2148,11 @@ fn build_intelligence_prompt_inner(
            do NOT re-extract the same items. Supplement only with new commitments not already listed.\n\
          - strategicPriorities[]: The customer's stated BUSINESS OBJECTIVES for the engagement. \
            High-level goals, not tactical commitments or individual blockers.\n\
-         - renewalOutlook.riskFactors[]: Factors that could affect the CONTRACT DECISION \
+         - agreementOutlook.riskFactors[]: Factors that could affect the {close_concept} decision \
            specifically. Brief references to items detailed elsewhere — not full duplicates.\n\
          - valueDelivered[]: OUTCOMES already achieved. Past tense. Not promises or goals.\n\
          - expansionSignals[]: GROWTH opportunities not yet closed. Not existing commitments.\n\n",
-    );
+    ));
 
     // Writing style instructions
     prompt.push_str(&format!(
@@ -2002,7 +2188,7 @@ fn build_intelligence_prompt_inner(
                  - Focus on relationship health, engagement signals, and influence.\n\
                  - WORKING items = strong engagement, responsiveness, advocacy, trust signals.\n\
                  - NOT_WORKING items = disengagement, unresponsiveness, misalignment, risk of churn.\n\
-                 - Risks should focus on relationship risks — champion departure, sentiment shifts.\n\
+                 - Risks should focus on relationship risks — key advocate departure, sentiment shifts.\n\
                  - Assessment should answer: 'What does this person need and how do I navigate them?'\n\n",
             ),
             _ => prompt.push_str(
@@ -2048,7 +2234,7 @@ fn build_intelligence_prompt_inner(
             "## Pre-Computed Account Health (Algorithmic — ADR-0097)\n\
              Score: {score:.0}/100 ({band}) | Confidence: {conf:.0}%\n\
              Dimensions: meeting_cadence={mc:.0} email={em:.0} stakeholder={sc:.0} \
-             champion={ch:.0} financial={fp:.0} signal={sm:.0}\n\n\
+             {key_advocate_label}={ch:.0} financial={fp:.0} signal={sm:.0}\n\n\
              Given the pre-computed health above, for the \"health\" field return ONLY \
              \"narrative\" (2-3 sentences explaining the score in business context) and \
              \"recommendedActions\" (3 specific next actions). Do NOT return score, band, \
@@ -2059,7 +2245,7 @@ fn build_intelligence_prompt_inner(
             mc = computed.dimensions.meeting_cadence.score,
             em = computed.dimensions.email_engagement.score,
             sc = computed.dimensions.stakeholder_coverage.score,
-            ch = computed.dimensions.champion_health.score,
+            ch = computed.dimensions.key_advocate_health.score,
             fp = computed.dimensions.financial_proximity.score,
             sm = computed.dimensions.signal_momentum.score,
         ));
@@ -2194,7 +2380,7 @@ fn build_intelligence_prompt_inner(
                    \"meetingCadence\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
                    \"emailEngagement\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
                    \"stakeholderCoverage\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
-                   \"championHealth\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"keyAdvocateHealth\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
                    \"financialProximity\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
                    \"signalMomentum\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"}\n\
                  },\n\
@@ -2222,7 +2408,7 @@ fn build_intelligence_prompt_inner(
            \"openCommitments\": [{\"description\": \"what was committed\", \"owner\": \"who owns it\", \
          \"dueDate\": \"ISO date or null\", \"source\": \"meeting/email where committed\", \
          \"status\": \"open|in_progress|overdue|completed\"}],\n\
-           \"relationshipDepth\": {\"championStrength\": \"strong|moderate|weak|none\", \
+               \"relationshipDepth\": {\"championStrength\": \"strong|moderate|weak|none (key advocate strength)\", \
          \"executiveAccess\": \"direct|indirect|none\", \
          \"stakeholderCoverage\": \"broad|narrow|single_threaded\", \
          \"coverageGaps\": [\"role or team with no relationship\"]}",
@@ -2246,7 +2432,7 @@ fn build_intelligence_prompt_inner(
                // organizational growth (hiring, acquisitions), questions about roadmap/pricing,\n\
                // budget increase mentions. Each must cite specific evidence.\n\
                {\"opportunity\": \"...\", \"arrImpact\": 0.0, \"stage\": \"exploring|evaluating|committed|blocked\", \"strength\": \"strong|moderate|early\"}],\n\
-               \"renewalOutlook\": {\"confidence\": \"high|moderate|low\", \"riskFactors\": [\"...\"], \"expansionPotential\": \"...\", \"recommendedStart\": \"ISO date\"},\n\
+               \"agreementOutlook\": {\"confidence\": \"high|moderate|low\", \"riskFactors\": [\"...\"], \"expansionPotential\": \"...\", \"recommendedStart\": \"ISO date for when to start close/decision work\"},\n\
                \"supportHealth\": {\"openTickets\": 0, \"criticalTickets\": 0, \"trend\": \"improving|stable|degrading\", \"csat\": 0.0},\n\
                \"productAdoption\": {\"adoptionRate\": 0.0, \"trend\": \"growing|stable|declining\", \"featureAdoption\": [\"...\"], \"lastActive\": \"ISO date\"},\n\
                \"npsCsat\": {\"nps\": 0, \"csat\": 0.0, \"surveyDate\": \"ISO date\", \"verbatim\": \"quote\"},\n\
@@ -2395,6 +2581,9 @@ struct AiIntelResponse {
     strategic_priorities: Vec<super::io::StrategicPriority>,
     #[serde(default)]
     market_context: Vec<super::io::MarketContextItem>,
+    /// DOS-207: Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR, ...).
+    #[serde(default)]
+    regulatory_context: Vec<super::io::RegulatoryItem>,
     #[serde(default)]
     coverage_assessment: Option<super::io::CoverageAssessment>,
     #[serde(default)]
@@ -2412,7 +2601,7 @@ struct AiIntelResponse {
     #[serde(default)]
     expansion_signals: Vec<super::io::ExpansionSignal>,
     #[serde(default)]
-    renewal_outlook: Option<super::io::RenewalOutlook>,
+    agreement_outlook: Option<super::io::AgreementOutlook>,
     #[serde(default)]
     support_health: Option<super::io::SupportHealth>,
     #[serde(default)]
@@ -2464,6 +2653,7 @@ fn legacy_health_to_account_health(
             rationale: health_trend.and_then(|t| t.rationale),
             timeframe: "30d".to_string(),
             confidence: 0.3,
+            ..Default::default()
         },
         dimensions: super::io::RelationshipDimensions::default(),
         divergence: None,
@@ -2595,6 +2785,15 @@ struct AiRisk {
     source: Option<String>,
     #[serde(default = "default_urgency")]
     urgency: String,
+    /// DOS-249: Punchy 1-liner headline for the triage card.
+    #[serde(default)]
+    headline: Option<String>,
+    /// DOS-249: Evidence body with named people/timelines.
+    #[serde(default)]
+    evidence: Option<String>,
+    /// DOS-249: Specific kind label (e.g. "Renewal drag · compliance gap").
+    #[serde(default)]
+    kind_label: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2628,6 +2827,14 @@ struct AiStakeholder {
     assessment: Option<String>,
     #[serde(default)]
     engagement: Option<String>,
+    /// DOS-207: verified from actual customer-conversation transcript
+    /// (true) vs inferred from meeting attendance only (false).
+    #[serde(default)]
+    verified: bool,
+    #[serde(default)]
+    verified_source: Option<String>,
+    #[serde(default)]
+    verified_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2707,9 +2914,8 @@ pub fn parse_intelligence_response(
     // companies unrelated to this entity. Cross-entity contamination from
     // Glean's unbounded search can produce stats about other companies.
     if !intel.value_delivered.is_empty() {
-        let entity_key = crate::helpers::normalize_key(
-            entity_id.split("--").last().unwrap_or(entity_id),
-        );
+        let entity_key =
+            crate::helpers::normalize_key(entity_id.split("--").last().unwrap_or(entity_id));
         let before = intel.value_delivered.len();
         intel.value_delivered.retain(|v| {
             let stmt_lower = v.statement.to_lowercase();
@@ -2717,12 +2923,8 @@ pub fn parse_intelligence_response(
             // a known-bad external source. Only reject items from "web" or empty
             // sources that don't mention the entity — everything else (meeting,
             // email, file, QBR deck, etc.) is trusted first-party context.
-            let mentions_entity = stmt_lower.contains(&entity_key)
-                || entity_key.len() < 4; // skip check for very short slugs
-            let is_untrusted_source = matches!(
-                v.source.as_deref(),
-                Some("web") | None
-            );
+            let mentions_entity = stmt_lower.contains(&entity_key) || entity_key.len() < 4; // skip check for very short slugs
+            let is_untrusted_source = matches!(v.source.as_deref(), Some("web") | None);
             mentions_entity || !is_untrusted_source
         });
         let filtered = before - intel.value_delivered.len();
@@ -2958,6 +3160,9 @@ fn try_parse_json_response(
                 text: r.text,
                 source: r.source,
                 urgency: r.urgency,
+                headline: r.headline,
+                evidence: r.evidence,
+                kind_label: r.kind_label,
                 item_source: None,
                 discrepancy: None,
             })
@@ -2985,6 +3190,9 @@ fn try_parse_json_response(
                 source: None,
                 person_id: None,
                 suggested_person_id: None,
+                verified: s.verified,
+                verified_source: s.verified_source,
+                verified_at: s.verified_at,
                 item_source: None,
                 discrepancy: None,
             })
@@ -3069,6 +3277,7 @@ fn try_parse_json_response(
         competitive_context: ai_resp.competitive_context,
         strategic_priorities: ai_resp.strategic_priorities,
         market_context: ai_resp.market_context,
+        regulatory_context: ai_resp.regulatory_context,
         coverage_assessment: ai_resp.coverage_assessment,
         organizational_changes: ai_resp.organizational_changes,
         internal_team: ai_resp.internal_team,
@@ -3077,7 +3286,7 @@ fn try_parse_json_response(
         blockers: ai_resp.blockers,
         contract_context: ai_resp.contract_context,
         expansion_signals: ai_resp.expansion_signals,
-        renewal_outlook: ai_resp.renewal_outlook,
+        agreement_outlook: ai_resp.agreement_outlook,
         product_classification: None,
         support_health: ai_resp.support_health,
         product_adoption: ai_resp.product_adoption,
@@ -3282,6 +3491,9 @@ fn parse_risk_line(rest: &str) -> Option<IntelRisk> {
         text,
         source,
         urgency,
+        headline: None,
+        evidence: None,
+        kind_label: None,
         item_source: None,
         discrepancy: None,
     })
@@ -3327,6 +3539,7 @@ fn parse_stakeholder_line(rest: &str) -> Option<StakeholderInsight> {
         suggested_person_id: None,
         item_source: None,
         discrepancy: None,
+        ..Default::default()
     })
 }
 
@@ -3447,6 +3660,7 @@ mod tests {
             signal_weights_block: String::new(),
             source_verified_facts: String::new(),
             technical_footprint_block: String::new(),
+            disambiguators: EntityDisambiguators::default(),
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);

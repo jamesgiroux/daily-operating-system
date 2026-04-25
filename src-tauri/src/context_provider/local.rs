@@ -78,6 +78,61 @@ impl ContextProvider for LocalContextProvider {
                     ctx.org_health = Some(org_health);
                 }
             }
+
+            // DOS-15 IL-check-3: Surface prior Glean leading signals so the next
+            // enrichment pass can detect drift and update stale signals.
+            // Only inject the high-signal fields (champion_risk, channel_sentiment,
+            // commercial_signals) — not the full blob — to stay within token budget.
+            if let Ok(Some(signals_json)) = db.conn_ref().query_row(
+                "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+                [entity_id],
+                |row| row.get::<_, Option<String>>(0),
+            ) {
+                if let Ok(signals) = serde_json::from_str::<
+                    crate::intelligence::glean_leading_signals::HealthOutlookSignals,
+                >(&signals_json)
+                {
+                    let mut block_parts: Vec<String> =
+                        vec!["## Prior Glean Leading Signals (drift detection)".to_string()];
+
+                    if let Some(cr) = &signals.champion_risk {
+                        if cr.at_risk {
+                            block_parts.push(format!(
+                                "Champion risk: {} — level={}, evidence_count={}",
+                                cr.champion_name.as_deref().unwrap_or("unknown"),
+                                cr.risk_level.as_deref().unwrap_or("unknown"),
+                                cr.risk_evidence.len()
+                            ));
+                        }
+                    }
+
+                    if let Some(cs) = &signals.channel_sentiment {
+                        if cs.divergence_detected {
+                            block_parts.push(format!(
+                                "Channel divergence: {}",
+                                cs.divergence_summary
+                                    .as_deref()
+                                    .unwrap_or("divergence detected")
+                            ));
+                        }
+                    }
+
+                    if let Some(comm) = &signals.commercial_signals {
+                        if let Some(dir) = &comm.arr_direction {
+                            block_parts.push(format!("ARR direction: {}", dir));
+                        }
+                        if let Some(pay) = &comm.payment_behavior {
+                            if pay != "on-time" && pay != "unknown" {
+                                block_parts.push(format!("Payment behavior: {}", pay));
+                            }
+                        }
+                    }
+
+                    if block_parts.len() > 1 {
+                        ctx.extra_blocks.push(block_parts.join("\n"));
+                    }
+                }
+            }
         }
 
         Ok(ctx)

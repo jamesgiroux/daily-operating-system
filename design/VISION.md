@@ -2,6 +2,8 @@
 
 > Open the app. Your day is ready.
 
+For the company-level mission behind this product vision, see [Mission: DailyOS](MISSION.md).
+
 ---
 
 ## What DailyOS Is

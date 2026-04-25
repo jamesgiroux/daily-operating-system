@@ -117,7 +117,7 @@ pub fn account_dir(workspace: &Path, name: &str) -> PathBuf {
 
 /// Resolve the directory for an account, preferring `tracker_path` when set (I114).
 ///
-/// Child accounts have `tracker_path` like `Accounts/Crestview Media/Consumer-Brands` which
+/// Child accounts have `tracker_path` like `Accounts/Crestview Media/BrandsCo` which
 /// correctly resolves to a nested directory. Falls back to `account_dir()` for
 /// flat accounts without a tracker_path.
 pub fn resolve_account_dir(workspace: &Path, account: &DbAccount) -> PathBuf {
@@ -530,7 +530,7 @@ fn compute_account_hierarchy(
 /// Read a dashboard.json file and convert to DbAccount + narrative fields.
 ///
 /// Supports flat (`Accounts/Acme/dashboard.json`) and arbitrarily nested
-/// accounts (`Accounts/Crestview Media/Consumer-Brands/dashboard.json`, or deeper).
+/// accounts (`Accounts/Crestview Media/BrandsCo/dashboard.json`, or deeper).
 ///
 /// I316: Uses `compute_account_hierarchy` to walk up the directory tree and
 /// build an ID chain with `--` separators for any nesting depth.
@@ -1355,7 +1355,7 @@ END_ENRICHMENT";
 
     #[test]
     fn test_is_bu_directory() {
-        assert!(is_bu_directory("Consumer-Brands"));
+        assert!(is_bu_directory("BrandsCo"));
         assert!(is_bu_directory("Enterprise"));
         assert!(is_bu_directory("Diversification"));
         assert!(!is_bu_directory("01-Customer-Information"));
@@ -1372,8 +1372,8 @@ END_ENRICHMENT";
     fn test_child_id_scheme() {
         // Verify the -- separator is unambiguous
         assert_eq!(
-            format!("{}--{}", slugify("Crestview Media"), slugify("Consumer Brands")),
-            "crestview-media--consumer-brands"
+            format!("{}--{}", slugify("Crestview Media"), slugify("BrandsCo")),
+            "crestview-media--brandsco"
         );
         // slugify collapses consecutive dashes so -- can't appear from slugify alone
         assert_eq!(slugify("Some--Thing"), "some-thing");
@@ -1403,19 +1403,19 @@ END_ENRICHMENT";
     fn test_read_account_json_nested_child() {
         let dir = tempfile::tempdir().expect("tempdir");
         let workspace = dir.path();
-        let child_dir = workspace.join("Accounts/Crestview Media/Consumer-Brands");
+        let child_dir = workspace.join("Accounts/Crestview Media/BrandsCo");
         std::fs::create_dir_all(&child_dir).unwrap();
 
         let json = r#"{"structured":{"arr":500000,"health":"green"}}"#;
         std::fs::write(child_dir.join("dashboard.json"), json).unwrap();
 
         let result = read_account_json(&child_dir.join("dashboard.json")).unwrap();
-        assert_eq!(result.account.id, "crestview-media--consumer-brands");
-        assert_eq!(result.account.name, "Consumer-Brands");
+        assert_eq!(result.account.id, "crestview-media--brandsco");
+        assert_eq!(result.account.name, "BrandsCo");
         assert_eq!(result.account.parent_id, Some("crestview-media".to_string()));
         assert_eq!(
             result.account.tracker_path,
-            Some("Accounts/Crestview Media/Consumer-Brands".to_string())
+            Some("Accounts/Crestview Media/BrandsCo".to_string())
         );
         assert_eq!(result.account.arr, Some(500000.0));
     }
@@ -1428,15 +1428,15 @@ END_ENRICHMENT";
 
         // Create a child account with tracker_path pointing to nested dir
         let account = DbAccount {
-            id: "crestview-media--consumer-brands".to_string(),
-            name: "Consumer-Brands".to_string(),
+            id: "crestview-media--brandsco".to_string(),
+            name: "BrandsCo".to_string(),
             lifecycle: None,
             arr: Some(500_000.0),
             health: Some("green".to_string()),
             contract_start: None,
             contract_end: None,
             nps: None,
-            tracker_path: Some("Accounts/Crestview Media/Consumer-Brands".to_string()),
+            tracker_path: Some("Accounts/Crestview Media/BrandsCo".to_string()),
             parent_id: Some("crestview-media".to_string()),
             account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
@@ -1449,11 +1449,11 @@ END_ENRICHMENT";
 
         write_account_json(workspace, &account, None, &db).unwrap();
 
-        // Should write to nested path, not Accounts/Consumer-Brands/
-        let nested = workspace.join("Accounts/Crestview Media/Consumer-Brands/dashboard.json");
+        // Should write to nested path, not Accounts/BrandsCo/
+        let nested = workspace.join("Accounts/Crestview Media/BrandsCo/dashboard.json");
         assert!(nested.exists(), "Should write to nested tracker_path");
 
-        let flat = workspace.join("Accounts/Consumer-Brands/dashboard.json");
+        let flat = workspace.join("Accounts/BrandsCo/dashboard.json");
         assert!(!flat.exists(), "Should NOT write to flat path");
     }
 
@@ -1533,15 +1533,15 @@ END_ENRICHMENT";
 
         // Insert children
         let child1 = DbAccount {
-            id: "crestview-media--consumer-brands".to_string(),
-            name: "Consumer-Brands".to_string(),
+            id: "crestview-media--brandsco".to_string(),
+            name: "BrandsCo".to_string(),
             lifecycle: None,
             arr: Some(2_000_000.0),
             health: Some("green".to_string()),
             contract_start: None,
             contract_end: None,
             nps: None,
-            tracker_path: Some("Accounts/Crestview Media/Consumer-Brands".to_string()),
+            tracker_path: Some("Accounts/Crestview Media/BrandsCo".to_string()),
             parent_id: Some("crestview-media".to_string()),
             account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
@@ -1582,7 +1582,7 @@ END_ENRICHMENT";
         // children query
         let children = db.get_child_accounts("crestview-media").unwrap();
         assert_eq!(children.len(), 2);
-        assert!(children.iter().any(|c| c.id == "crestview-media--consumer-brands"));
+        assert!(children.iter().any(|c| c.id == "crestview-media--brandsco"));
         assert!(children.iter().any(|c| c.id == "crestview-media--enterprise"));
     }
 

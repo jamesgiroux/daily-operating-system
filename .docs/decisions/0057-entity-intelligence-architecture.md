@@ -18,7 +18,7 @@ This is the same disease the weekly page had before ADR-0052: a dashboard when i
 - **Factual data needs protection.** ARR, lifecycle, health, renewal dates are facts that may come from CSV imports or CRM integrations. AI enrichment must never overwrite these.
 - **Intelligence should auto-update.** A user adds a call transcript to an account directory. The intelligence for that account should refresh without manual intervention. Cost is minimal — one file/week/account, one Claude call.
 - **Incremental updates must not erase signals.** If a stakeholder mentioned Parse.ly six months ago and subsequent updates pushed that signal out, the intelligence missed a trend. The pipeline must be able to reach back to raw source files, not just see its own prior synthesis.
-- **Briefings consume entity intelligence.** The daily briefing, weekly briefing, and meeting prep are rendering surfaces. They should pull from per-entity intelligence, not generate their own. Cross-entity synthesis ("your busiest account this week is Nexus Analytics, but Heroku's renewal is closer") is the briefing layer's job.
+- **Briefings consume entity intelligence.** The daily briefing, weekly briefing, and meeting prep are rendering surfaces. They should pull from per-entity intelligence, not generate their own. Cross-entity synthesis ("your busiest account this week is Nexus Analytics, but CloudCo's renewal is closer") is the briefing layer's job.
 
 ## Decision
 
@@ -64,7 +64,7 @@ These are facts. They can be bulk-imported from CSV, edited in-app, or written b
 ```json
 {
   "version": 1,
-  "entityId": "nielsen",
+  "entityId": "dataco",
   "enrichedAt": "2026-02-09T14:30:00Z",
   "sourceFileCount": 12,
   "executiveAssessment": "Nexus Analytics is at a critical juncture. The exit clause request (Jan 22) signals procurement hygiene under new leadership, not active churn. The Feb 5 meeting introducing Samantha Severin — a Six Sigma Black Belt brought in to rationalize vendor spend — is the decisive moment. Lead with value delivered. Renewal is 10 months out and manageable if this meeting goes well.",
@@ -198,8 +198,8 @@ This is not prep for a specific meeting — it's the entity's readiness posture.
 
 The daily and weekly briefings remain separate enrichment surfaces but consume per-entity intelligence as input:
 
-- **Daily briefing**: Pulls intelligence.json for entities with meetings today. Uses executive assessments and nextMeetingReadiness for meeting prep context. Adds cross-entity synthesis: "Your three meetings today span two accounts — Nexus Analytics and Heroku — both in renewal window."
-- **Weekly briefing**: Pulls intelligence.json for all active entities. Uses risks, wins, and readiness to compose the weekly narrative. Adds cross-entity synthesis: "Your busiest account this week is Nexus Analytics, but Heroku's renewal is closer."
+- **Daily briefing**: Pulls intelligence.json for entities with meetings today. Uses executive assessments and nextMeetingReadiness for meeting prep context. Adds cross-entity synthesis: "Your three meetings today span two accounts — Nexus Analytics and CloudCo — both in renewal window."
+- **Weekly briefing**: Pulls intelligence.json for all active entities. Uses risks, wins, and readiness to compose the weekly narrative. Adds cross-entity synthesis: "Your busiest account this week is Nexus Analytics, but CloudCo's renewal is closer."
 - **Meeting prep**: Pulls nextMeetingReadiness from the associated entity's intelligence.json. No separate prep generation needed.
 
 Entity intelligence is the **data layer**. Briefings are the **presentation layer** that synthesizes across entities.

@@ -4,6 +4,7 @@
  * Passed as `bottomSection` to the shared WatchList component.
  */
 import type { StrategicProgram } from "@/types";
+import styles from "./WatchListPrograms.module.css";
 
 interface WatchListProgramsProps {
   programs: StrategicProgram[];
@@ -13,6 +14,7 @@ interface WatchListProgramsProps {
 }
 
 function statusBadgeStyle(status: string): React.CSSProperties {
+  // Badge colors are data-driven by program status, so they stay inline.
   const lower = status.toLowerCase();
   if (lower === "active") {
     return { background: "var(--color-garden-sage-14)", color: "var(--color-garden-rosemary)" };
@@ -33,39 +35,16 @@ export function WatchListPrograms({
   if (activePrograms.length === 0 && !onAddProgram) return null;
 
   return (
-    <div style={{ marginTop: 48 }}>
-      <div
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 500,
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
-          color: "var(--color-spice-turmeric)",
-          marginBottom: 20,
-        }}
-      >
-        Active Initiatives
-      </div>
+    <div className={styles.section}>
+      <div className={styles.heading}>Active Initiatives</div>
 
       {activePrograms.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div className={styles.programList}>
           {activePrograms.map((p) => {
             const originalIndex = programs.indexOf(p);
             return (
-              <div
-                key={originalIndex}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  padding: "12px 0",
-                  borderBottom:
-                    originalIndex === programs.indexOf(activePrograms[activePrograms.length - 1])
-                      ? "none"
-                      : "1px solid var(--color-rule-light)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+              <div key={originalIndex} className={styles.program}>
+                <div className={styles.programHeader}>
                   {onProgramUpdate ? (
                     <input
                       value={p.name}
@@ -73,57 +52,24 @@ export function WatchListPrograms({
                         onProgramUpdate(originalIndex, { ...p, name: e.target.value })
                       }
                       placeholder="Initiative name"
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "var(--color-text-primary)",
-                        flex: 1,
-                        background: "none",
-                        border: "none",
-                        borderBottom: "1px solid transparent",
-                        outline: "none",
-                        padding: 0,
-                      }}
-                      onFocus={(e) => {
-                        e.currentTarget.style.borderBottomColor = "var(--color-rule-light)";
-                      }}
-                      onBlur={(e) => {
-                        e.currentTarget.style.borderBottomColor = "transparent";
-                      }}
+                      className={styles.programNameInput}
                     />
                   ) : (
-                    <span
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "var(--color-text-primary)",
-                        flex: 1,
-                      }}
-                    >
+                    <span className={styles.programName}>
                       {p.name || "Untitled"}
                     </span>
                   )}
 
                   {onProgramUpdate ? (
+                    <>
+                      {/* Status badge colors are data-driven by program status. */}
                     <select
                       value={p.status}
                       onChange={(e) =>
                         onProgramUpdate(originalIndex, { ...p, status: e.target.value })
                       }
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 9,
-                        fontWeight: 500,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.06em",
-                        padding: "2px 7px",
-                        borderRadius: 3,
-                        border: "none",
-                        cursor: "pointer",
-                        ...statusBadgeStyle(p.status),
-                      }}
+                      className={styles.statusSelect}
+                      style={statusBadgeStyle(p.status)}
                     >
                       <option value="Active">Active</option>
                       <option value="Planned">Planned</option>
@@ -131,35 +77,23 @@ export function WatchListPrograms({
                       <option value="On Hold">On Hold</option>
                       <option value="Complete">Complete</option>
                     </select>
+                    </>
                   ) : (
+                    <>
+                      {/* Status badge colors are data-driven by program status. */}
                     <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 9,
-                        fontWeight: 500,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.06em",
-                        padding: "2px 7px",
-                        borderRadius: 3,
-                        ...statusBadgeStyle(p.status),
-                      }}
+                      className={styles.statusBadge}
+                      style={statusBadgeStyle(p.status)}
                     >
                       {p.status}
                     </span>
+                    </>
                   )}
 
                   {onProgramDelete && (
                     <button
                       onClick={() => onProgramDelete(originalIndex)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 10,
-                        color: "var(--color-text-tertiary)",
-                        padding: 0,
-                      }}
+                      className={styles.deleteButton}
                     >
                       x
                     </button>
@@ -167,15 +101,7 @@ export function WatchListPrograms({
                 </div>
 
                 {p.notes && (
-                  <p
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 13,
-                      lineHeight: 1.5,
-                      color: "var(--color-text-tertiary)",
-                      margin: "4px 0 0",
-                    }}
-                  >
+                  <p className={styles.notes}>
                     {p.notes}
                   </p>
                 )}
@@ -188,17 +114,7 @@ export function WatchListPrograms({
       {onAddProgram && (
         <button
           onClick={onAddProgram}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: "8px 0",
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
+          className={styles.addButton}
         >
           + Add Initiative
         </button>

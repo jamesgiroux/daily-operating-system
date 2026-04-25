@@ -101,6 +101,7 @@ export function TeamRoleSelector({ value, onChange }: TeamRoleSelectorProps) {
         <div
           ref={dropdownRef}
           className={css.dropdown}
+          // Runtime coordinates keep the portal dropdown anchored to its trigger.
           style={{ top: pos.top, left: pos.left }}
         >
           {TEAM_ROLE_OPTIONS.map((opt) => {

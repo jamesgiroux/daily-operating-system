@@ -234,6 +234,48 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// DOS-258: Return all distinct active external stakeholder emails for an account,
+    /// excluding internal-relationship people. Used to derive account_domains from
+    /// the stakeholder graph.
+    pub fn get_active_external_stakeholder_emails(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<String>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT LOWER(p.email) \
+             FROM account_stakeholders asa \
+             JOIN people p ON p.id = asa.person_id \
+             WHERE asa.account_id = ?1 \
+               AND asa.status = 'active' \
+               AND p.email IS NOT NULL AND p.email != '' \
+               AND (p.relationship IS NULL OR p.relationship != 'internal')",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// DOS-258: Return every (account_id, email) tuple for active external stakeholders
+    /// across all non-archived customer/partner accounts. Used by the boot sweep.
+    pub fn get_all_active_external_stakeholder_emails(
+        &self,
+    ) -> Result<Vec<(String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT asa.account_id, LOWER(p.email) \
+             FROM account_stakeholders asa \
+             JOIN people p ON p.id = asa.person_id \
+             JOIN accounts a ON a.id = asa.account_id \
+             WHERE asa.status = 'active' \
+               AND p.email IS NOT NULL AND p.email != '' \
+               AND (p.relationship IS NULL OR p.relationship != 'internal') \
+               AND a.archived = 0 \
+               AND a.account_type IN ('customer', 'partner')",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Get all accounts with their domains in a single JOIN query.
     ///
     /// Eliminates N+1 queries when callers need domains for many accounts.
@@ -265,8 +307,7 @@ impl ActionDb {
 
         let mut result: Vec<(DbAccount, Vec<String>)> = Vec::new();
         let mut current_id: Option<String> = None;
-        // Domain column follows all ACCOUNT_COLUMNS (41 columns, 0-indexed → index 41).
-        let domain_idx = 41;
+        let domain_idx = Self::ACCOUNT_COLUMNS.split(',').count();
 
         while let Some(row) = rows.next()? {
             let account_id: String = row.get(0)?;
@@ -290,6 +331,18 @@ impl ActionDb {
     }
 
     /// Lookup non-archived account candidates by email domain.
+    ///
+    /// DOS-258 Tier 4 domain hierarchy: if the domain matches an account that
+    /// has `parent_id` set (i.e. a subsidiary), the parent account is
+    /// surfaced alongside it as a second candidate. P9 then lets the user
+    /// pick between "Subsidiary BU" and "Parent Corp" rather than blindly
+    /// picking the subsidiary. When the attendee meant the parent (e.g.,
+    /// a group-wide stakeholder attending a subsidiary-domain email thread),
+    /// the picker now offers both.
+    ///
+    /// Schema choice: reuses the existing `accounts.parent_id` column
+    /// (migration 001_baseline.sql). No new hierarchy table needed — the
+    /// parent walk is a single indexed lookup per direct hit.
     pub fn lookup_account_candidates_by_domain(
         &self,
         domain: &str,
@@ -308,7 +361,34 @@ impl ActionDb {
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![normalized], Self::map_account_row)?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        let mut direct: Vec<DbAccount> = rows.collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+
+        // Walk parent_id for each direct hit and surface the parent as an
+        // additional candidate (dedup by id). P9 will see multiple candidates
+        // and prompt the user when ambiguous; if the parent ALSO has a
+        // direct domain match, the dedup keeps a single entry.
+        let parent_ids: Vec<String> = direct.iter().filter_map(|a| a.parent_id.clone()).collect();
+        if parent_ids.is_empty() {
+            return Ok(direct);
+        }
+
+        let parent_sql = format!(
+            "SELECT {} FROM accounts a WHERE a.id = ?1 AND a.archived = 0",
+            Self::account_columns_aliased("a")
+        );
+        let mut parent_stmt = self.conn.prepare(&parent_sql)?;
+        for pid in parent_ids {
+            if direct.iter().any(|a| a.id == pid) {
+                continue;
+            }
+            let mut rows = parent_stmt.query_map(params![pid], Self::map_account_row)?;
+            if let Some(Ok(parent)) = rows.next() {
+                direct.push(parent);
+            }
+        }
+
+        Ok(direct)
     }
 
     /// Copy domains from parent to child (idempotent).
@@ -1868,15 +1948,14 @@ impl ActionDb {
             .prepare("UPDATE meetings SET meeting_type = 'internal' WHERE id = ?1")?;
 
         for (meeting_id, attendees_str) in path_a_rows {
-            let attendees: Vec<String> =
-                match serde_json::from_str::<Vec<String>>(&attendees_str) {
-                    Ok(arr) => arr,
-                    Err(_) => attendees_str
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect(),
-                };
+            let attendees: Vec<String> = match serde_json::from_str::<Vec<String>>(&attendees_str) {
+                Ok(arr) => arr,
+                Err(_) => attendees_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+            };
 
             // Only parseable emails participate in the coverage check.
             let emails: Vec<String> = attendees
@@ -1993,6 +2072,113 @@ impl ActionDb {
                )",
             [],
         )?;
+
+        // DOS-258 Tier 2: weak-primary flip. If a meeting is still labelled
+        // `customer` but its linked primary account has ZERO stakeholder or
+        // domain evidence connecting the attendee list to that account,
+        // the primary was elected on weak signal (e.g. a pre-fix P5 title
+        // match). Flip the classification back to `internal` so the UI
+        // stops promising customer context it can't deliver.
+        //
+        // Title-derived types (qbr, training, all_hands, team_sync, personal,
+        // external, one_on_one) are left alone — their classification does
+        // not depend on the linked-account evidence strength.
+        let weak_primary_rows: Vec<(String, String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT m.id, m.attendees, ler.entity_id \
+                 FROM meetings m \
+                 JOIN linked_entities_raw ler ON ler.owner_id = m.id \
+                 WHERE m.meeting_type = 'customer' \
+                   AND ler.owner_type = 'meeting' \
+                   AND ler.role = 'primary' \
+                   AND ler.entity_type = 'account' \
+                   AND m.attendees IS NOT NULL AND m.attendees != ''",
+            )?;
+            let rows: Vec<_> = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+
+        let mut weak_flip_stmt = self
+            .conn
+            .prepare("UPDATE meetings SET meeting_type = 'internal' WHERE id = ?1")?;
+
+        for (meeting_id, attendees_str, account_id) in weak_primary_rows {
+            let attendees: Vec<String> = match serde_json::from_str::<Vec<String>>(&attendees_str) {
+                Ok(arr) => arr,
+                Err(_) => attendees_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+            };
+            let attendee_emails: Vec<String> = attendees
+                .iter()
+                .filter(|a| a.contains('@'))
+                .map(|a| a.to_lowercase())
+                .collect();
+            if attendee_emails.is_empty() {
+                continue;
+            }
+
+            // Load this account's registered domains once per meeting.
+            let account_domains: Vec<String> = {
+                let mut dom_stmt = self
+                    .conn
+                    .prepare("SELECT domain FROM account_domains WHERE account_id = ?1")?;
+                let doms: Vec<String> = dom_stmt
+                    .query_map(params![account_id], |row| row.get::<_, String>(0))?
+                    .filter_map(Result::ok)
+                    .map(|d| d.to_lowercase())
+                    .collect();
+                doms
+            };
+
+            // Domain evidence: any attendee whose domain maps to this account.
+            let has_domain_match = attendee_emails.iter().any(|email| {
+                email
+                    .split('@')
+                    .nth(1)
+                    .map(|d| account_domains.iter().any(|ad| ad == d))
+                    .unwrap_or(false)
+            });
+
+            if has_domain_match {
+                continue;
+            }
+
+            // Stakeholder evidence: any attendee is an active stakeholder.
+            let mut stake_stmt = self.conn.prepare(
+                "SELECT 1 FROM account_stakeholders as_ \
+                 JOIN people p ON p.id = as_.person_id \
+                 WHERE as_.account_id = ?1 \
+                   AND as_.status = 'active' \
+                   AND LOWER(p.email) = ?2 \
+                 LIMIT 1",
+            )?;
+            let mut has_stakeholder_match = false;
+            for email in &attendee_emails {
+                let exists: Option<i64> = stake_stmt
+                    .query_row(params![account_id, email], |row| row.get(0))
+                    .ok();
+                if exists.is_some() {
+                    has_stakeholder_match = true;
+                    break;
+                }
+            }
+
+            if !has_stakeholder_match {
+                weak_flip_stmt.execute(params![meeting_id])?;
+                total += 1;
+            }
+        }
 
         Ok(total)
     }
@@ -2698,9 +2884,7 @@ impl ActionDb {
         // sentinel `0` passed here would silently wipe real support data
         // whenever a user edits `usage_tier`, `csat_score`, or any other
         // non-`open_tickets` gap field — DOS-231 Codex follow-up).
-        let bootstrap_now = chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
+        let bootstrap_now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
         self.conn.execute(
             "INSERT OR IGNORE INTO account_technical_footprint
                 (account_id, integrations_json, usage_tier, adoption_score, active_users,
@@ -2728,8 +2912,7 @@ impl ActionDb {
                         "update_technical_footprint_field: '{value}' is not a valid integer for {column}"
                     )))
                 })?;
-                self.conn
-                    .execute(&sql, params![parsed, now, account_id])?;
+                self.conn.execute(&sql, params![parsed, now, account_id])?;
             }
             Kind::Real => {
                 let parsed: f64 = value.parse().map_err(|_| {
@@ -2737,8 +2920,7 @@ impl ActionDb {
                         "update_technical_footprint_field: '{value}' is not a valid number for {column}"
                     )))
                 })?;
-                self.conn
-                    .execute(&sql, params![parsed, now, account_id])?;
+                self.conn.execute(&sql, params![parsed, now, account_id])?;
             }
         }
         Ok(())
@@ -2971,7 +3153,13 @@ impl ActionDb {
             "INSERT INTO user_sentiment_history
                 (account_id, sentiment, note, computed_band, computed_score)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![account_id, sentiment, note_clean, computed_band, computed_score],
+            params![
+                account_id,
+                sentiment,
+                note_clean,
+                computed_band,
+                computed_score
+            ],
         )?;
         Ok(())
     }
@@ -3084,7 +3272,11 @@ impl ActionDb {
         };
         let note_clean = note.and_then(|n| {
             let trimmed = n.trim();
-            if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
         });
         self.conn.execute(
             "UPDATE user_sentiment_history SET note = ?1 WHERE rowid = ?2",
@@ -3364,9 +3556,9 @@ impl ActionDb {
     /// List all account_ids with a pending health recompute. Ordered by
     /// requested_at so startup drains oldest-first.
     pub fn list_health_recompute_pending(&self) -> Result<Vec<String>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT account_id FROM health_recompute_pending ORDER BY requested_at ASC",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT account_id FROM health_recompute_pending ORDER BY requested_at ASC")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
@@ -3411,4 +3603,110 @@ pub struct DbHealthSparklinePoint {
     pub day: String,
     pub score: f64,
     pub band: String,
+}
+
+#[cfg(test)]
+mod dos258_reclassify_tests {
+    use crate::db::test_utils::test_db;
+    use rusqlite::params;
+
+    /// DOS-258 Tier 2: a meeting labelled `customer` whose linked primary
+    /// account has zero attendee-level evidence (no domain match, no active
+    /// stakeholder) must flip back to `internal` on re-classification.
+    #[test]
+    fn reclassify_weak_primary_customer_flips_to_internal() {
+        let db = test_db();
+
+        // Seed: one account "WordPress VIP" with its own domain wpvip.com
+        // that does NOT appear among the meeting attendees.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at, archived) VALUES ('acc-wp', 'WordPress VIP', '2026-01-01', 0)",
+                [],
+            )
+            .expect("seed account");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_domains (account_id, domain) VALUES ('acc-wp', 'wpvip.com')",
+                [],
+            )
+            .expect("seed account_domains");
+
+        // Meeting classified as customer but attendee list has no wpvip.com
+        // domain and no stakeholder on acc-wp. Pre-DOS-258 P5 title-only
+        // could have elected this — the reclassifier must correct it.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, attendees, created_at, calendar_event_id) \
+                 VALUES ('m-weak', 'WordPress VIP Plan', 'customer', '2026-04-20', '[\"me@company.com\",\"jane@example.test\"]', '2026-04-20', 'ev1')",
+                [],
+            )
+            .expect("seed meeting");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO linked_entities_raw \
+                 (owner_type, owner_id, entity_id, entity_type, role, source, rule_id, graph_version, created_at) \
+                 VALUES ('meeting', 'm-weak', 'acc-wp', 'account', 'primary', 'rule:P5', 'P5', 0, '2026-04-20')",
+                [],
+            )
+            .expect("seed linked_entities_raw");
+
+        let updated = db
+            .reclassify_meeting_types_from_attendees()
+            .expect("reclassify");
+        assert!(updated >= 1, "expected at least one update, got {updated}");
+
+        let meeting_type: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT meeting_type FROM meetings WHERE id = 'm-weak'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("fetch meeting_type");
+        assert_eq!(
+            meeting_type, "internal",
+            "weak-primary customer meeting should flip back to internal"
+        );
+
+        // Now seed a stakeholder link for jane@example.test on acc-wp and re-flip
+        // the meeting to customer, then verify the reclassifier preserves it.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, name, email, relationship, updated_at) \
+                 VALUES ('p-jane', 'Jane', 'jane@example.test', 'external', '2026-04-20')",
+                [],
+            )
+            .expect("seed person");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source, status, confidence, created_at) \
+                 VALUES ('acc-wp', 'p-jane', 'test', 'active', 1.0, '2026-04-20')",
+                [],
+            )
+            .expect("seed stakeholder");
+        db.conn_ref()
+            .execute(
+                "UPDATE meetings SET meeting_type = 'customer' WHERE id = 'm-weak'",
+                [],
+            )
+            .expect("reset");
+
+        db.reclassify_meeting_types_from_attendees()
+            .expect("reclassify 2");
+        let mt2: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT meeting_type FROM meetings WHERE id = 'm-weak'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("fetch meeting_type 2");
+        assert_eq!(
+            mt2, "customer",
+            "with stakeholder evidence the customer label must stick"
+        );
+
+        let _ = params![0]; // silence unused import if no params! used above
+    }
 }

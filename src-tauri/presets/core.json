@@ -1,0 +1,106 @@
+{
+  "id": "core",
+  "name": "Core",
+  "description": "The default DailyOS operating mode for project-centered work. Tracks projects, meetings, decisions, and follow-through without assuming a specific department or go-to-market motion.",
+  "defaultEntityMode": "project",
+  "vocabulary": {
+    "entityNoun": "project",
+    "entityNounPlural": "projects",
+    "primaryMetric": "Progress",
+    "healthLabel": "Status",
+    "riskLabel": "Risk",
+    "successVerb": "completed",
+    "cadenceNoun": "check-in"
+  },
+  "vitals": {
+    "account": [
+      { "key": "health", "label": "Status", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["active", "inactive"] },
+      { "key": "lifecycle", "label": "Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["active", "archived"] }
+    ],
+    "project": [
+      { "key": "status", "label": "Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["not_started", "active", "on_hold", "completed", "cancelled"] },
+      { "key": "target_date", "label": "Due Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "Owner", "fieldType": "text", "source": "column", "columnMapping": "owner" },
+      { "key": "milestone", "label": "Milestone", "fieldType": "text", "source": "column", "columnMapping": "milestone" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [],
+    "project": [],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "client", "label": "Client / Customer", "description": "External person you serve" },
+    { "id": "collaborator", "label": "Collaborator", "description": "External person you work with" },
+    { "id": "vendor", "label": "Vendor / Contractor", "description": "External person who serves you" }
+  ],
+  "internalTeamRoles": [
+    { "id": "manager", "label": "Manager", "description": "Your direct manager" },
+    { "id": "colleague", "label": "Colleague", "description": "People you work with daily" },
+    { "id": "stakeholder", "label": "Stakeholder", "description": "People who care about your output" }
+  ],
+  "lifecycleEvents": [
+    "project_started",
+    "milestone_reached",
+    "project_completed",
+    "retrospective"
+  ],
+  "prioritization": {
+    "primarySignal": "deadline",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "deadline_within_7d",
+      "project_blocked"
+    ]
+  },
+  "intelligence": {
+    "systemRole": "core work intelligence system",
+    "dimensionWeights": {
+      "meeting_cadence": 0.18,
+      "email_engagement": 0.15,
+      "stakeholder_coverage": 0.15,
+      "key_advocate_health": 0.10,
+      "financial_proximity": 0.12,
+      "signal_momentum": 0.30
+    },
+    "signalKeywords": [
+      { "keyword": "deadline", "weight": 0.13 },
+      { "keyword": "blocked", "weight": 0.12 },
+      { "keyword": "decision", "weight": 0.10 },
+      { "keyword": "follow up", "weight": 0.09 },
+      { "keyword": "handoff", "weight": 0.08 },
+      { "keyword": "review", "weight": 0.08 },
+      { "keyword": "priority", "weight": 0.08 },
+      { "keyword": "next steps", "weight": 0.08 }
+    ],
+    "emailSignalTypes": [
+      "deadline_risk",
+      "project_blocked",
+      "decision_needed",
+      "handoff_needed",
+      "priority_change",
+      "follow_up"
+    ],
+    "dimensionLabels": {
+      "meeting_cadence": "Work Cadence",
+      "email_engagement": "Responsiveness",
+      "stakeholder_coverage": "Collaborator Coverage",
+      "key_advocate_health": "Owner Health",
+      "financial_proximity": "Commitment Proximity",
+      "signal_momentum": "Work Momentum"
+    },
+    "closeConcept": "deadline",
+    "keyAdvocateLabel": "owner",
+    "dimensionGuidance": {
+      "meeting_cadence": "Evaluate whether project check-ins and decision meetings are happening often enough.",
+      "email_engagement": "Read responsiveness and follow-through as signals of active progress.",
+      "stakeholder_coverage": "Assess whether the necessary collaborators, reviewers, and decision makers are involved.",
+      "key_advocate_health": "Assess whether a clear owner is driving the work forward.",
+      "financial_proximity": "Focus on deadlines, commitments, constraints, and meaningful cost or impact signals.",
+      "signal_momentum": "Weigh blockers, decisions, handoffs, overdue work, and concrete progress."
+    }
+  },
+  "briefingEmphasis": "Focus on upcoming deadlines, blocked work, and action items. Keep the briefing concise and action-oriented.",
+  "emailPriorityKeywords": []
+}

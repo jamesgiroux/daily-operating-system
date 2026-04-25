@@ -5,8 +5,8 @@
  */
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import type { UserEntity, UserContextEntry } from "@/types";
+import { useTauriEvent } from "./useTauriEvent";
 
 export function useMe() {
   const [userEntity, setUserEntity] = useState<UserEntity | null>(null);
@@ -43,14 +43,7 @@ export function useMe() {
 
   // ─── Event listeners ──────────────────────────────────────────────────
 
-  useEffect(() => {
-    const unlisten = listen("user-entity-updated", () => {
-      silentRefresh();
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [silentRefresh]);
+  useTauriEvent("user-entity-updated", silentRefresh);
 
   // ─── Field editing ────────────────────────────────────────────────────
 

@@ -10,6 +10,32 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.2.2 — Your role, your dossier
+
+DailyOS started as a chief of staff for Customer Success, but most of what it does applies to any role that lives in account relationships. v1.2.2 makes that real. Pick your role in onboarding (or change it later in Preferences) and the AI's thinking shifts to match — the language, the dimensions it scores, the things it watches for, the vitals it surfaces. Affiliates and Partnerships joins Customer Success, Product Marketing, and Core as a ready-to-use role today.
+
+Plus a heavy polish round on the design pass that landed in v1.2.1: clearer Health, Context, and Work tabs, and a long list of capture fields you can finally edit by hand for the details AI does not know yet.
+
+**Your role, your dossier.** The role you pick changes what the AI thinks about, not just the labels you see. Affiliates? Partner Revenue, Partner Stage, and Performance Score lead your vitals strip — and AI write-ups are framed around campaign cycles, not renewals. Switch roles any time from Preferences. Onboarding asks every new user up front.
+
+**Health & Outlook leads with The Call.** Confidence, peer benchmark, and recommended start window — the verdict on the relationship in one line. The benchmark cell ("Above peers / At peers / Below peers") compares you to similar customers using cross-account context, with a note on which sources informed the read. Below that, dimension bars with role-aware names and the supporting tension between computed score and observed direction.
+
+**Context tab tells the relationship story.** Thesis, who's in the room, what matters to them (with compliance and competitive context), what we have built together, and their voice — verbatim quotes pulled from your conversations. Commercial shape, Technical shape, and Relationship fabric round it out. Most fields were "— not captured" before; now every one is editable inline. Selectors for Yes/No-style fields, free text for the rest.
+
+**Work tab focuses on next.** Commitments, suggestions, programs, recently landed. Empty chapters disappear from navigation instead of leaving dead links.
+
+**One way to correct anything.** "Is this accurate?" replaces the old mix of thumbs up/down, inline edits, and field-conflict prompts. Yes / No on individual claims, Yes / Partially / No on AI write-ups (Partially opens an annotation; No opens an inline editor). Every correction teaches the system what to trust.
+
+**Daily AI budget you actually control.** Diagnostics now shows a single user-defined daily token cap that's enforced, replacing the old 50k display that didn't do anything. Set it as low or high as you like.
+
+**Less wasted background work.** Archived accounts are skipped by the AI queue. Suggestions and commitments deduped at the source — no more dozens of identical rows piling up across runs.
+
+**The Work tab actually renders now.** On larger accounts, the Suggestions and Commitments sections were rendering as blank space due to a CSS animation gate that should never have been load-bearing on operational content. Removed entirely from Work surfaces; the magazine-editorial polish stays where it belongs.
+
+**Smaller things.** Compliance section appears once (in "What matters to them"), not twice. Products list restructured from long verbose paragraph dumps into compact grouped product / feature lists. The contamination detector no longer flags your own subdomains as if they belonged to a foreign account. Health scoring no longer silently feeds on fabricated zeros when a database query fails — failures log honestly.
+
+---
+
 ## v1.2.1 — The right account, every time
 
 DailyOS has always known a lot about your accounts. The problem was linking. A meeting with someone from Acme might file under a parent company, a subsidiary, or not link at all — depending on subtle quirks in how the meeting was structured. This release replaces that heuristic guessing with a deterministic system: the same meeting will always reach the same answer, and you can see why.

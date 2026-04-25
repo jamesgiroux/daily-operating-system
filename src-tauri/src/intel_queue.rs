@@ -5,10 +5,10 @@
 //! and runs enrichment with split DB locking so the UI stays responsive
 //! during the 30-120s PTY operation.
 
+use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use parking_lot::Mutex;
 use std::time::Instant;
 
 use chrono::Utc;
@@ -21,6 +21,7 @@ use crate::intelligence::{
     parse_intelligence_response, write_intelligence_json, InferredRelationship, IntelligenceJson,
     SourceManifestEntry,
 };
+use crate::presets::schema::RolePreset;
 use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::AiModelConfig;
@@ -31,7 +32,7 @@ const CALENDAR_DEBOUNCE_SECS: u64 = 600;
 /// Background enrichment timeout — raised from 20s to the v1.2.1 floor of 90s.
 const BACKGROUND_ENRICHMENT_TIMEOUT_SECS: u64 = 90;
 /// Per-dimension manual-refresh timeout. Large accounts with deep context
-/// (e.g. Blackstone-scale) need >90s for some dimensions; 90s caused half
+/// (e.g. Globex-scale) need >90s for some dimensions; 90s caused half
 /// the dimensions to time out and return empty arrays, which silently wiped
 /// downstream Work/Context content. Bumped to the 240s cap.
 const DIMENSION_ENRICHMENT_TIMEOUT_SECS: u64 = 240;
@@ -208,6 +209,29 @@ impl IntelligenceQueue {
     /// Whether the queue is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Remove all queued requests for a given entity (DOS-286).
+    ///
+    /// Called when an entity is archived so pending enrichments don't run
+    /// against a now-archived target. Also clears the debounce tracker so
+    /// an unarchive → re-enqueue works without the debounce delay. Returns
+    /// the number of queue entries removed.
+    pub fn remove_by_entity_id(&self, entity_id: &str) -> usize {
+        let mut queue = self.queue.lock();
+        let before = queue.len();
+        queue.retain(|r| r.entity_id != entity_id);
+        let removed = before - queue.len();
+        drop(queue);
+
+        self.last_enqueued.lock().remove(entity_id);
+
+        if removed > 0 {
+            log::info!(
+                "IntelQueue: removed {removed} pending entries for archived entity {entity_id}"
+            );
+        }
+        removed
     }
 
     /// Remove stale entries from the `last_enqueued` debounce tracker.
@@ -392,6 +416,8 @@ pub struct EnrichmentInput {
     /// I535: Intelligence context for Glean-first enrichment.
     /// Preserved from gather phase so Glean can inject local context into its prompt.
     pub intelligence_context: Option<crate::intelligence::prompts::IntelligenceContext>,
+    /// DOS-178: Active role preset captured during the gather phase.
+    pub active_preset: Option<RolePreset>,
 }
 
 /// Parsed enrichment output from one model response section.
@@ -661,7 +687,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         .entry(original.entity_id.clone())
                         .or_insert("schema_validation");
                     {
-            let mut audit = state.audit_log.lock();
+                        let mut audit = state.audit_log.lock();
                         let _ = audit.append(
                             "anomaly",
                             "schema_validation_failed",
@@ -678,7 +704,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             let failed_count = original_requests.len() - succeeded_count;
             if succeeded_count > 0 {
                 {
-            let mut audit = state.audit_log.lock();
+                    let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "ai",
                         "entity_enrichment_completed",
@@ -696,7 +722,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     "pty_error"
                 };
                 {
-            let mut audit = state.audit_log.lock();
+                    let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "ai",
                         "entity_enrichment_failed",
@@ -717,7 +743,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 let anomalies = crate::intelligence::validation::detect_anomalies(&serialized);
                 if !anomalies.is_empty() {
                     {
-            let mut audit = state.audit_log.lock();
+                        let mut audit = state.audit_log.lock();
                         let _ = audit.append(
                             "anomaly",
                             "injection_instruction_in_output",
@@ -760,6 +786,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         &request.entity_type,
                         &request.entity_id,
                         &written_intel,
+                        input.active_preset.as_ref(),
                     );
                 }
             }
@@ -782,13 +809,29 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     let engine = std::sync::Arc::clone(&state.signals.engine);
                     let state_for_spawn = std::sync::Arc::clone(&state);
                     let app_for_spawn = app.clone();
+                    // DOS-287: Pass disambiguators through so Glean's retrieval is
+                    // biased toward this account's known identifiers. Cloned from
+                    // the intelligence_context populated by build_intelligence_context.
+                    let disambiguators_for_spawn = input
+                        .intelligence_context
+                        .as_ref()
+                        .map(|c| c.disambiguators.clone());
                     // Same is_background gate as main enrichment: suppress
                     // user-visible toast on scheduled work, keep audit log.
                     let is_background = is_background_priority(request.priority);
                     tauri::async_runtime::spawn(async move {
-                        let provider = crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
+                        let provider =
+                            crate::intelligence::glean_provider::GleanIntelligenceProvider::new(
+                                &endpoint,
+                            );
                         let ls_start = std::time::Instant::now();
-                        match provider.enrich_leading_signals(&entity_name).await {
+                        match provider
+                            .enrich_leading_signals_with_disambiguators(
+                                &entity_name,
+                                disambiguators_for_spawn.as_ref(),
+                            )
+                            .await
+                        {
                             Ok(signals) => {
                                 if let Ok(db) = crate::db::ActionDb::open() {
                                     if let Err(e) =
@@ -838,6 +881,64 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                                     &e,
                                     ls_start.elapsed().as_millis() as u64,
                                     is_background,
+                                );
+                            }
+                        }
+
+                        // DOS-204: Peer-cohort renewal benchmark — separate Glean chat pass that
+                        // populates AgreementOutlook.peer_benchmark. Glean uses its own org-wide
+                        // context (tier, ARR, package, industry) to identify the cohort, so we
+                        // only need to pass the account name. Failures (timeout / unparseable /
+                        // unknown band) silently leave peer_benchmark = None so the Outlook
+                        // panel collapses to its 2-col layout — no toast, no audit event (the
+                        // cell is additive, not load-bearing for Health).
+                        match provider.enrich_peer_benchmark(&entity_name).await {
+                            Ok(peer_benchmark) => {
+                                if let Ok(db) = crate::db::ActionDb::open() {
+                                    match db.get_entity_intelligence(&entity_id) {
+                                        Ok(Some(mut current)) => {
+                                            let outlook = current
+                                                .agreement_outlook
+                                                .get_or_insert_with(Default::default);
+                                            outlook.peer_benchmark = Some(peer_benchmark);
+                                            if let Err(e) =
+                                                crate::services::intelligence::upsert_assessment_snapshot(
+                                                    &db, &current,
+                                                )
+                                            {
+                                                log::warn!(
+                                                    "[DOS-204] Persisting peer_benchmark failed for {}: {}",
+                                                    entity_id,
+                                                    e
+                                                );
+                                            } else {
+                                                log::info!(
+                                                    "[DOS-204] Peer benchmark persisted for {}",
+                                                    entity_id
+                                                );
+                                            }
+                                        }
+                                        Ok(None) => {
+                                            log::debug!(
+                                                "[DOS-204] No assessment row for {}; skipping peer_benchmark write",
+                                                entity_id
+                                            );
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "[DOS-204] Reading assessment for {} failed: {}",
+                                                entity_id,
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::info!(
+                                    "[DOS-204] Peer benchmark unavailable for {} ({})",
+                                    entity_id,
+                                    e
                                 );
                             }
                         }
@@ -1057,7 +1158,7 @@ pub fn gather_enrichment_input(
                     crate::context_provider::ContextError::Other(_) => "other",
                 };
                 {
-            let mut audit = state.audit_log.lock();
+                    let mut audit = state.audit_log.lock();
                     let _ = audit.append(
                         "data_access",
                         "glean_connection_failed",
@@ -1088,15 +1189,19 @@ pub fn gather_enrichment_input(
         }
     }
 
+    // Read active preset once for prompt language and preset-aware health scoring.
+    let active_preset = state.active_preset.read().clone();
+
     // I499: Compute algorithmic health for accounts before prompt building.
     // This populates ctx.computed_health so the prompt uses narrative-only health schema.
     let mut ctx = ctx;
     let computed_health = if request.entity_type == "account" {
         account.as_ref().map(|acct| {
-            crate::intelligence::health_scoring::compute_account_health(
+            crate::intelligence::health_scoring::compute_account_health_with_preset(
                 &db,
                 acct,
                 ctx.org_health.as_ref(),
+                active_preset.as_ref(),
             )
         })
     } else {
@@ -1148,13 +1253,12 @@ pub fn gather_enrichment_input(
         .map(|p| p.relationship.as_str())
         .or_else(|| account.as_ref().map(|a| a.account_type.as_db_str()));
     // Read active preset for domain-specific prompt language (I313)
-    let preset_guard = state.active_preset.read();
     let prompt = build_intelligence_prompt_with_preset(
         &entity_name,
         &request.entity_type,
         &ctx,
         relationship,
-        preset_guard.as_ref(),
+        active_preset.as_ref(),
     );
 
     let file_manifest = ctx.file_manifest.clone();
@@ -1177,6 +1281,7 @@ pub fn gather_enrichment_input(
         entity_name: entity_name.clone(),
         relationship: relationship.map(|s| s.to_string()),
         intelligence_context: preserved_ctx,
+        active_preset,
     })
 }
 
@@ -1249,6 +1354,7 @@ async fn run_glean_enrichment_with_fallback(
                     input.relationship.as_deref(),
                     Some(app_handle),
                     is_background,
+                    input.active_preset.as_ref(),
                 )
                 .await
             {
@@ -1412,6 +1518,7 @@ fn run_parallel_enrichment(
             input.relationship.as_deref(),
             ctx,
             is_incremental,
+            input.active_preset.as_ref(),
         );
 
         let workspace = input.workspace.clone();
@@ -1567,6 +1674,18 @@ fn run_parallel_enrichment(
             }
         }
     }
+
+    // DOS-249: Stamp enriched_at and source_manifest on the combined result.
+    // The parallel fan-out initialises `combined` as IntelligenceJson::default(),
+    // and `merge_dimension_into` only copies dimension-specific fields — it never
+    // propagates the manifest or enrichment timestamp.  Without this, every account
+    // enriched via the parallel path ends up with an empty source_manifest_json
+    // column even when the context builder collected dozens of source files.
+    combined.enriched_at = chrono::Utc::now().to_rfc3339();
+    combined.source_file_count = input.file_manifest.len();
+    combined.source_manifest = input.file_manifest.clone();
+    combined.entity_id = input.entity_id.clone();
+    combined.entity_type = input.entity_type.clone();
 
     Ok(EnrichmentParseResult {
         intel: combined,
@@ -1861,9 +1980,7 @@ pub fn write_enrichment_results(
                                 existing.as_ref().and_then(|(ds, _)| ds.as_deref()),
                                 Some("user")
                             );
-                            let is_dismissed = existing
-                                .as_ref()
-                                .is_some_and(|(_, d)| d.is_some());
+                            let is_dismissed = existing.as_ref().is_some_and(|(_, d)| d.is_some());
                             if !is_user_owned && !is_dismissed {
                                 let _ = db_sh.conn_ref().execute(
                                     "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
@@ -2030,6 +2147,102 @@ pub fn write_enrichment_results(
                     );
                     cc.current_arr = Some(user_arr);
                 }
+            }
+        }
+    }
+
+    // DOS-287: Cross-entity contamination check — second-line defense against
+    // Glean/PTY bleeding a different customer's content into this account's
+    // narrative fields. Runs before any persistence. On hit + RejectOnHit, we
+    // emit a signal + Tauri event and refuse to write. Shadow mode logs only.
+    if input.entity_type == "account" {
+        let policy = crate::intelligence::contamination::ContaminationValidation::from_env();
+        if policy.is_enabled() {
+            let narrative =
+                crate::intelligence::contamination::collect_narrative_text(&final_intel);
+            let target_domains: Vec<String> = db
+                .conn_ref()
+                .prepare("SELECT domain FROM account_domains WHERE account_id = ?1")
+                .and_then(|mut stmt| {
+                    stmt.query_map(rusqlite::params![&input.entity_id], |row| {
+                        row.get::<_, String>(0)
+                    })
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+                })
+                .unwrap_or_default();
+
+            let hits = crate::intelligence::contamination::detect_cross_entity_contamination(
+                &narrative,
+                &input.entity_id,
+                &target_domains,
+                &[],
+                &db,
+            );
+
+            if !hits.is_empty() {
+                let payload = serde_json::json!({
+                    "entity_id": input.entity_id,
+                    "entity_type": input.entity_type,
+                    "hits": hits,
+                    "rejected": policy.rejects(),
+                })
+                .to_string();
+
+                log::warn!(
+                    "Cross-entity contamination detected in enrichment for {} \
+                     ({} hit{}): {:?} — validation policy={:?}",
+                    input.entity_id,
+                    hits.len(),
+                    if hits.len() == 1 { "" } else { "s" },
+                    hits,
+                    policy,
+                );
+
+                // Emit a signal for the propagation engine + audit trail.
+                let _ = crate::signals::bus::emit_signal(
+                    &db,
+                    &input.entity_type,
+                    &input.entity_id,
+                    "enrichment_contamination_rejected",
+                    "dos_287_contamination",
+                    Some(&payload),
+                    0.95,
+                );
+
+                // Emit a Tauri event so the frontend can surface a toast.
+                if let Some(handle) = _state.app_handle() {
+                    let _ = handle.emit(
+                        "enrichment-contamination-rejected",
+                        serde_json::json!({
+                            "entity_id": input.entity_id,
+                            "entity_type": input.entity_type,
+                            "hits": hits,
+                            "rejected": policy.rejects(),
+                        }),
+                    );
+                }
+
+                if policy.rejects() {
+                    // Graceful rejection: skip the writes, preserve prior
+                    // intelligence as the fallback. The Tauri event has
+                    // already been emitted above so the frontend surfaces
+                    // a toast; the audit signal has been recorded; the
+                    // warn log captured the hits. Returning Ok with the
+                    // prior row (or empty when none exists) lets the
+                    // caller treat this as a soft skip rather than a
+                    // hard error that takes over the screen.
+                    log::info!(
+                        "Cross-entity contamination guard rejected enrichment for {}; \
+                         prior intelligence preserved",
+                        input.entity_id
+                    );
+                    return Ok(existing_intel.unwrap_or(IntelligenceJson {
+                        entity_id: input.entity_id.clone(),
+                        entity_type: input.entity_type.clone(),
+                        ..Default::default()
+                    }));
+                }
+                // ShadowMode: fall through and persist anyway.
             }
         }
     }
@@ -2506,8 +2719,16 @@ fn dual_write_enrichment_products(
             continue;
         }
 
-        match db.upsert_account_product(entity_id, &name, None, "active", adoption_pct, source, 0.55, None)
-        {
+        match db.upsert_account_product(
+            entity_id,
+            &name,
+            None,
+            "active",
+            adoption_pct,
+            source,
+            0.55,
+            None,
+        ) {
             Ok(_) => upserted += 1,
             Err(e) => {
                 log::warn!(
@@ -2563,6 +2784,9 @@ mod tests {
                 text: "Renewal owner unresolved".to_string(),
                 source: None,
                 urgency: "high".to_string(),
+                headline: None,
+                evidence: None,
+                kind_label: None,
                 item_source: None,
                 discrepancy: None,
             }],
@@ -2605,6 +2829,73 @@ mod tests {
         assert_eq!(req.entity_id, "acme");
         assert_eq!(req.priority, IntelPriority::ContentChange);
         assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn test_intel_queue_remove_by_entity_id() {
+        // DOS-286: archiving an entity should drop all of its pending queue
+        // entries regardless of priority, and should not touch other entities.
+        let queue = IntelligenceQueue::new();
+
+        queue.enqueue(IntelRequest {
+            entity_id: "archived-acct".to_string(),
+            entity_type: "account".to_string(),
+            priority: IntelPriority::ProactiveHygiene,
+            requested_at: Instant::now(),
+            retry_count: 0,
+        });
+        queue.enqueue(IntelRequest {
+            entity_id: "other-acct".to_string(),
+            entity_type: "account".to_string(),
+            priority: IntelPriority::Manual,
+            requested_at: Instant::now(),
+            retry_count: 0,
+        });
+
+        assert_eq!(queue.len(), 2);
+
+        let removed = queue.remove_by_entity_id("archived-acct");
+        assert_eq!(removed, 1);
+        assert_eq!(queue.len(), 1);
+
+        let req = queue.dequeue().unwrap();
+        assert_eq!(req.entity_id, "other-acct");
+
+        // Removing an unknown entity is a safe no-op.
+        assert_eq!(queue.remove_by_entity_id("never-queued"), 0);
+    }
+
+    #[test]
+    fn test_intel_queue_remove_clears_debounce_tracker() {
+        // DOS-286: removal must clear the debounce tracker so an
+        // unarchive → re-enqueue can proceed without the debounce delay.
+        let queue = IntelligenceQueue::new();
+
+        queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
+            entity_type: "account".to_string(),
+            priority: IntelPriority::ContentChange,
+            requested_at: Instant::now(),
+            retry_count: 0,
+        });
+        // Drain so the queue is empty but the debounce tracker still holds "acme".
+        let _ = queue.dequeue();
+        assert!(queue.is_empty());
+        assert!(queue.last_enqueued.lock().contains_key("acme"));
+
+        queue.remove_by_entity_id("acme");
+        assert!(!queue.last_enqueued.lock().contains_key("acme"));
+
+        // A fresh ContentChange enqueue for the same entity should now go through
+        // instead of being debounced.
+        queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
+            entity_type: "account".to_string(),
+            priority: IntelPriority::ContentChange,
+            requested_at: Instant::now(),
+            retry_count: 0,
+        });
+        assert_eq!(queue.len(), 1);
     }
 
     #[test]

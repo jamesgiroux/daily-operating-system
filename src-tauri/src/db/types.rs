@@ -1017,10 +1017,10 @@ pub struct EscalationQuote {
     pub speaker: String,
 }
 
-/// Per-meeting champion health assessment (I555).
+/// Per-meeting key advocate health assessment (I555).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChampionHealthAssessment {
+pub struct KeyAdvocateAssessment {
     pub meeting_id: String,
     pub champion_name: Option<String>,
     pub champion_status: String,
@@ -1063,7 +1063,8 @@ pub struct EnrichedCapture {
 #[serde(rename_all = "camelCase")]
 pub struct MeetingPostIntelligence {
     pub interaction_dynamics: Option<InteractionDynamics>,
-    pub champion_health: Option<ChampionHealthAssessment>,
+    #[serde(default, alias = "championHealth", alias = "champion_health")]
+    pub key_advocate_health: Option<KeyAdvocateAssessment>,
     pub role_changes: Vec<RoleChange>,
     pub enriched_captures: Vec<EnrichedCapture>,
 }

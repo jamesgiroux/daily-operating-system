@@ -175,7 +175,7 @@ Beyond the core gap detection, the scanner can identify higher-order opportuniti
 
 5. **Prep completeness audit.** Before the daily briefing generates, scan today's meetings: do all external meetings have entity intelligence? Do all attendees have resolved profiles? Surface gaps as "3 of 5 external meetings are fully prepped."
 
-6. **Cross-entity relationship mapping.** Person X appears in meetings for Account A and Account B. The system can infer organizational connections and surface them: "Sarah Chen connects your Nexus Analytics and Heroku accounts — she moved from Nexus Analytics to Heroku in January."
+6. **Cross-entity relationship mapping.** Person X appears in meetings for Account A and Account B. The system can infer organizational connections and surface them: "Sarah Chen connects your Nexus Analytics and CloudCo accounts — she moved from Nexus Analytics to CloudCo in January."
 
 7. **Calendar pattern learning.** After several weeks, the system recognizes recurring meeting patterns: "This is your monthly sync with Nexus Analytics — last month's key topic was the exit clause." Meeting prep becomes richer automatically.
 

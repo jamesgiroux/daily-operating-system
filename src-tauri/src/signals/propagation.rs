@@ -113,9 +113,16 @@ impl PropagationEngine {
             }
         }
 
-        // I385: Propagated signals trigger intel enrichment for cross-entity targets
+        // I385: Propagated signals trigger intel enrichment for cross-entity targets.
+        // DOS-286: skip archived entities — user has asserted they're done with them.
         if let Some(ref intel_q) = self.intel_queue {
             for (eid, etype) in &cross_entity_targets {
+                if db.is_entity_archived(eid, etype) {
+                    log::debug!(
+                        "Signal propagation: skipping archived entity {eid} ({etype})"
+                    );
+                    continue;
+                }
                 intel_q.enqueue(crate::intel_queue::IntelRequest::new(
                     eid.clone(),
                     etype.clone(),
@@ -175,6 +182,8 @@ pub fn default_engine() -> PropagationEngine {
         "rule_glean_champion_departed",
         super::rules::rule_glean_champion_departed,
     );
+    // DOS-207: Regulatory gap → account_risk propagation
+    engine.register("rule_regulatory_gap", super::rules::rule_regulatory_gap);
 
     engine
 }

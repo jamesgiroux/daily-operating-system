@@ -24,10 +24,6 @@
   scroll-margin-top: 60px;
 }
 
-.presetFieldsReveal {
-  margin-top: var(--space-sm);
-}
-
 /* ── Breadcrumb Navigation ── */
 
 .breadcrumbNav {

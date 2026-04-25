@@ -92,6 +92,38 @@ pub async fn reject_suggested_action(
         .await
 }
 
+/// Dismiss a suggested action — preference-based (no quality penalty).
+///
+/// Pairs with `reject_suggested_action`: same archive + tombstone behavior
+/// so the suggestion isn't re-proposed on next enrichment, but skips the
+/// `action_rejected` signal that penalizes Bayesian source weights.
+/// Used by the Work-tab "Dismiss" affordance for "I don't want this"
+/// versus "Is this accurate? No" which means "this is wrong."
+#[tauri::command]
+pub async fn dismiss_suggested_action(
+    id: String,
+    source: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let source = source.unwrap_or_else(|| "unknown".to_string());
+    crate::util::validate_enum_string(
+        source.as_str(),
+        "source",
+        &[
+            "unknown",
+            "actions_page",
+            "daily_briefing",
+            "meeting_detail",
+        ],
+    )?;
+    let engine = state.signals.engine.clone();
+    state
+        .db_write(move |db| {
+            crate::services::actions::dismiss_suggested_action(db, &engine, &id, &source)
+        })
+        .await
+}
+
 // =============================================================================
 // I579: Per-email triage actions
 // =============================================================================
@@ -765,6 +797,66 @@ pub async fn attach_meeting_transcript(
 ) -> Result<crate::types::TranscriptResult, String> {
     crate::services::meetings::attach_meeting_transcript(
         file_path,
+        meeting,
+        state.inner(),
+        app_handle,
+    )
+    .await
+}
+
+/// Attach a transcript by raw text instead of a file path.
+///
+/// Writes the pasted content to `{app_data_dir}/transcripts/pasted/{meeting_id}_{ts}.{ext}`
+/// and routes through `attach_meeting_transcript`, so processing, captures,
+/// and entity-linking all match the file-upload path. `format` controls the
+/// extension ("md" or "txt") so downstream parsers can decide whether to
+/// strip markdown formatting; the actual transcript text is always written
+/// as UTF-8.
+#[tauri::command]
+pub async fn attach_meeting_transcript_text(
+    text: String,
+    format: Option<String>,
+    meeting: CalendarEvent,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::types::TranscriptResult, String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("Pasted transcript is empty".to_string());
+    }
+
+    let ext = match format.as_deref() {
+        Some("md") | Some("markdown") => "md",
+        _ => "txt",
+    };
+
+    // Resolve {app_data_dir}/transcripts/pasted/. Ensure directory exists.
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Could not resolve app data dir: {e}"))?;
+    let pasted_dir = app_data_dir.join("transcripts").join("pasted");
+    std::fs::create_dir_all(&pasted_dir)
+        .map_err(|e| format!("Could not create pasted-transcript dir: {e}"))?;
+
+    let safe_meeting = meeting
+        .id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect::<String>();
+    let ts = chrono::Utc::now().format("%Y%m%dT%H%M%S").to_string();
+    let path = pasted_dir.join(format!("{}_{}.{}", safe_meeting, ts, ext));
+
+    std::fs::write(&path, &text)
+        .map_err(|e| format!("Could not write pasted transcript: {e}"))?;
+
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| "pasted transcript path is not valid UTF-8".to_string())?
+        .to_string();
+
+    crate::services::meetings::attach_meeting_transcript(
+        path_str,
         meeting,
         state.inner(),
         app_handle,

@@ -42,7 +42,7 @@ function makeMinimalIntelligence(overrides: Partial<EntityIntelligence> = {}): E
 }
 
 const renewalIntelligence = makeMinimalIntelligence({
-  renewalOutlook: {
+  agreementOutlook: {
     confidence: "high",
     riskFactors: ["Executive sponsor departure", "Budget freeze in Q4"],
     expansionPotential: "moderate",
@@ -75,7 +75,7 @@ const contractIntelligence = makeMinimalIntelligence({
 });
 
 const fullIntelligence = makeMinimalIntelligence({
-  renewalOutlook: renewalIntelligence.renewalOutlook,
+  agreementOutlook: renewalIntelligence.agreementOutlook,
   expansionSignals: expansionIntelligence.expansionSignals,
   contractContext: contractIntelligence.contractContext,
 });

@@ -13,7 +13,7 @@
  * All styles use design tokens. Widths are 1fr/1fr grids — no fixed widths.
  */
 
-@import '../../styles/design-tokens.css';
+@import "../../styles/design-tokens.css";
 
 /* ═════════ SECTION + SUBSECTIONS ═════════ */
 

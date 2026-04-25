@@ -67,7 +67,7 @@ function baseData(overrides: Partial<MeetingPostIntelligence> = {}): MeetingPost
       competitorMentions: [],
       escalationLanguage: [],
     },
-    championHealth: {
+    keyAdvocateHealth: {
       meetingId: "mtg-001",
       championName: "Sarah Chen",
       championStatus: "strong",
@@ -299,7 +299,7 @@ describe("PostMeetingIntelligence", () => {
               { quote: "[RED] We need legal unstuck this week", speaker: "[YELLOW] Sarah Chen" },
             ],
           },
-          championHealth: {
+          keyAdvocateHealth: {
             meetingId: "mtg-001",
             championName: "Sarah Chen",
             championStatus: "strong",

@@ -161,10 +161,6 @@ vi.mock("@/components/editorial/EditorialError", () => ({
   ),
 }));
 
-vi.mock("@/components/entity/PresetFieldsEditor", () => ({
-  PresetFieldsEditor: () => null,
-}));
-
 vi.mock("@/components/entity/AddToRecord", () => ({
   AddToRecord: () => null,
 }));

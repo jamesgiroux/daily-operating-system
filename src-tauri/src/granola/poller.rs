@@ -63,8 +63,29 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 continue;
             }
         };
-        if let Err(e) = poll_once(&state, &app_handle, &cache_path) {
-            log::warn!("Granola poller: {}", e);
+        match poll_once(&state, &app_handle, &cache_path) {
+            Ok(events) => {
+                // Re-run entity linking with the post-transcript context for
+                // each meeting we successfully ingested. The calendar poller
+                // already ran the engine when the meeting was created, but
+                // the transcript may refine attendees/account inference.
+                for event in events {
+                    if let Err(e) = crate::services::entity_linking::calendar_adapter::evaluate_meeting(
+                        state.clone(),
+                        &event,
+                        crate::services::entity_linking::Trigger::TranscriptIngest,
+                    )
+                    .await
+                    {
+                        log::warn!(
+                            "entity_linking after Granola ingest failed (non-fatal) for {}: {}",
+                            event.id,
+                            e
+                        );
+                    }
+                }
+            }
+            Err(e) => log::warn!("Granola poller: {}", e),
         }
 
         tokio::select! {
@@ -77,14 +98,18 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
 }
 
 /// Single poll cycle: read cache, match documents, sync new ones.
+///
+/// Returns the calendar events for meetings whose transcripts were
+/// successfully ingested in this cycle, so the async caller can re-run
+/// entity linking on each.
 fn poll_once(
     state: &AppState,
     app_handle: &AppHandle,
     cache_path: &std::path::Path,
-) -> Result<(), String> {
+) -> Result<Vec<crate::types::CalendarEvent>, String> {
     let documents = cache::read_cache(cache_path)?;
     if documents.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     // Get recent meetings from DB for matching (last 90 days)
@@ -94,6 +119,7 @@ fn poll_once(
     };
 
     let mut synced = 0;
+    let mut linkable_events: Vec<crate::types::CalendarEvent> = Vec::new();
 
     for doc in &documents {
         // Match to a meetings row
@@ -156,7 +182,7 @@ fn poll_once(
         );
 
         match &result {
-            Ok(dest) => {
+            Ok((dest, _)) => {
                 log::info!(
                     "Granola sync: processed '{}' → {} ({} chars, {:?})",
                     doc.title,
@@ -174,9 +200,14 @@ fn poll_once(
         // Notify frontend with normalized payload (fallback to meeting ID if unavailable).
         emit_transcript_processed(state, app_handle, &matched.meeting_id);
 
-        if result.is_ok() {
-            let _ =
-                crate::notification::notify_transcript_ready(app_handle, &doc.title, None, state);
+        if let Ok((_, calendar_event)) = result {
+            let _ = crate::notification::notify_transcript_ready(
+                app_handle,
+                &doc.title,
+                None,
+                state,
+            );
+            linkable_events.push(calendar_event);
         }
     }
 
@@ -184,7 +215,7 @@ fn poll_once(
         log::info!("Granola poller: synced {} documents", synced);
     }
 
-    Ok(())
+    Ok(linkable_events)
 }
 
 /// Process a Granola document through the shared transcript pipeline.
@@ -194,13 +225,15 @@ fn poll_once(
 ///   Phase 1 (with lock): Read meeting data, config, build calendar_event
 ///   Phase 2 (no lock): Run AI pipeline via process_fetched_transcript_without_db
 ///   Phase 3 (with lock): Write results back to DB
+/// Returns (destination_path, calendar_event) on success so the async
+/// caller can re-run entity linking with the post-transcript context.
 fn process_granola_document(
     state: &AppState,
     sync_id: &str,
     meeting_id: &str,
     content: &str,
     content_kind: crate::processor::transcript::TranscriptContentKind,
-) -> Result<String, String> {
+) -> Result<(String, crate::types::CalendarEvent), String> {
     // Phase 1: Read data with lock, then drop
     let (calendar_event, workspace, profile, ai_config) = {
         let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
@@ -210,7 +243,11 @@ fn process_granola_document(
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Meeting {} not found", meeting_id))?;
 
-        let calendar_event = crate::quill::sync::db_meeting_to_calendar_event(&meeting);
+        let mut calendar_event = crate::quill::sync::db_meeting_to_calendar_event(&meeting);
+        // Hydrate linked entities + attendees so the processor routes the
+        // markdown to the right account dir and emits entity IDs in the
+        // YAML frontmatter.
+        crate::processor::transcript::enrich_meeting_from_db(&mut calendar_event, &db);
 
         let (workspace, profile, ai_config) = {
             let config_guard = state.config.read();
@@ -384,7 +421,7 @@ fn process_granola_document(
                 None,
             );
 
-            Ok(dest.to_string())
+            Ok((dest.to_string(), calendar_event))
         }
         Err(error) => {
             if let Ok(db) = crate::db::ActionDb::open() {
@@ -554,12 +591,14 @@ pub struct ManualGranolaSyncResult {
 ///
 /// Unlike the background poller, this scopes matching to one meeting and returns
 /// a concrete result when no Granola document is currently available.
+/// Returns the manual-sync result and, when a transcript was attached, the
+/// calendar event so the async caller can re-run entity linking.
 pub fn trigger_granola_sync_for_meeting(
     state: &AppState,
     app_handle: &AppHandle,
     meeting_id: &str,
     force: bool,
-) -> Result<ManualGranolaSyncResult, String> {
+) -> Result<(ManualGranolaSyncResult, Option<crate::types::CalendarEvent>), String> {
     let granola_config = state
         .config
         .read()
@@ -580,20 +619,26 @@ pub fn trigger_granola_sync_for_meeting(
         {
             match existing.state.as_str() {
                 "completed" => {
-                    return Ok(ManualGranolaSyncResult {
-                        status: ManualGranolaSyncStatus::AlreadyCompleted,
-                        message: "Transcript already synced".to_string(),
-                        document_title: None,
-                        content_type: None,
-                    });
+                    return Ok((
+                        ManualGranolaSyncResult {
+                            status: ManualGranolaSyncStatus::AlreadyCompleted,
+                            message: "Transcript already synced".to_string(),
+                            document_title: None,
+                            content_type: None,
+                        },
+                        None,
+                    ));
                 }
                 "processing" | "pending" => {
-                    return Ok(ManualGranolaSyncResult {
-                        status: ManualGranolaSyncStatus::AlreadyInProgress,
-                        message: "Sync already in progress".to_string(),
-                        document_title: None,
-                        content_type: None,
-                    });
+                    return Ok((
+                        ManualGranolaSyncResult {
+                            status: ManualGranolaSyncStatus::AlreadyInProgress,
+                            message: "Sync already in progress".to_string(),
+                            document_title: None,
+                            content_type: None,
+                        },
+                        None,
+                    ));
                 }
                 _ => {} // failed/abandoned — allow retry
             }
@@ -651,14 +696,17 @@ pub fn trigger_granola_sync_for_meeting(
             // Run the sync pipeline
             match process_granola_document(state, &sync_id, meeting_id, &doc.content, content_kind)
             {
-                Ok(_) => {
+                Ok((_, calendar_event)) => {
                     emit_transcript_processed(state, app_handle, meeting_id);
-                    return Ok(ManualGranolaSyncResult {
-                        status: ManualGranolaSyncStatus::Attached,
-                        message: "Transcript synced successfully".to_string(),
-                        document_title: Some(doc.title.clone()),
-                        content_type: Some(doc.content_type),
-                    });
+                    return Ok((
+                        ManualGranolaSyncResult {
+                            status: ManualGranolaSyncStatus::Attached,
+                            message: "Transcript synced successfully".to_string(),
+                            document_title: Some(doc.title.clone()),
+                            content_type: Some(doc.content_type),
+                        },
+                        Some(calendar_event),
+                    ));
                 }
                 Err(e) => {
                     return Err(format!("Granola sync failed: {}", e));
@@ -667,12 +715,15 @@ pub fn trigger_granola_sync_for_meeting(
         }
     }
 
-    Ok(ManualGranolaSyncResult {
-        status: ManualGranolaSyncStatus::NotFound,
-        message: "No matching Granola document found".to_string(),
-        document_title: None,
-        content_type: None,
-    })
+    Ok((
+        ManualGranolaSyncResult {
+            status: ManualGranolaSyncStatus::NotFound,
+            message: "No matching Granola document found".to_string(),
+            document_title: None,
+            content_type: None,
+        },
+        None,
+    ))
 }
 
 #[cfg(test)]

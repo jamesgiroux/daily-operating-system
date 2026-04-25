@@ -351,6 +351,39 @@ impl GleanMcpClient {
         message: &str,
         context: Option<Vec<String>>,
     ) -> Result<String, ContextError> {
+        self.chat_inner(message, context)
+            .await
+            .map(|resp| resp.text)
+    }
+
+    /// DOS-204: AI-powered chat that also returns citation metadata.
+    ///
+    /// Same wire call as [`chat`], but extracts the citation count from the
+    /// response envelope so callers (e.g., the peer-benchmark cell) can
+    /// render a "Drawn from N Glean sources" footer.
+    ///
+    /// `source_count` is best-effort: if Glean's envelope doesn't carry
+    /// citation metadata in a recognised shape, it is `0` rather than
+    /// erroring. Callers should treat 0 as "no citation count available"
+    /// and degrade gracefully.
+    pub async fn chat_with_citations(
+        &self,
+        message: &str,
+        context: Option<Vec<String>>,
+    ) -> Result<ChatResponse, ContextError> {
+        self.chat_inner(message, context).await
+    }
+
+    /// Shared implementation for [`chat`] and [`chat_with_citations`].
+    ///
+    /// Performs the JSON-RPC `tools/call` for the `chat` tool, walks the
+    /// MCP envelope to extract the final GLEAN_AI message text, and counts
+    /// citations attached to that message.
+    async fn chat_inner(
+        &self,
+        message: &str,
+        context: Option<Vec<String>>,
+    ) -> Result<ChatResponse, ContextError> {
         let token = self.get_token()?;
 
         let mut arguments = serde_json::json!({
@@ -434,7 +467,7 @@ impl GleanMcpClient {
             )));
         }
 
-        // Try to parse the messages envelope and extract the final AI response
+        // Try to parse the messages envelope and extract the final AI response.
         if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(content_text) {
             if let Some(messages) = envelope.get("messages").and_then(|m| m.as_array()) {
                 // Find the last GLEAN_AI message that is CONTENT type (not UPDATE)
@@ -465,16 +498,116 @@ impl GleanMcpClient {
                             .unwrap_or_default();
 
                         if !text.is_empty() {
-                            return Ok(text);
+                            let source_count = count_citations(msg, &envelope);
+                            return Ok(ChatResponse { text, source_count });
                         }
                     }
                 }
             }
         }
 
-        // Fallback: return the raw content text (might already be the final answer)
-        Ok(content_text.to_string())
+        // Fallback: return the raw content text (might already be the final answer).
+        // No structured envelope -> no citation count.
+        Ok(ChatResponse {
+            text: content_text.to_string(),
+            source_count: 0,
+        })
     }
+}
+
+/// DOS-204: Response from a Glean chat call including citation metadata.
+///
+/// `source_count` is the number of distinct sources Glean cited when
+/// producing `text`. A value of 0 means either Glean returned no citations
+/// or the envelope shape didn't expose them in a way we recognised.
+#[derive(Debug, Clone)]
+pub struct ChatResponse {
+    pub text: String,
+    pub source_count: u32,
+}
+
+/// DOS-204: Count citations attached to a GLEAN_AI content message.
+///
+/// Glean's MCP envelope shape for citations is not formally documented and
+/// has varied across versions. We probe the most likely locations in
+/// preference order and return the first non-zero count:
+///
+/// 1. CITATION-typed fragments inside `msg.fragments[]`
+/// 2. A `citations` / `citationList` / `sources` array on `msg`
+/// 3. A top-level `citations` / `citationList` array on the envelope
+///
+/// Citation entries are deduped by URL (or `documentId`/`opaqueRef` when no
+/// URL is present) so a multi-fragment citation of the same Salesforce
+/// record counts once. Returns 0 when no recognised citation field is
+/// present — callers treat that as "unknown" and render the cell without
+/// a source-count footer.
+fn count_citations(msg: &serde_json::Value, envelope: &serde_json::Value) -> u32 {
+    use std::collections::HashSet;
+
+    fn absorb_array(arr: &[serde_json::Value], keys: &mut HashSet<String>) {
+        for item in arr {
+            // Prefer URL → documentId → opaqueRef → id → full json string as the dedupe key
+            let key = item
+                .get("url")
+                .and_then(|v| v.as_str())
+                .or_else(|| item.get("sourceUrl").and_then(|v| v.as_str()))
+                .or_else(|| item.get("documentId").and_then(|v| v.as_str()))
+                .or_else(|| item.get("opaqueRef").and_then(|v| v.as_str()))
+                .or_else(|| item.get("id").and_then(|v| v.as_str()))
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| item.to_string());
+            keys.insert(key);
+        }
+    }
+
+    let mut keys: HashSet<String> = HashSet::new();
+
+    // 1. CITATION-typed fragments on the message
+    if let Some(frags) = msg.get("fragments").and_then(|f| f.as_array()) {
+        let cit_frags: Vec<&serde_json::Value> = frags
+            .iter()
+            .filter(|f| {
+                f.get("type")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t.eq_ignore_ascii_case("CITATION"))
+                    .unwrap_or(false)
+                    || f.get("citation").is_some()
+            })
+            .collect();
+        if !cit_frags.is_empty() {
+            for f in cit_frags {
+                // Citation payload may live under `citation`, `source`, or be the fragment itself.
+                let payload = f.get("citation").or_else(|| f.get("source")).unwrap_or(f);
+                if let Some(arr) = payload.as_array() {
+                    absorb_array(arr, &mut keys);
+                } else {
+                    absorb_array(std::slice::from_ref(payload), &mut keys);
+                }
+            }
+            if !keys.is_empty() {
+                return keys.len() as u32;
+            }
+        }
+    }
+
+    // 2. Citations / citationList / sources array on the message itself
+    for field in &["citations", "citationList", "sources"] {
+        if let Some(arr) = msg.get(*field).and_then(|v| v.as_array()) {
+            absorb_array(arr, &mut keys);
+        }
+    }
+    if !keys.is_empty() {
+        return keys.len() as u32;
+    }
+
+    // 3. Top-level citations / citationList on the envelope
+    for field in &["citations", "citationList"] {
+        if let Some(arr) = envelope.get(*field).and_then(|v| v.as_array()) {
+            absorb_array(arr, &mut keys);
+        }
+    }
+
+    keys.len() as u32
 }
 
 // ---------------------------------------------------------------------------

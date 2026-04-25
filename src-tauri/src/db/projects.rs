@@ -673,6 +673,8 @@ impl ActionDb {
                 confidence,
                 is_primary,
                 suggested,
+                role: None,
+                applied_rule: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -750,6 +752,8 @@ impl ActionDb {
                     confidence,
                     is_primary,
                     suggested,
+                    role: None,
+                    applied_rule: None,
                 },
             ))
         })?;

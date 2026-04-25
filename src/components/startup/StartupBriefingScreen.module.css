@@ -1,0 +1,253 @@
+.screen {
+  --startup-accent: var(--color-spice-turmeric);
+  color: var(--color-text-primary);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-paper-cream);
+  opacity: 1;
+  transition: opacity 300ms ease-out;
+}
+
+.fading {
+  pointer-events: none;
+  opacity: 0;
+}
+
+.splashStack {
+  display: flex;
+  width: min(320px, calc(100vw - 48px));
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.rule {
+  width: 48px;
+  height: 1px;
+  background: var(--color-rule-heavy);
+}
+
+.ruleTop {
+  margin-bottom: var(--space-xl);
+}
+
+.ruleBottom {
+  margin-top: var(--space-xl);
+}
+
+.brandMark {
+  width: 36px;
+  height: 36px;
+  color: var(--startup-accent);
+}
+
+.brandName {
+  margin-top: 20px;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.06em;
+}
+
+.splashTitle {
+  margin-top: 10px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+}
+
+.progress {
+  display: grid;
+  grid-template-columns: 100px 32px minmax(0, 1fr);
+  padding-top: var(--space-5xl);
+  padding-bottom: 96px;
+}
+
+.elapsed {
+  padding-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--startup-accent);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.progressContent {
+  max-width: 520px;
+}
+
+.sectionRule {
+  border-top: 1px solid var(--color-rule-heavy);
+  margin-bottom: var(--space-xl);
+}
+
+.progressTitle {
+  margin-bottom: var(--space-xl);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--startup-accent);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.phaseList {
+  margin-bottom: var(--space-3xl);
+}
+
+.phaseRow {
+  display: flex;
+  gap: var(--space-md);
+  align-items: flex-start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  transition: opacity 0.5s ease;
+}
+
+.phaseRow:last-child {
+  border-bottom: 0;
+}
+
+.phaseRow[data-state="pending"] {
+  opacity: 0.3;
+}
+
+.phaseDot {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  border: 2px solid var(--color-rule-light);
+  border-radius: 50%;
+  transition: border-color 0.3s ease, background 0.3s ease;
+}
+
+.phaseRow[data-state="complete"] .phaseDot {
+  border-color: var(--color-garden-sage);
+  background: var(--color-garden-sage);
+}
+
+.phaseRow[data-state="current"] .phaseDot {
+  border-color: var(--startup-accent);
+}
+
+.phasePulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--startup-accent);
+  animation: startup-briefing-pulse 1.5s ease infinite;
+}
+
+.phaseText {
+  padding-top: 1px;
+}
+
+.phaseLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--color-text-tertiary);
+  transition: color 0.3s ease;
+}
+
+.phaseRow[data-state="complete"] .phaseLabel {
+  color: var(--color-text-secondary);
+}
+
+.phaseRow[data-state="current"] .phaseLabel {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.phaseDetail {
+  margin-top: 3px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-tertiary);
+}
+
+.quoteBox {
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+  padding: 20px 0;
+}
+
+.quote {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+  animation: startup-briefing-quote-fade 0.6s ease;
+}
+
+.navigateHint {
+  margin-top: 20px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-tertiary);
+  opacity: 0.6;
+}
+
+@keyframes startup-briefing-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes startup-briefing-quote-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 760px) {
+  .progress {
+    grid-template-columns: 1fr;
+    padding: var(--space-4xl) var(--space-lg) 96px;
+  }
+
+  .elapsed {
+    margin-bottom: var(--space-lg);
+    padding-top: 0;
+  }
+
+  .progressSpacer {
+    display: none;
+  }
+}

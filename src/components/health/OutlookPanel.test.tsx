@@ -3,9 +3,9 @@
  */
 import { describe, expect, it } from "vitest";
 import { renewalCallVerdict } from "./OutlookPanel";
-import type { RenewalOutlook } from "@/types";
+import type { AgreementOutlook } from "@/types";
 
-function ro(overrides: Partial<RenewalOutlook>): RenewalOutlook {
+function ro(overrides: Partial<AgreementOutlook>): AgreementOutlook {
   return {
     confidence: undefined,
     riskFactors: [],
@@ -17,7 +17,7 @@ function ro(overrides: Partial<RenewalOutlook>): RenewalOutlook {
   };
 }
 
-describe("renewalCallVerdict — chapter-title verdict from renewalOutlook", () => {
+describe("renewalCallVerdict — chapter-title verdict from agreementOutlook", () => {
   it("returns 'Churn risk' when confidence is low", () => {
     expect(renewalCallVerdict(ro({ confidence: "low" }))).toBe("Churn risk");
   });
@@ -64,7 +64,7 @@ describe("renewalCallVerdict — chapter-title verdict from renewalOutlook", () 
   });
 
   it("returns 'Renewal' for moderate confidence even with substantive expansion narrative", () => {
-    // Blackstone-shaped: moderate confidence + rich expansion narrative.
+    // Globex-shaped: moderate confidence + rich expansion narrative.
     // Expansion is real but we haven't earned 'Expansion' as the call yet.
     expect(
       renewalCallVerdict(
