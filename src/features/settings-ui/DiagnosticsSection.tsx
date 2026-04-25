@@ -6,13 +6,9 @@ import {
   Loader2,
   Play,
   RefreshCw,
-  Check,
-  Building2,
-  FolderKanban,
-  Layers,
   HardDrive,
 } from "lucide-react";
-import type { EntityMode, FeatureFlags } from "@/types";
+import type { EntityMode } from "@/types";
 import { styles } from "@/components/settings/styles";
 import ds from "./DiagnosticsSection.module.css";
 
@@ -72,31 +68,6 @@ function cronToHumanTime(cron: string): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Entity mode options
-// ═══════════════════════════════════════════════════════════════════════════
-
-const entityModeOptions: { id: EntityMode; title: string; description: string; icon: typeof Building2 }[] = [
-  {
-    id: "account",
-    title: "Account-based",
-    description: "External relationships -- customers, clients, partners",
-    icon: Building2,
-  },
-  {
-    id: "project",
-    title: "Project-based",
-    description: "Internal efforts -- features, campaigns, initiatives",
-    icon: FolderKanban,
-  },
-  {
-    id: "both",
-    title: "Both",
-    description: "Relationships and initiatives",
-    icon: Layers,
-  },
-];
-
-// ═══════════════════════════════════════════════════════════════════════════
 // DeveloperToggle
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -137,72 +108,6 @@ function DeveloperToggle({
         >
           {config?.developerMode ? "On" : "Off"}
         </button>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// EntityModeSelector
-// ═══════════════════════════════════════════════════════════════════════════
-
-function EntityModeSelector({
-  currentMode,
-  onModeChange,
-}: {
-  currentMode: EntityMode;
-  onModeChange: (mode: EntityMode) => void;
-}) {
-  const [saving, setSaving] = useState(false);
-
-  async function handleSelect(mode: EntityMode) {
-    if (mode === currentMode || saving) return;
-    setSaving(true);
-    try {
-      await invoke("set_entity_mode", { mode });
-      onModeChange(mode);
-      toast.success("Work mode updated -- reloading...");
-      setTimeout(() => window.location.reload(), 800);
-    } catch (err) {
-      toast.error(typeof err === "string" ? err : "Failed to update work mode");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div>
-      <p style={styles.subsectionLabel}>Work Mode</p>
-      <p className={ds.entityModeDescription}>
-        How you organize your work -- shapes workspace structure and sidebar
-      </p>
-      <div className={ds.entityModeList}>
-        {entityModeOptions.map((option) => {
-          const Icon = option.icon;
-          const isSelected = currentMode === option.id;
-          return (
-            <button
-              key={option.id}
-              type="button"
-              className={ds.entityModeBtn}
-              data-selected={isSelected}
-              data-saving={saving && !isSelected}
-              onClick={() => handleSelect(option.id)}
-              disabled={saving}
-            >
-              <Icon size={18} className={ds.entityModeIcon} />
-              <div className={ds.entityModeContent}>
-                <span className={ds.entityModeTitle}>
-                  {option.title}
-                </span>
-                <p className={ds.entityModeDesc}>
-                  {option.description}
-                </p>
-              </div>
-              {isSelected && <Check size={16} className={ds.entityModeCheck} />}
-            </button>
-          );
-        })}
       </div>
     </div>
   );
@@ -913,15 +818,11 @@ function ArchivedAccountsSection() {
 export default function DiagnosticsSection() {
   const [config, setConfig] = useState<Config | null>(null);
   const [running, setRunning] = useState<string | null>(null);
-  const [rolePresetsEnabled, setRolePresetsEnabled] = useState(false);
 
   useEffect(() => {
     invoke<Config>("get_config")
       .then(setConfig)
       .catch((err) => console.error("get_config (diagnostics) failed:", err));
-    invoke<FeatureFlags>("get_feature_flags")
-      .then((flags) => setRolePresetsEnabled(flags.role_presets_enabled))
-      .catch(() => setRolePresetsEnabled(false));
   }, []);
 
   async function handleRunWorkflow(workflow: string) {
@@ -939,15 +840,6 @@ export default function DiagnosticsSection() {
   return (
     <div>
       <DeveloperToggle config={config} setConfig={setConfig} />
-      {rolePresetsEnabled && (
-        <>
-          <hr style={styles.thinRule} />
-          <EntityModeSelector
-            currentMode={config?.entityMode ?? "account"}
-            onModeChange={(mode) => setConfig(config ? { ...config, entityMode: mode } : null)}
-          />
-        </>
-      )}
       <hr style={styles.thinRule} />
       <SchedulesSection config={config} running={running} onRun={handleRunWorkflow} />
       <hr style={styles.thinRule} />

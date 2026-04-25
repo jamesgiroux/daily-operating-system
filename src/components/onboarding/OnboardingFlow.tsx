@@ -13,7 +13,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
-import type { EntityMode, FeatureFlags, DiscoveredAccount, GleanAuthStatus } from "@/types";
+import type { EntityMode, DiscoveredAccount, GleanAuthStatus } from "@/types";
 
 import { AtmosphereLayer } from "@/components/layout/AtmosphereLayer";
 import { FolioBar } from "@/components/layout/FolioBar";
@@ -93,20 +93,12 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [chapter, setChapter] = useState<Chapter>(CHAPTERS[0]);
   const [visitedChapters, setVisitedChapters] = useState<Set<Chapter>>(new Set([CHAPTERS[0]]));
   const [resumeChecked, setResumeChecked] = useState(false);
-  const [rolePresetsEnabled, setRolePresetsEnabled] = useState(false);
 
   // I561: Glean state
   const [gleanConnected, setGleanConnected] = useState(false);
   const [discoveredAccounts, setDiscoveredAccounts] = useState<DiscoveredAccount[]>([]);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [importedAccountNames, setImportedAccountNames] = useState<string[]>([]);
-
-  // Fetch feature flags on mount
-  useEffect(() => {
-    invoke<FeatureFlags>("get_feature_flags")
-      .then((flags) => setRolePresetsEnabled(flags.role_presets_enabled))
-      .catch(() => setRolePresetsEnabled(false));
-  }, []);
 
   // Resume from last completed step on mount
   useEffect(() => {
@@ -244,9 +236,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   }
 
   // Build chapter items for FloatingNavIsland (step dots, not labels)
-  // Hide "role" chapter when role presets are gated off (I537)
   const navChapters: ChapterItem[] = CHAPTERS
-    .filter((c) => c !== "welcome" && (c !== "role" || rolePresetsEnabled))
+    .filter((c) => c !== "welcome")
     .map((c) => ({
       id: c,
       label: CHAPTER_LABELS[c],
@@ -355,30 +346,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             discoveredAccounts={discoveredAccounts}
             discoveryLoading={discoveryLoading}
             onImported={setImportedAccountNames}
-            onNext={async () => {
-              if (rolePresetsEnabled) {
-                goToChapter("role");
-              } else {
-                await invoke("set_role", { role: "core" }).catch(() => {});
-                await invoke("set_entity_mode", { mode: "project" }).catch(() => {});
-                await invoke("set_wizard_step", { step: "role" }).catch(() => {});
-                goToChapter("prime");
-              }
+            onNext={() => {
+              goToChapter("role");
             }}
-            onSkip={async () => {
-              if (rolePresetsEnabled) {
-                goToChapter("role");
-              } else {
-                await invoke("set_role", { role: "core" }).catch(() => {});
-                await invoke("set_entity_mode", { mode: "project" }).catch(() => {});
-                await invoke("set_wizard_step", { step: "role" }).catch(() => {});
-                goToChapter("prime");
-              }
+            onSkip={() => {
+              goToChapter("role");
             }}
           />
         )}
 
-        {chapter === "role" && rolePresetsEnabled && (
+        {chapter === "role" && (
           <EntityModeChapter
             onNext={async (_mode) => {
               await invoke("set_wizard_step", { step: "role" }).catch(() => {});
