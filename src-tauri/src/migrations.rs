@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use rusqlite::Connection;
+use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
 struct Migration {
     version: i32,
@@ -562,6 +562,16 @@ const MIGRATIONS: &[Migration] = &[
         version: 122,
         sql: include_str!("migrations/121_entity_graph_sweep_state.sql"),
     },
+    // DOS-321: collapse duplicate commitment-typed actions where the AI
+    // emitted the same commitment text under different commitment_id
+    // values across enrichment runs. Pick a canonical row per
+    // (entity, normalized_title), rewire bridge rows to point at it,
+    // delete the duplicates. Forward-going dedup is enforced in
+    // services::commitment_bridge::sync_ai_commitments.
+    Migration {
+        version: 123,
+        sql: include_str!("migrations/122_dos_321_collapse_commitment_dupes.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -810,6 +820,45 @@ fn should_try_encrypted_backup_fallback(encrypted: bool, err: &str) -> bool {
             || err.contains("encrypted databases"))
 }
 
+fn is_no_such_actions_table_error(err: &SqliteError) -> bool {
+    let msg = match err {
+        SqliteError::SqliteFailure(sqlite_err, Some(msg))
+            if sqlite_err.code == ErrorCode::Unknown =>
+        {
+            msg
+        }
+        SqliteError::SqlInputError {
+            error,
+            msg,
+            sql: _,
+            offset: _,
+        } if error.code == ErrorCode::Unknown => msg,
+        _ => return false,
+    };
+
+    msg.contains("no such table: actions")
+}
+
+fn probe_actions_table(conn: &Connection) -> Result<bool, String> {
+    let mut stmt = match conn.prepare("SELECT 1 FROM actions LIMIT 1") {
+        Ok(stmt) => stmt,
+        Err(err) if is_no_such_actions_table_error(&err) => return Ok(false),
+        Err(err) => {
+            return Err(format!(
+                "Failed to inspect actions table during migration bootstrap: {err}"
+            ))
+        }
+    };
+
+    match stmt.exists([]) {
+        Ok(_) => Ok(true),
+        Err(err) if is_no_such_actions_table_error(&err) => Ok(false),
+        Err(err) => Err(format!(
+            "Failed to inspect actions table during migration bootstrap: {err}"
+        )),
+    }
+}
+
 /// Detect a pre-framework database and mark the baseline as applied.
 ///
 /// If the `actions` table exists but `schema_version` does not, this is a
@@ -823,13 +872,9 @@ fn bootstrap_existing_db(conn: &Connection) -> Result<bool, String> {
         return Ok(false);
     }
 
-    // Check if this is an existing database (has the actions table with data)
-    let has_actions: bool = conn
-        .prepare("SELECT 1 FROM actions LIMIT 1")
-        .and_then(|mut stmt| stmt.exists([]))
-        .unwrap_or(false);
-
-    if has_actions {
+    // Only a missing `actions` table means a fresh database. Other probe
+    // failures indicate the DB cannot be safely classified.
+    if probe_actions_table(conn)? {
         // Existing database — mark baseline as applied
         conn.execute(
             "INSERT OR IGNORE INTO schema_version (version) VALUES (?1)",
@@ -1034,6 +1079,86 @@ mod tests {
     /// Helper: open an in-memory database with WAL-like settings.
     fn mem_db() -> Connection {
         Connection::open_in_memory().expect("in-memory db")
+    }
+
+    #[test]
+    fn test_bootstrap_missing_actions_table_is_fresh_db() {
+        let conn = mem_db();
+        ensure_schema_version_table(&conn).expect("schema_version table");
+
+        let bootstrapped = bootstrap_existing_db(&conn).expect("bootstrap should inspect db");
+        assert!(!bootstrapped, "missing actions table should mean fresh DB");
+
+        let version = current_version(&conn).expect("version query");
+        assert_eq!(version, 0, "fresh DB should not be marked as bootstrapped");
+    }
+
+    #[test]
+    fn test_bootstrap_empty_actions_table_is_existing_db() {
+        let conn = mem_db();
+        ensure_schema_version_table(&conn).expect("schema_version table");
+        conn.execute_batch("CREATE TABLE actions (id TEXT PRIMARY KEY);")
+            .expect("empty actions table");
+
+        let bootstrapped = bootstrap_existing_db(&conn).expect("bootstrap should inspect db");
+        assert!(
+            bootstrapped,
+            "an existing actions table should bootstrap even when empty"
+        );
+
+        let version = current_version(&conn).expect("version query");
+        assert_eq!(version, 1, "existing DB should be marked at baseline");
+    }
+
+    #[test]
+    fn test_bootstrap_actions_probe_surfaces_non_missing_table_errors() {
+        let conn = mem_db();
+        ensure_schema_version_table(&conn).expect("schema_version table");
+        conn.execute_batch("CREATE VIEW actions AS SELECT * FROM missing_dependency;")
+            .expect("broken actions view");
+
+        let err =
+            bootstrap_existing_db(&conn).expect_err("broken actions probe should not look fresh");
+        assert!(
+            err.contains("Failed to inspect actions table during migration bootstrap"),
+            "error should surface probe failure: {err}"
+        );
+        assert!(
+            err.contains("missing_dependency"),
+            "error should identify the underlying SQLite failure: {err}"
+        );
+    }
+
+    #[test]
+    fn test_bootstrap_actions_probe_error_classifier_is_strict() {
+        let conn = mem_db();
+        let missing_actions = match conn.prepare("SELECT 1 FROM actions LIMIT 1") {
+            Ok(_) => panic!("actions table should be missing"),
+            Err(err) => err,
+        };
+        assert!(is_no_such_actions_table_error(&missing_actions));
+
+        for (code, msg) in [
+            (rusqlite::ffi::SQLITE_LOCKED, "database table is locked"),
+            (
+                rusqlite::ffi::SQLITE_CORRUPT,
+                "database disk image is malformed",
+            ),
+            (rusqlite::ffi::SQLITE_IOERR, "disk I/O error"),
+            (
+                rusqlite::ffi::SQLITE_ERROR,
+                "no such table: missing_dependency",
+            ),
+        ] {
+            let err = SqliteError::SqliteFailure(
+                rusqlite::ffi::Error::new(code),
+                Some(msg.to_string()),
+            );
+            assert!(
+                !is_no_such_actions_table_error(&err),
+                "only missing actions table should classify as fresh DB: {msg}"
+            );
+        }
     }
 
     #[test]
