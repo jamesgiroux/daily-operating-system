@@ -253,12 +253,20 @@ pub fn collect_narrative_text(intel: &super::io::IntelligenceJson) -> String {
     parts.join("\n")
 }
 
-/// DOS-287: Runtime feature flag for the contamination validator.
+/// Runtime policy for the cross-entity contamination validator.
 ///
-/// Default: enabled + rejecting. The bug is live in production, so we ship
-/// the safe-by-default behavior. Operators can run in "shadow mode" for a
-/// release by setting `DAILYOS_CONTAMINATION_VALIDATION=shadow` (log only).
-/// Setting it to `off` disables the scan entirely.
+/// Default: `ShadowMode` — detect, log, emit signals, surface a toast,
+/// but write the data anyway. The contamination signal is *evidence*
+/// for the user (and for downstream trust scoring landing in v1.4.0),
+/// not a hard gate that blocks the write. With local-only sources the
+/// AI has less context and produces more shapes that look like foreign
+/// tokens; gating writes on the detector would silently strand fresh
+/// accounts at empty state.
+///
+/// Operators in paranoid environments can opt into hard rejection by
+/// setting `DAILYOS_CONTAMINATION_VALIDATION=strict` (or
+/// `=reject`/`=reject-on-hit`). Setting it to `off` disables the scan
+/// entirely so no signals fire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContaminationValidation {
     /// Run the scan; on hit, emit signals/events and REJECT the write.
@@ -271,7 +279,7 @@ pub enum ContaminationValidation {
 
 impl ContaminationValidation {
     /// Read the policy from the `DAILYOS_CONTAMINATION_VALIDATION` env var.
-    /// Unknown / unset values produce the default (`RejectOnHit`).
+    /// Unknown / unset values produce the default (`ShadowMode`).
     pub fn from_env() -> Self {
         Self::from_env_value(std::env::var("DAILYOS_CONTAMINATION_VALIDATION").ok().as_deref())
     }
@@ -281,8 +289,9 @@ impl ContaminationValidation {
     pub fn from_env_value(raw: Option<&str>) -> Self {
         match raw.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
             Some("off" | "disabled" | "false" | "0") => Self::Off,
-            Some("shadow" | "shadow_mode" | "log_only" | "log-only") => Self::ShadowMode,
-            _ => Self::RejectOnHit,
+            Some("strict" | "reject" | "reject-on-hit" | "reject_on_hit") => Self::RejectOnHit,
+            // Default + explicit shadow values land in ShadowMode.
+            _ => Self::ShadowMode,
         }
     }
 
@@ -554,11 +563,13 @@ mod tests {
     }
 
     #[test]
-    fn contamination_validation_default_is_reject_on_hit() {
+    fn contamination_validation_default_is_shadow_mode() {
+        // Default policy: detect + log + emit, but allow the write.
+        // Strict rejection is opt-in only.
         let p = ContaminationValidation::from_env_value(None);
-        assert_eq!(p, ContaminationValidation::RejectOnHit);
+        assert_eq!(p, ContaminationValidation::ShadowMode);
         assert!(p.is_enabled());
-        assert!(p.rejects());
+        assert!(!p.rejects());
     }
 
     #[test]
@@ -572,6 +583,17 @@ mod tests {
     }
 
     #[test]
+    fn contamination_validation_strict_mode_parse() {
+        // Strict rejection is opt-in via explicit env var values.
+        for raw in ["strict", "reject", "reject-on-hit", "reject_on_hit", "STRICT"] {
+            let p = ContaminationValidation::from_env_value(Some(raw));
+            assert_eq!(p, ContaminationValidation::RejectOnHit, "raw={raw}");
+            assert!(p.is_enabled());
+            assert!(p.rejects());
+        }
+    }
+
+    #[test]
     fn contamination_validation_off_parse() {
         for raw in ["off", "disabled", "false", "0"] {
             let p = ContaminationValidation::from_env_value(Some(raw));
@@ -581,9 +603,9 @@ mod tests {
     }
 
     #[test]
-    fn contamination_validation_unknown_value_defaults_to_reject() {
+    fn contamination_validation_unknown_value_defaults_to_shadow() {
         let p = ContaminationValidation::from_env_value(Some("nonsense"));
-        assert_eq!(p, ContaminationValidation::RejectOnHit);
+        assert_eq!(p, ContaminationValidation::ShadowMode);
     }
 
     // Integration-style: hit on a cross-entity narrative field produces hits
