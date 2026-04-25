@@ -32,7 +32,7 @@ pub fn gather_email_context(
     // (e.g. a thread with heavy fan-out) drowned out every other meeting's
     // prep — a user with a 1:1 with Josiah would see "6 email threads from
     // randall.benson@coxautoinc.com" injected into the briefing because
-    // Randall's Cox-scoped signals were the most recent rows in the table.
+    // Randall's AcmeCorp-scoped signals were the most recent rows in the table.
     //
     // Scoping by entity_id (and skipping the query entirely when the meeting
     // has no resolved primary entity) closes the leak.
@@ -140,7 +140,7 @@ mod tests {
     /// was added to the signal_events query, every meeting prep globally
     /// pulled the 8 most-recent pre_meeting_context rows from the last 7
     /// days, causing (e.g.) a 1:1 with Josiah to render Randall's
-    /// Cox-scoped email signals in the briefing digest.
+    /// AcmeCorp-scoped email signals in the briefing digest.
     #[test]
     fn pre_meeting_context_signals_are_entity_scoped() {
         let db = test_db();
@@ -149,8 +149,8 @@ mod tests {
         // Seed two entities' worth of pre_meeting_context signals.
         let conn = db.conn_ref();
         for (eid, from, text) in [
-            ("cox", "randall.benson@example.com", "Randall: Cox thread"),
-            ("cox", "randall.benson@example.com", "Randall: another Cox thread"),
+            ("acmecorp", "randall.benson@example.com", "Randall: AcmeCorp thread"),
+            ("acmecorp", "randall.benson@example.com", "Randall: another AcmeCorp thread"),
             ("josiah-wold", "josiah@example.com", "Josiah: 1:1 prep"),
         ] {
             let value = serde_json::json!({
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(
             arr.len(),
             1,
-            "josiah meeting must not pull cox signals; got {arr:?}"
+            "josiah meeting must not pull acmecorp signals; got {arr:?}"
         );
         assert_eq!(
             arr[0].get("from").and_then(|v| v.as_str()),
@@ -181,9 +181,9 @@ mod tests {
             "wrong sender leaked into josiah meeting: {arr:?}"
         );
 
-        // Gather for Cox — must see both Cox rows.
-        let result = gather_email_context(&db, &[], "cox", 8);
+        // Gather for AcmeCorp — must see both AcmeCorp rows.
+        let result = gather_email_context(&db, &[], "acmecorp", 8);
         let arr = result.as_array().expect("array");
-        assert_eq!(arr.len(), 2, "cox should have 2 signals, got {arr:?}");
+        assert_eq!(arr.len(), 2, "acmecorp should have 2 signals, got {arr:?}");
     }
 }

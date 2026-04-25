@@ -114,6 +114,27 @@ Run these BEFORE build verification. CI runs `pnpm audit --audit-level high` and
 - [ ] OAuth flow uses PKCE with S256 challenge
 - [ ] Keychain storage for tokens — no plaintext token files
 
+### Hard gate: content sweep against the local blocklist (`.claude/pii-blocklist.txt`)
+
+This is non-negotiable. Release does not ship if any term from the blocklist appears in any of the surfaces below. The pre-commit hook (`.claude/hooks/pre-commit-gate.sh`) catches them at commit time, but the gate is only reliable if the blocklist is current and the hook was not bypassed.
+
+- [ ] Blocklist is current — all customer names, account domains, stakeholder names, and other identifiers from the production workspace have been added since the last release
+- [ ] Sweep all commits ahead of the release base (content + messages):
+      ```bash
+      TERMS=$(grep -v '^#' .claude/pii-blocklist.txt | grep -v '^$' | paste -sd '|' -)
+      git log -p origin/<base>..HEAD | grep -iE "$TERMS" | grep -v "^+++" | head -50
+      git log --format='%H %s%n%b' origin/<base>..HEAD | grep -iE "$TERMS" | head -20
+      ```
+- [ ] Sweep working tree:
+      ```bash
+      git grep -iE "$TERMS"
+      ```
+- [ ] Sweep `CHANGELOG.md`, `release-notes.md`, all `.docs/decisions/*.md`, all `.docs/plans/*.md`, all test fixtures, all mock data, all example payloads
+- [ ] Sweep filenames (some leaks happen in paths, not content): `git diff --name-only origin/<base>..HEAD | grep -iE "$TERMS"`
+- [ ] Sweep branch names: `git branch | grep -iE "$TERMS"`
+- [ ] Any hits → halt release. Scrub via `git filter-repo --replace-text` and `--replace-message`. Force-push the rewritten branch. Re-run this gate.
+- [ ] Commit messages produced by the scrub (or any release commit) do not reference the scrub itself, the blocklist, the act of removing data, or the categories of removed content — that information is itself a leak that tells observers what to look for in the older history
+
 ## 9. Performance Audit
 
 - [ ] App cold launch to usable dashboard: under 3 seconds

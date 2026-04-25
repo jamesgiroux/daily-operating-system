@@ -39,7 +39,7 @@ function didEnrich(intelligence: EntityIntelligence): boolean {
   if (intelligence.health) return true;
   if (intelligence.currentState) return true;
   if (intelligence.executiveAssessment && intelligence.executiveAssessment.trim().length > 0) return true;
-  if (intelligence.renewalOutlook) return true;
+  if (intelligence.agreementOutlook) return true;
   if ((intelligence.risks?.length ?? 0) > 0) return true;
   if ((intelligence.recentWins?.length ?? 0) > 0) return true;
   return false;

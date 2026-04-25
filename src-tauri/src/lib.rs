@@ -304,11 +304,89 @@ pub fn run() {
                 async move { google_drive::poller::run_drive_poller(s).await }
             });
 
-            // Spawn event-driven entity resolution trigger (I308) — supervised (I616)
-            let entity_res_state = state.clone();
-            task_supervisor::spawn_supervised("EntityResolutionTrigger", move || {
-                let s = entity_res_state.clone();
-                async move { signals::event_trigger::run_entity_resolution_trigger(s).await }
+            // DOS-258: legacy entity resolution trigger removed. Entity
+            // linking now runs on every calendar poll via
+            // `services::entity_linking::calendar_adapter::evaluate_meeting`.
+
+            // DOS-258 Tier 4: one-shot post-upgrade sweep that self-corrects
+            // weak-primary entity links (rule:P5 / rule:P11) whose graph
+            // version has drifted since the evidence-hierarchy fix shipped.
+            // Gated by entity_graph_version.last_migration_sweep_at so it
+            // runs at most once per upgrade. Fire-and-forget — failures
+            // just log a warning, the periodic graph-drift pass handles
+            // anything this sweep missed.
+            let sweep_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                // Tiny delay so the app UI lands first.
+                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+                match services::entity_linking::rescan::run_one_shot_upgrade_sweep(
+                    sweep_state,
+                )
+                .await
+                {
+                    Ok(n) => {
+                        if n > 0 {
+                            log::info!("entity_linking one-shot sweep: re-evaluated {n} weak primaries");
+                        }
+                    }
+                    Err(e) => log::warn!("entity_linking one-shot sweep failed: {e}"),
+                }
+            });
+
+            // DOS-258: meeting-type reclassification runs on every boot so
+            // existing meetings get re-labelled whenever attendee evidence
+            // changes (stakeholder added, domain registered, relationship
+            // flipped). Ungated — the entity-linking one-shot sweep above
+            // only handles primary-entity drift, not meeting_type, and the
+            // function is idempotent + cheap. Fire-and-forget.
+            let reclassify_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(35)).await;
+                let result = reclassify_state
+                    .db_write(|db| {
+                        db.reclassify_meeting_types_from_attendees()
+                            .map_err(|e| e.to_string())
+                    })
+                    .await;
+                match result {
+                    Ok(n) if n > 0 => log::info!(
+                        "reclassify_meeting_types_from_attendees: re-labelled {n} meetings"
+                    ),
+                    Ok(_) => {}
+                    Err(e) => log::warn!("reclassify_meeting_types_from_attendees failed: {e}"),
+                }
+            });
+
+            // DOS-258: stakeholder-derived domain backfill runs on every boot so
+            // new users AND existing users self-heal any account whose stakeholder
+            // graph has domains that aren't yet registered. Idempotent — repeat
+            // runs on unchanged data are cheap. Spawned ~40s after init to avoid
+            // UI contention while still fronting the first calendar poll.
+            let stakeholder_domains_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(40)).await;
+                let user_domains = crate::state::load_config()
+                    .map(|c| c.resolved_user_domains())
+                    .unwrap_or_default();
+                let result = stakeholder_domains_state
+                    .db_write(move |db| {
+                        crate::services::entity_linking::stakeholder_domains::backfill_domains_for_all_accounts(
+                            db,
+                            &user_domains,
+                        )
+                    })
+                    .await;
+                match result {
+                    Ok((touched, new)) if new > 0 => log::info!(
+                        "stakeholder_domains boot sweep: {} new domains across {} accounts",
+                        new,
+                        touched
+                    ),
+                    Ok(_) => log::debug!(
+                        "stakeholder_domains boot sweep: no new domains to register"
+                    ),
+                    Err(e) => log::warn!("stakeholder_domains boot sweep failed: {e}"),
+                }
             });
 
             // Create tray menu
@@ -470,6 +548,7 @@ pub fn run() {
             commands::reset_ai_models_to_recommended,
             commands::set_google_poll_settings,
             commands::set_hygiene_config,
+            commands::set_daily_ai_budget,
             commands::set_notification_config,
             commands::set_schedule,
             commands::get_actions_from_db,
@@ -477,6 +556,8 @@ pub fn run() {
             commands::reopen_action,
             commands::accept_suggested_action,
             commands::reject_suggested_action,
+            commands::dismiss_suggested_action,
+            commands::attach_meeting_transcript_text,
             commands::mark_reply_sent,
             commands::dismiss_gone_quiet,
             commands::archive_email,
@@ -583,6 +664,9 @@ pub fn run() {
             commands::dev_clean_artifacts,
             commands::dev_set_auth_override,
             commands::dev_onboarding_scenario,
+            // DOS-287: Cross-entity contamination audit + cleanup
+            commands::devtools_audit_cross_contamination,
+            commands::devtools_clear_contaminated_enrichment,
             // I52: Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,

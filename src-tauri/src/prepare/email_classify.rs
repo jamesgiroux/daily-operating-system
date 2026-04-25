@@ -270,19 +270,6 @@ fn apply_dismissal_penalty(
 // I320: Signal-context boosting (Layer 1 of hybrid classification)
 // ============================================================================
 
-/// High-confidence signal types that warrant boosting a medium email to high.
-const BOOST_SIGNAL_TYPES: &[&str] = &[
-    "renewal_approaching",
-    "engagement_warning",
-    "champion_risk",
-    "churn_risk",
-    "escalation",
-    "expansion_opportunity",
-    "cadence_anomaly",
-    "email_cadence_drop",
-    "project_health_warning",
-];
-
 /// A boost result explaining why an email was elevated.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BoostResult {
@@ -295,12 +282,17 @@ pub struct BoostResult {
 /// After mechanical classification, check if the email's sender resolves to
 /// an entity with active high-confidence signals. If so, boost "medium" → "high".
 ///
+/// `merged_email_signal_types` is the pre-merged list of signal type strings from
+/// `AppState::get_merged_signal_config().email_signal_types` (DOS-176). Callers
+/// must pass this list — this function does not reach into global state.
+///
 /// Returns `Some(BoostResult)` if the email should be boosted, `None` otherwise.
 /// Only operates on "medium" priority emails — high stays high, low stays low.
 pub fn boost_with_entity_context(
     from_email: &str,
     current_priority: &str,
     db: &crate::db::ActionDb,
+    merged_email_signal_types: &[String],
 ) -> Option<BoostResult> {
     if current_priority != "medium" {
         return None;
@@ -356,7 +348,10 @@ pub fn boost_with_entity_context(
             .collect();
 
         for (signal_type, value, confidence) in &signals {
-            if BOOST_SIGNAL_TYPES.contains(&signal_type.as_str()) {
+            if merged_email_signal_types
+                .iter()
+                .any(|t| t == signal_type)
+            {
                 let reason = match value {
                     Some(v) => format!("elevated: {} (confidence {:.0}%)", v, confidence * 100.0),
                     None => format!(
@@ -1010,5 +1005,67 @@ mod tests {
             ),
             "medium"
         );
+    }
+
+    // =========================================================================
+    // DOS-176: Preset-aware email signal type tests
+    // =========================================================================
+
+    fn merged_signal_types_for_preset(role: &str) -> Vec<String> {
+        let preset = crate::presets::loader::load_preset(role)
+            .unwrap_or_else(|e| panic!("Failed to load '{}' preset: {}", role, e));
+        crate::state::build_merged_signal_config(&preset).email_signal_types
+    }
+
+    #[test]
+    fn dos176_affiliates_merged_signal_types_include_campaign_deadline() {
+        let types = merged_signal_types_for_preset("affiliates");
+        assert!(
+            types.iter().any(|t| t == "campaign_deadline_approaching"),
+            "affiliates merged signal types must include 'campaign_deadline_approaching', got: {:?}",
+            types
+        );
+    }
+
+    #[test]
+    fn dos176_affiliates_merged_signal_types_exclude_renewal_approaching() {
+        // "renewal_approaching" is a CS-specific signal type and must NOT be in the
+        // affiliates preset's own config (it may be in the base list — that is
+        // acceptable — but the affiliates preset itself must not add it).
+        let preset = crate::presets::loader::load_preset("affiliates")
+            .expect("affiliates preset should load");
+        assert!(
+            !preset
+                .intelligence
+                .email_signal_types
+                .iter()
+                .any(|t| t == "renewal_approaching"),
+            "affiliates preset config must NOT include 'renewal_approaching'"
+        );
+    }
+
+    #[test]
+    fn dos176_cs_merged_signal_types_include_churn_risk_and_renewal_approaching() {
+        let types = merged_signal_types_for_preset("customer-success");
+        assert!(
+            types.iter().any(|t| t == "churn_risk"),
+            "CS merged signal types must include 'churn_risk'"
+        );
+        assert!(
+            types.iter().any(|t| t == "renewal_approaching"),
+            "CS merged signal types must include 'renewal_approaching'"
+        );
+    }
+
+    #[test]
+    fn dos176_base_signal_types_are_generic() {
+        // Base signal types must be role-neutral: no CS-specific types.
+        for t in crate::state::BASE_EMAIL_SIGNAL_TYPES {
+            assert!(
+                *t != "churn_risk" && *t != "renewal_approaching" && *t != "champion_risk",
+                "Base signal type '{}' is CS-specific — it must live in the CS preset",
+                t
+            );
+        }
     }
 }

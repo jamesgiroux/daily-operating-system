@@ -274,7 +274,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                             let profile = config
                                 .as_ref()
                                 .map(|c| c.profile.clone())
-                                .unwrap_or_else(|| "customer-success".to_string());
+                                .unwrap_or_else(|| "general".to_string());
                             let ai_config = config
                                 .as_ref()
                                 .map(|c| c.ai_models.clone())

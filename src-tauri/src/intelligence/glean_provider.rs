@@ -20,6 +20,7 @@ use super::dimension_prompts::{self, DIMENSION_NAMES};
 use super::io::{IntelligenceJson, SourceManifestEntry};
 use super::prompts::{parse_intelligence_response, IntelligenceContext};
 use crate::context_provider::glean::GleanMcpClient;
+use crate::presets::schema::RolePreset;
 
 use serde::{Deserialize, Serialize};
 
@@ -98,6 +99,7 @@ impl GleanIntelligenceProvider {
         relationship: Option<&str>,
         app_handle: Option<&AppHandle>,
         is_background: bool,
+        preset: Option<&RolePreset>,
     ) -> Result<IntelligenceJson, String> {
         // Try parallel dimension fan-out first
         match self
@@ -109,6 +111,7 @@ impl GleanIntelligenceProvider {
                 relationship,
                 app_handle,
                 is_background,
+                preset,
             )
             .await
         {
@@ -119,8 +122,15 @@ impl GleanIntelligenceProvider {
                     entity_name,
                     e
                 );
-                self.enrich_entity_legacy(entity_id, entity_type, entity_name, ctx, relationship)
-                    .await
+                self.enrich_entity_legacy(
+                    entity_id,
+                    entity_type,
+                    entity_name,
+                    ctx,
+                    relationship,
+                    preset,
+                )
+                .await
             }
         }
     }
@@ -144,6 +154,7 @@ impl GleanIntelligenceProvider {
         relationship: Option<&str>,
         app_handle: Option<&AppHandle>,
         is_background: bool,
+        preset: Option<&RolePreset>,
     ) -> Result<IntelligenceJson, String> {
         use crate::intel_queue::{EnrichmentComplete, EnrichmentProgress};
 
@@ -162,6 +173,7 @@ impl GleanIntelligenceProvider {
                     relationship,
                     ctx,
                     is_incremental,
+                    preset,
                 );
                 (dim.to_string(), prompt)
             })
@@ -210,7 +222,8 @@ impl GleanIntelligenceProvider {
                 // of glean_*. 240s matches GLEAN_CHAT_TIMEOUT so slow-but-
                 // valid responses complete before either timeout fires.
                 let response_result =
-                    tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt, None)).await;
+                    tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt, None))
+                        .await;
 
                 let elapsed_ms = start.elapsed().as_millis();
 
@@ -549,6 +562,7 @@ impl GleanIntelligenceProvider {
         entity_name: &str,
         ctx: &IntelligenceContext,
         relationship: Option<&str>,
+        preset: Option<&RolePreset>,
     ) -> Result<IntelligenceJson, String> {
         let is_incremental = ctx.prior_intelligence.is_some();
 
@@ -559,6 +573,7 @@ impl GleanIntelligenceProvider {
             relationship,
             ctx,
             is_incremental,
+            preset,
         );
 
         log::info!(
@@ -726,17 +741,33 @@ impl GleanIntelligenceProvider {
         &self,
         entity_name: &str,
     ) -> Result<super::glean_leading_signals::HealthOutlookSignals, String> {
-        let prompt = super::glean_leading_signals::build_leading_signals_prompt(entity_name);
+        self.enrich_leading_signals_with_disambiguators(entity_name, None)
+            .await
+    }
+
+    /// DOS-287: Leading-signals enrichment with optional structured
+    /// disambiguators. Callers that have an `IntelligenceContext` handy
+    /// should prefer this variant so Glean retrieval is biased correctly.
+    pub async fn enrich_leading_signals_with_disambiguators(
+        &self,
+        entity_name: &str,
+        disambiguators: Option<&super::prompts::EntityDisambiguators>,
+    ) -> Result<super::glean_leading_signals::HealthOutlookSignals, String> {
+        let prompt = super::glean_leading_signals::build_leading_signals_prompt(
+            entity_name,
+            disambiguators,
+        );
         let client = GleanMcpClient::new(&self.endpoint);
 
         let response_text =
             tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt, None))
                 .await
-                .map_err(|_| {
-                    format!("Glean leading-signals chat timed out for {}", entity_name)
-                })?
+                .map_err(|_| format!("Glean leading-signals chat timed out for {}", entity_name))?
                 .map_err(|e| {
-                    format!("Glean leading-signals chat failed for {}: {}", entity_name, e)
+                    format!(
+                        "Glean leading-signals chat failed for {}: {}",
+                        entity_name, e
+                    )
                 })?;
 
         log::info!(
@@ -747,6 +778,127 @@ impl GleanIntelligenceProvider {
 
         super::glean_leading_signals::parse_leading_signals(&response_text)
     }
+
+    /// DOS-204: Peer-cohort renewal benchmark via a dedicated Glean chat pass.
+    ///
+    /// Builds the validated peer-benchmark prompt from `account_name`,
+    /// `industry_descriptor`, and `size_descriptor`, calls Glean with citation
+    /// metadata (so the cell can render the "Drawn from N source(s)" footer),
+    /// and parses the response into a `PeerBenchmark`.
+    ///
+    /// The parser is a lowercase prefix match against the response text:
+    /// - `above peers` → `PeerBenchmarkBand::Above`
+    /// - `in line peers` / `in-line peers` → `PeerBenchmarkBand::At`
+    /// - `below peers` → `PeerBenchmarkBand::Below`
+    /// - `no comparable` (or anything else) → `PeerBenchmarkBand::Unknown`,
+    ///   which the frontend cell renders as `null` (collapses the column).
+    ///
+    /// On unknown band, returns `Err` so the caller can skip the write
+    /// (no point persisting a record the UI will hide). On chat failure
+    /// or timeout, also returns `Err` — the caller swallows it as a
+    /// silent fallback (parity with `enrich_leading_signals_*`).
+    pub async fn enrich_peer_benchmark(
+        &self,
+        account_name: &str,
+    ) -> Result<super::io::PeerBenchmark, String> {
+        let prompt = format!(
+            "For the customer **{account_name}**, what is a reasonable peer benchmark for \
+their renewal trajectory and account health on WordPress VIP? Use whatever you know about \
+their tier, ARR, package, industry, and size to identify comparable peer customers.\n\n\
+Consider:\n\n\
+1. Renewal rates and retention norms for VIP customers at similar tier and ACV\n\
+2. Typical engagement indicators (meeting cadence, ticket volume, expansion patterns) \
+for healthy renewals at this tier\n\
+3. Whether there are recent or historical signals from comparable {account_name}-like \
+accounts that suggest typical health patterns\n\n\
+Return a short assessment in the form: \"**[Above / In line / Below] peers**\" followed \
+by **one sentence** explaining the comparison with specific numbers where possible. \
+Cite sources."
+        );
+
+        let client = GleanMcpClient::new(&self.endpoint);
+
+        let response = tokio::time::timeout(
+            Duration::from_secs(240),
+            client.chat_with_citations(&prompt, None),
+        )
+        .await
+        .map_err(|_| format!("Glean peer-benchmark chat timed out for {}", account_name))?
+        .map_err(|e| format!("Glean peer-benchmark chat failed for {}: {}", account_name, e))?;
+
+        log::info!(
+            "[DOS-204] Glean peer-benchmark response for {} — {} chars, {} sources",
+            account_name,
+            response.text.len(),
+            response.source_count
+        );
+
+        let (band, narrative) = parse_peer_benchmark_response(&response.text)?;
+
+        Ok(super::io::PeerBenchmark {
+            band,
+            narrative,
+            source_count: response.source_count,
+        })
+    }
+}
+
+/// DOS-204: Parse a Glean peer-benchmark response into `(band, narrative)`.
+///
+/// Recognises the four explicit band prefixes (above / in line / in-line /
+/// below) plus the explicit "no comparable" opt-out. Anything that doesn't
+/// match returns `Err` so the caller can skip persisting the record — the
+/// frontend cell hides on `Unknown`/missing, so writing a stub helps no one.
+///
+/// Strips the band prefix and any leading separator (em-dash, en-dash, hyphen,
+/// colon) plus surrounding whitespace, then trims surrounding markdown
+/// emphasis (`**`) the model often emits around the band label.
+fn parse_peer_benchmark_response(
+    raw: &str,
+) -> Result<(super::io::PeerBenchmarkBand, String), String> {
+    // Normalise: trim leading whitespace and any leading markdown emphasis
+    // so "**In line peers** – ..." matches the same as "In line peers – ...".
+    let trimmed = raw.trim_start().trim_start_matches('*');
+    let lower = trimmed.to_lowercase();
+
+    let (band, prefix_len) = if lower.starts_with("above peers") {
+        (super::io::PeerBenchmarkBand::Above, "above peers".len())
+    } else if lower.starts_with("in line peers") {
+        (super::io::PeerBenchmarkBand::At, "in line peers".len())
+    } else if lower.starts_with("in-line peers") {
+        (super::io::PeerBenchmarkBand::At, "in-line peers".len())
+    } else if lower.starts_with("below peers") {
+        (super::io::PeerBenchmarkBand::Below, "below peers".len())
+    } else if lower.starts_with("no comparable") {
+        return Err("Glean reported no comparable peers".to_string());
+    } else {
+        return Err(format!(
+            "Peer-benchmark response did not start with a recognised band: {}",
+            trimmed.chars().take(80).collect::<String>()
+        ));
+    };
+
+    // Strip the band prefix, trailing emphasis markers, and the
+    // band/narrative separator (em-dash, en-dash, hyphen, or colon).
+    let after_band = &trimmed[prefix_len..];
+    let narrative = after_band
+        .trim_start()
+        .trim_start_matches('*')
+        .trim_start()
+        .trim_start_matches(|c: char| {
+            c == '\u{2014}' // em-dash
+                || c == '\u{2013}' // en-dash
+                || c == '-'
+                || c == ':'
+        })
+        .trim()
+        .to_string();
+
+    if narrative.is_empty() {
+        return Err("Peer-benchmark response had a band but no narrative".to_string());
+    }
+
+    Ok((band, narrative))
 }
 
 /// Path 2c: Placeholder for domain extraction from Glean enrichment.
@@ -829,6 +981,7 @@ pub fn emit_glean_signals(
     entity_type: &str,
     entity_id: &str,
     intel: &IntelligenceJson,
+    preset: Option<&RolePreset>,
 ) {
     use crate::signals::bus::{emit_signal, emit_signal_and_propagate};
 
@@ -1083,7 +1236,7 @@ pub fn emit_glean_signals(
         let dims = &health.dimensions;
         {
             // Check champion dimension for concerning score
-            if dims.champion_health.score < 40.0 && dims.champion_health.weight > 0.0 {
+            if dims.key_advocate_health.score < 40.0 && dims.key_advocate_health.weight > 0.0 {
                 let _ = emit_signal_and_propagate(
                     db,
                     engine,
@@ -1093,8 +1246,8 @@ pub fn emit_glean_signals(
                     "glean_chat",
                     Some(
                         &serde_json::json!({
-                            "score": dims.champion_health.score,
-                            "evidence": dims.champion_health.evidence,
+                            "score": dims.key_advocate_health.score,
+                            "evidence": dims.key_advocate_health.evidence,
                         })
                         .to_string(),
                     ),
@@ -1113,9 +1266,9 @@ pub fn emit_glean_signals(
     // Recompute health after Glean signals are emitted so that new CRM/Gong/Zendesk
     // data flows immediately into the 6 health dimensions.
     if entity_type == "account" {
-        if let Err(e) =
-            crate::services::intelligence::recompute_entity_health(db, entity_id, "account")
-        {
+        if let Err(e) = crate::services::intelligence::recompute_entity_health_with_preset(
+            db, entity_id, "account", preset,
+        ) {
             log::warn!(
                 "Health recompute failed for {} after Glean signals: {}",
                 entity_id,
@@ -1203,8 +1356,8 @@ fn promote_glean_facts_to_accounts(
         }
     }
 
-    // --- Financial dimension: renewal_outlook ---
-    if let Some(ref outlook) = intel.renewal_outlook {
+    // --- Financial dimension: agreement_outlook ---
+    if let Some(ref outlook) = intel.agreement_outlook {
         if let Some(ref confidence) = outlook.confidence {
             // Map "high"/"moderate"/"low" to numeric likelihood
             let likelihood = match confidence.to_lowercase().as_str() {
@@ -1223,7 +1376,7 @@ fn promote_glean_facts_to_accounts(
             promote_fact!("support_tier", tier, "zendesk", "fact");
         }
         if let Some(ref likelihood) = org.renewal_likelihood {
-            // Only promote if renewal_outlook didn't already set it —
+            // Only promote if agreement_outlook didn't already set it —
             // both are "salesforce" priority so upsert_account_fact
             // keeps the first write (same priority = overwrite).
             promote_fact!("renewal_likelihood", likelihood, "salesforce", "fact");
@@ -1317,7 +1470,7 @@ pub fn reconcile_enrichment(
     // Skip reconciliation for fields with user edits — preserve_user_edits
     // handles those after this function returns.
 
-    // Non-destructive-empty guard (DOS Blackstone regression): when a dimension
+    // Non-destructive-empty guard (DOS Globex regression): when a dimension
     // times out, its fields arrive empty. Reconciling an empty new_items array
     // against existing pty_synthesis items would wipe them all. Reconcile only
     // when the new output actually has data, or when existing is also empty
@@ -1475,7 +1628,7 @@ pub fn reconcile_enrichment(
     reconcile_option!(meeting_cadence, "meetingCadence");
     reconcile_option!(email_responsiveness, "emailResponsiveness");
     reconcile_option!(contract_context, "contractContext");
-    reconcile_option!(renewal_outlook, "renewalOutlook");
+    reconcile_option!(agreement_outlook, "agreementOutlook");
     reconcile_option!(support_health, "supportHealth");
     reconcile_option!(product_adoption, "productAdoption");
     reconcile_option!(nps_csat, "npsCsat");

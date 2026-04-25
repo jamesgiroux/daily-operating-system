@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import type { GoogleAuthStatus } from "@/types";
+import { useTauriEvent } from "./useTauriEvent";
 
 type GoogleAuthPhase = "idle" | "authorizing" | "disconnecting";
 const AUTH_TIMEOUT_MS = 150_000; // 2.5 min — backend has 120s timeout, give it room
@@ -33,22 +33,21 @@ export function useGoogleAuth() {
     invoke<GoogleAuthStatus>("get_google_auth_status").then(setStatus).catch((err) => {
       console.error("get_google_auth_status failed:", err); // Expected: background auth check on mount
     });
-
-    const unlistenChanged = listen<GoogleAuthStatus>("google-auth-changed", (event) => {
-      setStatus(event.payload);
-    });
-    const unlistenFailed = listen<GoogleAuthFailedPayload>("google-auth-failed", (event) => {
-      const message = event.payload?.message || "Google auth failed";
-      setError(message);
-      setLoading(false);
-      setPhase("idle");
-    });
-
-    return () => {
-      unlistenChanged.then((fn) => fn());
-      unlistenFailed.then((fn) => fn());
-    };
   }, []);
+
+  const handleGoogleAuthChanged = useCallback((payload: GoogleAuthStatus) => {
+    setStatus(payload);
+  }, []);
+
+  const handleGoogleAuthFailed = useCallback((payload: GoogleAuthFailedPayload) => {
+    const message = payload?.message || "Google auth failed";
+    setError(message);
+    setLoading(false);
+    setPhase("idle");
+  }, []);
+
+  useTauriEvent("google-auth-changed", handleGoogleAuthChanged);
+  useTauriEvent("google-auth-failed", handleGoogleAuthFailed);
 
   const connect = useCallback(async () => {
     if (loading) return;

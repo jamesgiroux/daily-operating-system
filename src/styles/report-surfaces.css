@@ -1,4 +1,7 @@
-@import "./design-tokens.css";
+/* design-tokens.css is loaded by index.css before this file — no re-import.
+ * The redundant @import here was the source of a strict-WebKit MIME-type
+ * warning when Vite's CSS resolver emitted an absolute "/styles/…" URL
+ * during the chained inline pass. */
 
 .report-surface-page {
   max-width: 800px;

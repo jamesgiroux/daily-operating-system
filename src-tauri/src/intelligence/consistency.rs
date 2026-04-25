@@ -785,7 +785,7 @@ mod tests {
 
     fn fact_context_with_matt() -> FactContext {
         FactContext {
-            entity_id: "janus-henderson".to_string(),
+            entity_id: "assetco".to_string(),
             entity_type: "account".to_string(),
             entity_name: "Meridian Asset".to_string(),
             related_entity_names: vec![],
@@ -829,6 +829,9 @@ mod tests {
                 urgency: "watch".to_string(),
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             ..Default::default()
         };
@@ -903,6 +906,9 @@ mod tests {
                 suggested_person_id: None,
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             ..Default::default()
         };

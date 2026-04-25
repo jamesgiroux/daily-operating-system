@@ -62,6 +62,11 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "support_health_updated",
     "glean_org_change",
     "glean_champion_departed",
+    // DOS-207: Regulatory context + stakeholder verification
+    "regulatory_requirement_detected",
+    "regulatory_gap_detected",
+    "stakeholder_verified",
+    "stakeholder_unverified",
     // DOS-49: Linear signal types
     "linear_issue_completed",
     "linear_issue_blocked",

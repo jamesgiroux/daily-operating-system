@@ -332,10 +332,16 @@ export function SentimentHero({
             <span className={css.sparklineLabel}>90d</span>
           </>
         ) : (
-          // TODO(DOS-27): Empty-state sparkline placeholder when no computed
-          // history is available yet — reserves the layout slot without
-          // fabricating data.
-          <span className={css.sparklineEmpty} aria-hidden="true" />
+          // DOS-249: Ghost bars — reserves the layout slot so row geometry
+          // doesn't collapse; subtle opacity reassures the user the sparkline
+          // isn't broken, it just has no computed history yet.
+          <span className={css.sparklineEmpty} aria-hidden="true">
+            <span className={`${css.sparklineEmptyBar} ${css.sparklineEmptyBarH9}`} />
+            <span className={`${css.sparklineEmptyBar} ${css.sparklineEmptyBarH13}`} />
+            <span className={`${css.sparklineEmptyBar} ${css.sparklineEmptyBarH7}`} />
+            <span className={`${css.sparklineEmptyBar} ${css.sparklineEmptyBarH17}`} />
+            <span className={`${css.sparklineEmptyBar} ${css.sparklineEmptyBarH11}`} />
+          </span>
         )}
 
         <button

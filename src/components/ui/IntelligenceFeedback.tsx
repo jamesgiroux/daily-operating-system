@@ -1,3 +1,8 @@
+/**
+ * @deprecated DOS-41: Use `IntelligenceCorrection` on account pages instead.
+ * `IntelligenceFeedback` remains on project and person pages during the
+ * strangler-fig migration. Do not add new usages on account surfaces.
+ */
 import { ThumbsUp, ThumbsDown } from "lucide-react";
 import styles from "./IntelligenceFeedback.module.css";
 

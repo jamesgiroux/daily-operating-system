@@ -14,6 +14,9 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use serde_json::{json, Value};
 
+use crate::presets::loader::canonical_role_id;
+use crate::presets::schema::RolePreset;
+
 // ---------------------------------------------------------------------------
 // Entity context match (I337)
 // ---------------------------------------------------------------------------
@@ -39,6 +42,7 @@ pub fn gather_all_meeting_contexts(
     workspace: &Path,
     db: Option<&crate::db::ActionDb>,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+    preset: Option<&RolePreset>,
 ) -> Vec<Value> {
     let mut contexts = Vec::new();
     for meeting in classified {
@@ -59,6 +63,7 @@ pub fn gather_all_meeting_contexts(
             workspace,
             db,
             embedding_model,
+            preset,
         ));
     }
     contexts
@@ -68,72 +73,106 @@ pub fn gather_all_meeting_contexts(
 // Primary entity resolution (I337)
 // ---------------------------------------------------------------------------
 
-/// Resolve the primary entity for a meeting by merging I336 classification
-/// entities with the entity resolver's signal cascade.
+/// Resolve the primary entity for a meeting by reading the DOS-258
+/// `linked_entities` view.
 ///
-/// Returns the highest-confidence entity above threshold with meeting-type
-/// aware preference for account/project entities on external meetings.
+/// Replaces the legacy fuzzy/keyword signal cascade with a direct lookup of
+/// rows written by the deterministic entity linking engine
+/// (`services::entity_linking`). Returns the highest-confidence entity above
+/// threshold with meeting-type aware preference for account/project entities
+/// on external meetings.
 fn resolve_primary_entity(
     db: Option<&crate::db::ActionDb>,
     event_id: &str,
     meeting: &Value,
     workspace: &Path,
-    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+    _embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> Option<EntityContextMatch> {
-    use super::entity_resolver::{resolve_meeting_entities, ResolutionOutcome};
     use crate::entity::EntityType;
 
     const PRIMARY_ENTITY_MIN_CONFIDENCE: f64 = 0.75;
 
     let db = db?;
-    let accounts_dir = workspace.join("Accounts");
     let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
-    // Entity resolver handles junction-is-definitive gate internally.
-    // If junction table has entries, it returns those immediately
-    // without running attendee/keyword/embedding resolution.
-    let resolver_outcomes =
-        resolve_meeting_entities(db, event_id, meeting, &accounts_dir, embedding_model);
+    // DOS-258: read from the `linked_entities` view (a filtered view over
+    // `linked_entities_raw`, excluding user_dismissed rows). The calendar
+    // adapter writes links keyed by the meeting DB id, which is the event id
+    // with '@' substituted — mirror that derivation here.
+    let meeting_db_id = if event_id.is_empty() {
+        return None;
+    } else {
+        event_id.replace('@', "_at_")
+    };
 
-    // Build candidates from resolver outcomes only.
-    // Classification entities are NOT merged — the resolver already
-    // incorporates junction signals which are definitive. Merging
-    // classification entities would reintroduce attendee-domain-based
-    // entities that compete with the manual link.
+    #[derive(Debug)]
+    struct LinkRow {
+        entity_id: String,
+        entity_type: EntityType,
+        role: String,
+        confidence: f64,
+        source: String,
+    }
+
+    let link_rows: Vec<LinkRow> = {
+        let conn = db.conn_ref();
+        conn.prepare(
+            "SELECT entity_id, entity_type, role, confidence, rule_id, source \
+                 FROM linked_entities \
+                 WHERE owner_type = 'meeting' AND owner_id = ?1",
+        )
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map(rusqlite::params![meeting_db_id], |row| {
+                let et: String = row.get(1)?;
+                let confidence: Option<f64> = row.get(3)?;
+                let rule_id: Option<String> = row.get(4)?;
+                let source: String = row.get(5)?;
+                Ok(LinkRow {
+                    entity_id: row.get(0)?,
+                    entity_type: EntityType::from_str_lossy(&et),
+                    role: row.get(2)?,
+                    // DOS-258: engine rows always carry confidence; default
+                    // high if any legacy backfill row is missing it so we
+                    // don't spuriously drop links below threshold.
+                    confidence: confidence.unwrap_or(0.95),
+                    // Prefer the rule_id for provenance; fall back to source.
+                    source: rule_id.unwrap_or(source),
+                })
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+        })
+        .unwrap_or_default()
+    };
+
+    // Build candidates: id -> (confidence, source, name).
     let mut candidates: HashMap<(String, EntityType), (f64, String, String)> = HashMap::new();
-
-    for outcome in &resolver_outcomes {
-        let entity = match outcome {
-            ResolutionOutcome::Resolved(e) => e,
-            ResolutionOutcome::ResolvedWithFlag(e) => {
-                if e.confidence >= PRIMARY_ENTITY_MIN_CONFIDENCE
-                    && matches!(e.source.as_str(), "junction" | "keyword" | "group_pattern")
-                {
-                    e
-                } else {
-                    continue;
-                }
-            }
-            _ => continue,
+    for row in link_rows {
+        // Primary rows anchor the decision regardless of the raw confidence
+        // score — the engine already earned the primary designation via a
+        // deterministic rule. Related rows stay in the pool for tie-breaking.
+        let effective_confidence = if row.role == "primary" {
+            row.confidence.max(PRIMARY_ENTITY_MIN_CONFIDENCE)
+        } else {
+            row.confidence
         };
         let name = db
-            .get_entity(&entity.entity_id)
+            .get_entity(&row.entity_id)
             .ok()
             .flatten()
             .map(|e| e.name)
-            .or_else(|| match entity.entity_type {
+            .or_else(|| match row.entity_type {
                 EntityType::Account => db
-                    .get_account(&entity.entity_id)
+                    .get_account(&row.entity_id)
                     .ok()
                     .flatten()
                     .map(|a| a.name),
                 EntityType::Project => db
-                    .get_project(&entity.entity_id)
+                    .get_project(&row.entity_id)
                     .ok()
                     .flatten()
                     .map(|p| p.name),
                 EntityType::Person => db
-                    .get_person(&entity.entity_id)
+                    .get_person(&row.entity_id)
                     .ok()
                     .flatten()
                     .map(|p| p.name),
@@ -141,8 +180,8 @@ fn resolve_primary_entity(
             })
             .unwrap_or_default();
         candidates.insert(
-            (entity.entity_id.clone(), entity.entity_type),
-            (entity.confidence, entity.source.clone(), name),
+            (row.entity_id.clone(), row.entity_type),
+            (effective_confidence, row.source, name),
         );
     }
 
@@ -233,6 +272,7 @@ fn gather_account_context(
     _workspace: &Path,
     entity_match: &EntityContextMatch,
     ctx: &mut Value,
+    preset: Option<&RolePreset>,
 ) {
     let account_path = &entity_match.workspace_path;
 
@@ -242,7 +282,7 @@ fn gather_account_context(
     // File references
     if let Some(dashboard) = find_file_in_dir(account_path, "dashboard.md") {
         ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
-        if let Some(data) = parse_dashboard(&dashboard) {
+        if let Some(data) = parse_dashboard(&dashboard, preset) {
             ctx["account_data"] = data;
         }
     }
@@ -373,6 +413,60 @@ fn gather_account_context(
             "source": tf.source,
             "sourcedAt": tf.sourced_at,
         });
+    }
+
+    // DOS-15 IL-check-3: Inject Glean leading signals into meeting prep context.
+    // Champion risk, channel divergence, and commercial signals inform pre-meeting
+    // positioning — include only high-signal fields to stay within token budget.
+    if let Ok(Some(signals_json)) = db.conn_ref().query_row(
+        "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+        [&entity_match.entity_id],
+        |row| row.get::<_, Option<String>>(0),
+    ) {
+        if let Ok(signals) = serde_json::from_str::<
+            crate::intelligence::glean_leading_signals::HealthOutlookSignals,
+        >(&signals_json)
+        {
+            let mut leading: serde_json::Map<String, serde_json::Value> =
+                serde_json::Map::new();
+
+            if let Some(cr) = &signals.champion_risk {
+                leading.insert(
+                    "championRisk".to_string(),
+                    json!({
+                        "atRisk": cr.at_risk,
+                        "level": cr.risk_level,
+                        "champion": cr.champion_name,
+                    }),
+                );
+            }
+
+            if let Some(cs) = &signals.channel_sentiment {
+                if cs.divergence_detected {
+                    leading.insert(
+                        "channelDivergence".to_string(),
+                        json!({
+                            "detected": true,
+                            "summary": cs.divergence_summary,
+                        }),
+                    );
+                }
+            }
+
+            if let Some(comm) = &signals.commercial_signals {
+                leading.insert(
+                    "commercialSignals".to_string(),
+                    json!({
+                        "arrDirection": comm.arr_direction,
+                        "paymentBehavior": comm.payment_behavior,
+                    }),
+                );
+            }
+
+            if !leading.is_empty() {
+                ctx["leadingSignals"] = serde_json::Value::Object(leading);
+            }
+        }
     }
 }
 
@@ -548,8 +642,9 @@ pub fn gather_meeting_context_single(
     workspace: &Path,
     db: Option<&crate::db::ActionDb>,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+    preset: Option<&RolePreset>,
 ) -> Value {
-    gather_meeting_context(meeting, workspace, db, embedding_model)
+    gather_meeting_context(meeting, workspace, db, embedding_model, preset)
 }
 
 /// Build rich context for a single meeting prep.
@@ -562,6 +657,7 @@ fn gather_meeting_context(
     workspace: &Path,
     db: Option<&crate::db::ActionDb>,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+    preset: Option<&RolePreset>,
 ) -> Value {
     let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
     let event_id = meeting.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -621,7 +717,7 @@ fn gather_meeting_context(
         if let Some(db) = db {
             match em.entity_type {
                 crate::entity::EntityType::Account => {
-                    gather_account_context(db, workspace, em, &mut ctx);
+                    gather_account_context(db, workspace, em, &mut ctx, preset);
                 }
                 crate::entity::EntityType::Project => {
                     gather_project_context(db, workspace, em, &mut ctx);
@@ -673,7 +769,7 @@ fn gather_meeting_context(
                     let account_path = accounts_dir.join(&matched.relative_path);
                     if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
                         ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
-                        if let Some(data) = parse_dashboard(&dashboard) {
+                        if let Some(data) = parse_dashboard(&dashboard, preset) {
                             ctx["account_data"] = data;
                         }
                     }
@@ -1251,9 +1347,9 @@ fn find_account_dir_by_name(name: &str, accounts_dir: &Path) -> Option<AccountMa
 
 /// Result of matching a meeting to an account directory.
 pub(crate) struct AccountMatch {
-    /// Display name (e.g., "Consumer-Brands" for a child, "Crestview Media" for a parent).
+    /// Display name (e.g., "BrandsCo" for a child, "Crestview Media" for a parent).
     pub(crate) name: String,
-    /// Relative path from Accounts/ dir (e.g., "Crestview Media/Consumer-Brands" for a child, "Crestview Media" for flat).
+    /// Relative path from Accounts/ dir (e.g., "Crestview Media/BrandsCo" for a child, "Crestview Media" for flat).
     pub(crate) relative_path: String,
 }
 
@@ -1503,11 +1599,12 @@ fn search_archive(query: &str, archive_dir: &Path, max_results: usize) -> Vec<st
 // ---------------------------------------------------------------------------
 
 /// Best-effort extraction of Quick View data from account dashboard markdown.
-fn parse_dashboard(dashboard_path: &Path) -> Option<Value> {
+fn parse_dashboard(dashboard_path: &Path, preset: Option<&RolePreset>) -> Option<Value> {
     let content = std::fs::read_to_string(dashboard_path).ok()?;
     let mut data = serde_json::Map::new();
+    let owner_pattern = build_dashboard_owner_pattern(preset);
 
-    let patterns = [
+    let mut patterns = vec![
         (
             r"(?i)(?:ARR|Annual Revenue|MRR)\s*[:\|]\s*\$?([\d,\.]+[KMB]?)",
             "arr",
@@ -1521,11 +1618,10 @@ fn parse_dashboard(dashboard_path: &Path) -> Option<Value> {
             r"(?i)(?:Lifecycle|Stage)\s*[:\|]\s*(.+?)(?:\n|\|)",
             "lifecycle",
         ),
-        (
-            r"(?i)(?:CSM|Account Manager)\s*[:\|]\s*(.+?)(?:\n|\|)",
-            "csm",
-        ),
     ];
+    if !owner_pattern.is_empty() {
+        patterns.push((owner_pattern.as_str(), "csm"));
+    }
 
     for (pattern, key) in &patterns {
         if let Ok(re) = Regex::new(pattern) {
@@ -1559,6 +1655,74 @@ fn parse_dashboard(dashboard_path: &Path) -> Option<Value> {
         None
     } else {
         Some(Value::Object(data))
+    }
+}
+
+fn build_dashboard_owner_pattern(preset: Option<&RolePreset>) -> String {
+    let mut labels = Vec::new();
+
+    if let Some(preset) = preset {
+        for role in &preset.internal_team_roles {
+            push_unique_label(&mut labels, &role.label);
+            if role.id.contains('_') {
+                push_unique_label(&mut labels, &role.id.replace('_', " "));
+            }
+        }
+
+        match canonical_role_id(&preset.id) {
+            "core" => {
+                push_unique_label(&mut labels, "Owner");
+                push_unique_label(&mut labels, "Lead");
+            }
+            "customer-success" => {
+                push_unique_label(&mut labels, "Account Manager");
+            }
+            "affiliates-partnerships" => {
+                push_unique_label(&mut labels, "Partner Manager");
+                push_unique_label(&mut labels, "Partnership Lead");
+            }
+            "product-marketing" => {
+                push_unique_label(&mut labels, "Project Lead");
+                push_unique_label(&mut labels, "Project Owner");
+                push_unique_label(&mut labels, "Marketing Lead");
+            }
+            _ => {}
+        }
+    } else {
+        for label in [
+            "CSM",
+            "Account Manager",
+            "Project Lead",
+            "Project Owner",
+            "Partner Manager",
+            "Partnership Lead",
+            "Product Manager",
+            "Marketing Lead",
+            "Campaign Owner",
+        ] {
+            push_unique_label(&mut labels, label);
+        }
+    }
+
+    if labels.is_empty() {
+        return String::new();
+    }
+
+    let alternation = labels
+        .into_iter()
+        .map(|label| regex::escape(&label))
+        .collect::<Vec<_>>()
+        .join("|");
+    format!(r"(?i)(?:{})\s*[:\|]\s*(.+?)(?:\n|\|)", alternation)
+}
+
+fn push_unique_label(labels: &mut Vec<String>, label: &str) {
+    let trimmed = label.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    if !labels.iter().any(|existing| existing.eq_ignore_ascii_case(trimmed)) {
+        labels.push(trimmed.to_string());
     }
 }
 
@@ -1894,17 +2058,18 @@ mod tests {
     fn test_guess_account_name_child_bu() {
         let dir = tempfile::tempdir().unwrap();
         // Parent with numbered internal dir + BU child
-        std::fs::create_dir_all(dir.path().join("Crestview Media/01-Customer-Information")).unwrap();
-        std::fs::create_dir_all(dir.path().join("Crestview Media/Consumer-Brands")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Crestview Media/01-Customer-Information"))
+            .unwrap();
+        std::fs::create_dir_all(dir.path().join("Crestview Media/BrandsCo")).unwrap();
 
         // Match by domain (most common for BU meetings)
         let meeting = json!({
             "title": "Weekly Sync",
-            "external_domains": ["consumer-brands.crestviewmedia.com"],
+            "external_domains": ["brandsco.crestviewmedia.com"],
         });
         let matched = guess_account_name(&meeting, dir.path()).unwrap();
-        assert_eq!(matched.name, "Consumer-Brands");
-        assert_eq!(matched.relative_path, "Crestview Media/Consumer-Brands");
+        assert_eq!(matched.name, "BrandsCo");
+        assert_eq!(matched.relative_path, "Crestview Media/BrandsCo");
     }
 
     #[test]
@@ -2039,7 +2204,7 @@ mod tests {
             json!({"id": "1", "type": "personal", "title": "Lunch"}),
             json!({"id": "2", "type": "customer", "title": "Acme Call", "start": "2026-02-08T10:00:00"}),
         ];
-        let contexts = gather_all_meeting_contexts(&classified, dir.path(), None, None);
+        let contexts = gather_all_meeting_contexts(&classified, dir.path(), None, None, None);
         assert_eq!(contexts.len(), 1);
         assert_eq!(contexts[0]["event_id"], "2");
     }
@@ -2148,7 +2313,7 @@ mod tests {
             attendees: None,
             notes_path: None,
             summary: None,
-            created_at: now,
+            created_at: now.clone(),
             calendar_event_id: Some(event_id.to_string()),
             description: None,
             prep_context_json: None,
@@ -2171,6 +2336,18 @@ mod tests {
 
         db.link_meeting_entity(event_id, entity_id, entity_type.as_str())
             .expect("link meeting entity");
+
+        // DOS-258: resolve_primary_entity reads from the linked_entities view.
+        // Seed a primary row so the deterministic reader finds the entity.
+        db.conn_ref()
+            .execute(
+                "INSERT OR REPLACE INTO linked_entities_raw \
+                 (owner_type, owner_id, entity_id, entity_type, role, source, \
+                  rule_id, confidence, graph_version, created_at) \
+                 VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, 0, ?4)",
+                rusqlite::params![event_id, entity_id, entity_type.as_str(), now],
+            )
+            .expect("seed linked_entities_raw");
 
         db
     }
@@ -2203,7 +2380,7 @@ mod tests {
             "start": "2026-02-18T10:00:00Z",
         });
 
-        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None);
+        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None, None);
 
         // Should have account set for backward compat
         assert_eq!(ctx["account"].as_str(), Some("Acme"));
@@ -2240,7 +2417,7 @@ mod tests {
             "start": "2026-02-18T14:00:00Z",
         });
 
-        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None);
+        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None, None);
 
         // Should have primary_entity with project type
         assert!(ctx.get("primary_entity").is_some());
@@ -2276,7 +2453,7 @@ mod tests {
             "start": "2026-02-18T15:00:00Z",
         });
 
-        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None);
+        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None, None);
 
         // Should have primary_entity with person type
         assert!(ctx.get("primary_entity").is_some());
@@ -2306,11 +2483,27 @@ mod tests {
         });
 
         // No DB → no entity resolution → should still produce base context
-        let ctx = gather_meeting_context(&meeting, dir.path(), None, None);
+        let ctx = gather_meeting_context(&meeting, dir.path(), None, None, None);
 
         assert_eq!(ctx["event_id"].as_str(), Some("evt-unknown"));
         assert_eq!(ctx["title"].as_str(), Some("Random Sync"));
         // No primary_entity should be set
         assert!(ctx.get("primary_entity").is_none());
+    }
+
+    #[test]
+    fn test_parse_dashboard_uses_active_preset_role_labels() {
+        let dir = tempfile::tempdir().unwrap();
+        let dashboard = dir.path().join("dashboard.md");
+        std::fs::write(
+            &dashboard,
+            "# Launch Plan\n## Quick View\nPM: Alex Kim\nStage: In Flight\n",
+        )
+        .unwrap();
+
+        let preset = crate::presets::loader::load_preset("product-marketing").unwrap();
+        let parsed = parse_dashboard(&dashboard, Some(&preset)).expect("dashboard should parse");
+        assert_eq!(parsed["csm"].as_str(), Some("Alex Kim"));
+        assert_eq!(parsed["lifecycle"].as_str(), Some("In Flight"));
     }
 }

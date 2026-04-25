@@ -237,23 +237,13 @@ pub fn run_hygiene_scan(
         }
     }
 
-    // --- Phase 2b: Low-confidence entity match detection (I305) ---
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let accounts_dir = workspace.join("Accounts");
-        let (count, details) =
-            detectors::detect_low_confidence_matches(db, &accounts_dir, embedding_model);
-        report.fixes.entity_suggestions_created = count;
-        report.low_confidence_entity_matches = count;
-        all_details.extend(details);
-    })) {
-        Ok(()) => {}
-        Err(e) => {
-            log::error!(
-                "Hygiene phase 2b (low-confidence matches) panicked: {:?}",
-                e
-            );
-        }
-    }
+    // --- Phase 2b: Low-confidence entity match detection (removed by DOS-258) ---
+    // The legacy fuzzy/keyword resolver produced suggestion-tier matches for
+    // hygiene review. The deterministic entity linking engine (see
+    // services::entity_linking) either links confidently or not at all, so there
+    // are no "suggestion" outcomes to surface. Fields are zeroed for API stability.
+    report.fixes.entity_suggestions_created = 0;
+    report.low_confidence_entity_matches = 0;
 
     // --- Phase 2c: Attendee group pattern mining (I307) ---
     match crate::signals::patterns::mine_attendee_patterns(db) {
@@ -515,12 +505,13 @@ pub(crate) mod tests_common {
             ai_models: crate::types::AiModelConfig::default(),
             ai_model_routing_version: crate::types::AI_MODEL_ROUTING_VERSION,
             embeddings: crate::types::EmbeddingConfig::default(),
-            role: "customer-success".to_string(),
+            role: "core".to_string(),
             custom_preset_path: None,
             app_lock_timeout_minutes: Some(15),
             icloud_warning_dismissed: None,
             hygiene_scan_interval_hours: 4,
-            hygiene_ai_budget: 10,
+            hygiene_ai_budget: 0,
+            daily_ai_token_budget: crate::pty::DEFAULT_DAILY_AI_TOKEN_BUDGET,
             hygiene_pre_meeting_hours: 12,
             email_enrichment_timeout_seconds: 90,
             notifications: crate::types::NotificationConfig::default(),

@@ -1744,8 +1744,12 @@ pub fn set_user_health_sentiment(
         .get_account(account_id)
         .map_err(|e| e.to_string())?
         .map(|acct| {
-            let health = crate::intelligence::health_scoring::compute_account_health(
-                db, &acct, None,
+            let preset_guard = state.active_preset.read();
+            let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
+                db,
+                &acct,
+                None,
+                preset_guard.as_ref(),
             );
             (Some(health.band), Some(health.score))
         })
@@ -1837,8 +1841,12 @@ pub fn update_latest_sentiment_note(
             .get_account(account_id)
             .map_err(|e| e.to_string())?
             .map(|acct| {
-                let health = crate::intelligence::health_scoring::compute_account_health(
-                    db, &acct, None,
+                let preset_guard = state.active_preset.read();
+                let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
+                    db,
+                    &acct,
+                    None,
+                    preset_guard.as_ref(),
                 );
                 (Some(health.band), Some(health.score))
             })
@@ -2266,6 +2274,10 @@ pub fn create_account(
 }
 
 /// Archive or unarchive an account with signal emission. Cascades to children when archiving.
+///
+/// DOS-286: when archiving, drops any pending intel queue entries for this
+/// account and its cascaded children so already-queued enrichments don't run
+/// against a now-archived target.
 pub fn archive_account(
     db: &ActionDb,
     state: &crate::state::AppState,
@@ -2277,6 +2289,23 @@ pub fn archive_account(
     } else {
         "entity_unarchived"
     };
+
+    // DOS-286: collect child IDs before archiving so we can drop their queued
+    // enrichments too (cascade archives children in the same transaction).
+    let child_ids: Vec<String> = if archived {
+        db.conn_ref()
+            .prepare("SELECT id FROM accounts WHERE parent_id = ?1")
+            .ok()
+            .and_then(|mut stmt| {
+                stmt.query_map(rusqlite::params![id], |row| row.get::<_, String>(0))
+                    .ok()
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     db.with_transaction(|tx| {
         tx.archive_account(id, archived)
             .map_err(|e| e.to_string())?;
@@ -2292,7 +2321,17 @@ pub fn archive_account(
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
         Ok(())
-    })
+    })?;
+
+    // DOS-286: drop any in-flight enrichments for the archived account and its children.
+    if archived {
+        state.intel_queue.remove_by_entity_id(id);
+        for child_id in &child_ids {
+            state.intel_queue.remove_by_entity_id(child_id);
+        }
+    }
+
+    Ok(())
 }
 
 /// Merge source account into target account with signal emission.
@@ -2982,7 +3021,7 @@ fn update_stakeholder_engagement_inner(
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
         // DOS-228 Wave 0g: stakeholder engagement feeds the `stakeholder_coverage`
-        // and `champion_health` health dimensions. Persist the durable marker
+        // and `key_advocate_health` health dimensions. Persist the durable marker
         // co-committed with the mutation so a crash between here and the debounce
         // flush leaves a trail for startup drain. See `update_account_field_inner`.
         tx.mark_health_recompute_pending(account_id)
@@ -3032,7 +3071,7 @@ fn update_stakeholder_assessment_inner(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        // DOS-228 Wave 0g: assessment edits change champion_health inputs —
+        // DOS-228 Wave 0g: assessment edits change key_advocate_health inputs —
         // co-commit the marker with the mutation, then debounce a recompute.
         tx.mark_health_recompute_pending(account_id)
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
@@ -3096,7 +3135,7 @@ fn add_stakeholder_role_inner(
             0.9,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        // DOS-228 Wave 0g: champion_health reads account_stakeholder_roles
+        // DOS-228 Wave 0g: key_advocate_health reads account_stakeholder_roles
         // directly. Adding a role (especially 'champion') is load-bearing for
         // the health dimension — co-commit the pending marker.
         tx.mark_health_recompute_pending(account_id)
@@ -3157,7 +3196,7 @@ fn remove_stakeholder_role_inner(
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
         // DOS-228 Wave 0g: removing a role (e.g. champion) downgrades
-        // champion_health and stakeholder_coverage — co-commit the marker.
+        // key_advocate_health and stakeholder_coverage — co-commit the marker.
         tx.mark_health_recompute_pending(account_id)
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
@@ -3577,7 +3616,7 @@ mod tests {
             .unwrap();
 
         // Seed two existing roles: one user-pinned (champion), one
-        // AI-surfaced (technical). This is the Chris-on-Blackstone shape.
+        // AI-surfaced (technical). This is the Chris-on-Globex shape.
         db.conn_ref()
             .execute(
                 "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)

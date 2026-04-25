@@ -19,6 +19,7 @@ import type {
   HealthOutlookSignals,
   RelationshipDimensions,
 } from "@/types";
+import { useActivePreset } from "@/hooks/useActivePreset";
 import styles from "./health.module.css";
 
 function scoreColorClass(band?: string): string {
@@ -52,13 +53,18 @@ function bandForScore(score: number): "green" | "yellow" | "red" {
   return "red";
 }
 
-const DIMENSION_LABELS: Array<{ key: keyof RelationshipDimensions; label: string }> = [
-  { key: "meetingCadence", label: "Meeting Cadence" },
-  { key: "emailEngagement", label: "Engagement" },
-  { key: "stakeholderCoverage", label: "Stakeholder Coverage" },
-  { key: "championHealth", label: "Champion Health" },
-  { key: "financialProximity", label: "Financial Proximity" },
-  { key: "signalMomentum", label: "Update Momentum" },
+/** DOS-177: maps camelCase RelationshipDimensions keys → snake_case preset keys + fallback labels. */
+const DIMENSION_LABELS: Array<{
+  key: keyof RelationshipDimensions;
+  presetKey: string;
+  defaultLabel: string;
+}> = [
+  { key: "meetingCadence", presetKey: "meeting_cadence", defaultLabel: "Meeting Cadence" },
+  { key: "emailEngagement", presetKey: "email_engagement", defaultLabel: "Engagement" },
+  { key: "stakeholderCoverage", presetKey: "stakeholder_coverage", defaultLabel: "Stakeholder Coverage" },
+  { key: "keyAdvocateHealth", presetKey: "key_advocate_health", defaultLabel: "Champion Health" },
+  { key: "financialProximity", presetKey: "financial_proximity", defaultLabel: "Financial Proximity" },
+  { key: "signalMomentum", presetKey: "signal_momentum", defaultLabel: "Update Momentum" },
 ];
 
 interface SupportingTensionProps {
@@ -84,6 +90,8 @@ function formatScoreDelta(delta: number | null | undefined): string {
 }
 
 export function SupportingTension({ intelligence, gleanSignals }: SupportingTensionProps) {
+  const preset = useActivePreset();
+  const presetLabels = preset?.intelligence?.dimensionLabels ?? {};
   const health = intelligence?.health;
   if (!health) return null;
   const sufficient = health.sufficientData !== false;
@@ -92,10 +100,8 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
   const bandLabel = health.band ? health.band[0].toUpperCase() + health.band.slice(1) : "Unknown";
   const dir = health.trend?.direction;
   const timeframe = health.trend?.timeframe ?? "";
-  // `health.trend.delta` isn't in the typed surface today; reach via a
-  // permissive cast so we can render the "▲ +12" meta when backend emits it,
-  // and render nothing when it doesn't — no fabrication.
-  const delta = (health.trend as { delta?: number | null } | undefined)?.delta ?? null;
+  // DOS-249: `delta` is now a typed field on `IntelligenceHealthTrend`.
+  const delta = health.trend?.delta ?? null;
   const deltaStr = formatScoreDelta(delta);
   const rationale =
     health.trend?.rationale && health.trend.rationale.trim().length > 0
@@ -115,11 +121,19 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
   }
   const scoreMeta = sufficient ? scoreMetaParts.join(" · ") : "Insufficient data";
 
-  // Trend meta: stays empty when we only have prose rationale — prose
-  // renders as the tension note below, not duplicated into the meta line.
-  // If the backend ever emits a structured short-tag list (mockup style:
-  // "Infra drift ▲ · Defensive Mode unsettled · …"), render it here.
-  const trendMeta = "";
+  // Trend meta: render structured tags when the backend emits them (DOS-249).
+  // Format: "Label ▲ · Label · Label ▼" — matches mockup style.
+  // Falls back to empty string when no tags are present.
+  const tags = health.trend?.tags ?? [];
+  const trendMeta =
+    tags.length > 0
+      ? tags
+          .map((t) => {
+            const arrow = t.direction === "up" ? " ▲" : t.direction === "down" ? " ▼" : "";
+            return `${t.label}${arrow}`;
+          })
+          .join(" · ")
+      : "";
 
   const dims = health.dimensions;
 
@@ -153,7 +167,8 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
 
       {dims ? (
         <div className={styles.dimensions}>
-          {DIMENSION_LABELS.map(({ key, label }) => {
+          {DIMENSION_LABELS.map(({ key, presetKey, defaultLabel }) => {
+            const label = presetLabels[presetKey] ?? defaultLabel;
             const d: DimensionScore | undefined = dims[key];
             if (!d) return null;
             const raw = Math.round(d.score);

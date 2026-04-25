@@ -86,7 +86,7 @@ SELECT
                 'meetingCadence', json_object('score', 0.0, 'weight', 0.0, 'evidence', json('[]'), 'trend', 'stable'),
                 'emailEngagement', json_object('score', 0.0, 'weight', 0.0, 'evidence', json('[]'), 'trend', 'stable'),
                 'stakeholderCoverage', json_object('score', 0.0, 'weight', 0.0, 'evidence', json('[]'), 'trend', 'stable'),
-                'championHealth', json_object('score', 0.0, 'weight', 0.0, 'evidence', json('[]'), 'trend', 'stable'),
+                'keyAdvocateHealth', json_object('score', 0.0, 'weight', 0.0, 'evidence', json('[]'), 'trend', 'stable'),
                 'financialProximity', json_object('score', 0.0, 'weight', 0.0, 'evidence', json('[]'), 'trend', 'stable'),
                 'signalMomentum', json_object('score', 0.0, 'weight', 0.0, 'evidence', json('[]'), 'trend', 'stable')
             ),

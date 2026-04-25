@@ -75,7 +75,7 @@ The foundational backend for the user entity. This issue covers: (1) the `user_e
      "value_proposition": "We help media companies publish faster...",
      "success_definition": "Customers succeed when time-to-publish drops...",
      "strategic_priorities": [
-       {"id": "sp-1", "text": "Expand Crestview Media to two new business units", "linked_entity_id": "acc-cox", "linked_entity_type": "account", "created_at": "2026-02-22T00:00:00Z"}
+       {"id": "sp-1", "text": "Expand Crestview Media to two new business units", "linked_entity_id": "acc-acmecorp", "linked_entity_type": "account", "created_at": "2026-02-22T00:00:00Z"}
      ]
    }
    ```
@@ -86,7 +86,7 @@ The foundational backend for the user entity. This issue covers: (1) the `user_e
 
 6. Annual priorities support entity linking. Each item in the `annual_priorities` JSON array may include `linked_entity_id` and `linked_entity_type` ("account" | "project" | "person"). Quarterly priorities support linking to actions, meetings, or people via `linked_to_id` and `linked_to_type`. These links are consumed by I414 (signal scoring).
 
-   Verify: call `update_user_entity_field("annual_priorities", '[{"id":"ap-1","text":"Expand Crestview Media to three BUs","linked_entity_id":"<cox-account-id>","linked_entity_type":"account","created_at":"2026-02-22T00:00:00Z"}]')`. Query: `SELECT annual_priorities FROM user_entity` — the JSON includes the `linked_entity_id` with the Crestview Media account ID.
+   Verify: call `update_user_entity_field("annual_priorities", '[{"id":"ap-1","text":"Expand Crestview Media to three BUs","linked_entity_id":"<acmecorp-account-id>","linked_entity_type":"account","created_at":"2026-02-22T00:00:00Z"}]')`. Query: `SELECT annual_priorities FROM user_entity` — the JSON includes the `linked_entity_id` with the Crestview Media account ID.
 
    **No expiration on either priority type.** Both `annual_priorities` and `quarterly_priorities` persist in full until the user explicitly removes or replaces items. `get_user_entity` returns the complete arrays as stored — no filtering, no automatic archival. This is intentional: requiring users to refresh priorities on a schedule creates maintenance burden that violates the zero-guilt design principle. Stale priorities are still useful context. The user updates them when they want to.
 

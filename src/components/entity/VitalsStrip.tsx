@@ -8,6 +8,7 @@ import type { AccountSourceRef } from "@/types";
 import {
   formatProvenanceSource,
 } from "@/components/ui/ProvenanceLabel";
+import css from "./VitalsStrip.module.css";
 
 interface VitalsStripProps {
   vitals: VitalDisplay[];
@@ -57,57 +58,27 @@ export function VitalsStrip({ vitals, sourceRefs }: VitalsStripProps) {
   }
 
   return (
-    <div
-      style={{
-        marginTop: 24,
-        marginBottom: 24,
-        borderTop: "1px solid var(--color-rule-heavy)",
-        borderBottom: "1px solid var(--color-rule-heavy)",
-        padding: "14px 0",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+    <div className={css.strip}>
+      <div className={css.items}>
         {vitals.map((v, i) => {
           const ref = sourceRefs ? matchVitalToSourceRef(v.text, refsByField) : undefined;
           const attribution = ref ? formatProvenanceSource(ref.sourceSystem) : null;
           return (
-            <span key={i} style={{ display: "flex", alignItems: "center", gap: 24 }}>
+            <span key={i} className={css.item}>
               {i > 0 && (
-                <span
-                  style={{
-                    width: 3,
-                    height: 3,
-                    borderRadius: "50%",
-                    background: "var(--color-text-tertiary)",
-                    flexShrink: 0,
-                  }}
-                />
+                <span className={css.separatorDot} />
               )}
-              <span style={{ display: "inline-flex", flexDirection: "column" }}>
+              <span className={css.fieldStack}>
+                {/* Data-driven color comes from each vital's highlight value. */}
                 <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    fontWeight: 500,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: v.highlight ? highlightColor[v.highlight] : "var(--color-text-secondary)",
-                    whiteSpace: "nowrap",
-                  }}
+                  className={css.vitalText}
+                  // Data-driven color comes from each vital's highlight value.
+                  style={{ color: v.highlight ? highlightColor[v.highlight] : "var(--color-text-secondary)" }}
                 >
                   {v.text}
                 </span>
                 {attribution && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "var(--type-xs)",
-                      color: "var(--color-text-muted)",
-                      marginTop: 2,
-                      display: "block",
-                      letterSpacing: "0.02em",
-                    }}
-                  >
+                  <span className={css.attribution}>
                     {attribution}
                   </span>
                 )}

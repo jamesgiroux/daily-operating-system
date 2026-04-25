@@ -6,7 +6,7 @@
    Fixed position, centered vertically at 28px from right.
    ============================================================================= */
 
-@import '../../styles/design-tokens.css';
+@import "../../styles/design-tokens.css";
 
 /* ─────────────────────────────────────────────────────────────────────────
    CONTAINER — Position context for both pills

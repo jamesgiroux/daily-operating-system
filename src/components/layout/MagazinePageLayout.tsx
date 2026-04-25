@@ -96,7 +96,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
 
   const atmosphereColor = pageConfig?.atmosphereColor ?? 'turmeric';
   const folioLabel = pageConfig?.folioLabel ?? 'Daily Briefing';
-  const backLink = pageConfig?.backLink;
+  const breadcrumbs = pageConfig?.breadcrumbs;
   const chapters = pageConfig?.chapters;
   // I563: Read volatile folio state from ref — falls back to config for backwards compat.
   const volatile = useFolioVolatile();
@@ -169,9 +169,8 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
     </button>
   ) : null;
 
-  const combinedActions = demoBadge || folioActions || modeBadge ? (
+  const combinedActions = demoBadge || folioActions ? (
     <>
-      {modeBadge}
       {demoBadge}
       {folioActions}
     </>
@@ -195,9 +194,10 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
         readinessStats={volatile.folioReadinessStats ?? pageConfig?.folioReadinessStats}
         statusText={volatile.folioStatusText ?? pageConfig?.folioStatusText}
         onSearchClick={onFolioSearch}
-        backLink={backLink}
+        breadcrumbs={breadcrumbs}
         actions={combinedActions}
         backgroundWork={backgroundWork}
+        modeBadge={modeBadge}
       />
 
       {/* Fixed floating nav island — right margin */}

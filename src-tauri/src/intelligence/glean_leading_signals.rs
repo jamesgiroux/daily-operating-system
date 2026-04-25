@@ -394,13 +394,27 @@ pub struct TrendSignals {
     pub sentiment_over_time: Vec<serde_json::Value>,
 }
 
-/// Build the supplemental leading-signals prompt, parameterised on account name.
+/// Build the supplemental leading-signals prompt, parameterised on account name
+/// and structured disambiguators.
 ///
-/// Mirrors `.docs/mockups/glean-prompt-health-outlook-signals.md` verbatim — any
-/// edits here MUST be reflected in the mockup and vice versa.
-pub fn build_leading_signals_prompt(account_name: &str) -> String {
+/// DOS-287: Prefixes the prompt with an `## Entity disambiguation`,
+/// `## Retrieval scope`, and `## Grounding rule` block — same shape as
+/// `build_glean_dimension_prompt` — so Glean's retrieval is biased toward
+/// documents that reference at least one explicit identifier.
+///
+/// When `disambiguators` is `None` or empty, the prompt degrades to the
+/// original name-only form (no "(none)" lines injected).
+pub fn build_leading_signals_prompt(
+    account_name: &str,
+    disambiguators: Option<&crate::intelligence::prompts::EntityDisambiguators>,
+) -> String {
+    // DOS-287: Build the structured disambiguation preamble up-front.
+    let preamble = build_disambiguation_preamble(account_name, disambiguators);
+
     format!(
         r#"You are a customer success intelligence system. For the customer account "{account_name}", search ALL available data sources (Salesforce, Zendesk, Gong, Slack, internal documents, LinkedIn data if indexed, org directory, Google Workspace, Notion/Confluence if configured) and extract HIGH-LEVERAGE leading signals that are often missed by standard enrichment.
+
+{preamble}
 
 Focus on EARLY WARNING signals, TRENDS, and DIVERGENCES — not static state. We already have the base account intelligence (ARR, renewal date, stakeholder list, support tickets, recent wins). Do NOT duplicate that. This pull is specifically for the signals below.
 
@@ -483,8 +497,80 @@ The JSON object must have these fields. Omit any field you have no data for — 
 - No markdown, no prose, no commentary.
 
 Your response begins with `{{` and ends with `}}`. Nothing else."#,
-        account_name = account_name
+        account_name = account_name,
+        preamble = preamble,
     )
+}
+
+/// DOS-287: Render the structured disambiguation preamble shared with
+/// dimension prompts. Returns an empty string (no extra newlines) when no
+/// disambiguator data is available, so the prompt gracefully degrades.
+fn build_disambiguation_preamble(
+    account_name: &str,
+    disambiguators: Option<&crate::intelligence::prompts::EntityDisambiguators>,
+) -> String {
+    let mut out = String::new();
+    out.push_str("## Entity disambiguation\n");
+    out.push_str(&format!("- Name: {}\n", account_name));
+
+    if let Some(d) = disambiguators {
+        if !d.known_domains.is_empty() {
+            out.push_str(&format!(
+                "- Known domains: {}\n",
+                d.known_domains.join(", ")
+            ));
+        }
+        if !d.known_contacts.is_empty() {
+            out.push_str(&format!(
+                "- Known contacts: {}\n",
+                d.known_contacts.join(", ")
+            ));
+        }
+        if let Some(ref parent) = d.parent_context {
+            if parent.domains.is_empty() {
+                out.push_str(&format!("- Parent company: {}\n", parent.name));
+            } else {
+                out.push_str(&format!(
+                    "- Parent company: {} (domains: {})\n",
+                    parent.name,
+                    parent.domains.join(", ")
+                ));
+            }
+        }
+        match d.salesforce_account_id.as_deref() {
+            Some(id) => out.push_str(&format!("- Salesforce account ID: {}\n", id)),
+            None => out.push_str("- Salesforce account ID: not provided\n"),
+        }
+    } else {
+        out.push_str("- Salesforce account ID: not provided\n");
+    }
+
+    out.push_str("\n## Retrieval scope\n");
+    out.push_str(&format!(
+        "- Prefer documents that reference at least one identifier above (name \"{}\", a known domain, a known contact email, the parent company, or the Salesforce account ID). Treat those as first-class evidence.\n",
+        account_name
+    ));
+    out.push_str(
+        "- EXCLUDE documents whose only signal is a different customer's identifier. A document mentioning a different `vip-*.com` host, a different Salesforce account ID, a different customer name, or a different company domain is evidence that document is NOT about this entity — do not draw from it.\n",
+    );
+    out.push_str(
+        "- `wordpress-vip2@assistant.gong.io` and similar shared Gong/Slack bots are multi-tenant note-takers. Their presence in a document says nothing about which specific customer the document concerns.\n",
+    );
+    if let Some(d) = disambiguators {
+        if !d.known_domains.is_empty() {
+            out.push_str(&format!(
+                "- For this entity, the allowed domain set is exactly: {}. Any other customer domain disqualifies a document.\n",
+                d.known_domains.join(", ")
+            ));
+        }
+    }
+
+    out.push_str("\n## Grounding rule\n");
+    out.push_str(&format!(
+        "Every sentence in your output must be supported by a document that mentions at least one of the known identifiers for \"{}\" above. If you cannot point to such a document for a claim, OMIT the claim entirely — do not fabricate, do not paraphrase adjacent customers, do not substitute a plausible-sounding alternative. Omission is always preferable to cross-customer contamination.",
+        account_name
+    ));
+    out
 }
 
 /// Parse a raw Glean chat response into a normalized `HealthOutlookSignals`.

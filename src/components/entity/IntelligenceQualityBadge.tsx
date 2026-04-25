@@ -5,6 +5,7 @@
  * 1. Structured quality from backend (preferred for meetings)
  * 2. Time-based freshness from enrichedAt (backward compat for entity heroes)
  */
+import css from "./IntelligenceQualityBadge.module.css";
 
 interface StructuredQuality {
   level: "sparse" | "developing" | "ready" | "fresh";
@@ -78,56 +79,22 @@ export function IntelligenceQualityBadge({
       : `${label} — Not yet updated`;
 
     return (
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-        }}
-        title={tooltip}
-      >
-        <span
-          style={{
-            position: "relative",
-            width: 7,
-            height: 7,
-            flexShrink: 0,
-          }}
-        >
+      <span className={css.root} title={tooltip}>
+        <span className={css.structuredDotShell}>
           <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: color,
-              display: "block",
-              opacity: quality.level === "sparse" ? 0.5 : 1,
-            }}
+            className={`${css.dot} ${quality.level === "sparse" ? css.mutedDot : ""}`}
+            // Runtime quality level determines the dot color.
+            style={{ background: color }}
           />
           {quality.hasNewSignals && (
-            <span
-              style={{
-                position: "absolute",
-                top: -2,
-                right: -2,
-                width: 5,
-                height: 5,
-                borderRadius: "50%",
-                background: "var(--color-water-larkspur)",
-              }}
-            />
+            <span className={css.newSignalDot} />
           )}
         </span>
         {showLabel && (
           <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              fontWeight: 500,
-              letterSpacing: "0.04em",
-              color,
-              textTransform: "uppercase",
-            }}
+            className={css.label}
+            // Runtime quality level determines the label color.
+            style={{ color }}
           >
             {label}
           </span>
@@ -140,34 +107,17 @@ export function IntelligenceQualityBadge({
   const freshness = computeFreshness(enrichedAt);
 
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-      }}
-      title={enrichedAt ? `${LABELS[freshness]} — Last updated: ${new Date(enrichedAt).toLocaleString()}` : "Not yet updated"}
-    >
+    <span className={css.root} title={enrichedAt ? `${LABELS[freshness]} — Last updated: ${new Date(enrichedAt).toLocaleString()}` : "Not yet updated"}>
       <span
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius: "50%",
-          background: DOT_COLORS[freshness],
-          flexShrink: 0,
-          opacity: freshness === "none" ? 0.5 : 1,
-        }}
+        className={`${css.dot} ${freshness === "none" ? css.mutedDot : ""}`}
+        // Runtime freshness determines the dot color.
+        style={{ background: DOT_COLORS[freshness] }}
       />
       {showLabel && (
         <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 500,
-            letterSpacing: "0.04em",
-            color: DOT_COLORS[freshness],
-            textTransform: "uppercase",
-          }}
+          className={css.label}
+          // Runtime freshness determines the label color.
+          style={{ color: DOT_COLORS[freshness] }}
         >
           {LABELS[freshness]}
         </span>

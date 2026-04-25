@@ -373,3 +373,128 @@ A typical Read ability produces ~500B–5KB of provenance. Transform abilities w
 - **ADR-0110 (forthcoming): Evaluation Harness for Abilities** — Uses `prompt_fingerprint` and `field_attributions` for regression detection.
 - **ADR-0111 (forthcoming): Surface-Independent Ability Invocation** — References the rendering rules in [ADR-0108](0108-provenance-rendering-and-privacy.md).
 - **ADR-0112 (forthcoming): Migration Strategy — Parallel Run and Cutover** — Covers migration of existing stored AI content to carry `synthesis_marker` so the trust model's `contains_stored_synthesis` check works retroactively.
+
+---
+
+## Amendment — 2026-04-24 — `source_asof` population semantics + `SourceTimestampUnknown` warning
+
+### Why
+
+The 2026-04-24 Claim Anatomy Review (`.docs/plans/claim-anatomy-review-2026-04-24.md` §10) identified that `source_asof: Option<DateTime<Utc>>` exists in §4 above as optional metadata but no code path actually populates it. Today's storage path stamps `observed_at = now` (`glean_provider.rs:1182`) regardless of when the underlying source was authored. The Glean/PTY prompts ask for `sourcedAt` per item (`dimension_prompts.rs:608`) but the returned timestamp lives in a JSON blob and is never lifted into the first-class column.
+
+**Effective behavior today:** every claim freshly synthesized from a 6-month-old Salesforce note looks fresh. Trust Compiler's `freshness_weight` factor (DOS-10) will be calibrated against ingestion time, not evidence time. Stale evidence appears as fresh claims — load-bearing bug present today, that worsens when Trust Compiler ships unless fixed.
+
+This amendment closes the gap before Trust Compiler ships in v1.4.0 spine (DOS-5).
+
+### A. Population semantics
+
+`source_asof` is amended from "optional metadata" to **must-be-populated-when-knowable**, with an explicit population chain:
+
+```text
+populate(source_asof) = pick first available:
+  1. LLM-returned `sourcedAt` from `itemSource.sourcedAt` (per dimension_prompts.rs:608 contract)
+  2. Glean document `lastModified` / `createdAt` from cited downstream documents
+  3. Source-class inference (e.g., for an email source attribution, the email's `Date:` header)
+  4. None
+```
+
+If all four fail, `source_asof = None` AND the Provenance envelope emits a new warning variant:
+
+```rust
+pub enum ProvenanceWarning {
+    // ...existing variants...
+    SourceTimestampUnknown {
+        source_index: usize,
+        fallback: SourceTimestampFallback,
+    },
+}
+
+pub enum SourceTimestampFallback {
+    /// Fell back to ingestion time `observed_at` for freshness calculation.
+    ObservedAt,
+    /// Fell back to claim creation time (worst case — neither source nor ingestion timestamp).
+    ClaimCreatedAt,
+}
+```
+
+Surfaces (per ADR-0108) render `SourceTimestampUnknown` so the system can see when freshness is being approximated rather than measured.
+
+### B. Freshness fallback chain (informs DOS-10)
+
+The freshness factor uses an explicit fallback chain — **conservative on unknown**:
+
+```text
+freshness_input_age = match (source_asof, observed_at):
+  (Some(t), _)            => now - t                        // measured evidence age
+  (None, Some(t))         => (now - t) + STALENESS_PADDING  // ingestion time + penalty
+  (None, None)            => MAX_AGE                        // treat as fully decayed
+```
+
+The `STALENESS_PADDING` (default 30 days, configurable in `config/scoring.toml`) ensures unknown timestamps are treated as old, not fresh. This prevents the system from claiming freshness it can't substantiate. DOS-10's freshness decay table consumes this corrected input.
+
+### C. `ProvenanceBuilder` enforcement
+
+The builder lifts `itemSource.sourcedAt` (when present in LLM output) and Glean document timestamps into `source_asof` automatically. Authors do not manually populate the field. The builder emits `SourceTimestampUnknown` when the population chain falls to step 4.
+
+### D. Consumer issues affected
+
+| Issue | What changes |
+|---|---|
+| DOS-211 (Provenance Builder, spine) | Builder lifts `sourcedAt` from `itemSource` JSON or Glean document metadata into `source_asof`. Emits `SourceTimestampUnknown` warning on full fallback. |
+| DOS-5 (Trust Compiler, spine) | `freshness_weight` factor uses the fallback chain in §B above. Conservative on unknown. |
+| DOS-10 (Freshness decay table, v1.4.1) | Spec amended to consume the corrected input from this fallback chain. |
+| DOS-218 / DOS-219 (pilot abilities, spine) | Acceptance criteria include: produces ≥1 claim with `source_asof` populated and ≥1 claim with `SourceTimestampUnknown` warning, demonstrating the chain works both ways. |
+| `glean_provider.rs:1182` write path | Lift Glean document timestamps into `source_asof` before writing SignalEvent / claim row. Don't stamp `observed_at = now` as the only timestamp. |
+| DOS-299 (new spine issue) | Implementation owner. |
+
+### E. Backfill from existing `ItemSource.sourced_at` (corrected 2026-04-24 PM per Codex finding 3)
+
+The earlier draft of this amendment said "Backfill of historical claims is a non-goal; `source_asof` stays NULL on pre-amendment rows." **That was wrong.** Adversarial review surfaced that the existing `ItemSource.sourced_at` field in stored `intelligence.json` blobs IS the evidence-time timestamp, and is consumed today by suppression (`is_suppressed`) and timeliness logic (`services/accounts.rs:1253-1274`). Treating migrated claims as unknown-timestamp would apply `STALENESS_PADDING` to data whose timestamp is actually knowable — that's a regression dressed as conservatism.
+
+The correct migration semantics:
+
+```text
+backfill source_asof for each migrated claim:
+  1. If the source IntelligenceJson item has `itemSource.sourcedAt` populated (parseable RFC3339 / ISO8601):
+     → source_asof = parsed timestamp
+  2. If the item has no itemSource (legacy items pre-ItemSource introduction):
+     → source_asof = None AND emit ProvenanceWarning::SourceTimestampUnknown { fallback: ObservedAt }
+  3. If itemSource.sourcedAt is malformed / future-dated / timezone-less:
+     → log + reject with explicit migration error; do not silently accept
+```
+
+The backfill runs as part of DOS-7's atomic consolidation migration. It is not optional; it is the only way to preserve the timeliness signal that production code already depends on.
+
+### F. Semantic timestamp bounds (added 2026-04-24 PM per Codex round 2 finding 17)
+
+The earlier amendment rejected malformed/future/timezone-less timestamps. Codex round 2 flagged that **parseable nonsense slips through** — year 1970 (Unix epoch zero), year 2099, timestamps before account creation. Each is a real failure mode in production data.
+
+The migration applies these bounds to every parsed `source_asof`:
+
+```text
+reject as malformed:
+  - timestamp < 2015-01-01 (DailyOS predates this; anything earlier is corruption)
+  - timestamp > now + 5 years (futures beyond +5y are garbage; +5y bound accommodates legitimate forward dating like contract-end dates)
+
+quarantine (load with warning, do not reject migration):
+  - timestamp before the entity's earliest known evidence (account.created_at, person.first_seen, etc.)
+    → mark claim with ProvenanceWarning::SourceTimestampImplausible { reason: "before entity origin" }
+    → freshness factor treats as None (unknown) rather than honoring the implausible value
+  - timestamp > now + 30 days (near-future; legitimate for renewal dates but suspicious for source_asof)
+    → mark with SourceTimestampImplausible { reason: "near-future" }
+    → freshness factor treats as observed_at instead
+
+operator visibility:
+  - migration audit reports per-bound counts: rejected, quarantined, accepted
+  - quarantined claims are queryable via `intelligence_claims WHERE provenance_warnings @> 'SourceTimestampImplausible'`
+  - operator can choose to manually correct quarantined timestamps post-migration via repair command
+```
+
+This catches the cases Codex named without halting migration on every borderline timestamp.
+
+### Non-goals for spine
+
+- Per-surface visualization of timestamp confidence (v1.4.1 DOS-214).
+- Auto-classifier for inferring `source_asof` from claim_text content (v1.5.x+).
+- Backfill of `source_asof` from sources OTHER than existing `ItemSource.sourced_at` (e.g., re-fetching Glean documents to recover their timestamps for old claims). This is post-spine cleanup if needed.
+- Configurable bounds per source class (default bounds in §F apply uniformly in spine; per-source tuning is v1.4.1 if data warrants).

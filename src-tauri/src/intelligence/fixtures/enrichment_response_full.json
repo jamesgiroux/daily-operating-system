@@ -63,7 +63,7 @@
       "meetingCadence": {"score": 80, "weight": 0.15, "evidence": ["Regular bi-weekly syncs maintained"], "trend": "stable"},
       "emailEngagement": {"score": 70, "weight": 0.15, "evidence": ["Responsive within 24h on most threads"], "trend": "stable"},
       "stakeholderCoverage": {"score": 65, "weight": 0.20, "evidence": ["Strong VP contact, weak CTO relationship"], "trend": "declining"},
-      "championHealth": {"score": 85, "weight": 0.20, "evidence": ["Sarah Chen actively advocating"], "trend": "improving"},
+      "keyAdvocateHealth": {"score": 85, "weight": 0.20, "evidence": ["Sarah Chen actively advocating"], "trend": "improving"},
       "financialProximity": {"score": 60, "weight": 0.15, "evidence": ["Budget review pending"], "trend": "stable"},
       "signalMomentum": {"score": 70, "weight": 0.15, "evidence": ["Mixed signals"], "trend": "stable"}
     },
@@ -92,7 +92,7 @@
   "expansionSignals": [
     {"opportunity": "EMEA team deployment across 3 teams", "arrImpact": 80000, "source": "QBR 2026-03-10", "stage": "exploring", "strength": "strong"}
   ],
-  "renewalOutlook": {
+  "agreementOutlook": {
     "confidence": "medium",
     "riskFactors": ["CTO vendor consolidation review", "Q2 budget constraints"],
     "expansionPotential": "EMEA expansion could add $80K ARR"

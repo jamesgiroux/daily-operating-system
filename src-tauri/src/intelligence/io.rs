@@ -239,6 +239,21 @@ pub struct AccountHealth {
     pub recommended_actions: Vec<String>,
 }
 
+/// A short directional tag for the health trend signal line.
+///
+/// DOS-249: The mockup's Signal-trend meta renders as a bullet list like
+/// "Infra drift ▲ · Defensive Mode unsettled · Headless ▲ · Compliance persistent".
+/// These are populated by `compute_trend_from_history` and emitted as structured
+/// data so the frontend renders bullets instead of leaving the meta line empty.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthTrendTag {
+    /// Short human label (e.g. "Infra drift", "Defensive Mode unsettled").
+    pub label: String,
+    /// Direction indicator: "up" | "down" | "stable".
+    pub direction: String,
+}
+
 /// ADR-0097: Health trend direction with rationale, timeframe, and confidence.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -251,6 +266,15 @@ pub struct HealthTrend {
     pub timeframe: String,
     #[serde(default)]
     pub confidence: f64,
+    /// DOS-249: Integer score delta over the trend window. Positive = improving,
+    /// negative = declining. Used by SupportingTension to render "▲ +12 in 30d".
+    /// Computed from health score history; `None` when fewer than 2 data points exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta: Option<i32>,
+    /// DOS-249: Structured signal tags for the trend meta line. Derived from
+    /// dimension evidence; frontend renders as "Label ▲ · Label · Label ▼".
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<HealthTrendTag>,
 }
 
 /// ADR-0097: Six-dimension relationship health breakdown.
@@ -263,8 +287,8 @@ pub struct RelationshipDimensions {
     pub email_engagement: DimensionScore,
     #[serde(default)]
     pub stakeholder_coverage: DimensionScore,
-    #[serde(default)]
-    pub champion_health: DimensionScore,
+    #[serde(default, alias = "championHealth", alias = "champion_health")]
+    pub key_advocate_health: DimensionScore,
     #[serde(default)]
     pub financial_proximity: DimensionScore,
     #[serde(default)]
@@ -525,6 +549,38 @@ pub struct MarketContextItem {
     pub discrepancy: Option<bool>,
 }
 
+/// DOS-207: Regulatory context item (DORA, SOC 2, HIPAA, GDPR, etc).
+///
+/// Emitted by the `strategic_context` dimension prompt when the AI detects
+/// a compliance requirement from transcripts, emails, or Glean output.
+/// Feeds `financial_proximity` risk scoring via the
+/// `regulatory_gap_detected` signal when `status == "gap"`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RegulatoryItem {
+    /// Standard name — typically one of: "DORA" | "SOC_2_TYPE_II" |
+    /// "HIPAA" | "GDPR" | "CUSTOM". Free-text so new standards don't
+    /// require a schema migration.
+    pub standard: String,
+    /// Lifecycle status — one of: "required" | "in_progress" | "met" | "gap".
+    /// UI renders per-status chip color.
+    pub status: String,
+    /// Short evidence line from the source material (one sentence).
+    pub evidence: String,
+    /// Optional reference to the underlying source (meeting id, email id,
+    /// Glean document URI).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_reference: Option<String>,
+    /// RFC3339 timestamp of first detection.
+    pub detected_at: String,
+    /// I576: structured source attribution + confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: true if multiple sources disagree on status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
+}
+
 // -- Dimension 2: Relationship Health --
 
 /// Coverage assessment of stakeholder roles for an account.
@@ -682,10 +738,16 @@ pub struct ExpansionSignal {
     pub discrepancy: Option<bool>,
 }
 
-/// Renewal outlook assessment for an account.
+/// Agreement outlook assessment for an account (renamed from RenewalOutlook
+/// in DOS-179; serde alias preserves backward compat).
+///
+/// DOS-249: `renewal_narrative` is the one-paragraph editorial read that
+/// appears as a pull-quote below the Confidence/Recommended-start grid in
+/// the Health tab. Previously the UI overloaded `expansion_potential` for
+/// this; the dedicated field removes that coupling.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct RenewalOutlook {
+pub struct AgreementOutlook {
     /// high | moderate | low — AI-assessed confidence in successful renewal.
     pub confidence: Option<String>,
     /// Specific risk factors for THIS renewal.
@@ -693,6 +755,11 @@ pub struct RenewalOutlook {
     pub risk_factors: Vec<String>,
     /// Is there upsell/expansion potential tied to the renewal conversation?
     pub expansion_potential: Option<String>,
+    /// DOS-249: One-paragraph editorial read on the renewal — rendered as a
+    /// pull-quote below the outlook grid. Distinct from `expansion_potential`.
+    /// The AI emits this from the commercial_financial dimension prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renewal_narrative: Option<String>,
     /// When to start the renewal conversation.
     pub recommended_start: Option<String>,
     /// What strengthens our position.
@@ -701,6 +768,48 @@ pub struct RenewalOutlook {
     /// What weakens our position.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub negotiation_risk: Vec<String>,
+    /// DOS-204: Peer-cohort renewal benchmark for the Outlook panel's
+    /// Benchmark cell. Optional — the cell collapses to the 2-col layout
+    /// when absent. Populated by a separate Glean chat pass; the field is
+    /// added by the orchestrator after the main intelligence pass returns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_benchmark: Option<PeerBenchmark>,
+}
+
+/// DOS-204: Peer-cohort renewal benchmark for an account.
+///
+/// Sourced from a dedicated Glean chat pass that asks for the typical
+/// renewal rate of accounts with a comparable industry, ARR band, and
+/// product mix. The Outlook panel renders `band` as a label
+/// (Above / At / Below) coloured by sentiment, with `narrative` underneath
+/// and a "Drawn from N Glean sources" footer driven by `source_count`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerBenchmark {
+    /// Above / At / Below the cohort norm. Parsed by lowercase prefix match
+    /// from the AI response.
+    pub band: PeerBenchmarkBand,
+    /// One-line editorial summary surfaced as the cell detail.
+    pub narrative: String,
+    /// Number of distinct Glean sources cited when generating the benchmark.
+    /// Drives the "Drawn from N Glean source(s)" footer in the cell.
+    #[serde(default)]
+    pub source_count: u32,
+}
+
+/// DOS-204: Peer benchmark band — where this account sits relative to the cohort.
+///
+/// Parsed from the AI's free-form answer by lowercase-prefix match on
+/// "above" / "at" / "below". Anything else falls back to `Unknown`,
+/// which the renderer displays without a sentiment colour.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PeerBenchmarkBand {
+    Above,
+    At,
+    Below,
+    #[default]
+    Unknown,
 }
 
 // -- Dimension 6: External Health Signals --
@@ -917,6 +1026,12 @@ pub struct IntelligenceJson {
     /// did that; this field replaces the hijack).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub market_context: Vec<MarketContextItem>,
+    /// DOS-207: Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR, ...).
+    /// Emitted by `strategic_context` dimension; items with `status: "gap"`
+    /// emit `regulatory_gap_detected` signals on enrichment write, which
+    /// feed `financial_proximity` dimension scoring.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regulatory_context: Vec<RegulatoryItem>,
 
     // Dimension 2: Relationship Health
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -941,8 +1056,13 @@ pub struct IntelligenceJson {
     pub contract_context: Option<ContractContext>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expansion_signals: Vec<ExpansionSignal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub renewal_outlook: Option<RenewalOutlook>,
+    #[serde(
+        default,
+        alias = "renewalOutlook",
+        alias = "renewal_outlook",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agreement_outlook: Option<AgreementOutlook>,
     /// I651: Product classification from Salesforce (Glean-only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_classification: Option<ProductClassification>,
@@ -998,6 +1118,9 @@ pub(crate) struct DimensionsBlob {
     pub strategic_priorities: Vec<StrategicPriority>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub market_context: Vec<MarketContextItem>,
+    /// DOS-207: Regulatory / compliance items.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub regulatory_context: Vec<RegulatoryItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coverage_assessment: Option<CoverageAssessment>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1014,8 +1137,13 @@ pub(crate) struct DimensionsBlob {
     pub contract_context: Option<ContractContext>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expansion_signals: Vec<ExpansionSignal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub renewal_outlook: Option<RenewalOutlook>,
+    #[serde(
+        default,
+        alias = "renewalOutlook",
+        alias = "renewal_outlook",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agreement_outlook: Option<AgreementOutlook>,
     /// I651: Product classification from Salesforce (Glean-only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_classification: Option<ProductClassification>,
@@ -1040,6 +1168,7 @@ impl IntelligenceJson {
             competitive_context: self.competitive_context.clone(),
             strategic_priorities: self.strategic_priorities.clone(),
             market_context: self.market_context.clone(),
+            regulatory_context: self.regulatory_context.clone(),
             coverage_assessment: self.coverage_assessment.clone(),
             organizational_changes: self.organizational_changes.clone(),
             internal_team: self.internal_team.clone(),
@@ -1048,7 +1177,7 @@ impl IntelligenceJson {
             blockers: self.blockers.clone(),
             contract_context: self.contract_context.clone(),
             expansion_signals: self.expansion_signals.clone(),
-            renewal_outlook: self.renewal_outlook.clone(),
+            agreement_outlook: self.agreement_outlook.clone(),
             product_classification: self.product_classification.clone(),
             support_health: self.support_health.clone(),
             product_adoption: self.product_adoption.clone(),
@@ -1064,6 +1193,7 @@ impl IntelligenceJson {
         self.competitive_context = blob.competitive_context.clone();
         self.strategic_priorities = blob.strategic_priorities.clone();
         self.market_context = blob.market_context.clone();
+        self.regulatory_context = blob.regulatory_context.clone();
         self.coverage_assessment = blob.coverage_assessment.clone();
         self.organizational_changes = blob.organizational_changes.clone();
         self.internal_team = blob.internal_team.clone();
@@ -1072,7 +1202,7 @@ impl IntelligenceJson {
         self.blockers = blob.blockers.clone();
         self.contract_context = blob.contract_context.clone();
         self.expansion_signals = blob.expansion_signals.clone();
-        self.renewal_outlook = blob.renewal_outlook.clone();
+        self.agreement_outlook = blob.agreement_outlook.clone();
         self.product_classification = blob.product_classification.clone();
         self.support_health = blob.support_health.clone();
         self.product_adoption = blob.product_adoption.clone();
@@ -1180,7 +1310,7 @@ fn is_true(v: &bool) -> bool {
     *v
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct IntelRisk {
     pub text: String,
@@ -1188,6 +1318,20 @@ pub struct IntelRisk {
     pub source: Option<String>,
     #[serde(default = "default_urgency")]
     pub urgency: String,
+    /// DOS-249: Punchy 1-liner headline for the triage card (≤80 chars).
+    /// When present, the frontend renders this in the 21px serif slot rather
+    /// than splitting `text` on punctuation. Falls back to client-side split
+    /// of `text` when absent (backward compat with existing enriched accounts).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headline: Option<String>,
+    /// DOS-249: Evidence body — multi-sentence supporting detail.
+    /// When present, rendered as the sans-serif paragraph below the headline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+    /// DOS-249: Specific kind label emitted by the AI (e.g. "Renewal drag · compliance gap").
+    /// When present, replaces the generic urgency-derived label in the triage card spine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind_label: Option<String>,
     /// I576: Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
@@ -1200,7 +1344,7 @@ pub(crate) fn default_urgency() -> String {
     "watch".to_string()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct IntelWin {
     pub text: String,
@@ -1227,7 +1371,7 @@ pub struct CurrentState {
     pub unknowns: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct StakeholderInsight {
     pub name: String,
@@ -1245,6 +1389,18 @@ pub struct StakeholderInsight {
     /// Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested_person_id: Option<String>,
+    /// DOS-207: Whether this assessment was verified from an actual
+    /// customer-conversation transcript (vs inferred from meeting attendance).
+    /// Set by the `stakeholder_champion` dimension prompt; user corrections
+    /// via the DOS-41 correction UX override.
+    #[serde(default)]
+    pub verified: bool,
+    /// DOS-207: How the verification was established — "meeting" | "glean" | "user".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_source: Option<String>,
+    /// DOS-207: RFC3339 timestamp when verification was established.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<String>,
     /// I576: Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
@@ -1253,7 +1409,7 @@ pub struct StakeholderInsight {
     pub discrepancy: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ValueItem {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1353,7 +1509,7 @@ pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
                     "meetingCadence": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
                     "emailEngagement": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
                     "stakeholderCoverage": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
-                    "championHealth": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
+                    "keyAdvocateHealth": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
                     "financialProximity": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
                     "signalMomentum": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"}
                 },
@@ -1365,7 +1521,10 @@ pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
         }
     }
 
-    serde_json::from_value(value).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
+    let mut intel: IntelligenceJson =
+        serde_json::from_value(value).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
+    normalize_legacy_intelligence_refs(&mut intel);
+    Ok(intel)
 }
 
 /// Write intelligence.json atomically to an entity directory.
@@ -1465,6 +1624,44 @@ fn parse_path_segments(path: &str) -> Result<Vec<PathSegment>, String> {
     Ok(segments)
 }
 
+fn normalize_legacy_intelligence_path(path: &str) -> String {
+    const RENAMES: &[(&str, &str)] = &[
+        ("renewalOutlook", "agreementOutlook"),
+        ("renewal_outlook", "agreement_outlook"),
+        (
+            "health.dimensions.championHealth",
+            "health.dimensions.keyAdvocateHealth",
+        ),
+        (
+            "health.dimensions.champion_health",
+            "health.dimensions.key_advocate_health",
+        ),
+    ];
+
+    for (old, new) in RENAMES {
+        if path == *old {
+            return (*new).to_string();
+        }
+        if let Some(rest) = path.strip_prefix(&format!("{old}.")) {
+            return format!("{new}.{rest}");
+        }
+        if let Some(rest) = path.strip_prefix(&format!("{old}[")) {
+            return format!("{new}[{rest}");
+        }
+    }
+
+    path.to_string()
+}
+
+fn normalize_legacy_intelligence_refs(intel: &mut IntelligenceJson) {
+    for edit in &mut intel.user_edits {
+        edit.field_path = normalize_legacy_intelligence_path(&edit.field_path);
+    }
+    for dismissed in &mut intel.dismissed_items {
+        dismissed.field = normalize_legacy_intelligence_path(&dismissed.field);
+    }
+}
+
 /// Apply a field update to an intelligence.json on disk.
 ///
 /// Reads the file, applies the update via JSON path navigation,
@@ -1474,6 +1671,8 @@ pub fn apply_intelligence_field_update(
     field_path: &str,
     value: &str,
 ) -> Result<IntelligenceJson, String> {
+    let field_path = normalize_legacy_intelligence_path(field_path);
+    let field_path = field_path.as_str();
     let intel_path = dir.join(INTEL_FILENAME);
     let content = std::fs::read_to_string(&intel_path)
         .map_err(|e| format!("Failed to read {}: {}", intel_path.display(), e))?;
@@ -1542,6 +1741,8 @@ pub fn apply_intelligence_field_update_in_memory(
     field_path: &str,
     value: &str,
 ) -> Result<IntelligenceJson, String> {
+    let field_path = normalize_legacy_intelligence_path(field_path);
+    let field_path = field_path.as_str();
     let mut json_val = serde_json::to_value(&existing)
         .map_err(|e| format!("Failed to serialize existing intelligence: {}", e))?;
 
@@ -1680,13 +1881,14 @@ pub fn preserve_user_edits(new_intel: &mut IntelligenceJson, existing: &Intellig
     let mut updated_edits = Vec::new();
 
     for edit in &existing.user_edits {
+        let field_path = normalize_legacy_intelligence_path(&edit.field_path);
         // I633: Array-indexed paths like "stakeholderInsights[0].role" break when
         // enrichment reorders the array. Match by identity ("name") instead of index.
         if let Some(resolved) =
-            resolve_array_path_by_identity(&existing_val, &new_val, &edit.field_path)
+            resolve_array_path_by_identity(&existing_val, &new_val, &field_path)
         {
             // Read the user-edited value from existing at the original path
-            if let Some(val) = get_json_path(&existing_val, &edit.field_path) {
+            if let Some(val) = get_json_path(&existing_val, &field_path) {
                 if set_json_path(&mut new_val, &resolved, val.clone()).is_ok() {
                     // Update the stored path to the new index
                     updated_edits.push(crate::intelligence::io::UserEdit {
@@ -1699,15 +1901,19 @@ pub fn preserve_user_edits(new_intel: &mut IntelligenceJson, existing: &Intellig
         }
 
         // Fallback: direct path restoration (non-array or identity match failed)
-        if let Some(val) = get_json_path(&existing_val, &edit.field_path) {
-            let _ = set_json_path(&mut new_val, &edit.field_path, val.clone());
+        if let Some(val) = get_json_path(&existing_val, &field_path) {
+            let _ = set_json_path(&mut new_val, &field_path, val.clone());
         }
-        updated_edits.push(edit.clone());
+        updated_edits.push(crate::intelligence::io::UserEdit {
+            field_path,
+            edited_at: edit.edited_at.clone(),
+        });
     }
 
     // Re-parse and carry forward user_edits (with updated paths)
     if let Ok(mut restored) = serde_json::from_value::<IntelligenceJson>(new_val) {
         restored.user_edits = updated_edits;
+        normalize_legacy_intelligence_refs(&mut restored);
         *new_intel = restored;
     }
 }
@@ -2008,6 +2214,69 @@ impl ActionDb {
             )?;
         }
 
+        // DOS-207: Emit regulatory_gap_detected and stakeholder_verified
+        // signals so the Intelligence Loop (callouts, propagation rules,
+        // health scoring) can react without waiting for the next enrichment.
+        // The 24-hour callout window dedupes repeat emissions of the same gap.
+        for item in &intel.regulatory_context {
+            if item.status == "gap" {
+                let value = serde_json::json!({
+                    "standard": item.standard,
+                    "evidence": item.evidence,
+                })
+                .to_string();
+                let _ = crate::signals::bus::emit_signal(
+                    self,
+                    &intel.entity_type,
+                    &intel.entity_id,
+                    "regulatory_gap_detected",
+                    "enrichment_write",
+                    Some(&value),
+                    0.9,
+                );
+            } else if item.status == "required" || item.status == "in_progress" {
+                let value = serde_json::json!({
+                    "standard": item.standard,
+                    "status": item.status,
+                })
+                .to_string();
+                let _ = crate::signals::bus::emit_signal(
+                    self,
+                    &intel.entity_type,
+                    &intel.entity_id,
+                    "regulatory_requirement_detected",
+                    "enrichment_write",
+                    Some(&value),
+                    0.85,
+                );
+            }
+        }
+
+        for insight in &intel.stakeholder_insights {
+            if let Some(ref person_id) = insight.person_id {
+                let (signal_type, confidence) = if insight.verified {
+                    ("stakeholder_verified", 0.9)
+                } else {
+                    ("stakeholder_unverified", 0.7)
+                };
+                let value = serde_json::json!({
+                    "person_id": person_id,
+                    "name": insight.name,
+                    "verified_source": insight.verified_source,
+                })
+                .to_string();
+                let _ = crate::signals::bus::emit_signal(
+                    self,
+                    &intel.entity_type,
+                    &intel.entity_id,
+                    signal_type,
+                    "enrichment_write",
+                    Some(&value),
+                    confidence,
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -2114,6 +2383,7 @@ impl ActionDb {
                     intel.apply_dimensions_blob(&blob);
                 }
             }
+            normalize_legacy_intelligence_refs(&mut intel);
             Ok(intel)
         });
 
@@ -2774,6 +3044,9 @@ mod tests {
                 source: Some("qbr-notes.md".to_string()),
                 urgency: "critical".to_string(),
                 item_source: None,
+                headline: None,
+                evidence: None,
+                kind_label: None,
                 discrepancy: None,
             }],
             recent_wins: vec![IntelWin {
@@ -2798,6 +3071,9 @@ mod tests {
                 suggested_person_id: None,
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),
@@ -3070,6 +3346,9 @@ mod tests {
             source: None,
             urgency: "watch".to_string(),
             item_source: None,
+            headline: None,
+            evidence: None,
+            kind_label: None,
             discrepancy: None,
         });
 
@@ -3169,13 +3448,14 @@ mod tests {
             item_source: None,
             discrepancy: None,
         }];
-        intel.renewal_outlook = Some(RenewalOutlook {
+        intel.agreement_outlook = Some(AgreementOutlook {
             confidence: Some("high".to_string()),
             risk_factors: vec!["Budget freeze possible".to_string()],
             expansion_potential: Some("$30k APAC".to_string()),
             recommended_start: Some("2026-01-15".to_string()),
             negotiation_leverage: vec!["Multi-year discount".to_string()],
             negotiation_risk: vec!["Competitor POC".to_string()],
+            ..Default::default()
         });
         intel.support_health = Some(SupportHealth {
             open_tickets: Some(3),
@@ -3246,9 +3526,9 @@ mod tests {
             Some(120_000.0)
         );
         assert_eq!(fetched.expansion_signals.len(), 1);
-        assert!(fetched.renewal_outlook.is_some());
+        assert!(fetched.agreement_outlook.is_some());
         assert_eq!(
-            fetched.renewal_outlook.as_ref().unwrap().confidence,
+            fetched.agreement_outlook.as_ref().unwrap().confidence,
             Some("high".to_string())
         );
         assert!(fetched.support_health.is_some());
@@ -3290,6 +3570,9 @@ mod tests {
                 source: Some("QBR notes".to_string()),
                 urgency: "critical".to_string(),
                 item_source: None,
+                headline: None,
+                evidence: None,
+                kind_label: None,
                 discrepancy: None,
             }],
             recent_wins: vec![IntelWin {
@@ -3314,6 +3597,9 @@ mod tests {
                 suggested_person_id: None,
                 item_source: None,
                 discrepancy: None,
+
+                ..Default::default()
+
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),

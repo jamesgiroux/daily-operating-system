@@ -215,14 +215,14 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
         ).length;
 
         if (readyCount === readiness.totalExternal) {
-          stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
+          stats.push({ label: `${readyCount}/${readiness.totalExternal} briefings ready`, color: "sage" });
         } else if (buildingCount > 0) {
-          stats.push({ label: `${readyCount} ready, ${buildingCount} limited`, color: "sage" });
+          stats.push({ label: `${readyCount} briefings ready, ${buildingCount} limited`, color: "sage" });
         } else {
-          stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
+          stats.push({ label: `${readyCount}/${readiness.totalExternal} briefings ready`, color: "sage" });
         }
       } else {
-        stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} ready`, color: "sage" });
+        stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} briefings ready`, color: "sage" });
       }
     }
     if (readiness.overdueCount > 0) {

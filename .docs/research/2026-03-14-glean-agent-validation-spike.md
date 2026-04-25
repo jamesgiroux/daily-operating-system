@@ -69,7 +69,7 @@ airtable, announcements, answers, automattic.com, bynder, clubhouse, collections
 ### Test 8: Account Discovery from Email Identity
 - **Status:** PASS — valid JSON
 - **Data quality:** 12 accounts found across Gong (7) and Zendesk (5) with evidence and role attribution
-- **Accounts found:** Nexus Analytics, BaT, Meridian Asset, Crestview Media, Heroku, AirBnB, Salesforce, Globex Holdings, Keystone Finance, Newsweek, CEI, Akismet
+- **Accounts found:** Nexus Analytics, Vintage, Meridian Asset, Crestview Media, CloudCo, AirBnB, Salesforce, Globex Holdings, Keystone Finance, Newsweek, CEI, Akismet
 - **Notable:** Knows role per account (TAM, co-owner, technical side)
 
 ### Test 9: Full Onboarding Bootstrap

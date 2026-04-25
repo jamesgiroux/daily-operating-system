@@ -13,7 +13,7 @@ Real workspace pattern (explored `~/Documents/VIP/Accounts/`):
 Accounts/Crestview Media/
 ├── dashboard.json            ← parent-level data
 ├── dashboard.md
-├── Consumer-Brands/          ← BU (human-readable name, no numeric prefix)
+├── BrandsCo/          ← BU (human-readable name, no numeric prefix)
 │   ├── 01-Customer-Information/
 │   ├── 02-Meetings/
 │   └── ...
@@ -34,7 +34,7 @@ Self-referential `parent_id TEXT` on the `accounts` table. NULL = top-level acco
 
 ### Path resolution
 
-Use the existing `tracker_path` field on `DbAccount`. `workspace.join(tracker_path)` resolves both flat paths (`Accounts/Crestview Media`) and nested paths (`Accounts/Crestview Media/Consumer-Brands`) without hierarchy table lookups. All write functions (`write_account_json`, `write_account_markdown`, `update_account_field`, etc.) resolve directories via `tracker_path` with fallback to `account_dir()`.
+Use the existing `tracker_path` field on `DbAccount`. `workspace.join(tracker_path)` resolves both flat paths (`Accounts/Crestview Media`) and nested paths (`Accounts/Crestview Media/BrandsCo`) without hierarchy table lookups. All write functions (`write_account_json`, `write_account_markdown`, `update_account_field`, etc.) resolve directories via `tracker_path` with fallback to `account_dir()`.
 
 ### BU detection heuristic
 
@@ -47,7 +47,7 @@ Parents have their own `dashboard.json`, own data, AND aggregate child signals. 
 ### UI
 
 - **AccountsPage**: expandable parent rows with disclosure chevron, lazy-loaded children with indent
-- **AccountDetailPage**: breadcrumb for children (`Accounts > Crestview Media > Consumer Brands`), BU list section for parents, portfolio aggregate row (total ARR, worst health, nearest renewal, BU count)
+- **AccountDetailPage**: breadcrumb for children (`Accounts > Crestview Media > BrandsCo`), BU list section for parents, portfolio aggregate row (total ARR, worst health, nearest renewal, BU count)
 - **Markdown writeback**: parent account markdown includes "Business Units" section listing children with health badges and ARR
 
 ### Intelligence aggregation

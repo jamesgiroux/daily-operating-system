@@ -21,7 +21,7 @@ Structured documents get JSON schemas. Rust reads JSON, applies structured updat
 
 **File layout:**
 ```
-Accounts/Heroku/01-Customer-Information/
+Accounts/CloudCo/01-Customer-Information/
 ├── dashboard.json   # Machine-readable (app updates)
 └── dashboard.md     # Human-readable (generated from JSON)
 ```

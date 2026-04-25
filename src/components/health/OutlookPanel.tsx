@@ -4,7 +4,7 @@
  * Compact 3-cell grid per mockup: Confidence / Benchmark / Recommended start.
  * Matches `.docs/mockups/account-health-outlook-globex.html` lines 888-913.
  *
- * Data sources (all from `intelligence.renewalOutlook` + contractContext):
+ * Data sources (all from `intelligence.agreementOutlook` + contractContext):
  *   - Confidence cell: `outlook.confidence` ("high"/"moderate"/"low"), detail
  *     summarises up to three `outlook.riskFactors`.
  *   - Benchmark cell: peer-cohort renewal rate — NOT wired yet. Cell is
@@ -20,7 +20,7 @@
  * `expansionPotential` nor `confidence` is populated, the entire panel
  * returns null rather than showing a dead frame.
  */
-import type { EntityIntelligence, RenewalOutlook } from "@/types";
+import type { EntityIntelligence, AgreementOutlook, PeerBenchmark } from "@/types";
 import styles from "./health.module.css";
 
 const RENEWAL_RUNWAY_DAYS = 120;
@@ -39,7 +39,7 @@ const RENEWAL_RUNWAY_DAYS = 120;
  * threshold the signal is stable enough to name the call "Expansion"
  * rather than default "Renewal".
  */
-export function renewalCallVerdict(outlook: RenewalOutlook | null | undefined): string {
+export function renewalCallVerdict(outlook: AgreementOutlook | null | undefined): string {
   const conf = (outlook?.confidence ?? "").toLowerCase();
   if (conf === "low") return "Churn risk";
   const expansion = (outlook?.expansionPotential ?? "").trim();
@@ -67,7 +67,7 @@ function confidenceColorClass(c?: string): string {
  * inline. Per the mockup: "Moderate. Risk factors: X, Y, Z." One-line-ish
  * synthesis rather than dumping the first riskFactor in full.
  */
-function confidenceCell(ro: RenewalOutlook): { label: string; detail: string } {
+function confidenceCell(ro: AgreementOutlook): { label: string; detail: string } {
   const raw = (ro.confidence ?? "").trim();
   if (!raw) return { label: "—", detail: "Confidence not yet captured." };
   const cap = raw[0].toUpperCase() + raw.slice(1);
@@ -191,12 +191,47 @@ function recommendedStartCell(
   };
 }
 
+/**
+ * DOS-204: Build the Benchmark cell from a `PeerBenchmark` payload.
+ *
+ * The cell shows the band (Above / At / Below) as the headline, the
+ * narrative as the detail, and a "Drawn from N Glean source(s)" footer.
+ * Returns null when the payload is missing or the band is unknown — the
+ * panel collapses to its 2-col layout in that case so we never render
+ * a half-empty cell.
+ */
+function benchmarkCell(
+  pb: PeerBenchmark | null | undefined,
+): { label: string; detail: string; footer: string; className: string } | null {
+  if (!pb) return null;
+  const band = (pb.band ?? "unknown").toLowerCase();
+  if (band === "unknown") return null;
+  const narrative = (pb.narrative ?? "").trim();
+  if (narrative.length === 0) return null;
+
+  let label: string;
+  let className: string;
+  if (band === "above") {
+    label = "Above";
+    className = styles.outlookValueHigh;
+  } else if (band === "below") {
+    label = "Below";
+    className = styles.outlookValueLow;
+  } else {
+    label = "At";
+    className = styles.outlookValueNeutral;
+  }
+  const count = Math.max(0, pb.sourceCount ?? 0);
+  const footer = `Drawn from ${count} Glean source${count === 1 ? "" : "s"}.`;
+  return { label, detail: narrative, footer, className };
+}
+
 interface OutlookPanelProps {
   intelligence: EntityIntelligence | null;
 }
 
 export function OutlookPanel({ intelligence }: OutlookPanelProps) {
-  const outlook = intelligence?.renewalOutlook;
+  const outlook = intelligence?.agreementOutlook;
   if (!outlook) return null;
 
   const conf = confidenceCell(outlook);
@@ -205,16 +240,18 @@ export function OutlookPanel({ intelligence }: OutlookPanelProps) {
     intelligence?.contractContext?.renewalDate,
   );
 
-  // TODO(DOS-204): when peer benchmark cohort data lands, render the
-  // Benchmark cell between Confidence and Recommended start. Today the cell
-  // is suppressed — the grid collapses to 2-col via .outlookGridTwoCol.
-  const hasBenchmark = false;
+  // DOS-204: Peer benchmark cell sits between Confidence and Recommended start
+  // when the backend supplies a recognised band + narrative. Otherwise the
+  // grid collapses to 2-col via .outlookGridTwoCol — no half-empty cell.
+  const benchmark = benchmarkCell(outlook.peerBenchmark);
+  const hasBenchmark = benchmark !== null;
 
   const gridClassName = `${styles.outlookGrid} ${hasBenchmark ? "" : styles.outlookGridTwoCol}`;
 
-  // Pull-quote narrative — `expansionPotential` is the renewal essay the
-  // AI emits today. Not fabricated: rendered only when present.
-  const pullQuote = (outlook.expansionPotential ?? "").trim();
+  // DOS-249: Pull-quote narrative — prefer `renewalNarrative` (dedicated field
+  // added in DOS-249). Fall back to `expansionPotential` for backward compat with
+  // accounts enriched before the field was added.
+  const pullQuote = (outlook.renewalNarrative ?? outlook.expansionPotential ?? "").trim();
 
   return (
     <>
@@ -226,6 +263,20 @@ export function OutlookPanel({ intelligence }: OutlookPanelProps) {
           </div>
           <div className={styles.outlookBlockDetail}>{conf.detail}</div>
         </div>
+
+        {benchmark ? (
+          <div>
+            <div className={styles.outlookBlockLabel}>Benchmark</div>
+            <div className={`${styles.outlookBlockValue} ${benchmark.className}`}>
+              {benchmark.label}
+            </div>
+            <div className={styles.outlookBlockDetail}>
+              {benchmark.detail}
+              <br />
+              {benchmark.footer}
+            </div>
+          </div>
+        ) : null}
 
         <div>
           <div className={styles.outlookBlockLabel}>Recommended start</div>

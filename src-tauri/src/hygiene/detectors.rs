@@ -10,8 +10,6 @@ use serde::{Deserialize, Serialize};
 use crate::db::ActionDb;
 use crate::types::Config;
 
-use super::HygieneFixDetail;
-
 /// Max people per domain for pairwise duplicate detection (prevents O(n^2) explosion).
 const MAX_DOMAIN_GROUP_SIZE: usize = 200;
 
@@ -209,74 +207,6 @@ pub fn score_name_similarity(name1: &str, name2: &str) -> Option<(f32, String)> 
     }
 
     None
-}
-
-/// Detect meetings from the last 14 days with no entity links that could
-/// be matched to entities with low confidence (0.30-0.60 = suggestion).
-/// Returns up to 10 suggestions as HygieneFixDetail entries.
-pub(super) fn detect_low_confidence_matches(
-    db: &ActionDb,
-    accounts_dir: &std::path::Path,
-    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
-) -> (usize, Vec<HygieneFixDetail>) {
-    use crate::prepare::entity_resolver::{resolve_meeting_entities, ResolutionOutcome};
-
-    let lookback = (Utc::now() - chrono::Duration::days(14)).to_rfc3339();
-    let meetings = db.get_unlinked_meetings(&lookback, 50).unwrap_or_default();
-
-    let mut suggestions = Vec::new();
-    let max_suggestions = 10;
-
-    for (_meeting_id, title, calendar_event_id, _start_time) in meetings {
-        if suggestions.len() >= max_suggestions {
-            break;
-        }
-
-        let event_id = calendar_event_id.as_deref().unwrap_or("");
-        let meeting_json = serde_json::json!({
-            "title": title,
-            "id": event_id,
-        });
-
-        let outcomes =
-            resolve_meeting_entities(db, event_id, &meeting_json, accounts_dir, embedding_model);
-
-        for outcome in &outcomes {
-            if let ResolutionOutcome::Suggestion(entity) = outcome {
-                suggestions.push(HygieneFixDetail {
-                    fix_type: "low_confidence_entity_match".to_string(),
-                    entity_name: Some(entity.entity_id.clone()),
-                    description: format!(
-                        "Meeting \"{}\" may be related to entity (confidence: {:.0}%, source: {})",
-                        title,
-                        entity.confidence * 100.0,
-                        entity.source,
-                    ),
-                });
-
-                // I306: Emit low_confidence_match signal to bus
-                let value = serde_json::json!({
-                    "meeting_title": title,
-                    "source": entity.source,
-                })
-                .to_string();
-                let _ = crate::services::hygiene::emit_low_confidence_match(
-                    db,
-                    entity.entity_type.as_str(),
-                    &entity.entity_id,
-                    &value,
-                    entity.confidence,
-                );
-
-                if suggestions.len() >= max_suggestions {
-                    break;
-                }
-            }
-        }
-    }
-
-    let count = suggestions.len();
-    (count, suggestions)
 }
 
 /// Check upcoming meetings and enqueue intelligence refresh for stale linked entities.

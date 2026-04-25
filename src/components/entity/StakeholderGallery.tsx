@@ -215,7 +215,12 @@ function TeamAddForm({
         <div
           ref={dropdownRef}
           className={css.teamSearchDropdownPortal}
-          style={{ top: pos.top, left: pos.left, width: pos.width }}
+          // Runtime coordinates keep the portal dropdown aligned to the search input.
+          style={{
+            top: pos.top,
+            left: pos.left,
+            width: pos.width,
+          }}
         >
           {hasResults && (
             <p className={css.searchResultsLabel}>Existing People</p>
@@ -464,34 +469,9 @@ export function StakeholderGallery({
       <ChapterHeading title={chapterTitle} epigraph={epigraph} freshness={chapterFreshness} />
 
       {subsectionLabels && visibleConfirmed.length > 0 && (
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "var(--color-text-secondary)",
-            marginBottom: 16,
-            marginTop: 8,
-            display: "flex",
-            alignItems: "baseline",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
+        <div className={css.subsectionLabel}>
           Their team
-          <span
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 12,
-              fontWeight: 400,
-              color: "var(--color-text-tertiary)",
-              textTransform: "none",
-              letterSpacing: 0,
-              fontStyle: "italic",
-            }}
-          >
+          <span className={css.subsectionHint}>
             who we&apos;re meeting with{accountName ? ` — ${accountName}` : ""}
           </span>
         </div>
@@ -537,6 +517,7 @@ export function StakeholderGallery({
                   ) : s.engagement && s.engagement !== "unknown" ? (
                     <span
                       className={css.engagementBadge}
+                      // Runtime engagement value determines badge colors.
                       style={{
                         background: getEngagementDisplay(s.engagement).background,
                         color: getEngagementDisplay(s.engagement).color,
@@ -553,7 +534,16 @@ export function StakeholderGallery({
                 {(roles.length > 0 || onAddRole) && (
                   <div className={css.roleBadges}>
                     {roles.map((r) => (
-                      <span key={r.role} className={css.roleBadge} data-source={r.dataSource} style={{ background: getRoleConfig(r.role).bg, color: getRoleConfig(r.role).fg }}>
+                      <span
+                        key={r.role}
+                        className={css.roleBadge}
+                        data-source={r.dataSource}
+                        // Runtime stakeholder role determines badge colors.
+                        style={{
+                          background: getRoleConfig(r.role).bg,
+                          color: getRoleConfig(r.role).fg,
+                        }}
+                      >
                         {getRoleConfig(r.role).label}
                         {onRemoveRole && (
                           <button
@@ -570,7 +560,7 @@ export function StakeholderGallery({
                       </span>
                     ))}
                     {onAddRole && (
-                      <div style={{ position: "relative", display: "inline-block" }}>
+                      <div className={css.addRoleWrapper}>
                         <button
                           className={css.addRoleBtn}
                           onClick={(e) => {
@@ -605,32 +595,13 @@ export function StakeholderGallery({
                   <TruncatedAssessment text={s.assessment} />
                 ) : (
                   <>
-                    <div
-                      style={{
-                        fontFamily: "var(--font-serif)",
-                        fontStyle: "italic",
-                        fontSize: 13,
-                        lineHeight: 1.55,
-                        color: "var(--color-text-tertiary)",
-                        background: "var(--color-spice-saffron-10, rgba(196,147,53,0.10))",
-                        borderLeft: "2px solid var(--color-spice-saffron)",
-                        borderRadius: "0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0",
-                        padding: "8px 12px",
-                        marginTop: 4,
-                      }}
-                    >
+                    <div className={css.pendingAssessment}>
                       {s.meetingCount != null && s.meetingCount > 0
                         ? `Assessment pending — attended ${s.meetingCount} meeting${s.meetingCount === 1 ? "" : "s"} but never characterized.`
                         : "Assessment pending — never characterized."}
                     </div>
                     <span
-                      className={css.engagementBadge}
-                      style={{
-                        background: "var(--color-spice-saffron-15, rgba(196,147,53,0.15))",
-                        color: "#a6862c",
-                        alignSelf: "flex-start",
-                        marginTop: 6,
-                      }}
+                      className={`${css.engagementBadge} ${css.needsAssessmentBadge} ${css.needsAssessmentBadgeTint}`}
                     >
                       Needs assessment
                     </span>
@@ -657,17 +628,7 @@ export function StakeholderGallery({
                   return (
                     <a
                       href={anchor}
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 9,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.08em",
-                        color: "var(--color-spice-turmeric)",
-                        borderBottom: "1px dotted var(--color-spice-turmeric)",
-                        textDecoration: "none",
-                        alignSelf: "flex-start",
-                        marginTop: 6,
-                      }}
+                      className={css.healthLink}
                     >
                       Active in Health →
                     </a>
@@ -681,7 +642,7 @@ export function StakeholderGallery({
 
       {/* ── Suggested stakeholders — rendered as editorial cards in the grid (I652) ── */}
       {pendingSuggestions.length > 0 && (
-        <div className={css.grid} style={visibleConfirmed.length > 0 ? { marginTop: 40 } : undefined}>
+        <div className={`${css.grid} ${visibleConfirmed.length > 0 ? css.suggestedGridOffset : ""}`}>
           {pendingSuggestions.map((s) => {
             const sourceLabel = formatProvenanceSource(s.source) ?? "AI";
             return (
@@ -719,7 +680,14 @@ export function StakeholderGallery({
 
                 {s.suggestedRole && (
                   <div className={css.roleBadges}>
-                    <span className={css.roleBadge} style={{ background: getRoleConfig(s.suggestedRole).bg, color: getRoleConfig(s.suggestedRole).fg }}>
+                    <span
+                      className={css.roleBadge}
+                      // Runtime suggested role determines badge colors.
+                      style={{
+                        background: getRoleConfig(s.suggestedRole).bg,
+                        color: getRoleConfig(s.suggestedRole).fg,
+                      }}
+                    >
                       {getRoleConfig(s.suggestedRole).label}
                     </span>
                   </div>
@@ -920,17 +888,7 @@ export function StakeholderGallery({
           <div className={css.teamHeader}>
             <span className={css.teamLabel}>{subsectionLabels ? "Our team" : "Your Team"}</span>
             {subsectionLabels && (
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 12,
-                  fontWeight: 400,
-                  color: "var(--color-text-tertiary)",
-                  textTransform: "none",
-                  letterSpacing: 0,
-                  fontStyle: "italic",
-                }}
-              >
+              <span className={css.subsectionHint}>
                 who we bring into{accountName ? ` ${accountName}` : " these"} conversations — Automattic
               </span>
             )}
