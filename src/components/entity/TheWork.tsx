@@ -502,7 +502,13 @@ export function TheWork({
               )}
               {objective.totalMilestoneCount > 0 && (
                 <div className={`${s.progressBar} ${progressClass}`}>
-                  <div className={s.progressFill} style={{ '--progress-width': `${progressRatio * 100}%` } as React.CSSProperties} />
+                  <div
+                    className={s.progressFill}
+                    // Runtime milestone completion sets the progress width.
+                    style={{
+                      '--progress-width': `${progressRatio * 100}%`,
+                    } as React.CSSProperties}
+                  />
                 </div>
               )}
             </div>
@@ -737,7 +743,13 @@ function ActionGroup({
   if (actions.length === 0) return null;
   return (
     <div className={s.actionGroup}>
-      <div className={s.groupLabel} style={{ '--label-color': labelColor } as React.CSSProperties}>
+      <div
+        className={s.groupLabel}
+        // Runtime action classification sets the group label color.
+        style={{
+          '--label-color': labelColor,
+        } as React.CSSProperties}
+      >
         {label}
       </div>
       {actions.map((action) => (

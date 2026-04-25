@@ -121,8 +121,7 @@ export function CiteChip({
   return (
     <button
       type="button"
-      className={s.citeChip}
-      style={{ background: "none", border: "none", padding: 0, cursor: onClick ? "pointer" : "default" }}
+      className={`${s.citeChip} ${s.citeChipButton} ${onClick ? s.citeChipButtonClickable : ""}`}
       onClick={onClick}
     >
       {children}
@@ -212,6 +211,7 @@ function InlineDateField({
     return (
       <input
         type="date"
+        className={s.inlineDateInput}
         value={draft}
         autoFocus
         onChange={(e) => setDraft(e.target.value)}
@@ -230,15 +230,6 @@ function InlineDateField({
             setDraft(value);
             setEditing(false);
           }
-        }}
-        style={{
-          font: "inherit",
-          color: "inherit",
-          background: "transparent",
-          border: "none",
-          borderBottom: "2px solid var(--color-spice-terracotta)",
-          outline: "none",
-          padding: 0,
         }}
       />
     );
@@ -340,7 +331,7 @@ export function CommitmentCard({
         <div className={s.commitmentMetaRow}>
           <strong>From:</strong>
           {provenance.map((p, i) => (
-            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span key={i} className={s.provenanceChipGroup}>
               {i > 0 && <span aria-hidden>·</span>}
               <CiteChip href={p.href}>{p.label}</CiteChip>
             </span>

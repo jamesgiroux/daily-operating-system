@@ -89,7 +89,7 @@ export function EntityLinkPicker({
               onClick={() => void handleSetPrimary(entityId, entityType)}
               title={`Set ${name} as the primary account for this ${ownerType}`}
             >
-              <Building2 style={{ width: 11, height: 11, opacity: 0.7, flexShrink: 0 }} />
+              <Building2 className={css.chipIcon} />
               {name}
               <span className={css.chipLabel}>Set as primary</span>
             </button>

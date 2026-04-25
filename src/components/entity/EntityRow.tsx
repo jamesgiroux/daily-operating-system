@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import s from "./EntityRow.module.css";
 
 interface EntityRowProps {
   to: string;
@@ -34,55 +35,33 @@ export function EntityRow({
     <Link
       to={to}
       params={params}
+      className={`${s.row} ${showBorder ? s.rowBorder : ""}`}
+      // Runtime hierarchy controls nested row indentation.
       style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 12,
-        padding: "14px 0",
         paddingLeft,
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-        textDecoration: "none",
       }}
     >
       {/* Avatar or accent dot */}
       {avatar ?? (
         <div
+          className={s.dot}
+          // Runtime entity type controls accent color.
           style={{
-            width: 8,
-            height: 8,
-            borderRadius: 4,
             background: dotColor,
-            flexShrink: 0,
-            marginTop: 8,
           }}
         />
       )}
 
       {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 17,
-              fontWeight: 400,
-              color: "var(--color-text-primary)",
-            }}
-          >
+      <div className={s.content}>
+        <div className={s.nameRow}>
+          <span className={s.name}>
             {name}
           </span>
           {nameSuffix}
         </div>
         {subtitle && (
-          <div
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              fontWeight: 300,
-              color: "var(--color-text-tertiary)",
-              marginTop: 2,
-            }}
-          >
+          <div className={s.subtitle}>
             {subtitle}
           </div>
         )}
@@ -90,7 +69,7 @@ export function EntityRow({
 
       {/* Right-aligned metadata */}
       {children && (
-        <div style={{ display: "flex", alignItems: "baseline", gap: 16, flexShrink: 0 }}>
+        <div className={s.meta}>
           {children}
         </div>
       )}

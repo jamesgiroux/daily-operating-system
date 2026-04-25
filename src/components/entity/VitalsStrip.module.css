@@ -1,0 +1,53 @@
+@import '../../styles/design-tokens.css';
+
+.strip {
+  margin-top: var(--space-lg);
+  margin-bottom: var(--space-lg);
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  padding: 14px 0;
+}
+
+.items {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.separatorDot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.fieldStack {
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.vitalText {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.attribution {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+  display: block;
+  letter-spacing: 0.02em;
+}

@@ -156,7 +156,7 @@ export function UnifiedTimeline({
   const hasMore = items.length > 10;
 
   return (
-    <section id={sectionId || undefined} style={{ scrollMarginTop: sectionId ? 60 : undefined }}>
+    <section id={sectionId || undefined} className={sectionId ? s.section : undefined}>
       <ChapterHeading title={chapterTitle} />
       {actionSlot}
 
