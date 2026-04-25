@@ -10,6 +10,13 @@
  *   .docs/mockups/account-work-globex.html
  * ========================================================================= */
 
+/* Pull in design tokens explicitly. The global load from index.css can
+ * fail in strict-mode WebKit when the relative @import chain emits an
+ * absolute URL that gets caught by the Vite SPA fallback (text/html
+ * MIME → refused). Importing locally guarantees these CSS variables
+ * resolve regardless of whether the global chain succeeded. */
+@import "../../styles/design-tokens.css";
+
 /* ═════════ Shared freshness strip (chapter sublabel style) ═════════ */
 .sublabel {
   font-family: var(--font-mono);
