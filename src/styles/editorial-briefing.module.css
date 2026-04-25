@@ -8,7 +8,7 @@
    Design reference: design/mockups/daily-briefing-reimagined-v2.html
    ============================================================================= */
 
-@import './design-tokens.css';
+@import "./design-tokens.css";
 
 /* =============================================================================
    MARGIN GRID — Editorial left-label / right-content layout
