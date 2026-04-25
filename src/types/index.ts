@@ -64,7 +64,6 @@ export interface PredictionScorecard {
 
 /** Feature flags for gating incomplete features (I537). */
 export interface FeatureFlags {
-  role_presets_enabled: boolean;
   book_of_business_enabled: boolean;
   glean_discovery_enabled: boolean;
 }
@@ -2304,6 +2303,19 @@ export interface AgreementOutlook {
   recommendedStart?: string;
   negotiationLeverage?: string[];
   negotiationRisk?: string[];
+  /** DOS-204: Peer-cohort renewal benchmark for the Outlook panel's Benchmark cell. */
+  peerBenchmark?: PeerBenchmark | null;
+}
+
+/** DOS-204: Peer benchmark band — where this account sits vs the cohort. */
+export type PeerBenchmarkBand = "above" | "at" | "below" | "unknown";
+
+/** DOS-204: Peer-cohort renewal benchmark sourced from a dedicated Glean chat pass. */
+export interface PeerBenchmark {
+  band: PeerBenchmarkBand;
+  narrative: string;
+  /** Distinct Glean sources cited when generating the benchmark. */
+  sourceCount: number;
 }
 
 // -- Dimension 6: External Health Signals --
