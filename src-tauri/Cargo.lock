@@ -1101,7 +1101,7 @@ dependencies = [
 
 [[package]]
 name = "dailyos"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

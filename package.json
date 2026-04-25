@@ -1,6 +1,6 @@
 {
   "name": "dailyos",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Operational intelligence for your workday. Open the app, your day is ready.",
   "type": "module",
   "pnpm": {
