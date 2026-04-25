@@ -241,12 +241,10 @@ function RootLayout() {
   }, [startupGate]);
 
   useEffect(() => {
+    if (startupGate !== "app") return;
+    let cancelled = false;
     let unlisten: UnlistenFn | undefined;
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
-
-    if (startupGate !== "app") {
-      return;
-    }
 
     listen("calendar-updated", () => {
       if (settleTimer) clearTimeout(settleTimer);
@@ -254,10 +252,18 @@ function RootLayout() {
         setStartupCalendarSettled(true);
       }, CALENDAR_SETTLE_GRACE_MS);
     }).then((fn) => {
+      // If the effect already cleaned up, drop the registration immediately
+      // so Tauri's internal listener table doesn't end up pointing at a
+      // dead handler that crashes when something tries to dispatch.
+      if (cancelled) {
+        fn();
+        return;
+      }
       unlisten = fn;
     });
 
     return () => {
+      cancelled = true;
       if (settleTimer) clearTimeout(settleTimer);
       unlisten?.();
     };
@@ -271,6 +277,7 @@ function RootLayout() {
   // accept the rejection.
   useEffect(() => {
     if (startupGate !== "app") return;
+    let cancelled = false;
     let unlisten: UnlistenFn | undefined;
 
     listen<{
@@ -296,10 +303,15 @@ function RootLayout() {
         duration: 8000,
       });
     }).then((fn) => {
+      if (cancelled) {
+        fn();
+        return;
+      }
       unlisten = fn;
     });
 
     return () => {
+      cancelled = true;
       unlisten?.();
     };
   }, [startupGate]);

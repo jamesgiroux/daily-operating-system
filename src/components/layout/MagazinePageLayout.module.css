@@ -5,7 +5,7 @@
    and page container. Provides the complete magazine-layout editorial shell.
    ============================================================================= */
 
-@import '../../styles/design-tokens.css';
+@import "../../styles/design-tokens.css";
 
 /* ─────────────────────────────────────────────────────────────────────────
    MAGAZINE PAGE — Root container

@@ -1,4 +1,11 @@
-@import "../../styles/design-tokens.css";
+/* No design-tokens @import here. EntityHeroBase is consumed via CSS-module
+ * `composes:` from AccountHero / PersonHero / ProjectHero, and a top-level
+ * @import in a composed-in file leaks unprocessed into the consumer's
+ * output — Vite/PostCSS doesn't inline composed @imports the way it does
+ * for direct ones, leaving the browser to fetch a relative URL that
+ * resolves against the document base (→ /styles/design-tokens.css, which
+ * Vite's SPA fallback returns as text/html → strict-WebKit refuses parse).
+ * Each consumer module @imports design-tokens itself. */
 
 /* Hero region for entity detail pages (Account / Project / Person).
    Flows from the top of the page per the canonical mockups — no viewport

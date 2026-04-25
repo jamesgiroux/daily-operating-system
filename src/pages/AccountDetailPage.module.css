@@ -1,4 +1,4 @@
-@import '../styles/design-tokens.css';
+@import "../styles/design-tokens.css";
 
 /* Each view wrapper is a plain flow container. The first child owns its
  * own top padding — SentimentHero has `padding-top: var(--space-2xl)`,
