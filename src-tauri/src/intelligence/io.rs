@@ -768,6 +768,48 @@ pub struct AgreementOutlook {
     /// What weakens our position.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub negotiation_risk: Vec<String>,
+    /// DOS-204: Peer-cohort renewal benchmark for the Outlook panel's
+    /// Benchmark cell. Optional — the cell collapses to the 2-col layout
+    /// when absent. Populated by a separate Glean chat pass; the field is
+    /// added by the orchestrator after the main intelligence pass returns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_benchmark: Option<PeerBenchmark>,
+}
+
+/// DOS-204: Peer-cohort renewal benchmark for an account.
+///
+/// Sourced from a dedicated Glean chat pass that asks for the typical
+/// renewal rate of accounts with a comparable industry, ARR band, and
+/// product mix. The Outlook panel renders `band` as a label
+/// (Above / At / Below) coloured by sentiment, with `narrative` underneath
+/// and a "Drawn from N Glean sources" footer driven by `source_count`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerBenchmark {
+    /// Above / At / Below the cohort norm. Parsed by lowercase prefix match
+    /// from the AI response.
+    pub band: PeerBenchmarkBand,
+    /// One-line editorial summary surfaced as the cell detail.
+    pub narrative: String,
+    /// Number of distinct Glean sources cited when generating the benchmark.
+    /// Drives the "Drawn from N Glean source(s)" footer in the cell.
+    #[serde(default)]
+    pub source_count: u32,
+}
+
+/// DOS-204: Peer benchmark band — where this account sits relative to the cohort.
+///
+/// Parsed from the AI's free-form answer by lowercase-prefix match on
+/// "above" / "at" / "below". Anything else falls back to `Unknown`,
+/// which the renderer displays without a sentiment colour.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PeerBenchmarkBand {
+    Above,
+    At,
+    Below,
+    #[default]
+    Unknown,
 }
 
 // -- Dimension 6: External Health Signals --

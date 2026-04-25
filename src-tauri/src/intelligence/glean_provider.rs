@@ -778,6 +778,127 @@ impl GleanIntelligenceProvider {
 
         super::glean_leading_signals::parse_leading_signals(&response_text)
     }
+
+    /// DOS-204: Peer-cohort renewal benchmark via a dedicated Glean chat pass.
+    ///
+    /// Builds the validated peer-benchmark prompt from `account_name`,
+    /// `industry_descriptor`, and `size_descriptor`, calls Glean with citation
+    /// metadata (so the cell can render the "Drawn from N source(s)" footer),
+    /// and parses the response into a `PeerBenchmark`.
+    ///
+    /// The parser is a lowercase prefix match against the response text:
+    /// - `above peers` → `PeerBenchmarkBand::Above`
+    /// - `in line peers` / `in-line peers` → `PeerBenchmarkBand::At`
+    /// - `below peers` → `PeerBenchmarkBand::Below`
+    /// - `no comparable` (or anything else) → `PeerBenchmarkBand::Unknown`,
+    ///   which the frontend cell renders as `null` (collapses the column).
+    ///
+    /// On unknown band, returns `Err` so the caller can skip the write
+    /// (no point persisting a record the UI will hide). On chat failure
+    /// or timeout, also returns `Err` — the caller swallows it as a
+    /// silent fallback (parity with `enrich_leading_signals_*`).
+    pub async fn enrich_peer_benchmark(
+        &self,
+        account_name: &str,
+    ) -> Result<super::io::PeerBenchmark, String> {
+        let prompt = format!(
+            "For the customer **{account_name}**, what is a reasonable peer benchmark for \
+their renewal trajectory and account health on WordPress VIP? Use whatever you know about \
+their tier, ARR, package, industry, and size to identify comparable peer customers.\n\n\
+Consider:\n\n\
+1. Renewal rates and retention norms for VIP customers at similar tier and ACV\n\
+2. Typical engagement indicators (meeting cadence, ticket volume, expansion patterns) \
+for healthy renewals at this tier\n\
+3. Whether there are recent or historical signals from comparable {account_name}-like \
+accounts that suggest typical health patterns\n\n\
+Return a short assessment in the form: \"**[Above / In line / Below] peers**\" followed \
+by **one sentence** explaining the comparison with specific numbers where possible. \
+Cite sources."
+        );
+
+        let client = GleanMcpClient::new(&self.endpoint);
+
+        let response = tokio::time::timeout(
+            Duration::from_secs(240),
+            client.chat_with_citations(&prompt, None),
+        )
+        .await
+        .map_err(|_| format!("Glean peer-benchmark chat timed out for {}", account_name))?
+        .map_err(|e| format!("Glean peer-benchmark chat failed for {}: {}", account_name, e))?;
+
+        log::info!(
+            "[DOS-204] Glean peer-benchmark response for {} — {} chars, {} sources",
+            account_name,
+            response.text.len(),
+            response.source_count
+        );
+
+        let (band, narrative) = parse_peer_benchmark_response(&response.text)?;
+
+        Ok(super::io::PeerBenchmark {
+            band,
+            narrative,
+            source_count: response.source_count,
+        })
+    }
+}
+
+/// DOS-204: Parse a Glean peer-benchmark response into `(band, narrative)`.
+///
+/// Recognises the four explicit band prefixes (above / in line / in-line /
+/// below) plus the explicit "no comparable" opt-out. Anything that doesn't
+/// match returns `Err` so the caller can skip persisting the record — the
+/// frontend cell hides on `Unknown`/missing, so writing a stub helps no one.
+///
+/// Strips the band prefix and any leading separator (em-dash, en-dash, hyphen,
+/// colon) plus surrounding whitespace, then trims surrounding markdown
+/// emphasis (`**`) the model often emits around the band label.
+fn parse_peer_benchmark_response(
+    raw: &str,
+) -> Result<(super::io::PeerBenchmarkBand, String), String> {
+    // Normalise: trim leading whitespace and any leading markdown emphasis
+    // so "**In line peers** – ..." matches the same as "In line peers – ...".
+    let trimmed = raw.trim_start().trim_start_matches('*');
+    let lower = trimmed.to_lowercase();
+
+    let (band, prefix_len) = if lower.starts_with("above peers") {
+        (super::io::PeerBenchmarkBand::Above, "above peers".len())
+    } else if lower.starts_with("in line peers") {
+        (super::io::PeerBenchmarkBand::At, "in line peers".len())
+    } else if lower.starts_with("in-line peers") {
+        (super::io::PeerBenchmarkBand::At, "in-line peers".len())
+    } else if lower.starts_with("below peers") {
+        (super::io::PeerBenchmarkBand::Below, "below peers".len())
+    } else if lower.starts_with("no comparable") {
+        return Err("Glean reported no comparable peers".to_string());
+    } else {
+        return Err(format!(
+            "Peer-benchmark response did not start with a recognised band: {}",
+            trimmed.chars().take(80).collect::<String>()
+        ));
+    };
+
+    // Strip the band prefix, trailing emphasis markers, and the
+    // band/narrative separator (em-dash, en-dash, hyphen, or colon).
+    let after_band = &trimmed[prefix_len..];
+    let narrative = after_band
+        .trim_start()
+        .trim_start_matches('*')
+        .trim_start()
+        .trim_start_matches(|c: char| {
+            c == '\u{2014}' // em-dash
+                || c == '\u{2013}' // en-dash
+                || c == '-'
+                || c == ':'
+        })
+        .trim()
+        .to_string();
+
+    if narrative.is_empty() {
+        return Err("Peer-benchmark response had a band but no narrative".to_string());
+    }
+
+    Ok((band, narrative))
 }
 
 /// Path 2c: Placeholder for domain extraction from Glean enrichment.

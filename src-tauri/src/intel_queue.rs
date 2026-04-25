@@ -884,6 +884,64 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                                 );
                             }
                         }
+
+                        // DOS-204: Peer-cohort renewal benchmark — separate Glean chat pass that
+                        // populates AgreementOutlook.peer_benchmark. Glean uses its own org-wide
+                        // context (tier, ARR, package, industry) to identify the cohort, so we
+                        // only need to pass the account name. Failures (timeout / unparseable /
+                        // unknown band) silently leave peer_benchmark = None so the Outlook
+                        // panel collapses to its 2-col layout — no toast, no audit event (the
+                        // cell is additive, not load-bearing for Health).
+                        match provider.enrich_peer_benchmark(&entity_name).await {
+                            Ok(peer_benchmark) => {
+                                if let Ok(db) = crate::db::ActionDb::open() {
+                                    match db.get_entity_intelligence(&entity_id) {
+                                        Ok(Some(mut current)) => {
+                                            let outlook = current
+                                                .agreement_outlook
+                                                .get_or_insert_with(Default::default);
+                                            outlook.peer_benchmark = Some(peer_benchmark);
+                                            if let Err(e) =
+                                                crate::services::intelligence::upsert_assessment_snapshot(
+                                                    &db, &current,
+                                                )
+                                            {
+                                                log::warn!(
+                                                    "[DOS-204] Persisting peer_benchmark failed for {}: {}",
+                                                    entity_id,
+                                                    e
+                                                );
+                                            } else {
+                                                log::info!(
+                                                    "[DOS-204] Peer benchmark persisted for {}",
+                                                    entity_id
+                                                );
+                                            }
+                                        }
+                                        Ok(None) => {
+                                            log::debug!(
+                                                "[DOS-204] No assessment row for {}; skipping peer_benchmark write",
+                                                entity_id
+                                            );
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "[DOS-204] Reading assessment for {} failed: {}",
+                                                entity_id,
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::info!(
+                                    "[DOS-204] Peer benchmark unavailable for {} ({})",
+                                    entity_id,
+                                    e
+                                );
+                            }
+                        }
                     });
                 }
             }

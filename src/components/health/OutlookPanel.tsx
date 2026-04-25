@@ -20,7 +20,7 @@
  * `expansionPotential` nor `confidence` is populated, the entire panel
  * returns null rather than showing a dead frame.
  */
-import type { EntityIntelligence, AgreementOutlook } from "@/types";
+import type { EntityIntelligence, AgreementOutlook, PeerBenchmark } from "@/types";
 import styles from "./health.module.css";
 
 const RENEWAL_RUNWAY_DAYS = 120;
@@ -191,6 +191,41 @@ function recommendedStartCell(
   };
 }
 
+/**
+ * DOS-204: Build the Benchmark cell from a `PeerBenchmark` payload.
+ *
+ * The cell shows the band (Above / At / Below) as the headline, the
+ * narrative as the detail, and a "Drawn from N Glean source(s)" footer.
+ * Returns null when the payload is missing or the band is unknown — the
+ * panel collapses to its 2-col layout in that case so we never render
+ * a half-empty cell.
+ */
+function benchmarkCell(
+  pb: PeerBenchmark | null | undefined,
+): { label: string; detail: string; footer: string; className: string } | null {
+  if (!pb) return null;
+  const band = (pb.band ?? "unknown").toLowerCase();
+  if (band === "unknown") return null;
+  const narrative = (pb.narrative ?? "").trim();
+  if (narrative.length === 0) return null;
+
+  let label: string;
+  let className: string;
+  if (band === "above") {
+    label = "Above";
+    className = styles.outlookValueHigh;
+  } else if (band === "below") {
+    label = "Below";
+    className = styles.outlookValueLow;
+  } else {
+    label = "At";
+    className = styles.outlookValueNeutral;
+  }
+  const count = Math.max(0, pb.sourceCount ?? 0);
+  const footer = `Drawn from ${count} Glean source${count === 1 ? "" : "s"}.`;
+  return { label, detail: narrative, footer, className };
+}
+
 interface OutlookPanelProps {
   intelligence: EntityIntelligence | null;
 }
@@ -205,10 +240,11 @@ export function OutlookPanel({ intelligence }: OutlookPanelProps) {
     intelligence?.contractContext?.renewalDate,
   );
 
-  // TODO(DOS-204): when peer benchmark cohort data lands, render the
-  // Benchmark cell between Confidence and Recommended start. Today the cell
-  // is suppressed — the grid collapses to 2-col via .outlookGridTwoCol.
-  const hasBenchmark = false;
+  // DOS-204: Peer benchmark cell sits between Confidence and Recommended start
+  // when the backend supplies a recognised band + narrative. Otherwise the
+  // grid collapses to 2-col via .outlookGridTwoCol — no half-empty cell.
+  const benchmark = benchmarkCell(outlook.peerBenchmark);
+  const hasBenchmark = benchmark !== null;
 
   const gridClassName = `${styles.outlookGrid} ${hasBenchmark ? "" : styles.outlookGridTwoCol}`;
 
@@ -227,6 +263,20 @@ export function OutlookPanel({ intelligence }: OutlookPanelProps) {
           </div>
           <div className={styles.outlookBlockDetail}>{conf.detail}</div>
         </div>
+
+        {benchmark ? (
+          <div>
+            <div className={styles.outlookBlockLabel}>Benchmark</div>
+            <div className={`${styles.outlookBlockValue} ${benchmark.className}`}>
+              {benchmark.label}
+            </div>
+            <div className={styles.outlookBlockDetail}>
+              {benchmark.detail}
+              <br />
+              {benchmark.footer}
+            </div>
+          </div>
+        ) : null}
 
         <div>
           <div className={styles.outlookBlockLabel}>Recommended start</div>
