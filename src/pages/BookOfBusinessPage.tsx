@@ -362,13 +362,10 @@ export default function BookOfBusinessPage() {
       folioLabel: "Book of Business",
       atmosphereColor: "turmeric" as const,
       activePage: "me" as const,
-      backLink: {
-        label: "Back",
-        onClick: () =>
-          window.history.length > 1
-            ? window.history.back()
-            : navigate({ to: "/me" }),
-      },
+      breadcrumbs: [
+        { label: "Me", onClick: () => navigate({ to: "/me" }) },
+        { label: "Book of Business" },
+      ],
       chapters,
       folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: content ? (

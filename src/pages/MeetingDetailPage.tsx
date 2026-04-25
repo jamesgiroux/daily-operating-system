@@ -827,7 +827,10 @@ Thanks!`;
     folioLabel: "Meeting Briefing",
     atmosphereColor: "turmeric" as const,
     activePage: "today" as const,
-    backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/" }) },
+    breadcrumbs: [
+      { label: "Today", onClick: () => navigate({ to: "/" }) },
+      { label: data?.title ?? "Meeting" },
+    ],
     chapters: CHAPTERS,
     folioStatusText: saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : undefined,
     folioActions: data ? (

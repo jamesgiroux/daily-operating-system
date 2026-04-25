@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import type { MeetingOutcomeData } from "@/types";
+import { useTauriEvent } from "./useTauriEvent";
 
 type TranscriptProcessedPayload = MeetingOutcomeData | string;
 
@@ -25,27 +25,29 @@ export function useMeetingOutcomes(meetingId: string) {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
 
-    // Listen for live updates from auto-processing or manual attach
-    const unlisten = listen<TranscriptProcessedPayload>(
-      "transcript-processed",
-      (event) => {
-        if (typeof event.payload === "string") {
-          if (event.payload === meetingId) {
-            void refresh();
-          }
-          return;
+  const handleTranscriptProcessed = useCallback(
+    (payload: TranscriptProcessedPayload) => {
+      if (typeof payload === "string") {
+        if (payload === meetingId) {
+          void refresh();
         }
-        if (event.payload.meetingId === meetingId) {
-          setOutcomes(event.payload);
-        }
+        return;
       }
-    );
 
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [meetingId, refresh]);
+      if (payload.meetingId === meetingId) {
+        setOutcomes(payload);
+      }
+    },
+    [meetingId, refresh],
+  );
+
+  // Listen for live updates from auto-processing or manual attach
+  useTauriEvent<TranscriptProcessedPayload>(
+    "transcript-processed",
+    handleTranscriptProcessed,
+  );
 
   return { outcomes, loading, refresh };
 }
