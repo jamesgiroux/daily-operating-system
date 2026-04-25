@@ -32,25 +32,62 @@ const EXPECTED_WORK_SECTION_IDS_WITH_SHARED = [
   "the-record",
 ];
 
+const EXPECTED_WORK_SECTION_IDS_WITH_FILES = [
+  "commitments",
+  "suggestions",
+  "programs",
+  "shared",
+  "recently-landed",
+  "outputs",
+  "the-record",
+  "files",
+];
+
+const ALL_CONTENT_FLAGS = {
+  hasCommitments: true,
+  hasSuggestions: true,
+  hasPrograms: true,
+  hasRecentlyLanded: true,
+  hasOutputs: true,
+};
+
 describe("buildWorkChapters", () => {
-  it("omits the 'shared' pill by default (honest degradation)", () => {
+  it("omitting all flags returns only the always-on chapter", () => {
     const chapters = buildWorkChapters();
-    expect(chapters.map((c) => c.id)).toEqual(EXPECTED_WORK_SECTION_IDS_NO_SHARED);
-    expect(chapters.some((c) => c.id === "shared")).toBe(false);
+    expect(chapters.map((c) => c.id)).toEqual(["the-record"]);
   });
 
   it("omits the 'shared' pill when hasSharedData is false", () => {
-    const chapters = buildWorkChapters(false);
+    const chapters = buildWorkChapters({
+      ...ALL_CONTENT_FLAGS,
+      hasSharedData: false,
+    });
     expect(chapters.map((c) => c.id)).toEqual(EXPECTED_WORK_SECTION_IDS_NO_SHARED);
   });
 
   it("includes the 'shared' pill when hasSharedData is true", () => {
-    const chapters = buildWorkChapters(true);
+    const chapters = buildWorkChapters({
+      ...ALL_CONTENT_FLAGS,
+      hasSharedData: true,
+    });
     expect(chapters.map((c) => c.id)).toEqual(EXPECTED_WORK_SECTION_IDS_WITH_SHARED);
   });
 
+  it("includes the 'files' pill after the record when hasFiles is true", () => {
+    const chapters = buildWorkChapters({
+      ...ALL_CONTENT_FLAGS,
+      hasSharedData: true,
+      hasFiles: true,
+    });
+    expect(chapters.map((c) => c.id)).toEqual(EXPECTED_WORK_SECTION_IDS_WITH_FILES);
+  });
+
   it("every chapter has a non-empty label and icon element", () => {
-    for (const chapter of buildWorkChapters(true)) {
+    for (const chapter of buildWorkChapters({
+      ...ALL_CONTENT_FLAGS,
+      hasSharedData: true,
+      hasFiles: true,
+    })) {
       expect(chapter.label).toBeTruthy();
       expect(typeof chapter.label).toBe("string");
       expect(chapter.icon).toBeTruthy();
@@ -59,7 +96,10 @@ describe("buildWorkChapters", () => {
 
   it("chapter ids are unique in both modes", () => {
     for (const hasShared of [false, true]) {
-      const ids = buildWorkChapters(hasShared).map((c) => c.id);
+      const ids = buildWorkChapters({
+        ...ALL_CONTENT_FLAGS,
+        hasSharedData: hasShared,
+      }).map((c) => c.id);
       expect(new Set(ids).size).toBe(ids.length);
     }
   });
