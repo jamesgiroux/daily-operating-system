@@ -19,6 +19,27 @@ pub struct BridgeSyncSummary {
     pub updated: usize,
     pub skipped_tombstoned: usize,
     pub skipped_missing_id: usize,
+    /// DOS-321: bridge_id was new but mapped to an existing action via
+    /// normalized-title match (alias). No new action row was created;
+    /// the bridge row was inserted pointing at the existing action.
+    pub aliased_to_existing: usize,
+}
+
+/// DOS-321: Normalize a commitment title for cross-source dedup.
+///
+/// The AI emits stable commitment_ids per source — but re-enrichment hits
+/// different sources (Gong call, meeting transcript, CRM, Glean) for the
+/// same commitment text, producing distinct commitment_ids that the bridge
+/// can't unify. Normalizing the title gives us a stable secondary key:
+/// (entity_id, normalized_title) → canonical action.
+///
+/// Lowercases and trims surrounding whitespace. Internal whitespace and
+/// punctuation are kept verbatim — the observed duplicates from real
+/// production data are character-for-character identical, so tighter
+/// normalization risks false-positive merges of similarly-worded but
+/// distinct commitments.
+pub fn normalize_commitment_title(title: &str) -> String {
+    title.trim().to_lowercase()
 }
 
 /// A single bridge row read from `ai_commitment_bridge`.
@@ -121,7 +142,40 @@ pub fn sync_ai_commitments(
                 touch_bridge_row(db, commitment_id, &now).map_err(|e| e.to_string())?;
             }
             None => {
-                // Brand new commitment: create Action, then insert bridge row.
+                // Brand-new commitment_id. Two sub-cases:
+                //
+                // (a) DOS-321: The same commitment text may already have a
+                //     non-tombstoned action under a *different* commitment_id
+                //     (different source, e.g. Gong vs meeting transcript vs
+                //     Glean). Re-emerging the row would create dupes that
+                //     accumulate every enrichment run. Look for an existing
+                //     action with the same normalized title; if found, alias
+                //     the new bridge row to it instead of creating another.
+                //
+                // (b) Truly new: create Action, then insert bridge row.
+                let normalized = normalize_commitment_title(&commitment.description);
+                if let Some(existing_action_id) =
+                    find_existing_open_commitment_by_title(db, entity_type, entity_id, &normalized)
+                        .map_err(|e| e.to_string())?
+                {
+                    insert_bridge_row(
+                        db,
+                        commitment_id,
+                        entity_type,
+                        entity_id,
+                        &existing_action_id,
+                        &now,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    log::debug!(
+                        "commitment_bridge: aliased {} → existing action {} via title match",
+                        commitment_id,
+                        existing_action_id
+                    );
+                    summary.aliased_to_existing += 1;
+                    continue;
+                }
+
                 let action_id = uuid::Uuid::new_v4().to_string();
                 let account_id = if entity_type == "account" {
                     Some(entity_id.to_string())
@@ -175,6 +229,49 @@ pub fn sync_ai_commitments(
     let _ = UNSTARTED;
 
     Ok(summary)
+}
+
+/// DOS-321: Look up an existing non-terminal commitment-typed action with
+/// the same normalized title under the given entity. Used by
+/// `sync_ai_commitments` to alias a new commitment_id onto an existing
+/// action instead of creating a duplicate row.
+///
+/// Returns the action_id of the oldest matching action so re-aliasing
+/// is stable across runs (deterministic on `created_at ASC`).
+fn find_existing_open_commitment_by_title(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    normalized_title: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    if normalized_title.is_empty() {
+        return Ok(None);
+    }
+    let entity_col = match entity_type {
+        "account" => "account_id",
+        "project" => "project_id",
+        _ => return Ok(None),
+    };
+    let sql = format!(
+        "SELECT id FROM actions
+         WHERE {entity_col} = ?1
+           AND action_kind = ?2
+           AND status NOT IN ('completed', 'cancelled', 'rejected', 'archived')
+           AND lower(trim(title)) = ?3
+         ORDER BY created_at ASC
+         LIMIT 1"
+    );
+    db.conn_ref()
+        .query_row(
+            &sql,
+            rusqlite::params![entity_id, KIND_COMMITMENT, normalized_title],
+            |row| row.get::<_, String>(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
 }
 
 /// Mark a commitment's bridge row tombstoned so re-enrichment can't
@@ -561,6 +658,134 @@ mod tests {
             )
             .unwrap();
         assert_eq!(title, "Refined phrasing");
+    }
+
+    #[test]
+    fn dos321_normalize_commitment_title_strips_case_and_outer_whitespace() {
+        assert_eq!(
+            normalize_commitment_title("  Send Renewal Deck  "),
+            "send renewal deck"
+        );
+        assert_eq!(
+            normalize_commitment_title("Send Renewal Deck"),
+            "send renewal deck"
+        );
+        // Internal whitespace + punctuation are preserved verbatim — the
+        // observed dupes are character-for-character identical, so loose
+        // matching would risk merging similarly-worded but distinct items.
+        assert_eq!(
+            normalize_commitment_title("Send  Renewal  Deck."),
+            "send  renewal  deck."
+        );
+    }
+
+    #[test]
+    fn dos321_aliases_new_commitment_id_to_existing_action_with_same_title() {
+        // Reproduces the production bug: same commitment text emerges twice
+        // under different commitment_ids (different sources). Without dedup
+        // we would create two action rows; with dedup the second emit
+        // creates a bridge row pointing at the first action's id.
+        let db = test_db();
+        let title = "Consolidate Globex subsidiary domains onto VIP";
+
+        // First emit: source = meeting transcript.
+        let first =
+            sync_ai_commitments(&db, "account", "acct-1", &[make_commitment(Some("meeting:1"), title)])
+                .expect("first sync");
+        assert_eq!(first.created, 1);
+        assert_eq!(first.aliased_to_existing, 0);
+
+        // Second emit: same title, different commitment_id (source = Gong).
+        let second = sync_ai_commitments(
+            &db,
+            "account",
+            "acct-1",
+            &[make_commitment(Some("gong:99"), title)],
+        )
+        .expect("second sync");
+        assert_eq!(second.created, 0);
+        assert_eq!(second.aliased_to_existing, 1);
+
+        // One action, two bridge rows pointing at it.
+        let action_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE account_id = ?1 AND action_kind = 'commitment'",
+                rusqlite::params!["acct-1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(action_count, 1, "should not create a duplicate action");
+
+        let bridge_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id IN (?1, ?2)",
+                rusqlite::params!["meeting:1", "gong:99"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(bridge_count, 2, "both source ids should bridge to the same action");
+    }
+
+    #[test]
+    fn dos321_alias_dedup_is_case_and_whitespace_insensitive_at_edges() {
+        let db = test_db();
+        sync_ai_commitments(
+            &db,
+            "account",
+            "acct-1",
+            &[make_commitment(Some("a"), "Send Renewal Deck")],
+        )
+        .expect("first");
+
+        // Different commitment_id, leading/trailing whitespace, different case.
+        let s = sync_ai_commitments(
+            &db,
+            "account",
+            "acct-1",
+            &[make_commitment(Some("b"), "  send renewal deck  ")],
+        )
+        .expect("second");
+        assert_eq!(s.aliased_to_existing, 1);
+        assert_eq!(s.created, 0);
+    }
+
+    #[test]
+    fn dos321_alias_only_targets_open_actions_not_completed() {
+        // If the existing action was completed/cancelled, a fresh emit
+        // should NOT alias onto it — the user is done with that commitment.
+        // Bridge tombstone usually catches this on the same commitment_id;
+        // for a *different* commitment_id pointing at a completed action,
+        // a brand-new action is the right shape.
+        let db = test_db();
+        sync_ai_commitments(
+            &db,
+            "account",
+            "acct-1",
+            &[make_commitment(Some("a"), "One-time work")],
+        )
+        .expect("first");
+        let action_id: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT action_id FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                rusqlite::params!["a"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        db.complete_action(&action_id).expect("complete");
+
+        let s = sync_ai_commitments(
+            &db,
+            "account",
+            "acct-1",
+            &[make_commitment(Some("b"), "One-time work")],
+        )
+        .expect("second");
+        // No alias — the existing action is completed; new action created.
+        assert_eq!(s.aliased_to_existing, 0);
+        assert_eq!(s.created, 1);
     }
 
     #[test]
