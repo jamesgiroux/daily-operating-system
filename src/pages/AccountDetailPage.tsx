@@ -57,7 +57,6 @@ import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { AddToRecord } from "@/components/entity/AddToRecord";
 import { FileListSection } from "@/components/entity/FileListSection";
 import { CommercialShape } from "@/components/context/CommercialShape";
-import { RegulatoryContextCard } from "@/components/context/RegulatoryContextCard";
 import { RelationshipFabric } from "@/components/context/RelationshipFabric";
 // View 3 — The Work (DOS-13: workbench, not todo list)
 import {
@@ -95,6 +94,15 @@ export default function AccountDetailPage() {
 
   // DOS-258 Lane F: pending stakeholder review queue for the Context tab.
   const pendingStakeholders = usePendingStakeholders(accountId);
+
+  // Work tab: progressive disclosure for suggestions. Long lists (some
+  // accounts have 20+) overwhelm the chapter — show 5 by default, paginate
+  // by 5 on "Show more". Resets via key when the user navigates accounts.
+  const SUGGESTIONS_PAGE_SIZE = 5;
+  const [suggestionsVisibleCount, setSuggestionsVisibleCount] = useState(SUGGESTIONS_PAGE_SIZE);
+  useEffect(() => {
+    setSuggestionsVisibleCount(SUGGESTIONS_PAGE_SIZE);
+  }, [accountId]);
 
 
   if (page.loading) return <EditorialLoading />;
@@ -232,19 +240,10 @@ export default function AccountDetailPage() {
             it sits alongside Technical shape / Commercial shape. Products are
             a contractual/technical surface, not a health signal. */}
 
-        {/* DOS-203 Ch.6: Regulatory context — appears on Health tab as
-            supporting context when present. RegulatoryContextCard returns
-            null when items is empty or undefined, so this section only
-            renders when the account has regulatory signals. Mirrors the
-            same card rendered on the Context tab (Commercial shape chapter)
-            per DOS-207. Regulatory gaps feed financial_proximity scoring
-            and should be visible without navigating away from the health
-            view. */}
-        {intelligence?.regulatoryContext && intelligence.regulatoryContext.length > 0 && (
-          <MarginSection id="regulatory-context" label={<>Regulatory<br/>context</>}>
-            <RegulatoryContextCard items={intelligence.regulatoryContext} />
-          </MarginSection>
-        )}
+        {/* Regulatory context lives on the Context tab (Commercial shape
+            chapter) — it's a contractual/structural surface, not a health
+            signal. Gaps still feed financial_proximity scoring via the
+            intelligence pipeline; the score itself is what surfaces here. */}
 
         {/* Chapter 7: About this intelligence */}
         <MarginSection id="about-intelligence" label={<>About this<br/>intelligence</>} reveal={false}>
@@ -753,14 +752,16 @@ export default function AccountDetailPage() {
                 <ChapterFreshness
                   enrichedAt={intelligence?.enrichedAt}
                   fragments={[
-                    `${visibleSuggestions.length} suggestion${visibleSuggestions.length === 1 ? "" : "s"}`,
-                    "Use Yes / No to train quality; Accept promotes to commitments",
+                    visibleSuggestions.length > suggestionsVisibleCount
+                      ? `Showing ${suggestionsVisibleCount} of ${visibleSuggestions.length} suggestions`
+                      : `${visibleSuggestions.length} suggestion${visibleSuggestions.length === 1 ? "" : "s"}`,
+                    "Accept → commitment · Dismiss to hide · Yes / No trains quality",
                   ]}
                 />
               }
             />
             <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-              {visibleSuggestions.map((r) => {
+              {visibleSuggestions.slice(0, suggestionsVisibleCount).map((r) => {
                 const provenance: { label: string; href?: string }[] = [];
                 if (r.sourceLabel) provenance.push({ label: r.sourceLabel });
                 else if (r.sourceType) provenance.push({ label: r.sourceType });
@@ -773,6 +774,11 @@ export default function AccountDetailPage() {
                     provenance={provenance}
                     accepting={work.suggestionAcceptInFlight.has(r.id)}
                     onAccept={() => work.handleAcceptSuggestion(r.id)}
+                    dismissing={work.suggestionDismissInFlight.has(r.id)}
+                    onDismiss={() => {
+                      suppressions.markSuppressed(`work_suggestion:${r.id}`, r.title);
+                      return work.handleArchiveSuggestion(r.id);
+                    }}
                     feedbackSlot={
                       <IntelligenceCorrection
                         entityId={detail.id}
@@ -789,6 +795,18 @@ export default function AccountDetailPage() {
                 );
               })}
             </div>
+            {visibleSuggestions.length > suggestionsVisibleCount && (
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
+                <WorkButton
+                  kind="muted"
+                  onClick={() =>
+                    setSuggestionsVisibleCount((prev) => prev + SUGGESTIONS_PAGE_SIZE)
+                  }
+                >
+                  Show {Math.min(SUGGESTIONS_PAGE_SIZE, visibleSuggestions.length - suggestionsVisibleCount)} more
+                </WorkButton>
+              </div>
+            )}
           </MarginSection>
         )}
 

@@ -417,6 +417,14 @@ export interface SuggestionCardProps {
   provenance?: { label: string; href?: string }[];
   onAccept?: () => void;
   accepting?: boolean;
+  /**
+   * Preference-based dismissal — "I don't want this." Tombstones the
+   * suggestion so enrichment doesn't re-propose it, but skips the quality
+   * penalty that "Is this accurate? No" applies. Distinct from the
+   * feedback-slot "No" answer, which means the suggestion is wrong.
+   */
+  onDismiss?: () => void;
+  dismissing?: boolean;
   feedbackSlot?: ReactNode;
 }
 
@@ -427,6 +435,8 @@ export function SuggestionCard({
   provenance,
   onAccept,
   accepting,
+  onDismiss,
+  dismissing,
   feedbackSlot,
 }: SuggestionCardProps) {
   return (
@@ -445,9 +455,19 @@ export function SuggestionCard({
         </div>
       )}
       <div className={s.recActions}>
-        <WorkButton kind="accent" onClick={onAccept} disabled={accepting}>
+        <WorkButton kind="accent" onClick={onAccept} disabled={accepting || dismissing}>
           {accepting ? "Accepting…" : "Accept → create commitment"}
         </WorkButton>
+        {onDismiss && (
+          <WorkButton
+            kind="muted"
+            onClick={onDismiss}
+            disabled={accepting || dismissing}
+            title="Hide this suggestion. Won't be re-proposed."
+          >
+            {dismissing ? "Dismissing…" : "Dismiss"}
+          </WorkButton>
+        )}
       </div>
       {feedbackSlot}
     </article>

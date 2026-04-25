@@ -92,6 +92,38 @@ pub async fn reject_suggested_action(
         .await
 }
 
+/// Dismiss a suggested action — preference-based (no quality penalty).
+///
+/// Pairs with `reject_suggested_action`: same archive + tombstone behavior
+/// so the suggestion isn't re-proposed on next enrichment, but skips the
+/// `action_rejected` signal that penalizes Bayesian source weights.
+/// Used by the Work-tab "Dismiss" affordance for "I don't want this"
+/// versus "Is this accurate? No" which means "this is wrong."
+#[tauri::command]
+pub async fn dismiss_suggested_action(
+    id: String,
+    source: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let source = source.unwrap_or_else(|| "unknown".to_string());
+    crate::util::validate_enum_string(
+        source.as_str(),
+        "source",
+        &[
+            "unknown",
+            "actions_page",
+            "daily_briefing",
+            "meeting_detail",
+        ],
+    )?;
+    let engine = state.signals.engine.clone();
+    state
+        .db_write(move |db| {
+            crate::services::actions::dismiss_suggested_action(db, &engine, &id, &source)
+        })
+        .await
+}
+
 // =============================================================================
 // I579: Per-email triage actions
 // =============================================================================

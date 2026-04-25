@@ -208,6 +208,65 @@ pub fn reject_suggested_action(
     Ok(())
 }
 
+/// Dismiss a suggested action — preference-based, not quality-based.
+///
+/// Archives the action and records the rejection-pattern tombstone (so the
+/// enrichment pipeline doesn't re-propose it via `is_action_suppressed`),
+/// but does NOT emit the `action_rejected` correction signal. The user is
+/// saying "I don't want this," not "this is wrong" — Bayesian source
+/// weights should be untouched.
+///
+/// Pairs with `reject_suggested_action` (the "Not accurate" path), which
+/// keeps the quality-penalty signal.
+pub fn dismiss_suggested_action(
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+    source: &str,
+) -> Result<(), String> {
+    let action = db.get_action_by_id(id).ok().flatten();
+    db.reject_suggested_action_with_source(id, source)
+        .map_err(|e| e.to_string())?;
+
+    if let Some(ref action) = action {
+        // Tombstone so the enrichment pipeline suppresses re-proposal
+        // (rejected_action_patterns is consulted by is_action_suppressed).
+        if let Err(e) = db.record_rejection_pattern(action) {
+            log::warn!("Failed to record rejection pattern: {}", e);
+        }
+
+        // For commitment-kind actions still tombstone the bridge so the
+        // commitment view doesn't resurrect it from the source artifact.
+        if action.action_kind == crate::action_status::KIND_COMMITMENT {
+            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(db, id)
+            {
+                log::warn!("commitment_bridge tombstone on dismiss failed (non-fatal): {e}");
+            }
+        }
+
+        // Telemetry-only: lets us see dismissal volume without it counting
+        // as a quality penalty against the source. Confidence 0.0 makes it
+        // a non-scoring observation.
+        let (entity_type, entity_id) = action_entity_info(action, id);
+        let _ = crate::services::signals::emit_and_propagate(
+            db,
+            engine,
+            entity_type,
+            &entity_id,
+            "action_dismissed",
+            action.source_type.as_deref().unwrap_or("unknown"),
+            Some(&format!(
+                "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+                id,
+                action.title.replace('"', "\\\"")
+            )),
+            0.0,
+        );
+    }
+
+    Ok(())
+}
+
 /// Cycle an action's priority with signal emission.
 pub fn update_action_priority(
     db: &ActionDb,
