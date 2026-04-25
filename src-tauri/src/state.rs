@@ -966,7 +966,7 @@ impl AppState {
                     .reader()
                     .call(move |conn| {
                         let db = crate::db::ActionDb::from_conn(conn);
-                        Ok(f(&db))
+                        Ok(f(db))
                     })
                     .await
                     .map_err(|e| format!("DB read error: {e}"))?;
@@ -1004,7 +1004,7 @@ impl AppState {
                     .writer()
                     .call(move |conn| {
                         let db = crate::db::ActionDb::from_conn(conn);
-                        Ok(f(&db))
+                        Ok(f(db))
                     })
                     .await
                     .map_err(|e| format!("DB write error: {e}"))?;
