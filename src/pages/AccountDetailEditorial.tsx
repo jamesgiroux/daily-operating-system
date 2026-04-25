@@ -35,11 +35,9 @@ import { TheWork } from "@/components/entity/TheWork";
 import { ValueCommitments } from "@/components/entity/ValueCommitments";
 import { StrategicLandscape } from "@/components/entity/StrategicLandscape";
 import { AccountOutlook } from "@/components/entity/AccountOutlook";
-import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { AddToRecord } from "@/components/entity/AddToRecord";
 import { FileListSection } from "@/components/entity/FileListSection";
 import { WatchListPrograms } from "@/components/account/WatchListPrograms";
-import { AccountBreadcrumbs } from "@/components/account/AccountBreadcrumbs";
 import { AccountRolloverPrompt } from "@/components/account/AccountRolloverPrompt";
 import { AccountProductsSection } from "@/components/account/AccountProductsSection";
 import { AccountPortfolioSection } from "@/components/account/AccountPortfolioSection";
@@ -72,13 +70,27 @@ export default function AccountDetailEditorial() {
     [acct.detail?.isParent, acct.intelligence?.health],
   );
 
+  const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!accountId) return;
+    invoke<{ id: string; name: string }[]>("get_account_ancestors", { accountId })
+      .then(setAncestors).catch(() => setAncestors([]));
+  }, [accountId]);
+
   const shellConfig = useMemo(() => ({
     folioLabel: acct.detail?.accountType === "internal" ? "Internal" : acct.detail?.accountType === "partner" ? "Partner" : "Account",
     atmosphereColor: acct.detail?.accountType === "internal" ? "larkspur" as const : "turmeric" as const,
     activePage: "accounts" as const,
-    backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
+    breadcrumbs: [
+      { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
+      ...ancestors.map((ancestor) => ({
+        label: ancestor.name,
+        onClick: () => navigate({ to: "/accounts/$accountId", params: { accountId: ancestor.id } }),
+      })),
+      { label: acct.detail?.name ?? "Account" },
+    ],
     chapters,
-  }), [navigate, acct.detail?.accountType, chapters]);
+  }), [ancestors, navigate, acct.detail?.accountType, acct.detail?.name, chapters]);
   useRegisterMagazineShell(shellConfig);
 
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
@@ -109,13 +121,6 @@ export default function AccountDetailEditorial() {
       .catch(() => setMetadataValues({}));
   }, [accountId]);
 
-  const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
-  useEffect(() => {
-    if (!accountId) return;
-    invoke<{ id: string; name: string }[]>("get_account_ancestors", { accountId })
-      .then(setAncestors).catch(() => setAncestors([]));
-  }, [accountId]);
-
   const feedback = useIntelligenceFeedback(accountId, "account");
   const entityCtx = useEntityContextEntries("account", accountId ?? null);
   const detail = acct.detail;
@@ -131,8 +136,6 @@ export default function AccountDetailEditorial() {
 
   return (
     <>
-      <AccountBreadcrumbs ancestors={ancestors} currentName={detail.name ?? ""} />
-
       <section id="headline" className={shared.chapterSection}>
         <AccountHero detail={detail} intelligence={intelligence}
           editName={acct.editName} setEditName={(v) => { acct.setEditName(v); acct.setDirty(true); }}
@@ -140,7 +143,8 @@ export default function AccountDetailEditorial() {
           editLifecycle={acct.editLifecycle} setEditLifecycle={(v) => { acct.setEditLifecycle(v); acct.setDirty(true); }}
           onSave={acct.handleSave} onSaveField={saveAccountField}
           vitalsSlot={detail.accountType !== "internal" ? (preset
-            ? <EditableVitalsStrip fields={preset.vitals.account} entityData={detail} metadata={metadataValues}
+            ? <EditableVitalsStrip fields={preset.vitals.account} metadataFields={preset.metadata.account}
+                entityData={detail} metadata={metadataValues}
                 onFieldChange={(key, col, source, value) => {
                   if (source === "metadata") handleMetadataChange(key, value);
                   else if (source === "column") void saveAccountField(col ?? key, value);
@@ -148,11 +152,6 @@ export default function AccountDetailEditorial() {
             : <VitalsStrip vitals={buildAccountVitals(detail)} sourceRefs={detail.sourceRefs} />
           ) : undefined}
           provenanceSlot={undefined} />
-        {preset && preset.metadata.account.length > 0 && (
-          <div className={`editorial-reveal ${shared.presetFieldsReveal}`}>
-            <PresetFieldsEditor fields={preset.metadata.account} values={metadataValues} onChange={handleMetadataChange} />
-          </div>
-        )}
         {detail.renewalDate && !rolloverDismissed && (
           <AccountRolloverPrompt renewalDate={detail.renewalDate}
             onRenewed={() => { acct.setNewEventType("renewal"); acct.setNewEventDate(detail.renewalDate!); acct.handleRecordEvent(); setRolloverDismissed(true); }}

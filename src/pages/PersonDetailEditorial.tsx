@@ -52,7 +52,6 @@ import { TheWork } from "@/components/entity/TheWork";
 import { RecommendedActions } from "@/components/entity/RecommendedActions";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { AddToRecord } from "@/components/entity/AddToRecord";
-import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 import shared from "@/styles/entity-detail.module.css";
 import styles from "./PersonDetailEditorial.module.css";
@@ -173,11 +172,14 @@ export default function PersonDetailEditorial() {
       folioLabel: "Person",
       atmosphereColor: "larkspur" as const,
       activePage: "people" as const,
-      backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/people" }) },
+      breadcrumbs: [
+        { label: "People", onClick: () => navigate({ to: "/people" }) },
+        { label: person.detail?.name ?? "Person" },
+      ],
       chapters: buildChapters(relationship),
       folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
     }),
-    [navigate, relationship, saveStatus],
+    [navigate, person.detail?.name, relationship, saveStatus],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -244,6 +246,7 @@ export default function PersonDetailEditorial() {
           {preset ? (
             <EditableVitalsStrip
               fields={preset.vitals.person}
+              metadataFields={preset.metadata.person}
               entityData={{ ...detail, signals: detail.signals as Record<string, unknown> | undefined }}
               metadata={metadataValues}
               onFieldChange={(key, _columnMapping, source, value) => {
@@ -260,22 +263,6 @@ export default function PersonDetailEditorial() {
             <VitalsStrip vitals={buildPersonVitals(detail)} />
           )}
         </div>
-        {/* I312: Preset metadata fields */}
-        {preset && preset.metadata.person.length > 0 && (
-          <div className={`editorial-reveal ${shared.presetFieldsReveal}`}>
-            <PresetFieldsEditor
-              fields={preset.metadata.person}
-              values={metadataValues}
-              onChange={(key, value) => {
-                setMetadataValues((prev) => {
-                  const updated = { ...prev, [key]: value };
-                  void saveMetadata(updated);
-                  return updated;
-                });
-              }}
-            />
-          </div>
-        )}
       </section>
 
       {/* Chapter 2: The Dynamic / The Rhythm */}
