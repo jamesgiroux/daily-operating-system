@@ -243,7 +243,11 @@ fn process_granola_document(
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Meeting {} not found", meeting_id))?;
 
-        let calendar_event = crate::quill::sync::db_meeting_to_calendar_event(&meeting);
+        let mut calendar_event = crate::quill::sync::db_meeting_to_calendar_event(&meeting);
+        // Hydrate linked entities + attendees so the processor routes the
+        // markdown to the right account dir and emits entity IDs in the
+        // YAML frontmatter.
+        crate::processor::transcript::enrich_meeting_from_db(&mut calendar_event, &db);
 
         let (workspace, profile, ai_config) = {
             let config_guard = state.config.read();
@@ -587,12 +591,14 @@ pub struct ManualGranolaSyncResult {
 ///
 /// Unlike the background poller, this scopes matching to one meeting and returns
 /// a concrete result when no Granola document is currently available.
+/// Returns the manual-sync result and, when a transcript was attached, the
+/// calendar event so the async caller can re-run entity linking.
 pub fn trigger_granola_sync_for_meeting(
     state: &AppState,
     app_handle: &AppHandle,
     meeting_id: &str,
     force: bool,
-) -> Result<ManualGranolaSyncResult, String> {
+) -> Result<(ManualGranolaSyncResult, Option<crate::types::CalendarEvent>), String> {
     let granola_config = state
         .config
         .read()
@@ -613,20 +619,26 @@ pub fn trigger_granola_sync_for_meeting(
         {
             match existing.state.as_str() {
                 "completed" => {
-                    return Ok(ManualGranolaSyncResult {
-                        status: ManualGranolaSyncStatus::AlreadyCompleted,
-                        message: "Transcript already synced".to_string(),
-                        document_title: None,
-                        content_type: None,
-                    });
+                    return Ok((
+                        ManualGranolaSyncResult {
+                            status: ManualGranolaSyncStatus::AlreadyCompleted,
+                            message: "Transcript already synced".to_string(),
+                            document_title: None,
+                            content_type: None,
+                        },
+                        None,
+                    ));
                 }
                 "processing" | "pending" => {
-                    return Ok(ManualGranolaSyncResult {
-                        status: ManualGranolaSyncStatus::AlreadyInProgress,
-                        message: "Sync already in progress".to_string(),
-                        document_title: None,
-                        content_type: None,
-                    });
+                    return Ok((
+                        ManualGranolaSyncResult {
+                            status: ManualGranolaSyncStatus::AlreadyInProgress,
+                            message: "Sync already in progress".to_string(),
+                            document_title: None,
+                            content_type: None,
+                        },
+                        None,
+                    ));
                 }
                 _ => {} // failed/abandoned — allow retry
             }
@@ -684,14 +696,17 @@ pub fn trigger_granola_sync_for_meeting(
             // Run the sync pipeline
             match process_granola_document(state, &sync_id, meeting_id, &doc.content, content_kind)
             {
-                Ok(_) => {
+                Ok((_, calendar_event)) => {
                     emit_transcript_processed(state, app_handle, meeting_id);
-                    return Ok(ManualGranolaSyncResult {
-                        status: ManualGranolaSyncStatus::Attached,
-                        message: "Transcript synced successfully".to_string(),
-                        document_title: Some(doc.title.clone()),
-                        content_type: Some(doc.content_type),
-                    });
+                    return Ok((
+                        ManualGranolaSyncResult {
+                            status: ManualGranolaSyncStatus::Attached,
+                            message: "Transcript synced successfully".to_string(),
+                            document_title: Some(doc.title.clone()),
+                            content_type: Some(doc.content_type),
+                        },
+                        Some(calendar_event),
+                    ));
                 }
                 Err(e) => {
                     return Err(format!("Granola sync failed: {}", e));
@@ -700,12 +715,15 @@ pub fn trigger_granola_sync_for_meeting(
         }
     }
 
-    Ok(ManualGranolaSyncResult {
-        status: ManualGranolaSyncStatus::NotFound,
-        message: "No matching Granola document found".to_string(),
-        document_title: None,
-        content_type: None,
-    })
+    Ok((
+        ManualGranolaSyncResult {
+            status: ManualGranolaSyncStatus::NotFound,
+            message: "No matching Granola document found".to_string(),
+            document_title: None,
+            content_type: None,
+        },
+        None,
+    ))
 }
 
 #[cfg(test)]

@@ -92,6 +92,37 @@ export function usePostMeetingCapture() {
     [state.meeting]
   );
 
+  const pasteTranscript = useCallback(
+    async (
+      text: string,
+      format: "txt" | "md" = "txt",
+    ): Promise<TranscriptResult | null> => {
+      if (!state.meeting) return null;
+      const trimmed = text.trim();
+      if (!trimmed) {
+        toast.error("Paste a transcript first");
+        return null;
+      }
+      setState((prev) => ({ ...prev, processing: true }));
+      try {
+        const result = await invoke<TranscriptResult>(
+          "attach_meeting_transcript_text",
+          { text: trimmed, format, meeting: state.meeting },
+        );
+        setTimeout(() => {
+          setState({ visible: false, meeting: null, isFallback: false, processing: false });
+        }, 2000);
+        return result;
+      } catch (err) {
+        console.error("Failed to paste transcript:", err);
+        toast.error("Failed to paste transcript");
+        setState((prev) => ({ ...prev, processing: false }));
+        return null;
+      }
+    },
+    [state.meeting],
+  );
+
   return {
     visible: state.visible,
     meeting: state.meeting,
@@ -101,5 +132,6 @@ export function usePostMeetingCapture() {
     skip,
     dismiss,
     attachTranscript,
+    pasteTranscript,
   };
 }

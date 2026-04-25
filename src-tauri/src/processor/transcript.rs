@@ -2857,6 +2857,64 @@ Transcript:
     )
 }
 
+/// Hydrate a `CalendarEvent` with the meeting's DB-side context before the
+/// transcript processor consumes it.
+///
+/// The frontend (and the Granola/Quill `db_meeting_to_calendar_event` helper)
+/// build a thin event with `account = None`, `attendees = []`, and
+/// `linked_entities = None`. That's enough for AI extraction but starves the
+/// routing logic in `resolve_transcript_destination`, which falls back to
+/// `_archive` when none of those fields point at a real entity.
+///
+/// This loads the meeting's linked entities + attendees from the DB and
+/// fills in the missing fields. Existing values on `meeting` are preserved
+/// — caller-supplied data wins. Linked-entity routing is the source of
+/// truth here; the frontmatter-fallback in `resolve_transcript_destination`
+/// is reserved for legacy files without DB context.
+pub fn enrich_meeting_from_db(meeting: &mut CalendarEvent, db: &ActionDb) {
+    // Linked entities (ordered: is_primary DESC, confidence DESC)
+    if meeting.linked_entities.as_ref().is_none_or(|v| v.is_empty()) {
+        if let Ok(entities) = db.get_meeting_linked_entities(&meeting.id) {
+            if !entities.is_empty() {
+                // Primary account name → meeting.account (used by routing step 1
+                // and frontmatter)
+                if meeting.account.is_none() {
+                    if let Some(primary_account) = entities
+                        .iter()
+                        .find(|e| e.entity_type == "account")
+                    {
+                        meeting.account = Some(primary_account.name.clone());
+                    }
+                }
+                meeting.linked_entities = Some(entities);
+            }
+        }
+    } else if meeting.account.is_none() {
+        // linked_entities was provided but account wasn't — derive it.
+        if let Some(entities) = meeting.linked_entities.as_ref() {
+            if let Some(primary_account) = entities
+                .iter()
+                .find(|e| e.entity_type == "account")
+            {
+                meeting.account = Some(primary_account.name.clone());
+            }
+        }
+    }
+
+    // Attendee emails (used by routing step 4 — domain fallback)
+    if meeting.attendees.is_empty() {
+        if let Ok(attendees) = db.get_meeting_attendees(&meeting.id) {
+            meeting.attendees = attendees
+                .into_iter()
+                .filter_map(|p| {
+                    let e = p.email.trim();
+                    if e.is_empty() { None } else { Some(e.to_string()) }
+                })
+                .collect();
+        }
+    }
+}
+
 /// I631+I661: Shared routing logic for transcripts and meeting records.
 ///
 /// Priority: account (classification) > project (linked) > person (1:1 linked)
@@ -3041,11 +3099,51 @@ fn build_frontmatter(meeting: &CalendarEvent, date: &str) -> String {
         .unwrap_or_default();
     let now = Utc::now().to_rfc3339();
 
+    // Emit DB-resolved entity IDs so downstream tools can reference linked
+    // entities by ID, not by name (names get renamed; IDs are stable).
+    // Order in linked_entities is is_primary DESC, confidence DESC, so the
+    // first entity of a given type is the primary one.
+    let mut entity_block = String::new();
+    if let Some(entities) = meeting.linked_entities.as_ref() {
+        if !entities.is_empty() {
+            if let Some(account) = entities.iter().find(|e| e.entity_type == "account") {
+                entity_block.push_str(&format!("account_id: \"{}\"\n", account.id));
+            }
+            if let Some(project) = entities.iter().find(|e| e.entity_type == "project") {
+                entity_block.push_str(&format!("project_id: \"{}\"\n", project.id));
+                entity_block.push_str(&format!(
+                    "project_name: \"{}\"\n",
+                    project.name.replace('"', "\\\"")
+                ));
+            }
+            let person_ids: Vec<String> = entities
+                .iter()
+                .filter(|e| e.entity_type == "person")
+                .map(|e| format!("\"{}\"", e.id))
+                .collect();
+            if !person_ids.is_empty() {
+                entity_block.push_str(&format!("person_ids: [{}]\n", person_ids.join(", ")));
+            }
+            // Full structured list — supports tools that want type+id pairs.
+            entity_block.push_str("linked_entities:\n");
+            for e in entities {
+                entity_block.push_str(&format!(
+                    "  - id: \"{}\"\n    type: \"{}\"\n    name: \"{}\"\n    primary: {}\n",
+                    e.id,
+                    e.entity_type,
+                    e.name.replace('"', "\\\""),
+                    e.is_primary
+                ));
+            }
+        }
+    }
+
     format!(
-        "---\nmeeting_id: \"{}\"\nmeeting_title: \"{}\"\n{}meeting_type: \"{}\"\nmeeting_date: \"{}\"\nprocessed_at: \"{}\"\nsource: transcript\n---\n",
+        "---\nmeeting_id: \"{}\"\nmeeting_title: \"{}\"\n{}{}meeting_type: \"{}\"\nmeeting_date: \"{}\"\nprocessed_at: \"{}\"\nsource: transcript\n---\n",
         meeting.id,
         meeting.title.replace('"', "\\\""),
         account_line,
+        entity_block,
         meeting_type,
         date,
         now,
@@ -4373,6 +4471,173 @@ mod tests {
             archive_path,
             PathBuf::from("/workspace/_archive/2026-03-22/2026-03-22-internal-sync-record.md")
         );
+    }
+
+    /// Pinning the bug fix: a thin CalendarEvent (no account, no
+    /// linked_entities, no attendees) — what the frontend, Granola, and
+    /// Quill all build — gets routed to `_archive` and the YAML
+    /// frontmatter omits the linked entity. After enrichment from the DB,
+    /// the meeting carries the primary account, the linked-entity list,
+    /// and attendee emails so routing lands the file in the account's
+    /// Call-Transcripts dir and frontmatter emits stable IDs.
+    #[test]
+    fn enrich_meeting_from_db_hydrates_account_linked_entities_and_attendees() {
+        let db = test_db();
+        db.upsert_account(&sample_account_row("acc-enrich", "Acme Corp"))
+            .expect("seed account");
+        db.upsert_project(&sample_project_row("proj-enrich", "Migration"))
+            .expect("seed project");
+        db.upsert_person(&sample_person_row(
+            "person-enrich",
+            "pat@acme.com",
+            "Pat Kim",
+        ))
+        .expect("seed person");
+
+        let meeting_row = sample_db_meeting_row(
+            "mtg-enrich",
+            "Acme QBR",
+            "customer",
+            "2026-03-22T15:00:00Z",
+            None,
+        );
+        db.upsert_meeting(&meeting_row).expect("upsert meeting row");
+
+        // Link primary account + secondary project so the helper has to
+        // pick the right primary by entity_type.
+        db.link_meeting_entity_with_confidence(
+            "mtg-enrich",
+            "acc-enrich",
+            "account",
+            0.95,
+            true,
+        )
+        .expect("link account");
+        db.link_meeting_entity_with_confidence(
+            "mtg-enrich",
+            "proj-enrich",
+            "project",
+            0.7,
+            false,
+        )
+        .expect("link project");
+
+        // Attach the person to the meeting via meeting_attendees so the
+        // attendee-fallback routing arm has data to chew on.
+        db.record_meeting_attendance("mtg-enrich", "person-enrich")
+            .expect("attach attendee");
+
+        // Frontend/Granola/Quill all build a thin event like this.
+        let mut event = CalendarEvent {
+            id: "mtg-enrich".to_string(),
+            title: "Acme QBR".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::Customer,
+            account: None,
+            attendees: vec![],
+            is_all_day: false,
+            series_id: None,
+            linked_entities: None,
+            classified_entities: None,
+            scored_classified_entities: None,
+        };
+
+        enrich_meeting_from_db(&mut event, &db);
+
+        assert_eq!(event.account.as_deref(), Some("Acme Corp"));
+        let entities = event
+            .linked_entities
+            .as_ref()
+            .expect("linked_entities populated");
+        assert!(entities
+            .iter()
+            .any(|e| e.entity_type == "account" && e.id == "acc-enrich" && e.is_primary));
+        assert!(entities
+            .iter()
+            .any(|e| e.entity_type == "project" && e.id == "proj-enrich"));
+        assert_eq!(event.attendees, vec!["pat@acme.com".to_string()]);
+
+        // Now routing should pick the account dir, not _archive.
+        let (dest, method) = resolve_transcript_destination(
+            &event,
+            Some(&db),
+            Path::new("/workspace"),
+            "test-transcript.md",
+            "Call-Transcripts",
+            "2026-03-22",
+            None,
+        );
+        assert_eq!(method, "account_classification");
+        assert_eq!(
+            dest,
+            PathBuf::from("/workspace/Accounts/Acme-Corp/Call-Transcripts/test-transcript.md")
+        );
+
+        // And frontmatter should carry stable IDs.
+        let frontmatter = build_frontmatter(&event, "2026-03-22");
+        assert!(
+            frontmatter.contains("account: \"Acme Corp\""),
+            "frontmatter should include account name: {frontmatter}"
+        );
+        assert!(
+            frontmatter.contains("account_id: \"acc-enrich\""),
+            "frontmatter should include account_id: {frontmatter}"
+        );
+        assert!(
+            frontmatter.contains("project_id: \"proj-enrich\""),
+            "frontmatter should include project_id: {frontmatter}"
+        );
+        assert!(
+            frontmatter.contains("linked_entities:"),
+            "frontmatter should include structured linked_entities: {frontmatter}"
+        );
+    }
+
+    /// Caller-supplied values (an explicit account, pre-filled attendees)
+    /// must never be overwritten by the DB enrichment — the hydration
+    /// fills missing data but doesn't argue with an authoritative caller.
+    #[test]
+    fn enrich_meeting_from_db_preserves_caller_supplied_fields() {
+        let db = test_db();
+        db.upsert_account(&sample_account_row("acc-pre", "DB-Side Co"))
+            .expect("seed account");
+        let meeting_row = sample_db_meeting_row(
+            "mtg-pre",
+            "Pre-set",
+            "customer",
+            "2026-03-22T15:00:00Z",
+            None,
+        );
+        db.upsert_meeting(&meeting_row).expect("upsert meeting row");
+        db.link_meeting_entity_with_confidence("mtg-pre", "acc-pre", "account", 0.95, true)
+            .expect("link account");
+
+        let mut event = CalendarEvent {
+            id: "mtg-pre".to_string(),
+            title: "Pre-set".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::Customer,
+            account: Some("Caller-supplied".to_string()),
+            attendees: vec!["already@there.com".to_string()],
+            is_all_day: false,
+            series_id: None,
+            linked_entities: None,
+            classified_entities: None,
+            scored_classified_entities: None,
+        };
+
+        enrich_meeting_from_db(&mut event, &db);
+
+        assert_eq!(
+            event.account.as_deref(),
+            Some("Caller-supplied"),
+            "caller-supplied account must not be overwritten"
+        );
+        assert_eq!(event.attendees, vec!["already@there.com".to_string()]);
+        // linked_entities was None — that gets filled
+        assert!(event.linked_entities.is_some());
     }
 
     // =========================================================================

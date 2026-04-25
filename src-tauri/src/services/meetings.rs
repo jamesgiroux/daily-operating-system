@@ -3422,6 +3422,13 @@ pub async fn attach_meeting_transcript(
         // Open a dedicated connection instead of holding the shared mutex
         // for the entire transcript processing duration (30-120s with PTY).
         let db = crate::db::ActionDb::open().ok();
+        // Hydrate linked entities + attendees from the DB so routing lands
+        // the file in the right Account/Project/Person dir instead of
+        // _archive, and frontmatter carries entity IDs.
+        let mut meeting_clone = meeting_clone;
+        if let Some(ref db_ref) = db {
+            crate::processor::transcript::enrich_meeting_from_db(&mut meeting_clone, db_ref);
+        }
         crate::processor::transcript::process_transcript(
             workspace,
             &file_path,

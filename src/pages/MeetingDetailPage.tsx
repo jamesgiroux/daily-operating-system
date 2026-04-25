@@ -7,6 +7,14 @@ import {
   AgendaDraftDialog,
   useAgendaDraft,
 } from "@/components/ui/agenda-draft-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import type {
   FullMeetingPrep,
   Stakeholder,
@@ -50,6 +58,7 @@ import {
   CircleDot,
   Clock,
   Copy,
+  ClipboardPaste,
   Loader2,
   Mail,
   Paperclip,
@@ -175,6 +184,10 @@ export default function MeetingDetailPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncingGranola, setSyncingGranola] = useState(false);
   const [retryingExtraction, setRetryingExtraction] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteFormat, setPasteFormat] = useState<"txt" | "md">("txt");
+  const [pasting, setPasting] = useState(false);
   const draft = useAgendaDraft({ onError: setError });
   const [prefillNotice, setPrefillNotice] = useState(false);
   const [prefilling, setPrefilling] = useState(false);
@@ -439,6 +452,69 @@ export default function MeetingDetailPage() {
       setAttaching(false);
     }
   }, [meetingId, data, meetingMeta, loadMeetingIntelligence]);
+
+  const handlePasteTranscript = useCallback(async () => {
+    if (!meetingId || !data) return;
+    const trimmed = pasteText.trim();
+    if (!trimmed) {
+      toast.error("Paste a transcript first");
+      return;
+    }
+
+    setPasting(true);
+    try {
+      const calendarEvent: CalendarEvent = {
+        id: meetingMeta?.id || meetingId,
+        title: meetingMeta?.title || data.title,
+        start: meetingMeta?.startTime || new Date().toISOString(),
+        end:
+          meetingMeta?.endTime ||
+          meetingMeta?.startTime ||
+          new Date().toISOString(),
+        type:
+          (meetingMeta?.meetingType as CalendarEvent["type"]) ?? "internal",
+        attendees: [],
+        isAllDay: false,
+      };
+      const result = await invoke<{
+        status: string;
+        message?: string;
+        summary?: string;
+      }>("attach_meeting_transcript_text", {
+        text: trimmed,
+        format: pasteFormat,
+        meeting: calendarEvent,
+      });
+
+      if (result.status !== "success") {
+        toast.error("Transcript processing failed", {
+          description: result.message || result.status,
+        });
+      } else if (!result.summary) {
+        toast.warning("No outcomes extracted", {
+          description: result.message || "AI extraction returned empty",
+        });
+      } else {
+        toast.success("Transcript processed");
+      }
+      setPasteOpen(false);
+      setPasteText("");
+      await loadMeetingIntelligence();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to paste transcript:", msg);
+      toast.error("Failed to paste transcript", { description: msg });
+    } finally {
+      setPasting(false);
+    }
+  }, [
+    meetingId,
+    data,
+    meetingMeta,
+    pasteText,
+    pasteFormat,
+    loadMeetingIntelligence,
+  ]);
 
   const handleReprocessTranscript = useCallback(async () => {
     if (!meetingId) return;
@@ -1573,6 +1649,15 @@ Thanks!`;
                 {attaching ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <Paperclip className={styles.iconMd} />}
                 {attaching ? "Processing…" : "Attach Transcript"}
               </button>
+              <button
+                onClick={() => setPasteOpen(true)}
+                disabled={attaching || pasting}
+                className={clsx(styles.transcriptCtaBtn, (attaching || pasting) && styles.transcriptCtaBtnDisabled)}
+                title="Paste a transcript copied from another tool"
+              >
+                <ClipboardPaste className={styles.iconMd} />
+                Paste Transcript
+              </button>
               {granolaEnabled && (
                 <span className={styles.transcriptCtaLabel}>
                   {isPastMeeting && !outcomes?.transcriptPath
@@ -1605,6 +1690,75 @@ Thanks!`;
         subject={draft.subject}
         body={draft.body}
       />
+      <Dialog open={pasteOpen} onOpenChange={(o) => { if (!pasting) setPasteOpen(o); }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Paste Transcript</DialogTitle>
+            <DialogDescription>
+              Paste the raw transcript or markdown notes from any meeting tool.
+              We&rsquo;ll process it through the same pipeline used for uploads —
+              outcomes, captures, and entity links update automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="uppercase tracking-wide">Format</span>
+              <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="paste-format"
+                  value="txt"
+                  checked={pasteFormat === "txt"}
+                  onChange={() => setPasteFormat("txt")}
+                  disabled={pasting}
+                />
+                <span>Plain text</span>
+              </label>
+              <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="paste-format"
+                  value="md"
+                  checked={pasteFormat === "md"}
+                  onChange={() => setPasteFormat("md")}
+                  disabled={pasting}
+                />
+                <span>Markdown</span>
+              </label>
+            </div>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              disabled={pasting}
+              placeholder="Paste your transcript here…"
+              aria-label="Pasted transcript"
+              className="min-h-[280px] w-full rounded-md border border-border/70 bg-muted/30 p-3 font-mono text-xs leading-relaxed"
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                {pasteText.trim().length.toLocaleString()} chars
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setPasteOpen(false)}
+                  disabled={pasting}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={handlePasteTranscript} disabled={pasting || pasteText.trim().length === 0}>
+                  {pasting ? (
+                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                  ) : (
+                    <ClipboardPaste className="mr-1.5 size-3.5" />
+                  )}
+                  {pasting ? "Processing…" : "Process Transcript"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
