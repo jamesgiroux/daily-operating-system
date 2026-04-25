@@ -54,10 +54,19 @@ EOF
 
 ## 2. Version Bump
 
+The release workflow on the public repo verifies the git tag against `tauri.conf.json` — if they do not match, the build aborts immediately and no DMG is produced. Bump every file BEFORE creating the tag, and tag the version-bump commit (or any later commit on the release branch) — never tag a commit that pre-dates the bump.
+
 - [ ] Bump version in `src-tauri/tauri.conf.json`
-- [ ] Bump version in `src-tauri/Cargo.toml` (triggers `Cargo.lock` update)
+- [ ] Bump version in `src-tauri/Cargo.toml`
+- [ ] Bump version in `src-tauri/Cargo.lock` — the `[[package]] name = "dailyos"` entry. `cargo build` will refresh it automatically; if you skip the build, edit it by hand or run `cargo update --workspace --offline` so the lockfile commits in the same change as `Cargo.toml`
 - [ ] Bump version in `package.json`
-- [ ] All three versions match
+- [ ] All four versions match — verify with:
+      ```bash
+      grep '"version"' src-tauri/tauri.conf.json package.json
+      grep -E '^version' src-tauri/Cargo.toml
+      grep -A1 'name = "dailyos"' src-tauri/Cargo.lock | head -2
+      ```
+- [ ] Version-bump commit lands on the release branch BEFORE the tag is created (Section 15)
 
 ## 3. Changelog & Documentation
 
@@ -204,9 +213,18 @@ This is non-negotiable. Release does not ship if any term from the blocklist app
 ## 15. Merge & Tag
 
 - [ ] Merge the release PR (creates merge commit on `main`)
-- [ ] Tag: `git tag v{version}` on the merge commit
-- [ ] Push: `git push origin main --tags`
+- [ ] Verify the merge commit (or whichever commit will receive the tag) carries the right version. The release workflow's first step extracts `${TAG#v}` and compares it against `tauri.conf.json` — a mismatch fails the build before any compilation runs:
+      ```bash
+      TAG=v{version}
+      TAG_VERSION="${TAG#v}"
+      grep '"version"' src-tauri/tauri.conf.json
+      # the printed version MUST equal $TAG_VERSION
+      ```
+- [ ] Tag: `git tag -a v{version} -m "Release v{version} — {title}"` on the verified commit (annotated, not lightweight)
+- [ ] Push: `git push origin main --tags` (push branch + tag together)
+- [ ] If publishing to a public mirror, push the tag there too: `git push public main:main && git push public v{version}`
 - [ ] Reconcile: `git checkout dev && git merge main` (keeps dev up to date)
+- [ ] If the tag was pushed at the wrong commit and the build failed, the recovery is: bump version files → commit → push branch → `git tag -d v{version}` locally → recreate annotated tag on the new commit → `git push <remote> v{version} --force` to every remote that received the bad tag
 
 ## 16. Post-Merge Verification
 
