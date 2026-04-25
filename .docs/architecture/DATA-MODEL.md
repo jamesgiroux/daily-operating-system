@@ -1,9 +1,9 @@
 # Data Model Reference
 
-**Auto-generated:** 2026-04-20 by `.docs/generators/gen-data-model.sh`
+**Auto-generated:** 2026-04-24 by `.docs/generators/gen-data-model.sh`
 
 **Database:** SQLite (SQLCipher-encrypted, WAL mode)
-**Migrations:** 116 files (`001_baseline.sql` through `115_migrate_meeting_entity_dismissals.sql`)
+**Migrations:** 123 files (`001_baseline.sql` through `122_dos_321_collapse_commitment_dupes.sql`)
 **DB modules:** `src-tauri/src/db/`
 
 ---
@@ -12,7 +12,7 @@
 
 | Table | Created In | Columns Added Later |
 |-------|-----------|-------------------|
-| `account_domains` | `002_internal_teams` | — |
+| `account_domains` | `002_internal_teams` | 118_account_domains_source |
 | `account_domains_new` | `010_foreign_keys` | — |
 | `account_events` | `001_baseline` | — |
 | `account_events_new` | `069_account_events_expand` | — |
@@ -58,7 +58,7 @@
 | `email_signals_new` | `063_email_signals_source` | — |
 | `email_sync_meta` | `093_email_sync_meta` | — |
 | `email_threads` | `027_email_threads` | — |
-| `emails` | `034_emails` | 035_email_relevance_score, 071_email_triage_columns, 082_email_enriched_at, 100_email_retry_batch, 102_email_is_noise, 103_email_auto_retry_count, 104_email_is_noise_defensive |
+| `emails` | `034_emails` | 035_email_relevance_score, 071_email_triage_columns, 082_email_enriched_at, 100_email_retry_batch, 102_email_is_noise, 103_email_auto_retry_count, 104_email_is_noise_defensive, 119_email_to_cc |
 | `emails_new` | `097_email_pending_retry_state` | — |
 | `enrichment_log` | `016_clay_enrichment` | — |
 | `entities` | `001_baseline` | 095_meeting_entities_confidence |
@@ -67,7 +67,7 @@
 | `entity_context_entries` | `051_entity_context_entries` | — |
 | `entity_email_cadence` | `028_entity_email_cadence` | — |
 | `entity_feedback_events` | `084_feedback_events` | — |
-| `entity_graph_version` | `113_entity_graph_version` | — |
+| `entity_graph_version` | `113_entity_graph_version` | 121_entity_graph_sweep_state |
 | `entity_intelligence` | `001_baseline` | 040_entity_quality, 045_intelligence_report_fields, 047_entity_intel_user_relevance, 054_intelligence_consistency_metadata |
 | `entity_linking_evaluations` | `112_entity_linking_evaluations` | — |
 | `entity_members` | `055_schema_decomposition` | — |
@@ -104,6 +104,7 @@
 | `meetings_history` | `001_baseline` | 031_intelligence_lifecycle |
 | `meetings_history_new` | `023_drop_meeting_account_id` | — |
 | `nudge_dismissals` | `108_work_tab_actions` | — |
+| `pending_thread_inheritance` | `116_pending_thread_inheritance` | — |
 | `people` | `001_baseline` | 016_clay_enrichment, 053_app_state_demo |
 | `person_emails` | `012_person_emails` | — |
 | `person_relationships` | `038_person_relationships` | 059_person_relationships_rationale |
@@ -144,6 +145,7 @@
 | `domain` | TEXT NOT NULL |
 | `account_id` | TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE |
 | `domain` | TEXT NOT NULL |
+- `source` *(added in 118_account_domains_source)*
 
 **Indexes:** idx_account_domains_domain
 
@@ -1161,3 +1163,787 @@
 | `detected_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
 | `deactivated_at` | TEXT |
 | `source` | TEXT NOT NULL DEFAULT 'email_enrichment' |
+- `deactivated_at` *(added in 034_emails)*
+
+---
+
+### `email_signals_new`
+
+**Created in:** `063_email_signals_source`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT |
+| `email_id` | TEXT NOT NULL |
+| `sender_email` | TEXT |
+| `person_id` | TEXT |
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL |
+| `signal_type` | TEXT NOT NULL |
+| `signal_text` | TEXT NOT NULL |
+| `confidence` | REAL |
+| `sentiment` | TEXT |
+| `urgency` | TEXT |
+| `detected_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `deactivated_at` | TEXT |
+| `source` | TEXT NOT NULL DEFAULT 'email_enrichment' |
+
+---
+
+### `email_sync_meta`
+
+**Created in:** `093_email_sync_meta`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | INTEGER PRIMARY KEY CHECK (id = 1) |
+| `last_successful_fetch_at` | TEXT |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `email_threads`
+
+**Created in:** `027_email_threads`
+
+| Column | Definition |
+|--------|-----------|
+| `thread_id` | TEXT PRIMARY KEY |
+| `subject` | TEXT NOT NULL DEFAULT '' |
+| `last_sender_email` | TEXT NOT NULL DEFAULT '' |
+| `last_message_date` | TEXT NOT NULL DEFAULT '' |
+| `message_count` | INTEGER NOT NULL DEFAULT 1 |
+| `user_is_last_sender` | INTEGER NOT NULL DEFAULT 0 |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `emails`
+
+**Created in:** `034_emails`
+
+| Column | Definition |
+|--------|-----------|
+| `person_id` | TEXT NOT NULL |
+| `email` | TEXT NOT NULL COLLATE NOCASE |
+| `is_primary` | INTEGER NOT NULL DEFAULT 0 |
+| `added_at` | TEXT NOT NULL |
+| `id` | TEXT PRIMARY KEY |
+| `meeting_id` | TEXT NOT NULL |
+| `email_signal_id` | TEXT NOT NULL |
+| `thread_id` | TEXT |
+| `correlated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `actions_extracted` | TEXT |
+| `email_id` | TEXT PRIMARY KEY |
+| `thread_id` | TEXT |
+| `sender_email` | TEXT |
+| `sender_name` | TEXT |
+| `subject` | TEXT |
+| `snippet` | TEXT |
+| `priority` | TEXT |
+| `is_unread` | INTEGER DEFAULT 1 |
+| `received_at` | TEXT |
+| `enrichment_state` | TEXT DEFAULT 'pending' CHECK(enrichment_state IN ('pending', 'enriching', 'enriched', 'failed')) |
+| `enrichment_attempts` | INTEGER DEFAULT 0 |
+| `last_enrichment_at` | TEXT |
+| `last_seen_at` | TEXT |
+| `resolved_at` | TEXT |
+| `entity_id` | TEXT |
+| `entity_type` | TEXT |
+| `contextual_summary` | TEXT |
+| `sentiment` | TEXT |
+| `urgency` | TEXT |
+| `user_is_last_sender` | INTEGER DEFAULT 0 |
+| `last_sender_email` | TEXT |
+| `message_count` | INTEGER DEFAULT 1 |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `email_id` | TEXT PRIMARY KEY |
+| `thread_id` | TEXT |
+| `sender_email` | TEXT |
+| `sender_name` | TEXT |
+| `subject` | TEXT |
+| `snippet` | TEXT |
+- `relevance_score` *(added in 035_email_relevance_score)*
+- `score_reason` *(added in 035_email_relevance_score)*
+- `pinned_at` *(added in 071_email_triage_columns)*
+- `commitments` *(added in 071_email_triage_columns)*
+- `questions` *(added in 071_email_triage_columns)*
+- `enriched_at` *(added in 082_email_enriched_at)*
+- `retry_batch_id` *(added in 100_email_retry_batch)*
+- `retry_started_at` *(added in 100_email_retry_batch)*
+- `is_noise` *(added in 102_email_is_noise)*
+- `auto_retry_count` *(added in 103_email_auto_retry_count)*
+- `is_noise` *(added in 104_email_is_noise_defensive)*
+- `to_recipients` *(added in 119_email_to_cc)*
+- `cc_recipients` *(added in 119_email_to_cc)*
+
+**Indexes:** idx_emails_enriched_at, idx_emails_enrichment, idx_emails_entity, idx_emails_is_noise, idx_emails_last_seen, idx_emails_priority_resolved, idx_emails_relevance, idx_emails_resolved, idx_emails_thread_id, idx_person_emails_email, idx_post_meeting_emails_meeting
+
+---
+
+### `emails_new`
+
+**Created in:** `097_email_pending_retry_state`
+
+| Column | Definition |
+|--------|-----------|
+| `email_id` | TEXT PRIMARY KEY |
+| `thread_id` | TEXT |
+| `sender_email` | TEXT |
+| `sender_name` | TEXT |
+| `subject` | TEXT |
+| `snippet` | TEXT |
+| `priority` | TEXT |
+| `is_unread` | INTEGER DEFAULT 1 |
+| `received_at` | TEXT |
+| `enrichment_state` | TEXT DEFAULT 'pending' CHECK(enrichment_state IN ('pending', 'pending_retry', 'enriching', 'enriched', 'failed')) |
+| `enrichment_attempts` | INTEGER DEFAULT 0 |
+| `last_enrichment_at` | TEXT |
+| `enriched_at` | DATETIME |
+| `last_seen_at` | TEXT |
+| `resolved_at` | TEXT |
+| `entity_id` | TEXT |
+| `entity_type` | TEXT |
+| `contextual_summary` | TEXT |
+| `sentiment` | TEXT |
+| `urgency` | TEXT |
+| `user_is_last_sender` | INTEGER DEFAULT 0 |
+| `last_sender_email` | TEXT |
+| `message_count` | INTEGER DEFAULT 1 |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `relevance_score` | REAL |
+| `score_reason` | TEXT |
+| `pinned_at` | TEXT |
+| `commitments` | TEXT |
+| `questions` | TEXT |
+
+---
+
+### `enrichment_log`
+
+**Created in:** `016_clay_enrichment`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL,        -- 'person' | 'account' |
+| `entity_id` | TEXT NOT NULL |
+| `source` | TEXT NOT NULL,             -- 'clay' | 'gravatar' | 'ai' | 'user' |
+| `event_type` | TEXT NOT NULL DEFAULT 'enrichment',  -- 'enrichment' | 'signal' |
+| `signal_type` | TEXT,                 -- 'title_change' | 'company_change' | null |
+| `fields_updated` | TEXT,             -- JSON array of field names |
+| `raw_payload` | TEXT,                -- full response for debugging |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+**Indexes:** idx_enrichment_log_entity, idx_enrichment_log_recent
+
+---
+
+### `entities`
+
+**Created in:** `001_baseline`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `name` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `tracker_path` | TEXT |
+| `updated_at` | TEXT NOT NULL |
+| `meeting_id` | TEXT NOT NULL |
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `meeting_id` |  TEXT NOT NULL REFERENCES meetings_history(id) ON DELETE CASCADE |
+| `entity_id` |   TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `meeting_id` |  TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE |
+| `entity_id` |   TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `owner_type` |    TEXT NOT NULL CHECK (owner_type IN ('meeting', 'email', 'email_thread')) |
+| `owner_id` |      TEXT NOT NULL |
+| `entity_id` |     TEXT NOT NULL |
+| `entity_type` |   TEXT NOT NULL |
+| `role` |          TEXT NOT NULL CHECK (role IN ('primary', 'related', 'auto_suggested')) |
+| `source` |        TEXT NOT NULL,  -- 'rule:<id>' | 'user' | 'inherited_from_thread' | 'inherited_from_series' | 'legacy' |
+| `rule_id` |       TEXT |
+| `confidence` |    REAL |
+| `evidence_json` | TEXT |
+| `graph_version` | INTEGER NOT NULL |
+| `created_at` |    TEXT NOT NULL |
+- `confidence` *(added in 095_meeting_entities_confidence)*
+- `is_primary` *(added in 095_meeting_entities_confidence)*
+
+**Indexes:** idx_entities_type, idx_meeting_entities_entity
+
+---
+
+### `entity_assessment`
+
+**Created in:** `055_schema_decomposition`
+
+| Column | Definition |
+|--------|-----------|
+| `entity_id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `enriched_at` | TEXT |
+| `source_file_count` | INTEGER DEFAULT 0 |
+| `executive_assessment` | TEXT |
+| `risks_json` | TEXT |
+| `recent_wins_json` | TEXT |
+| `current_state_json` | TEXT |
+| `stakeholder_insights_json` | TEXT |
+| `next_meeting_readiness_json` | TEXT |
+| `company_context_json` | TEXT |
+| `value_delivered` | TEXT |
+| `success_metrics` | TEXT |
+| `open_commitments` | TEXT |
+| `relationship_depth` | TEXT |
+| `user_relevance_weight` | REAL DEFAULT 1.0 |
+| `consistency_status` | TEXT |
+| `consistency_findings_json` | TEXT |
+| `consistency_checked_at` | TEXT |
+| `entity_id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `enriched_at` | TEXT |
+| `source_file_count` | INTEGER DEFAULT 0 |
+| `executive_assessment` | TEXT |
+| `risks_json` | TEXT |
+| `recent_wins_json` | TEXT |
+| `current_state_json` | TEXT |
+| `stakeholder_insights_json` | TEXT |
+| `next_meeting_readiness_json` | TEXT |
+| `company_context_json` | TEXT |
+| `value_delivered` | TEXT |
+| `success_metrics` | TEXT |
+| `open_commitments` | TEXT |
+| `relationship_depth` | TEXT |
+| `health_json` | TEXT |
+| `org_health_json` | TEXT |
+| `user_relevance_weight` | REAL DEFAULT 1.0 |
+| `consistency_status` | TEXT |
+| `consistency_findings_json` | TEXT |
+| `consistency_checked_at` | TEXT |
+- `portfolio_json` *(added in 057_intelligence_db_columns)*
+- `network_json` *(added in 057_intelligence_db_columns)*
+- `user_edits_json` *(added in 057_intelligence_db_columns)*
+- `source_manifest_json` *(added in 057_intelligence_db_columns)*
+- `dimensions_json` *(added in 060_intelligence_dimensions)*
+- `pull_quote` *(added in 078_pull_quote_column)*
+- `health_outlook_signals_json` *(added in 096_health_outlook_signals)*
+
+**Indexes:** idx_entity_assessment_type
+
+---
+
+### `entity_assessment_new`
+
+**Created in:** `058_health_schema_evolution`
+
+| Column | Definition |
+|--------|-----------|
+| `entity_id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `enriched_at` | TEXT |
+| `source_file_count` | INTEGER DEFAULT 0 |
+| `executive_assessment` | TEXT |
+| `risks_json` | TEXT |
+| `recent_wins_json` | TEXT |
+| `current_state_json` | TEXT |
+| `stakeholder_insights_json` | TEXT |
+| `next_meeting_readiness_json` | TEXT |
+| `company_context_json` | TEXT |
+| `value_delivered` | TEXT |
+| `success_metrics` | TEXT |
+| `open_commitments` | TEXT |
+| `relationship_depth` | TEXT |
+| `health_json` | TEXT |
+| `org_health_json` | TEXT |
+| `user_relevance_weight` | REAL DEFAULT 1.0 |
+| `consistency_status` | TEXT |
+| `consistency_findings_json` | TEXT |
+| `consistency_checked_at` | TEXT |
+| `portfolio_json` | TEXT |
+| `network_json` | TEXT |
+| `user_edits_json` | TEXT |
+| `source_manifest_json` | TEXT |
+| `entity_id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `enriched_at` | TEXT |
+| `source_file_count` | INTEGER DEFAULT 0 |
+| `executive_assessment` | TEXT |
+| `risks_json` | TEXT |
+| `recent_wins_json` | TEXT |
+| `current_state_json` | TEXT |
+| `stakeholder_insights_json` | TEXT |
+| `next_meeting_readiness_json` | TEXT |
+| `company_context_json` | TEXT |
+| `value_delivered` | TEXT |
+| `success_metrics` | TEXT |
+| `open_commitments` | TEXT |
+| `relationship_depth` | TEXT |
+
+---
+
+### `entity_context_entries`
+
+**Created in:** `051_entity_context_entries`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL |
+| `entity_id` | TEXT NOT NULL |
+| `title` | TEXT NOT NULL |
+| `content` | TEXT NOT NULL |
+| `embedding` | BLOB |
+| `created_at` | DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP |
+| `updated_at` | DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP |
+
+---
+
+### `entity_email_cadence`
+
+**Created in:** `028_entity_email_cadence`
+
+| Column | Definition |
+|--------|-----------|
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL |
+| `period` | TEXT NOT NULL |
+| `message_count` | INTEGER NOT NULL DEFAULT 0 |
+| `rolling_avg` | REAL NOT NULL DEFAULT 0.0 |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `entity_feedback_events`
+
+**Created in:** `084_feedback_events`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT |
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `field_key` | TEXT NOT NULL |
+| `item_key` | TEXT |
+| `feedback_type` | TEXT NOT NULL |
+| `source_system` | TEXT |
+| `source_kind` | TEXT |
+| `previous_value` | TEXT |
+| `corrected_value` | TEXT |
+| `reason` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+**Indexes:** idx_feedback_entity
+
+---
+
+### `entity_graph_version`
+
+**Created in:** `113_entity_graph_version`
+
+| Column | Definition |
+|--------|-----------|
+| `id` |      INTEGER PRIMARY KEY CHECK (id = 1) |
+| `version` | INTEGER NOT NULL |
+- `last_migration_sweep_at` *(added in 121_entity_graph_sweep_state)*
+
+---
+
+### `entity_intelligence`
+
+**Created in:** `001_baseline`
+
+| Column | Definition |
+|--------|-----------|
+| `entity_id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL DEFAULT 'account' |
+| `enriched_at` | TEXT |
+| `source_file_count` | INTEGER DEFAULT 0 |
+| `executive_assessment` | TEXT |
+| `risks_json` | TEXT |
+| `recent_wins_json` | TEXT |
+| `current_state_json` | TEXT |
+| `stakeholder_insights_json` | TEXT |
+| `next_meeting_readiness_json` | TEXT |
+| `company_context_json` | TEXT |
+- `coherence_score` *(added in 040_entity_quality)*
+- `coherence_flagged` *(added in 040_entity_quality)*
+- `health_score` *(added in 045_intelligence_report_fields)*
+- `health_trend` *(added in 045_intelligence_report_fields)*
+- `value_delivered` *(added in 045_intelligence_report_fields)*
+- `success_metrics` *(added in 045_intelligence_report_fields)*
+- `open_commitments` *(added in 045_intelligence_report_fields)*
+- `relationship_depth` *(added in 045_intelligence_report_fields)*
+- `user_relevance_weight` *(added in 047_entity_intel_user_relevance)*
+- `consistency_status` *(added in 054_intelligence_consistency_metadata)*
+- `consistency_findings_json` *(added in 054_intelligence_consistency_metadata)*
+- `consistency_checked_at` *(added in 054_intelligence_consistency_metadata)*
+
+---
+
+### `entity_linking_evaluations`
+
+**Created in:** `112_entity_linking_evaluations`
+
+| Column | Definition |
+|--------|-----------|
+| `id` |            INTEGER PRIMARY KEY |
+| `owner_type` |    TEXT NOT NULL |
+| `owner_id` |      TEXT NOT NULL |
+| `link_trigger` |  TEXT NOT NULL,  -- CalendarPoll | EmailFetch | CalendarUserEdit | ... |
+| `rule_id` |       TEXT,           -- matched rule id, e.g. 'P4a'; NULL if no primary chosen |
+| `entity_id` |     TEXT,           -- chosen primary entity; NULL if primary=none |
+| `entity_type` |   TEXT |
+| `role` |          TEXT |
+| `graph_version` | INTEGER NOT NULL |
+| `evidence_json` | TEXT NOT NULL,  -- full candidate set, phase outputs, rejected reasons |
+| `created_at` |    TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `entity_members`
+
+**Created in:** `055_schema_decomposition`
+
+| Column | Definition |
+|--------|-----------|
+| `entity_id` | TEXT NOT NULL |
+| `person_id` | TEXT NOT NULL |
+| `relationship_type` | TEXT DEFAULT 'associated' |
+
+**Indexes:** idx_entity_members_person
+
+---
+
+### `entity_people`
+
+**Created in:** `001_baseline`
+
+| Column | Definition |
+|--------|-----------|
+| `entity_id` | TEXT NOT NULL |
+| `person_id` | TEXT NOT NULL |
+| `relationship_type` | TEXT DEFAULT 'associated' |
+
+**Indexes:** idx_entity_people_person
+
+---
+
+### `entity_quality`
+
+**Created in:** `040_entity_quality`
+
+| Column | Definition |
+|--------|-----------|
+| `entity_id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL |
+| `quality_alpha` | REAL NOT NULL DEFAULT 1.0 |
+| `quality_beta` | REAL NOT NULL DEFAULT 1.0 |
+| `quality_score` | REAL NOT NULL DEFAULT 0.5 |
+| `last_enrichment_at` | TEXT |
+| `correction_count` | INTEGER NOT NULL DEFAULT 0 |
+| `coherence_retry_count` | INTEGER NOT NULL DEFAULT 0 |
+| `coherence_window_start` | TEXT |
+| `coherence_blocked` | INTEGER NOT NULL DEFAULT 0 |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `entity_id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL |
+| `quality_alpha` | REAL NOT NULL DEFAULT 1.0 |
+| `quality_beta` | REAL NOT NULL DEFAULT 1.0 |
+| `quality_score` | REAL NOT NULL DEFAULT 0.5 |
+| `last_enrichment_at` | TEXT |
+| `correction_count` | INTEGER NOT NULL DEFAULT 0 |
+| `coherence_retry_count` | INTEGER NOT NULL DEFAULT 0 |
+| `coherence_window_start` | TEXT |
+| `coherence_blocked` | INTEGER NOT NULL DEFAULT 0 |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `health_score` | REAL |
+| `health_trend` | TEXT |
+| `coherence_score` | REAL |
+| `coherence_flagged` | INTEGER DEFAULT 0 |
+
+**Indexes:** idx_entity_quality_blocked, idx_entity_quality_score
+
+---
+
+### `entity_quality_new`
+
+**Created in:** `055_schema_decomposition`
+
+| Column | Definition |
+|--------|-----------|
+| `entity_id` | TEXT PRIMARY KEY |
+| `entity_type` | TEXT NOT NULL |
+| `quality_alpha` | REAL NOT NULL DEFAULT 1.0 |
+| `quality_beta` | REAL NOT NULL DEFAULT 1.0 |
+| `quality_score` | REAL NOT NULL DEFAULT 0.5 |
+| `last_enrichment_at` | TEXT |
+| `correction_count` | INTEGER NOT NULL DEFAULT 0 |
+| `coherence_retry_count` | INTEGER NOT NULL DEFAULT 0 |
+| `coherence_window_start` | TEXT |
+| `coherence_blocked` | INTEGER NOT NULL DEFAULT 0 |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `updated_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `health_score` | REAL |
+| `health_trend` | TEXT |
+| `coherence_score` | REAL |
+| `coherence_flagged` | INTEGER DEFAULT 0 |
+
+---
+
+### `entity_resolution_feedback`
+
+**Created in:** `019_correction_learning`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `meeting_id` | TEXT NOT NULL |
+| `old_entity_id` | TEXT |
+| `old_entity_type` | TEXT |
+| `new_entity_id` | TEXT |
+| `new_entity_type` | TEXT |
+| `signal_source` | TEXT |
+| `corrected_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+**Indexes:** idx_feedback_meeting, idx_feedback_source
+
+---
+
+### `glean_document_cache`
+
+**Created in:** `052_glean_document_cache`
+
+| Column | Definition |
+|--------|-----------|
+| `cache_key` |   TEXT PRIMARY KEY |
+| `kind` |        TEXT NOT NULL DEFAULT 'document' |
+| `content` |     TEXT NOT NULL |
+| `cached_at` |   TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `gravatar_cache`
+
+**Created in:** `015_gravatar_cache`
+
+| Column | Definition |
+|--------|-----------|
+| `email` | TEXT PRIMARY KEY |
+| `avatar_url` | TEXT |
+| `display_name` | TEXT |
+| `bio` | TEXT |
+| `location` | TEXT |
+| `company` | TEXT |
+| `job_title` | TEXT |
+| `interests_json` | TEXT |
+| `has_gravatar` | INTEGER NOT NULL DEFAULT 0 |
+| `fetched_at` | TEXT NOT NULL |
+| `person_id` | TEXT REFERENCES people(id) ON DELETE SET NULL |
+
+**Indexes:** idx_gravatar_cache_person_id
+
+---
+
+### `health_recompute_pending`
+
+**Created in:** `101_risk_briefing_attempt_and_recompute_pending`
+
+| Column | Definition |
+|--------|-----------|
+| `account_id` |    TEXT PRIMARY KEY |
+| `requested_at` |  TEXT NOT NULL |
+
+---
+
+### `health_score_history`
+
+**Created in:** `072_health_score_history`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT |
+| `account_id` | TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE |
+| `score` | REAL NOT NULL |
+| `band` | TEXT NOT NULL |
+| `confidence` | REAL NOT NULL |
+| `computed_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `hygiene_actions_log`
+
+**Created in:** `029_hygiene_actions_log`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `source_signal_id` | TEXT |
+| `action_type` | TEXT NOT NULL |
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL DEFAULT '' |
+| `confidence` | REAL NOT NULL DEFAULT 0.0 |
+| `result` | TEXT NOT NULL DEFAULT '' |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `init_tasks`
+
+**Created in:** `081_init_tasks`
+
+| Column | Definition |
+|--------|-----------|
+| `task_name` | TEXT PRIMARY KEY |
+| `completed_at` | TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP |
+
+**Indexes:** idx_init_tasks_completed_at
+
+---
+
+### `intelligence_feedback`
+
+**Created in:** `062_intelligence_feedback`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL |
+| `field` | TEXT NOT NULL |
+| `feedback_type` | TEXT NOT NULL CHECK(feedback_type IN ('positive', 'negative', 'replaced')) |
+| `previous_value` | TEXT |
+| `context` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `id` | TEXT PRIMARY KEY |
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL |
+| `field` | TEXT NOT NULL |
+| `feedback_type` | TEXT NOT NULL CHECK(feedback_type IN ('positive', 'negative', 'replaced')) |
+| `previous_value` | TEXT |
+| `context` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+**Indexes:** idx_intelligence_feedback_entity
+
+---
+
+### `intelligence_feedback_new`
+
+**Created in:** `067_feedback_unique_constraint`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL |
+| `field` | TEXT NOT NULL |
+| `feedback_type` | TEXT NOT NULL CHECK(feedback_type IN ('positive', 'negative', 'replaced')) |
+| `previous_value` | TEXT |
+| `context` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `lifecycle_changes`
+
+**Created in:** `075_v110_lifecycle_products_provenance`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT |
+| `account_id` | TEXT NOT NULL REFERENCES accounts(id) |
+| `previous_lifecycle` | TEXT |
+| `new_lifecycle` | TEXT NOT NULL |
+| `previous_stage` | TEXT |
+| `new_stage` | TEXT |
+| `previous_contract_end` | TEXT |
+| `new_contract_end` | TEXT |
+| `source` | TEXT NOT NULL |
+| `confidence` | REAL NOT NULL |
+| `evidence` | TEXT |
+| `health_score_before` | REAL |
+| `health_score_after` | REAL |
+| `user_response` | TEXT NOT NULL DEFAULT 'pending' |
+| `response_notes` | TEXT |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+| `reviewed_at` | TEXT |
+
+---
+
+### `linear_entity_links`
+
+**Created in:** `041_linear_entity_links`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))) |
+| `linear_project_id` | TEXT NOT NULL |
+| `entity_id` | TEXT NOT NULL |
+| `entity_type` | TEXT NOT NULL CHECK (entity_type IN ('account', 'project', 'person')) |
+| `confirmed` | INTEGER NOT NULL DEFAULT 0 |
+| `created_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `linear_issues`
+
+**Created in:** `024_linear_sync`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `identifier` | TEXT NOT NULL |
+| `title` | TEXT NOT NULL |
+| `state_name` | TEXT |
+| `state_type` | TEXT |
+| `priority` | INTEGER |
+| `priority_label` | TEXT |
+| `project_id` | TEXT |
+| `project_name` | TEXT |
+| `due_date` | TEXT |
+| `url` | TEXT |
+| `synced_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+**Indexes:** idx_linear_issues_project, idx_linear_issues_state
+
+---
+
+### `linear_projects`
+
+**Created in:** `024_linear_sync`
+
+| Column | Definition |
+|--------|-----------|
+| `id` | TEXT PRIMARY KEY |
+| `name` | TEXT NOT NULL |
+| `state` | TEXT |
+| `url` | TEXT |
+| `synced_at` | TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `linked_entities_raw`
+
+**Created in:** `110_linked_entities_raw`
+
+| Column | Definition |
+|--------|-----------|
+| `owner_type` |    TEXT NOT NULL CHECK (owner_type IN ('meeting', 'email', 'email_thread')) |
+| `owner_id` |      TEXT NOT NULL |
+| `entity_id` |     TEXT NOT NULL |
+| `entity_type` |   TEXT NOT NULL |
+| `role` |          TEXT NOT NULL CHECK (role IN ('primary', 'related', 'auto_suggested')) |
+| `source` |        TEXT NOT NULL,  -- 'rule:<id>' | 'user' | 'inherited_from_thread' | 'inherited_from_series' | 'legacy' |
+| `rule_id` |       TEXT |
+| `confidence` |    REAL |
+| `evidence_json` | TEXT |
+| `graph_version` | INTEGER NOT NULL |
+| `created_at` |    TEXT NOT NULL |

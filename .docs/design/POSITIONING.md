@@ -1,7 +1,7 @@
 # DailyOS — Positioning & Narrative Framework
 
 > A GTM playbook for turning philosophy into market narrative.
-> For the underlying beliefs that inform this document, see `/design/PHILOSOPHY.md` (founding manifesto) and `PRODUCT-PRINCIPLES.md` (internal decision guide).
+> For the underlying beliefs that inform this document, see `/design/MISSION.md` (team mission), `/design/PHILOSOPHY.md` (founding manifesto), and `PRODUCT-PRINCIPLES.md` (internal decision guide).
 
 ---
 
