@@ -203,15 +203,29 @@ fn apply_pragmas(
     Ok(())
 }
 
-/// Open a fresh encrypted connection on the same validation semantics as
-/// `ActionDb::open` (key, verification query, WAL/busy/sync setup).
+/// Open a fresh encrypted connection on the same initialization semantics as
+/// `ActionDb::open` (key, verification query, WAL/busy/sync setup, migrations).
 fn open_encrypted_fresh(path: &str, hex_key: &str, read_only: bool) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
-    conn.execute_batch(&crate::db::encryption::key_to_pragma(hex_key))?;
+    apply_pragmas(&conn, read_only, hex_key)?;
     conn.query_row("SELECT count(*) FROM sqlite_master LIMIT 1", [], |row| {
         row.get::<_, i64>(0)
     })?;
-    apply_pragmas(&conn, read_only, hex_key)?;
+    if !read_only {
+        let has_accounts_table = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'accounts' LIMIT 1",
+                [],
+                |_| Ok(()),
+            )
+            .is_ok();
+        if !has_accounts_table {
+            crate::migrations::run_migrations(&conn).map_err(|e| {
+                rusqlite::Error::InvalidParameterName(format!("migration failed: {e}"))
+            })?;
+            conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        }
+    }
     Ok(conn)
 }
 
@@ -231,35 +245,19 @@ impl DbService {
 
     /// Open a DbService at an explicit path. Encrypted via SQLCipher.
     pub async fn open_at(path: PathBuf) -> Result<Arc<Self>, DbError> {
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent).map_err(DbError::CreateDir)?;
-            }
-        }
+        let path_for_writer = path.clone();
+        let path_for_readers = path.to_string_lossy().to_string();
 
-        let hex_key =
-            crate::db::encryption::get_or_create_db_key(&path).map_err(DbError::Encryption)?;
-
-        if path.exists() && crate::db::encryption::is_database_plaintext(&path) {
-            log::info!("DbService: detected plaintext DB, migrating to encrypted...");
-            crate::db::encryption::migrate_to_encrypted(&path, &hex_key)
-                .map_err(DbError::Encryption)?;
-        }
-
-        let path_str = path.to_string_lossy().to_string();
-        let path_for_readers = path_str.clone();
-        let key_for_readers = hex_key.clone();
-
-        // Build the writer on a blocking thread so open + migrations
-        // don't stall the Tokio runtime.
-        let writer = tokio::task::spawn_blocking(move || -> Result<Connection, DbError> {
-            let conn = Connection::open(&path_str)?;
-            apply_pragmas(&conn, false, &hex_key)?;
-            crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
-            Ok(conn)
+        // Build the writer on a blocking thread so filesystem checks,
+        // Keychain access, plaintext migration, open, and migrations do not
+        // stall the Tokio runtime.
+        let (writer, hex_key) = tokio::task::spawn_blocking(move || {
+            crate::db::ActionDb::open_encrypted_connection(path_for_writer)
         })
         .await
         .map_err(|e| DbError::Migration(format!("writer spawn join: {e}")))??;
+
+        let key_for_readers = hex_key.clone();
 
         // Readers: no migrations, just pragmas + query_only.
         let mut readers = Vec::with_capacity(NUM_READERS);
@@ -599,5 +597,25 @@ mod tests {
         );
 
         writer_task.await.expect("writer task").expect("writer task error");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn open_fresh_serialized_initializes_schema_for_new_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let service_path = dir.path().join("service.db");
+        let fresh_path = dir.path().join("fresh_missing_schema.db");
+
+        let svc = DbService::open_at(service_path).await.expect("open svc");
+        let hex_key = crate::db::encryption::get_or_create_db_key(&fresh_path).expect("db key");
+
+        let conn = svc
+            .open_fresh_serialized(fresh_path, hex_key)
+            .expect("fresh serialized open");
+
+        let account_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM accounts", [], |row| row.get(0))
+            .expect("accounts table should exist");
+        assert_eq!(account_count, 0);
     }
 }

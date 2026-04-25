@@ -398,20 +398,16 @@ pub enum EmailsResult {
 /// Get all emails
 #[tauri::command]
 pub fn get_all_emails(state: State<'_, Arc<AppState>>) -> EmailsResult {
-    // Get config
-    let config = match state.config.read().clone() {
-        Some(c) => c,
-        None => {
-            return EmailsResult::Error {
-                message: "No configuration loaded".to_string(),
-            }
-        }
-    };
-
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-
-    match load_emails_json(&today_dir) {
+    match state.with_db_read(|db| {
+        db.get_all_active_emails()
+            .map(|emails| {
+                emails
+                    .into_iter()
+                    .map(db_email_to_email)
+                    .collect::<Vec<_>>()
+            })
+            .map_err(|e| e.to_string())
+    }) {
         Ok(emails) => {
             if emails.is_empty() {
                 EmailsResult::NotFound {
@@ -421,9 +417,50 @@ pub fn get_all_emails(state: State<'_, Arc<AppState>>) -> EmailsResult {
                 EmailsResult::Success { data: emails }
             }
         }
-        Err(e) => EmailsResult::NotFound {
-            message: format!("No emails: {}", e),
+        Err(e) => EmailsResult::Error {
+            message: format!("Failed to load emails from database: {}", e),
         },
+    }
+}
+
+fn db_email_to_email(dbe: crate::db::DbEmail) -> crate::types::Email {
+    crate::types::Email {
+        id: dbe.email_id,
+        sender: dbe.sender_name.unwrap_or_default(),
+        sender_email: dbe.sender_email.unwrap_or_default(),
+        subject: dbe.subject.unwrap_or_default(),
+        snippet: dbe.snippet,
+        priority: match dbe.priority.as_deref() {
+            Some("high") => crate::types::EmailPriority::High,
+            Some("low") => crate::types::EmailPriority::Low,
+            _ => crate::types::EmailPriority::Medium,
+        },
+        is_unread: dbe.is_unread,
+        avatar_url: None,
+        summary: dbe.contextual_summary,
+        recommended_action: None,
+        conversation_arc: None,
+        email_type: None,
+        commitments: dbe
+            .commitments
+            .as_deref()
+            .and_then(|c| serde_json::from_str::<Vec<String>>(c).ok())
+            .unwrap_or_default(),
+        questions: dbe
+            .questions
+            .as_deref()
+            .and_then(|q| serde_json::from_str::<Vec<String>>(q).ok())
+            .unwrap_or_default(),
+        sentiment: dbe.sentiment,
+        urgency: dbe.urgency,
+        entity_id: dbe.entity_id,
+        entity_type: dbe.entity_type,
+        entity_name: None,
+        relevance_score: dbe.relevance_score,
+        score_reason: dbe.score_reason,
+        pinned_at: dbe.pinned_at,
+        tracked_commitments: Vec::new(),
+        meeting_linked: None,
     }
 }
 
@@ -454,7 +491,12 @@ pub async fn update_email_entity(
     let et_type = entity_type.clone();
     state
         .db_write(move |db| {
-            crate::services::emails::update_email_entity(db, &eid, et_id.as_deref(), et_type.as_deref())
+            crate::services::emails::update_email_entity(
+                db,
+                &eid,
+                et_id.as_deref(),
+                et_type.as_deref(),
+            )
         })
         .await?;
 
@@ -523,7 +565,9 @@ pub async fn dismiss_gone_quiet(
 pub async fn get_email_sync_status(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::db::EmailSyncStats, String> {
-    state.db_read(|db| db.get_email_sync_stats()).await
+    state
+        .db_read(|db| db.get_email_sync_stats().map_err(|e| e.to_string()))
+        .await
 }
 
 /// Get emails linked to a specific entity for entity detail pages (I368 AC5).
@@ -596,6 +640,7 @@ pub async fn list_permanently_failed_emails(
                 crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES,
                 20,
             )
+            .map_err(|e| e.to_string())
         })
         .await
 }
@@ -610,7 +655,7 @@ pub async fn skip_failed_emails(
     email_ids: Vec<String>,
 ) -> Result<usize, String> {
     state
-        .db_write(move |db| db.skip_failed_emails(&email_ids))
+        .db_write(move |db| db.skip_failed_emails(&email_ids).map_err(|e| e.to_string()))
         .await
 }
 
@@ -970,10 +1015,7 @@ pub fn set_personality(
 
 /// Set UI text scale percentage (DOS-45)
 #[tauri::command]
-pub fn set_text_scale(
-    percent: u32,
-    state: State<'_, Arc<AppState>>,
-) -> Result<Config, String> {
+pub fn set_text_scale(percent: u32, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
     crate::services::settings::set_text_scale(percent, &state)
 }
 
@@ -1030,10 +1072,7 @@ pub fn set_hygiene_config(
 ///
 /// Valid tiers: 50000, 100000, 250000.
 #[tauri::command]
-pub fn set_daily_ai_budget(
-    budget: u32,
-    state: State<'_, Arc<AppState>>,
-) -> Result<Config, String> {
+pub fn set_daily_ai_budget(budget: u32, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
     crate::services::settings::set_daily_ai_budget(budget, &state)
 }
 

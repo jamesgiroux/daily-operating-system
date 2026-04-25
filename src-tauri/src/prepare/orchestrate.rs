@@ -4,7 +4,7 @@
 //! Each orchestrator is async (for Google API calls) and writes a directive JSON
 //! that the Rust delivery pipeline (deliver.rs) consumes.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use chrono::{Datelike, NaiveDate, Utc};
@@ -114,7 +114,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 4: Fetch and classify emails
     let customer_domains = extract_customer_domains(&meetings_by_type);
     // DOS-176: use merged email priority keywords (base + preset) from cached config
-    let preset_email_keywords: Vec<String> = state.get_merged_signal_config().email_priority_keywords;
+    let preset_email_keywords: Vec<String> =
+        state.get_merged_signal_config().email_priority_keywords;
     // I374: Load dismissed domains for relevance learning penalty
     let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
@@ -1435,7 +1436,8 @@ pub async fn refresh_emails_with_retry_batch(
     }
 
     // DOS-176: use merged email priority keywords (base + preset) from cached config
-    let preset_email_keywords: Vec<String> = state.get_merged_signal_config().email_priority_keywords;
+    let preset_email_keywords: Vec<String> =
+        state.get_merged_signal_config().email_priority_keywords;
     // I374: Load dismissed domains for relevance learning penalty
     let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
@@ -1605,9 +1607,7 @@ pub async fn refresh_emails_with_retry_batch(
                     );
                     return Err(ExecutionError::ScriptFailed {
                         code: 1,
-                        stderr: format!(
-                            "Email retry batch {batch_id} finalize failed: {e}"
-                        ),
+                        stderr: format!("Email retry batch {batch_id} finalize failed: {e}"),
                     });
                 }
             }
@@ -2196,7 +2196,10 @@ async fn fetch_and_classify_week(
 /// `(account_domains, person_domains)` lowercase sets.
 fn load_tracked_domains(db: &crate::db::ActionDb) -> (HashSet<String>, HashSet<String>) {
     let mut account_domains: HashSet<String> = HashSet::new();
-    if let Ok(mut stmt) = db.conn_ref().prepare("SELECT DISTINCT domain FROM account_domains") {
+    if let Ok(mut stmt) = db
+        .conn_ref()
+        .prepare("SELECT DISTINCT domain FROM account_domains")
+    {
         if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
             for d in rows.flatten() {
                 let d = d.trim().to_lowercase();
@@ -2496,7 +2499,11 @@ fn extract_recipient_addresses(header: &str) -> Option<String> {
             let part = part.trim();
             if let (Some(lt), Some(gt)) = (part.find('<'), part.rfind('>')) {
                 let addr = part[lt + 1..gt].trim().to_lowercase();
-                if addr.contains('@') { Some(addr) } else { None }
+                if addr.contains('@') {
+                    Some(addr)
+                } else {
+                    None
+                }
             } else if part.contains('@') {
                 Some(part.to_lowercase())
             } else {
@@ -2504,7 +2511,11 @@ fn extract_recipient_addresses(header: &str) -> Option<String> {
             }
         })
         .collect();
-    if addrs.is_empty() { None } else { Some(addrs.join(",")) }
+    if addrs.is_empty() {
+        None
+    } else {
+        Some(addrs.join(","))
+    }
 }
 
 /// I318: Track thread positions from fetched high-priority emails.
@@ -2980,7 +2991,7 @@ fn build_week_overview(directive: &Value, data_dir: &Path) -> Value {
         days.push(build_week_day(&day_date, day_name, &day_meetings, data_dir));
     }
 
-    let action_summary = build_action_summary(directive, data_dir);
+    let action_summary = build_action_summary(directive);
     let focus_areas = build_focus_areas(directive);
     let time_blocks = build_time_blocks(directive);
     let readiness_checks = build_readiness_checks(directive, data_dir);
@@ -3081,9 +3092,9 @@ fn resolve_prep_status(meeting_id: &str, meeting_type: &str, data_dir: &Path) ->
     }
 }
 
-fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
-    let actions = directive.get("actions").cloned().unwrap_or(json!({}));
-    let overdue = actions
+fn build_action_summary(directive: &Value) -> Value {
+    let mut actions = directive.get("actions").cloned().unwrap_or(json!({}));
+    let mut overdue = actions
         .get("overdue")
         .and_then(|v| v.as_array())
         .cloned()
@@ -3095,23 +3106,20 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         .cloned()
         .unwrap_or_default();
 
-    // Fallback to actions.json
     if overdue.is_empty() && this_week.is_empty() {
-        let actions_path = data_dir.join("actions.json");
-        if let Ok(content) = std::fs::read_to_string(&actions_path) {
-            if let Ok(today_actions) = serde_json::from_str::<Value>(&content) {
-                if let Some(all) = today_actions.get("actions").and_then(|v| v.as_array()) {
-                    this_week = all
-                        .iter()
-                        .filter(|a| {
-                            !a.get("isOverdue")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false)
-                        })
-                        .cloned()
-                        .collect();
-                }
-            }
+        if let Ok(db) = crate::db::ActionDb::open() {
+            actions = actions::fetch_actions_from_db(&db);
+            overdue = actions
+                .get("overdue")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            this_week = actions
+                .get("thisWeek")
+                .or_else(|| actions.get("this_week"))
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
         }
     }
 
@@ -3131,26 +3139,7 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         })
         .collect();
 
-    // Build title→id lookup from actions.json so week items link to real action IDs
-    let action_id_by_title: std::collections::HashMap<String, String> = {
-        let mut map = std::collections::HashMap::new();
-        let actions_path = data_dir.join("actions.json");
-        if let Ok(content) = std::fs::read_to_string(&actions_path) {
-            if let Ok(parsed) = serde_json::from_str::<Value>(&content) {
-                if let Some(all) = parsed.get("actions").and_then(|v| v.as_array()) {
-                    for a in all {
-                        if let (Some(id), Some(title)) = (
-                            a.get("id").and_then(|v| v.as_str()),
-                            a.get("title").and_then(|v| v.as_str()),
-                        ) {
-                            map.insert(title.to_string(), id.to_string());
-                        }
-                    }
-                }
-            }
-        }
-        map
-    };
+    let action_id_by_title = build_action_id_lookup_from_db();
 
     let overdue_items: Vec<Value> = overdue
         .iter()
@@ -3221,6 +3210,29 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         "overdue": overdue_items,
         "dueThisWeekItems": due_this_week_items,
     })
+}
+
+fn build_action_id_lookup_from_db() -> HashMap<String, String> {
+    let Ok(db) = crate::db::ActionDb::open() else {
+        return HashMap::new();
+    };
+
+    let actions = actions::fetch_actions_from_db(&db);
+    let mut map = HashMap::new();
+    for bucket in ["overdue", "thisWeek", "this_week"] {
+        let Some(rows) = actions.get(bucket).and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for action in rows {
+            if let (Some(id), Some(title)) = (
+                action.get("id").and_then(|v| v.as_str()),
+                action.get("title").and_then(|v| v.as_str()),
+            ) {
+                map.insert(title.to_string(), id.to_string());
+            }
+        }
+    }
+    map
 }
 
 /// Build readiness checks: surfaces prep gaps, overdue actions, and stale contacts.
@@ -4040,7 +4052,6 @@ mod tests {
 
     #[test]
     fn test_readiness_checks_overdue_actions() {
-        let tmp = TempDir::new().unwrap();
         let directive = json!({
             "meetingsByDay": {},
             "actions": {
@@ -4051,7 +4062,7 @@ mod tests {
             }
         });
 
-        let checks = build_readiness_checks(&directive, tmp.path());
+        let checks = build_readiness_checks(&directive, Path::new(""));
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0]["checkType"], "overdue_action");
         assert!(checks[0]["message"]
@@ -4164,7 +4175,6 @@ mod tests {
 
     #[test]
     fn test_action_summary_includes_items() {
-        let tmp = TempDir::new().unwrap();
         let directive = json!({
             "actions": {
                 "overdue": [
@@ -4176,7 +4186,7 @@ mod tests {
             }
         });
 
-        let summary = build_action_summary(&directive, tmp.path());
+        let summary = build_action_summary(&directive);
         assert_eq!(summary["overdueCount"], 1);
         assert_eq!(summary["dueThisWeek"], 1);
 

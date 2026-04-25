@@ -3716,6 +3716,27 @@ pub async fn attach_meeting_transcript(
         let _ = crate::state::save_transcript_records(&guard);
     }
 
+    // Re-run entity linking with the post-transcript context. The calendar
+    // poller already ran the engine on first sync, but the transcript can
+    // surface new attendees or refine title/account inference. Best-effort:
+    // failures are logged but never block the transcript attachment.
+    if result.status == "success" {
+        match crate::services::entity_linking::calendar_adapter::evaluate_meeting(
+            state.clone(),
+            &meeting,
+            crate::services::entity_linking::Trigger::TranscriptIngest,
+        )
+        .await
+        {
+            Ok(_) => {}
+            Err(e) => log::warn!(
+                "entity_linking after transcript attach failed (non-fatal) for {}: {}",
+                meeting.id,
+                e
+            ),
+        }
+    }
+
     Ok(result)
 }
 

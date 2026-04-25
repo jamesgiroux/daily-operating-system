@@ -1012,7 +1012,8 @@ pub fn update_email_entity(
     entity_id: Option<&str>,
     entity_type: Option<&str>,
 ) -> Result<(), String> {
-    db.update_email_entity(email_id, entity_id, entity_type)?;
+    db.update_email_entity(email_id, entity_id, entity_type)
+        .map_err(|e| e.to_string())?;
 
     let etype = entity_type.unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
@@ -1057,7 +1058,7 @@ pub fn dismiss_email_signal(db: &crate::db::ActionDb, signal_id: i64) -> Result<
 /// Sets `user_is_last_sender` and emits a `reply_debt_cleared` signal via the bus
 /// with propagation so downstream effects (health scoring, prep invalidation) fire.
 pub fn mark_reply_sent(db: &crate::db::ActionDb, email_id: &str) -> Result<(), String> {
-    let entity_info = db.mark_reply_sent(email_id)?;
+    let entity_info = db.mark_reply_sent(email_id).map_err(|e| e.to_string())?;
 
     // Emit engagement signal if the email is linked to an entity
     if let Some((entity_id, entity_type)) = entity_info {
@@ -1091,7 +1092,7 @@ pub async fn archive_email(state: &AppState, email_id: &str) -> Result<String, S
         .await?;
     state
         .db_write(move |db| {
-            db.archive_email(&eid)?;
+            db.archive_email(&eid).map_err(|e| e.to_string())?;
 
             let engine = crate::signals::propagation::PropagationEngine::default();
             let (entity_type, entity_id) = email_entity_context(db, &eid);
@@ -1128,7 +1129,9 @@ pub async fn unarchive_email(state: &AppState, email_id: &str) -> Result<(), Str
             move |db| db.get_thread_email_ids(&eid).map_err(|e| e.to_string())
         })
         .await?;
-    state.db_write(move |db| db.unarchive_email(&eid)).await?;
+    state
+        .db_write(move |db| db.unarchive_email(&eid).map_err(|e| e.to_string()))
+        .await?;
 
     // Move the same thread back to INBOX in Gmail
     if let Ok(token) = crate::google_api::get_valid_access_token().await {
@@ -1176,7 +1179,7 @@ async fn unarchive_emails_in_gmail(
 /// and Records. Used by the "this isn't noise" affordance (DOS-41 wires UI).
 /// All mutations go through services per CLAUDE.md.
 pub fn unsuppress_email(db: &crate::db::ActionDb, email_id: &str) -> Result<(), String> {
-    db.unsuppress_email(email_id)
+    db.unsuppress_email(email_id).map_err(|e| e.to_string())
 }
 
 /// Toggle pin on an email. Returns the new pinned state.
@@ -1185,7 +1188,7 @@ pub fn pin_email(
     engine: &crate::signals::propagation::PropagationEngine,
     email_id: &str,
 ) -> Result<bool, String> {
-    let now_pinned = db.toggle_pin_email(email_id)?;
+    let now_pinned = db.toggle_pin_email(email_id).map_err(|e| e.to_string())?;
     if now_pinned {
         let (entity_type, entity_id) = email_entity_context(db, email_id);
         let _ = crate::services::signals::emit_and_propagate(
@@ -1437,7 +1440,9 @@ fn reconcile_inbox_presence_from_ids(
     let mut changed = false;
 
     if !vanished.is_empty() {
-        let resolved = db.mark_emails_resolved(&vanished)?;
+        let resolved = db
+            .mark_emails_resolved(&vanished)
+            .map_err(|e| e.to_string())?;
         let deactivated = db
             .deactivate_signals_for_emails(&vanished)
             .map_err(|e| e.to_string())?;
@@ -1529,7 +1534,10 @@ pub async fn archive_low_priority_emails(state: &AppState) -> Result<usize, Stri
     // Also mark as resolved in DB so they don't reappear on any page
     let ids_clone = ids.clone();
     let _ = state
-        .db_write(move |db| db.mark_emails_resolved(&ids_clone))
+        .db_write(move |db| {
+            db.mark_emails_resolved(&ids_clone)
+                .map_err(|e| e.to_string())
+        })
         .await;
 
     data["lowPriority"] = serde_json::json!([]);
@@ -1613,7 +1621,10 @@ pub async fn refresh_emails(
     // Phase 0 — recover stranded rows from any prior crashed refresh
     // before we stamp a new batch. Silent no-op in the happy path.
     let recovered = state
-        .db_write(|db| db.rollback_stale_pending_retry(PENDING_RETRY_STALE_AFTER_SECS))
+        .db_write(|db| {
+            db.rollback_stale_pending_retry(PENDING_RETRY_STALE_AFTER_SECS)
+                .map_err(|e| e.to_string())
+        })
         .await
         .map_err(|e| format!("Failed to recover stale pending_retry rows: {e}"))?;
     if recovered > 0 {
@@ -1637,6 +1648,7 @@ pub async fn refresh_emails(
                 STALE_FAILED_AFTER_SECS,
                 crate::db::emails::STALE_FAILED_MAX_AUTO_RETRIES,
             )
+            .map_err(|e| e.to_string())
         })
         .await
         .map_err(|e| format!("Failed to auto-retry stale failed emails: {e}"))?;
@@ -1651,7 +1663,10 @@ pub async fn refresh_emails(
     let batch_id = uuid::Uuid::new_v4().to_string();
     let batch_id_for_mark = batch_id.clone();
     let marked = state
-        .db_write(move |db| db.mark_failed_for_retry(&batch_id_for_mark))
+        .db_write(move |db| {
+            db.mark_failed_for_retry(&batch_id_for_mark)
+                .map_err(|e| e.to_string())
+        })
         .await
         .map_err(|e| format!("Failed to mark failed emails for retry: {e}"))?;
     if marked > 0 {
@@ -1703,11 +1718,10 @@ pub async fn refresh_emails(
                 let residual = state
                     .db_write(move |db| {
                         db.finalize_pending_retry_success(&batch_id_for_finalize)
+                            .map_err(|e| e.to_string())
                     })
                     .await
-                    .map_err(|e| {
-                        format!("Refresh succeeded but retry finalize failed: {e}")
-                    })?;
+                    .map_err(|e| format!("Refresh succeeded but retry finalize failed: {e}"))?;
                 if residual > 0 {
                     log::warn!(
                         "DOS-226: finalized {residual} residual pending_retry rows in batch {batch_id} (orchestrator should have handled these mid-run)"
@@ -1721,7 +1735,10 @@ pub async fn refresh_emails(
                 // previously orphaned rows in pending_retry.
                 let batch_id_for_rollback = batch_id.clone();
                 let rolled = state
-                    .db_write(move |db| db.rollback_pending_retry(&batch_id_for_rollback))
+                    .db_write(move |db| {
+                        db.rollback_pending_retry(&batch_id_for_rollback)
+                            .map_err(|e| e.to_string())
+                    })
                     .await
                     .map_err(|e| {
                         log::error!(
@@ -1758,7 +1775,7 @@ pub async fn retry_failed_emails(
     // drop to "nothing to retry". The refresh's phase-0 recovery will
     // roll them back to `failed` before the new batch is stamped.
     let retriable_before: usize = state
-        .db_read(|db| db.count_retriable_emails())
+        .db_read(|db| db.count_retriable_emails().map_err(|e| e.to_string()))
         .await?;
 
     if retriable_before == 0 {
@@ -2124,8 +2141,10 @@ mod tests {
             cc_recipients: None,
         };
 
-        db.upsert_email(&mk("em-A-older", &earlier)).expect("upsert A");
-        db.upsert_email(&mk("em-B-newer", &later)).expect("upsert B");
+        db.upsert_email(&mk("em-A-older", &earlier))
+            .expect("upsert A");
+        db.upsert_email(&mk("em-B-newer", &later))
+            .expect("upsert B");
 
         // The inbox renders the LATER row (B) under thread collapse.
         // Suppose the user clicks the chip on what they see and reassigns it

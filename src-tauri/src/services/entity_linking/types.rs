@@ -233,6 +233,10 @@ pub enum Trigger {
     EmailUserEdit,
     AccountRelinked,
     EntityGraphChange,
+    /// A transcript was attached or auto-imported (Granola, Quill, manual
+    /// upload, paste). Re-runs the four-phase engine so attendee/title
+    /// content discovered post-meeting refines the entity links.
+    TranscriptIngest,
 }
 
 impl Trigger {
@@ -246,6 +250,7 @@ impl Trigger {
             Self::EmailUserEdit => "EmailUserEdit",
             Self::AccountRelinked => "AccountRelinked",
             Self::EntityGraphChange => "EntityGraphChange",
+            Self::TranscriptIngest => "TranscriptIngest",
         }
     }
 }

@@ -12,7 +12,6 @@ use tauri::{Emitter, Manager, State};
 
 use crate::executor::request_workflow_execution;
 use crate::hygiene::{build_intelligence_hygiene_status, HygieneStatusView};
-use crate::json_loader::load_emails_json;
 use crate::parser::list_inbox_files;
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState};
