@@ -1,7 +1,7 @@
 /**
  * AccountOutlook — Three-section editorial outlook chapter.
  *
- * Surfaces renewalOutlook, expansionSignals, and contractContext
+ * Surfaces agreementOutlook, expansionSignals, and contractContext
  * as three visually distinct editorial sections with generous whitespace.
  *
  * I550: Per-item inline editing, dismiss, and feedback controls.
@@ -92,7 +92,7 @@ export function AccountOutlook({
   getItemFeedback,
   onItemFeedback,
 }: AccountOutlookProps) {
-  const renewal = intelligence.renewalOutlook ?? null;
+  const renewal = intelligence.agreementOutlook ?? null;
   const signals = (intelligence.expansionSignals ?? []).filter((s) => s.opportunity?.trim());
   const contract = intelligence.contractContext ?? null;
 
@@ -131,7 +131,7 @@ export function AccountOutlook({
               {onUpdateField ? (
                 <EditableText
                   value={riskFactorsAsProse(renewal.riskFactors)}
-                  onChange={(v) => onUpdateField("renewalOutlook.riskFactors[0]", v)}
+                  onChange={(v) => onUpdateField("agreementOutlook.riskFactors[0]", v)}
                   as="span"
                   multiline
                 />
@@ -141,9 +141,9 @@ export function AccountOutlook({
               {onItemFeedback && (
                 <span className={css.itemActions}>
                   <IntelligenceFeedback
-                    value={getItemFeedback?.("renewalOutlook.riskFactors") ?? null}
+                    value={getItemFeedback?.("agreementOutlook.riskFactors") ?? null}
                     onFeedback={(type) =>
-                      onItemFeedback("renewalOutlook.riskFactors", type)
+                      onItemFeedback("agreementOutlook.riskFactors", type)
                     }
                   />
                 </span>

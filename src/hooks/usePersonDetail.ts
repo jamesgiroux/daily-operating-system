@@ -5,9 +5,14 @@
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useNavigate } from "@tanstack/react-router";
 import type { Person, PersonDetail, DuplicateCandidate, ContentFile } from "@/types";
+import { useTauriEvent } from "./useTauriEvent";
+
+type IntelligenceUpdatedPayload = {
+  entity_type?: string;
+  entity_id?: string;
+};
 
 export function usePersonDetail(personId: string | undefined) {
   const navigate = useNavigate();
@@ -110,18 +115,20 @@ export function usePersonDetail(personId: string | undefined) {
 
   // ─── Event listeners ──────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (!personId) return;
-    const unlisten = listen("intelligence-updated", (event) => {
-      const payload = event.payload as { entity_type?: string; entity_id?: string };
+  const handleIntelligenceUpdated = useCallback(
+    (payload: IntelligenceUpdatedPayload) => {
+      if (!personId) return;
       if (payload.entity_type === "person" && payload.entity_id === personId) {
         load();
       }
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [personId, load]);
+    },
+    [personId, load],
+  );
+
+  useTauriEvent<IntelligenceUpdatedPayload>(
+    "intelligence-updated",
+    handleIntelligenceUpdated,
+  );
 
   // ─── Merge search (debounced) ─────────────────────────────────────────
 

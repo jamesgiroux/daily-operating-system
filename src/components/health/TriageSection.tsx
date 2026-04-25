@@ -143,16 +143,22 @@ function localRiskCandidate(risk: IntelRisk, i: number): TriageCandidate {
       label: risk.itemSource?.reference ? `${label} · ${risk.itemSource.reference}` : label,
     });
   }
-  const { headline, evidence } = splitHeadlineEvidence(risk.text);
+  // DOS-249: Use AI-emitted headline/evidence when present (avoids client-side
+  // punctuation splitting). Fall back to splitHeadlineEvidence for backward compat.
+  const headlineAndEvidence: { headline: string; evidence?: string } = risk.headline
+    ? { headline: risk.headline, evidence: risk.evidence ?? undefined }
+    : splitHeadlineEvidence(risk.text);
+  // DOS-249: Use AI-emitted kindLabel when present; fall back to urgency-derived label.
+  const kind = risk.kindLabel ?? kindFromUrgency(risk.urgency);
   return {
     id: `local-risk-${i}`,
     itemKey: risk.text,
     bucket: bucketFromUrgency(risk.urgency),
     source: "local",
     sourcedAt,
-    kind: kindFromUrgency(risk.urgency),
-    headline,
-    evidence,
+    kind,
+    headline: headlineAndEvidence.headline,
+    evidence: headlineAndEvidence.evidence,
     sources: [{ origin: "local", label: undefined }],
     citations,
   };

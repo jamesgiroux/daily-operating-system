@@ -25,7 +25,25 @@ interface DivergenceSectionProps {
   accountId?: string;
 }
 
+/**
+ * DOS-249: Map deterministic consistency finding codes to specific human labels.
+ * Specific labels match the mockup ("CRM vs reality", "Our pitch vs their authority",
+ * "Channel divergence") rather than the generic "Data · major mismatch" fallback.
+ */
+const FINDING_KIND_LABELS: Record<string, string> = {
+  ABSENCE_CONTRADICTION: "CRM vs reality · attendance gap",
+  NO_PROGRESS_CONTRADICTION: "CRM vs reality · stale signals",
+  AUTHORITY_UNKNOWN: "Our pitch vs their authority",
+  CROSS_ENTITY_BLEED: "Data hygiene · entity bleed",
+  CHANNEL_DIVERGENCE: "Channel divergence",
+  SENTIMENT_MISMATCH: "Sentiment divergence",
+  STAKEHOLDER_MISMATCH: "Stakeholder coverage · mismatch",
+};
+
 function kindForFinding(f: ConsistencyFinding): string {
+  if (f.code && FINDING_KIND_LABELS[f.code]) {
+    return FINDING_KIND_LABELS[f.code];
+  }
   const severity = f.severity === "high" ? "major" : f.severity === "medium" ? "notable" : "minor";
   return `Data · ${severity} mismatch`;
 }

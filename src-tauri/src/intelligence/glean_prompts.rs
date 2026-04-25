@@ -5,6 +5,7 @@
 //! same parser used for PTY output. Both paths produce identical types.
 
 use super::prompts::IntelligenceContext;
+use crate::presets::schema::RolePreset;
 
 /// Build the Glean enrichment prompt for an entity.
 ///
@@ -16,11 +17,18 @@ pub fn build_glean_enrichment_prompt(
     relationship: Option<&str>,
     ctx: &IntelligenceContext,
     is_incremental: bool,
+    preset: Option<&RolePreset>,
 ) -> String {
     let mut prompt = String::with_capacity(8192);
 
     // System role
-    prompt.push_str("You are a customer success intelligence system. Analyze the ");
+    let system_role = preset
+        .map(|p| p.intelligence.system_role.as_str())
+        .filter(|role| !role.trim().is_empty())
+        .unwrap_or("core work intelligence system");
+    prompt.push_str("You are a ");
+    prompt.push_str(system_role);
+    prompt.push_str(". Analyze the ");
     prompt.push_str(match entity_type {
         "account" => "customer account",
         "project" => "project",
@@ -169,7 +177,7 @@ fn build_json_schema(entity_type: &str) -> String {
 "#);
 
     // I554 enrichments
-    schema.push_str(r#"  "championHealth": { "name": "champion name or null", "status": "strong|weak|lost|none", "evidence": "behavioral evidence", "risk": "if weak/lost, the risk and recommended action" },
+    schema.push_str(r#"  "keyAdvocateHealth": { "name": "champion name or null", "status": "strong|weak|lost|none", "evidence": "behavioral evidence", "risk": "if weak/lost, the risk and recommended action" },
   "commitments": [{ "content": "what was committed", "ownedBy": "us|them|joint", "successCriteria": "how we know it's done", "targetDate": "YYYY-MM-DD or null" }],
   "successPlanSignals": {
     "statedObjectives": [{ "objective": "strategic goal", "source": "where stated", "owner": "who owns it", "targetDate": "YYYY-MM-DD or null", "confidence": "high|medium|low" }],
@@ -190,7 +198,7 @@ fn build_json_schema(entity_type: &str) -> String {
   "blockers": [{ "blocker": "what's blocking", "severity": "critical|moderate|low" }],
   "contractContext": { "summary": "contract details if known" },
   "expansionSignals": [{ "signal": "opportunity description", "strength": "strong|moderate|early", "source": "where found" }],
-  "renewalOutlook": { "assessment": "narrative about renewal likelihood", "confidence": "high|medium|low" },
+  "agreementOutlook": { "assessment": "narrative about renewal likelihood", "confidence": "high|medium|low" },
 "#);
 
         // Glean-specific fields (data only Glean can produce)
@@ -219,7 +227,7 @@ fn build_json_schema(entity_type: &str) -> String {
     schema.push_str("- For risks: RED urgency = champion departure, competitor eval, budget cut. YELLOW = usage decline, reorg. Use \"critical\"/\"watch\"/\"low\".\n");
     schema.push_str("- For wins: only extract verifiable outcomes, not vague sentiment. \"Customer seems happy\" is NOT a win.\n");
     schema.push_str("- For valueDelivered: must include a number (dollars, percentages, time saved). Reject vague usage statements.\n");
-    schema.push_str("- For championHealth: strong = power + vested interest + actively advocates internally. weak = helpful but lacks influence. lost = departed or disengaged.\n");
+    schema.push_str("- For keyAdvocateHealth: strong = power + vested interest + actively advocates internally. weak = helpful but lacks influence. lost = departed or disengaged.\n");
     schema.push_str("- recommendedActions: 2-3 specific, concrete actions. Reference specific people, meetings, or signals. Priority: 1=urgent, 2=high, 3=medium, 4=low. Leave empty for sparse accounts.\n");
     schema.push_str("- Omit any field you don't have data for — do not fabricate.\n");
     schema.push_str("- Use the local context above as ground truth. Supplement with org knowledge, don't contradict.\n");

@@ -48,6 +48,22 @@ export interface PresetPrioritization {
   urgencyDrivers: string[];
 }
 
+export interface SignalKeywordEntry {
+  keyword: string;
+  weight: number;
+}
+
+export interface PresetIntelligenceConfig {
+  systemRole: string;
+  dimensionWeights: Record<string, number>;
+  signalKeywords: SignalKeywordEntry[];
+  emailSignalTypes: string[];
+  dimensionLabels: Record<string, string>;
+  closeConcept: string;
+  keyAdvocateLabel: string;
+  dimensionGuidance: Record<string, string>;
+}
+
 export interface PresetRoleDefinition {
   id: string;
   label: string;
@@ -66,6 +82,7 @@ export interface RolePreset {
   internalTeamRoles?: PresetRoleDefinition[];
   lifecycleEvents: string[];
   prioritization: PresetPrioritization;
+  intelligence?: PresetIntelligenceConfig;
   briefingEmphasis: string;
   relationshipVocabulary?: Record<string, string>;
 }

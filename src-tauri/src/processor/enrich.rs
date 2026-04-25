@@ -75,11 +75,11 @@ pub fn enrich_file(
     let is_non_md = !matches!(format, super::extract::SupportedFormat::Markdown);
 
     // Build the prompt for Claude
-    // I313: Read vocabulary from active preset for domain-specific prompt language
-    let vocabulary = state
+    // I313/DOS-178: Read active preset for domain-specific prompt language.
+    let active_preset = state
         .map(|s| s.active_preset.read())
-        .and_then(|guard| guard.as_ref().map(|p| p.vocabulary.clone()));
-    let prompt = build_enrichment_prompt(filename, &content, user_ctx, vocabulary.as_ref());
+        .and_then(|guard| guard.as_ref().cloned());
+    let prompt = build_enrichment_prompt(filename, &content, user_ctx, active_preset.as_ref());
 
     // Invoke Claude Code via PTY (Mechanical tier — I174)
     let default_config = AiModelConfig::default();
@@ -364,7 +364,7 @@ fn build_enrichment_prompt(
     filename: &str,
     content: &str,
     user_ctx: Option<&crate::types::UserContext>,
-    vocabulary: Option<&crate::presets::schema::PresetVocabulary>,
+    preset: Option<&crate::presets::schema::RolePreset>,
 ) -> String {
     // Truncate very long content to fit in a reasonable prompt.
     // Must find a valid UTF-8 char boundary — slicing at an arbitrary byte panics.
@@ -390,10 +390,23 @@ fn build_enrichment_prompt(
         .map(|ctx| ctx.prompt_fragment())
         .unwrap_or_default();
 
-    // I313: Use vocabulary-driven terms when available
+    // I313/DOS-178: Use preset-driven terms when available.
+    let vocabulary = preset.map(|p| &p.vocabulary);
+    let system_role = preset
+        .map(|p| p.intelligence.system_role.as_str())
+        .filter(|role| !role.trim().is_empty())
+        .unwrap_or("core work intelligence system");
+    let close_concept = preset
+        .map(|p| p.intelligence.close_concept.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("deadline");
+    let key_advocate_label = preset
+        .map(|p| p.intelligence.key_advocate_label.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("owner");
     let entity_noun = vocabulary
         .map(|v| v.entity_noun.as_str())
-        .unwrap_or("customer/account");
+        .unwrap_or("entity");
     let entity_noun_plural = vocabulary
         .map(|v| v.entity_noun_plural.as_str())
         .unwrap_or("customers/accounts");
@@ -412,7 +425,7 @@ fn build_enrichment_prompt(
         .unwrap_or("check-in");
 
     format!(
-        r#"{preamble}{user_fragment}Analyze the following inbox file.
+        r#"{preamble}{user_fragment}You are a {system_role}. Analyze the following inbox file.
 
 Trust explicit hints from the filename and any YAML frontmatter before making weaker inferences from the body. If the file clearly belongs to a business unit under an account, keep ACCOUNT at the top-level account and set BUSINESS_UNIT to the child unit.
 
@@ -438,8 +451,8 @@ Sub-types (tag each):
 - ADOPTION: milestone crossed, feature activated, user activation target met, integration completed
 - EXPANSION: interest in additional scope, new department/team, usage ceiling hit, cross-functional mention
 - VALUE_REALIZED: customer articulates ROI in their own words, KPI improvement attributed to product, results shared with leadership
-- RELATIONSHIP: executive sponsor actively engaged, new champion identified, reference/case study agreement, advisory board join
-- COMMERCIAL: renewal confirmed (especially early), upsell/cross-sell, multi-year commitment, budget increase
+- RELATIONSHIP: executive sponsor actively engaged, new {key_advocate_label} identified, reference/case study agreement, advisory board join
+- COMMERCIAL: {close_concept} confirmed (especially early), upsell/cross-sell, multi-year commitment, budget increase
 - ADVOCACY: public endorsement, referral, conference speaking, internal win-sharing to leadership
 
 Format: - [SUB_TYPE] <specific win with evidence> #"verbatim quote if available"
@@ -448,16 +461,16 @@ RISKS:
 Categorize each risk by urgency. Be specific — name the person, the competitor, the timeline.
 
 RED (critical — requires immediate action):
-- Champion departure or executive sponsor disengagement
+- {key_advocate_label} departure or executive sponsor disengagement
 - Active competitor evaluation or piloting
 - Severe usage collapse (<50% utilization mentioned)
 - Active escalation (unresolved critical issue)
 - Budget elimination or review
-- Explicit renewal doubt
+- Explicit {close_concept} doubt
 
 YELLOW (moderate — needs a recovery plan):
 - Usage decline mentioned but not severe
-- Champion role change (internal move)
+- {key_advocate_label} role change (internal move)
 - Delayed implementation or milestone pushback
 - Organizational restructuring affecting ownership
 - Repeated feature complaints without resolution
@@ -482,8 +495,8 @@ END_COMMITMENTS
 
 Rules for actions:
 - TITLE MUST be concise and imperative: verb + object, max 10 words. Not a sentence — a task.
-  - Good: "Follow up on renewal pricing"
-  - Bad: "Follow up with the client regarding the renewal discussion they mentioned"
+  - Good: "Follow up on {close_concept} pricing"
+  - Bad: "Follow up with the client regarding the decision discussion they mentioned"
 - Include priority when urgency is inferable (P1=urgent, P2=normal, P3=low)
 - Include @AccountName when action relates to a specific {entity_noun}
 - Include due: YYYY-MM-DD when a deadline is mentioned or implied
@@ -492,7 +505,7 @@ Rules for actions:
   - Bad: #billing
 - Use "waiting" or "blocked" in the title if action depends on someone else
 - If no metadata can be inferred, just write the action text plainly
-- Example: Follow up on renewal P1 @Acme due: 2026-03-15 #"CFO needs pricing comparison before Q2"
+- Example: Follow up on {close_concept} P1 @Acme due: 2026-03-15 #"Decision owner needs pricing comparison before Q2"
 
 Rules for wins:
 - Only include if the file relates to a {entity_noun}
@@ -523,8 +536,11 @@ Rules for commitments:
 - If no commitments are apparent, leave the section empty (just the markers)
 "#,
         preamble = INJECTION_PREAMBLE,
+        system_role = system_role,
         filename = sanitize_external_field(filename),
         truncated = wrap_user_data(truncated),
+        close_concept = close_concept,
+        key_advocate_label = key_advocate_label,
     )
 }
 

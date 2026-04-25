@@ -24,11 +24,13 @@ use crate::types::{
 fn extract_dashboard_prep(prep_json: &str) -> Option<MeetingPrep> {
     // Format 1: direct FullMeetingPrep deserialization
     if let Ok(full) = serde_json::from_str::<crate::types::FullMeetingPrep>(prep_json) {
+        let wins = full.recent_wins;
+        let actions = dedupe_prep_items_against(full.talking_points, wins.as_ref());
         let prep = MeetingPrep {
             context: full.meeting_context.or(full.intelligence_summary),
             risks: full.risks,
-            wins: full.recent_wins,
-            actions: full.talking_points,
+            wins,
+            actions,
             stakeholders: full.attendees,
             questions: full.questions,
             ..Default::default()
@@ -82,6 +84,43 @@ fn extract_dashboard_prep(prep_json: &str) -> Option<MeetingPrep> {
     }
 
     None
+}
+
+fn dedupe_prep_items_against(
+    items: Option<Vec<String>>,
+    existing: Option<&Vec<String>>,
+) -> Option<Vec<String>> {
+    let mut seen: HashSet<String> = existing
+        .into_iter()
+        .flat_map(|items| items.iter())
+        .map(|item| normalize_prep_card_item(item))
+        .collect();
+
+    let filtered: Vec<String> = items
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|item| {
+            let key = normalize_prep_card_item(item);
+            !key.is_empty() && seen.insert(key)
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        None
+    } else {
+        Some(filtered)
+    }
+}
+
+fn normalize_prep_card_item(item: &str) -> String {
+    let mut value = item.trim().to_lowercase();
+    for suffix in [" — high", " — medium", " — low", " - high", " - medium", " - low"] {
+        if value.ends_with(suffix) {
+            value.truncate(value.len() - suffix.len());
+            break;
+        }
+    }
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Result type for dashboard data loading
@@ -306,7 +345,12 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
 
             // 3. Get entity map and intelligence qualities
             let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-            let entity_map = db.get_meeting_entity_map(&meeting_ids).unwrap_or_default();
+            // DOS-258: read from the linked_entities view rather than the legacy
+            // meeting_entities junction table so dashboard prep chips match the
+            // meeting detail page.
+            let entity_map = db
+                .get_linked_entities_map_for_meetings(&meeting_ids)
+                .unwrap_or_default();
             let mut iq_map = HashMap::new();
             for mid in &meeting_ids {
                 let q = crate::intelligence::assess_intelligence_quality(db, mid);
@@ -764,7 +808,12 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             }
             Ok(DashboardDbSnapshot {
                 reviewed: db.get_reviewed_preps().ok(),
-                entity_map: db.get_meeting_entity_map(&meeting_ids_clone).ok(),
+                // DOS-258: read from the linked_entities view rather than the legacy
+                // meeting_entities junction table so dashboard snapshot chips match
+                // the meeting detail page.
+                entity_map: db
+                    .get_linked_entities_map_for_meetings(&meeting_ids_clone)
+                    .ok(),
                 accounts_with_domains: db.get_all_accounts_with_domains(true).ok(),
                 non_briefing_actions: db.get_due_actions(90).ok(),
                 focus_candidates: db.get_focus_candidate_actions(7).ok(),

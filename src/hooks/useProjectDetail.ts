@@ -4,9 +4,14 @@
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useNavigate } from "@tanstack/react-router";
 import type { ProjectDetail, ContentFile } from "@/types";
+import { useTauriEvent } from "./useTauriEvent";
+
+type IntelligenceUpdatedPayload = {
+  entity_type?: string;
+  entity_id?: string;
+};
 
 export function useProjectDetail(projectId: string | undefined) {
   const navigate = useNavigate();
@@ -84,19 +89,21 @@ export function useProjectDetail(projectId: string | undefined) {
     load();
   }, [load]);
 
-  // Listen for intelligence-updated events
-  useEffect(() => {
-    if (!projectId) return;
-    const unlisten = listen("intelligence-updated", (event) => {
-      const payload = event.payload as { entity_type?: string; entity_id?: string };
+  const handleIntelligenceUpdated = useCallback(
+    (payload: IntelligenceUpdatedPayload) => {
+      if (!projectId) return;
       if (payload.entity_type === "project" && payload.entity_id === projectId) {
         load();
       }
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [projectId, load]);
+    },
+    [projectId, load],
+  );
+
+  // Listen for intelligence-updated events
+  useTauriEvent<IntelligenceUpdatedPayload>(
+    "intelligence-updated",
+    handleIntelligenceUpdated,
+  );
 
   async function saveField(field: string, value: string) {
     if (!detail) return;

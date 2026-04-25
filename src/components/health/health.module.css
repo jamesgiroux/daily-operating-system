@@ -546,7 +546,7 @@
 
 /* ═════════ OUTLOOK PULL-QUOTE ═════════ */
 .outlookPullQuote {
-  margin: var(--space-xl, 32px) 0 0;
+  margin: var(--space-xl, 32px) 0 var(--space-lg, 24px);
   padding: var(--space-lg, 24px) var(--space-xl, 32px);
   background: rgba(201, 162, 39, 0.08);
   border-left: 3px solid var(--color-spice-turmeric);

@@ -209,3 +209,45 @@ Per-ability migration plan is in [ADR-0112](0112-migration-strategy-parallel-run
 - [ADR-0105: Provenance as First-Class Output](0105-provenance-as-first-class-output.md) — §4 `SourceAttribution` uses this ADR's `DataSource` and `SourceIdentifier`.
 - [ADR-0108: Provenance Rendering and Privacy](0108-provenance-rendering-and-privacy.md) — Renders masking behavior and flag-for-re-enrichment status.
 - [ADR-0112: Migration Strategy — Parallel Run and Cutover](0112-migration-strategy-parallel-run-and-cutover.md) — Specifies the `source` → `data_source` migration and the synthesis-marker backfill.
+
+---
+
+## Amendment — 2026-04-24 PM — `LegacyUnattributed` `DataSource` variant
+
+### Why
+
+Codex round 2 finding 13 surfaced that the v1.4.0 spine plan (DOS-299) needed to preserve item-level confidence semantics for legacy items without `ItemSource` (the current `HasSource::effective_confidence` defaults missing source to `0.5` per `intelligence/io.rs:1185-1189`). My earlier writeup proposed registering this in the `CLAIM_TYPE_REGISTRY` (per ADR-0125). That was wrong — it's a `DataSource` taxonomy concern, not a claim type. ADR-0107 owns `DataSource`; this amendment adds the variant.
+
+### What
+
+Add to the `DataSource` enum:
+
+```rust
+pub enum DataSource {
+    // ...existing variants (User, Google, Glean { downstream }, Clay, Ai, CoAttendance, LocalEnrichment, Other(SourceName))...
+    /// Backfill-only marker for claims migrated from legacy items that pre-date `ItemSource`
+    /// attribution. The underlying source is unknown beyond "DailyOS produced this before
+    /// source taxonomy existed." Trust treatment matches `HasSource::effective_confidence`
+    /// default (0.5) so backfill preserves existing scoring behavior exactly.
+    LegacyUnattributed,
+}
+```
+
+### Properties
+
+- **`ScoringClass`:** `Reference` (most conservative — these claims cannot drive scoring decisions on their own).
+- **`LifecycleBehavior`:** `FlagForReEnrichment` (the underlying data is gone; the claim survives until re-enrichment supersedes it with a typed source).
+- **Default `confidence`:** `0.5` (matches the legacy `effective_confidence` default).
+- **Backfill-only:** new code MUST NOT write `LegacyUnattributed` claims. Production migration is the only legitimate writer. CI lint enforces no `DataSource::LegacyUnattributed` outside `services/migrations/` paths.
+
+### Lifecycle
+
+- v1.4.0 spine: backfill writes `LegacyUnattributed` claims for legacy items without `ItemSource`. Trust band parity preserved per DOS-299 acceptance criterion.
+- v1.4.1+: enrichment paths supersede `LegacyUnattributed` claims with typed-source claims as they re-enrich entities. Number of `LegacyUnattributed` claims decreases monotonically.
+- v1.5.x: when `LegacyUnattributed` claim count drops below 5% of total active claims, schedule retirement migration (drop the variant, force any remaining to be re-enriched or flagged).
+
+### Consumer issues affected
+
+- DOS-299 — backfill writes `LegacyUnattributed` for legacy items; preserves trust band parity.
+- DOS-300 — `CLAIM_TYPE_REGISTRY` does NOT include `legacy_unattributed`; that was a category error in the earlier writeup.
+- DOS-7 — backfill migration depends on this variant existing.

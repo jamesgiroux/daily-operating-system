@@ -25,6 +25,11 @@ export interface ReadinessStat {
   color: 'sage' | 'terracotta';
 }
 
+export interface FolioBreadcrumbItem {
+  label: string;
+  onClick?: () => void;
+}
+
 export interface FolioBarProps {
   /**
    * Publication label, e.g., "Daily Briefing", "Account", "Actions"
@@ -56,10 +61,10 @@ export interface FolioBarProps {
   onSearchClick?: () => void;
 
   /**
-   * Back link — replaces publication label with a navigation link.
-   * Used on detail pages to navigate back to list pages.
+   * Persistent orientation trail rendered beside the brand mark.
+   * Used on detail/report pages in place of a separate back affordance.
    */
-  backLink?: { label: string; onClick: () => void };
+  breadcrumbs?: FolioBreadcrumbItem[];
 
   /**
    * Actions slot — rendered in right section before search button.
@@ -86,7 +91,7 @@ export const FolioBar: React.FC<FolioBarProps> = ({
   readinessStats,
   statusText,
   onSearchClick,
-  backLink,
+  breadcrumbs,
   actions,
   backgroundWork,
   modeBadge,
@@ -96,36 +101,55 @@ export const FolioBar: React.FC<FolioBarProps> = ({
     : styles.folioMark;
   return (
     <header className={styles.folio}>
-      {/* LEFT: Back link OR Brand mark + Publication label */}
+      {/* LEFT: Brand mark + publication label or persistent breadcrumbs */}
       <div className={styles.folioLeft}>
-        {backLink ? (
-          <button onClick={backLink.onClick} className={styles.folioBackLink}>
-            <span className={styles.folioBackArrow}>&#8592;</span>
-            {backLink.label}
-          </button>
+        {backgroundWork?.phase === 'started' ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link to="/" className={styles.folioHomeLink}>
+                  <BrandMark className={markClass} size={18} />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                {backgroundWork.message || 'Updating…'}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         ) : (
-          <>
-            {backgroundWork?.phase === 'started' ? (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Link to="/" className={styles.folioHomeLink}>
-                      <BrandMark className={markClass} size={18} />
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-xs">
-                    {backgroundWork.message || 'Updating…'}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : (
-              <Link to="/" className={styles.folioHomeLink}>
-                <BrandMark className={markClass} size={18} />
-              </Link>
-            )}
-            {modeBadge}
-            <span className={styles.folioPub}>{publicationLabel}</span>
-          </>
+          <Link to="/" className={styles.folioHomeLink}>
+            <BrandMark className={markClass} size={18} />
+          </Link>
+        )}
+        {modeBadge}
+        {breadcrumbs && breadcrumbs.length > 0 ? (
+          <nav className={styles.folioBreadcrumbs} aria-label="Breadcrumb">
+            {breadcrumbs.map((crumb, idx) => {
+              const isLast = idx === breadcrumbs.length - 1;
+              return (
+                <React.Fragment key={`${crumb.label}-${idx}`}>
+                  {idx > 0 && <span className={styles.folioBreadcrumbSeparator}>/</span>}
+                  {crumb.onClick && !isLast ? (
+                    <button
+                      type="button"
+                      onClick={crumb.onClick}
+                      className={styles.folioBreadcrumbButton}
+                    >
+                      {crumb.label}
+                    </button>
+                  ) : (
+                    <span
+                      className={isLast ? styles.folioBreadcrumbCurrent : styles.folioBreadcrumbLabel}
+                    >
+                      {crumb.label}
+                    </span>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </nav>
+        ) : (
+          <span className={styles.folioPub}>{publicationLabel}</span>
         )}
       </div>
 

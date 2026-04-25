@@ -58,28 +58,23 @@ fn build_account_health_prompt(
     context_provider: &dyn ContextProvider,
 ) -> String {
     let entity_noun = match active_preset {
-        "sales" => "deal",
-        "agency" | "consulting" => "client",
-        "partnerships" => "partner",
-        "product" => "initiative",
-        "the-desk" => "project",
+        "affiliates-partnerships" | "affiliates" | "partnerships" => "partner",
+        "product-marketing" | "product" | "marketing" => "initiative",
+        "core" | "the-desk" => "project",
         _ => "account",
     };
     let close_concept = match active_preset {
-        "sales" => "close date and deal stage",
-        "agency" | "consulting" => "contract renewal or engagement end date",
-        "partnerships" => "agreement renewal",
-        "product" => "launch milestone or delivery date",
-        "the-desk" => "project deadline",
+        "affiliates-partnerships" | "affiliates" | "partnerships" => {
+            "agreement or campaign cycle"
+        }
+        "product-marketing" | "product" | "marketing" => "launch milestone or delivery date",
+        "core" | "the-desk" => "project deadline",
         _ => "renewal date",
     };
     let relationship_framing = match active_preset {
-        "sales" => "prospect/client relationship",
-        "agency" | "consulting" => "client engagement",
-        "partnerships" => "partner relationship",
-        "leadership" => "strategic relationship",
-        "product" => "stakeholder relationship",
-        "the-desk" => "working relationship",
+        "affiliates-partnerships" | "affiliates" | "partnerships" => "partner relationship",
+        "product-marketing" | "product" | "marketing" => "stakeholder relationship",
+        "core" | "the-desk" => "working relationship",
         _ => "customer partnership",
     };
     let prior = db.get_entity_intelligence(entity_id).ok().flatten();

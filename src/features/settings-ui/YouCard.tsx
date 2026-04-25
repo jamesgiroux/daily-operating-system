@@ -5,7 +5,6 @@ import { usePersonality, type Personality } from "@/hooks/usePersonality";
 import { toast } from "sonner";
 import { Check, X, Loader2 } from "lucide-react";
 import s from "./YouCard.module.css";
-import type { FeatureFlags } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -343,7 +342,7 @@ function PersonalitySection() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DayStartSection — user-friendly time picker for morning briefing schedule
+// DayStartSection — user-friendly time picker for daily briefing schedule
 // ═══════════════════════════════════════════════════════════════════════════
 
 function DayStartSection({
@@ -387,12 +386,12 @@ function DayStartSection({
     <div>
       <p className={s.subsectionLabel}>Your Day</p>
       <p className={s.description}>
-        When does your workday start? DailyOS prepares your briefing before this time.
+        When does your workday start? DailyOS prepares the first pass before this time.
       </p>
       <div className={s.settingRow}>
         <div>
           <span className={s.dayStartLabel}>
-            Morning briefing at{" "}
+            First briefing pass at{" "}
             <span className={s.dayStartBold}>{displayTime}</span>
           </span>
           {schedule?.timezone && (
@@ -455,7 +454,6 @@ export default function YouCard() {
     };
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [rolePresetsEnabled, setRolePresetsEnabled] = useState(false);
 
   useEffect(() => {
     invoke<{
@@ -473,9 +471,6 @@ export default function YouCard() {
       .then(setConfig)
       .catch((err) => console.error("get_config (you) failed:", err)) // Expected: background init on mount
       .finally(() => setLoading(false));
-    invoke<FeatureFlags>("get_feature_flags")
-      .then((flags) => setRolePresetsEnabled(flags.role_presets_enabled))
-      .catch(() => setRolePresetsEnabled(false));
   }, []);
 
   if (loading) {
@@ -506,12 +501,8 @@ export default function YouCard() {
       {/* ── Preferences ── */}
       <div className={s.subsectionGroup}>
         <h3 className={s.subsectionTitle}>Preferences</h3>
-        {rolePresetsEnabled && (
-          <>
-            <RoleSection />
-            <hr className={s.thinRule} />
-          </>
-        )}
+        <RoleSection />
+        <hr className={s.thinRule} />
         <PersonalitySection />
       </div>
     </div>

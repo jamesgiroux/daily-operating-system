@@ -236,6 +236,7 @@ pub async fn enrich_entity(
                     input.relationship.as_deref(),
                     app_handle,
                     false,
+                    input.active_preset.as_ref(),
                 )
                 .await
             {
@@ -596,6 +597,16 @@ pub fn upsert_health_outlook_signals(
         .map_err(|e| format!("Failed to serialize health_outlook_signals: {e}"))?;
 
     db.with_transaction(|tx| {
+        // DOS-249: INSERT OR IGNORE ensures a row exists before the UPDATE so
+        // that Glean leading-signals writes that race the main enrichment write
+        // are not silently dropped. entity_type is required NOT NULL.
+        tx.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO entity_assessment (entity_id, entity_type) VALUES (?1, ?2)",
+                rusqlite::params![entity_id, entity_type],
+            )
+            .map_err(|e| format!("Failed to ensure entity_assessment row: {e}"))?;
+
         tx.conn_ref()
             .execute(
                 "UPDATE entity_assessment SET health_outlook_signals_json = ?1 WHERE entity_id = ?2",
@@ -885,6 +896,7 @@ pub async fn update_stakeholders(
     let config = state.config.read().clone();
     let config = config.ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
+    let active_preset = state.active_preset.read().clone();
 
     let engine = state.signals.engine.clone();
     let entity_id = entity_id.to_string();
@@ -987,11 +999,16 @@ pub async fn update_stakeholders(
                 }
 
                 // Recompute health immediately so stakeholder changes reflect
-                // in champion_health + stakeholder_coverage dimensions without
+                // in key_advocate_health + stakeholder_coverage dimensions without
                 // waiting for a full enrichment cycle.
                 if entity_type == "account" && !scoring_roles.is_empty() {
                     if let Some(acct) = account.as_ref() {
-                        let health = crate::intelligence::health_scoring::compute_account_health(tx, acct, None);
+                        let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
+                            tx,
+                            acct,
+                            intel.org_health.as_ref(),
+                            active_preset.as_ref(),
+                        );
                         let health_json = serde_json::to_string(&health).ok();
                         tx.conn.execute(
                             "UPDATE entity_assessment SET health_json = ?1 WHERE entity_id = ?2",
@@ -1191,6 +1208,16 @@ pub fn recompute_entity_health(
     entity_id: &str,
     entity_type: &str,
 ) -> Result<(), String> {
+    recompute_entity_health_with_preset(db, entity_id, entity_type, None)
+}
+
+/// Recompute health dimensions with active preset weights when available.
+pub fn recompute_entity_health_with_preset(
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    preset: Option<&crate::presets::schema::RolePreset>,
+) -> Result<(), String> {
     if entity_type != "account" {
         return Ok(()); // Health scoring is account-only for now
     }
@@ -1210,8 +1237,12 @@ pub fn recompute_entity_health(
     // I633: Pass org_health from existing intelligence so the 40/60 baseline
     // blend fires consistently (previously passed None, diverging from enrichment scores)
     let org_health_ref = intel.org_health.as_ref();
-    let health =
-        crate::intelligence::health_scoring::compute_account_health(db, &account, org_health_ref);
+    let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
+        db,
+        &account,
+        org_health_ref,
+        preset,
+    );
 
     intel.health = Some(health.clone());
 
@@ -1603,9 +1634,10 @@ pub async fn mark_commitment_done(
                 })?;
 
             let commitment = {
-                let list = intel.open_commitments.as_mut().ok_or_else(|| {
-                    format!("Entity {} has no open commitments", entity_id)
-                })?;
+                let list = intel
+                    .open_commitments
+                    .as_mut()
+                    .ok_or_else(|| format!("Entity {} has no open commitments", entity_id))?;
                 if index >= list.len() {
                     return Err(format!("Commitment index {} out of bounds", index));
                 }
@@ -1839,6 +1871,226 @@ mod mutation_smoke_tests {
             0,
             "No signal for unsupported type"
         );
+    }
+}
+
+/// DOS-15 end-to-end: parse Glean JSON → normalize → upsert to DB column → re-read.
+///
+/// This test exercises the full path from Glean's raw response through
+/// `parse_leading_signals`, `upsert_health_outlook_signals`, and the SELECT
+/// read that populates `AccountDetailResult.glean_signals`. It validates:
+///  1. Bucket dispatch (champion_risk, channel_sentiment, commercial_signals survive)
+///  2. JSON roundtrip through the DB column (camelCase storage ↔ camelCase struct)
+///  3. Signal emissions (champion_at_risk, sentiment_divergence) fire correctly
+#[cfg(test)]
+mod dos15_leading_signals_db_tests {
+    use crate::db::test_utils::test_db;
+    use crate::db::{AccountType, DbAccount};
+    use crate::intelligence::glean_leading_signals::{parse_leading_signals, HealthOutlookSignals};
+    use crate::signals::propagation::PropagationEngine;
+
+    fn seed_account(db: &crate::db::ActionDb, id: &str) {
+        let account = DbAccount {
+            id: id.to_string(),
+            name: format!("Test Account {id}"),
+            lifecycle: Some("active".to_string()),
+            arr: Some(200_000.0),
+            account_type: AccountType::Customer,
+            ..Default::default()
+        };
+        db.upsert_account(&account).unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO entity_assessment (entity_id) VALUES (?1)",
+                rusqlite::params![id],
+            )
+            .unwrap();
+    }
+
+    fn signal_count(db: &crate::db::ActionDb, entity_id: &str, signal_type: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE entity_id = ?1 AND signal_type = ?2",
+                rusqlite::params![entity_id, signal_type],
+                |row| row.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    /// Core roundtrip: parse Glean's snake_case JSON → upsert → SELECT → verify.
+    #[test]
+    fn glean_json_roundtrip_through_db_column() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let entity_id = "dos15-roundtrip-test";
+        seed_account(&db, entity_id);
+
+        let glean_output = r#"{
+            "champion_risk": {
+                "champion_name": "Robin Taylor",
+                "at_risk": true,
+                "risk_level": "high",
+                "risk_evidence": ["email response slowed 3x", "missed last QBR"],
+                "backup_champion_candidates": [
+                    { "name": "Jamie Lee", "role": "VP Ops", "engagement_level": "medium" }
+                ]
+            },
+            "channel_sentiment": {
+                "email": { "sentiment": "cooling", "trend_30d": "worsening" },
+                "support_tickets": { "sentiment": "frustrated", "trend_30d": "worsening" },
+                "divergence_detected": true,
+                "divergence_summary": "tickets frustrated while Slack still cordial"
+            },
+            "commercial_signals": {
+                "arr_direction": "flat",
+                "payment_behavior": "on-time"
+            },
+            "quote_wall": [
+                {
+                    "quote": "We need better integration support.",
+                    "speaker": "Robin Taylor",
+                    "role": "Director of Data",
+                    "date": "2026-03-15",
+                    "source": "Gong",
+                    "sentiment": "negative"
+                }
+            ]
+        }"#;
+
+        // Step 1: parse Glean's snake_case output into the normalized struct.
+        let parsed = parse_leading_signals(glean_output).expect("parse_leading_signals should succeed");
+
+        // Verify bucket dispatch before persistence.
+        {
+            let cr = parsed.champion_risk.as_ref().expect("champion_risk bucket");
+            assert!(cr.at_risk, "champion should be at_risk");
+            assert_eq!(cr.champion_name.as_deref(), Some("Robin Taylor"));
+            assert_eq!(cr.risk_evidence.len(), 2, "2 evidence items");
+            assert_eq!(cr.backup_champion_candidates.len(), 1);
+
+            let cs = parsed.channel_sentiment.as_ref().expect("channel_sentiment bucket");
+            assert!(cs.divergence_detected, "divergence_detected should be true");
+
+            let comm = parsed.commercial_signals.as_ref().expect("commercial_signals bucket");
+            assert_eq!(comm.arr_direction.as_deref(), Some("flat"));
+
+            assert_eq!(parsed.quote_wall.len(), 1, "quote_wall should have 1 entry");
+        }
+
+        // Step 2: upsert to DB via the service function (also emits signals).
+        super::upsert_health_outlook_signals(&db, &engine, "account", entity_id, &parsed)
+            .expect("upsert_health_outlook_signals should succeed");
+
+        // Step 3: re-read from DB column (mirrors AccountDetailResult assembly).
+        let stored_json: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+                rusqlite::params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("SELECT should succeed");
+
+        let stored_json = stored_json.expect("health_outlook_signals_json should not be NULL");
+        let reread: HealthOutlookSignals =
+            serde_json::from_str(&stored_json).expect("DB JSON should deserialize");
+
+        // Step 4: verify every populated field survived the roundtrip.
+        let cr = reread.champion_risk.as_ref().expect("champion_risk after roundtrip");
+        assert_eq!(cr.champion_name.as_deref(), Some("Robin Taylor"));
+        assert!(cr.at_risk);
+        assert_eq!(cr.risk_level.as_deref(), Some("high"));
+        assert_eq!(cr.risk_evidence.len(), 2);
+        assert_eq!(cr.backup_champion_candidates.len(), 1);
+        assert_eq!(cr.backup_champion_candidates[0].name, "Jamie Lee");
+
+        let cs = reread.channel_sentiment.as_ref().expect("channel_sentiment after roundtrip");
+        assert!(cs.divergence_detected);
+        assert_eq!(
+            cs.divergence_summary.as_deref(),
+            Some("tickets frustrated while Slack still cordial")
+        );
+
+        assert_eq!(reread.quote_wall.len(), 1);
+        assert_eq!(reread.quote_wall[0].quote, "We need better integration support.");
+
+        // Step 5: verify derived signals were emitted correctly.
+        assert!(
+            signal_count(&db, entity_id, "champion_at_risk") > 0,
+            "champion_at_risk signal should be emitted"
+        );
+        assert!(
+            signal_count(&db, entity_id, "sentiment_divergence") > 0,
+            "sentiment_divergence signal should be emitted"
+        );
+        // No competitor_decision_relevant or budget_cycle_locked in this fixture.
+        assert_eq!(
+            signal_count(&db, entity_id, "competitor_decision_relevant"),
+            0,
+            "no competitor signal expected"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "budget_cycle_locked"),
+            0,
+            "no budget_cycle_locked signal expected"
+        );
+    }
+
+    /// NULL-safety: reading an account with no Glean enrichment must not panic.
+    #[test]
+    fn null_column_reads_as_none() {
+        let db = test_db();
+        let entity_id = "dos15-no-glean";
+        seed_account(&db, entity_id);
+
+        let result: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+                rusqlite::params![entity_id],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        assert!(result.is_none(), "unset column should read as NULL");
+    }
+
+    /// Idempotency: calling upsert twice overwrites cleanly — no duplicate rows.
+    #[test]
+    fn upsert_is_idempotent() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let entity_id = "dos15-idempotent";
+        seed_account(&db, entity_id);
+
+        let first = parse_leading_signals(r#"{"champion_risk": null, "quote_wall": []}"#)
+            .expect("parse first");
+        super::upsert_health_outlook_signals(&db, &engine, "account", entity_id, &first)
+            .expect("first upsert");
+
+        let second = parse_leading_signals(
+            r#"{"champion_risk": {"champion_name": "New Champion", "at_risk": false, "risk_evidence": []}, "quote_wall": []}"#,
+        )
+        .expect("parse second");
+        super::upsert_health_outlook_signals(&db, &engine, "account", entity_id, &second)
+            .expect("second upsert");
+
+        // Read back — should reflect second write.
+        let stored: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+                rusqlite::params![entity_id],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        let reread: HealthOutlookSignals =
+            serde_json::from_str(&stored.expect("should be set")).expect("deserialize");
+        let cr = reread.champion_risk.as_ref().expect("champion_risk");
+        assert_eq!(cr.champion_name.as_deref(), Some("New Champion"));
     }
 }
 
@@ -2262,6 +2514,9 @@ mod live_acceptance_tests {
                 source: Some("live-acceptance-test".to_string()),
                 urgency: "critical".to_string(),
                 item_source: None,
+                headline: None,
+                evidence: None,
+                kind_label: None,
                 discrepancy: None,
             }],
             ..Default::default()
@@ -2279,6 +2534,7 @@ mod live_acceptance_tests {
             entity_name: String::new(),
             relationship: None,
             intelligence_context: None,
+            active_preset: None,
         };
 
         let first = write_enrichment_results(&state, &input, &contradictory, None)
@@ -2462,6 +2718,7 @@ mod live_acceptance_tests {
                     rationale: Some("Usage and expansion improved".to_string()),
                     timeframe: "30d".to_string(),
                     confidence: 0.7,
+                    ..Default::default()
                 },
                 dimensions: RelationshipDimensions {
                     meeting_cadence: DimensionScore {
@@ -2472,7 +2729,7 @@ mod live_acceptance_tests {
                     },
                     email_engagement: DimensionScore::default(),
                     stakeholder_coverage: DimensionScore::default(),
-                    champion_health: DimensionScore::default(),
+                    key_advocate_health: DimensionScore::default(),
                     financial_proximity: DimensionScore::default(),
                     signal_momentum: DimensionScore::default(),
                 },

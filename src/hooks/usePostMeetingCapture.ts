@@ -1,12 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import type {
   CalendarEvent,
   CapturedOutcome,
   TranscriptResult,
 } from "@/types";
+import { useTauriEvent } from "./useTauriEvent";
 
 interface CaptureState {
   visible: boolean;
@@ -24,25 +24,19 @@ export function usePostMeetingCapture() {
     processing: false,
   });
 
-  useEffect(() => {
-    // Full capture prompt (manual trigger or auto with transcript)
-    const unlistenFull = listen<CalendarEvent>("post-meeting-prompt", (event) => {
-      setState({ visible: true, meeting: event.payload, isFallback: false, processing: false });
-    });
-
-    // Fallback prompt (no transcript detected after deadline)
-    const unlistenFallback = listen<CalendarEvent>(
-      "post-meeting-prompt-fallback",
-      (event) => {
-        setState({ visible: true, meeting: event.payload, isFallback: true, processing: false });
-      }
-    );
-
-    return () => {
-      unlistenFull.then((fn) => fn());
-      unlistenFallback.then((fn) => fn());
-    };
+  const handleFullPrompt = useCallback((meeting: CalendarEvent) => {
+    setState({ visible: true, meeting, isFallback: false, processing: false });
   }, []);
+
+  const handleFallbackPrompt = useCallback((meeting: CalendarEvent) => {
+    setState({ visible: true, meeting, isFallback: true, processing: false });
+  }, []);
+
+  // Full capture prompt (manual trigger or auto with transcript)
+  useTauriEvent("post-meeting-prompt", handleFullPrompt);
+
+  // Fallback prompt (no transcript detected after deadline)
+  useTauriEvent("post-meeting-prompt-fallback", handleFallbackPrompt);
 
   const capture = useCallback(
     async (outcome: CapturedOutcome) => {
@@ -98,6 +92,37 @@ export function usePostMeetingCapture() {
     [state.meeting]
   );
 
+  const pasteTranscript = useCallback(
+    async (
+      text: string,
+      format: "txt" | "md" = "txt",
+    ): Promise<TranscriptResult | null> => {
+      if (!state.meeting) return null;
+      const trimmed = text.trim();
+      if (!trimmed) {
+        toast.error("Paste a transcript first");
+        return null;
+      }
+      setState((prev) => ({ ...prev, processing: true }));
+      try {
+        const result = await invoke<TranscriptResult>(
+          "attach_meeting_transcript_text",
+          { text: trimmed, format, meeting: state.meeting },
+        );
+        setTimeout(() => {
+          setState({ visible: false, meeting: null, isFallback: false, processing: false });
+        }, 2000);
+        return result;
+      } catch (err) {
+        console.error("Failed to paste transcript:", err);
+        toast.error("Failed to paste transcript");
+        setState((prev) => ({ ...prev, processing: false }));
+        return null;
+      }
+    },
+    [state.meeting],
+  );
+
   return {
     visible: state.visible,
     meeting: state.meeting,
@@ -107,5 +132,6 @@ export function usePostMeetingCapture() {
     skip,
     dismiss,
     attachTranscript,
+    pasteTranscript,
   };
 }

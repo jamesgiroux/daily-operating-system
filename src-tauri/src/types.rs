@@ -81,7 +81,7 @@ pub struct Config {
     /// Embedding model/runtime configuration for semantic retrieval (Sprint 26).
     #[serde(default)]
     pub embeddings: EmbeddingConfig,
-    /// Active role preset ID (I309). Defaults to "customer-success".
+    /// Active role preset ID (I309). Defaults to "core".
     #[serde(default = "default_role")]
     pub role: String,
     /// Optional path to a custom preset JSON file (I309).
@@ -96,9 +96,15 @@ pub struct Config {
     /// Hygiene scan interval in hours (default: 4). Options: 1, 2, 4, 8.
     #[serde(default = "default_hygiene_scan_interval_hours")]
     pub hygiene_scan_interval_hours: u32,
-    /// Daily AI enrichment budget (default: 10). Options: 5, 10, 20, 50.
-    #[serde(default = "default_hygiene_ai_budget")]
+    /// Deprecated: was a call-count budget for hygiene enrichments.
+    /// Kept for config backwards-compatibility only. No longer enforced.
+    /// New installs will omit this field; existing configs continue to deserialize.
+    #[serde(default, skip_serializing_if = "skip_zero")]
     pub hygiene_ai_budget: u32,
+    /// Daily AI token budget (DOS-279). Covers all AI calls: background enrichment,
+    /// meeting prep, briefing generation, manual refresh. Options: 50_000, 100_000, 250_000.
+    #[serde(default = "default_daily_ai_token_budget")]
+    pub daily_ai_token_budget: u32,
     /// Pre-meeting refresh window in hours (default: 12). Options: 2, 4, 12, 24.
     #[serde(default = "default_hygiene_pre_meeting_hours")]
     pub hygiene_pre_meeting_hours: u32,
@@ -178,7 +184,7 @@ fn default_history_count() -> u32 {
 }
 
 fn default_profile() -> String {
-    "customer-success".to_string()
+    "general".to_string()
 }
 
 fn default_personality() -> String {
@@ -252,11 +258,11 @@ fn default_ai_model_routing_version() -> u32 {
 }
 
 fn default_entity_mode() -> String {
-    "account".to_string()
+    "project".to_string()
 }
 
 fn default_role() -> String {
-    "customer-success".to_string()
+    "core".to_string()
 }
 
 /// Embedding runtime configuration.
@@ -315,12 +321,17 @@ fn default_hygiene_scan_interval_hours() -> u32 {
     4
 }
 
-fn default_hygiene_ai_budget() -> u32 {
-    10
-}
-
 fn default_hygiene_pre_meeting_hours() -> u32 {
     12
+}
+
+fn default_daily_ai_token_budget() -> u32 {
+    crate::pty::DEFAULT_DAILY_AI_TOKEN_BUDGET
+}
+
+/// Skip serializing deprecated `hygiene_ai_budget` when it is 0 (new installs).
+fn skip_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 fn default_email_enrichment_timeout_seconds() -> u32 {
@@ -925,6 +936,13 @@ pub struct LinkedEntity {
     /// "suggested" affordance rather than as a primary chip.
     #[serde(default)]
     pub suggested: bool,
+    /// DOS-258: deterministic link role from the new engine.
+    /// Supersedes is_primary/suggested when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// DOS-258: rule identifier that produced this link (e.g. "P5", "P9").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied_rule: Option<String>,
 }
 
 fn default_linked_entity_confidence() -> f64 {
@@ -2169,10 +2187,10 @@ pub struct EscalationSignal {
     pub speaker: Option<String>,
 }
 
-/// I554: Champion health assessment from transcript analysis.
+/// I554: Key advocate health assessment from transcript analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChampionHealth {
+pub struct KeyAdvocateHealth {
     /// Name of the primary champion/advocate
     pub champion_name: String,
     /// strong|weak|lost|none
@@ -2264,9 +2282,14 @@ pub struct TranscriptResult {
     /// Interaction dynamics from transcript (I509)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interaction_dynamics: Option<InteractionDynamics>,
-    /// I554: Champion health assessment
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub champion_health: Option<ChampionHealth>,
+    /// I554: Key advocate health assessment
+    #[serde(
+        default,
+        alias = "championHealth",
+        alias = "champion_health",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub key_advocate_health: Option<KeyAdvocateHealth>,
     /// I554: Stakeholder role changes detected
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub role_changes: Vec<RoleChange>,
@@ -2861,13 +2884,9 @@ pub struct TimelineMeeting {
 }
 
 /// Feature flags for gating incomplete features behind compile/runtime switches.
-/// Currently used to hide role presets (not GA-ready) from the UI.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeatureFlags {
-    /// When false, role preset selection is hidden from onboarding and settings.
-    /// Defaults to false (bool's Default).
-    pub role_presets_enabled: bool,
     /// When false, Book of Business report is hidden from the Me page.
     /// Defaults to false — the template-aligned rebuild is not yet validated.
     pub book_of_business_enabled: bool,
@@ -2910,12 +2929,13 @@ mod tests {
             ai_models: AiModelConfig::default(),
             ai_model_routing_version: AI_MODEL_ROUTING_VERSION,
             embeddings: EmbeddingConfig::default(),
-            role: "customer-success".to_string(),
+            role: "core".to_string(),
             custom_preset_path: None,
             app_lock_timeout_minutes: Some(15),
             icloud_warning_dismissed: None,
             hygiene_scan_interval_hours: 4,
-            hygiene_ai_budget: 10,
+            hygiene_ai_budget: 0,
+            daily_ai_token_budget: crate::pty::DEFAULT_DAILY_AI_TOKEN_BUDGET,
             hygiene_pre_meeting_hours: 12,
             email_enrichment_timeout_seconds: 90,
             notifications: NotificationConfig::default(),
@@ -3253,5 +3273,89 @@ mod tests {
         let result = config.validate_email_enrichment_timeout();
         assert!(result.is_ok());
         assert_eq!(config.email_enrichment_timeout_seconds, 90);
+    }
+
+    // -----------------------------------------------------------------------
+    // DOS-177: Feature flag construction from config.features HashMap
+    // -----------------------------------------------------------------------
+
+    /// Simulates the logic inside `get_feature_flags` — construct FeatureFlags
+    /// from a Config's features HashMap. Extracted as a helper so it can be
+    /// unit-tested without a Tauri State mock.
+    fn build_feature_flags_from_config(config: &Config) -> FeatureFlags {
+        FeatureFlags {
+            book_of_business_enabled: *config
+                .features
+                .get("book_of_business_enabled")
+                .unwrap_or(&false),
+            glean_discovery_enabled: *config
+                .features
+                .get("glean_discovery_enabled")
+                .unwrap_or(&false),
+        }
+    }
+
+    #[test]
+    fn feature_flag_reads_from_config_when_set() {
+        let mut config = test_config("customer-success");
+        config
+            .features
+            .insert("book_of_business_enabled".to_string(), true);
+        config
+            .features
+            .insert("glean_discovery_enabled".to_string(), true);
+
+        let flags = build_feature_flags_from_config(&config);
+
+        assert!(flags.book_of_business_enabled, "book_of_business_enabled should be true when set in config");
+        assert!(flags.glean_discovery_enabled, "glean_discovery_enabled should be true when set in config");
+    }
+
+    #[test]
+    fn feature_flag_defaults_to_false_when_not_in_config() {
+        let config = test_config("customer-success");
+        // Empty features HashMap — no keys inserted
+        assert!(config.features.is_empty());
+
+        let flags = build_feature_flags_from_config(&config);
+
+        assert!(!flags.book_of_business_enabled, "book_of_business_enabled should default to false");
+        assert!(!flags.glean_discovery_enabled, "glean_discovery_enabled should default to false");
+    }
+
+    #[test]
+    fn feature_flag_partial_config_does_not_affect_other_flags() {
+        let mut config = test_config("customer-success");
+        // Only set one flag
+        config
+            .features
+            .insert("book_of_business_enabled".to_string(), true);
+
+        let flags = build_feature_flags_from_config(&config);
+
+        assert!(flags.book_of_business_enabled);
+        assert!(!flags.glean_discovery_enabled, "un-set flags should remain false");
+    }
+
+    #[test]
+    fn affiliates_partnerships_preset_appears_in_available_presets() {
+        // DOS-177: confirm affiliates-partnerships is in the curated 4
+        let presets = crate::presets::loader::get_available_presets();
+        assert_eq!(presets.len(), 4, "should have exactly 4 curated presets");
+        let ids: Vec<&str> = presets.iter().map(|(id, _, _)| id.as_str()).collect();
+        assert!(
+            ids.contains(&"affiliates-partnerships"),
+            "affiliates-partnerships must be in the preset list; got: {:?}",
+            ids
+        );
+        assert!(ids.contains(&"core"), "core must be in the preset list");
+        assert!(
+            ids.contains(&"customer-success"),
+            "customer-success must be in the preset list"
+        );
+        assert!(
+            ids.contains(&"product-marketing"),
+            "product-marketing must be in the preset list"
+        );
     }
 }

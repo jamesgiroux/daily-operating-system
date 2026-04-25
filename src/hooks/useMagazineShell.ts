@@ -9,7 +9,7 @@
 
 import { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import type { ChapterItem } from "@/components/layout/FloatingNavIsland";
-import type { ReadinessStat } from "@/components/layout/FolioBar";
+import type { FolioBreadcrumbItem, ReadinessStat } from "@/components/layout/FolioBar";
 
 export interface MagazineShellConfig {
   /** Publication label for FolioBar, e.g., "Account" */
@@ -18,8 +18,8 @@ export interface MagazineShellConfig {
   atmosphereColor: "turmeric" | "terracotta" | "larkspur" | "olive" | "eucalyptus";
   /** Which nav icon is highlighted */
   activePage: "today" | "week" | "emails" | "dropbox" | "actions" | "me" | "people" | "accounts" | "projects" | "settings";
-  /** Back link for FolioBar detail pages */
-  backLink?: { label: string; onClick: () => void };
+  /** Persistent orientation trail for FolioBar detail/report pages */
+  breadcrumbs?: FolioBreadcrumbItem[];
   /** Chapter definitions for FloatingNavIsland scroll mode */
   chapters?: ChapterItem[];
   /** Actions slot for FolioBar */
@@ -106,7 +106,7 @@ export { MagazineShellContext };
  *   folioLabel: "Account",
  *   atmosphereColor: "turmeric",
  *   activePage: "accounts",
- *   backLink: { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
+ *   breadcrumbs: [{ label: "Accounts", onClick: () => navigate({ to: "/accounts" }) }, { label: "Acme Corp" }],
  *   chapters: CHAPTERS,
  * });
  */

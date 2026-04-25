@@ -5,6 +5,55 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.2.2] — 2026-04-25
+
+### Added
+
+- **Role presets as intelligence contracts (DOS-176, DOS-178, DOS-180)** — the active role preset now shapes AI prompts, health scoring weights, signal-keyword matching, and email classification, not just UI labels. `PresetIntelligenceConfig` extends `RolePreset` with `system_role`, `dimension_weights`, `signal_keywords`, dimension labels, and base prompt overrides. `build_intelligence_prompt_with_preset` and the health-scoring path read the active preset state and merge preset-specific keywords with the base lists at runtime.
+- **Affiliates & Partnerships preset (DOS-176/178)** — first non-CS role ships alongside Customer Success, Product Marketing, and Core. Defines its own vitals (Partner Revenue, Partner Stage, Performance Score, Agreement End), metadata fields (Partner Type, Commercial Model, Audience / Reach), stakeholder roles, lifecycle events, and dimension labels.
+- **Role preset selector in onboarding and Preferences (DOS-177)** — onboarding "What's your role?" chapter is now part of the standard wizard for every new user. `RoleSection` in YouCard's Preferences lets existing users switch any time. Removes the gated rollout in favor of first-class availability.
+- **Peer benchmark cell on Health & Outlook → The Call (DOS-204)** — third column in the Outlook grid renders a band ("Above peers / At peers / Below peers") plus a one-sentence narrative sourced from a dedicated Glean leading-signals prompt that uses Glean's own org context (tier, ARR, package, industry) to identify the comparable cohort. Source-count footer ("Drawn from N Glean source(s).") gives provenance weight. Cell collapses to 2-col when Glean is unavailable or returns no recognizable verdict.
+- **Health & Outlook tab content rebuild (DOS-203)** — Sentiment hero, Needs attention triage, Divergences subgroup, Outlook chapter ("The Call"), Supporting tension (computed vs signal), and About this dossier meta. Conditional fine-state rendering when zero triage items + zero divergences.
+- **Context tab content rebuild (DOS-18, DOS-207)** — nine-chapter IA: Thesis / The Room / What matters to them (with regulatory + competitive subsections inside StrategicLandscape) / What we've built together / Their voice / Commercial shape / Technical shape / Relationship fabric / About the dossier. Regulatory context, stakeholder verification, and value impact tags wired through the Intelligence Loop.
+- **Work tab content rebuild (DOS-13)** — Commitments, Suggestions (with one-click accept), Programs & motions, Shared with team (when tracker provenance present), Recently landed, Outputs, The Record, optional Files.
+- **Quote Wall renderer on Context tab** — replaces the empty "Coming soon" placeholder. Reads `quote_wall: QuoteWallEntry[]` from the Glean leading-signals payload. Editorial pull-quote cards with quote, attribution, sentiment chip, source label, and "why it matters" line. Editorial empty state when zero quotes captured.
+- **Glean leading-signal enrichment (DOS-15)** — separate Glean chat pass alongside the main intelligence run. Returns champion-risk, channel-sentiment divergence, commercial signals, competitive mentions, regulatory context, and quote wall — all citation-backed. Drives new signal types (`champion_at_risk`, `sentiment_divergence`, `competitor_decision_relevant`, `budget_cycle_locked`) through the propagation engine.
+- **Editable capture fields across Commercial shape, Technical shape, Relationship fabric** — 28 newly editable fields (11 Commercial / 8 Technical / 7 Relationship + 2 already-editable on Commercial + 1 on Relationship). 25 metadata-backed via `set_entity_metadata`, 3 column-backed (`arr`, `contract_end`, `nps`). 9 enum fields render as styled `<Select>` (Auto-renew, Contract type, Previous renewal outcome, Procurement complexity, Discount appetite, Payment behavior, Reference customer, Logo permission, Advocacy trend); 12 stay free-text. The standalone `<PresetFieldsEditor>` form is removed — preset metadata fields now render inline in `EditableVitalsStrip` alongside role-aware vitals.
+- **"Is this accurate?" unified correction UX (DOS-41)** — replaces the prior mix of thumbs-up/down, inline edits, and field-conflict accept/dismiss. Two variants: `dismiss` (binary Yes/No for atomic claim cards — Yes confirms, No tombstones) and `correct` (three-state Yes/Partially/No for AI narrative summaries — Partially opens an annotation textarea, No opens an inline editor with the previous value). Both feed Bayesian source-weight learning.
+- **Single user-defined daily AI budget (DOS-279)** — Diagnostics now shows and enforces a configurable daily token cap. Replaces the misleading 50k display that was not actually gated.
+- **Globex Holdings devtools scenario (DOS-208)** — fixture aligned with the canonical mockup target so visual reviews can run against the same shape the design pass was built for.
+- **Chapter-by-chapter enrichment exploration (DOS-204)** — exploration spike documenting the cost/benefit of chapter-level TTLs vs full-run enrichment. ADR-0122 captures the decision to ship Wave 3 on the current model and instrument first.
+
+### Changed
+
+- **CS-specific schema types renamed to role-generic (DOS-179)** — `RenewalOutlook` → `AgreementOutlook`, `RelationshipDimensions.champion_health` → `key_advocate_health`, `ChampionHealth` struct → `KeyAdvocateHealth`, etc. Serde aliases preserve backward compatibility on every renamed serialized field; existing data round-trips unchanged. 171 references updated.
+- **Compliance/regulatory section dedupe** — removed the redundant `<RegulatoryContextCard>` after Commercial shape on the Context tab. The primary render lives inside `StrategicLandscape` ("What matters to them") as the third subsection alongside Strategic priorities and Competitive landscape.
+- **Products list restructured** — `AccountTechnicalFootprint` groups by `AccountProduct.category` when present; otherwise short canonical names become product headlines and longer descriptive entries fall into a compact "Captured products" feature list. Cap of 6 features per group with expand/collapse.
+- **Work tab nav-island chapter gating** — `buildWorkChapters` now takes per-chapter content-presence flags (`hasCommitments / hasSuggestions / hasPrograms / hasSharedData / hasRecentlyLanded / hasOutputs / hasFiles`); empty chapters drop from the nav island instead of rendering dead pills. Same hygiene applied to Health (portfolio requires children) and Context (thesis follows intelligence presence).
+- **Cross-entity contamination guard defaults to ShadowMode** — detect, log, emit signals, but do not block writes. Operators can opt into hard rejection via `DAILYOS_CONTAMINATION_VALIDATION=strict`. Aligns with the "soft signal, not hard gate" principle the v1.4.0 Trust Compiler will subsume.
+- **Inline-style audit across Account Detail surfaces** — 132 of 152 inline-style instances migrated to per-component CSS modules using existing design tokens. The remaining 20 are data-driven (dynamic widths, computed colors, runtime CSS custom properties, calculated layout positions) and retained inline with one-line justification comments. 13 new per-component `.module.css` files created. Zero new design tokens introduced.
+- **Linear issues exploration (DOS-75) closed** — exploration documented; surfacing decision deferred (currently visible only via meeting prep context and intelligence prompts).
+
+### Fixed
+
+- **DOS-322: Work tab rendered as blank space** — root cause was `editorial-reveal` (opacity:0 with `.visible` class added by `useRevealObserver` IntersectionObserver) used as a hard visibility gate on operational content. Removed `editorial-reveal` from Work tab content (Suggestions, Programs, Shared, Recently landed, Outputs, The Record sections + Finis marker wrapper). Decorative reveal animation stays on Health and Context tabs where it's appropriate polish; Work content renders immediately on tab switch.
+- **DOS-321: Commitment extraction created duplicate rows on every enrichment run** — each transcript pass was inserting a new `actions` row instead of upserting on stable identity. Production data showed commitment rows accumulating roughly 2:1 against unique titles. Now upserts on a deterministic identity hash; existing duplicates left in place (cleanup is a separate pass).
+- **DOS-319: Cross-entity contamination detector flagged target's own subdomains** — `is_target_owned` helper added; both heuristic 1 (foreign domain match) and heuristic 2 (foreign WP-VIP host pattern) now treat any subdomain of a target's own domain as target-owned. A target's own VIP-hosted subdomain (`vip.<target-domain>`) no longer fires as a foreign InfrastructureId.
+- **DOS-286: Enrichment pipeline ran on archived accounts** — `get_stale_accounts` now filters `archived = 0`. Frees AI capacity that was being burned on accounts users had already retired.
+- **DOS-268: db/signals.rs silenced query errors, fed fabricated cold-stakeholder data to health scoring** — schema mismatches and DB locks no longer return zeroed `get_stakeholder_signals` to the scoring path. Errors propagate to callers with warning logs.
+- **Glean leading-signals quote wall populated but invisible** — frontend was rendering an empty placeholder while the backend produced full `QuoteWallEntry` data on every leading-signals call. Real renderer wired (see Added).
+- **Peer benchmark Glean call no longer requires upstream `company_context.industry` and `size`** — Glean uses its own org-wide context to identify the cohort. Earlier behavior silently skipped the call when either field was missing.
+- **WebKit MIME-type rejection on `/styles/design-tokens.css` (DOS-322 family)** — defensive: every CSS module that references design tokens self-imports them, so a global load failure no longer takes down a page surface.
+
+### Removed
+
+- **`role_presets_enabled` feature flag** — role presets are first-class; no opt-in needed. `FeatureFlags` struct loses the field; `get_feature_flags` no longer constructs it. `book_of_business_enabled` and `glean_discovery_enabled` retained.
+- **`PresetFieldsEditor` standalone form** — preset metadata fields render inline in `EditableVitalsStrip` instead. The component file is deleted; consumers on Account / Person / Project detail surfaces updated.
+- **`EntityModeSelector` block from Diagnostics** — redundant with YouCard's `RoleSection`.
+- **DOS-243: Dead struct `Phase2EnrichmentParams`** — six-field struct in `executor.rs` with zero instantiations, obsolete since I652 Phase 6 restructuring.
+- **Misleading `ESTIMATED_DAILY_TOKEN_BUDGET = 50_000` reporting threshold** — replaced by user-defined enforced budget (DOS-279).
+
+
 ## [1.2.1] — 2026-04-21
 
 ### Added

@@ -4,7 +4,7 @@
 //! Each orchestrator is async (for Google API calls) and writes a directive JSON
 //! that the Rust delivery pipeline (deliver.rs) consumes.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use chrono::{Datelike, NaiveDate, Utc};
@@ -113,10 +113,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4: Fetch and classify emails
     let customer_domains = extract_customer_domains(&meetings_by_type);
-    let preset_email_keywords: Vec<String> = {
-        let guard = state.active_preset.read();
-        guard.as_ref().map(|p| p.email_priority_keywords.clone()).unwrap_or_default()
-    };
+    // DOS-176: use merged email priority keywords (base + preset) from cached config
+    let preset_email_keywords: Vec<String> =
+        state.get_merged_signal_config().email_priority_keywords;
     // I374: Load dismissed domains for relevance learning penalty
     let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
@@ -155,6 +154,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 4a2: Signal-context boosting (I320 — boost medium emails with entity signals)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
+            let merged_signal_types = state.get_merged_signal_config().email_signal_types;
             let mut boosted_count = 0u32;
             let mut new_high = Vec::new();
             let mut new_all = Vec::new();
@@ -169,9 +169,12 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
 
-                if let Some(boost) =
-                    email_classify::boost_with_entity_context(from_email, priority, &db)
-                {
+                if let Some(boost) = email_classify::boost_with_entity_context(
+                    from_email,
+                    priority,
+                    &db,
+                    &merged_signal_types,
+                ) {
                     // Clone and update priority
                     let mut boosted = email_val.clone();
                     if let Some(obj) = boosted.as_object_mut() {
@@ -350,7 +353,13 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             match crate::db::ActionDb::open() {
                 Ok(scoring_db) => {
                     let model = state.embedding_model.clone();
-                    crate::signals::email_scoring::score_emails(&scoring_db, Some(&model), &active)
+                    let merged_kws = state.get_merged_signal_config().signal_keywords;
+                    crate::signals::email_scoring::score_emails(
+                        &scoring_db,
+                        Some(&model),
+                        &active,
+                        &merged_kws,
+                    )
                 }
                 Err(e) => {
                     log::warn!("prepare_today: failed to open scoring DB: {}", e);
@@ -734,52 +743,11 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     continue;
                 }
 
-                // I653 FIX 5: Persist classification-time entity links (mirrors prepare_week:1139)
-                if let Some(entities) = cm.get("entities").and_then(|v| v.as_array()) {
-                    // DOS-224: `cm["entities"]` is a ResolvedMeetingEntity[]
-                    // with camelCase serde — NOT the snake_case pairs the
-                    // previous reader expected. Parse the full scored shape
-                    // so the persistence layer can enforce primary rules.
-                    let scored: Vec<crate::google_api::classify::ResolvedMeetingEntity> = entities
-                        .iter()
-                        .filter_map(|e| {
-                            let id = e
-                                .get("entityId")
-                                .or_else(|| e.get("entity_id"))
-                                .and_then(|v| v.as_str())?;
-                            let t = e
-                                .get("entityType")
-                                .or_else(|| e.get("entity_type"))
-                                .and_then(|v| v.as_str())?;
-                            let name = e
-                                .get("name")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
-                            let confidence =
-                                e.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            let source = e
-                                .get("source")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
-                            Some(crate::google_api::classify::ResolvedMeetingEntity {
-                                entity_id: id.to_string(),
-                                entity_type: t.to_string(),
-                                name,
-                                confidence,
-                                source,
-                            })
-                        })
-                        .collect();
-                    if !scored.is_empty() {
-                        let _ = crate::services::meetings::persist_classification_entities_scored(
-                            &db,
-                            calendar_event_id,
-                            &scored,
-                        );
-                    }
-                }
+                // DOS-258: entity linking is owned by
+                // `services::entity_linking::calendar_adapter::evaluate_meeting`,
+                // which runs on every calendar poll and writes to
+                // `linked_entities_raw`. The legacy classification-time
+                // write into `meeting_entities` has been removed.
 
                 ensured += 1;
             }
@@ -898,11 +866,13 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let db_guard_owned = crate::db::ActionDb::open().ok();
     let db_ref = db_guard_owned.as_ref();
     let embedding_ref = state.embedding_model.as_ref();
+    let active_preset = state.active_preset.read().clone();
     let mut meeting_contexts = meeting_context::gather_all_meeting_contexts(
         &classified,
         workspace,
         db_ref,
         Some(embedding_ref),
+        active_preset.as_ref(),
     );
 
     // I331: Assembly model — inject pre-computed AI intelligence into meeting contexts.
@@ -1203,51 +1173,11 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                     new_id
                 };
 
-                // Link meeting entities (I336, refactored I653 to use centralized service).
-                // DOS-224: parse scored shape (camelCase) and route through the
-                // scored persistence path so weak title-only matches land as
-                // non-primary suggestions rather than bogus primaries.
-                if let Some(entities) = cm.get("entities").and_then(|v| v.as_array()) {
-                    let scored: Vec<crate::google_api::classify::ResolvedMeetingEntity> = entities
-                        .iter()
-                        .filter_map(|e| {
-                            let id = e
-                                .get("entityId")
-                                .or_else(|| e.get("entity_id"))
-                                .and_then(|v| v.as_str())?;
-                            let t = e
-                                .get("entityType")
-                                .or_else(|| e.get("entity_type"))
-                                .and_then(|v| v.as_str())?;
-                            let name = e
-                                .get("name")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
-                            let confidence =
-                                e.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            let source = e
-                                .get("source")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
-                            Some(crate::google_api::classify::ResolvedMeetingEntity {
-                                entity_id: id.to_string(),
-                                entity_type: t.to_string(),
-                                name,
-                                confidence,
-                                source,
-                            })
-                        })
-                        .collect();
-                    if !scored.is_empty() {
-                        let _ = crate::services::meetings::persist_classification_entities_scored(
-                            &db,
-                            &meeting_id,
-                            &scored,
-                        );
-                    }
-                }
+                // DOS-258: entity linking is owned by
+                // `services::entity_linking::calendar_adapter::evaluate_meeting`,
+                // which runs on every calendar poll and writes to
+                // `linked_entities_raw`. The legacy classification-time
+                // write into `meeting_entities` has been removed.
 
                 log::debug!(
                     "prepare_week: ensured meeting '{}' in DB (id={})",
@@ -1329,11 +1259,13 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Meeting contexts (I305: thread embedding model for entity resolution)
     let embedding_ref_week = state.embedding_model.as_ref();
+    let active_preset_week = state.active_preset.read().clone();
     let meeting_contexts = meeting_context::gather_all_meeting_contexts(
         &classified,
         workspace,
         db_ref,
         Some(embedding_ref_week),
+        active_preset_week.as_ref(),
     );
 
     // Gap analysis — resolve user timezone from schedule config for accurate UTC→local conversion
@@ -1503,10 +1435,9 @@ pub async fn refresh_emails_with_retry_batch(
         }
     }
 
-    let preset_email_keywords: Vec<String> = {
-        let guard = state.active_preset.read();
-        guard.as_ref().map(|p| p.email_priority_keywords.clone()).unwrap_or_default()
-    };
+    // DOS-176: use merged email priority keywords (base + preset) from cached config
+    let preset_email_keywords: Vec<String> =
+        state.get_merged_signal_config().email_priority_keywords;
     // I374: Load dismissed domains for relevance learning penalty
     let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
@@ -1676,9 +1607,7 @@ pub async fn refresh_emails_with_retry_batch(
                     );
                     return Err(ExecutionError::ScriptFailed {
                         code: 1,
-                        stderr: format!(
-                            "Email retry batch {batch_id} finalize failed: {e}"
-                        ),
+                        stderr: format!("Email retry batch {batch_id} finalize failed: {e}"),
                     });
                 }
             }
@@ -1750,7 +1679,13 @@ pub async fn refresh_emails_with_retry_batch(
             match crate::db::ActionDb::open() {
                 Ok(scoring_db) => {
                     let model = state.embedding_model.clone();
-                    crate::signals::email_scoring::score_emails(&scoring_db, Some(&model), &active)
+                    let merged_kws = state.get_merged_signal_config().signal_keywords;
+                    crate::signals::email_scoring::score_emails(
+                        &scoring_db,
+                        Some(&model),
+                        &active,
+                        &merged_kws,
+                    )
                 }
                 Err(e) => {
                     log::warn!("refresh_emails: failed to open scoring DB: {}", e);
@@ -2261,7 +2196,10 @@ async fn fetch_and_classify_week(
 /// `(account_domains, person_domains)` lowercase sets.
 fn load_tracked_domains(db: &crate::db::ActionDb) -> (HashSet<String>, HashSet<String>) {
     let mut account_domains: HashSet<String> = HashSet::new();
-    if let Ok(mut stmt) = db.conn_ref().prepare("SELECT DISTINCT domain FROM account_domains") {
+    if let Ok(mut stmt) = db
+        .conn_ref()
+        .prepare("SELECT DISTINCT domain FROM account_domains")
+    {
         if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
             for d in rows.flatten() {
                 let d = d.trim().to_lowercase();
@@ -2561,7 +2499,11 @@ fn extract_recipient_addresses(header: &str) -> Option<String> {
             let part = part.trim();
             if let (Some(lt), Some(gt)) = (part.find('<'), part.rfind('>')) {
                 let addr = part[lt + 1..gt].trim().to_lowercase();
-                if addr.contains('@') { Some(addr) } else { None }
+                if addr.contains('@') {
+                    Some(addr)
+                } else {
+                    None
+                }
             } else if part.contains('@') {
                 Some(part.to_lowercase())
             } else {
@@ -2569,7 +2511,11 @@ fn extract_recipient_addresses(header: &str) -> Option<String> {
             }
         })
         .collect();
-    if addrs.is_empty() { None } else { Some(addrs.join(",")) }
+    if addrs.is_empty() {
+        None
+    } else {
+        Some(addrs.join(","))
+    }
 }
 
 /// I318: Track thread positions from fetched high-priority emails.
@@ -3045,7 +2991,7 @@ fn build_week_overview(directive: &Value, data_dir: &Path) -> Value {
         days.push(build_week_day(&day_date, day_name, &day_meetings, data_dir));
     }
 
-    let action_summary = build_action_summary(directive, data_dir);
+    let action_summary = build_action_summary(directive);
     let focus_areas = build_focus_areas(directive);
     let time_blocks = build_time_blocks(directive);
     let readiness_checks = build_readiness_checks(directive, data_dir);
@@ -3146,9 +3092,9 @@ fn resolve_prep_status(meeting_id: &str, meeting_type: &str, data_dir: &Path) ->
     }
 }
 
-fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
-    let actions = directive.get("actions").cloned().unwrap_or(json!({}));
-    let overdue = actions
+fn build_action_summary(directive: &Value) -> Value {
+    let mut actions = directive.get("actions").cloned().unwrap_or(json!({}));
+    let mut overdue = actions
         .get("overdue")
         .and_then(|v| v.as_array())
         .cloned()
@@ -3160,23 +3106,20 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         .cloned()
         .unwrap_or_default();
 
-    // Fallback to actions.json
     if overdue.is_empty() && this_week.is_empty() {
-        let actions_path = data_dir.join("actions.json");
-        if let Ok(content) = std::fs::read_to_string(&actions_path) {
-            if let Ok(today_actions) = serde_json::from_str::<Value>(&content) {
-                if let Some(all) = today_actions.get("actions").and_then(|v| v.as_array()) {
-                    this_week = all
-                        .iter()
-                        .filter(|a| {
-                            !a.get("isOverdue")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false)
-                        })
-                        .cloned()
-                        .collect();
-                }
-            }
+        if let Ok(db) = crate::db::ActionDb::open() {
+            actions = actions::fetch_actions_from_db(&db);
+            overdue = actions
+                .get("overdue")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            this_week = actions
+                .get("thisWeek")
+                .or_else(|| actions.get("this_week"))
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
         }
     }
 
@@ -3196,26 +3139,7 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         })
         .collect();
 
-    // Build title→id lookup from actions.json so week items link to real action IDs
-    let action_id_by_title: std::collections::HashMap<String, String> = {
-        let mut map = std::collections::HashMap::new();
-        let actions_path = data_dir.join("actions.json");
-        if let Ok(content) = std::fs::read_to_string(&actions_path) {
-            if let Ok(parsed) = serde_json::from_str::<Value>(&content) {
-                if let Some(all) = parsed.get("actions").and_then(|v| v.as_array()) {
-                    for a in all {
-                        if let (Some(id), Some(title)) = (
-                            a.get("id").and_then(|v| v.as_str()),
-                            a.get("title").and_then(|v| v.as_str()),
-                        ) {
-                            map.insert(title.to_string(), id.to_string());
-                        }
-                    }
-                }
-            }
-        }
-        map
-    };
+    let action_id_by_title = build_action_id_lookup_from_db();
 
     let overdue_items: Vec<Value> = overdue
         .iter()
@@ -3286,6 +3210,29 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         "overdue": overdue_items,
         "dueThisWeekItems": due_this_week_items,
     })
+}
+
+fn build_action_id_lookup_from_db() -> HashMap<String, String> {
+    let Ok(db) = crate::db::ActionDb::open() else {
+        return HashMap::new();
+    };
+
+    let actions = actions::fetch_actions_from_db(&db);
+    let mut map = HashMap::new();
+    for bucket in ["overdue", "thisWeek", "this_week"] {
+        let Some(rows) = actions.get(bucket).and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for action in rows {
+            if let (Some(id), Some(title)) = (
+                action.get("id").and_then(|v| v.as_str()),
+                action.get("title").and_then(|v| v.as_str()),
+            ) {
+                map.insert(title.to_string(), id.to_string());
+            }
+        }
+    }
+    map
 }
 
 /// Build readiness checks: surfaces prep gaps, overdue actions, and stale contacts.
@@ -4105,7 +4052,6 @@ mod tests {
 
     #[test]
     fn test_readiness_checks_overdue_actions() {
-        let tmp = TempDir::new().unwrap();
         let directive = json!({
             "meetingsByDay": {},
             "actions": {
@@ -4116,7 +4062,7 @@ mod tests {
             }
         });
 
-        let checks = build_readiness_checks(&directive, tmp.path());
+        let checks = build_readiness_checks(&directive, Path::new(""));
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0]["checkType"], "overdue_action");
         assert!(checks[0]["message"]
@@ -4229,7 +4175,6 @@ mod tests {
 
     #[test]
     fn test_action_summary_includes_items() {
-        let tmp = TempDir::new().unwrap();
         let directive = json!({
             "actions": {
                 "overdue": [
@@ -4241,7 +4186,7 @@ mod tests {
             }
         });
 
-        let summary = build_action_summary(&directive, tmp.path());
+        let summary = build_action_summary(&directive);
         assert_eq!(summary["overdueCount"], 1);
         assert_eq!(summary["dueThisWeek"], 1);
 

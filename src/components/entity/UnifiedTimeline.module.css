@@ -1,5 +1,11 @@
 /* UnifiedTimeline — The Record chapter */
 
+@import "../../styles/design-tokens.css";
+
+.section {
+  scroll-margin-top: 60px;
+}
+
 .toggleButton {
   display: inline-flex;
   align-items: center;

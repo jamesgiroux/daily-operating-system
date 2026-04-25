@@ -8,9 +8,9 @@
  * Automatic background work drives a quiet persistent indicator instead.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useTauriEvent } from "./useTauriEvent";
 
 interface BackgroundStatusEvent {
   phase: "started" | "completed" | "failed";
@@ -43,52 +43,53 @@ export function useBackgroundStatus(): BackgroundWorkState {
   });
   const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const handleBackgroundWorkStatus = useCallback((payload: BackgroundStatusEvent) => {
+    const { phase, message, error, manual } = payload;
+
+    // Clear any pending auto-clear timer
+    if (clearTimerRef.current) {
+      clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = null;
+    }
+
+    if (phase === "started") {
+      setState({ active: true, message, phase: "started" });
+
+      // Only toast for manual (user-initiated) refreshes
+      if (manual) {
+        toast.loading(message, { id: TOAST_ID, duration: 30000 });
+      }
+    } else if (phase === "completed") {
+      setState({ active: false, message, phase: "completed" });
+
+      if (manual) {
+        toast.success(message, { id: TOAST_ID, duration: 3000 });
+      }
+
+      // Auto-clear completed state after delay
+      clearTimerRef.current = setTimeout(() => {
+        setState({ active: false, message: "", phase: "idle" });
+      }, CLEAR_DELAY_MS);
+    } else if (phase === "failed") {
+      setState({ active: false, message: error || message, phase: "failed" });
+
+      // Always toast failures — errors should be visible regardless of source
+      toast.error(error ? `${message}: ${error}` : message, {
+        id: TOAST_ID,
+        duration: 8000,
+      });
+
+      // Auto-clear failed state after delay
+      clearTimerRef.current = setTimeout(() => {
+        setState({ active: false, message: "", phase: "idle" });
+      }, CLEAR_DELAY_MS);
+    }
+  }, []);
+
+  useTauriEvent("background-work-status", handleBackgroundWorkStatus);
+
   useEffect(() => {
-    const unlisten = listen<BackgroundStatusEvent>("background-work-status", (event) => {
-      const { phase, message, error, manual } = event.payload;
-
-      // Clear any pending auto-clear timer
-      if (clearTimerRef.current) {
-        clearTimeout(clearTimerRef.current);
-        clearTimerRef.current = null;
-      }
-
-      if (phase === "started") {
-        setState({ active: true, message, phase: "started" });
-
-        // Only toast for manual (user-initiated) refreshes
-        if (manual) {
-          toast.loading(message, { id: TOAST_ID, duration: 30000 });
-        }
-      } else if (phase === "completed") {
-        setState({ active: false, message, phase: "completed" });
-
-        if (manual) {
-          toast.success(message, { id: TOAST_ID, duration: 3000 });
-        }
-
-        // Auto-clear completed state after delay
-        clearTimerRef.current = setTimeout(() => {
-          setState({ active: false, message: "", phase: "idle" });
-        }, CLEAR_DELAY_MS);
-      } else if (phase === "failed") {
-        setState({ active: false, message: error || message, phase: "failed" });
-
-        // Always toast failures — errors should be visible regardless of source
-        toast.error(error ? `${message}: ${error}` : message, {
-          id: TOAST_ID,
-          duration: 8000,
-        });
-
-        // Auto-clear failed state after delay
-        clearTimerRef.current = setTimeout(() => {
-          setState({ active: false, message: "", phase: "idle" });
-        }, CLEAR_DELAY_MS);
-      }
-    });
-
     return () => {
-      unlisten.then((fn) => fn());
       if (clearTimerRef.current) {
         clearTimeout(clearTimerRef.current);
       }

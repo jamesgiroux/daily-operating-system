@@ -678,10 +678,11 @@ pub async fn trigger_granola_sync_for_meeting(
     let force = force.unwrap_or(false);
     let state = state.inner().clone();
     let app_handle = app_handle.clone();
+    let state_for_blocking = state.clone();
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let (result, attached_event) = tauri::async_runtime::spawn_blocking(move || {
         crate::granola::poller::trigger_granola_sync_for_meeting(
-            &state,
+            &state_for_blocking,
             &app_handle,
             &meeting_id,
             force,
@@ -689,6 +690,24 @@ pub async fn trigger_granola_sync_for_meeting(
     })
     .await
     .map_err(|e| format!("Granola sync task failed: {}", e))??;
+
+    // Re-run entity linking with the post-transcript context (DOS-258).
+    // Best-effort — failure here never blocks the manual-sync response.
+    if let Some(event) = attached_event {
+        if let Err(e) = crate::services::entity_linking::calendar_adapter::evaluate_meeting(
+            state,
+            &event,
+            crate::services::entity_linking::Trigger::TranscriptIngest,
+        )
+        .await
+        {
+            log::warn!(
+                "entity_linking after manual Granola sync failed (non-fatal) for {}: {}",
+                event.id,
+                e
+            );
+        }
+    }
 
     let status = match result.status {
         crate::granola::poller::ManualGranolaSyncStatus::Attached => "attached",
@@ -1955,13 +1974,14 @@ pub async fn set_role(
     let preset = crate::presets::loader::load_preset(&role)?;
 
     crate::state::create_or_update_config(&state, |c| {
-        c.role = role.clone();
+        c.role = preset.id.clone();
         c.custom_preset_path = None;
         c.entity_mode = preset.default_entity_mode.clone();
         c.profile = crate::types::profile_for_entity_mode(&c.entity_mode);
     })?;
 
-    *state.active_preset.write() = Some(preset);
+    // DOS-176: update active preset and recompute merged signal/email config cache.
+    state.set_active_preset(preset);
 
     let _ = app_handle.emit("config-updated", ());
     Ok("ok".to_string())
@@ -3850,7 +3870,7 @@ fn completed_onboarding_dimensions(intel: &crate::intelligence::IntelligenceJson
 
     if intel.contract_context.is_some()
         || !intel.expansion_signals.is_empty()
-        || intel.renewal_outlook.is_some()
+        || intel.agreement_outlook.is_some()
         || intel.org_health.is_some()
     {
         completed += 1;

@@ -6,37 +6,16 @@
  * like a page ready to receive its edition, not a blank screen. Section
  * rules, hero-scale typography, and a pull quote treatment for the footnote.
  *
- * When a briefing workflow is running, transitions to the shared
- * GeneratingProgress screen with phase steps and rotating quotes.
+ * When a briefing workflow is running, transitions to the shared startup
+ * briefing screen with phase steps and rotating quotes.
  */
 
 import { Mail } from "lucide-react";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
-import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { useAppState } from "@/hooks/useAppState";
 import type { GoogleAuthStatus } from "@/types";
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
-
-const BRIEFING_PHASES = [
-  { key: "preparing", label: "Gathering your day", detail: "Pulling calendar, emails, and account context" },
-  { key: "enriching", label: "Building context", detail: "Assembling meeting briefings, priorities, and action items" },
-  { key: "delivering", label: "Composing the briefing", detail: "Writing your morning document" },
-];
-
-const BRIEFING_QUOTES = [
-  "Grab a coffee — your day will be ready soon.",
-  "Combobulating your priorities…",
-  `"The secret of getting ahead is getting started." — Mark Twain`,
-  "Teaching the system about your calendar…",
-  `"By failing to prepare, you are preparing to fail." — Benjamin Franklin`,
-  "Cross-referencing all the things…",
-  "Turning chaos into calendar clarity…",
-  `"Plans are nothing; planning is everything." — Dwight D. Eisenhower`,
-  "Consulting the schedule oracle…",
-  "Almost done thinking about thinking…",
-  `"Preparation is the key to success." — Alexander Graham Bell`,
-  "Crunching context like it owes us money…",
-];
+import { StartupBriefingScreen } from "@/components/startup/StartupBriefingScreen";
 
 interface DashboardEmptyProps {
   message: string;
@@ -52,15 +31,7 @@ export function DashboardEmpty({ message, onGenerate, isRunning, workflowStatus,
   const isUnauthed = googleAuth?.status === "notconfigured";
 
   if (isRunning && workflowStatus?.status === "running") {
-    return (
-      <GeneratingProgress
-        title="Preparing Daily Briefing"
-        accentColor="var(--color-spice-turmeric)"
-        phases={BRIEFING_PHASES}
-        currentPhaseKey={workflowStatus.phase}
-        quotes={BRIEFING_QUOTES}
-      />
-    );
+    return <StartupBriefingScreen mode="progress" currentPhaseKey={workflowStatus.phase} />;
   }
 
   return (

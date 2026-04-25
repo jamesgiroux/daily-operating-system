@@ -39,8 +39,8 @@ export function Ready({
   return (
     <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
-        title="Tomorrow morning, your day will be ready."
-        epigraph="Everything is set. Here's what we configured."
+        title="Your workspace is ready."
+        epigraph="DailyOS will keep your day prepared as it changes."
       />
 
       {/* Config summary */}
@@ -95,10 +95,9 @@ export function Ready({
       {/* What happens next */}
       <div className={`${styles.ruleSection} ${styles.nextStepSection}`}>
         <p className={`${styles.secondaryText} ${styles.noMargin}`}>
-          Your first real briefing generates at{" "}
-          <span className={styles.accentText}>6:00 AM</span> tomorrow.
+          DailyOS prepares the first pass before your next workday.
           Your meetings will have context from the accounts and projects you just added.
-          Each day, the system learns more — prep gets richer, patterns sharpen, nothing falls through.
+          As the day changes, the system learns more: prep gets richer, patterns sharpen, nothing falls through.
         </p>
 
         {!isGoogleConnected && (

@@ -12,7 +12,7 @@
  * when the `conflicts` prop is provided.
  */
 import { useState, useRef, useEffect } from "react";
-import type { PresetVitalField } from "@/types/preset";
+import type { PresetVitalField, PresetMetadataField } from "@/types/preset";
 import type { AccountSourceRef } from "@/types";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -20,6 +20,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import {
   formatProvenanceSource,
 } from "@/components/ui/ProvenanceLabel";
+import css from "./EditableVitalsStrip.module.css";
 // Check, X icons removed — SuggestionRow disabled
 
 /** Loose data shape — uses index signature to accept any entity detail type. */
@@ -37,6 +38,12 @@ export interface VitalConflict {
 
 interface EditableVitalsStripProps {
   fields: PresetVitalField[];
+  /**
+   * Preset metadata custom fields appended inline as additional vital chips.
+   * Resolved via the `metadata` map; edits route through `onFieldChange`
+   * with `source === "metadata"`.
+   */
+  metadataFields?: PresetMetadataField[];
   entityData: EntityData;
   metadata?: Record<string, string>;
   onFieldChange: (key: string, columnMapping: string | undefined, source: string, value: string) => void;
@@ -176,9 +183,9 @@ function InlineInput({
   }, []);
 
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+    <span className={css.inlineInputRoot}>
       {prefix && (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-secondary)" }}>
+        <span className={css.inputPrefix}>
           {prefix}
         </span>
       )}
@@ -193,20 +200,7 @@ function InlineInput({
           if (e.key === "Escape") onCancel();
         }}
         placeholder={label}
-        style={{
-          width: type === "number" ? 80 : 120,
-          fontFamily: "var(--font-mono)",
-          fontSize: 12,
-          fontWeight: 500,
-          color: "var(--color-text-primary)",
-          background: "transparent",
-          border: "none",
-          borderBottom: "1px solid var(--color-text-tertiary)",
-          outline: "none",
-          padding: "0 2px",
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-        }}
+        className={`${css.inlineInput} ${type === "number" ? css.inlineInputNumber : css.inlineInputText}`}
       />
     </span>
   );
@@ -242,20 +236,7 @@ function InlineSelect({
       onKeyDown={(e) => {
         if (e.key === "Escape") onCancel();
       }}
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 12,
-        fontWeight: 500,
-        color: "var(--color-text-primary)",
-        background: "var(--color-paper-warm-white)",
-        border: "1px solid var(--color-rule-light)",
-        borderRadius: 4,
-        outline: "none",
-        padding: "2px 4px",
-        textTransform: "uppercase",
-        letterSpacing: "0.06em",
-        cursor: "pointer",
-      }}
+      className={css.inlineSelect}
     >
       <option value="">Not set</option>
       {options.map((opt) => (
@@ -276,17 +257,7 @@ function formatSourceAttribution(ref: AccountSourceRef): string {
 /** Source attribution line rendered below a vital value. */
 function SourceAttributionLine({ sourceRef }: { sourceRef: AccountSourceRef }) {
   return (
-    <span
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: "var(--type-xs)",
-        color: "var(--color-text-muted)",
-        marginTop: 2,
-        display: "block",
-        textTransform: "none",
-        letterSpacing: "0.02em",
-      }}
-    >
+    <span className={css.sourceAttribution}>
       {formatSourceAttribution(sourceRef)}
     </span>
   );
@@ -324,17 +295,12 @@ function VitalField({
   if (isSignal) {
     if (isEmpty) return null;
     return (
-      <span style={{ display: "inline-flex", flexDirection: "column" }}>
+      <span className={css.fieldStack}>
+        {/* Data-driven color comes from the vital field highlight mapping. */}
         <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            fontWeight: 500,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            color,
-            whiteSpace: "nowrap",
-          }}
+          className={css.fieldValue}
+          // Data-driven color comes from the vital field highlight mapping.
+          style={{ color }}
         >
           {field.fieldType === "currency" ? `${display} ${field.label}` : `${field.label} ${display}`}
         </span>
@@ -346,8 +312,8 @@ function VitalField({
   // Select: click to show dropdown
   if (field.fieldType === "select" && field.options?.length) {
     return (
-      <span style={{ display: "inline-flex", flexDirection: "column" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap" }}>
+      <span className={css.fieldStack}>
+        <span className={css.fieldRow}>
           {editing ? (
             <InlineSelect
               value={value}
@@ -359,19 +325,11 @@ function VitalField({
               onCancel={() => setEditing(false)}
             />
           ) : (
+            /* Data-driven color comes from the vital value and empty-field state. */
             <span
               onClick={() => setEditing(true)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                fontWeight: 500,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: isEmpty ? "var(--color-text-tertiary)" : color,
-                opacity: isEmpty ? 0.5 : 1,
-                borderBottom: isEmpty ? "1px dashed var(--color-text-tertiary)" : undefined,
-                cursor: "pointer",
-              }}
+              className={`${css.clickableFieldValue} ${isEmpty ? css.emptyFieldValue : ""}`}
+              style={!isEmpty ? { color } : undefined}
               title={`Click to ${isEmpty ? "set" : "change"} ${field.label.toLowerCase()}`}
             >
               {isEmpty ? field.label : `${display} ${field.label}`}
@@ -386,10 +344,10 @@ function VitalField({
   // Date: use DatePicker
   if (field.fieldType === "date") {
     return (
-      <span style={{ display: "inline-flex", flexDirection: "column" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap" }}>
+      <span className={css.fieldStack}>
+        <span className={css.fieldRow}>
           {editing ? (
-            <span style={{ display: "inline-block", width: 160 }}>
+            <span className={css.datePickerShell}>
               <DatePicker
                 value={value || undefined}
                 onChange={(v) => {
@@ -400,19 +358,11 @@ function VitalField({
               />
             </span>
           ) : (
+            /* Data-driven color comes from the vital value and empty-field state. */
             <span
               onClick={() => setEditing(true)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                fontWeight: 500,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: isEmpty ? "var(--color-text-tertiary)" : color,
-                opacity: isEmpty ? 0.5 : 1,
-                borderBottom: isEmpty ? "1px dashed var(--color-text-tertiary)" : undefined,
-                cursor: "pointer",
-              }}
+              className={`${css.clickableFieldValue} ${isEmpty ? css.emptyFieldValue : ""}`}
+              style={!isEmpty ? { color } : undefined}
               title={`Click to ${isEmpty ? "set" : "edit"} ${field.label.toLowerCase()}`}
             >
               {isEmpty ? field.label : display}
@@ -429,8 +379,8 @@ function VitalField({
   const prefix = field.fieldType === "currency" ? "$" : undefined;
 
   return (
-    <span style={{ display: "inline-flex", flexDirection: "column" }}>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+    <span className={css.fieldStack}>
+      <span className={`${css.fieldRow} ${css.fieldRowGap}`}>
         {editing ? (
           <InlineInput
             value={value}
@@ -444,19 +394,11 @@ function VitalField({
             label={field.label}
           />
         ) : (
+          /* Data-driven color comes from the vital value and empty-field state. */
           <span
             onClick={() => setEditing(true)}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              color: isEmpty ? "var(--color-text-tertiary)" : color,
-              opacity: isEmpty ? 0.5 : 1,
-              borderBottom: isEmpty ? "1px dashed var(--color-text-tertiary)" : undefined,
-              cursor: "pointer",
-            }}
+            className={`${css.clickableFieldValue} ${isEmpty ? css.emptyFieldValue : ""}`}
+            style={!isEmpty ? { color } : undefined}
             title={`Click to ${isEmpty ? "set" : "edit"} ${field.label.toLowerCase()}`}
           >
             {isEmpty
@@ -492,6 +434,7 @@ const FIELD_TO_SOURCE_KEY: Record<string, string> = {
 
 export function EditableVitalsStrip({
   fields,
+  metadataFields,
   entityData,
   metadata,
   onFieldChange,
@@ -499,7 +442,17 @@ export function EditableVitalsStrip({
   conflicts: _conflicts,
   sourceRefs,
 }: EditableVitalsStripProps) {
-  if (fields.length === 0) return null;
+  // Adapt preset metadata custom fields into the same shape used by the strip,
+  // tagged with source === "metadata" so resolution + persistence routes correctly.
+  const metadataAsVitals: PresetVitalField[] = (metadataFields ?? []).map((f) => ({
+    key: f.key,
+    label: f.label,
+    fieldType: f.fieldType,
+    source: "metadata",
+    options: f.options,
+  }));
+
+  if (fields.length === 0 && metadataAsVitals.length === 0) return null;
 
   // Build a lookup from field name to the most recent source ref
   const refsByField = new Map<string, AccountSourceRef>();
@@ -514,12 +467,12 @@ export function EditableVitalsStrip({
 
   const allItems: React.ReactNode[] = [];
 
-  for (const field of fields) {
+  const renderField = (field: PresetVitalField) => {
     const sourceKey = FIELD_TO_SOURCE_KEY[field.key] ?? field.key;
     const matchedRef = refsByField.get(sourceKey);
     allItems.push(
       <VitalField
-        key={field.key}
+        key={`${field.source}:${field.key}`}
         field={field}
         entityData={entityData}
         metadata={metadata}
@@ -527,23 +480,21 @@ export function EditableVitalsStrip({
         sourceRef={matchedRef}
       />,
     );
-  }
+  };
+
+  for (const field of fields) renderField(field);
+  for (const field of metadataAsVitals) renderField(field);
 
   // Append extra read-only vitals (signal-derived)
   if (extraVitals) {
     for (const ev of extraVitals) {
       allItems.push(
+        /* Data-driven color comes from optional extra vital highlight config. */
         <span
           key={`extra-${ev.text}`}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            fontWeight: 500,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            color: ev.highlight ? highlightColor[ev.highlight] ?? "var(--color-text-secondary)" : "var(--color-text-secondary)",
-            whiteSpace: "nowrap",
-          }}
+          className={css.fieldValue}
+          // Data-driven color comes from optional extra vital highlight config.
+          style={{ color: ev.highlight ? highlightColor[ev.highlight] ?? "var(--color-text-secondary)" : "var(--color-text-secondary)" }}
         >
           {ev.text}
         </span>,
@@ -552,28 +503,12 @@ export function EditableVitalsStrip({
   }
 
   return (
-    <div
-      style={{
-        marginTop: 24,
-        marginBottom: 24,
-        borderTop: "1px solid var(--color-rule-heavy)",
-        borderBottom: "1px solid var(--color-rule-heavy)",
-        padding: "14px 0",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap", paddingLeft: 14, paddingRight: 14 }}>
+    <div className={css.strip}>
+      <div className={css.stripItems}>
         {allItems.map((item, i) => (
-          <span key={i} style={{ display: "flex", alignItems: "center", gap: 24 }}>
+          <span key={i} className={css.itemWithSeparator}>
             {i > 0 && (
-              <span
-                style={{
-                  width: 3,
-                  height: 3,
-                  borderRadius: "50%",
-                  background: "var(--color-text-tertiary)",
-                  flexShrink: 0,
-                }}
-              />
+              <span className={css.separatorDot} />
             )}
             {item}
           </span>

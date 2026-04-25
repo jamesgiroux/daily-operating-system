@@ -72,17 +72,17 @@ const COPY: Record<CopyKey, Record<Personality, Copy>> = {
   "dashboard-empty": {
     professional: {
       title: "Your briefing will appear here",
-      explanation: "Each morning, DailyOS prepares a briefing with your schedule, priorities, and what needs attention.",
+      explanation: "DailyOS keeps your schedule, priorities, and what needs attention ready as your day changes.",
       benefit: "Open the app, read your day, get to work.",
     },
     friendly: {
-      title: "Your morning briefing starts here",
-      explanation: "DailyOS prepares your day while you sleep — schedule, priorities, and what needs your attention.",
+      title: "Your daily briefing starts here",
+      explanation: "DailyOS prepares your day before work starts, then keeps the context current as things change.",
       benefit: "Everything you need, ready when you are.",
     },
     playful: {
       title: "The briefing room awaits",
-      explanation: "Your daily briefing generates overnight — schedule, priorities, actions, and meeting prep all in one place.",
+      explanation: "Your daily briefing brings schedule, priorities, actions, and meeting prep into one place.",
       benefit: "Fifteen minutes to feel prepared for anything.",
     },
   },
@@ -106,20 +106,20 @@ const COPY: Record<CopyKey, Record<Personality, Copy>> = {
   "emails-empty": {
     professional: {
       title: "No email data yet",
-      message: "Emails are triaged as part of your morning briefing.",
-      explanation: "Your morning briefing analyzes Gmail messages and surfaces what matters. Connect Gmail to get started.",
+      message: "Emails are triaged as part of your daily briefing.",
+      explanation: "DailyOS analyzes Gmail messages and surfaces what matters. Connect Gmail to get started.",
       benefit: "The important emails, without the noise.",
     },
     friendly: {
       title: "No emails yet",
-      message: "Once your morning briefing runs, triaged emails will appear here.",
+      message: "Once your daily briefing runs, triaged emails will appear here.",
       explanation: "DailyOS reads your Gmail and highlights what needs attention — sorted by importance, not arrival time.",
       benefit: "Email triage, done for you.",
     },
     playful: {
       title: "Inbox zen",
-      message: "No email intel yet. The morning briefing will sort that out.",
-      explanation: "Connect Gmail and your morning briefing will triage everything — flagging what matters and filing the rest.",
+      message: "No email intel yet. The daily briefing will sort that out.",
+      explanation: "Connect Gmail and DailyOS will triage everything — flagging what matters and filing the rest.",
       benefit: "Never manually sort email again.",
     },
   },

@@ -11,6 +11,7 @@
  */
 import type { EntityIntelligence } from "@/types";
 import { formatShortDate } from "@/lib/utils";
+import css from "./AboutThisDossier.module.css";
 
 interface AboutThisDossierProps {
   intelligence: EntityIntelligence | null;
@@ -25,32 +26,6 @@ interface AboutThisDossierProps {
    */
   uncharacterizedStakeholders?: { personName: string; meetingCount?: number | null }[];
 }
-
-// Mockup .meta-card — charcoal-4 tint with a thin tertiary left accent only.
-// No full border, no serif body — sans body, 13px, max 620px readable width.
-const card: React.CSSProperties = {
-  background: "var(--color-desk-charcoal-4)",
-  borderLeft: "2px solid var(--color-text-tertiary)",
-  borderRadius: "0 var(--radius-md, 6px) var(--radius-md, 6px) 0",
-  padding: "20px 28px",
-  marginTop: 16,
-};
-const cardLabel: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 10,
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
-  color: "var(--color-text-tertiary)",
-  marginBottom: 8,
-  fontWeight: 600,
-};
-const cardText: React.CSSProperties = {
-  fontFamily: "var(--font-sans)",
-  fontSize: 13,
-  lineHeight: 1.55,
-  color: "var(--color-text-secondary)",
-  maxWidth: 620,
-};
 
 export function AboutThisDossier({
   intelligence,
@@ -82,25 +57,15 @@ export function AboutThisDossier({
   const gapCount = gapStakeholders.length;
 
   return (
-    <section style={{ paddingTop: 80 }}>
-      <div
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 10,
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
-          color: "var(--color-text-tertiary)",
-          marginBottom: 20,
-          fontWeight: 600,
-        }}
-      >
+    <section className={css.section}>
+      <div className={css.eyebrow}>
         About this dossier
       </div>
 
       {gapCount > 0 && (
-        <div style={card}>
-          <div style={cardLabel}>Our data capture gap</div>
-          <div style={cardText}>
+        <div className={css.card}>
+          <div className={css.cardLabel}>Our data capture gap</div>
+          <div className={css.cardText}>
             {gapCount} stakeholder{gapCount === 1 ? "" : "s"} attended meetings but{" "}
             {gapCount === 1 ? "has" : "have"} no characterization
             {gapStakeholders.length <= 3 ? (
@@ -120,9 +85,9 @@ export function AboutThisDossier({
       )}
 
       {formatSummary && (
-        <div style={card}>
-          <div style={cardLabel}>Source coverage</div>
-          <div style={cardText}>
+        <div className={css.card}>
+          <div className={css.cardLabel}>Source coverage</div>
+          <div className={css.cardText}>
             Synthesized from <strong>{sourceCount ?? manifest.length}</strong> source file
             {(sourceCount ?? manifest.length) === 1 ? "" : "s"} — {formatSummary}. Gaps
             in commercial and relationship-fabric fields require manual capture and are
@@ -132,16 +97,16 @@ export function AboutThisDossier({
       )}
 
       {freshnessLine.length > 0 && (
-        <div style={card}>
-          <div style={cardLabel}>Freshness</div>
-          <div style={cardText}>{freshnessLine.join(" · ")}.</div>
+        <div className={css.card}>
+          <div className={css.cardLabel}>Freshness</div>
+          <div className={css.cardText}>{freshnessLine.join(" · ")}.</div>
         </div>
       )}
 
       {!formatSummary && freshnessLine.length === 0 && gapCount === 0 && (
-        <div style={card}>
-          <div style={cardLabel}>Freshness</div>
-          <div style={cardText}>
+        <div className={css.card}>
+          <div className={css.cardLabel}>Freshness</div>
+          <div className={css.cardText}>
             No enrichment has run yet. Source manifest will populate once meetings,
             transcripts, and docs are captured.
           </div>

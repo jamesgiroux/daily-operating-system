@@ -119,6 +119,35 @@ impl super::super::phases::Rule for P5TitleEvidence {
             }
         }
 
+        // External-attendee veto (DOS-258 evidence-hierarchy fix).
+        //
+        // Title alone cannot elect an account as Primary when external attendees
+        // exist and we have no domain or stakeholder evidence connecting them
+        // to that account. The title becomes a Related chip at most; the meeting
+        // gets no primary and the user sees the picker.
+        //
+        // Why: an external stakeholder attending a meeting whose title name-drops
+        // a *different* account (e.g. an @jane.app contact on a call titled
+        // "WordPress VIP planning") is strong evidence that the *attendee*
+        // relationship matters more than the title match. Without this veto,
+        // P5 elected unrelated-account-with-matching-title as Primary whenever
+        // P4 found nothing — which is precisely the Bug B production regression.
+        //
+        // All-internal meetings (no external participants) keep the old behaviour:
+        // P5 can elect Primary on title alone, since an internal sync titled
+        // "Acme renewal plan" is legitimately about Acme.
+        if self.p4_entity_id.is_none() && ctx.has_external_participant() {
+            return RuleOutcome::Matched(Candidate {
+                entity: EntityRef { entity_id, entity_type },
+                role: LinkRole::Related,
+                confidence,
+                rule_id: "P5".to_string(),
+                evidence: evidence::title_match_evidence(
+                    ctx, &entity_name, &entity_name, &entity_name, false, false,
+                ),
+            });
+        }
+
         let ev = evidence::title_match_evidence(
             ctx, &entity_name, &entity_id, &entity_name, false, true,
         );
@@ -131,3 +160,101 @@ impl super::super::phases::Rule for P5TitleEvidence {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::super::phases::Rule;
+    use super::super::super::types::{OwnerRef, OwnerType, Participant, ParticipantRole};
+    use crate::db::test_utils::test_db;
+
+    fn ctx_with_participants(
+        participants: Vec<Participant>,
+        title: &str,
+    ) -> LinkingContext {
+        let attendee_count = participants.len();
+        LinkingContext {
+            owner: OwnerRef { owner_type: OwnerType::Meeting, owner_id: "m1".to_string() },
+            participants,
+            title: Some(title.to_string()),
+            attendee_count,
+            thread_id: None,
+            series_id: None,
+            graph_version: 0,
+            user_domains: vec!["company.com".to_string()],
+        }
+    }
+
+    fn internal(email: &str) -> Participant {
+        Participant {
+            email: email.to_string(),
+            name: None,
+            role: ParticipantRole::Attendee,
+            person_id: None,
+            domain: email.split('@').nth(1).map(|s| s.to_string()),
+        }
+    }
+
+    fn external(email: &str) -> Participant {
+        internal(email)
+    }
+
+    #[test]
+    fn p5_external_attendees_no_p4_match_demotes_to_related() {
+        let db = test_db();
+        // Seed an account whose name appears in the title.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at, archived) VALUES ('acc-wp', 'WordPress VIP', '2026-01-01', 0)",
+                [],
+            )
+            .expect("insert account");
+
+        // External attendee whose domain has nothing to do with WordPress VIP.
+        let ctx = ctx_with_participants(
+            vec![
+                internal("me@company.com"),
+                external("jane@jane.app"),
+            ],
+            "WordPress VIP planning",
+        );
+
+        let rule = P5TitleEvidence { p4_entity_id: None };
+        match rule.evaluate(&ctx, &db) {
+            RuleOutcome::Matched(c) => {
+                assert_eq!(c.role, LinkRole::Related, "must demote to Related when externals exist and P4 found nothing");
+                assert_eq!(c.entity.entity_id, "acc-wp");
+            }
+            RuleOutcome::Skip => panic!("expected Matched(Related), got Skip"),
+        }
+    }
+
+    #[test]
+    fn p5_all_internal_attendees_title_match_elects_primary_unchanged() {
+        let db = test_db();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at, archived) VALUES ('acc-acme', 'Acme Corp', '2026-01-01', 0)",
+                [],
+            )
+            .expect("insert account");
+
+        let ctx = ctx_with_participants(
+            vec![
+                internal("me@company.com"),
+                internal("alice@company.com"),
+            ],
+            "Acme Corp renewal planning",
+        );
+
+        let rule = P5TitleEvidence { p4_entity_id: None };
+        match rule.evaluate(&ctx, &db) {
+            RuleOutcome::Matched(c) => {
+                assert_eq!(c.role, LinkRole::Primary, "all-internal meetings keep Primary on title match");
+                assert_eq!(c.entity.entity_id, "acc-acme");
+            }
+            RuleOutcome::Skip => panic!("expected Matched(Primary), got Skip"),
+        }
+    }
+}
+

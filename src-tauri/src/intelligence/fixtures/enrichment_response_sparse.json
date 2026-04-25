@@ -31,7 +31,7 @@
       "meetingCadence": {"score": 20, "weight": 0.15, "evidence": ["1 meeting in 90 days"], "trend": "declining"},
       "emailEngagement": {"score": 0, "weight": 0.15, "evidence": [], "trend": "stable"},
       "stakeholderCoverage": {"score": 25, "weight": 0.20, "evidence": ["Single contact known"], "trend": "stable"},
-      "championHealth": {"score": 0, "weight": 0.20, "evidence": [], "trend": "stable"},
+      "keyAdvocateHealth": {"score": 0, "weight": 0.20, "evidence": [], "trend": "stable"},
       "financialProximity": {"score": 0, "weight": 0.15, "evidence": [], "trend": "stable"},
       "signalMomentum": {"score": 30, "weight": 0.15, "evidence": ["Low activity"], "trend": "stable"}
     },

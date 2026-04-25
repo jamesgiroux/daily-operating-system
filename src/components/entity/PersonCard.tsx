@@ -373,7 +373,11 @@ function RolePills({ person, catalog, canEdit, onAddRole, onRemoveRole }: RolePi
                 <div
                   ref={menuRef}
                   className={css.rolePickerMenu}
-                  style={{ top: pos.top, left: pos.left }}
+                  // Runtime coordinates keep the portal menu anchored to its trigger.
+                  style={{
+                    top: pos.top,
+                    left: pos.left,
+                  }}
                 >
                   {available.map((r) => (
                     <button

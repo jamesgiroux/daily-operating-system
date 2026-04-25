@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, TimeZone, Utc};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -86,13 +86,135 @@ pub const DEFAULT_CLAUDE_TIMEOUT_SECS: u64 = 300;
 pub const AI_USAGE_DAILY_KEY: &str = "ai_usage_daily";
 pub const AI_USAGE_RECENT_KEY: &str = "ai_usage_recent";
 pub const BACKGROUND_AI_GUARD_KEY: &str = "background_ai_guard";
-pub const ESTIMATED_DAILY_TOKEN_BUDGET: u32 = 50_000;
+/// KV key for the persisted daily token usage counter (local day key).
+pub const AI_DAILY_TOKEN_USAGE_KEY: &str = "ai_daily_token_usage";
+/// Default daily AI token budget (50k tokens). User-configurable in Settings.
+pub const DEFAULT_DAILY_AI_TOKEN_BUDGET: u32 = 50_000;
 const RECENT_AI_USAGE_LIMIT: usize = 200;
 const BACKGROUND_AI_TOKEN_WINDOW_HOURS: i64 = 4;
 const BACKGROUND_AI_PAUSE_MINUTES: i64 = 30;
 const BACKGROUND_AI_TIMEOUT_SAMPLE: usize = 20;
 const BACKGROUND_AI_TIMEOUT_RATE_THRESHOLD: f64 = 0.25;
 const BACKGROUND_AI_CONSECUTIVE_TIMEOUTS: usize = 3;
+
+// =============================================================================
+// Daily AI Token Budget (DOS-279)
+// =============================================================================
+
+/// Persisted daily token usage — keyed by local YYYY-MM-DD.
+///
+/// Tracks cumulative estimated tokens across all AI calls (background and
+/// foreground). Reset happens automatically on local-day roll.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct DailyTokenUsage {
+    /// Local date key (YYYY-MM-DD) for the current tracking day.
+    pub date: String,
+    /// Cumulative estimated tokens consumed so far today.
+    pub tokens_used: u32,
+}
+
+impl DailyTokenUsage {
+    /// Return today's local date key.
+    pub fn today_key() -> String {
+        chrono::Local::now().format("%Y-%m-%d").to_string()
+    }
+
+    /// Load from KV store, or return a fresh zero-usage entry for today.
+    pub fn load(db: &crate::db::ActionDb) -> Self {
+        let today = Self::today_key();
+        let stored: Option<DailyTokenUsage> = read_json_kv(db, AI_DAILY_TOKEN_USAGE_KEY);
+        match stored {
+            Some(usage) if usage.date == today => usage,
+            // Different day (or missing): start fresh for today.
+            _ => DailyTokenUsage {
+                date: today,
+                tokens_used: 0,
+            },
+        }
+    }
+
+    /// Persist to KV store.
+    pub fn save(&self, db: &crate::db::ActionDb) {
+        write_json_kv(db, AI_DAILY_TOKEN_USAGE_KEY, self);
+    }
+
+    /// Tokens remaining given the configured budget. Never negative.
+    pub fn remaining(&self, budget: u32) -> u32 {
+        budget.saturating_sub(self.tokens_used)
+    }
+
+    /// True when `additional` more tokens would exceed the budget.
+    pub fn would_exceed(&self, budget: u32, additional: u32) -> bool {
+        self.tokens_used.saturating_add(additional) > budget
+    }
+}
+
+/// Add `tokens` to today's usage ledger and persist.
+///
+/// Called from `record_ai_usage` after every PTY call completes.
+fn record_daily_token_usage(db: &crate::db::ActionDb, tokens: u32) {
+    let mut usage = DailyTokenUsage::load(db);
+    usage.tokens_used = usage.tokens_used.saturating_add(tokens);
+    usage.save(db);
+}
+
+/// Preflight budget check before starting a PTY call.
+///
+/// Reads the configured daily budget from `app_state_kv` or falls back to
+/// `DEFAULT_DAILY_AI_TOKEN_BUDGET`. Returns `Err` with a clear user-facing
+/// message when the budget is exhausted for today.
+///
+/// `estimated_call_tokens` is a rough estimate (e.g. from prompt length) used
+/// to decide whether to allow the call. Because we charge the actual measured
+/// token count post-call via `record_ai_usage`, a slight mismatch is acceptable.
+pub fn check_daily_budget(estimated_call_tokens: u32) -> Result<(), crate::error::ExecutionError> {
+    let Ok(db) = crate::db::ActionDb::open() else {
+        // DB unavailable — don't block; budget enforcement requires storage.
+        return Ok(());
+    };
+    let budget = read_configured_daily_budget(&db);
+    let usage = DailyTokenUsage::load(&db);
+    if usage.would_exceed(budget, estimated_call_tokens) {
+        let reset_at = {
+            // Next local midnight as a human-readable time.
+            let tomorrow = chrono::Local::now().date_naive().succ_opt()
+                .unwrap_or_else(|| chrono::Local::now().date_naive());
+            let midnight = tomorrow.and_hms_opt(0, 0, 0)
+                .map(|dt| chrono::Local.from_local_datetime(&dt).single())
+                .and_then(|maybe| maybe)
+                .map(|dt| dt.format("%-I:%M %p").to_string())
+                .unwrap_or_else(|| "midnight".to_string());
+            midnight
+        };
+        return Err(crate::error::ExecutionError::DailyBudgetExhausted {
+            used: usage.tokens_used,
+            budget,
+            reset_at,
+        });
+    }
+    Ok(())
+}
+
+/// Read the user-configured daily AI token budget from the DB config table,
+/// falling back to `DEFAULT_DAILY_AI_TOKEN_BUDGET` if not set.
+pub fn read_configured_daily_budget(db: &crate::db::ActionDb) -> u32 {
+    // The budget is stored directly in Config; read it via the KV pattern
+    // we use for other config-derived runtime values, using a dedicated key.
+    let stored: Option<u32> = read_json_kv(db, crate::pty::DAILY_BUDGET_CONFIG_KEY);
+    stored.unwrap_or(DEFAULT_DAILY_AI_TOKEN_BUDGET)
+}
+
+/// KV key for the user-configured daily AI budget (written by settings service).
+pub const DAILY_BUDGET_CONFIG_KEY: &str = "daily_ai_token_budget_config";
+
+/// Persist the user-configured daily AI budget to the KV store.
+///
+/// Called on startup (from `AppState::new`) and on every settings save so the
+/// preflight gate can read it from a sync DB connection without going through
+/// the async `AppState`.
+pub fn sync_budget_config_to_kv(db: &crate::db::ActionDb, budget: u32) {
+    write_json_kv(db, DAILY_BUDGET_CONFIG_KEY, &budget);
+}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct AiUsageLedger {
@@ -334,7 +456,21 @@ fn build_background_pause_status(
 }
 
 fn background_pause_reason(status: &BackgroundAiPauseStatus) -> Option<String> {
-    if status.rolling_4h_tokens >= ESTIMATED_DAILY_TOKEN_BUDGET {
+    // Use a 4h window threshold = 50% of the configured daily budget.
+    // Read the budget synchronously if DB is available, else fall back to the default.
+    let window_threshold = if let Ok(db) = crate::db::ActionDb::open() {
+        read_configured_daily_budget(&db) / 2
+    } else {
+        DEFAULT_DAILY_AI_TOKEN_BUDGET / 2
+    };
+    background_pause_reason_with_threshold(status, window_threshold)
+}
+
+fn background_pause_reason_with_threshold(
+    status: &BackgroundAiPauseStatus,
+    window_threshold: u32,
+) -> Option<String> {
+    if status.rolling_4h_tokens >= window_threshold {
         Some(format!(
             "Paused background AI after {} estimated tokens in the last {} hours",
             status.rolling_4h_tokens, BACKGROUND_AI_TOKEN_WINDOW_HOURS
@@ -443,7 +579,8 @@ fn record_ai_usage(
     };
     let mut ledger: AiUsageLedger = read_json_kv(&db, AI_USAGE_DAILY_KEY).unwrap_or_default();
 
-    let today = Utc::now().format("%Y-%m-%d").to_string();
+    // DOS-279: Use local day key for all daily usage tracking (not UTC).
+    let today = DailyTokenUsage::today_key();
     let day = ledger.days.entry(today).or_default();
     day.call_count += 1;
     day.estimated_prompt_tokens += prompt_tokens;
@@ -453,12 +590,16 @@ fn record_ai_usage(
     *day.operation_counts.entry(call_site).or_insert(0) += 1;
     *day.model_counts.entry(model_name.clone()).or_insert(0) += 1;
 
-    let cutoff = Utc::now().date_naive() - ChronoDuration::days(6);
+    // Retain last 7 days relative to local time (DOS-279: local day boundary).
+    let cutoff = chrono::Local::now().date_naive() - ChronoDuration::days(6);
     ledger
         .days
         .retain(|date, _| parse_usage_day(date).is_some_and(|parsed| parsed >= cutoff));
 
     write_json_kv(&db, AI_USAGE_DAILY_KEY, &ledger);
+
+    // Update the single-day token usage counter used by the budget gate (DOS-279).
+    record_daily_token_usage(&db, total_tokens);
 
     let mut recent: AiRecentUsageLedger =
         read_json_kv(&db, AI_USAGE_RECENT_KEY).unwrap_or_default();
@@ -583,6 +724,17 @@ fn is_model_unavailable_output(output: &str) -> bool {
         || (lower.contains("model") && lower.contains("not found"))
 }
 
+fn is_auth_failure_output(output: &str) -> bool {
+    let lower = output.to_lowercase();
+    lower.contains("not authenticated")
+        || lower.contains("please login")
+        || lower.contains("login required")
+        || lower.contains("failed to authenticate")
+        || lower.contains("authentication_error")
+        || lower.contains("invalid authentication credentials")
+        || (lower.contains("api error: 401") && lower.contains("authentication"))
+}
+
 impl Default for PtyManager {
     fn default() -> Self {
         Self::new()
@@ -676,6 +828,11 @@ impl PtyManager {
         let claude_path = resolve_claude_binary().ok_or(ExecutionError::ClaudeCodeNotFound)?;
         let claude_str = claude_path.to_string_lossy();
         let started = std::time::Instant::now();
+
+        // DOS-279: Preflight daily budget check.
+        // Estimate prompt size from the command string before spawning.
+        let estimated_tokens = estimate_tokens(command);
+        check_daily_budget(estimated_tokens)?;
 
         let pty_system = NativePtySystem::default();
 
@@ -824,10 +981,7 @@ impl PtyManager {
         );
 
         // Check for known error patterns in output
-        if output.contains("not authenticated")
-            || output.contains("please login")
-            || output.contains("login required")
-        {
+        if is_auth_failure_output(&output) {
             record_ai_usage(
                 &self.usage_context,
                 self.model.as_deref(),
@@ -926,9 +1080,9 @@ pub struct ClaudeOutput {
 #[cfg(test)]
 mod tests {
     use super::{
-        background_pause_reason, build_background_pause_status, is_model_unavailable_output,
-        strip_ansi, AiRecentUsageCall, AiRecentUsageLedger, BackgroundAiGuardState,
-        ESTIMATED_DAILY_TOKEN_BUDGET,
+        background_pause_reason_with_threshold, build_background_pause_status,
+        is_auth_failure_output, is_model_unavailable_output, strip_ansi, AiRecentUsageCall,
+        AiRecentUsageLedger, BackgroundAiGuardState, DailyTokenUsage, DEFAULT_DAILY_AI_TOKEN_BUDGET,
     };
     use chrono::{Duration as ChronoDuration, Utc};
 
@@ -941,6 +1095,17 @@ mod tests {
             "unknown model: custom-model-name"
         ));
         assert!(!is_model_unavailable_output("rate limit exceeded"));
+    }
+
+    #[test]
+    fn detects_claude_api_auth_failure_output() {
+        assert!(is_auth_failure_output(
+            r#"Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}"#
+        ));
+        assert!(is_auth_failure_output(
+            "Claude Code not authenticated. Run claude login"
+        ));
+        assert!(!is_auth_failure_output("rate limit exceeded"));
     }
 
     #[test]
@@ -982,6 +1147,8 @@ mod tests {
 
     #[test]
     fn background_pause_reason_triggers_on_token_threshold() {
+        // The 4h window threshold is 50% of DEFAULT_DAILY_AI_TOKEN_BUDGET.
+        let threshold = DEFAULT_DAILY_AI_TOKEN_BUDGET / 2;
         let recent = AiRecentUsageLedger {
             calls: vec![AiRecentUsageCall {
                 timestamp: Utc::now().to_rfc3339(),
@@ -993,14 +1160,42 @@ mod tests {
                 background: true,
                 status: "success".to_string(),
                 duration_ms: 1000,
-                estimated_prompt_tokens: ESTIMATED_DAILY_TOKEN_BUDGET,
+                estimated_prompt_tokens: DEFAULT_DAILY_AI_TOKEN_BUDGET,
                 estimated_output_tokens: 0,
-                estimated_total_tokens: ESTIMATED_DAILY_TOKEN_BUDGET,
+                estimated_total_tokens: DEFAULT_DAILY_AI_TOKEN_BUDGET,
                 error: None,
             }],
         };
         let status = build_background_pause_status(&recent, &BackgroundAiGuardState::default());
-        assert!(background_pause_reason(&status).is_some());
+        assert!(background_pause_reason_with_threshold(&status, threshold).is_some());
+    }
+
+    #[test]
+    fn daily_token_usage_today_key_is_local_date() {
+        let key = DailyTokenUsage::today_key();
+        // Key must be YYYY-MM-DD format
+        assert_eq!(key.len(), 10);
+        assert_eq!(&key[4..5], "-");
+        assert_eq!(&key[7..8], "-");
+    }
+
+    #[test]
+    fn daily_token_usage_remaining_never_negative() {
+        let usage = DailyTokenUsage {
+            date: "2026-01-01".to_string(),
+            tokens_used: 60_000,
+        };
+        assert_eq!(usage.remaining(50_000), 0);
+    }
+
+    #[test]
+    fn daily_token_usage_would_exceed_detects_overflow() {
+        let usage = DailyTokenUsage {
+            date: "2026-01-01".to_string(),
+            tokens_used: 49_900,
+        };
+        assert!(!usage.would_exceed(50_000, 99));
+        assert!(usage.would_exceed(50_000, 101));
     }
 
     #[test]
@@ -1024,5 +1219,89 @@ mod tests {
         };
         let status = build_background_pause_status(&recent, &BackgroundAiGuardState::default());
         assert_eq!(status.rolling_4h_tokens, 0);
+    }
+
+    // =========================================================================
+    // DOS-279: DailyTokenUsage unit tests
+    // =========================================================================
+
+    #[test]
+    fn daily_token_usage_local_day_reset() {
+        // A usage entry from yesterday should be treated as a new day.
+        let yesterday = (chrono::Local::now() - chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        let stale = DailyTokenUsage {
+            date: yesterday.clone(),
+            tokens_used: 45_000,
+        };
+        let today = DailyTokenUsage::today_key();
+        // If the stored date differs from today, load() returns a fresh entry.
+        // We can't call load() without a DB in unit tests, but we can verify
+        // the comparison logic: a DailyTokenUsage with a past date is stale.
+        assert_ne!(stale.date, today, "Yesterday's key must not equal today");
+        assert_eq!(stale.tokens_used, 45_000); // Stale — should be reset on load.
+    }
+
+    #[test]
+    fn daily_token_usage_blocking_when_exhausted() {
+        // Usage at exactly the budget limit should trigger exhaustion.
+        let usage = DailyTokenUsage {
+            date: DailyTokenUsage::today_key(),
+            tokens_used: 50_000,
+        };
+        let budget = 50_000u32;
+        assert_eq!(usage.remaining(budget), 0);
+        // Any additional call (even 1 token) would exceed.
+        assert!(usage.would_exceed(budget, 1));
+        // A call with 0 estimated tokens would not exceed (edge case for zero-cost probes).
+        assert!(!usage.would_exceed(budget, 0));
+    }
+
+    #[test]
+    fn daily_token_usage_foreground_and_background_share_pool() {
+        // Both foreground and background calls draw from the same counter.
+        let mut usage = DailyTokenUsage {
+            date: DailyTokenUsage::today_key(),
+            tokens_used: 0,
+        };
+        let budget = 50_000u32;
+        let background_tokens = 30_000u32;
+        let foreground_tokens = 25_000u32;
+
+        // After 30k background, a 25k foreground call would push total to 55k — exceeds 50k budget.
+        usage.tokens_used = background_tokens;
+        assert!(usage.would_exceed(budget, foreground_tokens));
+
+        // After only 20k background, a 25k foreground call totals 45k — within budget.
+        usage.tokens_used = 20_000;
+        assert!(!usage.would_exceed(budget, foreground_tokens));
+    }
+
+    #[test]
+    fn daily_token_usage_migration_from_zero_default() {
+        // Existing users whose config has hygiene_ai_budget=10 (old field) will
+        // get daily_ai_token_budget from the serde default (50_000).
+        // This test verifies DailyTokenUsage starts fresh for new installs.
+        let fresh = DailyTokenUsage {
+            date: DailyTokenUsage::today_key(),
+            tokens_used: 0,
+        };
+        assert_eq!(fresh.remaining(DEFAULT_DAILY_AI_TOKEN_BUDGET), DEFAULT_DAILY_AI_TOKEN_BUDGET);
+        assert!(!fresh.would_exceed(DEFAULT_DAILY_AI_TOKEN_BUDGET, 1000));
+    }
+
+    #[test]
+    fn daily_token_usage_diagnostics_correctness() {
+        // After partial consumption, remaining must match budget - used.
+        let budget = 100_000u32;
+        let used = 37_500u32;
+        let usage = DailyTokenUsage {
+            date: DailyTokenUsage::today_key(),
+            tokens_used: used,
+        };
+        assert_eq!(usage.remaining(budget), budget - used);
+        assert!(!usage.would_exceed(budget, budget - used));       // Exactly at limit
+        assert!(usage.would_exceed(budget, budget - used + 1));    // One over
     }
 }

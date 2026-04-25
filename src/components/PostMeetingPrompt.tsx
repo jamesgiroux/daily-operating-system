@@ -11,6 +11,7 @@ import {
   Check,
   MessageSquare,
   FileText,
+  ClipboardPaste,
   Loader2,
 } from "lucide-react";
 import { usePostMeetingCapture } from "@/hooks/usePostMeetingCapture";
@@ -26,8 +27,10 @@ interface CaptureItem {
 }
 
 export function PostMeetingPrompt() {
-  const { visible, meeting, isFallback, capture, skip, dismiss, attachTranscript } =
+  const { visible, meeting, isFallback, capture, skip, dismiss, attachTranscript, pasteTranscript } =
     usePostMeetingCapture();
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
   const [phase, setPhase] = useState<
     "prompt" | "input" | "confirm" | "processing" | "done"
   >("prompt");
@@ -292,6 +295,54 @@ export function PostMeetingPrompt() {
                 <FileText className="mr-1 size-3" />
                 Attach transcript
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-muted-foreground"
+                onClick={() => {
+                  setInteracted(true);
+                  setPasteOpen((v) => !v);
+                }}
+              >
+                <ClipboardPaste className="mr-1 size-3" />
+                {pasteOpen ? "Hide paste box" : "Paste transcript"}
+              </Button>
+              {pasteOpen && (
+                <div className="space-y-2 rounded-md border border-border/70 bg-muted/30 p-2">
+                  <textarea
+                    value={pasteText}
+                    onChange={(e) => setPasteText(e.target.value)}
+                    placeholder="Paste your transcript here…"
+                    aria-label="Pasted transcript"
+                    className="min-h-[160px] w-full rounded-md border border-border/70 bg-background p-2 font-mono text-[11px] leading-relaxed"
+                  />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-muted-foreground">
+                      {pasteText.trim().length.toLocaleString()} chars
+                    </span>
+                    <Button
+                      size="sm"
+                      className="text-xs"
+                      onClick={async () => {
+                        setPhase("processing");
+                        const result = await pasteTranscript(pasteText, "txt");
+                        if (result) {
+                          setTranscriptResult(result);
+                          setPasteOpen(false);
+                          setPasteText("");
+                          setPhase("done");
+                        } else {
+                          setPhase("prompt");
+                        }
+                      }}
+                      disabled={pasteText.trim().length === 0}
+                    >
+                      <ClipboardPaste className="mr-1 size-3" />
+                      Process
+                    </Button>
+                  </div>
+                </div>
+              )}
               <Button
                 variant="ghost"
                 size="sm"

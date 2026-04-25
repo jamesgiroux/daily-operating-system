@@ -201,6 +201,7 @@ export function buildHealthChapters(
 
 export function buildContextChapters(
   opts: {
+    hasThesis?: boolean;
     hasWhatMatters?: boolean;
     hasBuilt?: boolean;
     hasTechnical?: boolean;
@@ -208,10 +209,11 @@ export function buildContextChapters(
 ) {
   // DOS-18: IA matches renderContextView section order. Conditional chapters
   // are included only when the page renders them — otherwise the nav dead-links.
-  const chapters: { id: string; label: string; icon: React.ReactNode }[] = [
-    { id: "thesis", label: "Thesis", icon: React.createElement(Quote, { size: 18, strokeWidth: 1.5 }) },
-    { id: "the-room", label: "The Room", icon: React.createElement(Users, { size: 18, strokeWidth: 1.5 }) },
-  ];
+  const chapters: { id: string; label: string; icon: React.ReactNode }[] = [];
+  if (opts.hasThesis !== false) {
+    chapters.push({ id: "thesis", label: "Thesis", icon: React.createElement(Quote, { size: 18, strokeWidth: 1.5 }) });
+  }
+  chapters.push({ id: "the-room", label: "The Room", icon: React.createElement(Users, { size: 18, strokeWidth: 1.5 }) });
   if (opts.hasWhatMatters !== false) {
     chapters.push({ id: "what-matters", label: "What matters", icon: React.createElement(Compass, { size: 18, strokeWidth: 1.5 }) });
   }
@@ -237,29 +239,50 @@ export function buildContextChapters(
  * AccountDetailPage.renderWorkView. Each id here MUST match a MarginSection
  * id in the page or the nav anchor will dead-link.
  *
- * Section-id contract (verified in tests/account-detail-utils.test.ts):
- *   focus, programs, commitments, suggestions, [shared?], recently-landed,
- *   outputs, nudges.
+ * Section-id contract (verified in account-detail-utils.test.ts):
+ *   commitments, suggestions, programs, [shared?], recently-landed,
+ *   outputs, the-record, [files?].
  *
- * Wave 0g Finding 2 (honest degradation): the "shared" pill is only emitted
- * when real tracker provenance exists on the account. Without it, the page
- * suppresses the chapter — the pill would dead-link. Tracker provenance
- * lands in v1.2.2 (DOS-75); until then hasSharedData is always false.
+ * Optional pills are only emitted when the page renders the matching section.
+ * Otherwise the nav island creates dead anchors.
  */
-export function buildWorkChapters(hasSharedData: boolean = false, hasFiles: boolean = false) {
-  const chapters = [
-    { id: "commitments", label: "Commitments", icon: React.createElement(CheckSquare2, { size: 18, strokeWidth: 1.5 }) },
-    { id: "suggestions", label: "Suggestions", icon: React.createElement(Sparkles, { size: 18, strokeWidth: 1.5 }) },
-    { id: "programs", label: "Programs & motions", icon: React.createElement(Flag, { size: 18, strokeWidth: 1.5 }) },
-  ];
+export function buildWorkChapters({
+  hasCommitments = false,
+  hasSuggestions = false,
+  hasPrograms = false,
+  hasSharedData = false,
+  hasRecentlyLanded = false,
+  hasOutputs = false,
+  hasFiles = false,
+}: {
+  hasCommitments?: boolean;
+  hasSuggestions?: boolean;
+  hasPrograms?: boolean;
+  hasSharedData?: boolean;
+  hasRecentlyLanded?: boolean;
+  hasOutputs?: boolean;
+  hasFiles?: boolean;
+} = {}) {
+  const chapters: { id: string; label: string; icon: React.ReactNode }[] = [];
+  if (hasCommitments) {
+    chapters.push({ id: "commitments", label: "Commitments", icon: React.createElement(CheckSquare2, { size: 18, strokeWidth: 1.5 }) });
+  }
+  if (hasSuggestions) {
+    chapters.push({ id: "suggestions", label: "Suggestions", icon: React.createElement(Sparkles, { size: 18, strokeWidth: 1.5 }) });
+  }
+  if (hasPrograms) {
+    chapters.push({ id: "programs", label: "Programs & motions", icon: React.createElement(Flag, { size: 18, strokeWidth: 1.5 }) });
+  }
   if (hasSharedData) {
     chapters.push({ id: "shared", label: "Shared with team", icon: React.createElement(Share2, { size: 18, strokeWidth: 1.5 }) });
   }
-  chapters.push(
-    { id: "recently-landed", label: "Recently landed", icon: React.createElement(PackageCheck, { size: 18, strokeWidth: 1.5 }) },
-    { id: "outputs", label: "Outputs", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) },
-    { id: "the-record", label: "The Record", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) },
-  );
+  if (hasRecentlyLanded) {
+    chapters.push({ id: "recently-landed", label: "Recently landed", icon: React.createElement(PackageCheck, { size: 18, strokeWidth: 1.5 }) });
+  }
+  if (hasOutputs) {
+    chapters.push({ id: "outputs", label: "Outputs", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) });
+  }
+  chapters.push({ id: "the-record", label: "The Record", icon: React.createElement(Activity, { size: 18, strokeWidth: 1.5 }) });
   if (hasFiles) {
     chapters.push({ id: "files", label: "Files", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) });
   }

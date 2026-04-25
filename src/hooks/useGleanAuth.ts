@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import type { GleanAuthStatus } from "@/types";
+import { useTauriEvent } from "./useTauriEvent";
 
 type GleanAuthPhase = "idle" | "authorizing" | "disconnecting";
 
@@ -34,22 +34,21 @@ export function useGleanAuth() {
     invoke<GleanAuthStatus>("get_glean_auth_status").then(setStatus).catch((err) => {
       console.error("get_glean_auth_status failed:", err); // Expected: background auth check on mount
     });
-
-    const unlistenChanged = listen<GleanAuthStatus>("glean-auth-changed", (event) => {
-      setStatus(event.payload);
-    });
-    const unlistenFailed = listen<GleanAuthFailedPayload>("glean-auth-failed", (event) => {
-      const message = event.payload?.message || "Glean auth failed";
-      setError(message);
-      setLoading(false);
-      setPhase("idle");
-    });
-
-    return () => {
-      unlistenChanged.then((fn) => fn());
-      unlistenFailed.then((fn) => fn());
-    };
   }, []);
+
+  const handleGleanAuthChanged = useCallback((payload: GleanAuthStatus) => {
+    setStatus(payload);
+  }, []);
+
+  const handleGleanAuthFailed = useCallback((payload: GleanAuthFailedPayload) => {
+    const message = payload?.message || "Glean auth failed";
+    setError(message);
+    setLoading(false);
+    setPhase("idle");
+  }, []);
+
+  useTauriEvent("glean-auth-changed", handleGleanAuthChanged);
+  useTauriEvent("glean-auth-failed", handleGleanAuthFailed);
 
   const connect = useCallback(
     async (endpoint: string) => {

@@ -10,7 +10,6 @@
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import type {
@@ -27,6 +26,7 @@ import { useAccountFields } from "./useAccountFields";
 import { useAccountWorkData } from "./useAccountWorkData";
 import { useEnrichmentProgress } from "./useEnrichmentProgress";
 import { useTeamManagement } from "./useTeamManagement";
+import { useTauriEvent } from "./useTauriEvent";
 
 interface BackgroundWorkStatusEvent {
   phase: "started" | "completed" | "failed";
@@ -65,43 +65,9 @@ export const DEFAULT_SENTIMENT_LABELS: Record<SentimentValue, string> = {
 };
 
 export function buildPresetSentimentLabels(
-  preset: RolePreset | null | undefined,
+  _preset: RolePreset | null | undefined,
 ): Record<SentimentValue, string> {
-  const healthField = preset?.vitals.account.find(
-    (field) => field.key === "health" && field.fieldType === "select",
-  );
-  const options = (healthField?.options ?? []).filter((option) => option.trim().length > 0);
-  if (options.length < 3) {
-    return DEFAULT_SENTIMENT_LABELS;
-  }
-
-  if (options.length >= 5) {
-    return {
-      strong: options[0]!,
-      on_track: options[1]!,
-      concerning: options[2]!,
-      at_risk: options[3]!,
-      critical: options[4]!,
-    };
-  }
-
-  if (options.length === 4) {
-    return {
-      strong: options[0]!,
-      on_track: options[1]!,
-      concerning: options[2]!,
-      at_risk: options[3]!,
-      critical: options[3]!,
-    };
-  }
-
-  return {
-    strong: options[0]!,
-    on_track: options[0]!,
-    concerning: options[1]!,
-    at_risk: options[2]!,
-    critical: options[2]!,
-  };
+  return DEFAULT_SENTIMENT_LABELS;
 }
 
 export interface SentimentDivergence {
@@ -283,43 +249,37 @@ export function useAccountDetail(accountId: string | undefined) {
 
   // ─── Event listeners ──────────────────────────────────────────────────
 
-  useEffect(() => {
-    const unlisten = listen<{ entityId: string }>(
-      "intelligence-updated",
-      (event) => {
-        if (accountId && event.payload.entityId === accountId) {
-          load();
-        }
-      },
-    );
-    return () => { unlisten.then((fn) => fn()); };
-  }, [accountId, load]);
+  const handleIntelligenceUpdated = useCallback(
+    (payload: { entityId: string }) => {
+      if (accountId && payload.entityId === accountId) {
+        load();
+      }
+    },
+    [accountId, load],
+  );
+  useTauriEvent("intelligence-updated", handleIntelligenceUpdated);
 
-  useEffect(() => {
-    const unlisten = listen<BackgroundWorkStatusEvent>(
-      "background-work-status",
-      (event) => {
-        if (event.payload.phase !== "failed") return;
-        if (!accountId || event.payload.entityId !== accountId) return;
-        setEnriching(false);
-        setError(event.payload.error ?? event.payload.message);
-      },
-    );
-    return () => { unlisten.then((fn) => fn()); };
-  }, [accountId]);
+  const handleBackgroundWorkStatus = useCallback(
+    (payload: BackgroundWorkStatusEvent) => {
+      if (payload.phase !== "failed") return;
+      if (!accountId || payload.entityId !== accountId) return;
+      setEnriching(false);
+      setError(payload.error ?? payload.message);
+    },
+    [accountId],
+  );
+  useTauriEvent("background-work-status", handleBackgroundWorkStatus);
 
-  useEffect(() => {
-    const unlisten = listen<{ entityIds: string[]; count: number }>(
-      "content-changed",
-      (event) => {
-        if (accountId && event.payload.entityIds.includes(accountId)) {
-          setNewFileCount(event.payload.count);
-          setBannerDismissed(false);
-        }
-      },
-    );
-    return () => { unlisten.then((fn) => fn()); };
-  }, [accountId]);
+  const handleContentChanged = useCallback(
+    (payload: { entityIds: string[]; count: number }) => {
+      if (accountId && payload.entityIds.includes(accountId)) {
+        setNewFileCount(payload.count);
+        setBannerDismissed(false);
+      }
+    },
+    [accountId],
+  );
+  useTauriEvent("content-changed", handleContentChanged);
 
   // ─── Enrichment timer ─────────────────────────────────────────────────
 

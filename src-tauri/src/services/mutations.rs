@@ -3,7 +3,7 @@ use rusqlite::params;
 use serde_json::Value;
 
 use crate::db::person_relationships::UpsertRelationship;
-use crate::db::types::ChampionHealthAssessment;
+use crate::db::types::KeyAdvocateAssessment;
 use crate::db::{ActionDb, DbAction, DbChatSession, DbMeeting, DbProcessingLog};
 use crate::signals::propagation::PropagationEngine;
 
@@ -696,16 +696,16 @@ pub fn persist_transcript_metadata(
         .map_err(|e| e.to_string())
 }
 
-pub fn persist_champion_health(
+pub fn persist_key_advocate_health(
     db: &ActionDb,
     meeting_id: &str,
-    assessment: &ChampionHealthAssessment,
+    assessment: &KeyAdvocateAssessment,
 ) -> Result<(), String> {
-    db.upsert_champion_health(meeting_id, assessment)
+    db.upsert_key_advocate_health(meeting_id, assessment)
         .map_err(|e| e.to_string())
 }
 
-pub fn clear_champion_health(db: &ActionDb, meeting_id: &str) -> Result<(), String> {
+pub fn clear_key_advocate_health(db: &ActionDb, meeting_id: &str) -> Result<(), String> {
     db.conn_ref()
         .execute(
             "DELETE FROM meeting_champion_health WHERE meeting_id = ?1",

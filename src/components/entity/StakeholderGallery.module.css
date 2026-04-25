@@ -3,6 +3,8 @@
    Editorial stakeholder cards with enriched person data.
    ============================================================================= */
 
+@import "../../styles/design-tokens.css";
+
 /* ── Section root ── */
 
 .section {
@@ -15,6 +17,35 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 40px 48px;
+}
+
+.suggestedGridOffset {
+  margin-top: 40px;
+}
+
+.subsectionLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.subsectionHint {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
 }
 
 /* ── Individual card ── */
@@ -124,6 +155,41 @@
   font-size: 10px;
   color: var(--color-text-tertiary);
   letter-spacing: 0.04em;
+  margin-top: 6px;
+}
+
+.pendingAssessment {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-editorial-sm) var(--radius-editorial-sm) 0;
+  padding: 8px 12px;
+  margin-top: 4px;
+}
+
+.needsAssessmentBadge {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+.needsAssessmentBadgeTint {
+  background: rgba(196,147,53,0.15);
+  color: #a6862c;
+}
+
+.healthLink {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-spice-turmeric);
+  border-bottom: 1px dotted var(--color-spice-turmeric);
+  text-decoration: none;
+  align-self: flex-start;
   margin-top: 6px;
 }
 
@@ -943,6 +1009,11 @@
   gap: 4px;
   align-items: center;
   margin: 4px 0 6px 0;
+}
+
+.addRoleWrapper {
+  position: relative;
+  display: inline-block;
 }
 
 .roleBadge {

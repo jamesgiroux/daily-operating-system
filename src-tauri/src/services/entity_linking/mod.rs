@@ -5,7 +5,9 @@ pub mod evidence;
 pub mod phases;
 pub mod primitives;
 pub mod repository;
+pub mod rescan;
 pub mod rules;
+pub mod stakeholder_domains;
 pub mod types;
 
 pub use types::{
@@ -59,6 +61,122 @@ pub async fn evaluate(
 // Manual overrides — all writes go through the shared writer connection
 // ---------------------------------------------------------------------------
 
+/// DOS-258: Build a realistic `LinkingContext` for a manual override.
+///
+/// Previously all three `manual_*` functions passed `participants: vec![]`
+/// into `run_phases`, which crippled any cascade rule that needs attendee
+/// domains — in particular the downstream stakeholder-domain backfill and
+/// the P4 evidence rules. Here we load the meeting's attendees or the
+/// email's envelope so the same context that calendar_adapter /
+/// email_adapter would build for a live event is available on user
+/// relinks.
+///
+/// Returns a best-effort context — on DB errors we fall back to an empty
+/// participant list so the manual override itself still succeeds.
+fn build_manual_context(
+    db: &crate::db::ActionDb,
+    owner_type: OwnerType,
+    owner_id: String,
+) -> LinkingContext {
+    let graph_version = db.get_entity_graph_version().unwrap_or(0);
+    let user_domains = crate::state::load_config()
+        .map(|c| c.resolved_user_domains())
+        .unwrap_or_default();
+
+    match owner_type {
+        OwnerType::Meeting => {
+            let (participants, title) = match db.get_meeting_by_id(&owner_id) {
+                Ok(Some(meeting)) => {
+                    let parts = meeting
+                        .attendees
+                        .as_deref()
+                        .map(parse_meeting_attendees)
+                        .unwrap_or_default();
+                    (parts, Some(meeting.title))
+                }
+                _ => (Vec::new(), None),
+            };
+            let attendee_count = participants.len();
+            LinkingContext {
+                owner: OwnerRef { owner_type, owner_id },
+                participants,
+                title,
+                attendee_count,
+                thread_id: None,
+                series_id: None,
+                graph_version,
+                user_domains,
+            }
+        }
+        OwnerType::Email | OwnerType::EmailThread => {
+            match db.get_email_by_id_for_linking(&owner_id) {
+                Ok(Some(email)) => {
+                    match email_adapter::build_context(&email, None, db) {
+                        Ok(mut ctx) => {
+                            // build_context sets OwnerType::Email — preserve the
+                            // caller's owner_type (may be EmailThread).
+                            ctx.owner.owner_type = owner_type;
+                            ctx.owner.owner_id = owner_id;
+                            ctx
+                        }
+                        Err(_) => LinkingContext {
+                            owner: OwnerRef { owner_type, owner_id },
+                            participants: vec![],
+                            title: None,
+                            attendee_count: 0,
+                            thread_id: None,
+                            series_id: None,
+                            graph_version,
+                            user_domains,
+                        },
+                    }
+                }
+                _ => LinkingContext {
+                    owner: OwnerRef { owner_type, owner_id },
+                    participants: vec![],
+                    title: None,
+                    attendee_count: 0,
+                    thread_id: None,
+                    series_id: None,
+                    graph_version,
+                    user_domains,
+                },
+            }
+        }
+    }
+}
+
+/// Parse the `meetings.attendees` column (JSON array or comma-separated) into
+/// Participant rows. Mirrors calendar_adapter::build_context but reads from
+/// the persisted meeting row rather than a live CalendarEvent.
+fn parse_meeting_attendees(attendees_str: &str) -> Vec<Participant> {
+    let emails: Vec<String> = serde_json::from_str::<Vec<String>>(attendees_str)
+        .unwrap_or_else(|_| {
+            attendees_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        });
+    emails
+        .into_iter()
+        .filter_map(|email| {
+            let email_lower = email.to_lowercase();
+            if !email_lower.contains('@') {
+                return None;
+            }
+            let domain = primitives::domain_from_email(&email_lower);
+            Some(Participant {
+                email: email_lower,
+                name: None,
+                role: ParticipantRole::Attendee,
+                person_id: None,
+                domain,
+            })
+        })
+        .collect()
+}
+
 pub async fn manual_set_primary(
     state: Arc<AppState>,
     owner_type: OwnerType,
@@ -101,17 +219,10 @@ pub async fn manual_set_primary(
                 Ok(())
             })?;
 
-            let graph_version = db.get_entity_graph_version().unwrap_or(0);
-            let ctx = LinkingContext {
-                owner: OwnerRef { owner_type, owner_id },
-                participants: vec![],
-                title: None,
-                attendee_count: 0,
-                thread_id: None,
-                series_id: None,
-                graph_version,
-                user_domains: vec![],
-            };
+            // DOS-258: load the owner's actual attendees/envelope into ctx so
+            // downstream cascade rules (including the stakeholder-domain
+            // backfill in cascade::run_cascade) see real participants.
+            let ctx = build_manual_context(db, owner_type, owner_id);
             phases::run_phases(&ctx, db)
         })
         .await
@@ -144,17 +255,7 @@ pub async fn manual_dismiss(
                 )
             })?;
 
-            let graph_version = db.get_entity_graph_version().unwrap_or(0);
-            let ctx = LinkingContext {
-                owner: OwnerRef { owner_type, owner_id },
-                participants: vec![],
-                title: None,
-                attendee_count: 0,
-                thread_id: None,
-                series_id: None,
-                graph_version,
-                user_domains: vec![],
-            };
+            let ctx = build_manual_context(db, owner_type, owner_id);
             phases::run_phases(&ctx, db)
         })
         .await
@@ -192,17 +293,7 @@ pub async fn manual_undismiss(
                 )
                 .map_err(|e| format!("manual_undismiss restore: {e}"))?;
 
-            let graph_version = db.get_entity_graph_version().unwrap_or(0);
-            let ctx = LinkingContext {
-                owner: OwnerRef { owner_type, owner_id },
-                participants: vec![],
-                title: None,
-                attendee_count: 0,
-                thread_id: None,
-                series_id: None,
-                graph_version,
-                user_domains: vec![],
-            };
+            let ctx = build_manual_context(db, owner_type, owner_id);
             phases::run_phases(&ctx, db)
         })
         .await
@@ -217,8 +308,31 @@ pub async fn confirm_stakeholder_suggestion(
     account_id: String,
     person_id: String,
 ) -> Result<(), String> {
+    // DOS-258: after confirming, sweep the whole account's stakeholder graph
+    // for domains that aren't yet registered. Catches sibling stakeholders
+    // whose domain wasn't registered by an earlier confirmation that
+    // predated this code. Supersedes the per-person backfill — the
+    // account-wide scan includes the just-confirmed person.
+    let user_domains: Vec<String> = state
+        .config
+        .read()
+        .as_ref()
+        .map(|c| c.resolved_user_domains())
+        .unwrap_or_default();
     state
-        .db_write(move |db| db.confirm_stakeholder(&account_id, &person_id))
+        .db_write(move |db| {
+            db.confirm_stakeholder(&account_id, &person_id)?;
+            if let Err(e) = stakeholder_domains::backfill_domains_for_account(
+                db,
+                &account_id,
+                &user_domains,
+            ) {
+                log::warn!(
+                    "stakeholder_domains: confirm backfill for {account_id} failed: {e}"
+                );
+            }
+            Ok(())
+        })
         .await
 }
 
@@ -230,4 +344,85 @@ pub async fn dismiss_stakeholder_suggestion(
     state
         .db_write(move |db| db.dismiss_stakeholder_suggestion(&account_id, &person_id))
         .await
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::types::DbMeeting;
+    use chrono::Utc;
+
+    /// DOS-258: regression — manual_set_primary used to call run_phases with
+    /// `participants: vec![]`, which meant cascade C6 and the downstream
+    /// stakeholder-domain backfill never saw real attendees on user relinks.
+    /// This test asserts build_manual_context loads them from the DB.
+    #[test]
+    fn manual_set_primary_loads_meeting_attendees_into_cascade() {
+        let db = crate::db::test_utils::test_db();
+        let now = Utc::now().to_rfc3339();
+        let meeting = DbMeeting {
+            id: "mtg-dos258".to_string(),
+            title: "Customer QBR".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: now.clone(),
+            end_time: None,
+            attendees: Some(
+                r#"["alice@customer.com","bob@customer.com","carol@subsidiary.com"]"#
+                    .to_string(),
+            ),
+            notes_path: None,
+            summary: None,
+            created_at: now,
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
+        };
+        db.upsert_meeting(&meeting).expect("upsert meeting");
+
+        let ctx = build_manual_context(
+            &db,
+            OwnerType::Meeting,
+            "mtg-dos258".to_string(),
+        );
+
+        assert_eq!(ctx.participants.len(), 3, "should load all 3 attendees");
+        assert_eq!(ctx.attendee_count, 3);
+        assert_eq!(ctx.title.as_deref(), Some("Customer QBR"));
+        let emails: Vec<_> = ctx.participants.iter().map(|p| p.email.as_str()).collect();
+        assert!(emails.contains(&"alice@customer.com"));
+        assert!(emails.contains(&"bob@customer.com"));
+        assert!(emails.contains(&"carol@subsidiary.com"));
+        // Each participant has a resolved domain so P4b/P4c/P4d can fire.
+        assert!(ctx.participants.iter().all(|p| p.domain.is_some()));
+    }
+
+    #[test]
+    fn manual_context_handles_unknown_owner_gracefully() {
+        let db = crate::db::test_utils::test_db();
+        let ctx = build_manual_context(
+            &db,
+            OwnerType::Meeting,
+            "does-not-exist".to_string(),
+        );
+        assert!(ctx.participants.is_empty());
+        assert_eq!(ctx.attendee_count, 0);
+    }
 }

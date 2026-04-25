@@ -15,7 +15,7 @@ use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use crate::types::{
-    CalendarEvent, CapturedAction, ChampionHealth, CompetitorMention, EngagementSignals,
+    CalendarEvent, CapturedAction, KeyAdvocateHealth, CompetitorMention, EngagementSignals,
     EscalationSignal, InteractionDynamics, MeetingType, RoleChange, SpeakerSentiment,
     TranscriptCommitment, TranscriptResult, TranscriptSentiment,
 };
@@ -82,7 +82,7 @@ impl ProcessingProfile {
         *self == Self::CustomerFacing
     }
 
-    fn extract_champion_health(&self) -> bool {
+    fn extract_key_advocate_health(&self) -> bool {
         *self == Self::CustomerFacing
     }
 
@@ -139,7 +139,7 @@ struct TranscriptRoleReviewPayload {
     #[serde(default)]
     decisions: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    champion_health: Option<ChampionHealth>,
+    key_advocate_health: Option<KeyAdvocateHealth>,
 }
 
 fn emit_transcript_progress(app_handle: Option<&AppHandle>, payload: TranscriptProgressPayload) {
@@ -291,6 +291,14 @@ pub fn process_transcript_with_kind(
                 meeting.title,
                 e
             );
+            if e.requires_user_action() {
+                return TranscriptResult {
+                    status: "error".to_string(),
+                    destination: Some(destination.display().to_string()),
+                    message: Some(e.to_string()),
+                    ..TranscriptResult::default()
+                };
+            }
             return TranscriptResult {
                 status: "success".to_string(),
                 summary: None,
@@ -411,7 +419,7 @@ pub fn process_transcript_with_kind(
     );
 
     // ── Phase 2: Intelligence extraction (wins, risks, decisions, sentiment, champion) ──
-    let (mut wins, mut risks, mut decisions, sentiment, mut champion_health) = if proc_profile
+    let (mut wins, mut risks, mut decisions, sentiment, mut key_advocate_health) = if proc_profile
         .run_phase2()
     {
         let phase2_prompt =
@@ -446,8 +454,8 @@ pub fn process_transcript_with_kind(
 
                 let parsed_p2 = parse_enrichment_response(&phase2_output);
                 let sentiment = parse_sentiment_block(&phase2_output);
-                let champion_health = if proc_profile.extract_champion_health() {
-                    parse_champion_health_block(&phase2_output)
+                let key_advocate_health = if proc_profile.extract_key_advocate_health() {
+                    parse_key_advocate_block(&phase2_output)
                 } else {
                     None
                 };
@@ -456,7 +464,7 @@ pub fn process_transcript_with_kind(
                     parsed_p2.risks,
                     parsed_p2.decisions,
                     sentiment,
-                    champion_health,
+                    key_advocate_health,
                 )
             }
             Err(e) => {
@@ -510,9 +518,9 @@ pub fn process_transcript_with_kind(
         }
 
         // Persist champion health from Phase 2 (only for CustomerFacing)
-        if proc_profile.extract_champion_health() {
-            if let Some(ref health) = champion_health {
-                let db_health = crate::db::types::ChampionHealthAssessment {
+        if proc_profile.extract_key_advocate_health() {
+            if let Some(ref health) = key_advocate_health {
+                let db_health = crate::db::types::KeyAdvocateAssessment {
                     meeting_id: meeting.id.clone(),
                     champion_name: Some(health.champion_name.clone()),
                     champion_status: health.champion_status.clone(),
@@ -521,7 +529,7 @@ pub fn process_transcript_with_kind(
                 };
                 // DIRECT_DB_ALLOWED: Transcript extraction owns persistence of per-meeting
                 // champion health artifacts before downstream signal propagation runs.
-                if let Err(e) = db.upsert_champion_health(&meeting.id, &db_health) {
+                if let Err(e) = db.upsert_key_advocate_health(&meeting.id, &db_health) {
                     log::warn!(
                         "Failed to persist champion health for {}: {}",
                         meeting.id,
@@ -611,7 +619,7 @@ pub fn process_transcript_with_kind(
             wins: &wins,
             risks: &risks,
             decisions: &decisions,
-            champion_health: champion_health.as_ref(),
+            key_advocate_health: key_advocate_health.as_ref(),
         },
     ) {
         summary = reviewed.summary;
@@ -620,7 +628,7 @@ pub fn process_transcript_with_kind(
         wins = reviewed.wins;
         risks = reviewed.risks;
         decisions = reviewed.decisions;
-        champion_health = reviewed.champion_health;
+        key_advocate_health = reviewed.key_advocate_health;
 
         if let Some(db) = db {
             let processed_at = Utc::now().to_rfc3339();
@@ -683,8 +691,8 @@ pub fn process_transcript_with_kind(
                     e
                 );
             }
-            if let Some(ref health) = champion_health {
-                let db_health = crate::db::types::ChampionHealthAssessment {
+            if let Some(ref health) = key_advocate_health {
+                let db_health = crate::db::types::KeyAdvocateAssessment {
                     meeting_id: meeting.id.clone(),
                     champion_name: Some(health.champion_name.clone()),
                     champion_status: health.champion_status.clone(),
@@ -692,7 +700,7 @@ pub fn process_transcript_with_kind(
                     champion_risk: health.champion_risk.clone(),
                 };
                 if let Err(e) =
-                    crate::services::mutations::persist_champion_health(db, &meeting.id, &db_health)
+                    crate::services::mutations::persist_key_advocate_health(db, &meeting.id, &db_health)
                 {
                     log::warn!(
                         "Failed to persist reviewed champion health for {}: {}",
@@ -701,7 +709,7 @@ pub fn process_transcript_with_kind(
                     );
                 }
             } else if let Err(e) =
-                crate::services::mutations::clear_champion_health(db, &meeting.id)
+                crate::services::mutations::clear_key_advocate_health(db, &meeting.id)
             {
                 log::warn!(
                     "Failed to clear reviewed champion health for {}: {}",
@@ -721,7 +729,7 @@ pub fn process_transcript_with_kind(
                 meeting_title: &meeting.title,
                 account_id: meeting.account.as_deref(),
                 interaction_dynamics: interaction_dynamics.as_ref(),
-                champion_health: None, // champion_health already persisted in Phase 2
+                key_advocate_health: None, // key_advocate_health already persisted in Phase 2
                 role_changes: &role_changes,
                 commitments: &commitments,
             },
@@ -745,7 +753,7 @@ pub fn process_transcript_with_kind(
         },
     );
 
-    // Recompute health after transcript phases write champion_health + interaction_dynamics
+    // Recompute health after transcript phases write key_advocate_health + interaction_dynamics
     if let Some(db) = db {
         if proc_profile.recompute_account_health() {
             let transcript_entity_id = meeting
@@ -835,7 +843,7 @@ pub fn process_transcript_with_kind(
                 actions: &extracted_actions,
                 commitments: &commitments,
                 interaction_dynamics: interaction_dynamics.as_ref(),
-                champion_health: champion_health.as_ref(),
+                key_advocate_health: key_advocate_health.as_ref(),
                 db,
             },
         );
@@ -871,7 +879,7 @@ pub fn process_transcript_with_kind(
         message: debug_message,
         sentiment,
         interaction_dynamics,
-        champion_health,
+        key_advocate_health,
         role_changes,
         commitments,
     }
@@ -1108,8 +1116,8 @@ fn build_engagement_markdown(interaction_dynamics: Option<&InteractionDynamics>)
     Some(md)
 }
 
-fn build_champion_markdown(champion_health: Option<&ChampionHealth>) -> Option<String> {
-    let champion = champion_health?;
+fn build_key_advocate_markdown(key_advocate_health: Option<&KeyAdvocateHealth>) -> Option<String> {
+    let champion = key_advocate_health?;
     if champion.champion_status.eq_ignore_ascii_case("none") {
         return None;
     }
@@ -1152,7 +1160,7 @@ struct MeetingRecordData<'a> {
     actions: &'a [CapturedAction],
     commitments: &'a [TranscriptCommitment],
     interaction_dynamics: Option<&'a InteractionDynamics>,
-    champion_health: Option<&'a ChampionHealth>,
+    key_advocate_health: Option<&'a KeyAdvocateHealth>,
     db: &'a crate::db::ActionDb,
 }
 
@@ -1167,7 +1175,7 @@ fn generate_meeting_record_markdown(data: &MeetingRecordData<'_>) -> String {
     let actions = data.actions;
     let commitments = data.commitments;
     let interaction_dynamics = data.interaction_dynamics;
-    let champion_health = data.champion_health;
+    let key_advocate_health = data.key_advocate_health;
     let db = data.db;
     let date = meeting.end.format("%Y-%m-%d").to_string();
     let time = meeting.start.format("%H:%M").to_string();
@@ -1287,7 +1295,7 @@ fn generate_meeting_record_markdown(data: &MeetingRecordData<'_>) -> String {
         md.push_str(&engagement_markdown);
     }
 
-    if let Some(champion_markdown) = build_champion_markdown(champion_health) {
+    if let Some(champion_markdown) = build_key_advocate_markdown(key_advocate_health) {
         md.push_str(&champion_markdown);
     }
 
@@ -1546,7 +1554,7 @@ struct RoleReviewInput<'a> {
     wins: &'a [String],
     risks: &'a [String],
     decisions: &'a [String],
-    champion_health: Option<&'a ChampionHealth>,
+    key_advocate_health: Option<&'a KeyAdvocateHealth>,
 }
 
 fn review_transcript_role_attribution(
@@ -1580,7 +1588,7 @@ fn review_transcript_role_attribution(
         wins: input.wins.to_vec(),
         risks: input.risks.to_vec(),
         decisions: input.decisions.to_vec(),
-        champion_health: input.champion_health.cloned(),
+        key_advocate_health: input.key_advocate_health.cloned(),
     };
 
     let context_json = serde_json::json!({
@@ -1908,7 +1916,7 @@ struct EnrichedTranscriptData<'a> {
     meeting_title: &'a str,
     account_id: Option<&'a str>,
     interaction_dynamics: Option<&'a InteractionDynamics>,
-    champion_health: Option<&'a ChampionHealth>,
+    key_advocate_health: Option<&'a KeyAdvocateHealth>,
     role_changes: &'a [RoleChange],
     commitments: &'a [TranscriptCommitment],
 }
@@ -1919,7 +1927,7 @@ fn persist_enriched_transcript_data(db: &crate::db::ActionDb, data: &EnrichedTra
     let meeting_title = data.meeting_title;
     let account_id = data.account_id;
     let interaction_dynamics = data.interaction_dynamics;
-    let champion_health = data.champion_health;
+    let key_advocate_health = data.key_advocate_health;
     let role_changes = data.role_changes;
     let commitments = data.commitments;
     // Persist interaction dynamics
@@ -1937,8 +1945,8 @@ fn persist_enriched_transcript_data(db: &crate::db::ActionDb, data: &EnrichedTra
     }
 
     // Persist champion health
-    if let Some(health) = champion_health {
-        let db_health = crate::db::types::ChampionHealthAssessment {
+    if let Some(health) = key_advocate_health {
+        let db_health = crate::db::types::KeyAdvocateAssessment {
             meeting_id: meeting_id.to_string(),
             champion_name: Some(health.champion_name.clone()),
             champion_status: health.champion_status.clone(),
@@ -1947,7 +1955,7 @@ fn persist_enriched_transcript_data(db: &crate::db::ActionDb, data: &EnrichedTra
         };
         // DIRECT_DB_ALLOWED: Background transcript processing writes meeting-level
         // champion health directly in the processor pipeline.
-        if let Err(e) = db.upsert_champion_health(meeting_id, &db_health) {
+        if let Err(e) = db.upsert_key_advocate_health(meeting_id, &db_health) {
             log::warn!(
                 "Failed to persist champion health for {}: {}",
                 meeting_id,
@@ -2374,7 +2382,7 @@ END_RISKS"#
         ProcessingProfile::Lightweight => "",
     };
 
-    let champion_section = if proc_profile.extract_champion_health() {
+    let champion_section = if proc_profile.extract_key_advocate_health() {
         r#"
 CHAMPION_HEALTH:
 - champion_name: <name or "unidentified">
@@ -2390,7 +2398,7 @@ END_CHAMPION_HEALTH"#
         ""
     };
 
-    let champion_rules = if proc_profile.extract_champion_health() {
+    let champion_rules = if proc_profile.extract_key_advocate_health() {
         r#"
 Rules for champion health:
 - Focus on the PRIMARY champion/advocate at the customer org
@@ -2849,6 +2857,64 @@ Transcript:
     )
 }
 
+/// Hydrate a `CalendarEvent` with the meeting's DB-side context before the
+/// transcript processor consumes it.
+///
+/// The frontend (and the Granola/Quill `db_meeting_to_calendar_event` helper)
+/// build a thin event with `account = None`, `attendees = []`, and
+/// `linked_entities = None`. That's enough for AI extraction but starves the
+/// routing logic in `resolve_transcript_destination`, which falls back to
+/// `_archive` when none of those fields point at a real entity.
+///
+/// This loads the meeting's linked entities + attendees from the DB and
+/// fills in the missing fields. Existing values on `meeting` are preserved
+/// — caller-supplied data wins. Linked-entity routing is the source of
+/// truth here; the frontmatter-fallback in `resolve_transcript_destination`
+/// is reserved for legacy files without DB context.
+pub fn enrich_meeting_from_db(meeting: &mut CalendarEvent, db: &ActionDb) {
+    // Linked entities (ordered: is_primary DESC, confidence DESC)
+    if meeting.linked_entities.as_ref().is_none_or(|v| v.is_empty()) {
+        if let Ok(entities) = db.get_meeting_linked_entities(&meeting.id) {
+            if !entities.is_empty() {
+                // Primary account name → meeting.account (used by routing step 1
+                // and frontmatter)
+                if meeting.account.is_none() {
+                    if let Some(primary_account) = entities
+                        .iter()
+                        .find(|e| e.entity_type == "account")
+                    {
+                        meeting.account = Some(primary_account.name.clone());
+                    }
+                }
+                meeting.linked_entities = Some(entities);
+            }
+        }
+    } else if meeting.account.is_none() {
+        // linked_entities was provided but account wasn't — derive it.
+        if let Some(entities) = meeting.linked_entities.as_ref() {
+            if let Some(primary_account) = entities
+                .iter()
+                .find(|e| e.entity_type == "account")
+            {
+                meeting.account = Some(primary_account.name.clone());
+            }
+        }
+    }
+
+    // Attendee emails (used by routing step 4 — domain fallback)
+    if meeting.attendees.is_empty() {
+        if let Ok(attendees) = db.get_meeting_attendees(&meeting.id) {
+            meeting.attendees = attendees
+                .into_iter()
+                .filter_map(|p| {
+                    let e = p.email.trim();
+                    if e.is_empty() { None } else { Some(e.to_string()) }
+                })
+                .collect();
+        }
+    }
+}
+
 /// I631+I661: Shared routing logic for transcripts and meeting records.
 ///
 /// Priority: account (classification) > project (linked) > person (1:1 linked)
@@ -3033,11 +3099,51 @@ fn build_frontmatter(meeting: &CalendarEvent, date: &str) -> String {
         .unwrap_or_default();
     let now = Utc::now().to_rfc3339();
 
+    // Emit DB-resolved entity IDs so downstream tools can reference linked
+    // entities by ID, not by name (names get renamed; IDs are stable).
+    // Order in linked_entities is is_primary DESC, confidence DESC, so the
+    // first entity of a given type is the primary one.
+    let mut entity_block = String::new();
+    if let Some(entities) = meeting.linked_entities.as_ref() {
+        if !entities.is_empty() {
+            if let Some(account) = entities.iter().find(|e| e.entity_type == "account") {
+                entity_block.push_str(&format!("account_id: \"{}\"\n", account.id));
+            }
+            if let Some(project) = entities.iter().find(|e| e.entity_type == "project") {
+                entity_block.push_str(&format!("project_id: \"{}\"\n", project.id));
+                entity_block.push_str(&format!(
+                    "project_name: \"{}\"\n",
+                    project.name.replace('"', "\\\"")
+                ));
+            }
+            let person_ids: Vec<String> = entities
+                .iter()
+                .filter(|e| e.entity_type == "person")
+                .map(|e| format!("\"{}\"", e.id))
+                .collect();
+            if !person_ids.is_empty() {
+                entity_block.push_str(&format!("person_ids: [{}]\n", person_ids.join(", ")));
+            }
+            // Full structured list — supports tools that want type+id pairs.
+            entity_block.push_str("linked_entities:\n");
+            for e in entities {
+                entity_block.push_str(&format!(
+                    "  - id: \"{}\"\n    type: \"{}\"\n    name: \"{}\"\n    primary: {}\n",
+                    e.id,
+                    e.entity_type,
+                    e.name.replace('"', "\\\""),
+                    e.is_primary
+                ));
+            }
+        }
+    }
+
     format!(
-        "---\nmeeting_id: \"{}\"\nmeeting_title: \"{}\"\n{}meeting_type: \"{}\"\nmeeting_date: \"{}\"\nprocessed_at: \"{}\"\nsource: transcript\n---\n",
+        "---\nmeeting_id: \"{}\"\nmeeting_title: \"{}\"\n{}{}meeting_type: \"{}\"\nmeeting_date: \"{}\"\nprocessed_at: \"{}\"\nsource: transcript\n---\n",
         meeting.id,
         meeting.title.replace('"', "\\\""),
         account_line,
+        entity_block,
         meeting_type,
         date,
         now,
@@ -3366,7 +3472,7 @@ pub fn parse_interaction_dynamics(response: &str) -> Option<InteractionDynamics>
 /// Parse the CHAMPION_HEALTH block from AI transcript response.
 ///
 /// Returns `None` if the block is missing entirely.
-pub fn parse_champion_health_block(response: &str) -> Option<ChampionHealth> {
+pub fn parse_key_advocate_block(response: &str) -> Option<KeyAdvocateHealth> {
     let block = extract_block(response, "CHAMPION_HEALTH:", "END_CHAMPION_HEALTH")?;
 
     let mut champion_name = None;
@@ -3414,7 +3520,7 @@ pub fn parse_champion_health_block(response: &str) -> Option<ChampionHealth> {
     let name = champion_name.unwrap_or_else(|| "unidentified".to_string());
     let status = champion_status?;
 
-    Some(ChampionHealth {
+    Some(KeyAdvocateHealth {
         champion_name: name,
         champion_status: status,
         champion_evidence,
@@ -3681,7 +3787,7 @@ impl Default for TranscriptResult {
             message: None,
             sentiment: None,
             interaction_dynamics: None,
-            champion_health: None,
+            key_advocate_health: None,
             role_changes: Vec::new(),
             commitments: Vec::new(),
         }
@@ -4187,7 +4293,7 @@ mod tests {
                 speaker: Some("Sarah Chen".to_string()),
             }],
         };
-        let champion_health = crate::types::ChampionHealth {
+        let key_advocate_health = crate::types::KeyAdvocateHealth {
             champion_name: "Sarah Chen".to_string(),
             champion_status: "strong".to_string(),
             champion_evidence: Some("She rallied finance and procurement.".to_string()),
@@ -4203,7 +4309,7 @@ mod tests {
             actions: &actions,
             commitments: &commitments,
             interaction_dynamics: Some(&interaction_dynamics),
-            champion_health: Some(&champion_health),
+            key_advocate_health: Some(&key_advocate_health),
             db: &db,
         });
 
@@ -4239,7 +4345,7 @@ mod tests {
             actions: &actions,
             commitments: &commitments,
             interaction_dynamics: None,
-            champion_health: None,
+            key_advocate_health: None,
             db: &db,
         });
 
@@ -4365,6 +4471,173 @@ mod tests {
             archive_path,
             PathBuf::from("/workspace/_archive/2026-03-22/2026-03-22-internal-sync-record.md")
         );
+    }
+
+    /// Pinning the bug fix: a thin CalendarEvent (no account, no
+    /// linked_entities, no attendees) — what the frontend, Granola, and
+    /// Quill all build — gets routed to `_archive` and the YAML
+    /// frontmatter omits the linked entity. After enrichment from the DB,
+    /// the meeting carries the primary account, the linked-entity list,
+    /// and attendee emails so routing lands the file in the account's
+    /// Call-Transcripts dir and frontmatter emits stable IDs.
+    #[test]
+    fn enrich_meeting_from_db_hydrates_account_linked_entities_and_attendees() {
+        let db = test_db();
+        db.upsert_account(&sample_account_row("acc-enrich", "Acme Corp"))
+            .expect("seed account");
+        db.upsert_project(&sample_project_row("proj-enrich", "Migration"))
+            .expect("seed project");
+        db.upsert_person(&sample_person_row(
+            "person-enrich",
+            "pat@acme.com",
+            "Pat Kim",
+        ))
+        .expect("seed person");
+
+        let meeting_row = sample_db_meeting_row(
+            "mtg-enrich",
+            "Acme QBR",
+            "customer",
+            "2026-03-22T15:00:00Z",
+            None,
+        );
+        db.upsert_meeting(&meeting_row).expect("upsert meeting row");
+
+        // Link primary account + secondary project so the helper has to
+        // pick the right primary by entity_type.
+        db.link_meeting_entity_with_confidence(
+            "mtg-enrich",
+            "acc-enrich",
+            "account",
+            0.95,
+            true,
+        )
+        .expect("link account");
+        db.link_meeting_entity_with_confidence(
+            "mtg-enrich",
+            "proj-enrich",
+            "project",
+            0.7,
+            false,
+        )
+        .expect("link project");
+
+        // Attach the person to the meeting via meeting_attendees so the
+        // attendee-fallback routing arm has data to chew on.
+        db.record_meeting_attendance("mtg-enrich", "person-enrich")
+            .expect("attach attendee");
+
+        // Frontend/Granola/Quill all build a thin event like this.
+        let mut event = CalendarEvent {
+            id: "mtg-enrich".to_string(),
+            title: "Acme QBR".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::Customer,
+            account: None,
+            attendees: vec![],
+            is_all_day: false,
+            series_id: None,
+            linked_entities: None,
+            classified_entities: None,
+            scored_classified_entities: None,
+        };
+
+        enrich_meeting_from_db(&mut event, &db);
+
+        assert_eq!(event.account.as_deref(), Some("Acme Corp"));
+        let entities = event
+            .linked_entities
+            .as_ref()
+            .expect("linked_entities populated");
+        assert!(entities
+            .iter()
+            .any(|e| e.entity_type == "account" && e.id == "acc-enrich" && e.is_primary));
+        assert!(entities
+            .iter()
+            .any(|e| e.entity_type == "project" && e.id == "proj-enrich"));
+        assert_eq!(event.attendees, vec!["pat@acme.com".to_string()]);
+
+        // Now routing should pick the account dir, not _archive.
+        let (dest, method) = resolve_transcript_destination(
+            &event,
+            Some(&db),
+            Path::new("/workspace"),
+            "test-transcript.md",
+            "Call-Transcripts",
+            "2026-03-22",
+            None,
+        );
+        assert_eq!(method, "account_classification");
+        assert_eq!(
+            dest,
+            PathBuf::from("/workspace/Accounts/Acme-Corp/Call-Transcripts/test-transcript.md")
+        );
+
+        // And frontmatter should carry stable IDs.
+        let frontmatter = build_frontmatter(&event, "2026-03-22");
+        assert!(
+            frontmatter.contains("account: \"Acme Corp\""),
+            "frontmatter should include account name: {frontmatter}"
+        );
+        assert!(
+            frontmatter.contains("account_id: \"acc-enrich\""),
+            "frontmatter should include account_id: {frontmatter}"
+        );
+        assert!(
+            frontmatter.contains("project_id: \"proj-enrich\""),
+            "frontmatter should include project_id: {frontmatter}"
+        );
+        assert!(
+            frontmatter.contains("linked_entities:"),
+            "frontmatter should include structured linked_entities: {frontmatter}"
+        );
+    }
+
+    /// Caller-supplied values (an explicit account, pre-filled attendees)
+    /// must never be overwritten by the DB enrichment — the hydration
+    /// fills missing data but doesn't argue with an authoritative caller.
+    #[test]
+    fn enrich_meeting_from_db_preserves_caller_supplied_fields() {
+        let db = test_db();
+        db.upsert_account(&sample_account_row("acc-pre", "DB-Side Co"))
+            .expect("seed account");
+        let meeting_row = sample_db_meeting_row(
+            "mtg-pre",
+            "Pre-set",
+            "customer",
+            "2026-03-22T15:00:00Z",
+            None,
+        );
+        db.upsert_meeting(&meeting_row).expect("upsert meeting row");
+        db.link_meeting_entity_with_confidence("mtg-pre", "acc-pre", "account", 0.95, true)
+            .expect("link account");
+
+        let mut event = CalendarEvent {
+            id: "mtg-pre".to_string(),
+            title: "Pre-set".to_string(),
+            start: parse_utc("2026-03-22T15:00:00Z"),
+            end: parse_utc("2026-03-22T16:00:00Z"),
+            meeting_type: MeetingType::Customer,
+            account: Some("Caller-supplied".to_string()),
+            attendees: vec!["already@there.com".to_string()],
+            is_all_day: false,
+            series_id: None,
+            linked_entities: None,
+            classified_entities: None,
+            scored_classified_entities: None,
+        };
+
+        enrich_meeting_from_db(&mut event, &db);
+
+        assert_eq!(
+            event.account.as_deref(),
+            Some("Caller-supplied"),
+            "caller-supplied account must not be overwritten"
+        );
+        assert_eq!(event.attendees, vec!["already@there.com".to_string()]);
+        // linked_entities was None — that gets filled
+        assert!(event.linked_entities.is_some());
     }
 
     // =========================================================================
@@ -4616,7 +4889,7 @@ END_DECISIONS";
     // =========================================================================
 
     #[test]
-    fn test_parse_champion_health_block_valid() {
+    fn test_parse_key_advocate_block_valid() {
         let input = "\
 CHAMPION_HEALTH:
 - champion_name: Sarah Chen
@@ -4625,7 +4898,7 @@ CHAMPION_HEALTH:
 - champion_risk:
 END_CHAMPION_HEALTH";
 
-        let result = parse_champion_health_block(input).expect("should parse");
+        let result = parse_key_advocate_block(input).expect("should parse");
         assert_eq!(result.champion_name, "Sarah Chen");
         assert_eq!(result.champion_status, "strong");
         assert!(result.champion_evidence.is_some());
@@ -4633,7 +4906,7 @@ END_CHAMPION_HEALTH";
     }
 
     #[test]
-    fn test_parse_champion_health_block_weak() {
+    fn test_parse_key_advocate_block_weak() {
         let input = "\
 CHAMPION_HEALTH:
 - champion_name: Bob Vance
@@ -4642,13 +4915,13 @@ CHAMPION_HEALTH:
 - champion_risk: Single-threaded relationship, need to identify executive sponsor
 END_CHAMPION_HEALTH";
 
-        let result = parse_champion_health_block(input).expect("should parse");
+        let result = parse_key_advocate_block(input).expect("should parse");
         assert_eq!(result.champion_status, "weak");
         assert!(result.champion_risk.is_some());
     }
 
     #[test]
-    fn test_parse_champion_health_block_none() {
+    fn test_parse_key_advocate_block_none() {
         let input = "\
 CHAMPION_HEALTH:
 - champion_name: unidentified
@@ -4656,15 +4929,15 @@ CHAMPION_HEALTH:
 - champion_evidence: No clear advocate in this meeting
 END_CHAMPION_HEALTH";
 
-        let result = parse_champion_health_block(input).expect("should parse");
+        let result = parse_key_advocate_block(input).expect("should parse");
         assert_eq!(result.champion_name, "unidentified");
         assert_eq!(result.champion_status, "none");
     }
 
     #[test]
-    fn test_parse_champion_health_block_missing() {
+    fn test_parse_key_advocate_block_missing() {
         let input = "SUMMARY: No champion block\nACTIONS:\nEND_ACTIONS";
-        assert!(parse_champion_health_block(input).is_none());
+        assert!(parse_key_advocate_block(input).is_none());
     }
 
     #[test]
@@ -4916,11 +5189,11 @@ END_DECISIONS";
     }
 
     #[test]
-    fn test_profile_champion_health_extraction() {
-        assert!(ProcessingProfile::CustomerFacing.extract_champion_health());
-        assert!(!ProcessingProfile::InternalTeam.extract_champion_health());
-        assert!(!ProcessingProfile::OneOnOne.extract_champion_health());
-        assert!(!ProcessingProfile::Lightweight.extract_champion_health());
+    fn test_profile_key_advocate_health_extraction() {
+        assert!(ProcessingProfile::CustomerFacing.extract_key_advocate_health());
+        assert!(!ProcessingProfile::InternalTeam.extract_key_advocate_health());
+        assert!(!ProcessingProfile::OneOnOne.extract_key_advocate_health());
+        assert!(!ProcessingProfile::Lightweight.extract_key_advocate_health());
     }
 
     #[test]
@@ -5069,7 +5342,7 @@ mod eval_tests {
     fn eval_champion_departure_flagged_as_lost() {
         let response = include_str!("../intelligence/fixtures/transcript_champion_departure.txt");
 
-        let champion = parse_champion_health_block(response);
+        let champion = parse_key_advocate_block(response);
         assert!(
             champion.is_some(),
             "Champion departure fixture must produce champion health"

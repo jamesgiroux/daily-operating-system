@@ -5,11 +5,13 @@
 
 use crate::db::types::DbAccount;
 use crate::db::ActionDb;
+use crate::presets::loader::canonical_role_id;
+use crate::presets::schema::{PresetIntelligenceConfig, RolePreset};
 use crate::signals::fusion;
 
 use super::io::{
-    AccountHealth, DimensionScore, HealthDivergence, HealthSource, HealthTrend, OrgHealthData,
-    RelationshipDimensions,
+    AccountHealth, DimensionScore, HealthDivergence, HealthSource, HealthTrend, HealthTrendTag,
+    OrgHealthData, RelationshipDimensions,
 };
 
 // DOS-53: Pushing actions to Linear could feed the engagement health dimension
@@ -26,10 +28,20 @@ pub fn compute_account_health(
     account: &DbAccount,
     org_health: Option<&OrgHealthData>,
 ) -> AccountHealth {
+    compute_account_health_with_preset(db, account, org_health, None)
+}
+
+/// Compute algorithmic health with an optional role preset.
+pub fn compute_account_health_with_preset(
+    db: &ActionDb,
+    account: &DbAccount,
+    org_health: Option<&OrgHealthData>,
+    preset: Option<&RolePreset>,
+) -> AccountHealth {
     let meeting_cadence = compute_meeting_cadence(db, &account.id);
     let email_engagement = compute_email_engagement(db, &account.id);
     let stakeholder_coverage = compute_stakeholder_coverage(db, &account.id);
-    let champion_health = compute_champion_health(db, &account.id);
+    let key_advocate_health = compute_key_advocate_health(db, &account.id);
     let financial_proximity = compute_financial_proximity(db, account);
     let signal_momentum = compute_signal_momentum(db, &account.id);
 
@@ -37,13 +49,15 @@ pub fn compute_account_health(
         meeting_cadence,
         email_engagement,
         stakeholder_coverage,
-        champion_health,
+        key_advocate_health,
         financial_proximity,
         signal_momentum,
     };
 
     let lifecycle = account.lifecycle.as_deref();
-    let raw_weights = apply_lifecycle_weights(lifecycle);
+    let preset_id = preset.map(|p| p.id.as_str()).unwrap_or("core");
+    let raw_weights =
+        compose_dimension_weights(preset_id, preset.map(|p| &p.intelligence), lifecycle);
     let weights = redistribute_weights(&dims, raw_weights);
     let confidence = compute_confidence(&dims);
 
@@ -56,7 +70,7 @@ pub fn compute_account_health(
         &dims.meeting_cadence,
         &dims.email_engagement,
         &dims.stakeholder_coverage,
-        &dims.champion_health,
+        &dims.key_advocate_health,
         &dims.financial_proximity,
         &dims.signal_momentum,
     ];
@@ -95,7 +109,7 @@ pub fn compute_account_health(
 
     // Build recommended actions from dimension evidence
     let mut recommended_actions = Vec::new();
-    for ev in &dims.champion_health.evidence {
+    for ev in &dims.key_advocate_health.evidence {
         if ev.contains("Consider tagging") || ev.contains("champion candidate") {
             recommended_actions.push(ev.clone());
         }
@@ -178,37 +192,41 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
             rationale: Some("Insufficient history for trend".to_string()),
             timeframe: "30d".to_string(),
             confidence: 0.1,
+            delta: None,
+            tags: Vec::new(),
         };
     }
 
     // Compare current score to oldest in window
     let oldest_score = history.last().map(|(s, _)| *s).unwrap_or(current_score);
-    let delta = current_score - oldest_score;
+    let delta_f = current_score - oldest_score;
+    // DOS-249: integer delta for the "▲ +12 in 30d" meta line
+    let delta_i = delta_f.round() as i32;
 
-    let (direction, rationale) = if delta > 10.0 {
+    let (direction, rationale) = if delta_f > 10.0 {
         (
             "improving",
-            format!("Score up {delta:.0} points from {oldest_score:.0}"),
+            format!("Score up {delta_f:.0} points from {oldest_score:.0}"),
         )
-    } else if delta > 5.0 {
-        ("improving", format!("Score trending up {delta:.0} points"))
-    } else if delta < -10.0 {
+    } else if delta_f > 5.0 {
+        ("improving", format!("Score trending up {delta_f:.0} points"))
+    } else if delta_f < -10.0 {
         (
             "declining",
             format!(
                 "Score down {:.0} points from {oldest_score:.0}",
-                delta.abs()
+                delta_f.abs()
             ),
         )
-    } else if delta < -5.0 {
+    } else if delta_f < -5.0 {
         (
             "declining",
-            format!("Score trending down {:.0} points", delta.abs()),
+            format!("Score trending down {:.0} points", delta_f.abs()),
         )
     } else {
         (
             "stable",
-            format!("Score stable (±{:.0} points)", delta.abs()),
+            format!("Score stable (±{:.0} points)", delta_f.abs()),
         )
     };
 
@@ -218,12 +236,105 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
         _ => 0.3,
     };
 
+    // DOS-249: Build structured signal tags for the trend meta line.
+    // Derived from dimension evidence in the DB — one tag per declining or
+    // improving dimension with a non-trivial trend signal.
+    let tags = build_trend_tags(db, account_id, direction);
+
     HealthTrend {
         direction: direction.to_string(),
         rationale: Some(rationale),
         timeframe: "30d".to_string(),
         confidence: trend_confidence,
+        delta: Some(delta_i),
+        tags,
     }
+}
+
+/// DOS-249: Build structured tags for the trend meta line from dimension
+/// evidence evidence. Emits up to 4 tags (matching mockup style) derived from
+/// dimension trends stored in the most-recent health_json column.
+fn build_trend_tags(db: &ActionDb, account_id: &str, trend_direction: &str) -> Vec<HealthTrendTag> {
+    // Pull health_json from the last enriched assessment to read dimension trends
+    let health_json: Option<String> = db
+        .conn
+        .query_row(
+            "SELECT health_json FROM entity_assessment WHERE entity_id = ?1",
+            rusqlite::params![account_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
+    let Some(json) = health_json else {
+        return Vec::new();
+    };
+
+    let health: crate::intelligence::io::AccountHealth =
+        match serde_json::from_str(&json) {
+            Ok(h) => h,
+            Err(_) => return Vec::new(),
+        };
+
+    let mut tags: Vec<HealthTrendTag> = Vec::new();
+
+    let dim_labels: &[(&str, &str)] = &[
+        ("meeting_cadence", "Meeting cadence"),
+        ("email_engagement", "Email engagement"),
+        ("stakeholder_coverage", "Stakeholder coverage"),
+        ("champion_health", "Champion health"),
+        ("financial_proximity", "Financial proximity"),
+        ("signal_momentum", "Signal momentum"),
+    ];
+
+    let dim_arr: [(&str, &crate::intelligence::io::DimensionScore); 6] = [
+        ("meeting_cadence", &health.dimensions.meeting_cadence),
+        ("email_engagement", &health.dimensions.email_engagement),
+        ("stakeholder_coverage", &health.dimensions.stakeholder_coverage),
+        ("key_advocate_health", &health.dimensions.key_advocate_health),
+        ("financial_proximity", &health.dimensions.financial_proximity),
+        ("signal_momentum", &health.dimensions.signal_momentum),
+    ];
+
+    // Emit tags for dimensions whose trend aligns with the account trend direction
+    // or that are declining (always worth surfacing). Cap at 4.
+    for ((dim_key, _dim_label), (_, dim)) in dim_labels.iter().zip(dim_arr.iter()) {
+        if tags.len() >= 4 {
+            break;
+        }
+        if dim.weight == 0.0 {
+            continue;
+        }
+        let direction = match dim.trend.as_str() {
+            "improving" => "up",
+            "declining" => "down",
+            _ => {
+                // Only include stable dims when the overall trend is changing
+                if trend_direction != "stable" { "stable" } else { continue; }
+            }
+        };
+        // Build a human label from the first evidence item (capped to 25 chars)
+        // or fall back to the dimension label.
+        let label = dim.evidence.first()
+            .map(|e| {
+                let e = e.trim();
+                if e.len() > 35 {
+                    e[..35].trim_end_matches(|c: char| !c.is_alphanumeric()).to_string()
+                } else {
+                    e.to_string()
+                }
+            })
+            .unwrap_or_else(|| dim_labels.iter()
+                .find(|(k, _)| *k == *dim_key)
+                .map(|(_, l)| l.to_string())
+                .unwrap_or_default());
+        tags.push(HealthTrendTag {
+            label,
+            direction: direction.to_string(),
+        });
+    }
+
+    tags
 }
 
 fn band_to_score(band: &str) -> f64 {
@@ -257,14 +368,14 @@ pub enum AccountBucket {
 /// Classify an account into an operating bucket with a concise rationale.
 pub fn classify_account_bucket(health: &AccountHealth) -> (AccountBucket, String) {
     let cadence = health.dimensions.meeting_cadence.score;
-    let champion = health.dimensions.champion_health.score;
+    let champion = health.dimensions.key_advocate_health.score;
     let cadence_present = health.dimensions.meeting_cadence.weight > 0.0;
-    let champion_present = health.dimensions.champion_health.weight > 0.0;
+    let champion_present = health.dimensions.key_advocate_health.weight > 0.0;
     let any_declining = [
         &health.dimensions.meeting_cadence,
         &health.dimensions.email_engagement,
         &health.dimensions.stakeholder_coverage,
-        &health.dimensions.champion_health,
+        &health.dimensions.key_advocate_health,
         &health.dimensions.financial_proximity,
         &health.dimensions.signal_momentum,
     ]
@@ -698,7 +809,7 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
     }
 }
 
-fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
+fn compute_key_advocate_health(db: &ActionDb, account_id: &str) -> DimensionScore {
     // I652: Query account_stakeholder_roles directly for champion designation
     let champion_rows: Vec<(String, String)> = db
         .conn
@@ -1057,6 +1168,52 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
         }
     }
 
+    // DOS-207: Active regulatory gaps penalize financial proximity.
+    // Count recent regulatory_gap_detected signals (last 30 days) and
+    // subtract 5 points each, capped at 15 total. The surface forms the
+    // risk side of the dimension — compliance gaps are procurement-side
+    // friction that materially affects renewal outcome.
+    let reg_gaps: Vec<String> = db
+        .conn
+        .prepare(
+            "SELECT DISTINCT value FROM signal_events
+             WHERE entity_id = ?1
+               AND signal_type = 'regulatory_gap_detected'
+               AND created_at > datetime('now', '-30 days')",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![&account.id], |row| {
+                row.get::<_, Option<String>>(0)
+            })
+            .map(|rows| rows.filter_map(|r| r.ok().flatten()).collect())
+        })
+        .unwrap_or_default();
+
+    if !reg_gaps.is_empty() {
+        let penalty = ((reg_gaps.len() as f64) * 5.0).min(15.0);
+        score -= penalty;
+        let standards: Vec<String> = reg_gaps
+            .iter()
+            .filter_map(|v| serde_json::from_str::<serde_json::Value>(v).ok())
+            .filter_map(|v| {
+                v.get("standard")
+                    .and_then(|s| s.as_str())
+                    .map(str::to_string)
+            })
+            .collect();
+        if standards.is_empty() {
+            evidence.push(format!(
+                "Active regulatory gap ({}x) — -{penalty:.0} pts",
+                reg_gaps.len()
+            ));
+        } else {
+            evidence.push(format!(
+                "Active regulatory gap: {} — -{penalty:.0} pts",
+                standards.join(", ")
+            ));
+        }
+    }
+
     DimensionScore {
         score: score.clamp(0.0, 100.0),
         weight: 1.0,
@@ -1165,9 +1322,7 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
             }
 
             let age_days = chrono::DateTime::parse_from_rfc3339(latest_created_at)
-                .map(|d| {
-                    (chrono::Utc::now() - d.with_timezone(&chrono::Utc)).num_days()
-                })
+                .map(|d| (chrono::Utc::now() - d.with_timezone(&chrono::Utc)).num_days())
                 .unwrap_or(30);
             evidence.push(format!(
                 "Zendesk velocity signal {}d ago ({:.0}% confidence)",
@@ -1194,9 +1349,53 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
     }
 }
 
+const HEALTH_DIMENSION_WEIGHT_KEYS: [&str; 6] = [
+    "meeting_cadence",
+    "email_engagement",
+    "stakeholder_coverage",
+    "key_advocate_health",
+    "financial_proximity",
+    "signal_momentum",
+];
+
+/// Compose preset base weights with lifecycle-stage multipliers.
+/// Order: [meeting, email, stakeholder, champion, financial, signal]
+pub fn compose_dimension_weights(
+    preset_id: &str,
+    intelligence: Option<&PresetIntelligenceConfig>,
+    lifecycle: Option<&str>,
+) -> [f64; 6] {
+    let base_weights = intelligence
+        .map(dimension_weights_from_config)
+        .unwrap_or([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+    let multipliers = apply_lifecycle_weights(preset_id, lifecycle);
+    [
+        base_weights[0] * multipliers[0],
+        base_weights[1] * multipliers[1],
+        base_weights[2] * multipliers[2],
+        base_weights[3] * multipliers[3],
+        base_weights[4] * multipliers[4],
+        base_weights[5] * multipliers[5],
+    ]
+}
+
+fn dimension_weights_from_config(intelligence: &PresetIntelligenceConfig) -> [f64; 6] {
+    HEALTH_DIMENSION_WEIGHT_KEYS.map(|key| {
+        intelligence
+            .dimension_weights
+            .get(key)
+            .copied()
+            .unwrap_or(1.0)
+    })
+}
+
 /// Apply lifecycle-stage weight multipliers to each dimension.
 /// Order: [meeting, email, stakeholder, champion, financial, signal]
-fn apply_lifecycle_weights(lifecycle: Option<&str>) -> [f64; 6] {
+pub fn apply_lifecycle_weights(preset_id: &str, lifecycle: Option<&str>) -> [f64; 6] {
+    if canonical_role_id(preset_id) != "customer-success" {
+        return [1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    }
+
     match lifecycle {
         Some("onboarding") => [1.5, 1.0, 1.5, 1.0, 0.7, 1.0],
         Some("adoption") => [1.0, 1.0, 1.0, 1.5, 1.0, 1.5],
@@ -1213,7 +1412,7 @@ fn redistribute_weights(dims: &RelationshipDimensions, raw: [f64; 6]) -> [f64; 6
         dims.meeting_cadence.weight > 0.0,
         dims.email_engagement.weight > 0.0,
         dims.stakeholder_coverage.weight > 0.0,
-        dims.champion_health.weight > 0.0,
+        dims.key_advocate_health.weight > 0.0,
         dims.financial_proximity.weight > 0.0,
         dims.signal_momentum.weight > 0.0,
     ];
@@ -1245,7 +1444,7 @@ fn has_sufficient_data(dims: &RelationshipDimensions) -> bool {
         &dims.meeting_cadence,
         &dims.email_engagement,
         &dims.stakeholder_coverage,
-        &dims.champion_health,
+        &dims.key_advocate_health,
         &dims.financial_proximity,
         &dims.signal_momentum,
     ]
@@ -1282,7 +1481,7 @@ fn compute_confidence(dims: &RelationshipDimensions) -> f64 {
         &dims.meeting_cadence,
         &dims.email_engagement,
         &dims.stakeholder_coverage,
-        &dims.champion_health,
+        &dims.key_advocate_health,
         &dims.financial_proximity,
         &dims.signal_momentum,
     ]
@@ -1336,6 +1535,9 @@ fn detect_divergence(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::test_db;
+    use crate::db::{AccountType, DbAccount, DbMeeting};
+    use chrono::{Duration, Utc};
 
     fn null_dim() -> DimensionScore {
         DimensionScore {
@@ -1355,13 +1557,75 @@ mod tests {
         }
     }
 
+    fn make_account(id: &str, lifecycle: Option<&str>, contract_end: Option<String>) -> DbAccount {
+        DbAccount {
+            id: id.to_string(),
+            name: format!("Account {id}"),
+            lifecycle: lifecycle.map(|value| value.to_string()),
+            arr: Some(100_000.0),
+            health: None,
+            contract_start: Some("2025-01-01".to_string()),
+            contract_end,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            account_type: AccountType::Customer,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
+            metadata: None,
+            ..Default::default()
+        }
+    }
+
+    fn seed_linked_meeting(
+        db: &crate::db::ActionDb,
+        meeting_id: &str,
+        account_id: &str,
+        days_ago: i64,
+    ) {
+        let start_time = (Utc::now() - Duration::days(days_ago)).to_rfc3339();
+        let meeting = DbMeeting {
+            id: meeting_id.to_string(),
+            title: format!("Meeting {meeting_id}"),
+            meeting_type: "customer".to_string(),
+            start_time,
+            end_time: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
+        };
+        db.upsert_meeting(&meeting).expect("seed meeting");
+        db.link_meeting_entity_if_absent(meeting_id, account_id, "account")
+            .expect("link meeting to account");
+    }
+
     #[test]
     fn test_confidence_all_dimensions() {
         let dims = RelationshipDimensions {
             meeting_cadence: active_dim(70.0),
             email_engagement: active_dim(60.0),
             stakeholder_coverage: active_dim(80.0),
-            champion_health: active_dim(50.0),
+            key_advocate_health: active_dim(50.0),
             financial_proximity: active_dim(40.0),
             signal_momentum: active_dim(50.0),
         };
@@ -1375,7 +1639,7 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: null_dim(),
             stakeholder_coverage: active_dim(80.0),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: active_dim(50.0), // not a placeholder (evidence != "No recent signals")
         };
@@ -1389,7 +1653,7 @@ mod tests {
             meeting_cadence: null_dim(),
             email_engagement: null_dim(),
             stakeholder_coverage: null_dim(),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: DimensionScore {
                 score: 50.0,
@@ -1408,7 +1672,7 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: null_dim(),
             stakeholder_coverage: null_dim(),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: active_dim(50.0),
         };
@@ -1422,13 +1686,126 @@ mod tests {
 
     #[test]
     fn test_lifecycle_weights_renewal() {
-        let weights = apply_lifecycle_weights(Some("renewal"));
+        let weights = apply_lifecycle_weights("customer-success", Some("renewal"));
         // Financial proximity (index 4) should have highest weight in renewal
         assert!(
             weights[4] > weights[0],
             "financial_proximity should be highest in renewal"
         );
         assert!((weights[4] - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_lifecycle_weights_non_cs_are_flat() {
+        let weights = apply_lifecycle_weights("affiliates-partnerships", Some("renewal"));
+        assert_eq!(weights, [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_preset_dimension_weights_feed_raw_weights() {
+        let preset = crate::presets::loader::load_preset("affiliates-partnerships").unwrap();
+        let raw =
+            compose_dimension_weights(&preset.id, Some(&preset.intelligence), Some("renewal"));
+        let expected = preset.intelligence.dimension_weights["financial_proximity"];
+        assert!((raw[4] - expected).abs() < 1e-9);
+
+        let cs = crate::presets::loader::load_preset("customer-success").unwrap();
+        let cs_raw = compose_dimension_weights(&cs.id, Some(&cs.intelligence), Some("renewal"));
+        assert!(cs_raw[4] > cs_raw[0]);
+    }
+
+    #[test]
+    fn test_customer_success_preset_matches_legacy_health_output() {
+        let db = test_db();
+        let contract_end = (Utc::now().date_naive() + Duration::days(45)).to_string();
+        let account = make_account("acc-cs-baseline", Some("renewal"), Some(contract_end));
+        db.upsert_account(&account).expect("upsert account");
+        seed_linked_meeting(&db, "mtg-cs-baseline-1", &account.id, 7);
+        seed_linked_meeting(&db, "mtg-cs-baseline-2", &account.id, 20);
+        seed_linked_meeting(&db, "mtg-cs-baseline-3", &account.id, 50);
+
+        let customer_success = crate::presets::loader::load_preset("customer-success")
+            .expect("load customer-success preset");
+        let preset_health = compute_account_health_with_preset(
+            &db,
+            &account,
+            None,
+            Some(&customer_success),
+        );
+
+        let dims = RelationshipDimensions {
+            meeting_cadence: compute_meeting_cadence(&db, &account.id),
+            email_engagement: compute_email_engagement(&db, &account.id),
+            stakeholder_coverage: compute_stakeholder_coverage(&db, &account.id),
+            key_advocate_health: compute_key_advocate_health(&db, &account.id),
+            financial_proximity: compute_financial_proximity(&db, &account),
+            signal_momentum: compute_signal_momentum(&db, &account.id),
+        };
+        let legacy_raw = apply_lifecycle_weights("customer-success", account.lifecycle.as_deref());
+        let legacy_weights = redistribute_weights(&dims, legacy_raw);
+        let confidence = compute_confidence(&dims);
+        let dim_arr = [
+            &dims.meeting_cadence,
+            &dims.email_engagement,
+            &dims.stakeholder_coverage,
+            &dims.key_advocate_health,
+            &dims.financial_proximity,
+            &dims.signal_momentum,
+        ];
+        let mut weighted_sum = 0.0f64;
+        let mut weight_total = 0.0f64;
+        for (i, dim) in dim_arr.iter().enumerate() {
+            if dim.weight > 0.0 {
+                weighted_sum += dim.score * legacy_weights[i];
+                weight_total += legacy_weights[i];
+            }
+        }
+        let raw_avg = if weight_total > 0.0 {
+            weighted_sum / weight_total
+        } else {
+            50.0
+        };
+        let legacy_score = confidence * raw_avg + (1.0 - confidence) * 50.0;
+
+        assert!(
+            (legacy_score - preset_health.score).abs() < 1e-9,
+            "customer-success preset should preserve legacy score"
+        );
+        assert_eq!(
+            score_to_band(legacy_score),
+            preset_health.band,
+            "customer-success preset should preserve legacy band"
+        );
+        assert_eq!(
+            confidence, preset_health.confidence,
+            "customer-success preset should preserve legacy confidence"
+        );
+    }
+
+    #[test]
+    fn test_affiliates_preset_changes_health_output_for_same_account() {
+        let db = test_db();
+        let contract_end = (Utc::now().date_naive() + Duration::days(45)).to_string();
+        let account = make_account("acc-preset-diff", Some("renewal"), Some(contract_end));
+        db.upsert_account(&account).expect("upsert account");
+        seed_linked_meeting(&db, "mtg-preset-diff-1", &account.id, 7);
+        seed_linked_meeting(&db, "mtg-preset-diff-2", &account.id, 20);
+        seed_linked_meeting(&db, "mtg-preset-diff-3", &account.id, 50);
+
+        let customer_success = crate::presets::loader::load_preset("customer-success")
+            .expect("load customer-success preset");
+        let affiliates = crate::presets::loader::load_preset("affiliates-partnerships")
+            .expect("load affiliates preset");
+
+        let cs_health =
+            compute_account_health_with_preset(&db, &account, None, Some(&customer_success));
+        let affiliates_health =
+            compute_account_health_with_preset(&db, &account, None, Some(&affiliates));
+
+        assert_ne!(
+            cs_health.score, affiliates_health.score,
+            "different preset weights should change the final health score"
+        );
     }
 
     #[test]
@@ -1533,7 +1910,7 @@ mod tests {
                 meeting_cadence: active_dim(70.0),
                 email_engagement: active_dim(55.0),
                 stakeholder_coverage: active_dim(60.0),
-                champion_health: active_dim(75.0),
+                key_advocate_health: active_dim(75.0),
                 financial_proximity: active_dim(45.0),
                 signal_momentum: active_dim(60.0),
             },
@@ -1561,7 +1938,7 @@ mod tests {
                 meeting_cadence: if n >= 1 { active.clone() } else { null.clone() },
                 email_engagement: if n >= 2 { active.clone() } else { null.clone() },
                 stakeholder_coverage: if n >= 3 { active.clone() } else { null.clone() },
-                champion_health: if n >= 4 { active.clone() } else { null.clone() },
+                key_advocate_health: if n >= 4 { active.clone() } else { null.clone() },
                 financial_proximity: if n >= 5 { active.clone() } else { null.clone() },
                 signal_momentum: if n >= 6 { active.clone() } else { null.clone() },
             }
@@ -1598,7 +1975,7 @@ mod tests {
                 meeting_cadence: if n >= 1 { active.clone() } else { null.clone() },
                 email_engagement: if n >= 2 { active.clone() } else { null.clone() },
                 stakeholder_coverage: if n >= 3 { active.clone() } else { null.clone() },
-                champion_health: if n >= 4 { active.clone() } else { null.clone() },
+                key_advocate_health: if n >= 4 { active.clone() } else { null.clone() },
                 financial_proximity: if n >= 5 { active.clone() } else { null.clone() },
                 signal_momentum: if n >= 6 { active.clone() } else { null.clone() },
             }
@@ -1622,7 +1999,7 @@ mod tests {
             meeting_cadence: null_dim(),
             email_engagement: null_dim(),
             stakeholder_coverage: null_dim(),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: null_dim(),
         };
@@ -1634,7 +2011,7 @@ mod tests {
             meeting_cadence: active_dim(60.0),
             email_engagement: active_dim(60.0),
             stakeholder_coverage: active_dim(60.0),
-            champion_health: active_dim(60.0),
+            key_advocate_health: active_dim(60.0),
             financial_proximity: active_dim(60.0),
             signal_momentum: active_dim(60.0),
         };
@@ -1649,12 +2026,12 @@ mod tests {
             meeting_cadence: active_dim(80.0),
             email_engagement: active_dim(65.0),
             stakeholder_coverage: active_dim(70.0),
-            champion_health: active_dim(75.0),
+            key_advocate_health: active_dim(75.0),
             financial_proximity: active_dim(90.0), // recently renewed
             signal_momentum: active_dim(55.0),
         };
 
-        let raw_weights = apply_lifecycle_weights(None); // equal weights
+        let raw_weights = apply_lifecycle_weights("customer-success", None); // equal weights
         let weights = redistribute_weights(&dims, raw_weights);
         let confidence = compute_confidence(&dims);
 
@@ -1662,7 +2039,7 @@ mod tests {
             &dims.meeting_cadence,
             &dims.email_engagement,
             &dims.stakeholder_coverage,
-            &dims.champion_health,
+            &dims.key_advocate_health,
             &dims.financial_proximity,
             &dims.signal_momentum,
         ];
@@ -1692,12 +2069,12 @@ mod tests {
             meeting_cadence: active_dim(20.0),
             email_engagement: null_dim(),
             stakeholder_coverage: active_dim(30.0),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: active_dim(40.0), // approaching, no outcome
             signal_momentum: active_dim(50.0),     // neutral
         };
 
-        let raw_weights = apply_lifecycle_weights(None);
+        let raw_weights = apply_lifecycle_weights("customer-success", None);
         let weights = redistribute_weights(&dims, raw_weights);
         let confidence = compute_confidence(&dims);
 
@@ -1705,7 +2082,7 @@ mod tests {
             &dims.meeting_cadence,
             &dims.email_engagement,
             &dims.stakeholder_coverage,
-            &dims.champion_health,
+            &dims.key_advocate_health,
             &dims.financial_proximity,
             &dims.signal_momentum,
         ];
@@ -1735,7 +2112,7 @@ mod tests {
             meeting_cadence: active_dim(80.0),
             email_engagement: null_dim(),
             stakeholder_coverage: null_dim(),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: DimensionScore {
                 score: 50.0,
@@ -1745,7 +2122,7 @@ mod tests {
             },
         };
 
-        let raw_weights = apply_lifecycle_weights(None);
+        let raw_weights = apply_lifecycle_weights("customer-success", None);
         let weights = redistribute_weights(&dims, raw_weights);
         let confidence = compute_confidence(&dims);
 
@@ -1761,7 +2138,7 @@ mod tests {
             &dims.meeting_cadence,
             &dims.email_engagement,
             &dims.stakeholder_coverage,
-            &dims.champion_health,
+            &dims.key_advocate_health,
             &dims.financial_proximity,
             &dims.signal_momentum,
         ];
@@ -1786,11 +2163,11 @@ mod tests {
     #[test]
     fn test_lifecycle_weights_change_scoring() {
         // Renewal lifecycle should weight financial_proximity (index 4) at 2.0
-        let weights = apply_lifecycle_weights(Some("renewal"));
+        let weights = apply_lifecycle_weights("customer-success", Some("renewal"));
         assert!((weights[4] - 2.0).abs() < f64::EPSILON);
 
         // Onboarding should weight meeting_cadence (index 0) higher
-        let onboard = apply_lifecycle_weights(Some("onboarding"));
+        let onboard = apply_lifecycle_weights("customer-success", Some("onboarding"));
         assert!((onboard[0] - 1.5).abs() < f64::EPSILON);
         assert!((onboard[2] - 1.5).abs() < f64::EPSILON); // stakeholder_coverage
     }
@@ -1803,12 +2180,12 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: active_dim(60.0),
             stakeholder_coverage: active_dim(80.0),
-            champion_health: active_dim(65.0),
+            key_advocate_health: active_dim(65.0),
             financial_proximity: null_dim(),
             signal_momentum: active_dim(50.0),
         };
 
-        let raw = apply_lifecycle_weights(Some("renewal"));
+        let raw = apply_lifecycle_weights("customer-success", Some("renewal"));
         let redistributed = redistribute_weights(&dims, raw);
 
         // Financial proximity (index 4) should get 0 weight
@@ -1852,7 +2229,7 @@ mod tests {
                 meeting_cadence: active_dim(20.0),
                 email_engagement: active_dim(45.0),
                 stakeholder_coverage: active_dim(30.0),
-                champion_health: active_dim(15.0),
+                key_advocate_health: active_dim(15.0),
                 financial_proximity: active_dim(50.0),
                 signal_momentum: active_dim(40.0),
             },
@@ -1878,7 +2255,7 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: active_dim(60.0),
             stakeholder_coverage: null_dim(),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: DimensionScore {
                 score: 50.0,
@@ -1901,7 +2278,7 @@ mod tests {
             meeting_cadence: active_dim(70.0),
             email_engagement: active_dim(60.0),
             stakeholder_coverage: active_dim(50.0),
-            champion_health: null_dim(),
+            key_advocate_health: null_dim(),
             financial_proximity: null_dim(),
             signal_momentum: DimensionScore {
                 score: 50.0,

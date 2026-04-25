@@ -64,7 +64,6 @@ export interface PredictionScorecard {
 
 /** Feature flags for gating incomplete features (I537). */
 export interface FeatureFlags {
-  role_presets_enabled: boolean;
   book_of_business_enabled: boolean;
   glean_discovery_enabled: boolean;
 }
@@ -798,7 +797,7 @@ export interface InteractionDynamics {
   escalationLanguage: EscalationQuote[];
 }
 
-export interface ChampionHealthAssessment {
+export interface KeyAdvocateAssessment {
   meetingId: string;
   championName?: string;
   championStatus: string;
@@ -832,7 +831,7 @@ export interface EnrichedCapture {
 
 export interface MeetingPostIntelligence {
   interactionDynamics?: InteractionDynamics;
-  championHealth?: ChampionHealthAssessment;
+  keyAdvocateHealth?: KeyAdvocateAssessment;
   roleChanges: RoleChange[];
   enrichedCaptures: EnrichedCapture[];
 }
@@ -2086,18 +2085,37 @@ export interface IntelligenceAccountHealth {
   recommendedActions?: string[];
 }
 
+/** DOS-249: Structured signal tag for the trend meta line. */
+export interface HealthTrendTag {
+  label: string;
+  direction: "up" | "down" | "stable";
+}
+
 export interface IntelligenceHealthTrend {
   direction: "improving" | "stable" | "declining" | "volatile";
   rationale?: string | null;
   timeframe?: string;
   confidence?: number;
+  /** DOS-249: Integer score delta over the trend window. Positive = improving. */
+  delta?: number | null;
+  /** DOS-249: Structured signal tags for the trend meta line. */
+  tags?: HealthTrendTag[];
 }
 
+/**
+ * Six health scoring dimensions. Field names mirror the Rust serde output
+ * (camelCase via `rename_all = "camelCase"`).
+ *
+ * DOS-179: `keyAdvocateHealth` replaced the former `championHealth` field name.
+ * The preset label for this dimension varies by role (CS: "Champion Health";
+ * affiliates-partnerships: "Partner Lead Health") — see DOS-177.
+ */
 export interface RelationshipDimensions {
   meetingCadence: DimensionScore;
   emailEngagement: DimensionScore;
   stakeholderCoverage: DimensionScore;
-  championHealth: DimensionScore;
+  /** DOS-179: renamed from championHealth. Preset label is role-specific. */
+  keyAdvocateHealth: DimensionScore;
   financialProximity: DimensionScore;
   signalMomentum: DimensionScore;
 }
@@ -2171,6 +2189,26 @@ export interface MarketContextItem {
   body: string;
   category?: string;
   effectiveDate?: string;
+  itemSource?: ItemSource;
+  discrepancy?: boolean;
+}
+
+/**
+ * DOS-207: Regulatory / compliance item (DORA, SOC 2, HIPAA, GDPR, CUSTOM).
+ * Populated by the strategic_context enrichment. Items with status='gap'
+ * emit regulatory_gap_detected signals on enrichment write.
+ */
+export interface RegulatoryItem {
+  /** Standard name — typically 'DORA' | 'SOC_2_TYPE_II' | 'HIPAA' | 'GDPR' | 'CUSTOM'. */
+  standard: string;
+  /** Lifecycle status — 'required' | 'in_progress' | 'met' | 'gap'. */
+  status: string;
+  /** Short evidence line. */
+  evidence: string;
+  /** Optional reference into the source material. */
+  sourceReference?: string;
+  /** RFC3339 timestamp of first detection. */
+  detectedAt: string;
   itemSource?: ItemSource;
   discrepancy?: boolean;
 }
@@ -2256,13 +2294,28 @@ export interface ExpansionSignal {
   discrepancy?: boolean;
 }
 
-export interface RenewalOutlook {
+export interface AgreementOutlook {
   confidence?: string;
   riskFactors?: string[];
   expansionPotential?: string;
+  /** DOS-249: One-paragraph editorial read on the renewal, rendered as pull-quote. */
+  renewalNarrative?: string;
   recommendedStart?: string;
   negotiationLeverage?: string[];
   negotiationRisk?: string[];
+  /** DOS-204: Peer-cohort renewal benchmark for the Outlook panel's Benchmark cell. */
+  peerBenchmark?: PeerBenchmark | null;
+}
+
+/** DOS-204: Peer benchmark band — where this account sits vs the cohort. */
+export type PeerBenchmarkBand = "above" | "at" | "below" | "unknown";
+
+/** DOS-204: Peer-cohort renewal benchmark sourced from a dedicated Glean chat pass. */
+export interface PeerBenchmark {
+  band: PeerBenchmarkBand;
+  narrative: string;
+  /** Distinct Glean sources cited when generating the benchmark. */
+  sourceCount: number;
 }
 
 // -- Dimension 6: External Health Signals --
@@ -2341,6 +2394,8 @@ export interface EntityIntelligence {
   strategicPriorities?: StrategicPriority[];
   /** Dimension 1: Market / regulatory context items. */
   marketContext?: MarketContextItem[];
+  /** DOS-207: Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR). */
+  regulatoryContext?: RegulatoryItem[];
 
   /** Dimension 2: Stakeholder coverage assessment. */
   coverageAssessment?: CoverageAssessment | null;
@@ -2362,7 +2417,7 @@ export interface EntityIntelligence {
   /** Dimension 5: Expansion signals. */
   expansionSignals?: ExpansionSignal[];
   /** Dimension 5: Renewal outlook. */
-  renewalOutlook?: RenewalOutlook | null;
+  agreementOutlook?: AgreementOutlook | null;
 
   /** Dimension 6: Support ticket health. */
   supportHealth?: SupportHealth | null;
@@ -2404,6 +2459,12 @@ export interface IntelRisk {
   text: string;
   source?: string;
   urgency: string;
+  /** DOS-249: Punchy 1-liner headline for the triage card (≤80 chars). */
+  headline?: string;
+  /** DOS-249: Evidence body — multi-sentence supporting detail. */
+  evidence?: string;
+  /** DOS-249: Specific kind label emitted by AI (e.g. "Renewal drag · compliance gap"). */
+  kindLabel?: string;
   /** I576: Structured source attribution with confidence. */
   itemSource?: ItemSource;
   /** I576: True if multiple sources disagree on this item. */
@@ -2436,6 +2497,17 @@ export interface StakeholderInsight {
   personId?: string;
   /** Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420). */
   suggestedPersonId?: string;
+  /**
+   * DOS-207: Whether this assessment was grounded in an actual
+   * customer-conversation transcript (true) or inferred from meeting
+   * attendance alone (false). Frontend renders a "needs assessment" pill
+   * when false.
+   */
+  verified?: boolean;
+  /** DOS-207: How verification was established — 'meeting' | 'glean' | 'user'. */
+  verifiedSource?: string;
+  /** DOS-207: RFC3339 timestamp when verification was established. */
+  verifiedAt?: string;
   /** I576: Structured source attribution with confidence. */
   itemSource?: ItemSource;
   /** I576: True if multiple sources disagree on this item. */

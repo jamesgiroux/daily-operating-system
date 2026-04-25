@@ -121,8 +121,7 @@ export function CiteChip({
   return (
     <button
       type="button"
-      className={s.citeChip}
-      style={{ background: "none", border: "none", padding: 0, cursor: onClick ? "pointer" : "default" }}
+      className={`${s.citeChip} ${s.citeChipButton} ${onClick ? s.citeChipButtonClickable : ""}`}
       onClick={onClick}
     >
       {children}
@@ -212,6 +211,7 @@ function InlineDateField({
     return (
       <input
         type="date"
+        className={s.inlineDateInput}
         value={draft}
         autoFocus
         onChange={(e) => setDraft(e.target.value)}
@@ -230,15 +230,6 @@ function InlineDateField({
             setDraft(value);
             setEditing(false);
           }
-        }}
-        style={{
-          font: "inherit",
-          color: "inherit",
-          background: "transparent",
-          border: "none",
-          borderBottom: "2px solid var(--color-spice-terracotta)",
-          outline: "none",
-          padding: 0,
         }}
       />
     );
@@ -340,7 +331,7 @@ export function CommitmentCard({
         <div className={s.commitmentMetaRow}>
           <strong>From:</strong>
           {provenance.map((p, i) => (
-            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span key={i} className={s.provenanceChipGroup}>
               {i > 0 && <span aria-hidden>·</span>}
               <CiteChip href={p.href}>{p.label}</CiteChip>
             </span>
@@ -417,6 +408,14 @@ export interface SuggestionCardProps {
   provenance?: { label: string; href?: string }[];
   onAccept?: () => void;
   accepting?: boolean;
+  /**
+   * Preference-based dismissal — "I don't want this." Tombstones the
+   * suggestion so enrichment doesn't re-propose it, but skips the quality
+   * penalty that "Is this accurate? No" applies. Distinct from the
+   * feedback-slot "No" answer, which means the suggestion is wrong.
+   */
+  onDismiss?: () => void;
+  dismissing?: boolean;
   feedbackSlot?: ReactNode;
 }
 
@@ -427,6 +426,8 @@ export function SuggestionCard({
   provenance,
   onAccept,
   accepting,
+  onDismiss,
+  dismissing,
   feedbackSlot,
 }: SuggestionCardProps) {
   return (
@@ -445,9 +446,19 @@ export function SuggestionCard({
         </div>
       )}
       <div className={s.recActions}>
-        <WorkButton kind="accent" onClick={onAccept} disabled={accepting}>
+        <WorkButton kind="accent" onClick={onAccept} disabled={accepting || dismissing}>
           {accepting ? "Accepting…" : "Accept → create commitment"}
         </WorkButton>
+        {onDismiss && (
+          <WorkButton
+            kind="muted"
+            onClick={onDismiss}
+            disabled={accepting || dismissing}
+            title="Hide this suggestion. Won't be re-proposed."
+          >
+            {dismissing ? "Dismissing…" : "Dismiss"}
+          </WorkButton>
+        )}
       </div>
       {feedbackSlot}
     </article>
