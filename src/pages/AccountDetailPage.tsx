@@ -18,7 +18,7 @@ import { EditorialError } from "@/components/editorial/EditorialError";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { ChapterFreshness } from "@/components/editorial/ChapterFreshness";
-import { QuoteWallPlaceholder } from "@/components/editorial/QuoteWallPlaceholder";
+import { QuoteWall } from "@/components/editorial/QuoteWall";
 import { AboutThisDossier } from "@/components/context/AboutThisDossier";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { MarginSection } from "@/components/editorial/MarginSection";
@@ -26,8 +26,6 @@ import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import { AccountHero } from "@/components/account/AccountHero";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
-import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
-import { AccountBreadcrumbs } from "@/components/account/AccountBreadcrumbs";
 import { AccountRolloverPrompt } from "@/components/account/AccountRolloverPrompt";
 import { AccountDialogs } from "@/components/account/AccountDialogs";
 import { AccountViewSwitcher } from "@/components/account/AccountViewSwitcher";
@@ -268,6 +266,7 @@ export default function AccountDetailPage() {
   const renderContextView = () => {
     // Freshness fragment helpers derived from existing data. No new schema.
     const manifest = intelligence?.sourceManifest ?? [];
+    const glean = acct.gleanSignals;
     // DOS-233 Codex fix: prefer the backend COUNT(*) when available; fall
     // back to the manifest-derived count for older snapshots.
     const transcriptCount =
@@ -410,18 +409,22 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        {/* Chapter 5: Their voice — quote wall placeholder (DOS-205) */}
+        {/* Chapter 5: Their voice — Glean quote wall (DOS-205) */}
         <MarginSection id="their-voice" label={<>Their<br/>voice</>}>
           <ChapterHeading
             title="Their voice"
             freshness={
               <ChapterFreshness
                 enrichedAt={intelligence?.enrichedAt}
-                fragments={["Pull-quote wall in progress"]}
+                fragments={
+                  glean?.quoteWall?.length
+                    ? [`${glean.quoteWall.length} quote${glean.quoteWall.length === 1 ? "" : "s"} captured`]
+                    : ["Awaiting captured quotes"]
+                }
               />
             }
           />
-          <QuoteWallPlaceholder />
+          <QuoteWall quotes={glean?.quoteWall} />
         </MarginSection>
 
         {/* Chapter 6: Commercial shape — reference weight, most fields are gaps today */}
@@ -437,8 +440,12 @@ export default function AccountDetailPage() {
               />
             }
           />
-          <CommercialShape detail={detail} onUpdateField={page.saveAccountField} />
-          <RegulatoryContextCard items={intelligence?.regulatoryContext} />
+          <CommercialShape
+            detail={detail}
+            onUpdateField={page.saveAccountField}
+            onUpdateMetadata={page.handleMetadataChange}
+            metadataValues={page.metadataValues}
+          />
         </MarginSection>
 
         {/* Chapter 7: Technical shape — promoted footprint + feature list (reference weight). */}
@@ -458,6 +465,9 @@ export default function AccountDetailPage() {
             variant="chapter"
             featureAdoption={featureAdoption}
             products={detail.products ?? []}
+            onUpdateField={page.saveAccountField}
+            onUpdateMetadata={page.handleMetadataChange}
+            metadataValues={page.metadataValues}
           />
         </MarginSection>
 
@@ -477,7 +487,13 @@ export default function AccountDetailPage() {
               />
             }
           />
-          <RelationshipFabric detail={detail} accountName={detail.name ?? undefined} />
+          <RelationshipFabric
+            detail={detail}
+            accountName={detail.name ?? undefined}
+            onUpdateField={page.saveAccountField}
+            onUpdateMetadata={page.handleMetadataChange}
+            metadataValues={page.metadataValues}
+          />
         </MarginSection>
 
         {/* The Record + Files moved to the Work tab where they belong —
@@ -720,7 +736,7 @@ export default function AccountDetailPage() {
             chapter break. Matches Context "Thesis" + Health "Your
             Assessment" first-chapter treatment. */}
         {hasCommitments && (
-          <section id="commitments" className="editorial-reveal">
+          <section id="commitments">
             <ChapterHeading
               title="Commitments"
               epigraph="What we've said we'll do"
@@ -732,7 +748,7 @@ export default function AccountDetailPage() {
                 />
               }
             />
-            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+            <div className={pageStyles.cardStack}>
               {commitmentCards}
             </div>
           </section>
@@ -744,7 +760,7 @@ export default function AccountDetailPage() {
             when action_kind='commitment'); "No" archives the suggestion
             and feeds back into the quality loop. */}
         {hasSuggestions && (
-          <MarginSection id="suggestions" label={<>Sugges-<br/>tions</>}>
+          <MarginSection id="suggestions" label={<>Sugges-<br/>tions</>} reveal={false}>
             <ChapterHeading
               title="Suggestions"
               epigraph="AI proposals · accept or validate"
@@ -760,7 +776,7 @@ export default function AccountDetailPage() {
                 />
               }
             />
-            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+            <div className={pageStyles.cardStack}>
               {visibleSuggestions.slice(0, suggestionsVisibleCount).map((r) => {
                 const provenance: { label: string; href?: string }[] = [];
                 if (r.sourceLabel) provenance.push({ label: r.sourceLabel });
@@ -796,7 +812,7 @@ export default function AccountDetailPage() {
               })}
             </div>
             {visibleSuggestions.length > suggestionsVisibleCount && (
-              <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
+              <div className={pageStyles.showMoreRow}>
                 <WorkButton
                   kind="muted"
                   onClick={() =>
@@ -812,7 +828,7 @@ export default function AccountDetailPage() {
 
         {/* Chapter 3: Programs & motions — standing states, not to-dos */}
         {hasPrograms && (
-          <MarginSection id="programs" label={<>Programs<br/>&amp; motions</>}>
+          <MarginSection id="programs" label={<>Programs<br/>&amp; motions</>} reveal={false}>
             <ChapterHeading
               title="Programs & motions"
               epigraph="Standing motions · not a todo list"
@@ -844,7 +860,7 @@ export default function AccountDetailPage() {
           Rendering an always-empty chapter put a dead pill in the IA.
         */}
         {hasSharedData && (
-          <MarginSection id="shared" label={<>Shared<br/>with<br/>team</>}>
+          <MarginSection id="shared" label={<>Shared<br/>with<br/>team</>} reveal={false}>
             <ChapterHeading
               title="Shared with the team"
               freshness={
@@ -863,7 +879,7 @@ export default function AccountDetailPage() {
 
         {/* Chapter 6: Recently landed — 30-day completion tail */}
         {hasRecentlyLanded && (
-          <MarginSection id="recently-landed" label={<>Recently<br/>landed</>}>
+          <MarginSection id="recently-landed" label={<>Recently<br/>landed</>} reveal={false}>
             <ChapterHeading
               title="Recently landed"
               epigraph="30-day completion tail"
@@ -892,7 +908,7 @@ export default function AccountDetailPage() {
 
         {/* Chapter 7: Outputs — generated reports, link out to Report Engine */}
         {hasReports && (
-          <MarginSection id="outputs" label={<>Out-<br/>puts</>}>
+          <MarginSection id="outputs" label={<>Out-<br/>puts</>} reveal={false}>
             <ChapterHeading
               title="Outputs"
               epigraph="Generated reports · open to regenerate"
@@ -929,7 +945,7 @@ export default function AccountDetailPage() {
 
         {/* The Record — timeline continuity. Migrated from the Context tab.
             Design refresh tracked separately; here we preserve the live surface. */}
-        <MarginSection id="the-record" label={<>The<br/>Record</>}>
+        <MarginSection id="the-record" label={<>The<br/>Record</>} reveal={false}>
           <UnifiedTimeline
             data={{
               ...detail,
@@ -949,15 +965,13 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        <div className="editorial-reveal"><FinisMarker enrichedAt={intelligence?.enrichedAt} /></div>
+        <FinisMarker enrichedAt={intelligence?.enrichedAt} />
       </>
     );
   };
 
   return (
     <>
-      <AccountBreadcrumbs ancestors={page.ancestors} currentName={detail.name ?? ""} />
-
       <section id="headline" className={shared.chapterHeadline}>
         <AccountHero detail={detail} intelligence={intelligence}
           editName={acct.editName} setEditName={(v) => { acct.setEditName(v); acct.setDirty(true); }}
@@ -965,7 +979,8 @@ export default function AccountDetailPage() {
           editLifecycle={acct.editLifecycle} setEditLifecycle={(v) => { acct.setEditLifecycle(v); acct.setDirty(true); }}
           onSave={acct.handleSave} onSaveField={page.saveAccountField}
           vitalsSlot={detail.accountType !== "internal" ? (preset
-            ? <EditableVitalsStrip fields={preset.vitals.account} entityData={detail} metadata={page.metadataValues}
+            ? <EditableVitalsStrip fields={preset.vitals.account} metadataFields={preset.metadata.account}
+                entityData={detail} metadata={page.metadataValues}
                 onFieldChange={(key, col, source, value) => {
                   if (source === "metadata") page.handleMetadataChange(key, value);
                   else if (source === "column") void page.saveAccountField(col ?? key, value);
@@ -973,11 +988,6 @@ export default function AccountDetailPage() {
             : <VitalsStrip vitals={buildAccountVitals(detail)} sourceRefs={detail.sourceRefs} />
           ) : undefined}
           provenanceSlot={undefined} />
-        {preset && preset.metadata.account.length > 0 && (
-          <div className={`editorial-reveal ${shared.presetFieldsReveal}`}>
-            <PresetFieldsEditor fields={preset.metadata.account} values={page.metadataValues} onChange={page.handleMetadataChange} />
-          </div>
-        )}
         {detail.renewalDate && !page.rolloverDismissed && (
           <AccountRolloverPrompt renewalDate={detail.renewalDate}
             onRenewed={() => { acct.setNewEventType("renewal"); acct.setNewEventDate(detail.renewalDate!); acct.handleRecordEvent(); page.setRolloverDismissed(true); }}
@@ -987,12 +997,15 @@ export default function AccountDetailPage() {
       </section>
 
       {/* All 3 views rendered, inactive hidden with display:none */}
+      {/* Display is state-driven so inactive tabs remain mounted across switches. */}
       <div className={pageStyles.view} style={{ display: activeView === "health" ? "block" : "none" }}>
         {renderHealthView()}
       </div>
+      {/* Display is state-driven so inactive tabs remain mounted across switches. */}
       <div className={pageStyles.view} style={{ display: activeView === "context" ? "block" : "none" }}>
         {renderContextView()}
       </div>
+      {/* Display is state-driven so inactive tabs remain mounted across switches. */}
       <div className={pageStyles.view} style={{ display: activeView === "work" ? "block" : "none" }}>
         {renderWorkView()}
       </div>

@@ -21,6 +21,7 @@ import { FolioReportsDropdown } from "@/components/folio/FolioReportsDropdown";
 import { FolioToolsDropdown } from "@/components/folio/FolioToolsDropdown";
 import { hasTriageContent } from "@/components/health/TriageSection";
 import { hasDivergenceContent } from "@/components/health/DivergenceSection";
+import { getAccountReports } from "@/lib/report-config";
 import {
   buildHealthChapters,
   buildContextChapters,
@@ -90,16 +91,8 @@ export function useAccountDetailPage(accountId: string | undefined) {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [activeView]);
 
-  // Per-view chapter arrays.
-  // Work tab: the "shared" pill only appears when a commitment carries real
-  // tracker provenance (DOS-75, v1.2.2). Until then the pill is suppressed
-  // to avoid a dead-link nav anchor (Wave 0g Finding 2).
-  const hasSharedData = useMemo(
-    () => (acct.intelligence?.openCommitments ?? []).some(
-      (c) => !!(c as { trackerLink?: { href?: string } }).trackerLink?.href,
-    ),
-    [acct.intelligence?.openCommitments],
-  );
+  // Per-view chapter arrays. Work-tab chapters must mirror renderWorkView's
+  // conditional sections or the nav island creates dead anchors.
   const chapters = useMemo(() => {
     const intel = acct.intelligence;
     if (activeView === "health") {
@@ -117,7 +110,7 @@ export function useAccountDetailPage(accountId: string | undefined) {
         intel?.contractContext
       );
       return buildHealthChapters(
-        acct.detail?.isParent ?? false,
+        !!(acct.detail?.isParent && acct.detail.children.length > 0),
         !!intel?.health,
         { fineState, hasOutlook },
       );
@@ -136,31 +129,62 @@ export function useAccountDetailPage(accountId: string | undefined) {
         intel?.successMetrics ||
         intel?.openCommitments?.length
       );
-      const hasTechnical = !!acct.detail?.technicalFootprint;
-      return buildContextChapters({ hasWhatMatters, hasBuilt, hasTechnical });
+      return buildContextChapters({ hasThesis: !!intel, hasWhatMatters, hasBuilt });
     }
-    const hasFiles = (acct.files?.length ?? 0) > 0;
-    return buildWorkChapters(hasSharedData, hasFiles);
+    const activePrograms = (acct.programs ?? []).filter((p) => p.name);
+    return buildWorkChapters({
+      hasCommitments: acct.work.commitments.length > 0,
+      // renderWorkView also removes locally suppressed suggestions. That
+      // suppression state lives in AccountDetailPage, so the hook uses the raw
+      // action-backed list as the closest reachable source.
+      hasSuggestions: acct.work.suggestions.length > 0,
+      hasPrograms: activePrograms.length > 0,
+      hasSharedData: acct.work.commitments.some((c) => !!c.linearUrl),
+      hasRecentlyLanded: acct.work.recentlyLanded.length > 0,
+      hasOutputs: getAccountReports(preset?.id).length > 0,
+      hasFiles: (acct.files?.length ?? 0) > 0,
+    });
   }, [
     activeView,
     acct.detail?.isParent,
-    acct.detail?.technicalFootprint,
+    acct.detail?.children,
     acct.detail?.products,
     acct.intelligence,
     acct.gleanSignals,
     sentiment.current,
     acct.files,
-    hasSharedData,
+    acct.programs,
+    acct.work.commitments,
+    acct.work.suggestions,
+    acct.work.recentlyLanded,
+    preset?.id,
   ]);
 
+  // Ancestor breadcrumbs
+  const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!accountId) return;
+    invoke<{ id: string; name: string }[]>("get_account_ancestors", { accountId })
+      .then(setAncestors).catch(() => setAncestors([]));
+  }, [accountId]);
+
   // Magazine shell registration
+  const activeViewLabel = activeView === "health" ? "Health" : activeView === "context" ? "Context" : "Work";
   const shellConfig = useMemo(() => ({
     folioLabel: acct.detail?.accountType === "internal" ? "Internal" : acct.detail?.accountType === "partner" ? "Partner" : "Account",
     atmosphereColor: acct.detail?.accountType === "internal" ? "larkspur" as const : "turmeric" as const,
     activePage: "accounts" as const,
-    backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
+    breadcrumbs: [
+      { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
+      ...ancestors.map((ancestor) => ({
+        label: ancestor.name,
+        onClick: () => navigate({ to: "/accounts/$accountId", params: { accountId: ancestor.id } }),
+      })),
+      { label: acct.detail?.name ?? "Account" },
+      { label: activeViewLabel },
+    ],
     chapters,
-  }), [navigate, acct.detail?.accountType, chapters]);
+  }), [activeViewLabel, ancestors, navigate, acct.detail?.accountType, acct.detail?.name, chapters]);
   useRegisterMagazineShell(shellConfig);
 
   // Dialog state
@@ -194,14 +218,6 @@ export function useAccountDetailPage(accountId: string | undefined) {
     invoke<string>("get_entity_metadata", { entityType: "account", entityId: accountId })
       .then((json) => { try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); } })
       .catch(() => setMetadataValues({}));
-  }, [accountId]);
-
-  // Ancestor breadcrumbs
-  const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
-  useEffect(() => {
-    if (!accountId) return;
-    invoke<{ id: string; name: string }[]>("get_account_ancestors", { accountId })
-      .then(setAncestors).catch(() => setAncestors([]));
   }, [accountId]);
 
   // DOS-231 Codex fix: persist a single gap-row field on
