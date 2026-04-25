@@ -116,7 +116,7 @@ pub fn detect_cross_entity_contamination(
             if d_lower.is_empty() {
                 continue;
             }
-            if target_domains_lower.iter().any(|td| td == &d_lower) {
+            if is_target_owned(&d_lower, &target_domains_lower) {
                 continue;
             }
             if !seen_tokens.insert(d_lower.clone()) {
@@ -135,7 +135,7 @@ pub fn detect_cross_entity_contamination(
     // Heuristic 2 — foreign WordPress VIP host pattern.
     // Detect both `vip-*.com` and `vip<digits>-<name>.com` / `vip<digits>.<name>.com`.
     for cap in extract_vip_hosts(&text_lower) {
-        if target_domains_lower.iter().any(|td| td == &cap) {
+        if is_target_owned(&cap, &target_domains_lower) {
             continue;
         }
         if !seen_tokens.insert(cap.clone()) {
@@ -302,6 +302,21 @@ impl ContaminationValidation {
     pub fn rejects(&self) -> bool {
         matches!(self, Self::RejectOnHit)
     }
+}
+
+/// Returns true when `token` is exactly one of the target's domains OR a
+/// subdomain of one of them. Both inputs expected lowercase already.
+///
+/// Used by the contamination heuristics so a target's own subdomains
+/// (`vip.target.com`, `privacy.target.com`, `www.target.com`) don't get
+/// flagged as foreign tokens. DOS-319.
+fn is_target_owned(token: &str, target_domains: &[String]) -> bool {
+    target_domains.iter().any(|td| {
+        if td.is_empty() {
+            return false;
+        }
+        token == td || token.ends_with(&format!(".{td}"))
+    })
 }
 
 /// Whole-word substring check — `needle` must be bounded by either
@@ -664,6 +679,89 @@ mod tests {
         let hits = detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
         let acme_hit = hits.iter().find(|h| h.foreign_token == "acme.com").unwrap();
         assert_eq!(acme_hit.source_account_id.as_deref(), Some("acme"));
+    }
+
+    // DOS-319: subdomains of the target's own domains must not be flagged.
+    #[test]
+    fn target_owned_subdomain_not_flagged_as_vip_host() {
+        let db = test_db();
+        insert_account(&db, "target", "Globex", &["globex.com"]);
+        let text = "Performance at vip.globex.com remains stable.";
+        let hits = detect_cross_entity_contamination(
+            text,
+            "target",
+            &["globex.com".into()],
+            &[],
+            &db,
+        );
+        assert!(
+            hits.is_empty(),
+            "expected zero hits for target's own subdomain, got: {:?}",
+            hits
+        );
+    }
+
+    #[test]
+    fn target_owned_multi_level_subdomain_not_flagged() {
+        let db = test_db();
+        insert_account(&db, "target", "Globex", &["globex.com"]);
+        let text = "Routed via internal.privacy.globex.com tonight.";
+        let hits = detect_cross_entity_contamination(
+            text,
+            "target",
+            &["globex.com".into()],
+            &[],
+            &db,
+        );
+        assert!(
+            hits.is_empty(),
+            "expected zero hits for multi-level target subdomain, got: {:?}",
+            hits
+        );
+    }
+
+    #[test]
+    fn genuine_foreign_vip_host_still_flagged_after_subdomain_fix() {
+        let db = test_db();
+        insert_account(&db, "target", "Globex", &["globex.com"]);
+        let text = "Performance at vip-othercustomer.com is degraded.";
+        let hits = detect_cross_entity_contamination(
+            text,
+            "target",
+            &["globex.com".into()],
+            &[],
+            &db,
+        );
+        let infra_hits: Vec<_> = hits
+            .iter()
+            .filter(|h| h.kind == ContaminationKind::InfrastructureId)
+            .collect();
+        assert_eq!(
+            infra_hits.len(),
+            1,
+            "expected exactly one InfrastructureId hit for foreign VIP host, got: {:?}",
+            hits
+        );
+        assert_eq!(infra_hits[0].foreign_token, "vip-othercustomer.com");
+    }
+
+    #[test]
+    fn target_with_multiple_domains_subdomain_not_flagged() {
+        let db = test_db();
+        insert_account(&db, "target", "Globex", &["globex.com", "globex.io"]);
+        let text = "Customer routes through app.globex.io for staging.";
+        let hits = detect_cross_entity_contamination(
+            text,
+            "target",
+            &["globex.com".into(), "globex.io".into()],
+            &[],
+            &db,
+        );
+        assert!(
+            hits.is_empty(),
+            "expected zero hits when subdomain belongs to a secondary target domain, got: {:?}",
+            hits
+        );
     }
 
     #[test]
