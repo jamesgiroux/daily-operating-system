@@ -71,7 +71,9 @@ function TrendIcon({ trend }: { trend: string }) {
 function DimensionRow({
   label,
   dimension,
-  dimKey,
+  // dimKey is threaded through the row props for future per-dimension
+  // hooks (e.g., correction routing keyed on dimension); not consumed here.
+  dimKey: _dimKey,
 }: {
   label: string;
   dimension: DimensionScore;

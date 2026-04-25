@@ -2131,7 +2131,8 @@ pub fn write_enrichment_results(
                 .to_string();
 
                 log::warn!(
-                    "[DOS-287] contamination detected for {} ({} hit{}): {:?} — policy={:?}",
+                    "Cross-entity contamination detected in enrichment for {} \
+                     ({} hit{}): {:?} — validation policy={:?}",
                     input.entity_id,
                     hits.len(),
                     if hits.len() == 1 { "" } else { "s" },
@@ -2164,13 +2165,24 @@ pub fn write_enrichment_results(
                 }
 
                 if policy.rejects() {
-                    return Err(format!(
-                        "enrichment rejected: {} cross-entity contamination hit{} for {} \
-                         (set DAILYOS_CONTAMINATION_VALIDATION=shadow to run in log-only mode)",
-                        hits.len(),
-                        if hits.len() == 1 { "" } else { "s" },
-                        input.entity_id,
-                    ));
+                    // Graceful rejection: skip the writes, preserve prior
+                    // intelligence as the fallback. The Tauri event has
+                    // already been emitted above so the frontend surfaces
+                    // a toast; the audit signal has been recorded; the
+                    // warn log captured the hits. Returning Ok with the
+                    // prior row (or empty when none exists) lets the
+                    // caller treat this as a soft skip rather than a
+                    // hard error that takes over the screen.
+                    log::info!(
+                        "Cross-entity contamination guard rejected enrichment for {}; \
+                         prior intelligence preserved",
+                        input.entity_id
+                    );
+                    return Ok(existing_intel.unwrap_or(IntelligenceJson {
+                        entity_id: input.entity_id.clone(),
+                        entity_type: input.entity_type.clone(),
+                        ..Default::default()
+                    }));
                 }
                 // ShadowMode: fall through and persist anyway.
             }
