@@ -36,6 +36,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   -webkit-app-region: no-drag; /* macOS: clickable elements inside drag region */
 }
 
@@ -76,26 +77,59 @@
   color: var(--color-text-tertiary);
 }
 
-.folioBackLink {
+.folioBreadcrumbs {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--font-sans);
-  font-size: 12px;
+  min-width: 0;
+  max-width: min(42vw, 560px);
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 10px;
   font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--color-text-tertiary);
-  text-decoration: none;
+}
+
+.folioBreadcrumbButton {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--color-text-tertiary);
   cursor: pointer;
   transition: color var(--transition-normal);
 }
 
-.folioBackLink:hover {
+.folioBreadcrumbButton:hover {
   color: var(--color-text-primary);
 }
 
-.folioBackArrow {
-  font-size: 14px;
-  line-height: 1;
+.folioBreadcrumbLabel,
+.folioBreadcrumbCurrent {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folioBreadcrumbCurrent {
+  color: var(--color-text-secondary);
+}
+
+.folioBreadcrumbSeparator {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  opacity: 0.45;
 }
 
 .folioActions {

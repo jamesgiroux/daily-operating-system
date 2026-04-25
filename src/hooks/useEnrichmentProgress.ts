@@ -6,8 +6,8 @@
  * the current progress state for a given entity so the UI can show
  * incremental percentage updates instead of a seconds counter.
  */
-import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useCallback, useState } from "react";
+import { useTauriEvent } from "./useTauriEvent";
 
 export interface EnrichmentProgress {
   entityId: string;
@@ -39,33 +39,27 @@ export function useEnrichmentProgress(
 ) {
   const [progress, setProgress] = useState<EnrichmentProgress | null>(null);
 
-  useEffect(() => {
-    if (!entityId) return;
+  const handleProgress = useCallback(
+    (payload: EnrichmentProgress) => {
+      if (entityId && payload.entityId === entityId) {
+        setProgress(payload);
+        onDimensionComplete?.();
+      }
+    },
+    [entityId, onDimensionComplete],
+  );
 
-    const unlistenProgress = listen<EnrichmentProgress>(
-      "enrichment-progress",
-      (event) => {
-        if (event.payload.entityId === entityId) {
-          setProgress(event.payload);
-          onDimensionComplete?.();
-        }
-      },
-    );
+  const handleComplete = useCallback(
+    (payload: EnrichmentComplete) => {
+      if (entityId && payload.entityId === entityId) {
+        setProgress(null);
+      }
+    },
+    [entityId],
+  );
 
-    const unlistenComplete = listen<EnrichmentComplete>(
-      "enrichment-complete",
-      (event) => {
-        if (event.payload.entityId === entityId) {
-          setProgress(null);
-        }
-      },
-    );
-
-    return () => {
-      unlistenProgress.then((fn) => fn());
-      unlistenComplete.then((fn) => fn());
-    };
-  }, [entityId, onDimensionComplete]);
+  useTauriEvent("enrichment-progress", handleProgress);
+  useTauriEvent("enrichment-complete", handleComplete);
 
   return progress;
 }

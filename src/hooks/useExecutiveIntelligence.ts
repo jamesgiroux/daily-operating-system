@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ExecutiveIntelligence } from "@/types";
+import { useTauriEvent } from "./useTauriEvent";
 
 export function useExecutiveIntelligence() {
   const [data, setData] = useState<ExecutiveIntelligence | null>(null);
@@ -32,41 +32,15 @@ export function useExecutiveIntelligence() {
     load();
   }, [load]);
 
-  // Refresh after workflow completion — silent to avoid content blink
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    let cancelled = false;
-
-    listen("workflow-completed", () => {
-      load(true);
-    }).then((fn) => {
-      if (cancelled) fn();
-      else unlisten = fn;
-    });
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
+  const refreshSilently = useCallback(() => {
+    load(true);
   }, [load]);
+
+  // Refresh after workflow completion — silent to avoid content blink
+  useTauriEvent("workflow-completed", refreshSilently);
 
   // Refresh on calendar updates — silent
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    let cancelled = false;
-
-    listen("calendar-updated", () => {
-      load(true);
-    }).then((fn) => {
-      if (cancelled) fn();
-      else unlisten = fn;
-    });
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [load]);
+  useTauriEvent("calendar-updated", refreshSilently);
 
   const totalSignals = data
     ? data.signalCounts.decisions +

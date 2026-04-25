@@ -242,13 +242,14 @@ export default function EbrQbrPage() {
       folioLabel: "EBR / QBR",
       atmosphereColor: "larkspur" as const,
       activePage: "accounts" as const,
-      backLink: {
-        label: "Back",
-        onClick: () =>
-          window.history.length > 1
-            ? window.history.back()
-            : navigate({ to: "/accounts/$accountId", params: { accountId: accountId! } }),
-      },
+      breadcrumbs: [
+        { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
+        {
+          label: "Account",
+          onClick: () => navigate({ to: "/accounts/$accountId", params: { accountId: accountId! } }),
+        },
+        { label: "EBR / QBR" },
+      ],
       chapters: content ? SLIDES : undefined,
       folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: content ? (

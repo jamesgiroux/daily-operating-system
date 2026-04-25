@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,21 +39,72 @@ export function ReportShell({
   onReportGenerated,
   children,
 }: ReportShellProps) {
+  const navigate = useNavigate();
   const [generating, setGenerating] = useState(false);
   const [genSeconds, setGenSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const shellConfig = useMemo(
-    () => ({
-      folioLabel: title,
-      atmosphereColor: "olive" as const,
-      activePage: "accounts" as const,
-      backLink: {
-        label: "Back",
-        onClick: () => window.history.back(),
-      },
-    }),
-    [title],
+    () => {
+      if (entityType === "user") {
+        return {
+          folioLabel: title,
+          atmosphereColor: "olive" as const,
+          activePage: "me" as const,
+          breadcrumbs: [
+            { label: "Me", onClick: () => navigate({ to: "/me" }) },
+            { label: title },
+          ],
+        };
+      }
+
+      if (entityType === "project") {
+        return {
+          folioLabel: title,
+          atmosphereColor: "olive" as const,
+          activePage: "projects" as const,
+          breadcrumbs: [
+            { label: "Projects", onClick: () => navigate({ to: "/projects" }) },
+            {
+              label: "Project",
+              onClick: () => navigate({ to: "/projects/$projectId", params: { projectId: entityId } }),
+            },
+            { label: title },
+          ],
+        };
+      }
+
+      if (entityType === "person") {
+        return {
+          folioLabel: title,
+          atmosphereColor: "olive" as const,
+          activePage: "people" as const,
+          breadcrumbs: [
+            { label: "People", onClick: () => navigate({ to: "/people" }) },
+            {
+              label: "Person",
+              onClick: () => navigate({ to: "/people/$personId", params: { personId: entityId } }),
+            },
+            { label: title },
+          ],
+        };
+      }
+
+      return {
+        folioLabel: title,
+        atmosphereColor: "olive" as const,
+        activePage: "accounts" as const,
+        breadcrumbs: [
+          { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
+          {
+            label: "Account",
+            onClick: () => navigate({ to: "/accounts/$accountId", params: { accountId: entityId } }),
+          },
+          { label: title },
+        ],
+      };
+    },
+    [entityId, entityType, navigate, title],
   );
 
   useRegisterMagazineShell(shellConfig);
