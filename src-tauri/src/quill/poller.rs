@@ -272,7 +272,13 @@ async fn process_sync_row(
     client.disconnect().await;
 
     // Step 5: Process transcript through AI pipeline
-    let calendar_event = sync::db_meeting_to_calendar_event(&meeting);
+    let mut calendar_event = sync::db_meeting_to_calendar_event(&meeting);
+    // Hydrate linked entities + attendees so the processor routes the
+    // markdown to the right account dir and emits entity IDs in the
+    // YAML frontmatter.
+    if let Ok(db) = crate::db::ActionDb::open() {
+        crate::processor::transcript::enrich_meeting_from_db(&mut calendar_event, &db);
+    }
 
     let (workspace, profile, ai_config) = {
         let config_guard = state.config.read();

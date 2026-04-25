@@ -557,6 +557,7 @@ pub fn run() {
             commands::accept_suggested_action,
             commands::reject_suggested_action,
             commands::dismiss_suggested_action,
+            commands::attach_meeting_transcript_text,
             commands::mark_reply_sent,
             commands::dismiss_gone_quiet,
             commands::archive_email,

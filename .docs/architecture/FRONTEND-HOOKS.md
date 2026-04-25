@@ -3,7 +3,7 @@
 > Registry of all React hooks in `src/hooks/`.
 > **Auto-generated:** 2026-04-25 by `.docs/generators/gen-frontend-hooks.sh`
 
-**46** hook files | **5842** total lines
+**46** hook files | **5920** total lines
 
 ---
 
@@ -14,10 +14,10 @@
 | `useIsMobile` | `use-mobile.ts` | 19 | — | — |
 | `useAccountDetail.test.ts` | `useAccountDetail.test.ts` | 58 | — | — |
 | `useAccountDetail` | `useAccountDetail.ts` | 654 | archive_account, create_action, create_child_account, enrich_account, get_account_detail, get_account_events, get_entity_files, index_entity_files, record_account_event, retry_risk_briefing, set_user_health_sentiment, update_account_programs, update_latest_sentiment_note | background-work-status, content-changed, intelligence-updated |
-| `useAccountDetailPage` | `useAccountDetailPage.tsx` | 290 | get_account_ancestors, get_entity_metadata, update_technical_footprint_field | — |
+| `useAccountDetailPage` | `useAccountDetailPage.tsx` | 306 | get_account_ancestors, get_entity_metadata, update_technical_footprint_field | — |
 | `useAccountFields` | `useAccountFields.ts` | 137 | update_account_field | — |
 | `useAccountFieldSave` | `useAccountFieldSave.ts` | 127 | accept_account_field_conflict, dismiss_account_field_conflict, update_account_field, update_entity_metadata | — |
-| `useAccountWorkData` | `useAccountWorkData.ts` | 283 | accept_suggested_action, complete_action, get_account_commitments, get_account_recently_landed, get_account_suggestions, reject_suggested_action, update_action | — |
+| `useAccountWorkData` | `useAccountWorkData.ts` | 313 | accept_suggested_action, complete_action, dismiss_suggested_action, get_account_commitments, get_account_recently_landed, get_account_suggestions, reject_suggested_action, update_action | — |
 | `useActions` | `useActions.ts` | 223 | complete_action, create_action, get_actions_from_db, reopen_action | — |
 | `useActivePreset` | `useActivePreset.ts` | 23 | get_active_preset | — |
 | `useActivePreset` | `useActivePreset.tsx` | 47 | get_active_preset | preset-changed |
@@ -50,7 +50,7 @@
 | `usePendingStakeholders` | `usePendingStakeholders.ts` | 111 | confirm_pending_stakeholder, dismiss_pending_stakeholder | — |
 | `usePersonality` | `usePersonality.tsx` | 66 | get_config | — |
 | `usePersonDetail` | `usePersonDetail.ts` | 427 | archive_person, create_action, delete_person, enrich_person, get_entity_files, get_person_detail, index_entity_files, link_person_entity, merge_people, search_people, unlink_person_entity, update_person | — |
-| `usePostMeetingCapture` | `usePostMeetingCapture.ts` | 105 | capture_meeting_outcome, dismiss_meeting_prompt | post-meeting-prompt, post-meeting-prompt-fallback |
+| `usePostMeetingCapture` | `usePostMeetingCapture.ts` | 137 | capture_meeting_outcome, dismiss_meeting_prompt | post-meeting-prompt, post-meeting-prompt-fallback |
 | `useProjectDetail` | `useProjectDetail.ts` | 294 | archive_project, create_action, create_project, enrich_project, get_entity_files, get_project_detail, index_entity_files, update_project_field | — |
 | `useRevealObserver` | `useRevealObserver.ts` | 54 | — | — |
 | `useSuggestedActions` | `useSuggestedActions.ts` | 83 | accept_suggested_action, get_suggested_actions, reject_suggested_action | intelligence-updated, transcript-processed |
@@ -143,6 +143,7 @@ All Tauri commands invoked from hooks:
 - `enrich_project` (1 hooks)
 - `enrich_person` (1 hooks)
 - `enrich_account` (1 hooks)
+- `dismiss_suggested_action` (1 hooks)
 - `dismiss_stakeholder_suggestion` (1 hooks)
 - `dismiss_pending_stakeholder` (1 hooks)
 - `dismiss_meeting_prompt` (1 hooks)
