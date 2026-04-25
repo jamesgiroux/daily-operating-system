@@ -2884,13 +2884,9 @@ pub struct TimelineMeeting {
 }
 
 /// Feature flags for gating incomplete features behind compile/runtime switches.
-/// Currently used to hide role presets (not GA-ready) from the UI.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeatureFlags {
-    /// When false, role preset selection is hidden from onboarding and settings.
-    /// Defaults to false (bool's Default).
-    pub role_presets_enabled: bool,
     /// When false, Book of Business report is hidden from the Me page.
     /// Defaults to false — the template-aligned rebuild is not yet validated.
     pub book_of_business_enabled: bool,
@@ -3288,10 +3284,6 @@ mod tests {
     /// unit-tested without a Tauri State mock.
     fn build_feature_flags_from_config(config: &Config) -> FeatureFlags {
         FeatureFlags {
-            role_presets_enabled: *config
-                .features
-                .get("role_presets_enabled")
-                .unwrap_or(&false),
             book_of_business_enabled: *config
                 .features
                 .get("book_of_business_enabled")
@@ -3308,9 +3300,6 @@ mod tests {
         let mut config = test_config("customer-success");
         config
             .features
-            .insert("role_presets_enabled".to_string(), true);
-        config
-            .features
             .insert("book_of_business_enabled".to_string(), true);
         config
             .features
@@ -3318,7 +3307,6 @@ mod tests {
 
         let flags = build_feature_flags_from_config(&config);
 
-        assert!(flags.role_presets_enabled, "role_presets_enabled should be true when set in config");
         assert!(flags.book_of_business_enabled, "book_of_business_enabled should be true when set in config");
         assert!(flags.glean_discovery_enabled, "glean_discovery_enabled should be true when set in config");
     }
@@ -3331,7 +3319,6 @@ mod tests {
 
         let flags = build_feature_flags_from_config(&config);
 
-        assert!(!flags.role_presets_enabled, "role_presets_enabled should default to false");
         assert!(!flags.book_of_business_enabled, "book_of_business_enabled should default to false");
         assert!(!flags.glean_discovery_enabled, "glean_discovery_enabled should default to false");
     }
@@ -3342,12 +3329,11 @@ mod tests {
         // Only set one flag
         config
             .features
-            .insert("role_presets_enabled".to_string(), true);
+            .insert("book_of_business_enabled".to_string(), true);
 
         let flags = build_feature_flags_from_config(&config);
 
-        assert!(flags.role_presets_enabled);
-        assert!(!flags.book_of_business_enabled, "un-set flags should remain false");
+        assert!(flags.book_of_business_enabled);
         assert!(!flags.glean_discovery_enabled, "un-set flags should remain false");
     }
 

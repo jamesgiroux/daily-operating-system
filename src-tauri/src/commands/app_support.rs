@@ -1385,7 +1385,6 @@ pub async fn get_feature_flags(
         return Ok(crate::types::FeatureFlags::default());
     };
     let flags = crate::types::FeatureFlags {
-        role_presets_enabled: *config.features.get("role_presets_enabled").unwrap_or(&false),
         book_of_business_enabled: *config
             .features
             .get("book_of_business_enabled")

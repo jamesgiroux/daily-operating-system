@@ -5,7 +5,6 @@ import { usePersonality, type Personality } from "@/hooks/usePersonality";
 import { toast } from "sonner";
 import { Check, X, Loader2 } from "lucide-react";
 import s from "./YouCard.module.css";
-import type { FeatureFlags } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -455,7 +454,6 @@ export default function YouCard() {
     };
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [rolePresetsEnabled, setRolePresetsEnabled] = useState(false);
 
   useEffect(() => {
     invoke<{
@@ -473,9 +471,6 @@ export default function YouCard() {
       .then(setConfig)
       .catch((err) => console.error("get_config (you) failed:", err)) // Expected: background init on mount
       .finally(() => setLoading(false));
-    invoke<FeatureFlags>("get_feature_flags")
-      .then((flags) => setRolePresetsEnabled(flags.role_presets_enabled))
-      .catch(() => setRolePresetsEnabled(false));
   }, []);
 
   if (loading) {
@@ -506,12 +501,8 @@ export default function YouCard() {
       {/* ── Preferences ── */}
       <div className={s.subsectionGroup}>
         <h3 className={s.subsectionTitle}>Preferences</h3>
-        {rolePresetsEnabled && (
-          <>
-            <RoleSection />
-            <hr className={s.thinRule} />
-          </>
-        )}
+        <RoleSection />
+        <hr className={s.thinRule} />
         <PersonalitySection />
       </div>
     </div>
