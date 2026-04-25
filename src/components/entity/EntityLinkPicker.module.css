@@ -71,6 +71,13 @@
   cursor: not-allowed;
 }
 
+.chipIcon {
+  width: 11px;
+  height: 11px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
 /* ═════════ "SET AS PRIMARY" LABEL (screen reader + hover reveal) ═════════ */
 
 .chipLabel {

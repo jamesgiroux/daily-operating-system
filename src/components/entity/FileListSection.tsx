@@ -8,6 +8,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ContentFile } from "@/types";
 import { formatFileSize, formatRelativeDate } from "@/lib/utils";
+import s from "./FileListSection.module.css";
 
 interface FileListSectionProps {
   files: ContentFile[];
@@ -27,7 +28,7 @@ function FileIcon() {
       viewBox="0 0 14 14"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}
+      className={s.fileIcon}
     >
       <path
         d="M3 1.5h5l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1Z"
@@ -47,31 +48,6 @@ function FileIcon() {
   );
 }
 
-/* ── Shared styles ── */
-
-const sectionTitleStyle: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 10,
-  fontWeight: 500,
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
-  color: "var(--color-text-tertiary)",
-  marginBottom: 12,
-};
-
-const monoActionButtonStyle: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 10,
-  fontWeight: 500,
-  color: "var(--color-text-tertiary)",
-  background: "none",
-  border: "none",
-  cursor: "pointer",
-  textTransform: "uppercase",
-  letterSpacing: "0.06em",
-  padding: 0,
-};
-
 /* ── Component ── */
 
 export function FileListSection({
@@ -87,26 +63,14 @@ export function FileListSection({
   const hasMore = files.length > 10;
 
   return (
-    <div style={{ marginBottom: 40 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-        }}
-      >
-        <div style={sectionTitleStyle}>
+    <div className={s.section}>
+      <div className={s.header}>
+        <div className={s.sectionTitle}>
           Files{files.length > 0 ? ` \u00B7 ${files.length}` : ""}
         </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
+        <div className={s.headerActions}>
           {indexFeedback && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                color: "var(--color-garden-sage)",
-              }}
-            >
+            <span className={s.indexFeedback}>
               {indexFeedback}
             </span>
           )}
@@ -114,10 +78,7 @@ export function FileListSection({
             <button
               onClick={onIndexFiles}
               disabled={indexing}
-              style={{
-                ...monoActionButtonStyle,
-                cursor: indexing ? "default" : "pointer",
-              }}
+              className={s.actionButton}
             >
               {indexing ? "Indexing…" : "Re-index"}
             </button>
@@ -126,58 +87,25 @@ export function FileListSection({
       </div>
       {files.length > 0 ? (
         <>
-          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-            {visibleFiles.map((f, idx) => (
+          <ul className={s.fileList}>
+            {visibleFiles.map((f) => (
               <li
                 key={f.id}
                 onClick={() =>
                   invoke("reveal_in_finder", { path: f.absolutePath })
                 }
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "20px 1fr auto auto",
-                  gap: 10,
-                  padding: "7px 0",
-                  borderBottom:
-                    idx === visibleFiles.length - 1
-                      ? "none"
-                      : "1px solid var(--color-rule-light)",
-                  alignItems: "center",
-                  fontSize: 13,
-                  cursor: "pointer",
-                }}
+                className={s.fileRow}
               >
                 <span>
                   <FileIcon />
                 </span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 13,
-                    color: "var(--color-text-primary)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
+                <span className={s.filename}>
                   {f.filename}
                 </span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    color: "var(--color-text-tertiary)",
-                  }}
-                >
+                <span className={s.fileMeta}>
                   {formatFileSize(f.fileSize)}
                 </span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    color: "var(--color-text-tertiary)",
-                  }}
-                >
+                <span className={s.fileMeta}>
                   {formatRelativeDate(f.modifiedAt)}
                 </span>
               </li>
@@ -186,37 +114,14 @@ export function FileListSection({
           {hasMore && !expanded && (
             <button
               onClick={() => setExpanded(true)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                fontWeight: 500,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: "var(--color-text-tertiary)",
-                cursor: "pointer",
-                padding: "6px 0",
-                marginTop: 4,
-                border: "none",
-                background: "none",
-              }}
+              className={s.showMoreButton}
             >
               +{files.length - 10} more files
             </button>
           )}
         </>
       ) : (
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 13,
-            color: "var(--color-text-tertiary)",
-            fontStyle: "italic",
-            margin: 0,
-          }}
-        >
+        <p className={s.emptyMessage}>
           {emptyMessage}
         </p>
       )}

@@ -8,6 +8,7 @@ import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { RecommendedAction } from "@/types";
+import s from "./RecommendedActions.module.css";
 
 interface RecommendedActionsProps {
   entityId: string;
@@ -95,110 +96,45 @@ export function RecommendedActions({
   if (visibleActions.length === 0) return null;
 
   return (
-    <div style={{ marginTop: 24 }}>
-      <div
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "var(--color-spice-turmeric)",
-          marginBottom: 12,
-        }}
-      >
+    <div className={s.root}>
+      <div className={s.label}>
         Recommended
       </div>
       {visibleActions.map(({ action, originalIndex }) => (
-        <div
-          key={originalIndex}
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-            padding: "14px 0",
-            borderBottom: "1px solid var(--color-rule-light)",
-            borderLeft: "2px dashed var(--color-spice-turmeric)",
-            paddingLeft: 16,
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+        <div key={originalIndex} className={s.action}>
+          <div className={s.content}>
+            <div className={s.metaRow}>
               <span
+                className={s.priority}
+                // Runtime priority determines the status color.
                 style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: "0.04em",
                   color: priorityColor(action.priority),
                 }}
               >
                 {priorityLabel(action.priority)}
               </span>
               {action.suggestedDue && (
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    color: "var(--color-text-tertiary)",
-                  }}
-                >
+                <span className={s.dueDate}>
                   Due {action.suggestedDue}
                 </span>
               )}
             </div>
-            <div
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 17,
-                fontWeight: 400,
-                color: "var(--color-text-primary)",
-                lineHeight: 1.4,
-              }}
-            >
+            <div className={s.title}>
               {action.title}
             </div>
-            <div
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                fontWeight: 400,
-                color: "var(--color-text-secondary)",
-                marginTop: 4,
-                lineHeight: 1.45,
-              }}
-            >
+            <div className={s.rationale}>
               {action.rationale}
             </div>
-            <div
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 13,
-                fontWeight: 300,
-                color: "var(--color-text-tertiary)",
-                marginTop: 6,
-              }}
-            >
+            <div className={s.source}>
               Based on account intelligence
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 6, flexShrink: 0, marginTop: 4 }}>
+          <div className={s.actions}>
             <button
               onClick={() => handleTrack(originalIndex)}
               title="Track"
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 4,
-                border: "1px solid var(--color-garden-sage)",
-                background: "transparent",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 0,
-              }}
+              className={`${s.iconButton} ${s.trackButton}`}
             >
               <svg width={14} height={14} viewBox="0 0 14 14" fill="none">
                 <path
@@ -213,18 +149,7 @@ export function RecommendedActions({
             <button
               onClick={() => handleDismiss(originalIndex)}
               title="Dismiss"
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 4,
-                border: "1px solid var(--color-spice-terracotta)",
-                background: "transparent",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 0,
-              }}
+              className={`${s.iconButton} ${s.dismissButton}`}
             >
               <svg width={14} height={14} viewBox="0 0 14 14" fill="none">
                 <path

@@ -336,11 +336,11 @@ export function SentimentHero({
           // doesn't collapse; subtle opacity reassures the user the sparkline
           // isn't broken, it just has no computed history yet.
           <span className={css.sparklineEmpty} aria-hidden="true">
-            <span className={css.sparklineEmptyBar} style={{ height: 9 }} />
-            <span className={css.sparklineEmptyBar} style={{ height: 13 }} />
-            <span className={css.sparklineEmptyBar} style={{ height: 7 }} />
-            <span className={css.sparklineEmptyBar} style={{ height: 17 }} />
-            <span className={css.sparklineEmptyBar} style={{ height: 11 }} />
+            <span className={`${css.sparklineEmptyBar} ${css.sparklineEmptyBarH9}`} />
+            <span className={`${css.sparklineEmptyBar} ${css.sparklineEmptyBarH13}`} />
+            <span className={`${css.sparklineEmptyBar} ${css.sparklineEmptyBarH7}`} />
+            <span className={`${css.sparklineEmptyBar} ${css.sparklineEmptyBarH17}`} />
+            <span className={`${css.sparklineEmptyBar} ${css.sparklineEmptyBarH11}`} />
           </span>
         )}
 

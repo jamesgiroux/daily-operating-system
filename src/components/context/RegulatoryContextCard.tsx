@@ -11,6 +11,7 @@
  * regulatory context has been detected for the account.
  */
 import type { RegulatoryItem } from "@/types";
+import css from "./RegulatoryContextCard.module.css";
 
 interface RegulatoryContextCardProps {
   items?: RegulatoryItem[];
@@ -25,10 +26,10 @@ const STATUS_LABEL: Record<string, string> = {
 
 const STATUS_TOKEN: Record<string, string> = {
   // Matches existing editorial palette — picks the closest semantic token.
-  required: "var(--color-turmeric, #c88a2b)",
-  in_progress: "var(--color-larkspur, #4f6bed)",
-  met: "var(--color-sage, #6b8e6b)",
-  gap: "var(--color-terracotta, #c8664a)",
+  required: "var(--color-spice-turmeric)",
+  in_progress: "var(--color-garden-larkspur)",
+  met: "var(--color-garden-sage)",
+  gap: "var(--color-spice-terracotta)",
 };
 
 function statusLabel(status: string): string {
@@ -36,7 +37,7 @@ function statusLabel(status: string): string {
 }
 
 function statusColor(status: string): string {
-  return STATUS_TOKEN[status] ?? "var(--color-ink-60, #666)";
+  return STATUS_TOKEN[status] ?? "var(--color-text-tertiary)";
 }
 
 export function RegulatoryContextCard({ items }: RegulatoryContextCardProps) {
@@ -44,77 +45,38 @@ export function RegulatoryContextCard({ items }: RegulatoryContextCardProps) {
 
   return (
     <section aria-label="Regulatory context">
-      <header style={{ marginBottom: "0.75rem" }}>
-        <h3
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: "1.25rem",
-            margin: 0,
-          }}
-        >
+      <header className={css.header}>
+        <h3 className={css.title}>
           Regulatory context
         </h3>
-        <p
-          style={{
-            color: "var(--color-ink-60, #666)",
-            fontSize: "0.875rem",
-            margin: "0.25rem 0 0",
-          }}
-        >
+        <p className={css.subtitle}>
           From strategic-context enrichment. Gaps feed health scoring.
         </p>
       </header>
 
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+      <ul className={css.list}>
         {items.map((item, idx) => (
           <li
             key={`${item.standard}-${idx}`}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(140px, 20%) 1fr auto",
-              gap: "0.75rem",
-              padding: "0.75rem 0",
-              borderTop: idx === 0 ? "none" : "1px solid var(--color-rule, #e5e5e5)",
-              alignItems: "start",
-            }}
+            className={css.item}
           >
-            <div
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: "1rem",
-                fontWeight: 500,
-              }}
-            >
+            <div className={css.standard}>
               {item.standard}
             </div>
             <div>
-              <p style={{ margin: 0, fontSize: "0.9375rem", lineHeight: 1.4 }}>
+              <p className={css.evidence}>
                 {item.evidence}
               </p>
               {item.sourceReference && (
-                <p
-                  style={{
-                    margin: "0.25rem 0 0",
-                    fontSize: "0.75rem",
-                    color: "var(--color-ink-60, #666)",
-                    fontFamily: "var(--font-mono, monospace)",
-                  }}
-                >
+                <p className={css.sourceReference}>
                   {item.sourceReference}
                 </p>
               )}
             </div>
+            {/* Status chip color is data-driven by regulatory status. */}
             <span
-              style={{
-                padding: "0.125rem 0.5rem",
-                borderRadius: "999px",
-                backgroundColor: statusColor(item.status),
-                color: "white",
-                fontSize: "0.75rem",
-                fontWeight: 500,
-                whiteSpace: "nowrap",
-                alignSelf: "start",
-              }}
+              className={css.statusChip}
+              style={{ backgroundColor: statusColor(item.status) }}
             >
               {statusLabel(item.status)}
             </span>

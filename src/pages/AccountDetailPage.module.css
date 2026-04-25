@@ -10,3 +10,15 @@
 .view {
   display: block;
 }
+
+.cardStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.showMoreRow {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-lg);
+}

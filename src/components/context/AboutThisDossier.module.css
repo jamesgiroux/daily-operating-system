@@ -1,0 +1,42 @@
+@import "../../styles/design-tokens.css";
+
+.section {
+  padding-top: var(--space-5xl);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 20px;
+  font-weight: 600;
+}
+
+/* Mockup .meta-card: charcoal tint, thin tertiary left accent, sans body. */
+.card {
+  background: var(--color-desk-charcoal-4);
+  border-left: 2px solid var(--color-text-tertiary);
+  border-radius: 0 var(--radius-editorial-sm) var(--radius-editorial-sm) 0;
+  padding: 20px 28px;
+  margin-top: var(--space-md);
+}
+
+.cardLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-sm);
+  font-weight: 600;
+}
+
+.cardText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  max-width: 620px;
+}

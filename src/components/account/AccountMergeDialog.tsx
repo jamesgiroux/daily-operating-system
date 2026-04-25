@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { PickerAccount } from "@/types";
+import styles from "./AccountMergeDialog.module.css";
 
 interface AccountMergeDialogProps {
   open: boolean;
@@ -81,94 +82,48 @@ export function AccountMergeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 20,
-              fontWeight: 400,
-            }}
-          >
+          <DialogTitle className={styles.title}>
             Merge Account
           </DialogTitle>
-          <DialogDescription
-            style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
-          >
+          <DialogDescription className={styles.description}>
             Merge <strong>{sourceAccountName}</strong> into another account.
             All actions, meetings, people, and events will be reassigned.
           </DialogDescription>
         </DialogHeader>
 
         {result ? (
-          <div style={{ marginTop: 16 }}>
-            <p
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                color: "var(--color-garden-sage)",
-                marginBottom: 12,
-              }}
-            >
+          <div className={styles.body}>
+            <p className={styles.successMessage}>
               Merge complete. {sourceAccountName} has been archived.
             </p>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 4,
-              }}
-            >
+            <div className={styles.resultStats}>
               <span>{result.actions_moved} actions moved</span>
               <span>{result.meetings_moved} meeting links updated</span>
               <span>{result.people_moved} people links updated</span>
               <span>{result.events_moved} events moved</span>
               <span>{result.children_moved} child accounts reassigned</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+            <div className={styles.actions}>
               <Button
                 onClick={() => {
                   onOpenChange(false);
                   onMerged();
                 }}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+                className={styles.buttonText}
               >
                 Done
               </Button>
             </div>
           </div>
         ) : (
-          <div style={{ marginTop: 16 }}>
-            <label
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: "var(--color-text-tertiary)",
-                marginBottom: 4,
-                display: "block",
-              }}
-            >
+          <div className={styles.body}>
+            <label className={styles.label}>
               Merge Into
             </label>
             <select
               value={targetId}
               onChange={(e) => setTargetId(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "8px 12px",
-                borderRadius: 4,
-                border: "1px solid var(--color-rule-light)",
-                background: "var(--color-paper-warm-white)",
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                color: "var(--color-text-primary)",
-                outline: "none",
-                height: 38,
-              }}
+              className={styles.select}
             >
               <option value="">Select target account...</option>
               {accounts.map((a) => (
@@ -180,51 +135,30 @@ export function AccountMergeDialog({
             </select>
 
             {targetId && (
-              <p
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 13,
-                  color: "var(--color-text-secondary)",
-                  marginTop: 12,
-                }}
-              >
+              <p className={styles.previewText}>
                 All data from <strong>{sourceAccountName}</strong> will be moved to{" "}
                 <strong>{targetName}</strong>. The source account will be archived.
               </p>
             )}
 
             {error && (
-              <p
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 13,
-                  color: "var(--color-spice-terracotta)",
-                  marginTop: 8,
-                }}
-              >
+              <p className={styles.errorText}>
                 {error}
               </p>
             )}
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 8,
-                marginTop: 20,
-              }}
-            >
+            <div className={styles.formActions}>
               <Button
                 variant="ghost"
                 onClick={() => onOpenChange(false)}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+                className={styles.buttonText}
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleMerge}
                 disabled={!targetId || merging}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+                className={styles.buttonText}
               >
                 {merging ? "Merging..." : "Merge"}
               </Button>

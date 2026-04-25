@@ -8,6 +8,7 @@
  * Stored values stay backward-compatible with existing DB columns.
  */
 import { useState, useRef, useEffect } from "react";
+import css from "./EngagementSelector.module.css";
 
 interface EngagementSelectorProps {
   value: string;
@@ -73,44 +74,23 @@ export function EngagementSelector({ value, onChange }: EngagementSelectorProps)
   }, [open]);
 
   return (
-    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+    <div ref={ref} className={css.root}>
       <button
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
           setOpen(!open);
         }}
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 9,
-          fontWeight: 500,
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-          padding: "2px 7px",
-          borderRadius: 3,
-          border: "none",
-          cursor: "pointer",
-          background: display.background,
-          color: display.color,
-        }}
+        className={css.badge}
+        // Runtime engagement value determines badge colors.
+        style={{ background: display.background, color: display.color }}
       >
         {display.label}
       </button>
 
       {open && (
         <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            zIndex: 50,
-            background: "var(--color-paper-cream)",
-            border: "1px solid var(--color-rule-light)",
-            borderRadius: 6,
-            boxShadow: "var(--shadow-lg)",
-            padding: "4px 0",
-            minWidth: 140,
-          }}
+          className={css.dropdown}
         >
           {ENGAGEMENT_OPTIONS.map((opt) => (
             <button
@@ -121,34 +101,14 @@ export function EngagementSelector({ value, onChange }: EngagementSelectorProps)
                 onChange(opt.stored);
                 setOpen(false);
               }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                width: "100%",
-                padding: "6px 12px",
-                border: "none",
-                background: opt.stored === value.toLowerCase() ? "var(--color-black-4)" : "none",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
+              className={opt.stored === value.toLowerCase() ? css.optionActive : css.option}
             >
               <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: opt.color,
-                  flexShrink: 0,
-                }}
+                className={css.optionDot}
+                // Runtime engagement option determines dot color.
+                style={{ background: opt.color }}
               />
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 12,
-                  color: "var(--color-text-primary)",
-                }}
-              >
+              <span className={css.optionLabel}>
                 {opt.label}
               </span>
             </button>

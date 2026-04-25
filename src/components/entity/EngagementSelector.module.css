@@ -1,6 +1,9 @@
 @import '../../styles/design-tokens.css';
 
-/* ── TeamRoleSelector — role badge dropdown ── */
+.root {
+  position: relative;
+  display: inline-block;
+}
 
 .badge {
   font-family: var(--font-mono);
@@ -12,17 +15,17 @@
   border-radius: 3px;
   border: none;
   cursor: pointer;
-  background: var(--color-garden-larkspur-14);
-  color: var(--color-garden-larkspur);
 }
 
 .dropdown {
-  position: fixed;
-  z-index: 9999;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
   background: var(--color-paper-cream);
   border: 1px solid var(--color-rule-light);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-lg);
   padding: 4px 0;
   min-width: 140px;
 }
@@ -30,7 +33,7 @@
 .option {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
   width: 100%;
   padding: 6px 12px;
   border: none;
@@ -39,17 +42,16 @@
   text-align: left;
 }
 
-.option:hover {
-  background: var(--color-black-4);
-}
-
 .optionActive {
   composes: option;
   background: var(--color-black-4);
 }
 
-.optionActive:hover {
-  background: var(--color-black-8);
+.optionDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .optionLabel {
