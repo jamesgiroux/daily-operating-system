@@ -2,8 +2,8 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-04-21 by `.docs/generators/gen-command-reference.sh`
-**Registered in lib.rs:** ~393 commands
+**Auto-generated:** 2026-04-25 by `.docs/generators/gen-command-reference.sh`
+**Registered in lib.rs:** ~397 commands
 **Source files:** 11
 
 ---
@@ -77,6 +77,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `disconnect_google` | — | — |
 | `dismiss_email_item` | yes | item_type, email_id, item_text, email_type, entity_id |
 | `dismiss_meeting_prompt` | — | meeting_id |
+| `dismiss_suggested_action` | yes | id, source |
 | `get_account_commitments` | yes | account_id |
 | `get_account_recently_landed` | yes | account_id |
 | `get_account_suggestions` | yes | account_id |
@@ -131,6 +132,8 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `dev_run_today_full` | — | — |
 | `dev_run_today_mechanical` | — | — |
 | `dev_set_auth_override` | — | claude_mode, google_mode |
+| `devtools_audit_cross_contamination` | yes | — |
+| `devtools_clear_contaminated_enrichment` | yes | account_id |
 | `export_all_data` | yes | dest_path |
 | `get_ai_usage_diagnostics` | yes | — |
 | `get_app_state` | yes | — |
@@ -428,6 +431,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `reset_ai_models_to_recommended` | — | — |
 | `retry_failed_emails` | yes | — |
 | `set_ai_model` | — | tier, model |
+| `set_daily_ai_budget` | — | budget |
 | `set_developer_mode` | yes | enabled |
 | `set_entity_mode` | — | mode |
 | `set_google_poll_settings` | — | calendar_poll_interval_minutes, email_poll_interval_minutes |
