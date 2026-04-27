@@ -62,6 +62,9 @@ jobs:
       - name: Enforce service-layer mutation boundary
         run: ./scripts/check_service_layer_boundary.sh
 
+      - name: Enforce no-let-underscore on feedback/tombstone/file-write (DOS-309)
+        run: ./scripts/check_no_let_underscore_feedback.sh
+
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
 
