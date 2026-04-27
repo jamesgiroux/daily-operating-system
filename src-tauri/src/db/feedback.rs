@@ -71,6 +71,7 @@ pub struct FeedbackEventInput<'a> {
 
 impl ActionDb {
     /// Record a feedback event (dismiss, accept, reject, thumbs-up, thumbs-down, etc.).
+    #[must_use = "feedback events must be propagated; silent discard hides ghost-resurrection bugs"]
     pub fn record_feedback_event(&self, input: &FeedbackEventInput<'_>) -> Result<i64, DbError> {
         self.conn_ref().execute(
             "INSERT INTO entity_feedback_events \
@@ -94,6 +95,7 @@ impl ActionDb {
     }
 
     /// Create a suppression tombstone that prevents re-surfacing a dismissed item.
+    #[must_use = "tombstones must be propagated; silent discard re-surfaces dismissed items"]
     pub fn create_suppression_tombstone(
         &self,
         entity_id: &str,

@@ -828,7 +828,10 @@ pub async fn update_intelligence_field(
             )?;
 
             // I644: DB is sole source of truth — no filesystem fallback.
-            let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
+            // DOS-309: propagate DB read errors instead of collapsing them into "no row".
+            let existing_intel = db
+                .get_entity_intelligence(&entity_id)
+                .map_err(|e| format!("DB read failed for entity {entity_id}: {e}"))?;
             let intel = match existing_intel {
                 Some(existing) => crate::intelligence::apply_intelligence_field_update_in_memory(
                     existing,
@@ -842,14 +845,14 @@ pub async fn update_intelligence_field(
                     ))
                 }
             };
-            // Write to disk for MCP sidecar compatibility (best-effort)
-            let _ = crate::intelligence::write_intelligence_json(&dir, &intel);
 
             // I530: Distinguish curation (delete/clear) from correction (edit).
             // Empty value = user removed the item → curation, no source penalty.
             // Non-empty value = user corrected the item → correction, source penalized.
             let is_curation = value.trim().is_empty() || value == "[]" || value == "null";
 
+            // DOS-309: DB-first ordering. Commit canonical state first; the
+            // legacy file cache is written AFTER commit as best-effort.
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
                     .map_err(|e| e.to_string())?;
@@ -870,6 +873,15 @@ pub async fn update_intelligence_field(
                 .map_err(|e| format!("signal emit failed: {e}"))?;
                 Ok(())
             })?;
+
+            // Post-commit file write — best-effort cache. DB is canonical from here.
+            if let Err(e) = crate::intelligence::write_intelligence_json(&dir, &intel) {
+                log::warn!(
+                    "post-commit file write failed; \
+                     repair_target=projection_writer (DOS-301) \
+                     entity={entity_id} field={field_path}: {e}"
+                );
+            }
 
             // Self-healing: only record correction (not curation) to lower quality score
             if !is_curation {
@@ -974,15 +986,18 @@ pub async fn update_stakeholders(
             };
 
             // DB-first: prefer intelligence from DB over disk
-            let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
+            // DOS-309: propagate DB read errors instead of collapsing them.
+            let existing_intel = db
+                .get_entity_intelligence(&entity_id)
+                .map_err(|e| format!("DB read failed for entity {entity_id}: {e}"))?;
             let intel = if let Some(existing) = existing_intel {
                 crate::intelligence::apply_stakeholders_update_in_memory(existing, stakeholders)?
             } else {
                 crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?
             };
-            // Write back to disk for MCP sidecar
-            let _ = crate::intelligence::write_intelligence_json(&dir, &intel);
 
+            // DOS-309: DB-first ordering. The legacy file cache is written AFTER
+            // the transaction commits.
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
                     .map_err(|e| e.to_string())?;
@@ -1043,6 +1058,15 @@ pub async fn update_stakeholders(
                 Ok(())
             })?;
 
+            // Post-commit file write — best-effort cache. DB is canonical from here.
+            if let Err(e) = crate::intelligence::write_intelligence_json(&dir, &intel) {
+                log::warn!(
+                    "post-commit file write failed; \
+                     repair_target=projection_writer (DOS-301) \
+                     entity={entity_id}: {e}"
+                );
+            }
+
             Ok(())
         })
         .await
@@ -1100,7 +1124,11 @@ pub async fn dismiss_intelligence_item(
             )?;
 
             // I644: DB is sole source of truth — no filesystem fallback.
-            let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
+            // DOS-309: propagate DB read errors instead of collapsing them into "no row";
+            // the previous `.ok().flatten()` masked connection failures behind the I644 message.
+            let existing_intel = db
+                .get_entity_intelligence(&entity_id)
+                .map_err(|e| format!("DB read failed for entity {entity_id}: {e}"))?;
             let mut intel = existing_intel.ok_or_else(|| {
                 format!(
                     "I644: no DB intelligence row for {} — cannot dismiss item",
@@ -1149,14 +1177,19 @@ pub async fn dismiss_intelligence_item(
                 _ => return Err(format!("Cannot dismiss items from field: {}", field)),
             }
 
-            crate::intelligence::write_intelligence_json(&dir, &intel)?;
-
+            // DOS-309: DB-first ordering. The transaction commits the canonical
+            // state; the legacy `intelligence.json` cache is written AFTER commit
+            // and treated as best-effort. A file write failure does not roll back
+            // DB state — DOS-301's projection writer will repair file drift on
+            // the next claim touch.
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
                     .map_err(|e| e.to_string())?;
 
                 // I645: Record feedback event + suppression tombstone.
-                let _ = tx.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
+                // DOS-309: propagate errors so a failed insert no longer leaves
+                // a ghost-resurrectable item.
+                tx.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
                     entity_id: &entity_id,
                     entity_type: &entity_type,
                     field_key: &field,
@@ -1167,31 +1200,52 @@ pub async fn dismiss_intelligence_item(
                     previous_value: Some(&item_text),
                     corrected_value: None,
                     reason: None,
-                });
-                let _ = tx.create_suppression_tombstone(
+                })
+                .map_err(|e| format!("record_feedback_event: {e}"))?;
+                tx.create_suppression_tombstone(
                     &entity_id,
                     &field,
                     Some(&item_text),
                     None,
                     Some("intelligence"),
                     None,
-                );
-
-                crate::services::signals::emit_and_propagate(
-                    tx,
-                    &engine,
-                    &entity_type,
-                    &entity_id,
-                    "intelligence_curated",
-                    "user_curation",
-                    Some(&format!(
-                        "{{\"field\":\"{field}\",\"dismissed\":\"{item_text}\"}}",
-                    )),
-                    0.5,
                 )
-                .map_err(|e| format!("signal emit failed: {e}"))?;
+                .map_err(|e| format!("create_suppression_tombstone: {e}"))?;
+
                 Ok(())
             })?;
+
+            // Post-commit side effects. emit_and_propagate dispatches engine.propagate
+            // which can enqueue cross-entity intel work; running it after commit
+            // means a downstream propagation failure cannot roll back the user's
+            // dismiss intent. DB is the source of truth; emission failures log.
+            if let Err(e) = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                &entity_type,
+                &entity_id,
+                "intelligence_curated",
+                "user_curation",
+                Some(&format!(
+                    "{{\"field\":\"{field}\",\"dismissed\":\"{item_text}\"}}",
+                )),
+                0.5,
+            ) {
+                log::warn!(
+                    "post-commit signal emission failed; \
+                     repair_target=signals_engine \
+                     entity={entity_id} field={field}: {e}"
+                );
+            }
+
+            // Post-commit file write — best-effort cache. DB is canonical from here.
+            if let Err(e) = crate::intelligence::write_intelligence_json(&dir, &intel) {
+                log::warn!(
+                    "post-commit file write failed; \
+                     repair_target=projection_writer (DOS-301) \
+                     entity={entity_id} field={field}: {e}"
+                );
+            }
 
             Ok(())
         })
@@ -1541,16 +1595,13 @@ pub async fn dismiss_recommendation(
 
             let removed = intel.recommended_actions.remove(index);
 
-            // Write back to filesystem
-            crate::intelligence::write_intelligence_json(&dir, &intel)
-                .map_err(|e| format!("Failed to write intelligence: {}", e))?;
-
-            // Update DB cache
+            // DOS-309: DB-first ordering. Commit DB state; file write + signal
+            // emission run after as best-effort post-commit work.
             db.upsert_entity_intelligence(&intel)
                 .map_err(|e| e.to_string())?;
 
-            // Emit recommendation_rejected signal
-            let _ = crate::services::signals::emit_and_propagate(
+            // Post-commit signal emission. Failures log; DB is source of truth.
+            if let Err(e) = crate::services::signals::emit_and_propagate(
                 db,
                 &engine,
                 &entity_type,
@@ -1562,7 +1613,22 @@ pub async fn dismiss_recommendation(
                     removed.title.replace('"', "\\\"")
                 )),
                 0.3,
-            );
+            ) {
+                log::warn!(
+                    "post-commit signal emission failed; \
+                     repair_target=signals_engine \
+                     entity={entity_id}: {e}"
+                );
+            }
+
+            // Post-commit file write — best-effort cache.
+            if let Err(e) = crate::intelligence::write_intelligence_json(&dir, &intel) {
+                log::warn!(
+                    "post-commit file write failed; \
+                     repair_target=projection_writer (DOS-301) \
+                     entity={entity_id}: {e}"
+                );
+            }
 
             Ok(())
         })
@@ -1664,12 +1730,12 @@ pub async fn mark_commitment_done(
                     discrepancy: None,
                 });
 
-            crate::intelligence::write_intelligence_json(&dir, &intel)
-                .map_err(|e| format!("Failed to write intelligence: {}", e))?;
+            // DOS-309: DB-first ordering. Commit canonical state; file + signal
+            // run after as best-effort post-commit work.
             db.upsert_entity_intelligence(&intel)
                 .map_err(|e| e.to_string())?;
 
-            let _ = crate::services::signals::emit_and_propagate(
+            if let Err(e) = crate::services::signals::emit_and_propagate(
                 db,
                 &engine,
                 &entity_type,
@@ -1681,7 +1747,21 @@ pub async fn mark_commitment_done(
                     commitment.description.replace('"', "\\\"")
                 )),
                 0.85,
-            );
+            ) {
+                log::warn!(
+                    "post-commit signal emission failed; \
+                     repair_target=signals_engine \
+                     entity={entity_id}: {e}"
+                );
+            }
+
+            if let Err(e) = crate::intelligence::write_intelligence_json(&dir, &intel) {
+                log::warn!(
+                    "post-commit file write failed; \
+                     repair_target=projection_writer (DOS-301) \
+                     entity={entity_id}: {e}"
+                );
+            }
 
             Ok(())
         })
@@ -2607,9 +2687,11 @@ mod live_acceptance_tests {
         }
 
         if let Some(prev_file) = previous_file {
-            let _ = write_intelligence_json(&entity_dir, &prev_file);
+            // Test cleanup: best-effort restore; explicit `.ok()` documents
+            // the intent rather than swallowing via `let _`.
+            write_intelligence_json(&entity_dir, &prev_file).ok();
         } else {
-            let _ = std::fs::remove_file(entity_dir.join("intelligence.json"));
+            std::fs::remove_file(entity_dir.join("intelligence.json")).ok();
         }
     }
 

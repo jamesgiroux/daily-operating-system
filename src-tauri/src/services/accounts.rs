@@ -1073,41 +1073,63 @@ pub fn accept_account_field_conflict(
     } else {
         suggested_value.to_string()
     };
+
+    // `update_account_field_inner` runs its own internal DB writes plus
+    // post-commit side effects (emit_propagate_and_evaluate, self-healing
+    // feedback, health debounce, workspace file regen). We do NOT pull it
+    // inside the transaction below — it manages its own atomicity.
     update_account_field_inner(db, state, account_id, field, &next_value)?;
 
-    if matches!(field, "arr" | "lifecycle" | "contract_end" | "nps") {
-        db.set_account_field_provenance(account_id, field, source, None)
-            .map_err(|e| e.to_string())?;
-    }
+    // DOS-309: pull the conflict-resolution writes into one transaction so
+    // a failure on any single write rolls back the whole conflict-resolution
+    // sequence. Side-effect emission (emit_propagate_and_evaluate, which
+    // enqueues cross-entity intel work via engine.propagate) runs AFTER
+    // the transaction commits — a downstream propagation failure cannot
+    // roll back the user's accept intent.
+    let accepted_signal_id_holder: Option<String> = signal_id
+        .map(|_| format!("account-field-conflict-accepted-{}", uuid::Uuid::new_v4()));
 
-    if let Some(sig_id) = signal_id {
-        let accepted_signal_id =
-            format!("account-field-conflict-accepted-{}", uuid::Uuid::new_v4());
-        let _ = crate::signals::bus::supersede_signal(db, sig_id, &accepted_signal_id);
-    }
+    db.with_transaction(|tx| -> Result<(), String> {
+        if matches!(field, "arr" | "lifecycle" | "contract_end" | "nps") {
+            tx.set_account_field_provenance(account_id, field, source, None)
+                .map_err(|e| format!("set_account_field_provenance: {e}"))?;
+        }
 
-    // I645: Record feedback event for accepted field conflict.
-    let _ = db.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
-        entity_id: account_id,
-        entity_type: "account",
-        field_key: field,
-        item_key: signal_id,
-        feedback_type: "accept",
-        source_system: Some(source),
-        source_kind: Some("field_conflict"),
-        previous_value: None,
-        corrected_value: Some(suggested_value),
-        reason: None,
-    });
+        if let (Some(sig_id), Some(accepted_id)) = (signal_id, accepted_signal_id_holder.as_deref()) {
+            crate::signals::bus::supersede_signal(tx, sig_id, accepted_id)
+                .map_err(|e| format!("supersede_signal: {e}"))?;
+        }
 
-    let _ = db.upsert_signal_weight(
-        source,
-        "account",
-        &account_field_signal_category(field),
-        1.0,
-        0.0,
-    );
+        tx.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
+            entity_id: account_id,
+            entity_type: "account",
+            field_key: field,
+            item_key: signal_id,
+            feedback_type: "accept",
+            source_system: Some(source),
+            source_kind: Some("field_conflict"),
+            previous_value: None,
+            corrected_value: Some(suggested_value),
+            reason: None,
+        })
+        .map_err(|e| format!("record_feedback_event: {e}"))?;
 
+        tx.upsert_signal_weight(
+            source,
+            "account",
+            &account_field_signal_category(field),
+            1.0,
+            0.0,
+        )
+        .map_err(|e| format!("upsert_signal_weight: {e}"))?;
+        Ok(())
+    })?;
+
+    // Post-commit side effects. emit_propagate_and_evaluate calls
+    // engine.propagate which can enqueue cross-entity intel work via
+    // state.intel_queue. Running it after commit means a downstream
+    // failure cannot roll back the conflict resolution. DB is canonical;
+    // emission failure logs.
     let payload = serde_json::json!({
         "field": field,
         "source": source,
@@ -1115,7 +1137,7 @@ pub fn accept_account_field_conflict(
         "suggested_value": suggested_value,
     })
     .to_string();
-    crate::services::signals::emit_propagate_and_evaluate(
+    if let Err(e) = crate::services::signals::emit_propagate_and_evaluate(
         db,
         &state.signals.engine,
         "account",
@@ -1125,8 +1147,13 @@ pub fn accept_account_field_conflict(
         Some(&payload),
         0.95,
         &state.intel_queue,
-    )
-    .map_err(|e| format!("signal emit failed: {e}"))?;
+    ) {
+        log::warn!(
+            "post-commit signal emission failed; \
+             repair_target=signals_engine \
+             account={account_id} field={field}: {e}"
+        );
+    }
 
     // DOS-229 Wave 0e Fix 5: return post-write detail so the frontend can
     // setDetail(result) without a second fetch.
@@ -1142,38 +1169,51 @@ pub fn dismiss_account_field_conflict(
     source: &str,
     suggested_value: Option<&str>,
 ) -> Result<AccountDetailResult, String> {
-    // I645: Record feedback event + suppression tombstone for rejected field conflict.
-    let _ = db.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
-        entity_id: account_id,
-        entity_type: "account",
-        field_key: field,
-        item_key: Some(signal_id),
-        feedback_type: "reject",
-        source_system: Some(source),
-        source_kind: Some("field_conflict"),
-        previous_value: None,
-        corrected_value: suggested_value,
-        reason: None,
-    });
-    let _ = db.create_suppression_tombstone(
-        account_id,
-        field,
-        Some(signal_id),
-        None,
-        Some(source),
-        None,
-    );
-
-    let _ = db.upsert_signal_weight(
-        source,
-        "account",
-        &account_field_signal_category(field),
-        0.0,
-        1.0,
-    );
-
+    // DOS-309: pull conflict-resolution writes into one transaction; emit
+    // signal-bus side effects after commit. See accept_account_field_conflict
+    // for the architectural rationale.
     let dismissed_signal_id = format!("account-field-conflict-dismissed-{}", uuid::Uuid::new_v4());
-    let _ = crate::signals::bus::supersede_signal(db, signal_id, &dismissed_signal_id);
+
+    db.with_transaction(|tx| -> Result<(), String> {
+        tx.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
+            entity_id: account_id,
+            entity_type: "account",
+            field_key: field,
+            item_key: Some(signal_id),
+            feedback_type: "reject",
+            source_system: Some(source),
+            source_kind: Some("field_conflict"),
+            previous_value: None,
+            corrected_value: suggested_value,
+            reason: None,
+        })
+        .map_err(|e| format!("record_feedback_event: {e}"))?;
+
+        tx.create_suppression_tombstone(
+            account_id,
+            field,
+            Some(signal_id),
+            None,
+            Some(source),
+            None,
+        )
+        .map_err(|e| format!("create_suppression_tombstone: {e}"))?;
+
+        tx.upsert_signal_weight(
+            source,
+            "account",
+            &account_field_signal_category(field),
+            0.0,
+            1.0,
+        )
+        .map_err(|e| format!("upsert_signal_weight: {e}"))?;
+
+        crate::signals::bus::supersede_signal(tx, signal_id, &dismissed_signal_id)
+            .map_err(|e| format!("supersede_signal: {e}"))?;
+        Ok(())
+    })?;
+
+    // Post-commit side effects. Emission failure logs; DB is canonical.
     let payload = serde_json::json!({
         "field": field,
         "source": source,
@@ -1181,7 +1221,7 @@ pub fn dismiss_account_field_conflict(
         "suggested_value": suggested_value,
     })
     .to_string();
-    crate::services::signals::emit_propagate_and_evaluate(
+    if let Err(e) = crate::services::signals::emit_propagate_and_evaluate(
         db,
         &state.signals.engine,
         "account",
@@ -1191,8 +1231,13 @@ pub fn dismiss_account_field_conflict(
         Some(&payload),
         0.95,
         &state.intel_queue,
-    )
-    .map_err(|e| format!("signal emit failed: {e}"))?;
+    ) {
+        log::warn!(
+            "post-commit signal emission failed; \
+             repair_target=signals_engine \
+             account={account_id} field={field}: {e}"
+        );
+    }
 
     build_account_detail_result(db, account_id)
 }
