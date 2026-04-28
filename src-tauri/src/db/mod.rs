@@ -8,6 +8,7 @@ pub(crate) use chrono::Utc;
 pub(crate) use rusqlite::params;
 
 pub mod accounts;
+pub mod claim_invalidation;
 pub mod entity_linking;
 pub mod actions;
 pub mod content;

@@ -572,6 +572,23 @@ const MIGRATIONS: &[Migration] = &[
         version: 123,
         sql: include_str!("migrations/122_dos_321_collapse_commitment_dupes.sql"),
     },
+    // DOS-310: per-entity claim_version columns (Option A invalidation primitive)
+    // + shared migration_state.global_claim_epoch row. Replaces the
+    // entity_graph_version trigger extension that round-1 Codex review caught
+    // as a singleton-counter cache thrash bug. SubjectRef::Multi uses
+    // deterministic lock ordering (Account < Meeting < Person < Project).
+    Migration {
+        version: 124,
+        sql: include_str!("migrations/123_dos_310_per_entity_claim_invalidation.sql"),
+    },
+    // DOS-311: migration_state.schema_epoch row. Workers capture it at job
+    // pickup; the WriteFence rechecks at write-back. If a migration bumps
+    // the epoch mid-flight, in-flight work is rejected (caller logs +
+    // re-queues). See src-tauri/src/intelligence/write_fence.rs.
+    Migration {
+        version: 125,
+        sql: include_str!("migrations/124_dos_311_schema_epoch.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
