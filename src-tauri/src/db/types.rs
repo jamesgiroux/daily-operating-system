@@ -32,6 +32,12 @@ pub enum DbError {
 
     #[error("Encryption key missing: database at {db_path} is encrypted but the Keychain entry was not found")]
     KeyMissing { db_path: String },
+
+    /// Caller violated an internal API contract (e.g., nested Multi in
+    /// SubjectRef, calling bump_entity_claim_version with a Multi/Global
+    /// variant). Indicates a programming error, not a runtime fault.
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
 }
 
 /// A row from the `actions` table.

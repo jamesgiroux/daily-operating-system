@@ -420,6 +420,9 @@ fn recovery_status_from_db_error(err: &crate::db::DbError) -> DatabaseRecoverySt
             DatabaseRecoveryStatus::required("database_path_error", "Home directory not found")
         }
         crate::db::DbError::KeyMissing { .. } => DatabaseRecoveryStatus::not_required(),
+        crate::db::DbError::InvalidArgument(message) => {
+            DatabaseRecoveryStatus::required("internal_invalid_argument", message.clone())
+        }
     }
 }
 

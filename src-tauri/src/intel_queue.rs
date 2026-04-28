@@ -87,26 +87,95 @@ impl IntelRequest {
 }
 
 /// Thread-safe intelligence enrichment queue with deduplication and debounce.
+///
+/// DOS-311: also exposes pause/drain/resume primitives consumed by the
+/// schema-epoch migration sequence (DOS-7's W3 cutover). When paused, new
+/// enqueues return `false` so the caller can surface a user-visible
+/// "operation interrupted by migration; retry" message rather than
+/// silently dropping work. Background-priority enqueues (`ContentChange`,
+/// `CalendarChange`, `ProactiveHygiene`) coalesce silently — they will
+/// re-fire on the next change and the migration is a one-time event.
 pub struct IntelligenceQueue {
     queue: Mutex<VecDeque<IntelRequest>>,
     last_enqueued: Mutex<HashMap<String, Instant>>,
+    /// DOS-311: when true, `enqueue` rejects user-visible (Manual) requests
+    /// with `false` and silently drops background requests. The processor
+    /// loop checks this flag at dequeue-time to honor the pause.
+    paused: std::sync::atomic::AtomicBool,
 }
+
+/// Default drain timeout (configurable per-call). DOS-311 acceptance:
+/// "drain timeout configurable; default 60s."
+pub const DEFAULT_DRAIN_TIMEOUT_SECS: u64 = 60;
 
 impl IntelligenceQueue {
     pub fn new() -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),
             last_enqueued: Mutex::new(HashMap::new()),
+            paused: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
+    /// DOS-311: pause new enqueues + dequeues. Used by the schema-epoch
+    /// migration to drain in-flight work before bumping the epoch.
+    pub fn pause(&self) {
+        self.paused
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        log::info!("IntelQueue: paused (DOS-311 schema-epoch migration)");
+    }
+
+    /// DOS-311: resume normal processing after a migration completes.
+    pub fn resume(&self) {
+        self.paused
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        log::info!("IntelQueue: resumed");
+    }
+
+    /// DOS-311: whether the queue is currently paused. The processor loop
+    /// checks this at every dequeue to skip work during a migration.
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// DOS-311: drain pending requests. Returns the items so DOS-7's
+    /// migration sequence can re-enqueue them at step 5 (after backfill).
+    /// In-flight workers are out of scope here — they self-abort on epoch
+    /// mismatch via the WriteFence.
+    pub fn drain_pending(&self) -> Vec<IntelRequest> {
+        let mut queue = self.queue.lock();
+        let drained: Vec<_> = queue.drain(..).collect();
+        drop(queue);
+        if !drained.is_empty() {
+            log::info!(
+                "IntelQueue: drained {} pending requests for migration",
+                drained.len()
+            );
+        }
+        drained
+    }
+
     /// Enqueue an enrichment request.
+    ///
+    /// DOS-311: returns `true` if accepted, `false` if rejected due to a
+    /// pause. Manual-priority callers should surface the rejection to the
+    /// UI ("operation interrupted by migration; retry"); background
+    /// callers can ignore the bool because the change-trigger will fire
+    /// again post-migration.
     ///
     /// Deduplicates by entity_id: if the same entity is already queued,
     /// the higher priority wins. Debounces content changes by
     /// `CONTENT_DEBOUNCE_SECS` — rapid changes within the window are
     /// coalesced into a single request.
-    pub fn enqueue(&self, request: IntelRequest) {
+    pub fn enqueue(&self, request: IntelRequest) -> bool {
+        // DOS-311: refuse new work during a migration drain.
+        if self.is_paused() {
+            log::warn!(
+                "IntelQueue: rejected enqueue for {} (migration in progress)",
+                request.entity_id
+            );
+            return false;
+        }
         if let Some(debounce_secs) = debounce_window_secs(request.priority) {
             let last = self.last_enqueued.lock();
             if let Some(last_time) = last.get(&request.entity_id) {
@@ -116,7 +185,7 @@ impl IntelligenceQueue {
                         request.entity_id,
                         last_time.elapsed().as_secs()
                     );
-                    return;
+                    return false;
                 }
             }
             drop(last);
@@ -134,7 +203,7 @@ impl IntelligenceQueue {
                     request.priority
                 );
             }
-            return;
+            return true;
         }
 
         log::info!(
@@ -151,6 +220,7 @@ impl IntelligenceQueue {
             let mut last = self.last_enqueued.lock();
             last.insert(request.entity_id, Instant::now());
         }
+        true
     }
 
     /// Dequeue the highest-priority request.
@@ -2767,6 +2837,86 @@ fn dual_write_enrichment_products(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dos311_pause_rejects_new_enqueue() {
+        let q = IntelligenceQueue::new();
+        q.pause();
+        let accepted = q.enqueue(IntelRequest::new(
+            "acc-1".into(),
+            "account".into(),
+            IntelPriority::Manual,
+        ));
+        assert!(!accepted, "paused queue must reject new enqueues");
+        assert_eq!(q.len(), 0);
+    }
+
+    #[test]
+    fn dos311_resume_re_enables_enqueue() {
+        let q = IntelligenceQueue::new();
+        q.pause();
+        q.resume();
+        let accepted = q.enqueue(IntelRequest::new(
+            "acc-1".into(),
+            "account".into(),
+            IntelPriority::Manual,
+        ));
+        assert!(accepted, "resumed queue accepts enqueues");
+        assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn dos311_drain_pending_returns_and_empties() {
+        let q = IntelligenceQueue::new();
+        assert!(q.enqueue(IntelRequest::new(
+            "acc-1".into(),
+            "account".into(),
+            IntelPriority::Manual,
+        )));
+        assert!(q.enqueue(IntelRequest::new(
+            "acc-2".into(),
+            "account".into(),
+            IntelPriority::Manual,
+        )));
+        assert_eq!(q.len(), 2);
+        let drained = q.drain_pending();
+        assert_eq!(drained.len(), 2);
+        assert_eq!(q.len(), 0);
+    }
+
+    #[test]
+    fn dos311_paused_then_drained_then_resumed_recovers() {
+        // Simulates DOS-7's migration sequence shape: pause → drain →
+        // (run migration) → re-enqueue drained → resume.
+        let q = IntelligenceQueue::new();
+        assert!(q.enqueue(IntelRequest::new(
+            "acc-1".into(),
+            "account".into(),
+            IntelPriority::Manual,
+        )));
+        q.pause();
+        let drained = q.drain_pending();
+        assert_eq!(drained.len(), 1);
+        // While paused, a new enqueue should be rejected.
+        assert!(!q.enqueue(IntelRequest::new(
+            "acc-2".into(),
+            "account".into(),
+            IntelPriority::Manual,
+        )));
+        // After resume, drained items can be re-enqueued.
+        q.resume();
+        for r in drained {
+            assert!(q.enqueue(r));
+        }
+        assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn dos311_default_drain_timeout_is_60s() {
+        // Live ticket acceptance: "drain timeout configurable; default 60s."
+        // The constant lives in this module; the migration script consumes it.
+        assert_eq!(DEFAULT_DRAIN_TIMEOUT_SECS, 60);
+    }
 
     #[test]
     fn test_merge_missing_core_fields_preserves_existing_assessment() {

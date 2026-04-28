@@ -9,6 +9,7 @@ pub mod health_scoring;
 pub mod io;
 pub mod lifecycle;
 pub mod predictions;
+pub mod write_fence;
 pub mod prompts;
 pub mod relationships;
 pub mod timeliness;

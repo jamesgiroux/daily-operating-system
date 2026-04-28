@@ -65,6 +65,9 @@ jobs:
       - name: Enforce no-let-underscore on feedback/tombstone/file-write (DOS-309)
         run: ./scripts/check_no_let_underscore_feedback.sh
 
+      - name: Enforce write_intelligence_json fence usage (DOS-311)
+        run: ./scripts/check_write_fence_usage.sh
+
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
 
