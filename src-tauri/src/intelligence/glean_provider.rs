@@ -16,11 +16,18 @@ use parking_lot::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager};
 
+use async_trait::async_trait;
+
 use super::dimension_prompts::{self, DIMENSION_NAMES};
 use super::io::{IntelligenceJson, SourceManifestEntry};
 use super::prompts::{parse_intelligence_response, IntelligenceContext};
+use super::provider::{
+    Completion, FingerprintMetadata, IntelligenceProvider, ModelName, PromptInput, ProviderError,
+    ProviderKind,
+};
 use crate::context_provider::glean::GleanMcpClient;
 use crate::presets::schema::RolePreset;
+use crate::pty::ModelTier;
 
 use serde::{Deserialize, Serialize};
 
@@ -840,6 +847,62 @@ Cite sources."
             narrative,
             source_count: response.source_count,
         })
+    }
+}
+
+/// DOS-259 (W2-B): `IntelligenceProvider` trait impl over `GleanIntelligenceProvider`.
+///
+/// `complete()` invokes the Glean MCP `chat` tool and returns the raw response
+/// text. The existing domain-specific helpers (`enrich_entity*`,
+/// `enrich_leading_signals*`, `discover_accounts`, `enrich_peer_benchmark`) stay
+/// as Glean-specific module-local methods, not provider-trait surface — they
+/// embed Glean's MCP-only retrieval semantics that other providers cannot mirror.
+///
+/// The 240s timeout matches `GLEAN_CHAT_TIMEOUT` and the parallel-dimension
+/// timeout in `enrich_entity_parallel` to keep behavior parity.
+#[async_trait]
+impl IntelligenceProvider for GleanIntelligenceProvider {
+    async fn complete(
+        &self,
+        prompt: PromptInput,
+        tier: ModelTier,
+    ) -> Result<Completion, ProviderError> {
+        let client = GleanMcpClient::new(&self.endpoint);
+        let chat_result =
+            tokio::time::timeout(Duration::from_secs(240), client.chat(&prompt.text, None)).await;
+        let text = match chat_result {
+            Ok(Ok(text)) => text,
+            Ok(Err(e)) => {
+                let msg = format!("{e}");
+                if msg.to_lowercase().contains("auth")
+                    || msg.to_lowercase().contains("unauthorized")
+                {
+                    return Err(ProviderError::Permanent(msg));
+                }
+                return Err(ProviderError::Transient(msg));
+            }
+            Err(_) => {
+                return Err(ProviderError::Timeout { seconds: 240 });
+            }
+        };
+        Ok(Completion {
+            text,
+            fingerprint_metadata: FingerprintMetadata {
+                provider: Some(ProviderKind::Other("glean")),
+                model: Some(self.current_model(tier)),
+                ..Default::default()
+            },
+        })
+    }
+
+    fn provider_kind(&self) -> ProviderKind {
+        ProviderKind::Other("glean")
+    }
+
+    fn current_model(&self, _tier: ModelTier) -> ModelName {
+        // Glean does not expose its underlying model selection; report the
+        // chat tool name as the canonical model identifier.
+        ModelName::new("glean-chat")
     }
 }
 
@@ -1837,6 +1900,30 @@ pub fn extract_products_from_response(
                 Ok(Some(products))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod provider_trait_tests {
+    use super::*;
+    use super::super::provider::{IntelligenceProvider, ProviderKind};
+
+    fn fixture() -> GleanIntelligenceProvider {
+        GleanIntelligenceProvider::new("https://example.invalid/glean")
+    }
+
+    /// `glean_provider_fixture_returns_expected_fingerprint_metadata`
+    /// (per DOS-259 plan §9): fingerprint metadata fields populated at
+    /// `complete()` time are deterministic for a given (provider, tier).
+    /// We assert the metadata shape via `current_model()` + `provider_kind()`
+    /// rather than invoking Glean MCP (which requires a live endpoint);
+    /// the byte-identical parity test in §9 covers chat-response shape.
+    #[test]
+    fn glean_provider_fixture_returns_expected_fingerprint_metadata() {
+        let p = fixture();
+        assert_eq!(p.provider_kind(), ProviderKind::Other("glean"));
+        assert_eq!(p.current_model(ModelTier::Synthesis).as_str(), "glean-chat");
+        assert_eq!(p.current_model(ModelTier::Extraction).as_str(), "glean-chat");
     }
 }
 
