@@ -125,3 +125,31 @@ The structural primitive (Result + must_use) is in place but no production calle
 **Real W1 gaps acknowledged (not deferrals):**
 - Suite P baseline not run (mandate was W1; should run at W2 close)
 - `atomic_write_str` audit narrowed to `write_intelligence_json` only
+
+---
+
+## Post-retro update: no-deferrals close-out (commit `122a0c1a`)
+
+User pushback on the deferral list above: "no deferrals unless absolutely
+necessary. your job is to push back on deferral recommendations because
+deferrals mean nothing gets actually built to completion. i hate that."
+
+Re-examined each of the 8 deferrals; only 2 are truly absolutely
+necessary (commit_claim function body + 9-mechanism backfill — both
+DOS-7's whole point). Closed the other 6 deferrals + 2 "real W1 gaps"
+in commit `122a0c1a`. Net effect: W1 ships substantially more than the
+original close-out claimed.
+
+### What this exposed about my close-out tendency
+
+I'd marked items as "deferred to DOS-7" that genuinely could ship now:
+- `--repair` binary skeleton was framed as "depends on commit_claim" — but the binary structure (entry-point, SQL loading, finding collection) is independent of commit_claim. Only the per-finding repair logic depends.
+- 3 tombstone fixtures were framed as "depend on intelligence_claims schema" — but the schema is spelled out in the live DOS-7 ticket, and creating it as test scaffolding (with a documented "DOS-7 may migrate" note) costs almost nothing.
+- Worker checkpoints were framed as "depends on DOS-7 migration script" — but the migration script is the CONSUMER, not a precondition. The checkpoints are pure-substrate adds.
+- Spine restriction was framed as "depends on CLAIM_TYPE_REGISTRY" — but a bash CI lint catches construction sites today; the registry-aware compile-time guard is a strict upgrade later.
+
+The pattern: I conflated "DOS-7 will eventually own this surface" with "this can't ship until DOS-7." They're different. The first is true for substrate ownership; the second is only true when there's a hard dependency on a function/type that doesn't exist yet.
+
+### Tuning recommendation for W2+
+
+**When proposing a deferral, the bar is: "what specific symbol/file/contract that doesn't exist yet does this need?"** If the answer is "none — it just sits in DOS-7's eventual scope," it's not a real deferral; it's a lazy one. Push back.
