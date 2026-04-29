@@ -875,13 +875,14 @@ pub async fn update_intelligence_field(
             })?;
 
             // Post-commit file write — best-effort cache. DB is canonical from here.
-            if let Err(e) = crate::intelligence::write_intelligence_json(&dir, &intel) {
-                log::warn!(
-                    "post-commit file write failed; \
-                     repair_target=projection_writer (DOS-301) \
-                     entity={entity_id} field={field_path}: {e}"
-                );
-            }
+            // DOS-311: routed through the schema-epoch fence so a concurrent
+            // migration can preempt stale cache writes.
+            crate::intelligence::write_fence::post_commit_fenced_write(
+                db,
+                &dir,
+                &intel,
+                &format!("entity={entity_id} field={field_path}"),
+            );
 
             // Self-healing: only record correction (not curation) to lower quality score
             if !is_curation {
@@ -1059,13 +1060,13 @@ pub async fn update_stakeholders(
             })?;
 
             // Post-commit file write — best-effort cache. DB is canonical from here.
-            if let Err(e) = crate::intelligence::write_intelligence_json(&dir, &intel) {
-                log::warn!(
-                    "post-commit file write failed; \
-                     repair_target=projection_writer (DOS-301) \
-                     entity={entity_id}: {e}"
-                );
-            }
+            // DOS-311: routed through the schema-epoch fence.
+            crate::intelligence::write_fence::post_commit_fenced_write(
+                db,
+                &dir,
+                &intel,
+                &format!("entity={entity_id}"),
+            );
 
             Ok(())
         })
@@ -1239,13 +1240,13 @@ pub async fn dismiss_intelligence_item(
             }
 
             // Post-commit file write — best-effort cache. DB is canonical from here.
-            if let Err(e) = crate::intelligence::write_intelligence_json(&dir, &intel) {
-                log::warn!(
-                    "post-commit file write failed; \
-                     repair_target=projection_writer (DOS-301) \
-                     entity={entity_id} field={field}: {e}"
-                );
-            }
+            // DOS-311: routed through the schema-epoch fence.
+            crate::intelligence::write_fence::post_commit_fenced_write(
+                db,
+                &dir,
+                &intel,
+                &format!("entity={entity_id} field={field}"),
+            );
 
             Ok(())
         })
@@ -1622,13 +1623,13 @@ pub async fn dismiss_recommendation(
             }
 
             // Post-commit file write — best-effort cache.
-            if let Err(e) = crate::intelligence::write_intelligence_json(&dir, &intel) {
-                log::warn!(
-                    "post-commit file write failed; \
-                     repair_target=projection_writer (DOS-301) \
-                     entity={entity_id}: {e}"
-                );
-            }
+            // DOS-311: routed through the schema-epoch fence.
+            crate::intelligence::write_fence::post_commit_fenced_write(
+                db,
+                &dir,
+                &intel,
+                &format!("entity={entity_id}"),
+            );
 
             Ok(())
         })
@@ -1755,13 +1756,13 @@ pub async fn mark_commitment_done(
                 );
             }
 
-            if let Err(e) = crate::intelligence::write_intelligence_json(&dir, &intel) {
-                log::warn!(
-                    "post-commit file write failed; \
-                     repair_target=projection_writer (DOS-301) \
-                     entity={entity_id}: {e}"
-                );
-            }
+            // DOS-311: routed through the schema-epoch fence.
+            crate::intelligence::write_fence::post_commit_fenced_write(
+                db,
+                &dir,
+                &intel,
+                &format!("entity={entity_id}"),
+            );
 
             Ok(())
         })
@@ -2687,8 +2688,10 @@ mod live_acceptance_tests {
         }
 
         if let Some(prev_file) = previous_file {
-            // Test cleanup: best-effort restore; explicit `.ok()` documents
-            // the intent rather than swallowing via `let _`.
+            // Test cleanup: best-effort restore. Bypasses the schema-epoch
+            // fence intentionally — this runs at end-of-test to restore the
+            // pre-test workspace state and has no live migration to honor.
+            // fence-exempt: test-cleanup
             write_intelligence_json(&entity_dir, &prev_file).ok();
         } else {
             std::fs::remove_file(entity_dir.join("intelligence.json")).ok();

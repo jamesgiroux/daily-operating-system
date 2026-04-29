@@ -499,8 +499,7 @@ pub(super) fn enqueue_ai_enrichments(
                 );
                 return enqueued;
             }
-            queue.enqueue(IntelRequest::new(
-                entity_id,
+            let _ = queue.enqueue(IntelRequest::new(                entity_id,
                 entity_type,
                 IntelPriority::ProactiveHygiene,
             ));
@@ -522,8 +521,7 @@ pub(super) fn enqueue_ai_enrichments(
                 );
                 return enqueued;
             }
-            queue.enqueue(IntelRequest::new(
-                entity_id,
+            let _ = queue.enqueue(IntelRequest::new(                entity_id,
                 entity_type,
                 IntelPriority::ProactiveHygiene,
             ));
@@ -576,8 +574,7 @@ pub(super) fn enqueue_glean_risk_gap_fills(
             break;
         }
 
-        queue.enqueue(crate::intel_queue::IntelRequest::new(
-            entity_id,
+        let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(            entity_id,
             "account".to_string(),
             crate::intel_queue::IntelPriority::ProactiveHygiene,
         ));

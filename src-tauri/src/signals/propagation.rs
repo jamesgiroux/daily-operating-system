@@ -123,8 +123,7 @@ impl PropagationEngine {
                     );
                     continue;
                 }
-                intel_q.enqueue(crate::intel_queue::IntelRequest::new(
-                    eid.clone(),
+                let _ = intel_q.enqueue(crate::intel_queue::IntelRequest::new(                    eid.clone(),
                     etype.clone(),
                     crate::intel_queue::IntelPriority::ProactiveHygiene,
                 ));

@@ -18,8 +18,7 @@ use tauri::{AppHandle, Emitter};
 use crate::intelligence::dimension_prompts::{self, DIMENSION_NAMES};
 use crate::intelligence::{
     build_intelligence_prompt_with_preset, extract_inferred_relationships,
-    parse_intelligence_response, write_intelligence_json, InferredRelationship, IntelligenceJson,
-    SourceManifestEntry,
+    parse_intelligence_response, InferredRelationship, IntelligenceJson, SourceManifestEntry,
 };
 use crate::presets::schema::RolePreset;
 use crate::pty::{AiUsageContext, ModelTier, PtyManager};
@@ -108,6 +107,49 @@ pub struct IntelligenceQueue {
 /// "drain timeout configurable; default 60s."
 pub const DEFAULT_DRAIN_TIMEOUT_SECS: u64 = 60;
 
+/// Outcome of a successful [`IntelligenceQueue::enqueue`] call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnqueueOutcome {
+    /// New entry added to the queue.
+    Accepted,
+    /// Existing entry was kept (priority upgraded if the new request was higher).
+    Coalesced,
+}
+
+/// Reason an enqueue was rejected. Manual-priority callers MUST handle
+/// [`EnqueueError::Paused`] by returning a user-visible error
+/// ("operation interrupted by migration; retry"); background callers can
+/// discard via `let _ = ...` since the change trigger will refire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnqueueError {
+    /// A schema-epoch migration is draining the queue (DOS-311). New
+    /// work is rejected; the user-facing call should surface a retry
+    /// prompt rather than silently dropping.
+    Paused,
+    /// Background request landed inside the debounce window for its
+    /// priority (`CONTENT_DEBOUNCE_SECS` for ContentChange,
+    /// `CALENDAR_DEBOUNCE_SECS` for CalendarChange). Acceptable for
+    /// background callers; not normally surfaced.
+    Debounced,
+}
+
+impl std::fmt::Display for EnqueueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Paused => write!(
+                f,
+                "intel queue paused (schema-epoch migration in progress); retry"
+            ),
+            Self::Debounced => write!(f, "intel request debounced"),
+        }
+    }
+}
+
+impl std::error::Error for EnqueueError {}
+
+/// Result alias for [`IntelligenceQueue::enqueue`].
+pub type EnqueueResult = Result<EnqueueOutcome, EnqueueError>;
+
 impl IntelligenceQueue {
     pub fn new() -> Self {
         Self {
@@ -157,24 +199,33 @@ impl IntelligenceQueue {
 
     /// Enqueue an enrichment request.
     ///
-    /// DOS-311: returns `true` if accepted, `false` if rejected due to a
-    /// pause. Manual-priority callers should surface the rejection to the
-    /// UI ("operation interrupted by migration; retry"); background
-    /// callers can ignore the bool because the change-trigger will fire
-    /// again post-migration.
+    /// DOS-311: returns `Ok(EnqueueOutcome::Accepted)` for new entries,
+    /// `Ok(EnqueueOutcome::Coalesced)` when an existing higher-or-equal
+    /// queued entry was preserved (priority upgraded if applicable),
+    /// `Err(EnqueueError::Paused)` while a schema-epoch migration is
+    /// draining, or `Err(EnqueueError::Debounced)` for background
+    /// requests inside the debounce window. Manual-priority callers
+    /// (Tauri commands invoked by user actions) MUST surface
+    /// `Paused` to the UI as "operation interrupted by migration; retry";
+    /// background callers can `let _ = ` the result because the change
+    /// trigger will fire again post-migration.
+    ///
+    /// `#[must_use]` so silent discard is a compile-time error caught by
+    /// `clippy::let_underscore_must_use` once the workspace lint lands
+    /// (DOS-342).
     ///
     /// Deduplicates by entity_id: if the same entity is already queued,
     /// the higher priority wins. Debounces content changes by
-    /// `CONTENT_DEBOUNCE_SECS` — rapid changes within the window are
-    /// coalesced into a single request.
-    pub fn enqueue(&self, request: IntelRequest) -> bool {
+    /// `CONTENT_DEBOUNCE_SECS`.
+    #[must_use = "enqueue returns a Result; manual-priority callers must surface Paused to the user"]
+    pub fn enqueue(&self, request: IntelRequest) -> EnqueueResult {
         // DOS-311: refuse new work during a migration drain.
         if self.is_paused() {
             log::warn!(
                 "IntelQueue: rejected enqueue for {} (migration in progress)",
                 request.entity_id
             );
-            return false;
+            return Err(EnqueueError::Paused);
         }
         if let Some(debounce_secs) = debounce_window_secs(request.priority) {
             let last = self.last_enqueued.lock();
@@ -185,7 +236,7 @@ impl IntelligenceQueue {
                         request.entity_id,
                         last_time.elapsed().as_secs()
                     );
-                    return false;
+                    return Err(EnqueueError::Debounced);
                 }
             }
             drop(last);
@@ -203,7 +254,7 @@ impl IntelligenceQueue {
                     request.priority
                 );
             }
-            return true;
+            return Ok(EnqueueOutcome::Coalesced);
         }
 
         log::info!(
@@ -220,7 +271,7 @@ impl IntelligenceQueue {
             let mut last = self.last_enqueued.lock();
             last.insert(request.entity_id, Instant::now());
         }
-        true
+        Ok(EnqueueOutcome::Accepted)
     }
 
     /// Dequeue the highest-priority request.
@@ -526,6 +577,13 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             continue;
         }
 
+        // DOS-311: skip processing entirely while a schema-epoch migration
+        // drains the queue. Pending items remain in `queue` (not destroyed)
+        // so DOS-7's migration sequence can drain → backfill → re-enqueue.
+        if state.intel_queue.is_paused() {
+            continue;
+        }
+
         // Periodic pruning of stale debounce entries (I234)
         polls_since_prune += 1;
         if polls_since_prune >= prune_interval {
@@ -728,8 +786,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         original.retry_count + 1,
                         MAX_VALIDATION_RETRIES,
                     );
-                    state.intel_queue.enqueue(IntelRequest {
-                        entity_id: original.entity_id.clone(),
+                    let _ = state.intel_queue.enqueue(IntelRequest {                        entity_id: original.entity_id.clone(),
                         entity_type: original.entity_type.clone(),
                         priority: original.priority,
                         requested_at: Instant::now(),
@@ -2317,8 +2374,37 @@ pub fn write_enrichment_results(
         }
     }
 
-    // Write intelligence.json to disk
-    write_intelligence_json(&input.entity_dir, &final_intel)?;
+    // DOS-311: capture schema_epoch + write through the fence. Migration
+    // sequence (DOS-7 W3) drains in-flight workers via the FenceCycle RAII
+    // counter before bumping the epoch; EpochAdvanced here means a migration
+    // ran mid-cycle and we must skip the write so DOS-7's backfill stays
+    // canonical.
+    let fence_cycle = crate::intelligence::write_fence::FenceCycle::capture(&db)
+        .map_err(|e| format!("schema_epoch capture failed for {}: {e}", input.entity_id))?;
+    if let Err(e) = crate::intelligence::write_fence::fenced_write_intelligence_json(
+        &fence_cycle,
+        &db,
+        &input.entity_dir,
+        &final_intel,
+    ) {
+        match e {
+            crate::intelligence::write_fence::FenceError::EpochAdvanced { captured, current } => {
+                log::warn!(
+                    "IntelProcessor: schema_epoch advanced mid-cycle for {} \
+                     (captured={captured}, current={current}); skipping write — \
+                     work will be re-queued after migration completes",
+                    input.entity_id,
+                );
+                return Err(format!(
+                    "fence rejected write for {}: schema_epoch advanced",
+                    input.entity_id,
+                ));
+            }
+            other => {
+                return Err(format!("fence write failed for {}: {other}", input.entity_id));
+            }
+        }
+    }
     crate::services::intelligence::upsert_assessment_from_enrichment(
         &db,
         &_state.signals.engine,
@@ -2350,8 +2436,7 @@ pub fn write_enrichment_results(
     if input.entity_type == "account" {
         if let Ok(Some(account)) = db.get_account(&input.entity_id) {
             if let Some(ref parent_id) = account.parent_id {
-                _state.intel_queue.enqueue(IntelRequest {
-                    entity_id: parent_id.clone(),
+                let _ = _state.intel_queue.enqueue(IntelRequest {                    entity_id: parent_id.clone(),
                     entity_type: "account".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: std::time::Instant::now(),
@@ -2369,8 +2454,7 @@ pub fn write_enrichment_results(
     if input.entity_type == "project" {
         if let Ok(Some(project)) = db.get_project(&input.entity_id) {
             if let Some(ref parent_id) = project.parent_id {
-                _state.intel_queue.enqueue(IntelRequest {
-                    entity_id: parent_id.clone(),
+                let _ = _state.intel_queue.enqueue(IntelRequest {                    entity_id: parent_id.clone(),
                     entity_type: "project".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: std::time::Instant::now(),
@@ -2842,12 +2926,16 @@ mod tests {
     fn dos311_pause_rejects_new_enqueue() {
         let q = IntelligenceQueue::new();
         q.pause();
-        let accepted = q.enqueue(IntelRequest::new(
+        let result = q.enqueue(IntelRequest::new(
             "acc-1".into(),
             "account".into(),
             IntelPriority::Manual,
         ));
-        assert!(!accepted, "paused queue must reject new enqueues");
+        assert_eq!(
+            result,
+            Err(EnqueueError::Paused),
+            "paused queue must reject new enqueues"
+        );
         assert_eq!(q.len(), 0);
     }
 
@@ -2856,28 +2944,38 @@ mod tests {
         let q = IntelligenceQueue::new();
         q.pause();
         q.resume();
-        let accepted = q.enqueue(IntelRequest::new(
+        let result = q.enqueue(IntelRequest::new(
             "acc-1".into(),
             "account".into(),
             IntelPriority::Manual,
         ));
-        assert!(accepted, "resumed queue accepts enqueues");
+        assert_eq!(
+            result,
+            Ok(EnqueueOutcome::Accepted),
+            "resumed queue accepts enqueues"
+        );
         assert_eq!(q.len(), 1);
     }
 
     #[test]
     fn dos311_drain_pending_returns_and_empties() {
         let q = IntelligenceQueue::new();
-        assert!(q.enqueue(IntelRequest::new(
-            "acc-1".into(),
-            "account".into(),
-            IntelPriority::Manual,
-        )));
-        assert!(q.enqueue(IntelRequest::new(
-            "acc-2".into(),
-            "account".into(),
-            IntelPriority::Manual,
-        )));
+        assert_eq!(
+            q.enqueue(IntelRequest::new(
+                "acc-1".into(),
+                "account".into(),
+                IntelPriority::Manual,
+            )),
+            Ok(EnqueueOutcome::Accepted)
+        );
+        assert_eq!(
+            q.enqueue(IntelRequest::new(
+                "acc-2".into(),
+                "account".into(),
+                IntelPriority::Manual,
+            )),
+            Ok(EnqueueOutcome::Accepted)
+        );
         assert_eq!(q.len(), 2);
         let drained = q.drain_pending();
         assert_eq!(drained.len(), 2);
@@ -2889,24 +2987,30 @@ mod tests {
         // Simulates DOS-7's migration sequence shape: pause → drain →
         // (run migration) → re-enqueue drained → resume.
         let q = IntelligenceQueue::new();
-        assert!(q.enqueue(IntelRequest::new(
-            "acc-1".into(),
-            "account".into(),
-            IntelPriority::Manual,
-        )));
+        assert_eq!(
+            q.enqueue(IntelRequest::new(
+                "acc-1".into(),
+                "account".into(),
+                IntelPriority::Manual,
+            )),
+            Ok(EnqueueOutcome::Accepted)
+        );
         q.pause();
         let drained = q.drain_pending();
         assert_eq!(drained.len(), 1);
-        // While paused, a new enqueue should be rejected.
-        assert!(!q.enqueue(IntelRequest::new(
-            "acc-2".into(),
-            "account".into(),
-            IntelPriority::Manual,
-        )));
+        // While paused, a new enqueue should be rejected with Paused.
+        assert_eq!(
+            q.enqueue(IntelRequest::new(
+                "acc-2".into(),
+                "account".into(),
+                IntelPriority::Manual,
+            )),
+            Err(EnqueueError::Paused)
+        );
         // After resume, drained items can be re-enqueued.
         q.resume();
         for r in drained {
-            assert!(q.enqueue(r));
+            assert_eq!(q.enqueue(r), Ok(EnqueueOutcome::Accepted));
         }
         assert_eq!(q.len(), 1);
     }

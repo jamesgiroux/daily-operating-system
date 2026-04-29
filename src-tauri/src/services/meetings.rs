@@ -669,8 +669,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
     entities_to_refresh.dedup();
     if !entities_to_refresh.is_empty() {
         for (entity_id, entity_type) in entities_to_refresh {
-            state
-                .intel_queue
+            let _ = state                .intel_queue
                 .enqueue(crate::intel_queue::IntelRequest::new(
                     entity_id,
                     entity_type,
@@ -3065,8 +3064,7 @@ pub async fn refresh_meeting_briefing_full(
     // Failed entity refreshes are queued for retry.
     if !failed_entities.is_empty() {
         for (entity_id, entity_type) in &failed_entities {
-            state
-                .intel_queue
+            let _ = state                .intel_queue
                 .enqueue(crate::intel_queue::IntelRequest::new(
                     entity_id.clone(),
                     entity_type.clone(),

@@ -28,12 +28,24 @@
 -- columns must include `(subject_ref, claim_type, field_path, dedup_key,
 -- sourced_at, projection_target)`.
 
+-- Match-key contract: a projected item resurrects a tombstoned claim when
+-- ANY of the following hold (inclusive OR), in addition to the
+-- (subject_ref, claim_type, field_path) triple agreeing:
+--   1. dedup_key match (canonicalized item key)
+--   2. item_hash match (content fingerprint; survives dedup_key changes)
+--
+-- The item_hash fallback catches items whose dedup_key shifted post-tombstone
+-- (e.g., a re-enrichment regenerated the canonical key) but whose content
+-- fingerprint still matches the dismissed item. Live ticket DOS-311 calls
+-- this out explicitly: "(dedup_key OR item_hash)".
+
 WITH tombstoned_claims AS (
     SELECT
         subject_ref,
         claim_type,
         field_path,
         dedup_key,
+        item_hash,
         source_asof,
         created_at AS dismissed_at
     FROM intelligence_claims
@@ -45,15 +57,30 @@ SELECT
     pi.claim_type,
     pi.field_path,
     pi.dedup_key,
+    pi.item_hash,
     pi.projection_target,
     tc.dismissed_at,
-    pi.sourced_at
+    pi.sourced_at,
+    -- Indicate which match path fired so operators can spot data drift.
+    CASE
+        WHEN pi.dedup_key IS NOT NULL
+             AND tc.dedup_key IS NOT NULL
+             AND pi.dedup_key = tc.dedup_key THEN 'dedup_key'
+        WHEN pi.item_hash IS NOT NULL
+             AND tc.item_hash IS NOT NULL
+             AND pi.item_hash = tc.item_hash THEN 'item_hash'
+        ELSE 'unknown'
+    END AS match_path
 FROM legacy_projection_state pi
 JOIN tombstoned_claims tc
     ON pi.subject_ref = tc.subject_ref
    AND pi.claim_type  = tc.claim_type
    AND pi.field_path  = tc.field_path
-   AND pi.dedup_key   = tc.dedup_key
+   AND (
+        (pi.dedup_key IS NOT NULL AND tc.dedup_key IS NOT NULL AND pi.dedup_key = tc.dedup_key)
+        OR
+        (pi.item_hash IS NOT NULL AND tc.item_hash IS NOT NULL AND pi.item_hash = tc.item_hash)
+   )
 WHERE pi.sourced_at IS NULL
    OR pi.sourced_at <= tc.dismissed_at;
 -- Each row in this result set is a ghost-resurrection finding.

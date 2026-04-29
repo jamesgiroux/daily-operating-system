@@ -28,15 +28,30 @@ PATTERN='\bwrite_intelligence_json[[:space:]]*\('
 
 violations=0
 while IFS= read -r line; do
+  # Path-based allowlist
   case "$line" in
     "$ROOT_DIR/src-tauri/src/intelligence/write_fence.rs"*) continue ;;
     "$ROOT_DIR/src-tauri/src/intelligence/io.rs"*) continue ;;
-    "$ROOT_DIR/src-tauri/src/services/intelligence.rs"*) continue ;;
-    "$ROOT_DIR/src-tauri/src/intel_queue.rs"*) continue ;;
     "$ROOT_DIR/src-tauri/tests/"*) continue ;;
     "$ROOT_DIR/.docs/"*) continue ;;
     "$ROOT_DIR/scripts/"*) continue ;;
   esac
+
+  # Inline marker exemption: a `// fence-exempt: <reason>` comment within 3
+  # lines above the call deliberately bypasses the fence (test cleanup,
+  # imports, etc.). Extract <file>:<lineno>:<text> from grep -rEn output.
+  file_part="${line%%:*}"
+  rest="${line#*:}"
+  lineno="${rest%%:*}"
+  if [ -n "$lineno" ] && [ -f "$file_part" ]; then
+    start=$((lineno - 3))
+    [ "$start" -lt 1 ] && start=1
+    if sed -n "${start},${lineno}p" "$file_part" 2>/dev/null \
+        | grep -q "fence-exempt:"; then
+      continue
+    fi
+  fi
+
   echo "$line"
   violations=$((violations + 1))
 done < <(grep -rEn "$PATTERN" \

@@ -2975,8 +2975,7 @@ pub async fn create_child_account_cmd(
         })
         .await?;
 
-    state
-        .intel_queue
+    let _ = state        .intel_queue
         .enqueue(crate::intel_queue::IntelRequest::new(
             child_id.clone(),
             "account".to_string(),

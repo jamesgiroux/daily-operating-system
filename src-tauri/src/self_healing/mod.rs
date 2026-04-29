@@ -53,8 +53,7 @@ pub fn evaluate_portfolio(
             continue;
         }
 
-        queue.enqueue(crate::intel_queue::IntelRequest::new(
-            entity_id.clone(),
+        let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(            entity_id.clone(),
             entity_type.clone(),
             crate::intel_queue::IntelPriority::ProactiveHygiene,
         ));
