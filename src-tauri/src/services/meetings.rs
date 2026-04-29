@@ -3062,14 +3062,27 @@ pub async fn refresh_meeting_briefing_full(
     }
 
     // Failed entity refreshes are queued for retry.
+    // DOS-311: Manual-priority retry path — surface EnqueueError::Paused
+    // to the user (queue is draining for a schema-epoch migration). The
+    // loop aborts on first Paused so the frontend shows a single retry
+    // prompt rather than N error toasts.
     if !failed_entities.is_empty() {
+        let mut paused_seen: Option<String> = None;
         for (entity_id, entity_type) in &failed_entities {
-            let _ = state                .intel_queue
-                .enqueue(crate::intel_queue::IntelRequest::new(
+            if let Err(e) = crate::intel_queue::enqueue_user_facing(
+                &state.intel_queue,
+                crate::intel_queue::IntelRequest::new(
                     entity_id.clone(),
                     entity_type.clone(),
                     crate::intel_queue::IntelPriority::Manual,
-                ));
+                ),
+            ) {
+                paused_seen = Some(e);
+                break;
+            }
+        }
+        if let Some(e) = paused_seen {
+            return Err(e);
         }
         state.integrations.intel_queue_wake.notify_one();
     }

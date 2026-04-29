@@ -358,6 +358,158 @@ mod tests {
         );
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    // W1 Suite P baseline for write_fence primitives.
+    // Captured 2026-04-29; bounds are 5× the typical observed median.
+    // ───────────────────────────────────────────────────────────────────────
+
+    fn median_micros(samples: &mut [u128]) -> u128 {
+        samples.sort();
+        samples[samples.len() / 2]
+    }
+
+    #[test]
+    fn suite_p_baseline_fence_cycle_capture() {
+        // W1 baseline: typical median ~5-15µs. Bound: 200µs.
+        let db = test_db();
+        for _ in 0..50 {
+            drop(FenceCycle::capture(&db).unwrap());
+        }
+        let mut samples = Vec::with_capacity(500);
+        for _ in 0..500 {
+            let start = Instant::now();
+            let cycle = FenceCycle::capture(&db).unwrap();
+            samples.push(start.elapsed().as_nanos() / 1_000);
+            drop(cycle);
+        }
+        let median = median_micros(&mut samples);
+        eprintln!(
+            "[suite-p baseline] FenceCycle::capture: median={median}µs samples=500"
+        );
+        assert!(
+            median < 200,
+            "regression: FenceCycle::capture took {median}µs (W1 baseline ~5-15µs; bound 200µs)"
+        );
+    }
+
+    #[test]
+    fn suite_p_baseline_fenced_write_intelligence_json() {
+        // W1 baseline: typical median 1-5ms (file write dominates). Bound: 25ms.
+        let db = test_db();
+        let intel = IntelligenceJson {
+            entity_id: "a1".into(),
+            entity_type: "account".into(),
+            ..Default::default()
+        };
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dir = tmp.path();
+
+        for _ in 0..10 {
+            let cycle = FenceCycle::capture(&db).unwrap();
+            fenced_write_intelligence_json(&cycle, &db, dir, &intel).unwrap();
+        }
+        let mut samples = Vec::with_capacity(100);
+        for _ in 0..100 {
+            let cycle = FenceCycle::capture(&db).unwrap();
+            let start = Instant::now();
+            fenced_write_intelligence_json(&cycle, &db, dir, &intel).unwrap();
+            samples.push(start.elapsed().as_nanos() / 1_000);
+        }
+        let median = median_micros(&mut samples);
+        eprintln!(
+            "[suite-p baseline] fenced_write_intelligence_json: median={median}µs samples=100"
+        );
+        assert!(
+            median < 25_000,
+            "regression: fenced_write_intelligence_json took {median}µs (W1 baseline ~1-5ms; bound 25ms)"
+        );
+    }
+
+    #[test]
+    fn dos311_substrate_migration_sequence_end_to_end() {
+        // Live ticket DOS-311 acceptance: the 7-step migration sequence
+        // shape (pre-flight → bump → drain → backfill → requeue →
+        // reconcile → resume). DOS-7 (W3) supplies steps 1, 4, 5, 6.
+        // This test exercises the substrate primitives DOS-311 owns:
+        // bump_schema_epoch, drain_with_timeout, FenceCycle capture/recheck.
+        //
+        // Scenario:
+        //  1. Worker captures FenceCycle (simulating start-of-job).
+        //  2. Migration begins: bump_schema_epoch.
+        //  3. Migration calls drain_with_timeout — must Err because the
+        //     worker still holds its FenceCycle.
+        //  4. Worker tries to write — fenced_write_intelligence_json
+        //     returns FenceError::EpochAdvanced.
+        //  5. Worker drops its FenceCycle (releases registry slot).
+        //  6. Migration's NEXT drain call returns Ok(0).
+        //  7. After "backfill" (no-op here), a fresh FenceCycle captured
+        //     post-migration sees the bumped epoch and writes succeed.
+
+        let db = test_db();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dir = tmp.path();
+        let intel = IntelligenceJson {
+            entity_id: "e1".into(),
+            entity_type: "account".into(),
+            ..Default::default()
+        };
+
+        // Step 1: worker captures
+        let worker_cycle = FenceCycle::capture(&db).expect("worker capture");
+        assert_eq!(worker_cycle.captured_epoch(), 1);
+
+        // Step 2: migration bumps
+        let new_epoch = bump_schema_epoch(&db).expect("bump");
+        assert_eq!(new_epoch, 2);
+
+        // Step 3: drain Err while worker holds cycle
+        let drain_result = drain_with_timeout(Duration::from_millis(50));
+        assert!(
+            matches!(drain_result, Err(n) if n >= 1),
+            "drain must Err with non-zero in-flight; got {drain_result:?}",
+        );
+
+        // Step 4: worker write rejected
+        let write_result =
+            fenced_write_intelligence_json(&worker_cycle, &db, dir, &intel);
+        assert!(
+            matches!(
+                write_result,
+                Err(FenceError::EpochAdvanced { captured: 1, current: 2 })
+            ),
+            "worker write must be rejected with EpochAdvanced 1→2; got {write_result:?}",
+        );
+        // The file must NOT have been written
+        assert!(
+            !dir.join("intelligence.json").exists(),
+            "rejected write must not touch disk"
+        );
+
+        // Step 5: worker drops the FenceCycle
+        drop(worker_cycle);
+
+        // Step 6: drain returns Ok(0) after worker released
+        let drain_result_2 = drain_with_timeout(Duration::from_millis(50));
+        assert!(
+            matches!(drain_result_2, Ok(0)),
+            "drain after release must return Ok(0); got {drain_result_2:?}",
+        );
+
+        // Step 7: post-migration write succeeds with a fresh FenceCycle
+        let post_cycle = FenceCycle::capture(&db).expect("post capture");
+        assert_eq!(
+            post_cycle.captured_epoch(),
+            2,
+            "fresh cycle reads post-bump epoch"
+        );
+        fenced_write_intelligence_json(&post_cycle, &db, dir, &intel)
+            .expect("post-migration write succeeds");
+        assert!(
+            dir.join("intelligence.json").exists(),
+            "post-migration write must reach disk"
+        );
+    }
+
     #[test]
     fn dos311_force_abort_drain_completes_within_timeout() {
         // Live ticket DOS-311 acceptance: "Force-abort path tested: simulate

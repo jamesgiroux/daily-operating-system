@@ -95,6 +95,16 @@ name = "dailyos-mcp"
 path = "src/mcp/main.rs"
 required-features = ["mcp"]
 
+# DOS-311: post-migration reconcile + repair binary. Reads
+# scripts/reconcile_ghost_resurrection.sql and runs it against the
+# workspace DB. Skeleton form: detects whether intelligence_claims
+# (DOS-7 / W3) exists and either runs the reconcile (if yes) or
+# logs a no-op (if not). Per-finding repair logic that calls
+# services::claims::commit_claim lands when DOS-7 ships that module.
+[[bin]]
+name = "reconcile_post_migration"
+path = "src/bin/reconcile_post_migration.rs"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = "0.3"

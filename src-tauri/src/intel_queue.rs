@@ -150,6 +150,26 @@ impl std::error::Error for EnqueueError {}
 /// Result alias for [`IntelligenceQueue::enqueue`].
 pub type EnqueueResult = Result<EnqueueOutcome, EnqueueError>;
 
+/// Convenience for user-facing Tauri command callers: enqueue an
+/// `IntelRequest` and surface only `EnqueueError::Paused` to the user
+/// (debounce rejections are silently OK because background change
+/// triggers will refire). The returned `Err(String)` is meant to be
+/// returned directly from the Tauri command — the frontend renders it
+/// as "operation interrupted by migration; retry."
+///
+/// Use from manual-priority paths (Manual / Onboarding). Background
+/// callers should use `let _ = queue.enqueue(...)` directly.
+pub fn enqueue_user_facing(
+    queue: &IntelligenceQueue,
+    request: IntelRequest,
+) -> Result<(), String> {
+    match queue.enqueue(request) {
+        Ok(_) => Ok(()),
+        Err(EnqueueError::Paused) => Err(EnqueueError::Paused.to_string()),
+        Err(EnqueueError::Debounced) => Ok(()),
+    }
+}
+
 impl IntelligenceQueue {
     pub fn new() -> Self {
         Self {
@@ -598,6 +618,32 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             continue;
         }
 
+        // DOS-311: capture FenceCycle for the entire batch lifetime. RAII
+        // (Drop on scope exit) keeps IN_FLIGHT_CYCLES > 0 through PTY/Glean
+        // enrichment + write-back, so a concurrent migration's
+        // drain_with_timeout waits for this batch to complete (or times
+        // out as force-abort).
+        //
+        // ActionDb::open() is the standard processor-loop pattern (see
+        // gather_enrichment_input which also opens its own handle); the
+        // FenceCycle is a short-lived read against migration_state.
+        let _fence_cycle = match crate::db::ActionDb::open() {
+            Ok(db) => match crate::intelligence::write_fence::FenceCycle::capture(&db) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    log::warn!(
+                        "IntelProcessor: failed to capture schema_epoch for batch ({e}); \
+                         processing without fence — migration must not run during this batch"
+                    );
+                    None
+                }
+            },
+            Err(e) => {
+                log::warn!("IntelProcessor: failed to open db for FenceCycle capture: {e}");
+                None
+            }
+        };
+
         let entity_names: Vec<&str> = batch.iter().map(|r| r.entity_id.as_str()).collect();
         log::info!(
             "IntelProcessor: dequeued batch of {} entities: {:?}",
@@ -736,6 +782,16 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 // I564: Run PTY enrichment on blocking threads to avoid stalling Tokio workers.
                 let mut entity_results = Vec::new();
                 for (request, input) in inputs {
+                    // DOS-311: per-entity checkpoint inside the PTY batch loop.
+                    // Symmetric to the Glean path — abort early when a
+                    // schema-epoch migration starts mid-batch.
+                    if state.intel_queue.is_paused() {
+                        log::info!(
+                            "IntelProcessor: pause detected mid-PTY-batch; aborting after {} entities",
+                            entity_results.len()
+                        );
+                        break;
+                    }
                     let ai_cfg = ai_config.clone();
                     let input_clone = input.clone();
                     let app_clone = app.clone();
@@ -1463,6 +1519,19 @@ async fn run_glean_enrichment_with_fallback(
     let mut pty_fallback_inputs: Vec<(IntelRequest, EnrichmentInput)> = Vec::new();
 
     for (request, input) in inputs {
+        // DOS-311: per-entity checkpoint inside the Glean batch loop.
+        // If a migration started while we were processing earlier entities,
+        // abort the rest of the batch — unprocessed entities are dropped
+        // (the change-trigger that originally enqueued them will refire
+        // post-migration via the normal background path).
+        if state.intel_queue.is_paused() {
+            log::info!(
+                "IntelProcessor: pause detected mid-batch; aborting Glean enrichment after {} successful entities",
+                results.len()
+            );
+            break;
+        }
+
         // Only try Glean if we have the intelligence context (populated for remote providers)
         if let Some(ref ctx) = input.intelligence_context {
             log::info!(
@@ -3015,6 +3084,46 @@ mod tests {
         assert_eq!(q.len(), 1);
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    // W1 Suite P baseline for queue primitives.
+    // Captured 2026-04-29; bounds are 5× the typical observed median.
+    // ───────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn suite_p_baseline_enqueue_dequeue_roundtrip() {
+        // W1 baseline: typical median ~1-5µs. Bound: 50µs.
+        let q = IntelligenceQueue::new();
+
+        for i in 0..50 {
+            let _ = q.enqueue(IntelRequest::new(
+                format!("warm-{i}"),
+                "account".into(),
+                IntelPriority::Manual,
+            ));
+            q.dequeue();
+        }
+        let mut samples = Vec::with_capacity(500);
+        for i in 0..500 {
+            let start = std::time::Instant::now();
+            let _ = q.enqueue(IntelRequest::new(
+                format!("e-{i}"),
+                "account".into(),
+                IntelPriority::Manual,
+            ));
+            q.dequeue();
+            samples.push(start.elapsed().as_nanos() / 1_000);
+        }
+        samples.sort();
+        let median = samples[samples.len() / 2];
+        eprintln!(
+            "[suite-p baseline] enqueue+dequeue roundtrip: median={median}µs samples=500"
+        );
+        assert!(
+            median < 50,
+            "regression: enqueue+dequeue took {median}µs (W1 baseline ~1-5µs; bound 50µs)"
+        );
+    }
+
     #[test]
     fn dos311_default_drain_timeout_is_60s() {
         // Live ticket acceptance: "drain timeout configurable; default 60s."
@@ -3069,8 +3178,7 @@ mod tests {
     fn test_intel_queue_enqueue_dequeue() {
         let queue = IntelligenceQueue::new();
 
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3091,15 +3199,13 @@ mod tests {
         // entries regardless of priority, and should not touch other entities.
         let queue = IntelligenceQueue::new();
 
-        queue.enqueue(IntelRequest {
-            entity_id: "archived-acct".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "archived-acct".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ProactiveHygiene,
             requested_at: Instant::now(),
             retry_count: 0,
         });
-        queue.enqueue(IntelRequest {
-            entity_id: "other-acct".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "other-acct".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
@@ -3125,8 +3231,7 @@ mod tests {
         // unarchive → re-enqueue can proceed without the debounce delay.
         let queue = IntelligenceQueue::new();
 
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3142,8 +3247,7 @@ mod tests {
 
         // A fresh ContentChange enqueue for the same entity should now go through
         // instead of being debounced.
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3156,8 +3260,7 @@ mod tests {
     fn test_intel_queue_dedup_keeps_higher_priority() {
         let queue = IntelligenceQueue::new();
 
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3165,8 +3268,7 @@ mod tests {
         });
 
         // Same entity, higher priority → should upgrade
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
@@ -3182,8 +3284,7 @@ mod tests {
     fn test_intel_queue_dedup_ignores_lower_priority() {
         let queue = IntelligenceQueue::new();
 
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
@@ -3191,8 +3292,7 @@ mod tests {
         });
 
         // Same entity, lower priority → should be ignored
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3208,24 +3308,21 @@ mod tests {
     fn test_intel_queue_priority_ordering() {
         let queue = IntelligenceQueue::new();
 
-        queue.enqueue(IntelRequest {
-            entity_id: "alpha".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "alpha".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
             retry_count: 0,
         });
 
-        queue.enqueue(IntelRequest {
-            entity_id: "beta".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "beta".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
             retry_count: 0,
         });
 
-        queue.enqueue(IntelRequest {
-            entity_id: "gamma".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "gamma".to_string(),
             entity_type: "project".to_string(),
             priority: IntelPriority::CalendarChange,
             requested_at: Instant::now(),
@@ -3251,8 +3348,7 @@ mod tests {
         let queue = IntelligenceQueue::new();
 
         // First enqueue succeeds
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3264,8 +3360,7 @@ mod tests {
         assert!(queue.is_empty());
 
         // Second enqueue within debounce window is suppressed
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3281,8 +3376,7 @@ mod tests {
         let queue = IntelligenceQueue::new();
 
         // First: content change
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3293,8 +3387,7 @@ mod tests {
         let _ = queue.dequeue();
 
         // Manual request should bypass debounce
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
@@ -3337,16 +3430,14 @@ mod tests {
     fn test_intel_queue_multiple_entities() {
         let queue = IntelligenceQueue::new();
 
-        queue.enqueue(IntelRequest {
-            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
             retry_count: 0,
         });
 
-        queue.enqueue(IntelRequest {
-            entity_id: "beta-project".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "beta-project".to_string(),
             entity_type: "project".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3365,8 +3456,7 @@ mod tests {
         let queue = IntelligenceQueue::new();
 
         for name in &["alpha", "beta", "gamma", "delta"] {
-            queue.enqueue(IntelRequest {
-                entity_id: name.to_string(),
+            let _ = queue.enqueue(IntelRequest {                entity_id: name.to_string(),
                 entity_type: "account".to_string(),
                 priority: IntelPriority::ContentChange,
                 requested_at: Instant::now(),
@@ -3386,22 +3476,19 @@ mod tests {
     fn test_dequeue_batch_returns_by_priority() {
         let queue = IntelligenceQueue::new();
 
-        queue.enqueue(IntelRequest {
-            entity_id: "low".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "low".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
             retry_count: 0,
         });
-        queue.enqueue(IntelRequest {
-            entity_id: "high".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "high".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
             retry_count: 0,
         });
-        queue.enqueue(IntelRequest {
-            entity_id: "mid".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "mid".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::CalendarChange,
             requested_at: Instant::now(),
@@ -3426,8 +3513,7 @@ mod tests {
     fn test_dequeue_batch_fewer_than_max() {
         let queue = IntelligenceQueue::new();
 
-        queue.enqueue(IntelRequest {
-            entity_id: "only-one".to_string(),
+        let _ = queue.enqueue(IntelRequest {            entity_id: "only-one".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),

@@ -68,6 +68,9 @@ jobs:
       - name: Enforce write_intelligence_json fence usage (DOS-311)
         run: ./scripts/check_write_fence_usage.sh
 
+      - name: Enforce SubjectRef::Global spine restriction (DOS-310)
+        run: ./scripts/check_no_global_subject_in_spine.sh
+
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
 
