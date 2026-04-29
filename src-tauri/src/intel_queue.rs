@@ -1003,10 +1003,18 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     // user-visible toast on scheduled work, keep audit log.
                     let is_background = is_background_priority(request.priority);
                     tauri::async_runtime::spawn(async move {
-                        let provider =
-                            crate::intelligence::glean_provider::GleanIntelligenceProvider::new(
-                                &endpoint,
-                            );
+                        // DOS-259 (W2-B): route through AppState-owned Glean
+                        // provider Arc per ADR-0091; fall back to inline
+                        // construction if the bridge is somehow empty despite
+                        // is_remote being true (defensive — should not happen).
+                        let provider = match state_for_spawn.glean_intelligence_provider() {
+                            Some(p) => p,
+                            None => std::sync::Arc::new(
+                                crate::intelligence::glean_provider::GleanIntelligenceProvider::new(
+                                    &endpoint,
+                                ),
+                            ),
+                        };
                         let ls_start = std::time::Instant::now();
                         match provider
                             .enrich_leading_signals_with_disambiguators(
@@ -1513,7 +1521,16 @@ async fn run_glean_enrichment_with_fallback(
         }
     };
 
-    let provider = crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
+    // DOS-259 (W2-B): route through AppState-owned Glean provider Arc per
+    // ADR-0091 instead of constructing inline. Settings-change swap takes
+    // effect on next batch. Defensive fallback to inline construction if
+    // the bridge is empty despite is_remote being true.
+    let provider = match state.glean_intelligence_provider() {
+        Some(p) => p,
+        None => std::sync::Arc::new(
+            crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint),
+        ),
+    };
 
     let mut results = Vec::new();
     let mut pty_fallback_inputs: Vec<(IntelRequest, EnrichmentInput)> = Vec::new();
@@ -1730,14 +1747,28 @@ fn run_parallel_enrichment(
         std::thread::spawn(move || {
             let dim_start = Instant::now();
 
-            let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_cfg)
-                .with_usage_context(dimension_usage_context)
-                .with_timeout(DIMENSION_ENRICHMENT_TIMEOUT_SECS)
-                .with_nice_priority(10);
+            // DOS-259 (W2-B): route through PtyClaudeCode trait surface (sync
+            // helper) instead of constructing PtyManager inline. Behavior
+            // parity preserved — same tier/timeout/nice_priority/usage_context.
+            // The sync helper bridges async-trait callers; ReplayProvider
+            // substitution lands when intel_queue's sync orchestration is
+            // async-ified (W3-A migration).
+            let pty_provider = crate::intelligence::pty_provider::PtyClaudeCode::new(
+                std::sync::Arc::new(ai_cfg.clone()),
+                workspace.clone(),
+                dimension_usage_context,
+            );
+            let prompt_input =
+                crate::intelligence::provider::PromptInput::new(dim_prompt.clone())
+                    .with_workspace(workspace.clone());
 
-            let result = pty
-                .spawn_claude(&workspace, &dim_prompt)
-                .map_err(|e| format!("PTY error for dimension {}: {}", dim_name, e))
+            let result = pty_provider
+                .complete_blocking(prompt_input, ModelTier::Extraction)
+                .map(|completion| crate::pty::ClaudeOutput {
+                    stdout: completion.text,
+                    exit_code: 0,
+                })
+                .map_err(|e| format!("PTY error for dimension {}: {:?}", dim_name, e))
                 .and_then(|output| {
                     let intel = parse_intelligence_response(
                         &output.stdout,
@@ -1942,13 +1973,23 @@ fn run_enrichment_legacy(
     ai_config: &AiModelConfig,
     usage_context: &AiUsageContext,
 ) -> Result<EnrichmentParseResult, String> {
-    let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
-        .with_usage_context(usage_context.clone().with_tier(ModelTier::Synthesis))
-        .with_timeout(DIMENSION_ENRICHMENT_TIMEOUT_SECS)
-        .with_nice_priority(10);
-    let output = pty
-        .spawn_claude(&input.workspace, &input.prompt)
-        .map_err(|e| format!("Claude Code error: {}", e))?;
+    // DOS-259 (W2-B): legacy synthesis path migrated through PtyClaudeCode
+    // sync helper. Behavior parity preserved (same Synthesis tier + 240s
+    // timeout from PtyClaudeCode::timeout_for_tier(Synthesis)).
+    let pty_provider = crate::intelligence::pty_provider::PtyClaudeCode::new(
+        std::sync::Arc::new(ai_config.clone()),
+        input.workspace.clone(),
+        usage_context.clone(),
+    );
+    let prompt_input = crate::intelligence::provider::PromptInput::new(input.prompt.clone())
+        .with_workspace(input.workspace.clone());
+    let completion = pty_provider
+        .complete_blocking(prompt_input, ModelTier::Synthesis)
+        .map_err(|e| format!("Claude Code error: {:?}", e))?;
+    let output = crate::pty::ClaudeOutput {
+        stdout: completion.text,
+        exit_code: 0,
+    };
 
     // I305: Extract and persist keywords from the raw AI response
     if let Some(keywords_json) = crate::intelligence::extract_keywords_from_response(&output.stdout)

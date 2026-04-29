@@ -634,7 +634,7 @@ fn parse_usage_day(value: &str) -> Option<chrono::NaiveDate> {
 /// Model tier for AI operations (I174).
 ///
 /// Maps to configured model names via `AiModelConfig`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ModelTier {
     /// Intelligence, briefing, week narrative — needs synthesis
     Synthesis,

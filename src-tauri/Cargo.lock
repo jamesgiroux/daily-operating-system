@@ -1104,6 +1104,7 @@ name = "dailyos"
 version = "1.2.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "block2",
  "calamine",

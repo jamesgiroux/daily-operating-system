@@ -220,10 +220,20 @@ pub async fn enrich_entity(
     let parsed = if is_remote {
         // Try Glean-first path
         let mut glean_result = None;
-        if let (Some(ref endpoint), Some(ref ctx)) = (&glean_endpoint, &input.intelligence_context)
-        {
-            let provider =
-                crate::intelligence::glean_provider::GleanIntelligenceProvider::new(endpoint);
+        if let (Some(_endpoint), Some(ref ctx)) = (&glean_endpoint, &input.intelligence_context) {
+            // DOS-259 (W2-B): route through AppState-owned Glean provider Arc
+            // per ADR-0091 instead of constructing inline. Settings-change swap
+            // takes effect on next call. If the Arc is missing here despite
+            // is_remote being true, fall back to inline construction so we
+            // don't silently skip the user-initiated refresh.
+            let provider = match state.glean_intelligence_provider() {
+                Some(p) => p,
+                None => std::sync::Arc::new(
+                    crate::intelligence::glean_provider::GleanIntelligenceProvider::new(
+                        glean_endpoint.as_deref().unwrap_or(""),
+                    ),
+                ),
+            };
             // This path is the services::intelligence manual-refresh entry,
             // always user-initiated — pass is_background=false so the UI
             // gets degraded/fallback toasts.

@@ -56,7 +56,7 @@ mod privacy;
 pub mod proactive;
 mod processor;
 pub mod projects;
-mod pty;
+pub mod pty;
 pub mod queries;
 pub mod quill;
 pub mod reports;

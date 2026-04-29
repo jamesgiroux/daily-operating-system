@@ -6,6 +6,8 @@ pub mod glean_leading_signals;
 pub mod glean_prompts;
 pub mod glean_provider;
 pub mod health_scoring;
+pub mod provider;
+pub mod pty_provider;
 pub mod io;
 pub mod lifecycle;
 pub mod predictions;

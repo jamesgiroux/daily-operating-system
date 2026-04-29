@@ -68,6 +68,9 @@ rand = "0.10"
 rand_distr = "0.6"
 strsim = "0.11"
 
+# DOS-259 (W2-B): IntelligenceProvider trait — async fn in dyn-compatible trait
+async-trait = "0.1"
+
 # ADR-0095: Glean context provider cache (concurrent hash map)
 dashmap = "6"
 
