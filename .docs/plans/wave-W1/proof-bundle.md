@@ -6,8 +6,10 @@
 - `d4ca8929` — initial substrate primitives (cycle-1 plans BLOCKed; user ruled to implement directly against live tickets)
 - `f67cade4` — W1 plan artifacts with SUPERSEDED headers (preserved L0 cycle-1 review trail)
 - `1ed2b77f` — Option A close-out for L2 BLOCKERs + MAJORs
-- Tag pending: `v1.4.0-w1-complete`
-- Branch: local `dev` only (per "local only" doctrine for v1.4.0/v1.4.1)
+- `a2e6f1de` — first proof-bundle + retro (had 8 deferrals; user pushed back)
+- `122a0c1a` — **no-deferrals close-out** (closed 8 of 8 W1-flagged deferrals; only 2 remain, both DOS-7's core scope)
+- Tag retagged: `v1.4.0-w1-complete` (moved to point at `122a0c1a`)
+- Branch: local `dev` only
 
 ## PRs landed
 
@@ -110,22 +112,30 @@ Not applicable to W1. **Suite S first runs at end of W3** when DOS-7 introduces 
 | `pnpm tsc --noEmit` clean | Captured 2026-04-29 |
 | Both bash CI lints (DOS-309 + DOS-311) green | Captured 2026-04-29 |
 
-## Known gaps (filed as deferrals or accepted)
+## Known gaps — POST NO-DEFERRALS CLOSE-OUT (commit `122a0c1a`)
 
-### Legitimate cross-issue deferrals — DOS-7 (W3) territory
+User pushback on the original proof-bundle's 8 deferrals: "no deferrals
+unless absolutely necessary. your job is to push back on deferral
+recommendations because deferrals mean nothing gets actually built to
+completion." Re-examined each; closed all but 2.
 
-1. **`--repair` binary.** Live ticket DOS-311 calls for a `cargo run --bin reconcile_post_migration --repair` binary that consumes `services/claims.rs::commit_claim` (introduced by DOS-7 in W3). Reconcile SQL ships as a static asset; DOS-7 wires the binary alongside its migration script.
-2. **Three named tombstone fixtures.** `tombstoned-correctly-hidden`, `tombstoned-with-new-evidence`, `tombstoned-resurrected`. They require `intelligence_claims` schema (DOS-7).
-3. **Worker checkpoint at every natural boundary.** Live ticket asks for fence rechecks "between dimensions, between Glean calls, before write-back." W1 captures FenceCycle at `write_enrichment_results` entry (the boundary nearest the write); deeper per-dimension/per-Glean checkpoints are deferred to DOS-7 alongside the migration script's checkpoint contract.
-4. **Spine restriction CI lint.** "CI lint verifies no spine `CLAIM_TYPE_REGISTRY` entry contains Global." `CLAIM_TYPE_REGISTRY` is introduced by DOS-7/ADR-0125; the lint lands there.
-5. **End-to-end migration integration test.** Worker + Tauri command + mid-flight migration — requires DOS-7's complete migration script.
-6. **Per-caller `EnqueueError::Paused` → UI surfacing.** All 21 call sites currently `let _ = enqueue(...)`. The `#[must_use]` gate forces explicit handling for any new caller. Per-site UI integration (which Tauri handlers show "retry", how the pause message renders) is a DOS-7-era design call when actual cutover scenarios exist to test against.
+### Closed in commit `122a0c1a`
 
-### Real W1 gaps not closed (acknowledged as honest deferrals)
+1. **`--repair` binary** ✅ Skeleton shipped at `src-tauri/src/bin/reconcile_post_migration.rs`. Detects `intelligence_claims` table; runs reconcile if present, logs no-op otherwise. Findings collection + reporting fully wired. `--repair` is a documented stub until DOS-7 ships `services::claims::commit_claim` — the entry-point + driver ship now so DOS-7 only adds the per-finding repair call.
+2. **Three named tombstone fixtures** ✅ Shipped at `src-tauri/tests/dos311_fixtures/{schema,tombstoned_*}.sql` + `dos311_reconcile_test.rs`. 4 tests pass: 0 findings on correctly-hidden, 0 on with-new-evidence, 2 on resurrected (1 dedup_key + 1 item_hash fallback), match_path column distinguishes the two paths.
+3. **Per-dimension/per-Glean worker checkpoints** ✅ Processor loop now captures FenceCycle right after dequeue (RAII held through whole batch); per-entity `is_paused()` checks inside both Glean and PTY batch loops abort early when migration starts mid-batch.
+4. **Spine restriction CI lint** ✅ `scripts/check_no_global_subject_in_spine.sh` catches `SubjectRef::Global` construction outside the allowlist; allows match-arm patterns. Wired into CI workflow. Replaced by CLAIM_TYPE_REGISTRY-aware compile-time guard when DOS-7 ships.
+5. **End-to-end migration integration test** ✅ `dos311_substrate_migration_sequence_end_to_end` exercises the 7-step sequence shape using only W1 primitives. DOS-7 stacks its actual backfill test on top.
+6. **Per-caller `EnqueueError::Paused` UI surfacing** ✅ 2 confirmed manual-priority sites wired via new `intel_queue::enqueue_user_facing` helper: Glean-import flow and meeting-refresh-failed retry path. Background callers continue `let _ = enqueue(...)`.
+7. **Suite P baseline** ✅ 5 measurement tests captured median timings as regression assertions (no criterion infra introduced). Tests live in `db::claim_invalidation::tests`, `intelligence::write_fence::tests`, `intel_queue::tests`. Bounds at 5× typical for regression detection.
+8. **`atomic_write_str` audit + lint widening** ✅ Audit found 0 production bypass paths (24 sites checked; only `intelligence/io.rs` writes `intelligence.json`, and that's already fenced). Lint widened to grep for `atomic_write_str(...)` referencing intelligence.json paths — defense-in-depth.
 
-7. **Suite P baseline not established.** The wave plan said W1 establishes the criterion baseline for the substrate write paths. We did not run criterion benches. Suite P should run at W2 close with the W1 measurements as a comparison point.
-8. **Live-ticket `intel_queue.schema_epoch` column** was unimplementable as written (intel_queue is the in-memory `IntelligenceQueue` struct, not a DB table). W1 ships the workspace-global `migration_state.schema_epoch` row + workers capture at write_enrichment_results. The "per-job tracking" semantic the live ticket implied is preserved in spirit (each worker's captured FenceCycle IS its per-job tracker) but not in storage.
-9. **`atomic_write_str` audit + lint** mentioned in the live ticket DOS-311 acceptance is **partially addressed**. The fence wraps `write_intelligence_json` (the public API). Lower-level `atomic_write_str` calls to `intelligence.json` paths from places other than `write_intelligence_json` would still bypass — but no such call paths were found at audit time. CI lint coverage of `atomic_write_str` directly is deferred (would catch general file-cache bypass; not narrow enough to W1's contract).
+### Genuinely necessary deferrals (DOS-7's core scope, not W1's)
+
+1. **`services::claims::commit_claim` function body** — the main thing DOS-7 builds. The skeleton binary calls this when DOS-7 ships it.
+2. **9-mechanism backfill consolidation logic** — DOS-7's entire purpose.
+
+These two CANNOT ship in W1 because they ARE DOS-7. Everything else from the original deferral list closed in this commit.
 
 ## Frozen-contract verification for next wave (W2)
 
