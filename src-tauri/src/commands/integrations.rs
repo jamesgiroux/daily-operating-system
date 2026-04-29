@@ -2761,8 +2761,7 @@ pub async fn set_context_mode(
     {
         use crate::intel_queue::{IntelPriority, IntelRequest};
         for (id, typ) in &targets {
-            state.intel_queue.enqueue(IntelRequest::new(
-                id.clone(),
+            let _ = state.intel_queue.enqueue(IntelRequest::new(                id.clone(),
                 typ.clone(),
                 IntelPriority::ProactiveHygiene,
             ));
@@ -2857,8 +2856,7 @@ pub async fn start_glean_auth(
                     use crate::intel_queue::{IntelPriority, IntelRequest};
                     let count = entities_to_enqueue.len();
                     for (entity_id, entity_type) in entities_to_enqueue {
-                        state.intel_queue.enqueue(IntelRequest::new(
-                            entity_id,
+                        let _ = state.intel_queue.enqueue(IntelRequest::new(                            entity_id,
                             entity_type,
                             IntelPriority::ProactiveHygiene,
                         ));
@@ -3567,8 +3565,7 @@ async fn import_account_from_glean_internal(
         }
     }
 
-    state
-        .intel_queue
+    let _ = state        .intel_queue
         .enqueue(crate::intel_queue::IntelRequest::new(
             account_id.clone(),
             "account".to_string(),

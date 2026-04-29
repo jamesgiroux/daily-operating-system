@@ -1861,8 +1861,7 @@ fn queue_person_intelligence(
             }
         }
 
-        queue.enqueue(crate::intel_queue::IntelRequest::new(
-            entity_id,
+        let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(            entity_id,
             "person".to_string(),
             crate::intel_queue::IntelPriority::CalendarChange,
         ));

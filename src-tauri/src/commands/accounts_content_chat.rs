@@ -1118,8 +1118,7 @@ pub async fn index_entity_files(
             requested_at: std::time::Instant::now(),
         });
     state.integrations.embedding_queue_wake.notify_one();
-    state
-        .intel_queue
+    let _ = state        .intel_queue
         .enqueue(crate::intel_queue::IntelRequest::new(
             entity_id,
             entity_type,

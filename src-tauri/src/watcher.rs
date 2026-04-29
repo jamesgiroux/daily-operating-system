@@ -446,8 +446,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                 requested_at: std::time::Instant::now(),
                             },
                         );
-                        state
-                            .intel_queue
+                        let _ = state                            .intel_queue
                             .enqueue(crate::intel_queue::IntelRequest::new(
                                 entity_id.clone(),
                                 "account".to_string(),
@@ -482,8 +481,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                 requested_at: std::time::Instant::now(),
                             },
                         );
-                        state
-                            .intel_queue
+                        let _ = state                            .intel_queue
                             .enqueue(crate::intel_queue::IntelRequest::new(
                                 entity_id.clone(),
                                 "project".to_string(),

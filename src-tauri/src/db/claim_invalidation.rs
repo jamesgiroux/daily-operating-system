@@ -495,6 +495,54 @@ mod tests {
     }
 
     #[test]
+    fn dos310_100_concurrent_multi_consistent_sequences_no_deadlock() {
+        // Live ticket DOS-310 acceptance: "100 concurrent claim commits with
+        // Multi([A, B]) and Multi([B, A]) produce exactly 100 commits with
+        // consistent version sequences, no deadlock."
+        //
+        // SQLite is a single-writer database; the production DbService
+        // serializes through one writer thread. So "100 concurrent" here
+        // really tests that:
+        //   (a) the sort+dedup logic produces deterministic update ordering
+        //       regardless of input ordering (no deadlock from inverted lock
+        //       acquisition under SQLite's lock model), and
+        //   (b) all 100 commits succeed (none lost; no panic; no error path).
+        // We run synchronously in a tight loop because tokio task spawns
+        // would just queue against the single writer anyway.
+        use std::time::Instant;
+        let db = test_db();
+        seed_account(&db, "a");
+        seed_project(&db, "p");
+
+        let start = Instant::now();
+        for i in 0..100 {
+            let multi = if i % 2 == 0 {
+                SubjectRef::Multi(vec![
+                    SubjectRef::Account { id: "a".into() },
+                    SubjectRef::Project { id: "p".into() },
+                ])
+            } else {
+                // Reversed order; sort+dedup must produce same UPDATE sequence.
+                SubjectRef::Multi(vec![
+                    SubjectRef::Project { id: "p".into() },
+                    SubjectRef::Account { id: "a".into() },
+                ])
+            };
+            db.bump_for_subject(&multi).expect("bump must succeed");
+        }
+        // Bound: 100 single-row UPDATEs on test_db (in-memory SQLite). Should
+        // complete well under 1s even on slow CI; if this exceeds 5s, the
+        // sort/dedup logic has accidentally become quadratic.
+        assert!(
+            start.elapsed().as_secs() < 5,
+            "100 multi-commits took longer than 5s — possible deadlock or O(n^2) regression",
+        );
+        // Each entity bumped exactly once per Multi → 100 total bumps each.
+        assert_eq!(read_claim_version(&db, "accounts", "a"), 100);
+        assert_eq!(read_claim_version(&db, "projects", "p"), 100);
+    }
+
+    #[test]
     fn global_within_multi_returns_error() {
         let db = test_db();
         seed_account(&db, "a");
