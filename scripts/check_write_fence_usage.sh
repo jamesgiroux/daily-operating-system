@@ -27,36 +27,49 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PATTERN='\bwrite_intelligence_json[[:space:]]*\('
 
 violations=0
-while IFS= read -r line; do
+check_line() {
+  local line="$1"
   # Path-based allowlist
   case "$line" in
-    "$ROOT_DIR/src-tauri/src/intelligence/write_fence.rs"*) continue ;;
-    "$ROOT_DIR/src-tauri/src/intelligence/io.rs"*) continue ;;
-    "$ROOT_DIR/src-tauri/tests/"*) continue ;;
-    "$ROOT_DIR/.docs/"*) continue ;;
-    "$ROOT_DIR/scripts/"*) continue ;;
+    "$ROOT_DIR/src-tauri/src/intelligence/write_fence.rs"*) return 0 ;;
+    "$ROOT_DIR/src-tauri/src/intelligence/io.rs"*) return 0 ;;
+    "$ROOT_DIR/src-tauri/tests/"*) return 0 ;;
+    "$ROOT_DIR/.docs/"*) return 0 ;;
+    "$ROOT_DIR/scripts/"*) return 0 ;;
   esac
 
   # Inline marker exemption: a `// fence-exempt: <reason>` comment within 3
   # lines above the call deliberately bypasses the fence (test cleanup,
-  # imports, etc.). Extract <file>:<lineno>:<text> from grep -rEn output.
-  file_part="${line%%:*}"
-  rest="${line#*:}"
-  lineno="${rest%%:*}"
+  # imports, etc.).
+  local file_part="${line%%:*}"
+  local rest="${line#*:}"
+  local lineno="${rest%%:*}"
   if [ -n "$lineno" ] && [ -f "$file_part" ]; then
-    start=$((lineno - 3))
+    local start=$((lineno - 3))
     [ "$start" -lt 1 ] && start=1
     if sed -n "${start},${lineno}p" "$file_part" 2>/dev/null \
         | grep -q "fence-exempt:"; then
-      continue
+      return 0
     fi
   fi
 
   echo "$line"
   violations=$((violations + 1))
-done < <(grep -rEn "$PATTERN" \
-  "$ROOT_DIR/src-tauri/src/" \
-  2>/dev/null || true)
+}
+
+# Direct write_intelligence_json calls (the function-level guard).
+while IFS= read -r line; do
+  check_line "$line"
+done < <(grep -rEn "$PATTERN" "$ROOT_DIR/src-tauri/src/" 2>/dev/null || true)
+
+# DOS-311 follow-up: also catch any atomic_write_str call whose path
+# argument references intelligence.json. The W1 audit found no such
+# bypass today; this guard prevents future regressions where a caller
+# constructs an intelligence.json path manually and writes it raw.
+ATOMIC_PATTERN='atomic_write_str[[:space:]]*\([^)]*intelligence(\.json|/io|_json|"[[:space:]]*[,)])'
+while IFS= read -r line; do
+  check_line "$line"
+done < <(grep -rEn "$ATOMIC_PATTERN" "$ROOT_DIR/src-tauri/src/" 2>/dev/null || true)
 
 if [ "$violations" -gt 0 ]; then
   echo

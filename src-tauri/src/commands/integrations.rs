@@ -3565,12 +3565,17 @@ async fn import_account_from_glean_internal(
         }
     }
 
-    let _ = state        .intel_queue
-        .enqueue(crate::intel_queue::IntelRequest::new(
+    // DOS-311: this path runs at Manual or Onboarding priority (see callers
+    // at lines 3627 and 3918). User-facing Glean import; surface
+    // EnqueueError::Paused as a retry message rather than silently dropping.
+    crate::intel_queue::enqueue_user_facing(
+        &state.intel_queue,
+        crate::intel_queue::IntelRequest::new(
             account_id.clone(),
             "account".to_string(),
             priority,
-        ));
+        ),
+    )?;
 
     Ok(account_id)
 }

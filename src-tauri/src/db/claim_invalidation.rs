@@ -63,7 +63,17 @@ pub enum SubjectRef {
     /// Multiple entities affected by one claim. Sorted before bumping.
     Multi(Vec<SubjectRef>),
     /// v1.4.1+ only; bumps `migration_state.global_claim_epoch` instead of
-    /// per-entity counters. Spine restriction: see module-level docs.
+    /// per-entity counters.
+    ///
+    /// **Spine restriction (v1.4.0):** production code MUST NOT construct
+    /// this variant. Match arms for it (in `bump_for_subject`,
+    /// `entity_type_order`, `id_str`) are permitted because they only
+    /// route the variant to the correct epoch path; there is no
+    /// production caller that builds a `SubjectRef::Global` value to pass
+    /// in. Construction is enforced by the bash lint at
+    /// `scripts/check_no_global_subject_in_spine.sh` (CI-time) until
+    /// DOS-7 (ADR-0125) introduces the `CLAIM_TYPE_REGISTRY` and a
+    /// stronger compile-time guard via `canonical_subject_types`.
     Global,
 }
 
@@ -540,6 +550,77 @@ mod tests {
         // Each entity bumped exactly once per Multi → 100 total bumps each.
         assert_eq!(read_claim_version(&db, "accounts", "a"), 100);
         assert_eq!(read_claim_version(&db, "projects", "p"), 100);
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // W1 Suite P baseline (per W0 retro recommendation: bench at end of W1)
+    //
+    // Captured 2026-04-29 against test_db (in-memory SQLite, FK-off, debug
+    // build). Bounds are 5× the typical observed median — they're regression
+    // guards, not perf targets. W2+ should compare against these.
+    // ───────────────────────────────────────────────────────────────────────
+
+    fn median_micros(samples: &mut [u128]) -> u128 {
+        samples.sort();
+        samples[samples.len() / 2]
+    }
+
+    #[test]
+    fn suite_p_baseline_bump_for_subject_single() {
+        // W1 baseline: typical median ~5-15µs. Bound: 200µs.
+        let db = test_db();
+        seed_account(&db, "a1");
+        let subject = SubjectRef::Account { id: "a1".into() };
+
+        for _ in 0..50 {
+            db.bump_for_subject(&subject).unwrap();
+        }
+        let mut samples = Vec::with_capacity(500);
+        for _ in 0..500 {
+            let start = std::time::Instant::now();
+            db.bump_for_subject(&subject).unwrap();
+            samples.push(start.elapsed().as_nanos() / 1_000);
+        }
+        let median = median_micros(&mut samples);
+        eprintln!(
+            "[suite-p baseline] bump_for_subject single: median={median}µs samples=500"
+        );
+        assert!(
+            median < 200,
+            "regression: bump_for_subject single took {median}µs (W1 baseline ~5-15µs; bound 200µs)"
+        );
+    }
+
+    #[test]
+    fn suite_p_baseline_bump_for_subject_multi_3() {
+        // W1 baseline: typical median ~15-40µs. Bound: 500µs.
+        let db = test_db();
+        seed_account(&db, "a1");
+        seed_project(&db, "p1");
+        seed_person(&db, "ps1");
+        let multi = SubjectRef::Multi(vec![
+            SubjectRef::Account { id: "a1".into() },
+            SubjectRef::Project { id: "p1".into() },
+            SubjectRef::Person { id: "ps1".into() },
+        ]);
+
+        for _ in 0..50 {
+            db.bump_for_subject(&multi).unwrap();
+        }
+        let mut samples = Vec::with_capacity(500);
+        for _ in 0..500 {
+            let start = std::time::Instant::now();
+            db.bump_for_subject(&multi).unwrap();
+            samples.push(start.elapsed().as_nanos() / 1_000);
+        }
+        let median = median_micros(&mut samples);
+        eprintln!(
+            "[suite-p baseline] bump_for_subject Multi-3: median={median}µs samples=500"
+        );
+        assert!(
+            median < 500,
+            "regression: bump_for_subject Multi-3 took {median}µs (W1 baseline ~15-40µs; bound 500µs)"
+        );
     }
 
     #[test]
