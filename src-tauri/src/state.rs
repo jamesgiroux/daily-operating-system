@@ -1363,7 +1363,8 @@ pub fn run_startup_sync(state: &AppState) {
     }
 
     // Migrate legacy people notes to entity_context_entries (idempotent)
-    match crate::services::entity_context::migrate_legacy_notes(&db) {
+    let ctx = state.live_service_context();
+    match crate::services::entity_context::migrate_legacy_notes(&ctx, &db) {
         Ok(n) if n > 0 => log::info!("Startup sync: migrated {} legacy notes", n),
         Ok(_) => {}
         Err(e) => log::warn!("Startup sync: legacy notes migration failed: {}", e),

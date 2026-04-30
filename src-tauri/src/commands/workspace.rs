@@ -1175,7 +1175,8 @@ pub async fn set_user_profile(
 pub async fn get_user_entity(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::UserEntity, String> {
-    crate::services::user_entity::get_user_entity(&state).await
+    let ctx = state.live_service_context();
+    crate::services::user_entity::get_user_entity(&ctx, &state).await
 }
 
 /// Update a single field on the user entity.
@@ -1185,7 +1186,8 @@ pub async fn update_user_entity_field(
     value: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::user_entity::update_user_entity_field(&field, &value, &state).await
+    let ctx = state.live_service_context();
+    crate::services::user_entity::update_user_entity_field(&ctx, &field, &value, &state).await
 }
 
 /// Get all user context entries.
@@ -1203,7 +1205,8 @@ pub async fn create_user_context_entry(
     content: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::UserContextEntry, String> {
-    crate::services::user_entity::create_user_context_entry(&title, &content, &state).await
+    let ctx = state.live_service_context();
+    crate::services::user_entity::create_user_context_entry(&ctx, &title, &content, &state).await
 }
 
 /// Update an existing user context entry.
@@ -1214,7 +1217,9 @@ pub async fn update_user_context_entry(
     content: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::user_entity::update_user_context_entry(&id, &title, &content, &state).await
+    let ctx = state.live_service_context();
+    crate::services::user_entity::update_user_context_entry(&ctx, &id, &title, &content, &state)
+        .await
 }
 
 /// Delete a user context entry.
@@ -1223,7 +1228,8 @@ pub async fn delete_user_context_entry(
     id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::user_entity::delete_user_context_entry(&id, &state).await
+    let ctx = state.live_service_context();
+    crate::services::user_entity::delete_user_context_entry(&ctx, &id, &state).await
 }
 
 /// Get all entity context entries for an entity.
@@ -1245,7 +1251,9 @@ pub async fn create_entity_context_entry(
     content: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::EntityContextEntry, String> {
+    let ctx = state.live_service_context();
     crate::services::entity_context::create_entry(
+        &ctx,
         &entity_type,
         &entity_id,
         &title,
@@ -1263,7 +1271,8 @@ pub async fn update_entity_context_entry(
     content: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::entity_context::update_entry(&id, &title, &content, &state).await
+    let ctx = state.live_service_context();
+    crate::services::entity_context::update_entry(&ctx, &id, &title, &content, &state).await
 }
 
 /// Delete an entity context entry.
@@ -1272,7 +1281,8 @@ pub async fn delete_entity_context_entry(
     id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::entity_context::delete_entry(&id, &state).await
+    let ctx = state.live_service_context();
+    crate::services::entity_context::delete_entry(&ctx, &id, &state).await
 }
 
 /// Process a user attachment from the /me page dropzone.

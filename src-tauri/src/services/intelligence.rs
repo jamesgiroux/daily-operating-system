@@ -505,6 +505,7 @@ pub fn persist_entity_keywords(
         }
 
         crate::services::signals::emit(
+            ctx,
             tx,
             entity_type,
             entity_id,
@@ -537,6 +538,7 @@ pub fn upsert_assessment_from_enrichment(
         tx.upsert_entity_intelligence(&intel)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             engine,
             entity_type,
@@ -562,6 +564,7 @@ pub fn upsert_assessment_from_enrichment(
     if entity_type == "account" {
         if let Some(ref commitments) = intel.open_commitments {
             match crate::services::commitment_bridge::sync_ai_commitments(
+            ctx,
                 db,
                 entity_type,
                 entity_id,
@@ -664,6 +667,7 @@ pub fn upsert_health_outlook_signals(
 
         if let Some(payload) = derived.champion_at_risk {
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 engine,
                 entity_type,
@@ -678,6 +682,7 @@ pub fn upsert_health_outlook_signals(
 
         if let Some(payload) = derived.sentiment_divergence {
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 engine,
                 entity_type,
@@ -692,6 +697,7 @@ pub fn upsert_health_outlook_signals(
 
         for payload in derived.competitor_decision_relevant {
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 engine,
                 entity_type,
@@ -706,6 +712,7 @@ pub fn upsert_health_outlook_signals(
 
         if let Some(payload) = derived.budget_cycle_locked {
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 engine,
                 entity_type,
@@ -810,6 +817,7 @@ pub fn upsert_inferred_relationships_from_enrichment(
                     rel.relationship_type
                 );
                 crate::services::signals::emit_and_propagate(
+            ctx,
                     tx,
                     engine,
                     entity_type,
@@ -906,12 +914,17 @@ pub async fn update_intelligence_field(
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
                     .map_err(|e| e.to_string())?;
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 let (signal_type, source, confidence) = if is_curation {
                     ("intelligence_curated", "user_curation", 0.5)
                 } else {
                     ("user_correction", "user_edit", 1.0)
                 };
                 crate::services::signals::emit(
+                    &ctx,
                     tx,
                     &entity_type,
                     &entity_id,
@@ -1098,7 +1111,12 @@ pub async fn update_stakeholders(
                     }
                 }
 
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 crate::services::signals::emit_and_propagate(
+                    &ctx,
                     tx,
                     &engine,
                     &entity_type,
@@ -1276,7 +1294,12 @@ pub async fn dismiss_intelligence_item(
             // which can enqueue cross-entity intel work; running it after commit
             // means a downstream propagation failure cannot roll back the user's
             // dismiss intent. DB is the source of truth; emission failures log.
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             if let Err(e) = crate::services::signals::emit_and_propagate(
+                &ctx,
                 db,
                 &engine,
                 &entity_type,
@@ -1577,7 +1600,12 @@ pub async fn track_recommendation(
             }
 
             // Emit recommendation_accepted signal
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             let _ = crate::services::signals::emit_and_propagate(
+                &ctx,
                 db,
                 &engine,
                 &entity_type,
@@ -1669,7 +1697,12 @@ pub async fn dismiss_recommendation(
                 .map_err(|e| e.to_string())?;
 
             // Post-commit signal emission. Failures log; DB is source of truth.
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             if let Err(e) = crate::services::signals::emit_and_propagate(
+                &ctx,
                 db,
                 &engine,
                 &entity_type,
@@ -1805,7 +1838,12 @@ pub async fn mark_commitment_done(
             db.upsert_entity_intelligence(&intel)
                 .map_err(|e| e.to_string())?;
 
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             if let Err(e) = crate::services::signals::emit_and_propagate(
+                &ctx,
                 db,
                 &engine,
                 &entity_type,

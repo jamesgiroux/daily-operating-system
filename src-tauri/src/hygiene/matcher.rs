@@ -27,6 +27,10 @@ pub fn resolve_names_from_emails(
 
     let mut resolved = 0;
     let mut details = Vec::new();
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
     let mut stmt = match db.conn_ref().prepare(
         "SELECT DISTINCT sender_email, sender_name
@@ -59,7 +63,8 @@ pub fn resolve_names_from_emails(
         }
 
         let person_id = crate::util::person_id_from_email(&addr);
-        if crate::services::hygiene::update_person_name(db, &person_id, cleaned_name).is_ok() {
+        if crate::services::hygiene::update_person_name(&ctx, db, &person_id, cleaned_name).is_ok()
+        {
             details.push(HygieneFixDetail {
                 fix_type: "name_resolved".to_string(),
                 entity_name: Some(cleaned_name.to_string()),
@@ -116,6 +121,10 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> (usize, Vec<HygieneFixDetail
 
     let mut linked = 0;
     let mut details = Vec::new();
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
     for person in &people {
         // Check if already linked
         let already_linked = db
@@ -137,6 +146,7 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> (usize, Vec<HygieneFixDetail
         for (hint, account_id, account_name) in &account_hints {
             if (&domain_base == hint || (hint.len() >= 4 && domain_base.contains(hint.as_str())))
                 && crate::services::hygiene::link_person_to_entity(
+                    &ctx,
                     db,
                     &person.id,
                     account_id,
@@ -232,6 +242,10 @@ pub(super) fn dedup_people_by_domain_alias(
 
     let mut merged = 0;
     let mut details = Vec::new();
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
     for ((_local_part, _domains), group) in &groups {
         if group.len() < 2 {
@@ -248,8 +262,14 @@ pub(super) fn dedup_people_by_domain_alias(
 
         let keep = sorted[0];
         for &remove in &sorted[1..] {
-            if crate::services::hygiene::merge_people(db, &keep.id, &remove.id, "hygiene_alias")
-                .is_ok()
+            if crate::services::hygiene::merge_people(
+                &ctx,
+                db,
+                &keep.id,
+                &remove.id,
+                "hygiene_alias",
+            )
+            .is_ok()
             {
                 if details.len() < 5 {
                     details.push(HygieneFixDetail {
@@ -284,6 +304,10 @@ pub(super) fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFix
     let mut details = Vec::new();
     let mut already_merged: std::collections::HashSet<String> = std::collections::HashSet::new();
     const MAX_MERGES: usize = 10;
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
     for candidate in &candidates {
         if merged >= MAX_MERGES {
@@ -316,11 +340,18 @@ pub(super) fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFix
             }
         };
 
-        if crate::services::hygiene::merge_people(db, &keep_id, &remove_id, "hygiene_auto_merge")
-            .is_ok()
+        if crate::services::hygiene::merge_people(
+            &ctx,
+            db,
+            &keep_id,
+            &remove_id,
+            "hygiene_auto_merge",
+        )
+        .is_ok()
         {
             // Emit audit signal on the kept person
             if let Err(err) = crate::services::signals::emit(
+                &ctx,
                 db,
                 "person",
                 &keep_id,
@@ -392,9 +423,14 @@ pub(super) fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDe
 
     let mut linked = 0;
     let mut details = Vec::new();
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
     for (person_id, person_name, entity_id, account_name, shared_count) in &candidates {
         if crate::services::hygiene::link_person_to_entity(
+            &ctx,
             db,
             person_id,
             entity_id,
@@ -459,9 +495,14 @@ pub(super) fn resolve_names_from_calendar(db: &ActionDb) -> (usize, Vec<HygieneF
 
     let mut resolved = 0;
     let mut details = Vec::new();
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
     for (person_id, email, display_name) in &candidates {
-        if crate::services::hygiene::update_person_name(db, person_id, display_name).is_ok() {
+        if crate::services::hygiene::update_person_name(&ctx, db, person_id, display_name).is_ok()
+        {
             details.push(HygieneFixDetail {
                 fix_type: "name_resolved_calendar".to_string(),
                 entity_name: Some(display_name.clone()),

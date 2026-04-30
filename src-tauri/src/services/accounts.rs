@@ -713,6 +713,7 @@ fn emit_auto_completed_success_plan_signals(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     for milestone in &auto_completed.milestones {
         crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             engine,
             "account",
@@ -732,6 +733,7 @@ fn emit_auto_completed_success_plan_signals(
 
     for objective in &auto_completed.objectives {
         crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             engine,
             "account",
@@ -840,6 +842,7 @@ pub fn apply_lifecycle_transition(
         })
         .to_string();
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             engine,
             "account",
@@ -878,6 +881,7 @@ pub fn apply_lifecycle_transition(
                         milestone_title, account_id, transition.confidence
                     );
                     let _ = crate::services::signals::emit_and_propagate(
+            ctx,
                         tx,
                         engine,
                         "account",
@@ -935,6 +939,7 @@ pub fn ensure_account_lifecycle_state(
                 inferred_stage.as_deref().unwrap_or("")
             );
             let _ = crate::services::signals::emit_and_propagate(
+            ctx,
                 db,
                 engine,
                 "account",
@@ -1011,6 +1016,7 @@ pub fn confirm_lifecycle_change(
         .map_err(|e| e.to_string())?;
     let _ = db.upsert_signal_weight(&change.source, "account", "lifecycle_transition", 1.0, 0.0);
     crate::services::signals::emit_and_propagate(
+            ctx,
         db,
         engine,
         "account",
@@ -1041,6 +1047,7 @@ pub fn correct_account_product(
         .map_err(|e| e.to_string())?;
     let _ = db.upsert_signal_weight(source_to_penalize, "account", "product_adoption", 0.0, 1.0);
     crate::services::signals::emit_and_propagate(
+            ctx,
         db,
         engine,
         "account",
@@ -1168,6 +1175,7 @@ pub fn accept_account_field_conflict(
     })
     .to_string();
     if let Err(e) = crate::services::signals::emit_propagate_and_evaluate(
+            ctx,
         db,
         &state.signals.engine,
         "account",
@@ -1256,6 +1264,7 @@ pub fn dismiss_account_field_conflict(
     })
     .to_string();
     if let Err(e) = crate::services::signals::emit_propagate_and_evaluate(
+            ctx,
         db,
         &state.signals.engine,
         "account",
@@ -1638,6 +1647,7 @@ fn update_account_field_inner(
 
     // Emit field update signal + self-healing evaluation (I308, I410)
     crate::services::signals::emit_propagate_and_evaluate(
+            ctx,
         db,
         &state.signals.engine,
         "account",
@@ -1776,6 +1786,7 @@ pub fn update_technical_footprint_field(
     // Emit field-update signal + self-healing evaluation so the rest of
     // the Intelligence Loop picks up the user correction.
     crate::services::signals::emit_propagate_and_evaluate(
+            ctx,
         db,
         &state.signals.engine,
         "account",
@@ -1859,6 +1870,7 @@ pub fn set_user_health_sentiment(
 
     // Emit field_updated signal with high confidence (user-initiated)
     crate::services::signals::emit_propagate_and_evaluate(
+            ctx,
         db,
         &state.signals.engine,
         "account",
@@ -1958,6 +1970,7 @@ pub fn update_latest_sentiment_note(
 
     // Emit annotation-level signal (user augmented their journal entry).
     crate::services::signals::emit_propagate_and_evaluate(
+            ctx,
         db,
         &state.signals.engine,
         "account",
@@ -2020,6 +2033,7 @@ pub fn resolve_triage_item(
     // Best-effort signal emit — triage resolution is user-intent evidence
     // the card was accurate + actioned. Failure should not rollback.
     let _ = crate::services::signals::emit_propagate_and_evaluate(
+            ctx,
         db,
         &state.signals.engine,
         entity_type,
@@ -2254,6 +2268,7 @@ pub fn update_account_notes(
 
     // Emit field update signal (I377)
     crate::services::signals::emit_and_propagate(
+            ctx,
         db,
         &state.signals.engine,
         "account",
@@ -2305,6 +2320,7 @@ pub fn update_account_programs(
 
     // Emit field update signal (I377)
     crate::services::signals::emit_and_propagate(
+            ctx,
         db,
         &state.signals.engine,
         "account",
@@ -2424,6 +2440,7 @@ pub fn archive_account(
         tx.archive_account(id, archived)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -2462,6 +2479,7 @@ pub fn merge_accounts(
             .merge_accounts(from_id, into_id)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -2506,6 +2524,7 @@ pub fn add_account_team_member(
         tx.add_account_team_member(account_id, person_id, &role)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -2537,6 +2556,7 @@ pub fn set_team_member_role(
         tx.set_team_member_role(account_id, person_id, new_role)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -2568,6 +2588,7 @@ pub fn remove_account_team_member(
         tx.remove_account_team_member(account_id, person_id, role)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -2604,6 +2625,7 @@ pub fn record_account_event(
             .record_account_event(account_id, event_type, event_date, arr_impact, notes)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -2622,6 +2644,7 @@ pub fn record_account_event(
             .map_err(|e| e.to_string())?;
         for completed in auto_completed.milestones {
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 &state.signals.engine,
                 "account",
@@ -2638,6 +2661,7 @@ pub fn record_account_event(
         }
         for completed in auto_completed.objectives {
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 &state.signals.engine,
                 "account",
@@ -3154,6 +3178,7 @@ fn update_stakeholder_engagement_inner(
             )
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -3212,6 +3237,7 @@ fn update_stakeholder_assessment_inner(
             )
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -3277,6 +3303,7 @@ fn add_stakeholder_role_inner(
             )
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -3341,6 +3368,7 @@ fn remove_stakeholder_role_inner(
             )
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -3476,6 +3504,7 @@ pub fn accept_stakeholder_suggestion(
             .map_err(|e| e.to_string())?;
 
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -3524,6 +3553,7 @@ pub fn dismiss_stakeholder_suggestion(
             .map_err(|e| e.to_string())?;
 
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             engine,
             "account",
@@ -3622,12 +3652,17 @@ mod tests {
         let engine = PropagationEngine::default();
         let account = make_account("acc-ar", "Archive Me");
         db.upsert_account(&account).unwrap();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         // Archive via DB transaction (mirrors archive_account service without AppState)
         db.with_transaction(|tx| {
             tx.archive_account("acc-ar", true)
                 .map_err(|e| e.to_string())?;
             crate::services::signals::emit_and_propagate(
+                &ctx,
                 tx,
                 &engine,
                 "account",
@@ -3657,10 +3692,6 @@ mod tests {
         );
 
         // Restore
-        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
-        let rng = SeedableRng::new(42);
-        let ext = ExternalClients::default();
-        let ctx = test_ctx(&clock, &rng, &ext);
         super::restore_account(&ctx, &db, "acc-ar", false).expect("restore");
         let archived_after: bool = db
             .conn_ref()
@@ -3680,6 +3711,10 @@ mod tests {
         let engine = PropagationEngine::default();
         let account = make_account("acc-tm", "Team Corp");
         db.upsert_account(&account).unwrap();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         // Seed a person
         db.conn_ref()
@@ -3694,6 +3729,7 @@ mod tests {
             tx.add_account_team_member("acc-tm", "p-tm", "csm")
                 .map_err(|e| e.to_string())?;
             crate::services::signals::emit_and_propagate(
+                &ctx,
                 tx,
                 &engine,
                 "account",
@@ -3737,6 +3773,7 @@ mod tests {
             tx.remove_account_team_member("acc-tm", "p-tm", "csm")
                 .map_err(|e| e.to_string())?;
             crate::services::signals::emit_and_propagate(
+                &ctx,
                 tx,
                 &engine,
                 "account",
@@ -4030,6 +4067,10 @@ mod tests {
         let engine = PropagationEngine::default();
         let account = make_account("acc-ev", "Event Corp");
         db.upsert_account(&account).unwrap();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         db.with_transaction(|tx| {
             tx.record_account_event(
@@ -4041,6 +4082,7 @@ mod tests {
             )
             .map_err(|e| e.to_string())?;
             crate::services::signals::emit_and_propagate(
+                &ctx,
                 tx,
                 &engine,
                 "account",

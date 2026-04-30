@@ -338,6 +338,13 @@ impl Executor {
                                 // Emit email_received for person entities to trigger hygiene rules
                                 if entity_type == "person" {
                                     if let Some(ref pid) = person_id {
+                                        let clock = crate::services::context::SystemClock;
+                                        let rng = crate::services::context::SystemRng;
+                                        let ext =
+                                            crate::services::context::ExternalClients::default();
+                                        let ctx = crate::services::context::ServiceContext::new_live(
+                                            &clock, &rng, &ext,
+                                        );
                                         let display_name = sender_email.as_deref().and_then(|e| {
                                             // Extract display name from "Name <email>" format
                                             let trimmed = e.trim();
@@ -352,6 +359,7 @@ impl Executor {
                                             })
                                         });
                                         let _ = crate::services::signals::emit(
+                                            &ctx,
                                             db,
                                             "person",
                                             pid,
@@ -364,6 +372,7 @@ impl Executor {
                                         // (e.g. rule_champion_sentiment → champion_risk)
                                         if sentiment == Some("negative") {
                                             let _ = crate::services::signals::emit(
+                                                &ctx,
                                                 db,
                                                 "person",
                                                 pid,

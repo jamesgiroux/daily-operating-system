@@ -22,10 +22,16 @@ pub(super) fn fix_unknown_relationships(
 
     let mut fixed = 0;
     let mut details = Vec::new();
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
     for person in &people {
         let new_rel = crate::util::classify_relationship_multi(&person.email, user_domains);
         if new_rel != "unknown"
-            && crate::services::hygiene::update_person_relationship(db, &person.id, &new_rel)
+            && crate::services::hygiene::update_person_relationship(
+                &ctx, db, &person.id, &new_rel,
+            )
                 .is_ok()
         {
             details.push(HygieneFixDetail {
@@ -54,6 +60,10 @@ pub(super) fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDe
     let mut extracted = 0;
     let mut details = Vec::new();
     let now = chrono::Utc::now().to_rfc3339();
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
     for file in files.iter().take(batch_limit) {
         let path = std::path::Path::new(&file.absolute_path);
@@ -65,6 +75,7 @@ pub(super) fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDe
         if !path.exists() {
             // File was deleted since indexing -- mark so it exits the unsummarized pool
             let _ = crate::services::hygiene::mark_content_index_summary(
+                &ctx,
                 db,
                 &file.id,
                 &now,
@@ -77,7 +88,7 @@ pub(super) fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDe
         match (extracted_at, summary) {
             (Some(ext_at), Some(summ)) => {
                 let _ = crate::services::hygiene::mark_content_index_summary(
-                    db, &file.id, &ext_at, &summ,
+                    &ctx, db, &file.id, &ext_at, &summ,
                 );
                 if details.len() < 5 {
                     details.push(HygieneFixDetail {
@@ -92,6 +103,7 @@ pub(super) fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDe
                 // Extraction failed or returned empty -- mark as attempted so the file
                 // doesn't reappear as an unsummarized gap on every scan forever.
                 let _ = crate::services::hygiene::mark_content_index_summary(
+                    &ctx,
                     db,
                     &file.id,
                     &now,
@@ -165,6 +177,10 @@ pub(super) fn fix_renewal_rollovers(db: &ActionDb) -> (usize, Vec<HygieneFixDeta
 
     let mut fixed = 0;
     let mut details = Vec::new();
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
     for account in &past_renewal {
         // Defensive: skip if a churn event exists
         if db.has_churn_event(&account.id).unwrap_or(false) {
@@ -185,6 +201,7 @@ pub(super) fn fix_renewal_rollovers(db: &ActionDb) -> (usize, Vec<HygieneFixDeta
         let next = parsed + chrono::Months::new(12);
         let next_str = next.format("%Y-%m-%d").to_string();
         if crate::services::hygiene::rollover_account_renewal(
+            &ctx,
             db,
             &account.id,
             &account.name,
@@ -219,8 +236,12 @@ pub(super) fn retry_abandoned_quill_syncs(db: &ActionDb) -> (usize, Vec<HygieneF
 
     let mut retried = 0;
     let mut details = Vec::new();
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
     for sync_row in &syncs {
-        if crate::services::hygiene::reset_quill_sync_for_retry(db, &sync_row.id).is_ok() {
+        if crate::services::hygiene::reset_quill_sync_for_retry(&ctx, db, &sync_row.id).is_ok() {
             details.push(HygieneFixDetail {
                 fix_type: "quill_sync_retried".to_string(),
                 entity_name: Some(sync_row.meeting_id.clone()),

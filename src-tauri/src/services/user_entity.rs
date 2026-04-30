@@ -69,7 +69,11 @@ pub fn get_user_entity_from_db(db: &ActionDb) -> Result<UserEntity, String> {
 }
 
 /// Get the user entity, seeding from config if no row exists yet.
-pub async fn get_user_entity(state: &AppState) -> Result<UserEntity, String> {
+pub async fn get_user_entity(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    state: &AppState,
+) -> Result<UserEntity, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state.config.read().clone();
 
     let result = state
@@ -115,10 +119,12 @@ pub async fn get_user_entity(state: &AppState) -> Result<UserEntity, String> {
 
 /// Update a single field on the user entity.
 pub async fn update_user_entity_field(
+    ctx: &crate::services::context::ServiceContext<'_>,
     field: &str,
     value: &str,
     state: &AppState,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if !ALLOWED_FIELDS.contains(&field) {
         return Err(format!(
             "Invalid field '{}'. Allowed: {}",
@@ -283,10 +289,12 @@ pub async fn get_user_context_entries(state: &AppState) -> Result<Vec<UserContex
 
 /// Create a new user context entry and generate its embedding (I417).
 pub async fn create_user_context_entry(
+    ctx: &crate::services::context::ServiceContext<'_>,
     title: &str,
     content: &str,
     state: &AppState,
 ) -> Result<UserContextEntry, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let id = uuid::Uuid::new_v4().to_string();
 
     // Generate embedding before acquiring DB lock (embedding is CPU-bound)
@@ -330,11 +338,13 @@ pub async fn create_user_context_entry(
 
 /// Update an existing user context entry and regenerate its embedding (I417).
 pub async fn update_user_context_entry(
+    ctx: &crate::services::context::ServiceContext<'_>,
     id: &str,
     title: &str,
     content: &str,
     state: &AppState,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // Regenerate embedding before acquiring DB lock
     let embedding_blob = embed_context_text(&state.embedding_model, title, content);
 
@@ -361,7 +371,12 @@ pub async fn update_user_context_entry(
 }
 
 /// Delete a user context entry and its associated embedding.
-pub async fn delete_user_context_entry(id: &str, state: &AppState) -> Result<(), String> {
+pub async fn delete_user_context_entry(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    id: &str,
+    state: &AppState,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let id = id.to_string();
     state
         .db_write(move |db| {
@@ -426,7 +441,12 @@ pub(crate) fn embed_context_text(
 }
 
 /// Write the user entity to `_user/context.json` in the workspace.
-fn write_user_context_json(db: &ActionDb, state: &AppState) -> Result<(), String> {
+fn write_user_context_json(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    state: &AppState,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config_guard = state.config.read();
     let config = config_guard.as_ref().ok_or("Config not initialized")?;
 

@@ -43,6 +43,7 @@ pub fn upsert_account(
     db.with_transaction(|tx| {
         tx.upsert_account(account).map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             engine,
             "account",
@@ -67,6 +68,7 @@ pub fn upsert_project(
     db.with_transaction(|tx| {
         tx.upsert_project(project).map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             engine,
             "project",
@@ -92,6 +94,7 @@ pub fn remove_project_keyword(
         tx.remove_project_keyword(project_id, keyword)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit(
+            ctx,
             tx,
             "project",
             project_id,
@@ -119,6 +122,7 @@ pub fn remove_account_keyword(
         tx.remove_account_keyword(account_id, keyword)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit(
+            ctx,
             tx,
             "account",
             account_id,
@@ -207,6 +211,7 @@ pub fn update_meeting_user_layer(
         tx.update_meeting_user_layer(meeting_id, agenda_json, notes)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             engine,
             "meeting",
@@ -376,6 +381,7 @@ pub fn update_entity_metadata(
     db.with_transaction(|tx| {
         tx.update_entity_metadata(entity_type, entity_id, metadata)?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             engine,
             entity_type,
@@ -433,6 +439,7 @@ pub fn upsert_timeline_meeting_with_entities(
                 .map_err(|e| e.to_string())?;
         }
         crate::services::signals::emit(
+            ctx,
             tx,
             "meeting",
             &meeting.id,
@@ -458,6 +465,7 @@ pub fn upsert_person_relationship(
             .map_err(|e| format!("Failed to upsert relationship: {}", e))?;
 
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             engine,
             "person",
@@ -473,6 +481,7 @@ pub fn upsert_person_relationship(
         .map_err(|e| format!("signal emit failed (from): {e}"))?;
 
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             engine,
             "person",
@@ -507,6 +516,7 @@ pub fn delete_person_relationship(
 
         if let Some((from_id, to_id)) = person_ids {
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 engine,
                 "person",
@@ -518,6 +528,7 @@ pub fn delete_person_relationship(
             )
             .map_err(|e| format!("signal emit failed (from): {e}"))?;
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 engine,
                 "person",
@@ -608,6 +619,7 @@ pub fn persist_transcript_outcomes(
         let capture_count = wins.len() + risks.len() + decisions.len();
         if capture_count > 0 {
             crate::services::signals::emit(
+            ctx,
                 tx,
                 entity_type,
                 entity_id,
@@ -731,6 +743,7 @@ pub fn upsert_action_if_not_completed(
 
         let (entity_type, entity_id) = action_signal_target(action);
         crate::services::signals::emit(
+            ctx,
             tx,
             entity_type,
             &entity_id,
@@ -1003,6 +1016,7 @@ mod tests {
                     [],
                 ).unwrap();
                 crate::services::signals::emit(
+                    &ctx,
                     tx,
                     "account",
                     "acc-t",

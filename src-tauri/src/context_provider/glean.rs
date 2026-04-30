@@ -1244,6 +1244,10 @@ fn process_glean_contacts(
     use crate::db::people::ProfileUpdate;
 
     let mut new_count = 0;
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
     // Map email → person_id for pass 2 manager lookups
     let mut email_to_person: Vec<(String, String)> = Vec::new();
 
@@ -1285,6 +1289,7 @@ fn process_glean_contacts(
                         // Avoid false-positive profile_enriched signals when no fields were written.
                         if !result.fields_updated.is_empty() {
                             if let Err(e) = crate::services::signals::emit(
+                                &ctx,
                                 db,
                                 "person",
                                 &existing.id,
@@ -1325,6 +1330,7 @@ fn process_glean_contacts(
 
                 // Emit glean_contact_discovered signal
                 let _ = crate::services::signals::emit(
+                    &ctx,
                     db,
                     "person",
                     &pid,

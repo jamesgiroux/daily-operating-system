@@ -104,7 +104,8 @@ pub async fn create_project(
     parent_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    crate::services::projects::create_project(&name, parent_id, &state).await
+    let ctx = state.live_service_context();
+    crate::services::projects::create_project(&ctx, &name, parent_id, &state).await
 }
 
 /// Update a single structured field on a project.
@@ -115,7 +116,9 @@ pub async fn update_project_field(
     value: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::projects::update_project_field(&project_id, &field, &value, &state).await
+    let ctx = state.live_service_context();
+    crate::services::projects::update_project_field(&ctx, &project_id, &field, &value, &state)
+        .await
 }
 
 /// Update the notes field on a project.
@@ -418,9 +421,11 @@ pub async fn archive_project(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            crate::services::projects::archive_project(db, &app_state, &id, archived)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::projects::archive_project(&ctx, db, &app_state, &id, archived)
         })
         .await
 }
@@ -547,10 +552,12 @@ pub async fn bulk_create_projects(
         .ok_or("Config not loaded")?
         .workspace_path
         .clone();
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let workspace = Path::new(&workspace_path);
-            crate::services::projects::bulk_create_projects(db, workspace, &names)
+            crate::services::projects::bulk_create_projects(&ctx, db, workspace, &names)
         })
         .await
 }

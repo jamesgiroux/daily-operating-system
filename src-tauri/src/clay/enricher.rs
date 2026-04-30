@@ -173,6 +173,7 @@ pub async fn enrich_person_from_clay_with_client(
     let signal_names: Vec<String> = signals.iter().map(|s| s.signal_type.clone()).collect();
     {
         let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let ctx = state.live_service_context();
         for signal in &signals {
             let value = serde_json::json!({
                 "description": signal.description,
@@ -181,6 +182,7 @@ pub async fn enrich_person_from_clay_with_client(
             })
             .to_string();
             let _ = crate::services::signals::emit_and_propagate(
+                &ctx,
                 &db,
                 &state.signals.engine,
                 "person",

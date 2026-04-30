@@ -163,11 +163,13 @@ pub fn attendee_domains(attendees: &[String]) -> HashSet<String> {
 /// and aren't already in the entity's keyword list. This teaches the keyword
 /// matcher to recognize similar titles in future meetings.
 pub fn auto_extract_title_keywords(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &crate::db::ActionDb,
     entity_id: &str,
     entity_type: &str,
     meeting_title: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // Words to ignore — generic meeting vocabulary
     const STOP_WORDS: &[&str] = &[
         "1:1",

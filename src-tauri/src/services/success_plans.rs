@@ -545,6 +545,7 @@ pub fn complete_objective(
             .complete_objective(objective_id)
             .map_err(|e: crate::db::DbError| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -623,6 +624,7 @@ pub fn complete_milestone(
             .complete_milestone(milestone_id)
             .map_err(|e: crate::db::DbError| e.to_string())?;
         crate::services::signals::emit_and_propagate(
+            ctx,
             tx,
             &state.signals.engine,
             "account",
@@ -638,6 +640,7 @@ pub fn complete_milestone(
         .map_err(|e| format!("signal emit failed: {e}"))?;
         if let Some(objective) = objective {
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 &state.signals.engine,
                 "account",
@@ -666,6 +669,7 @@ pub fn skip_milestone(
             .map_err(|e: crate::db::DbError| e.to_string())?;
         if let Some(objective) = objective {
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 &state.signals.engine,
                 "account",
@@ -1152,6 +1156,7 @@ mod tests {
 
             // Emit signal as the service layer would
             crate::services::signals::emit_and_propagate(
+                &ctx,
                 tx,
                 &engine,
                 "account",

@@ -1026,6 +1026,7 @@ pub fn update_email_entity(
     let etype = entity_type.unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
     let _ = crate::services::signals::emit(
+            ctx,
         db,
         etype,
         eid,
@@ -1051,6 +1052,7 @@ pub fn dismiss_email_signal(
 
     if let Some((entity_id, entity_type, signal_type, email_id)) = context {
         let _ = crate::services::signals::emit(
+            ctx,
             db,
             &entity_type,
             &entity_id,
@@ -1119,7 +1121,12 @@ pub async fn archive_email(
 
             let engine = crate::signals::propagation::PropagationEngine::default();
             let (entity_type, entity_id) = email_entity_context(db, &eid);
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             let _ = crate::services::signals::emit_and_propagate(
+                &ctx,
                 db,
                 &engine,
                 &entity_type,
@@ -1229,6 +1236,7 @@ pub fn pin_email(
     if now_pinned {
         let (entity_type, entity_id) = email_entity_context(db, email_id);
         let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             engine,
             &entity_type,
@@ -1340,6 +1348,7 @@ pub fn promote_commitment_to_action(
     let sig_entity_type = entity_type.unwrap_or("email");
     let sig_entity_id = entity_id.unwrap_or(email_id);
     let _ = crate::services::signals::emit_and_propagate(
+            ctx,
         db,
         engine,
         sig_entity_type,
@@ -1382,6 +1391,7 @@ pub fn dismiss_gone_quiet(
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let _ = crate::services::signals::emit_and_propagate(
+            ctx,
         db,
         engine,
         "account",
@@ -1426,6 +1436,7 @@ pub fn dismiss_email_item(
     let etype = entity_id.map(|_| "account").unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
     let _ = crate::services::signals::emit(
+            ctx,
         db,
         etype,
         eid,
