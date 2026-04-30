@@ -322,6 +322,17 @@ pub struct AppState {
     pub embedding_model: Arc<crate::embeddings::EmbeddingModel>,
     /// Background embedding generation queue (Sprint 26).
     pub embedding_queue: Arc<crate::processor::embeddings::EmbeddingQueue>,
+    /// DOS-209 (W2-A): production clock for ServiceContext injection.
+    /// Concrete `SystemClock` so it is `Sized`; tests construct their
+    /// own `FixedClock` and a separate `ServiceContext::test_live`.
+    pub clock: crate::services::context::SystemClock,
+    /// DOS-209 (W2-A): production RNG for ServiceContext injection.
+    /// Concrete `SystemRng`; tests use `SeedableRng`.
+    pub rng: crate::services::context::SystemRng,
+    /// DOS-209 (W2-A): mode-aware external-client wrappers for
+    /// ServiceContext injection. Live mode wraps configured clients;
+    /// non-Live modes hold replay/fixture wrappers per ADR-0104 §3.4.
+    pub external: crate::services::context::ExternalClients,
     /// Hygiene subsystem state (I404).
     pub hygiene: HygieneState,
     /// Stashed live workspace path before switching to dev mode (I298).
@@ -747,6 +758,9 @@ impl AppState {
             ),
             embedding_model,
             embedding_queue: Arc::new(crate::processor::embeddings::EmbeddingQueue::new()),
+            clock: crate::services::context::SystemClock,
+            rng: crate::services::context::SystemRng,
+            external: crate::services::context::ExternalClients::default(),
             hygiene: HygieneState {
                 report: Mutex::new(None),
                 scan_running: AtomicBool::new(false),
@@ -902,6 +916,27 @@ impl AppState {
     ) {
         let mut guard = self.context_state.write();
         guard.glean_intelligence_provider = new;
+    }
+
+    /// DOS-209 (W2-A): build a `Live` `ServiceContext` borrowing this
+    /// `AppState`'s clock + rng + external clients. Tauri command
+    /// handlers and background workers call this once per-call to get
+    /// the `&ServiceContext` they pass into service mutators.
+    ///
+    /// ```ignore
+    /// let ctx = state.live_service_context();
+    /// services::accounts::create_account(&ctx, db, ...).await?;
+    /// ```
+    ///
+    /// The returned `ServiceContext<'_>` borrows from `&self` so the
+    /// caller must keep the `state` reference alive for the call's
+    /// duration — which is the natural pattern for command handlers.
+    pub fn live_service_context(&self) -> crate::services::context::ServiceContext<'_> {
+        crate::services::context::ServiceContext::new_live(
+            &self.clock,
+            &self.rng,
+            &self.external,
+        )
     }
 
     /// DOS-259 (W2-B cycle 3, L6 2026-04-30): atomic context-mode transition.

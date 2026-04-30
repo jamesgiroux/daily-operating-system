@@ -10,12 +10,18 @@
 
 use crate::db::feedback::{CorrectionAction, FeedbackEventInput};
 use crate::db::ActionDb;
+use crate::services::context::ServiceContext;
 
 /// Submit feedback on an intelligence field for an entity.
 ///
 /// Records the feedback, adjusts source weights (Bayesian alpha/beta),
 /// and emits a signal for downstream propagation.
+///
+/// DOS-209 (W2-A): takes `&ServiceContext` as first parameter and gates
+/// on `ctx.check_mutation_allowed()?` per ADR-0104. Errors out of the
+/// `WriteBlockedByMode` boundary in non-Live modes.
 pub fn submit_intelligence_feedback(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     entity_id: &str,
     entity_type: &str,
@@ -23,6 +29,7 @@ pub fn submit_intelligence_feedback(
     feedback_type: &str,
     context: Option<&str>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = match feedback_type {
         "positive" => CorrectionAction::Confirmed,
         "negative" => CorrectionAction::Rejected,
@@ -30,6 +37,7 @@ pub fn submit_intelligence_feedback(
     };
 
     submit_intelligence_correction(
+        ctx,
         db,
         SubmitIntelligenceCorrectionInput {
             entity_id,
@@ -198,9 +206,11 @@ pub struct SubmitIntelligenceCorrectionInput<'a> {
 /// `entity_feedback_events` as the single source of truth for correction
 /// history.
 pub fn submit_intelligence_correction(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     input: SubmitIntelligenceCorrectionInput<'_>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let SubmitIntelligenceCorrectionInput {
         entity_id,
         entity_type,
@@ -496,6 +506,19 @@ mod correction_tests {
 
     use super::*;
     use crate::db::{DbAccount, test_utils::test_db};
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::TimeZone;
+
+    /// DOS-209 test scaffold: returns a `Live` `ServiceContext` with
+    /// deterministic clock + RNG so test mutators pass `check_mutation_allowed`
+    /// AND get reproducible time/random values.
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     fn seed_account(db: &ActionDb, id: &str) {
         let account = DbAccount {
@@ -523,7 +546,12 @@ mod correction_tests {
         annotation: Option<&str>,
         item_key: Option<&str>,
     ) -> Result<(), String> {
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
         super::submit_intelligence_correction(
+            &ctx,
             db,
             SubmitIntelligenceCorrectionInput {
                 entity_id,
@@ -535,6 +563,21 @@ mod correction_tests {
                 item_key,
             },
         )
+    }
+
+    fn submit_intelligence_feedback(
+        db: &ActionDb,
+        entity_id: &str,
+        entity_type: &str,
+        field: &str,
+        feedback_type: &str,
+        context: Option<&str>,
+    ) -> Result<(), String> {
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        super::submit_intelligence_feedback(&ctx, db, entity_id, entity_type, field, feedback_type, context)
     }
 
     /// Read all feedback rows for an entity; newest first.

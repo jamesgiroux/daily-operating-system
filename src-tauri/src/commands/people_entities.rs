@@ -534,9 +534,15 @@ pub async fn submit_intelligence_feedback(
     context: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    // DOS-209 (W2-A): construct ServiceContext at the command boundary
+    // and pass it into the service mutator. Arc-clone state so the
+    // closure can build the context inside the db_write lane.
+    let state_for_ctx = Arc::clone(&state);
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::feedback::submit_intelligence_feedback(
+                &ctx,
                 db,
                 &entity_id,
                 &entity_type,
@@ -578,9 +584,13 @@ pub async fn submit_intelligence_correction(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let parsed = crate::db::feedback::CorrectionAction::parse(&request.action)?;
+    // DOS-209 (W2-A): construct ServiceContext at the command boundary.
+    let state_for_ctx = Arc::clone(&state);
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::feedback::submit_intelligence_correction(
+                &ctx,
                 db,
                 crate::services::feedback::SubmitIntelligenceCorrectionInput {
                     entity_id: &request.entity_id,
