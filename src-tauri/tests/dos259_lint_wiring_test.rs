@@ -39,26 +39,86 @@ fn dos259_provider_clock_rng_lint_passes() {
 
 #[test]
 fn dos259_provider_clock_rng_lint_catches_unmarked_violation() {
-    // Regression test: the lint must trip on a synthetic violation. We
-    // write a temp file shaped like a provider module with a bare
-    // `Utc::now()` call (no exempt/grandfathered marker) into a temp
-    // location, then invoke the script against an environment that
-    // points at that file. Since the script hard-codes the FILES list,
-    // we instead verify behavior by seeding a marker-less call into a
-    // copy and asserting the script fails — but that requires
-    // editing source. To stay non-destructive, we assert the script
-    // text itself contains both the exempt and grandfathered marker
-    // strings (the contract surfaces) so the marker contract cannot
-    // silently regress.
+    // L2 cycle-2 finding #3 regression: the lint must actually trip on
+    // a marker-less Utc::now() / thread_rng() call. Earlier version of
+    // this test only verified marker strings existed in the script —
+    // codex correctly flagged that as not exercising the matching logic.
+    //
+    // This version writes a synthetic provider module to a temp file
+    // with a bare `chrono::Utc::now()` call (no exempt/grandfathered
+    // marker) and invokes the script with the
+    // DOS259_LINT_FILES_OVERRIDE env var pointing at the temp file.
+    // Asserts the script exits non-zero, confirming the lint matching
+    // logic actually catches violations.
+    let tmp_dir = std::env::temp_dir().join(format!("dos259-lint-test-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir).expect("create temp dir");
+    let fixture = tmp_dir.join("synthetic_unmarked_provider.rs");
+    let synthetic = "\
+//! Synthetic provider-module fixture for the DOS-259 lint test.
+//! Contains an UNMARKED `chrono::Utc::now()` call — the lint must trip.
+fn timestamp() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
+";
+    std::fs::write(&fixture, synthetic).expect("write fixture");
+
     let root = workspace_root();
     let script = root.join("scripts/check_no_direct_clock_rng_in_provider_modules.sh");
-    let src = std::fs::read_to_string(&script).expect("read lint script");
+    let output = Command::new("bash")
+        .arg(&script)
+        .env("DOS259_LINT_FILES_OVERRIDE", &fixture)
+        .current_dir(&root)
+        .output()
+        .expect("execute lint script with override");
+
+    let _ = std::fs::remove_file(&fixture);
+    let _ = std::fs::remove_dir(&tmp_dir);
+
     assert!(
-        src.contains("dos259-exempt:"),
-        "lint script must continue to recognise `dos259-exempt:` marker"
+        !output.status.success(),
+        "lint must exit non-zero on unmarked Utc::now() — stdout: {:?}, stderr: {:?}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
     );
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        src.contains("dos259-grandfathered:"),
-        "lint script must continue to recognise `dos259-grandfathered:` marker"
+        stdout.contains("synthetic_unmarked_provider.rs"),
+        "lint output must reference the offending file; got: {stdout}"
+    );
+}
+
+#[test]
+fn dos259_provider_clock_rng_lint_accepts_grandfathered_marker_in_synthetic_fixture() {
+    // Companion regression: verify that a `dos259-grandfathered:` marker
+    // within 3 lines above the Utc::now() call exempts it (not just by
+    // virtue of the line numbers in the production glean_provider.rs).
+    let tmp_dir = std::env::temp_dir().join(format!("dos259-lint-test-gf-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir).expect("create temp dir");
+    let fixture = tmp_dir.join("synthetic_grandfathered_provider.rs");
+    let synthetic = "\
+//! Synthetic provider-module fixture with a properly-marked grandfather call.
+fn timestamp() -> String {
+    // dos259-grandfathered: synthetic-test fixture; lint must accept this marker.
+    chrono::Utc::now().to_rfc3339()
+}
+";
+    std::fs::write(&fixture, synthetic).expect("write fixture");
+
+    let root = workspace_root();
+    let script = root.join("scripts/check_no_direct_clock_rng_in_provider_modules.sh");
+    let output = Command::new("bash")
+        .arg(&script)
+        .env("DOS259_LINT_FILES_OVERRIDE", &fixture)
+        .current_dir(&root)
+        .output()
+        .expect("execute lint script with override");
+
+    let _ = std::fs::remove_file(&fixture);
+    let _ = std::fs::remove_dir(&tmp_dir);
+
+    assert!(
+        output.status.success(),
+        "lint must exit zero when the only call has a grandfathered marker — stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr),
     );
 }

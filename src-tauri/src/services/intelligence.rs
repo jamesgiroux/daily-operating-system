@@ -205,12 +205,16 @@ pub async fn enrich_entity(
         }
     };
 
-    let provider = state.context_provider();
-    let is_remote = provider.is_remote();
-    let glean_endpoint = provider.remote_endpoint().map(|s| s.to_string());
+    // DOS-259 (W2-B cycle 3): single coherent snapshot of context state —
+    // is_remote + Glean Arc captured under one read-lock acquisition.
+    // Avoids the L2 codex race where a Local switch between separate
+    // getters could leave callers in a mixed-state world.
+    let snap = state.context_snapshot();
+    let is_remote = snap.is_remote();
+    let glean_endpoint = snap.remote_endpoint();
     log::warn!(
         "[I535] enrich_entity: provider={}, is_remote={}, endpoint={:?}, has_ctx={}, entity={} ({})",
-        provider.provider_name(),
+        snap.provider_name(),
         is_remote,
         glean_endpoint.is_some(),
         input.intelligence_context.is_some(),
@@ -221,20 +225,18 @@ pub async fn enrich_entity(
         // Try Glean-first path
         let mut glean_result = None;
         if let (Some(_endpoint), Some(ref ctx)) = (&glean_endpoint, &input.intelligence_context) {
-            // DOS-259 (W2-B): route through AppState-owned Glean provider Arc
-            // per ADR-0091. Fail closed when the bridge is empty — that means
-            // a Local-mode swap raced this manual refresh; issuing an inline
-            // remote call would violate ADR-0091's "next dequeue" guarantee
-            // and call Glean after the user picked Local. Skip Glean and
-            // fall through to PTY (the existing fallback path below handles
-            // glean_result == None).
-            let provider_opt = state.glean_intelligence_provider();
-            let provider = match provider_opt {
+            // DOS-259 (W2-B cycle 3): route through the snapshot's Glean Arc
+            // per ADR-0091. Falls through to PTY when the snapshot shows
+            // None (bridge cleared by atomic Local swap). The snapshot
+            // captured above is immutable here, so a concurrent settings
+            // change cannot perturb the routing decision mid-call.
+            let provider = match snap.glean_intelligence_provider.clone() {
                 Some(p) => Some(p),
                 None => {
                     log::warn!(
-                        "[I535] Glean Arc bridge empty for manual refresh on {}; \
-                         settings switch likely raced this call. Falling through to PTY.",
+                        "[I535] Context-mode snapshot for manual refresh on {} \
+                         shows is_remote=true but no Glean Arc; settings raced this \
+                         call. Falling through to PTY per ADR-0091.",
                         input.entity_name
                     );
                     None
