@@ -2450,17 +2450,22 @@ mod live_acceptance_tests {
             .expect("meeting lookup query failed")
             .expect("no linked meeting found for entity");
 
-        let refresh =
-            crate::services::meetings::refresh_meeting_briefing_full(&state, &meeting_id, None)
-                .await
-                .expect("refresh_meeting_briefing_full failed");
+        let ctx = state.live_service_context();
+        let refresh = crate::services::meetings::refresh_meeting_briefing_full(
+            &ctx,
+            &state,
+            &meeting_id,
+            None,
+        )
+        .await
+        .expect("refresh_meeting_briefing_full failed");
 
         assert!(
             refresh.prep_rebuilt_sync || refresh.prep_queued,
             "refresh should rebuild prep sync or queue it"
         );
 
-        let detail = crate::services::meetings::get_meeting_intelligence(&state, &meeting_id)
+        let detail = crate::services::meetings::get_meeting_intelligence(&ctx, &state, &meeting_id)
             .await
             .expect("get_meeting_intelligence failed after refresh");
         let prep = detail

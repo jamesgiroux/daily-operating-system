@@ -136,7 +136,9 @@ pub async fn archive_email(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
-    let result = crate::services::emails::archive_email(&state, &email_id).await?;
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    let result = crate::services::emails::archive_email(&ctx, &app_state, &email_id).await?;
     let _ = app_handle.emit("emails-updated", ());
     Ok(result)
 }
@@ -149,7 +151,9 @@ pub async fn unarchive_email(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    crate::services::emails::unarchive_email(&state, &email_id).await?;
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::emails::unarchive_email(&ctx, &app_state, &email_id).await?;
     let _ = app_handle.emit("emails-updated", ());
     Ok(())
 }
@@ -163,8 +167,12 @@ pub async fn unsuppress_email(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(move |db| crate::services::emails::unsuppress_email(db, &email_id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::emails::unsuppress_email(&ctx, db, &email_id)
+        })
         .await?;
     let _ = app_handle.emit("emails-updated", ());
     Ok(())
@@ -178,8 +186,12 @@ pub async fn pin_email(
     app_handle: tauri::AppHandle,
 ) -> Result<bool, String> {
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     let result = state
-        .db_write(move |db| crate::services::emails::pin_email(db, &engine, &email_id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::emails::pin_email(&ctx, db, &engine, &email_id)
+        })
         .await?;
     let _ = app_handle.emit("emails-updated", ());
     Ok(result)
@@ -205,9 +217,12 @@ pub async fn promote_commitment_to_action(
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     let action_id = state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::emails::promote_commitment_to_action(
+                &ctx,
                 db,
                 &engine,
                 &crate::services::emails::PromoteCommitmentParams {
@@ -242,9 +257,12 @@ pub async fn dismiss_email_item(
     entity_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::emails::dismiss_email_item(
+                &ctx,
                 db,
                 &item_type,
                 &email_id,
@@ -729,7 +747,9 @@ pub async fn capture_meeting_outcome(
     outcome: CapturedOutcome,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::meetings::capture_meeting_outcome(&outcome, &state).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::meetings::capture_meeting_outcome(&ctx, &outcome, &app_state).await
 }
 
 /// Dismiss a post-meeting capture prompt (skip)
@@ -790,10 +810,13 @@ pub async fn attach_meeting_transcript(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<crate::types::TranscriptResult, String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::meetings::attach_meeting_transcript(
+        &ctx,
         file_path,
         meeting,
-        state.inner(),
+        &app_state,
         app_handle,
     )
     .await
@@ -849,10 +872,13 @@ pub async fn attach_meeting_transcript_text(
         .ok_or_else(|| "pasted transcript path is not valid UTF-8".to_string())?
         .to_string();
 
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::meetings::attach_meeting_transcript(
+        &ctx,
         path_str,
         meeting,
-        state.inner(),
+        &app_state,
         app_handle,
     )
     .await
@@ -866,8 +892,15 @@ pub async fn reprocess_meeting_transcript(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<crate::types::TranscriptResult, String> {
-    crate::services::meetings::reprocess_meeting_transcript(&meeting_id, state.inner(), app_handle)
-        .await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::meetings::reprocess_meeting_transcript(
+        &ctx,
+        &meeting_id,
+        &app_state,
+        app_handle,
+    )
+    .await
 }
 
 /// Get meeting outcomes (from transcript processing or manual capture).

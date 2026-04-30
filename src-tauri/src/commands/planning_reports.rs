@@ -332,7 +332,9 @@ pub async fn update_meeting_user_agenda(
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = app_state.live_service_context();
             crate::services::meetings::update_meeting_user_agenda(
+                &ctx,
                 db,
                 &app_state,
                 &meeting_id,
@@ -354,7 +356,9 @@ pub async fn update_meeting_user_notes(
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = app_state.live_service_context();
             crate::services::meetings::update_meeting_user_notes(
+                &ctx,
                 db,
                 &app_state,
                 &meeting_id,
@@ -376,7 +380,9 @@ pub async fn update_meeting_prep_field(
     let app_state = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = app_state.live_service_context();
             crate::services::meetings::update_meeting_prep_field(
+                &ctx,
                 db,
                 &app_state,
                 &meeting_id,

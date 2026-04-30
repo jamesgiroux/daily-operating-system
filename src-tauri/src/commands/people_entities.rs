@@ -188,8 +188,11 @@ pub async fn link_meeting_entity(
     entity_type: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::meetings::link_meeting_entity_with_prep_queue(
-        &state,
+        &ctx,
+        &app_state,
         &meeting_id,
         &entity_id,
         &entity_type,
@@ -206,8 +209,11 @@ pub async fn unlink_meeting_entity(
     entity_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::meetings::unlink_meeting_entity_with_prep_queue(
-        &state,
+        &ctx,
+        &app_state,
         &meeting_id,
         &entity_id,
     )
@@ -224,8 +230,11 @@ pub async fn dismiss_meeting_entity(
     entity_type: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::meetings::dismiss_meeting_entity(
-        &state,
+        &ctx,
+        &app_state,
         &meeting_id,
         &entity_id,
         &entity_type,
@@ -243,7 +252,15 @@ pub async fn restore_meeting_entity(
     entity_type: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<bool, String> {
-    crate::services::meetings::restore_meeting_entity(&state, &meeting_id, &entity_id, &entity_type)
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::meetings::restore_meeting_entity(
+        &ctx,
+        &app_state,
+        &meeting_id,
+        &entity_id,
+        &entity_type,
+    )
         .await
 }
 
@@ -355,13 +372,16 @@ pub async fn update_meeting_entity(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    let ctx = crate::services::meetings::MeetingMutationCtx {
-        state: &state,
+    let app_state = state.inner().clone();
+    let service_ctx = app_state.live_service_context();
+    let mutation_ctx = crate::services::meetings::MeetingMutationCtx {
+        service_ctx: &service_ctx,
+        state: &app_state,
         meeting_id: &meeting_id,
         app_handle: Some(&app_handle),
     };
     crate::services::meetings::update_meeting_entity(
-        ctx,
+        mutation_ctx,
         entity_id.as_deref(),
         &entity_type,
         &meeting_title,
@@ -390,13 +410,16 @@ pub async fn add_meeting_entity(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    let ctx = crate::services::meetings::MeetingMutationCtx {
-        state: &state,
+    let app_state = state.inner().clone();
+    let service_ctx = app_state.live_service_context();
+    let mutation_ctx = crate::services::meetings::MeetingMutationCtx {
+        service_ctx: &service_ctx,
+        state: &app_state,
         meeting_id: &meeting_id,
         app_handle: Some(&app_handle),
     };
     crate::services::meetings::add_meeting_entity(
-        ctx,
+        mutation_ctx,
         &entity_id,
         &entity_type,
         &meeting_title,
@@ -416,12 +439,15 @@ pub async fn remove_meeting_entity(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    let ctx = crate::services::meetings::MeetingMutationCtx {
-        state: &state,
+    let app_state = state.inner().clone();
+    let service_ctx = app_state.live_service_context();
+    let mutation_ctx = crate::services::meetings::MeetingMutationCtx {
+        service_ctx: &service_ctx,
+        state: &app_state,
         meeting_id: &meeting_id,
         app_handle: Some(&app_handle),
     };
-    crate::services::meetings::remove_meeting_entity(ctx, &entity_id, &entity_type).await
+    crate::services::meetings::remove_meeting_entity(mutation_ctx, &entity_id, &entity_type).await
 }
 
 // =========================================================================

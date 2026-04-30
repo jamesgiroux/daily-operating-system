@@ -208,6 +208,10 @@ pub fn run_reconciliation(workspace: &Path, db: Option<&ActionDb>) -> Reconcilia
 /// Also persists enriched prep context (I181) so prep data survives archival.
 pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace: &Path) {
     let preps_dir = workspace.join("_today").join("data").join("preps");
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
     for ms in &result.meetings.details {
         let meeting_id = ms
@@ -280,7 +284,8 @@ pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace:
             last_viewed_at: None,
         };
 
-        if let Err(e) = crate::services::meetings::upsert_meeting_for_reconcile(db, &meeting) {
+        if let Err(e) = crate::services::meetings::upsert_meeting_for_reconcile(&ctx, db, &meeting)
+        {
             log::warn!("Failed to persist meeting '{}': {}", ms.title, e);
             continue;
         }
