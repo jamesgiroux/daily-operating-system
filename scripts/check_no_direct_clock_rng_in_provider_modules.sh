@@ -20,11 +20,19 @@
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-FILES=(
-  "$ROOT_DIR/src-tauri/src/intelligence/provider.rs"
-  "$ROOT_DIR/src-tauri/src/intelligence/pty_provider.rs"
-  "$ROOT_DIR/src-tauri/src/intelligence/glean_provider.rs"
-)
+if [ -n "${DOS259_LINT_FILES_OVERRIDE:-}" ]; then
+  # Test seam: tests pass `DOS259_LINT_FILES_OVERRIDE` (colon-separated
+  # absolute paths) to drive the lint against synthetic fixture files.
+  # Production callers leave the env var unset and get the canonical
+  # provider-module list below.
+  IFS=':' read -r -a FILES <<< "$DOS259_LINT_FILES_OVERRIDE"
+else
+  FILES=(
+    "$ROOT_DIR/src-tauri/src/intelligence/provider.rs"
+    "$ROOT_DIR/src-tauri/src/intelligence/pty_provider.rs"
+    "$ROOT_DIR/src-tauri/src/intelligence/glean_provider.rs"
+  )
+fi
 
 # Grandfathered allowlist: pre-W2-B `Utc::now()` calls in `glean_provider.rs`
 # that timestamp serializable response / manifest fields. These migrate to

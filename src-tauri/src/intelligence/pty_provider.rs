@@ -19,7 +19,7 @@
 //! `tokio::task::spawn_blocking`. This matches the existing
 //! `std::thread::spawn` pattern in `intel_queue.rs:1730`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -28,7 +28,7 @@ use super::provider::{
     Completion, FingerprintMetadata, IntelligenceProvider, ModelName, PromptInput, ProviderError,
     ProviderKind,
 };
-use crate::pty::{AiUsageContext, ModelTier, PtyManager};
+use crate::pty::{AiUsageContext, ClaudeOutput, ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 
 /// Default per-tier timeout (seconds) when callers do not override.
@@ -51,25 +51,85 @@ const DEFAULT_NICE_PRIORITY: i32 = 10;
 /// temperature when canonical fingerprint hashing lands.
 const CLAUDE_CODE_DEFAULT_TEMPERATURE: f32 = 1.0;
 
+/// DOS-259 (W2-B cycle 3): bundled args for `PtySpawnAdapter::spawn_claude`.
+///
+/// Bundles workspace, prompt, tier, ai_config, usage_context, timeout,
+/// and nice_priority into a single struct so the trait method stays under
+/// the clippy `too_many_arguments` limit (7) per CLAUDE.md.
+pub struct PtySpawnRequest<'a> {
+    pub workspace: &'a Path,
+    pub prompt: &'a str,
+    pub tier: ModelTier,
+    pub ai_config: &'a AiModelConfig,
+    pub usage_context: AiUsageContext,
+    pub timeout_secs: u64,
+    pub nice_priority: i32,
+}
+
+/// DOS-259 (W2-B cycle 3, L2 finding #2): test seam for the actual PTY
+/// invocation. Production uses `DefaultPtySpawnAdapter` which constructs
+/// a `PtyManager` per call (matching the legacy inline behavior). Tests
+/// inject a `FakePtySpawnAdapter` with a captured-stdout fixture so
+/// `complete_blocking` is exercised end-to-end without spawning Claude
+/// Code.
+pub trait PtySpawnAdapter: Send + Sync {
+    fn spawn_claude(&self, req: PtySpawnRequest<'_>) -> Result<ClaudeOutput, String>;
+}
+
+/// Production `PtySpawnAdapter`: constructs a `PtyManager` per call with
+/// the same builder chain the legacy `intel_queue` sites used inline.
+/// Returns `Err(formatted error)` on PTY failures so the caller can map
+/// into `ProviderError`.
+#[derive(Debug, Default, Clone)]
+pub struct DefaultPtySpawnAdapter;
+
+impl PtySpawnAdapter for DefaultPtySpawnAdapter {
+    fn spawn_claude(&self, req: PtySpawnRequest<'_>) -> Result<ClaudeOutput, String> {
+        let pty = PtyManager::for_tier(req.tier, req.ai_config)
+            .with_usage_context(req.usage_context)
+            .with_timeout(req.timeout_secs)
+            .with_nice_priority(req.nice_priority);
+        pty.spawn_claude(req.workspace, req.prompt)
+            .map_err(|e| format!("{e:?}"))
+    }
+}
+
 /// PTY-based Claude Code provider.
 pub struct PtyClaudeCode {
     ai_config: Arc<AiModelConfig>,
     default_workspace: PathBuf,
     usage_context: AiUsageContext,
+    spawn_adapter: Arc<dyn PtySpawnAdapter>,
 }
 
 impl PtyClaudeCode {
     /// Build a provider pinned to an `AiModelConfig` and default workspace.
-    /// `usage_context` is the base — `complete()` overlays the requested tier.
+    /// Uses `DefaultPtySpawnAdapter` (production path).
     pub fn new(
         ai_config: Arc<AiModelConfig>,
         default_workspace: impl Into<PathBuf>,
         usage_context: AiUsageContext,
     ) -> Self {
+        Self::with_spawn_adapter(
+            ai_config,
+            default_workspace,
+            usage_context,
+            Arc::new(DefaultPtySpawnAdapter),
+        )
+    }
+
+    /// Build a provider with a custom `PtySpawnAdapter` — the test seam.
+    pub fn with_spawn_adapter(
+        ai_config: Arc<AiModelConfig>,
+        default_workspace: impl Into<PathBuf>,
+        usage_context: AiUsageContext,
+        spawn_adapter: Arc<dyn PtySpawnAdapter>,
+    ) -> Self {
         Self {
             ai_config,
             default_workspace: default_workspace.into(),
             usage_context,
+            spawn_adapter,
         }
     }
 
@@ -103,18 +163,24 @@ impl PtyClaudeCode {
         let timeout_secs = Self::timeout_for_tier(tier);
         let model_name = self.current_model(tier);
 
-        let pty = PtyManager::for_tier(tier, &self.ai_config)
-            .with_usage_context(usage_context)
-            .with_timeout(timeout_secs)
-            .with_nice_priority(DEFAULT_NICE_PRIORITY);
-        let output = pty.spawn_claude(&workspace, &prompt.text).map_err(|e| {
-            let msg = format!("{e:?}");
-            if msg.contains("ClaudeCodeNotFound") || msg.contains("not authenticated") {
-                ProviderError::Permanent(msg)
-            } else {
-                ProviderError::Transient(msg)
-            }
-        })?;
+        let output = self
+            .spawn_adapter
+            .spawn_claude(PtySpawnRequest {
+                workspace: &workspace,
+                prompt: &prompt.text,
+                tier,
+                ai_config: &self.ai_config,
+                usage_context,
+                timeout_secs,
+                nice_priority: DEFAULT_NICE_PRIORITY,
+            })
+            .map_err(|msg| {
+                if msg.contains("ClaudeCodeNotFound") || msg.contains("not authenticated") {
+                    ProviderError::Permanent(msg)
+                } else {
+                    ProviderError::Transient(msg)
+                }
+            })?;
         Ok(Completion {
             text: output.stdout,
             fingerprint_metadata: FingerprintMetadata {
@@ -147,21 +213,23 @@ impl IntelligenceProvider for PtyClaudeCode {
         let usage_context = self.usage_context.clone().with_tier(tier);
         let timeout_secs = Self::timeout_for_tier(tier);
         let model_name = self.current_model(tier);
+        let adapter = Arc::clone(&self.spawn_adapter);
 
         let join = tokio::task::spawn_blocking(move || {
-            let pty = PtyManager::for_tier(tier, &ai_config)
-                .with_usage_context(usage_context)
-                .with_timeout(timeout_secs)
-                .with_nice_priority(DEFAULT_NICE_PRIORITY);
-            pty.spawn_claude(&workspace, &prompt_text)
+            adapter.spawn_claude(PtySpawnRequest {
+                workspace: &workspace,
+                prompt: &prompt_text,
+                tier,
+                ai_config: &ai_config,
+                usage_context,
+                timeout_secs,
+                nice_priority: DEFAULT_NICE_PRIORITY,
+            })
         })
         .await
         .map_err(|e| ProviderError::Permanent(format!("spawn_blocking join error: {e}")))?;
 
-        let output = join.map_err(|e| {
-            // Map PTY ExecutionError into ProviderError. PTY auth/binary errors
-            // are permanent; transient subprocess failures are transient.
-            let msg = format!("{e:?}");
+        let output = join.map_err(|msg| {
             if msg.contains("ClaudeCodeNotFound") || msg.contains("not authenticated") {
                 ProviderError::Permanent(msg)
             } else {

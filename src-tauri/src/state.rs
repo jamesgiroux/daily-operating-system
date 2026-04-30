@@ -243,6 +243,56 @@ impl ResourcePermits {
     }
 }
 
+/// DOS-259 (W2-B cycle 3): atomic state bundle for context-mode switches.
+///
+/// Combines the three Arcs that all change together when the user
+/// switches between Local and Glean modes:
+///   - `context_provider`: ADR-0095 entity-context source.
+///   - `intelligence_provider`: ADR-0091 trait Arc for `IntelligenceProvider`.
+///   - `glean_intelligence_provider`: concrete Glean Arc bridge for callers
+///     still on Glean-specific helpers (migrates when W3-A lands AbilityContext).
+///
+/// All three move together inside one `RwLock` so a write is atomic from
+/// the reader's perspective. Multi-field reads route through
+/// `AppState::context_snapshot()` so callers cannot interleave with a
+/// writer mid-transition.
+pub struct ContextProviderBundle {
+    pub context_provider: Arc<dyn crate::context_provider::ContextProvider>,
+    pub intelligence_provider:
+        Option<Arc<dyn crate::intelligence::provider::IntelligenceProvider + Send + Sync>>,
+    pub glean_intelligence_provider:
+        Option<Arc<crate::intelligence::glean_provider::GleanIntelligenceProvider>>,
+}
+
+/// DOS-259 (W2-B cycle 3): coherent read snapshot of the context state.
+///
+/// Callers that need to make a routing decision based on multiple fields
+/// (e.g., `is_remote()` AND the trait `Arc`) MUST use this snapshot
+/// instead of reading the individual getters separately — that pattern
+/// was the L2 codex finding #1 race. A snapshot is captured under one
+/// read-lock acquisition; the caller then reasons against an immutable
+/// view.
+#[derive(Clone)]
+pub struct ContextSnapshot {
+    pub context_provider: Arc<dyn crate::context_provider::ContextProvider>,
+    pub intelligence_provider:
+        Option<Arc<dyn crate::intelligence::provider::IntelligenceProvider + Send + Sync>>,
+    pub glean_intelligence_provider:
+        Option<Arc<crate::intelligence::glean_provider::GleanIntelligenceProvider>>,
+}
+
+impl ContextSnapshot {
+    pub fn is_remote(&self) -> bool {
+        self.context_provider.is_remote()
+    }
+    pub fn remote_endpoint(&self) -> Option<String> {
+        self.context_provider.remote_endpoint().map(|s| s.to_string())
+    }
+    pub fn provider_name(&self) -> String {
+        self.context_provider.provider_name().to_string()
+    }
+}
+
 /// Application state managed by Tauri
 pub struct AppState {
     pub config: RwLock<Option<Config>>,
@@ -301,26 +351,13 @@ pub struct AppState {
     pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
     /// Typed resource permits for concurrent background work (I565).
     pub permits: ResourcePermits,
-    /// Context provider for intelligence enrichment (ADR-0095).
-    /// Determines where entity context is gathered (local DB vs. Glean).
-    /// Wrapped in RwLock to allow hot-swap without app restart.
-    context_provider: RwLock<Arc<dyn crate::context_provider::ContextProvider>>,
-    /// DOS-259 (W2-B): configured remote `IntelligenceProvider` (Glean today)
-    /// per ADR-0091. `None` when no remote provider is configured — callers
-    /// fall back to PTY (`PtyClaudeCode` constructed per-call with workspace).
-    /// `RwLock` so settings changes can swap atomically; the read at call
-    /// time means "switch mid-queue takes effect on the next dequeue."
-    intelligence_provider: RwLock<
-        Option<Arc<dyn crate::intelligence::provider::IntelligenceProvider + Send + Sync>>,
-    >,
-    /// DOS-259 (W2-B) bridge: concrete Glean provider Arc for early callers
-    /// that still depend on `enrich_entity*`/`enrich_leading_signals*`/
-    /// `discover_accounts` Glean-specific helpers. These migrate to the
-    /// `IntelligenceProvider` trait surface (`complete()`) when W3-A wires
-    /// the ability registry; until then the dual exposure is intentional
-    /// per the W2-B plan §3 line 79 bridge contract.
-    glean_intelligence_provider:
-        RwLock<Option<Arc<crate::intelligence::glean_provider::GleanIntelligenceProvider>>>,
+    /// DOS-259 (W2-B cycle 3, L6 2026-04-30): all three context-related
+    /// Arcs live behind ONE `RwLock<ContextProviderBundle>` so a settings
+    /// switch updates them atomically. Multi-step reads use
+    /// `context_snapshot()` to get a coherent view per ADR-0091's "switch
+    /// mid-queue takes effect on next dequeue" guarantee. The previous
+    /// 3-RwLock layout was a real race surface flagged by L2 codex review.
+    context_state: RwLock<ContextProviderBundle>,
     /// Shared app handle for service-layer Tauri event emission.
     app_handle: RwLock<Option<tauri::AppHandle>>,
 }
@@ -744,9 +781,11 @@ impl AppState {
             merged_signal_config: RwLock::new(startup_merged_config),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             permits: ResourcePermits::new(),
-            context_provider: RwLock::new(context_provider),
-            intelligence_provider: RwLock::new(intelligence_provider),
-            glean_intelligence_provider: RwLock::new(glean_intelligence_provider),
+            context_state: RwLock::new(ContextProviderBundle {
+                context_provider,
+                intelligence_provider,
+                glean_intelligence_provider,
+            }),
             app_handle: RwLock::new(None),
         }
     }
@@ -777,15 +816,45 @@ impl AppState {
     }
 
     /// Get a snapshot of the current context provider (cheap Arc clone).
+    ///
+    /// **For multi-field reads (e.g., `is_remote()` + `intelligence_provider()`)
+    /// use `context_snapshot()` instead** — separate getters can interleave
+    /// with a writer mid-transition. This getter is safe in isolation.
     pub fn context_provider(&self) -> Arc<dyn crate::context_provider::ContextProvider> {
-        Arc::clone(&self.context_provider.read())
+        Arc::clone(&self.context_state.read().context_provider)
     }
 
-    /// Hot-swap the context provider at runtime (ADR-0095 dynamic mode switch).
+    /// DOS-259 (W2-B cycle 3, L6 2026-04-30): atomic snapshot of the
+    /// context state. Captures all three Arcs under one read-lock
+    /// acquisition so callers reasoning about routing (`is_remote()` AND
+    /// the trait `Arc`) see a coherent view.
+    ///
+    /// **Migration sites must use this snapshot, not the individual
+    /// getters.** The L2 codex review found the per-field-getter pattern
+    /// races with `set_context_mode_atomic()` and could issue a remote
+    /// Glean call after a Local switch.
+    pub fn context_snapshot(&self) -> ContextSnapshot {
+        let bundle = self.context_state.read();
+        ContextSnapshot {
+            context_provider: Arc::clone(&bundle.context_provider),
+            intelligence_provider: bundle.intelligence_provider.clone(),
+            glean_intelligence_provider: bundle.glean_intelligence_provider.clone(),
+        }
+    }
+
+    /// Hot-swap ONLY the context provider (ADR-0095 dynamic mode switch).
+    ///
+    /// **Prefer `set_context_mode_atomic`** which updates all three Arcs
+    /// together. This single-field swap exists for legacy callers that
+    /// only manage `context_provider`; it leaves `intelligence_provider`
+    /// and `glean_intelligence_provider` unchanged.
     pub fn swap_context_provider(&self, new: Arc<dyn crate::context_provider::ContextProvider>) {
-        let mut guard = self.context_provider.write();
-        *guard = new;
-        log::info!("Context provider swapped to: {}", guard.provider_name());
+        let mut guard = self.context_state.write();
+        guard.context_provider = new;
+        log::info!(
+            "Context provider swapped to: {}",
+            guard.context_provider.provider_name()
+        );
     }
 
     /// DOS-259 (W2-B): get the configured remote `IntelligenceProvider`, if any.
@@ -793,43 +862,96 @@ impl AppState {
     /// Per ADR-0091: read at call time so a swap mid-queue takes effect on
     /// the next dequeue. `None` means no remote provider is configured —
     /// callers route through PTY (`PtyClaudeCode` constructed per-call).
-    /// Once `AbilityContext` lands in W3-A, callers migrate to
-    /// `select_provider(ability_ctx, tier)`.
     pub fn intelligence_provider(
         &self,
     ) -> Option<Arc<dyn crate::intelligence::provider::IntelligenceProvider + Send + Sync>> {
-        self.intelligence_provider.read().clone()
+        self.context_state.read().intelligence_provider.clone()
     }
 
-    /// DOS-259 (W2-B): hot-swap the `IntelligenceProvider` Arc on settings change.
-    /// `None` clears the configured remote provider (caller falls back to PTY).
+    /// DOS-259 (W2-B): hot-swap ONLY the `IntelligenceProvider` Arc.
+    ///
+    /// **Prefer `set_context_mode_atomic`** for settings transitions —
+    /// this single-field swap exists for tests and legacy paths.
     pub fn swap_intelligence_provider(
         &self,
         new: Option<Arc<dyn crate::intelligence::provider::IntelligenceProvider + Send + Sync>>,
     ) {
-        let mut guard = self.intelligence_provider.write();
-        *guard = new;
+        let mut guard = self.context_state.write();
+        guard.intelligence_provider = new;
     }
 
     /// DOS-259 (W2-B) bridge: get the concrete Glean provider Arc, if any.
-    ///
-    /// Used by callers that depend on Glean-specific helpers (`enrich_entity*`,
-    /// `enrich_leading_signals*`, `discover_accounts`, `enrich_peer_benchmark`).
-    /// These migrate to the `IntelligenceProvider` trait surface (`complete()`)
-    /// when W3-A wires the ability registry.
     pub fn glean_intelligence_provider(
         &self,
     ) -> Option<Arc<crate::intelligence::glean_provider::GleanIntelligenceProvider>> {
-        self.glean_intelligence_provider.read().clone()
+        self.context_state.read().glean_intelligence_provider.clone()
     }
 
-    /// DOS-259 (W2-B) bridge: hot-swap the concrete Glean provider Arc on settings change.
+    /// DOS-259 (W2-B) bridge: hot-swap ONLY the concrete Glean provider Arc.
+    /// **Prefer `set_context_mode_atomic`** — this single-field swap is for tests.
     pub fn swap_glean_intelligence_provider(
         &self,
         new: Option<Arc<crate::intelligence::glean_provider::GleanIntelligenceProvider>>,
     ) {
-        let mut guard = self.glean_intelligence_provider.write();
-        *guard = new;
+        let mut guard = self.context_state.write();
+        guard.glean_intelligence_provider = new;
+    }
+
+    /// DOS-259 (W2-B cycle 3, L6 2026-04-30): atomic context-mode transition.
+    ///
+    /// Updates `context_provider` + `intelligence_provider` + `glean_intelligence_provider`
+    /// inside ONE write-lock critical section. Callers reading via
+    /// `context_snapshot()` see either the pre-swap bundle or the post-swap
+    /// bundle, never a mixed state. This closes the L2 codex finding #1
+    /// race where a reader could observe `is_remote=true` + `None` Glean Arc.
+    pub fn set_context_mode_atomic(&self, mode: &crate::context_provider::ContextMode) {
+        let workspace_path = self
+            .config_read_or_recover()
+            .ok()
+            .and_then(|c| {
+                c.as_ref()
+                    .map(|cfg| std::path::PathBuf::from(&cfg.workspace_path))
+            })
+            .unwrap_or_default();
+        let local_provider = crate::context_provider::local::LocalContextProvider::new(
+            workspace_path,
+            Arc::clone(&self.embedding_model),
+        );
+
+        let new_bundle = match mode {
+            crate::context_provider::ContextMode::Glean { endpoint } => {
+                let cache = Arc::new(crate::context_provider::cache::GleanCache::new());
+                let glean_arc = Arc::new(
+                    crate::intelligence::glean_provider::GleanIntelligenceProvider::new(endpoint),
+                );
+                ContextProviderBundle {
+                    context_provider: Arc::new(
+                        crate::context_provider::glean::GleanContextProvider::new(
+                            endpoint.clone(),
+                            cache,
+                            local_provider,
+                        ),
+                    ),
+                    intelligence_provider: Some(Arc::clone(&glean_arc)
+                        as Arc<
+                            dyn crate::intelligence::provider::IntelligenceProvider + Send + Sync,
+                        >),
+                    glean_intelligence_provider: Some(glean_arc),
+                }
+            }
+            crate::context_provider::ContextMode::Local => ContextProviderBundle {
+                context_provider: Arc::new(local_provider),
+                intelligence_provider: None,
+                glean_intelligence_provider: None,
+            },
+        };
+
+        let mut guard = self.context_state.write();
+        *guard = new_bundle;
+        log::info!(
+            "Context mode atomic transition complete: {}",
+            guard.context_provider.provider_name()
+        );
     }
 
     pub fn set_app_handle(&self, handle: tauri::AppHandle) {
@@ -843,54 +965,17 @@ impl AppState {
 
     /// Build a context provider for the given mode, using this state's config and embedding model.
     ///
-    /// DOS-259 (W2-B): also rebuilds the AppState-owned `IntelligenceProvider`
-    /// Arc to mirror the configured remote provider (Glean today). Callers that
-    /// invoke `swap_context_provider` should also receive a fresh
-    /// `IntelligenceProvider` Arc — handled inline here so settings UI flows
-    /// stay in sync.
+    /// DOS-259 (W2-B cycle 3): now routes through `set_context_mode_atomic`
+    /// so the three context Arcs update under one write lock. Returns the
+    /// new context provider Arc for callers that still want a handle, but
+    /// AppState already holds it via the atomic swap — most callers can
+    /// drop the return and read via `context_snapshot()`.
     pub fn build_context_provider(
         &self,
         mode: &crate::context_provider::ContextMode,
     ) -> Arc<dyn crate::context_provider::ContextProvider> {
-        let workspace_path = self
-            .config_read_or_recover()
-            .ok()
-            .and_then(|c| {
-                c.as_ref()
-                    .map(|cfg| std::path::PathBuf::from(&cfg.workspace_path))
-            })
-            .unwrap_or_default();
-
-        let local_provider = crate::context_provider::local::LocalContextProvider::new(
-            workspace_path,
-            Arc::clone(&self.embedding_model),
-        );
-
-        match mode {
-            crate::context_provider::ContextMode::Glean { endpoint } => {
-                let cache = Arc::new(crate::context_provider::cache::GleanCache::new());
-                let glean_arc = Arc::new(
-                    crate::intelligence::glean_provider::GleanIntelligenceProvider::new(endpoint),
-                );
-                self.swap_glean_intelligence_provider(Some(Arc::clone(&glean_arc)));
-                self.swap_intelligence_provider(Some(glean_arc
-                    as Arc<
-                        dyn crate::intelligence::provider::IntelligenceProvider + Send + Sync,
-                    >));
-                Arc::new(crate::context_provider::glean::GleanContextProvider::new(
-                    endpoint.clone(),
-                    cache,
-                    local_provider,
-                ))
-            }
-            crate::context_provider::ContextMode::Local => {
-                // Clear remote providers — local callers fall back to PTY
-                // (`PtyClaudeCode` constructed per-call).
-                self.swap_intelligence_provider(None);
-                self.swap_glean_intelligence_provider(None);
-                Arc::new(local_provider)
-            }
-        }
+        self.set_context_mode_atomic(mode);
+        Arc::clone(&self.context_state.read().context_provider)
     }
 
     /// Get current status of a workflow

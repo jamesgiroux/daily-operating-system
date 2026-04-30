@@ -980,12 +980,16 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             // no longer silent — we emit an audit event + Tauri event so the
             // frontend can surface a toast and we can see why Health triage
             // fell back to activity-sourced cards.
-            if state.context_provider().is_remote() && request.entity_type == "account" {
-                let endpoint = state
-                    .context_provider()
-                    .remote_endpoint()
-                    .map(|s| s.to_string());
-                if endpoint.is_some() {
+            // DOS-259 (W2-B cycle 3): single coherent snapshot of context
+            // state — `is_remote` and the Glean Arc are both read under one
+            // lock acquisition. Avoids the L2 codex race where a Local
+            // switch between separate getters could let a remote call slip.
+            let ctx_snapshot = state.context_snapshot();
+            if ctx_snapshot.is_remote()
+                && request.entity_type == "account"
+                && ctx_snapshot.remote_endpoint().is_some()
+            {
+                {
                     let entity_name = input.entity_name.clone();
                     let entity_id = request.entity_id.clone();
                     let entity_type = request.entity_type.clone();
@@ -1003,21 +1007,23 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     // user-visible toast on scheduled work, keep audit log.
                     let is_background = is_background_priority(request.priority);
                     tauri::async_runtime::spawn(async move {
-                        // DOS-259 (W2-B): route through AppState-owned Glean
-                        // provider Arc per ADR-0091. Fail closed when the
-                        // bridge is empty — that state means Local was
-                        // selected mid-flight and issuing a remote call here
-                        // would violate ADR-0091's "next dequeue" guarantee.
-                        // Leading-signals enrichment is supplemental, so
-                        // skipping it on bridge miss is the correct close.
-                        let provider = match state_for_spawn.glean_intelligence_provider() {
-                            Some(p) => p,
-                            None => {
+                        // DOS-259 (W2-B cycle 3): re-snapshot at dequeue
+                        // time so a settings switch between enqueue and
+                        // dequeue takes effect on the next read (per
+                        // ADR-0091). Atomic transition guarantees the
+                        // snapshot reads is_remote + Glean Arc coherently.
+                        let snap = state_for_spawn.context_snapshot();
+                        let provider = match snap.glean_intelligence_provider {
+                            Some(p) if snap.is_remote() => p,
+                            _ => {
                                 log::warn!(
-                                    "[DOS-15] Glean Arc bridge empty for leading-signals \
-                                     on {}; settings switch likely raced this dequeue. \
-                                     Skipping leading-signals enrichment.",
-                                    entity_name
+                                    "[DOS-15] Context-mode snapshot for leading-signals \
+                                     on {} shows is_remote={} / Glean Arc={:?}; \
+                                     settings switched between enqueue and dequeue. \
+                                     Skipping leading-signals enrichment per ADR-0091.",
+                                    entity_name,
+                                    snap.is_remote(),
+                                    snap.glean_intelligence_provider.is_some(),
                                 );
                                 return;
                             }
@@ -1528,21 +1534,21 @@ async fn run_glean_enrichment_with_fallback(
         }
     };
 
-    // DOS-259 (W2-B): route through AppState-owned Glean provider Arc per
-    // ADR-0091. Fails closed if the bridge is empty: that state means a
-    // Local-mode swap completed mid-dequeue and this batch was already in
-    // flight with the old `is_remote` snapshot. Constructing an inline
-    // Glean provider here would issue a remote call AFTER the user picked
-    // Local — an ADR-0091 "switch mid-queue takes effect on next dequeue"
-    // violation flagged by L2 codex review. Skip Glean and fall through
-    // to PTY for the entire batch.
-    let provider = match state.glean_intelligence_provider() {
-        Some(p) => p,
-        None => {
+    // DOS-259 (W2-B cycle 3): coherent snapshot of context state. Reading
+    // `is_remote` + Glean Arc together under one lock prevents the
+    // settings-race that L2 codex review flagged. If the snapshot shows
+    // Local mode OR a missing Glean Arc when we expected remote, fall
+    // through to PTY for the whole batch (ADR-0091 "next dequeue").
+    let snap = state.context_snapshot();
+    let provider = match snap.glean_intelligence_provider {
+        Some(p) if snap.is_remote() => p,
+        _ => {
             log::warn!(
-                "IntelProcessor: Glean Arc bridge empty despite is_remote=true; \
-                 settings switch likely raced this batch. Falling through to PTY \
-                 for {} entities.",
+                "IntelProcessor: context-mode snapshot shows is_remote={} / \
+                 Glean Arc={:?}; settings switched between enqueue and dequeue. \
+                 Falling through to PTY for {} entities per ADR-0091.",
+                snap.is_remote(),
+                snap.glean_intelligence_provider.is_some(),
                 inputs.len()
             );
             let mut pty_results = Vec::new();
