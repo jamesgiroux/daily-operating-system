@@ -222,7 +222,9 @@ pub async fn get_account_detail(
     account_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
-    crate::services::accounts::get_account_detail(&account_id, &state).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::accounts::get_account_detail(&ctx, &account_id, &app_state).await
 }
 
 /// Get account-team members (I207).
@@ -245,9 +247,12 @@ pub async fn add_account_team_member(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::add_account_team_member(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -267,9 +272,12 @@ pub async fn set_team_member_role(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::set_team_member_role(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -289,9 +297,12 @@ pub async fn remove_account_team_member(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::remove_account_team_member(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -312,9 +323,12 @@ pub async fn update_account_field(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::update_account_field(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -336,9 +350,12 @@ pub async fn update_technical_footprint_field(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::update_technical_footprint_field(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -359,9 +376,12 @@ pub async fn set_user_health_sentiment(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::set_user_health_sentiment(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -384,9 +404,12 @@ pub async fn update_latest_sentiment_note(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::update_latest_sentiment_note(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -407,9 +430,13 @@ pub async fn snooze_triage_item(
     days: Option<i64>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::snooze_triage_item(
+                &ctx,
                 db,
                 &entity_type,
                 &entity_id,
@@ -430,9 +457,12 @@ pub async fn resolve_triage_item(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::resolve_triage_item(
+                &ctx,
                 db,
                 &app_state,
                 &entity_type,
@@ -466,7 +496,9 @@ pub async fn retry_risk_briefing(
     account_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::accounts::retry_risk_briefing(state.inner(), &account_id).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::accounts::retry_risk_briefing(&ctx, &app_state, &account_id).await
 }
 
 #[tauri::command]
@@ -475,9 +507,12 @@ pub async fn confirm_lifecycle_change(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::confirm_lifecycle_change(
+                &ctx,
                 db,
                 &app_state.signals.engine,
                 change_id,
@@ -496,9 +531,12 @@ pub async fn correct_account_product(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::correct_account_product(
+                &ctx,
                 db,
                 &app_state.signals.engine,
                 &account_id,
@@ -520,9 +558,12 @@ pub async fn correct_lifecycle_change(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::correct_lifecycle_change(
+                &ctx,
                 db,
                 &app_state.signals.engine,
                 change_id,
@@ -544,9 +585,12 @@ pub async fn accept_account_field_conflict(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::accept_account_field_conflict(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -569,9 +613,12 @@ pub async fn dismiss_account_field_conflict(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::dismiss_account_field_conflict(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -593,9 +640,17 @@ pub async fn update_account_notes(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            crate::services::accounts::update_account_notes(db, &app_state, &account_id, &notes)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::accounts::update_account_notes(
+                &ctx,
+                db,
+                &app_state,
+                &account_id,
+                &notes,
+            )
         })
         .await
 }
@@ -609,9 +664,12 @@ pub async fn update_account_programs(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::update_account_programs(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -634,9 +692,12 @@ pub async fn create_account(
 ) -> Result<String, String> {
     let acct_type = account_type.map(|s| crate::db::AccountType::from_db(&s));
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::create_account(
+                &ctx,
                 db,
                 &app_state,
                 &name,
@@ -744,8 +805,11 @@ pub async fn create_internal_organization(
     existing_person_ids: Option<Vec<String>>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<CreateInternalOrganizationResult, String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::accounts::create_internal_organization(
-        &state,
+        &ctx,
+        &app_state,
         &company_name,
         &domains,
         &team_name,
@@ -763,8 +827,11 @@ pub async fn create_child_account(
     owner_person_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<CreateChildAccountResult, String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::accounts::create_child_account_cmd(
-        &state,
+        &ctx,
+        &app_state,
         &parent_id,
         &name,
         description.as_deref(),
@@ -806,8 +873,13 @@ pub async fn create_team(
 pub async fn backfill_internal_meeting_associations(
     state: State<'_, Arc<AppState>>,
 ) -> Result<usize, String> {
+    let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
-        .db_write(crate::services::accounts::backfill_internal_meeting_associations)
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::accounts::backfill_internal_meeting_associations(&ctx, db)
+        })
         .await
 }
 
@@ -824,9 +896,12 @@ pub async fn update_stakeholder_engagement(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::update_stakeholder_engagement(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -846,9 +921,12 @@ pub async fn update_stakeholder_assessment(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::update_stakeholder_assessment(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -882,9 +960,12 @@ pub async fn add_stakeholder_role(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::add_stakeholder_role(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -904,9 +985,12 @@ pub async fn remove_stakeholder_role(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::remove_stakeholder_role(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
@@ -938,9 +1022,16 @@ pub async fn accept_stakeholder_suggestion(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            crate::services::accounts::accept_stakeholder_suggestion(db, &app_state, suggestion_id)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::accounts::accept_stakeholder_suggestion(
+                &ctx,
+                db,
+                &app_state,
+                suggestion_id,
+            )
         })
         .await
 }
@@ -952,9 +1043,12 @@ pub async fn dismiss_stakeholder_suggestion(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::dismiss_stakeholder_suggestion(
+                &ctx,
                 db,
                 &app_state.signals.engine,
                 suggestion_id,

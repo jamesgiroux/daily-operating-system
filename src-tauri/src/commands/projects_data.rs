@@ -381,9 +381,11 @@ pub async fn archive_account(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            crate::services::accounts::archive_account(db, &app_state, &id, archived)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::accounts::archive_account(&ctx, db, &app_state, &id, archived)
         })
         .await
 }
@@ -396,9 +398,11 @@ pub async fn merge_accounts(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::db::MergeResult, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            crate::services::accounts::merge_accounts(db, &app_state, &from_id, &into_id)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::accounts::merge_accounts(&ctx, db, &app_state, &from_id, &into_id)
         })
         .await
 }
@@ -475,9 +479,12 @@ pub async fn restore_account(
     restore_children: bool,
     state: State<'_, Arc<AppState>>,
 ) -> Result<usize, String> {
+    let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            crate::services::accounts::restore_account(db, &account_id, restore_children)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::accounts::restore_account(&ctx, db, &account_id, restore_children)
         })
         .await
 }
@@ -512,10 +519,13 @@ pub async fn bulk_create_accounts(
         .ok_or("Config not loaded")?
         .workspace_path
         .clone();
+    let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let workspace = Path::new(&workspace_path);
-            crate::services::accounts::bulk_create_accounts(db, workspace, &names)
+            crate::services::accounts::bulk_create_accounts(&ctx, db, workspace, &names)
         })
         .await
 }
@@ -556,9 +566,12 @@ pub async fn record_account_event(
     state: State<'_, Arc<AppState>>,
 ) -> Result<i64, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::record_account_event(
+                &ctx,
                 db,
                 &app_state,
                 &account_id,
