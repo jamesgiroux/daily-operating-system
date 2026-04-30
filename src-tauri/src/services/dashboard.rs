@@ -266,7 +266,17 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
     let engine = std::sync::Arc::clone(&state.signals.engine);
     let _ = state
         .db_write(move |db| {
-            crate::services::accounts::refresh_lifecycle_states_for_dashboard(db, &engine)
+            // DOS-209 (W2-A): construct Live ServiceContext inline. Dashboard
+            // operations are always Live; the called mutator only consumes
+            // ctx.check_mutation_allowed + ctx.clock (not external clients),
+            // so a default ExternalClients is safe here. When dashboard.rs
+            // migrates its own command callers to take &Arc<AppState>, this
+            // shifts to state.live_service_context() per the standard pattern.
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            crate::services::accounts::refresh_lifecycle_states_for_dashboard(&ctx, db, &engine)
         })
         .await;
 
@@ -583,7 +593,12 @@ pub async fn get_dashboard_data(state: &AppState) -> DashboardResult {
     let engine = std::sync::Arc::clone(&state.signals.engine);
     let _ = state
         .db_write(move |db| {
-            crate::services::accounts::refresh_lifecycle_states_for_dashboard(db, &engine)
+            // DOS-209 (W2-A): see comment at build_live_dashboard_data — same pattern.
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            crate::services::accounts::refresh_lifecycle_states_for_dashboard(&ctx, db, &engine)
         })
         .await;
 

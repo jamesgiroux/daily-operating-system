@@ -3501,8 +3501,10 @@ async fn import_account_from_glean_internal(
 ) -> Result<String, String> {
     let request_for_db = request.clone();
     let state_for_db = state.clone();
+    let state_for_ctx = state.clone();
     let (account_id, created_new) = state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             if let Some(existing) = db
                 .get_account_by_name(&request_for_db.name)
                 .map_err(|e| e.to_string())?
@@ -3511,6 +3513,7 @@ async fn import_account_from_glean_internal(
             }
 
             let account_id = crate::services::accounts::create_account(
+                &ctx,
                 db,
                 &state_for_db,
                 &request_for_db.name,
@@ -3524,7 +3527,7 @@ async fn import_account_from_glean_internal(
                 .map(|value| value.trim().to_lowercase())
                 .filter(|value| !value.is_empty())
             {
-                crate::services::accounts::set_account_domains(db, &account_id, &[domain])?;
+                crate::services::accounts::set_account_domains(&ctx, db, &account_id, &[domain])?;
             }
 
             let signal_payload = serde_json::json!({

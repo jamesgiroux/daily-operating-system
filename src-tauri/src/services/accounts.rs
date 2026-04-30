@@ -12,14 +12,17 @@ use crate::commands::{
     PickerAccount, PrepContext,
 };
 use crate::db::ActionDb;
+use crate::services::context::ServiceContext;
 use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 
 pub fn set_account_domains(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     account_id: &str,
     domains: &[String],
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.set_account_domains(account_id, domains)
         .map_err(|e| e.to_string())
 }
@@ -29,6 +32,7 @@ pub fn set_account_domains(
 /// Checks for duplicate names, generates unique IDs, creates DB record,
 /// copies parent domains, and optionally writes workspace files.
 pub fn create_child_account_record(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     workspace: Option<&Path>,
     parent: &crate::db::DbAccount,
@@ -36,6 +40,7 @@ pub fn create_child_account_record(
     description: Option<&str>,
     owner_person_id: Option<&str>,
 ) -> Result<crate::db::DbAccount, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let children = db
         .get_child_accounts(&parent.id)
         .map_err(|e| e.to_string())?;
@@ -62,7 +67,7 @@ pub fn create_child_account_record(
         }
     });
     let tracker_path = format!("{}/{}", parent_tracker, name);
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
 
     let account = crate::db::DbAccount {
         id,
@@ -699,11 +704,13 @@ fn evaluate_lifecycle_transition_candidate(
 }
 
 fn emit_auto_completed_success_plan_signals(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     auto_completed: &crate::db::success_plans::AutoCompletedMilestones,
     source: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     for milestone in &auto_completed.milestones {
         crate::services::signals::emit_and_propagate(
             db,
@@ -741,11 +748,13 @@ fn emit_auto_completed_success_plan_signals(
 }
 
 pub fn apply_lifecycle_transition(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     account_id: &str,
     transition: &LifecycleTransitionCandidate,
 ) -> Result<Option<i64>, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         let account = tx
             .get_account(account_id)
@@ -847,6 +856,7 @@ pub fn apply_lifecycle_transition(
                     )
                     .map_err(|e| e.to_string())?;
                 emit_auto_completed_success_plan_signals(
+                    ctx,
                     tx,
                     engine,
                     &auto_completed,
@@ -886,10 +896,12 @@ pub fn apply_lifecycle_transition(
 }
 
 pub fn ensure_account_lifecycle_state(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     account_id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let Some(account) = db.get_account(account_id).map_err(|e| e.to_string())? else {
         return Ok(());
     };
@@ -901,7 +913,7 @@ pub fn ensure_account_lifecycle_state(
     }
 
     if let Some(candidate) = evaluate_lifecycle_transition_candidate(db, &account) {
-        let _ = apply_lifecycle_transition(db, engine, account_id, &candidate)?;
+        let _ = apply_lifecycle_transition(ctx, db, engine, account_id, &candidate)?;
         return Ok(());
     }
 
@@ -934,9 +946,11 @@ pub fn ensure_account_lifecycle_state(
 }
 
 pub fn refresh_lifecycle_states_for_dashboard(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
 ) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let mut refreshed = 0usize;
     for account in db.get_all_accounts().map_err(|e| e.to_string())? {
         if !matches!(
@@ -950,7 +964,7 @@ pub fn refresh_lifecycle_states_for_dashboard(
             .contract_end
             .as_deref()
             .and_then(parse_iso_date)
-            .map(|date| (date - Utc::now().date_naive()).num_days() <= 150)
+            .map(|date| (date - ctx.clock.now().date_naive()).num_days() <= 150)
             .unwrap_or(false);
         let has_signals = crate::services::signals::get_for_entity(db, "account", &account.id)
             .map(|signals| {
@@ -971,17 +985,19 @@ pub fn refresh_lifecycle_states_for_dashboard(
             continue;
         }
 
-        ensure_account_lifecycle_state(db, engine, &account.id)?;
+        ensure_account_lifecycle_state(ctx, db, engine, &account.id)?;
         refreshed += 1;
     }
     Ok(refreshed)
 }
 
 pub fn confirm_lifecycle_change(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     change_id: i64,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let change = db
         .get_lifecycle_change(change_id)
         .map_err(|e| e.to_string())?
@@ -1003,7 +1019,10 @@ pub fn confirm_lifecycle_change(
     Ok(())
 }
 
+// DOS-209: ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
+#[allow(clippy::too_many_arguments)]
 pub fn correct_account_product(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     account_id: &str,
@@ -1012,6 +1031,7 @@ pub fn correct_account_product(
     status: Option<&str>,
     source_to_penalize: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.update_account_product(product_id, name, status, None, "user_correction", 1.0)
         .map_err(|e| e.to_string())?;
     let _ = db.upsert_signal_weight(source_to_penalize, "account", "product_adoption", 0.0, 1.0);
@@ -1032,6 +1052,7 @@ pub fn correct_account_product(
 }
 
 pub fn correct_lifecycle_change(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     change_id: i64,
@@ -1039,6 +1060,7 @@ pub fn correct_lifecycle_change(
     corrected_stage: Option<&str>,
     notes: Option<&str>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let change = db
         .get_lifecycle_change(change_id)
         .map_err(|e| e.to_string())?
@@ -1051,15 +1073,17 @@ pub fn correct_lifecycle_change(
         evidence: notes.map(str::to_string),
         completion_trigger: None,
     };
-    apply_lifecycle_transition(db, engine, &change.account_id, &transition)?;
+    apply_lifecycle_transition(ctx, db, engine, &change.account_id, &transition)?;
     db.set_lifecycle_change_response(change_id, "corrected", notes)
         .map_err(|e| e.to_string())?;
     let _ = db.upsert_signal_weight(&change.source, "account", "lifecycle_transition", 0.0, 1.0);
     Ok(())
 }
 
+// DOS-209: ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
 #[allow(clippy::too_many_arguments)]
 pub fn accept_account_field_conflict(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
@@ -1068,6 +1092,7 @@ pub fn accept_account_field_conflict(
     source: &str,
     signal_id: Option<&str>,
 ) -> Result<AccountDetailResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let next_value = if field == "lifecycle" {
         normalized_lifecycle(suggested_value)
     } else {
@@ -1078,7 +1103,7 @@ pub fn accept_account_field_conflict(
     // post-commit side effects (emit_propagate_and_evaluate, self-healing
     // feedback, health debounce, workspace file regen). We do NOT pull it
     // inside the transaction below — it manages its own atomicity.
-    update_account_field_inner(db, state, account_id, field, &next_value)?;
+    update_account_field_inner(ctx, db, state, account_id, field, &next_value)?;
 
     // DOS-309: pull the conflict-resolution writes into one transaction so
     // a failure on any single write rolls back the whole conflict-resolution
@@ -1160,7 +1185,10 @@ pub fn accept_account_field_conflict(
     build_account_detail_result(db, account_id)
 }
 
+// DOS-209: ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
+#[allow(clippy::too_many_arguments)]
 pub fn dismiss_account_field_conflict(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     account_id: &str,
@@ -1169,6 +1197,7 @@ pub fn dismiss_account_field_conflict(
     source: &str,
     suggested_value: Option<&str>,
 ) -> Result<AccountDetailResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // DOS-309: pull conflict-resolution writes into one transaction; emit
     // signal-bus side effects after commit. See accept_account_field_conflict
     // for the architectural rationale.
@@ -1247,15 +1276,21 @@ pub fn dismiss_account_field_conflict(
 /// I644: All data from DB — no filesystem reads on the detail page path.
 /// Fetches actions, meetings, people, team, signals, captures, and email signals.
 pub async fn get_account_detail(
+    ctx: &ServiceContext<'_>,
     account_id: &str,
-    state: &AppState,
+    state: &std::sync::Arc<AppState>,
 ) -> Result<AccountDetailResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let _config = state.config.read().clone();
     let engine = std::sync::Arc::clone(&state.signals.engine);
+    let state_for_ctx = state.clone();
 
     let lifecycle_account_id = account_id.to_string();
     let _ = state
-        .db_write(move |db| ensure_account_lifecycle_state(db, &engine, &lifecycle_account_id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            ensure_account_lifecycle_state(&ctx, db, &engine, &lifecycle_account_id)
+        })
         .await;
 
     let account_id = account_id.to_string();
@@ -1530,13 +1565,15 @@ pub fn build_account_detail_result(
 /// Update a single structured field on an account.
 /// Writes to SQLite, emits signal, then regenerates dashboard.json + dashboard.md.
 pub fn update_account_field(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     field: &str,
     value: &str,
 ) -> Result<AccountDetailResult, String> {
-    update_account_field_inner(db, state, account_id, field, value)?;
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    update_account_field_inner(ctx, db, state, account_id, field, value)?;
     // DOS-229 generalization (Wave 0e Fix 5): return the fresh detail
     // assembled on the SAME writer connection so the frontend hook can
     // setDetail(result) without a follow-up silentRefresh (which hits a
@@ -1545,12 +1582,14 @@ pub fn update_account_field(
 }
 
 fn update_account_field_inner(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     field: &str,
     value: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let normalized_value = if field == "lifecycle" {
         normalized_lifecycle(value)
     } else {
@@ -1718,12 +1757,14 @@ const RISK_SENTIMENTS: &[&str] = &["at_risk", "critical"];
 ///      source when applicable via the self-healing feedback system; here we
 ///      stamp `source = 'user_edit'` on the row.
 pub fn update_technical_footprint_field(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     field: &str,
     value: &str,
 ) -> Result<AccountDetailResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.update_technical_footprint_field(account_id, field, value)
         .map_err(|e| e.to_string())?;
 
@@ -1757,12 +1798,14 @@ pub fn update_technical_footprint_field(
 /// and — on transition into at_risk/critical — enqueues a background risk
 /// briefing generation.
 pub fn set_user_health_sentiment(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     sentiment: &str,
     note: Option<&str>,
 ) -> Result<AccountDetailResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     const VALID_SENTIMENTS: &[&str] =
         &["strong", "on_track", "concerning", "at_risk", "critical"];
     if !VALID_SENTIMENTS.contains(&sentiment) {
@@ -1778,7 +1821,7 @@ pub fn set_user_health_sentiment(
         .map_err(|e| e.to_string())?
         .and_then(|a| a.user_health_sentiment);
 
-    let now = Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
     db.update_account_field(account_id, "user_health_sentiment", sentiment)
         .map_err(|e| e.to_string())?;
     db.update_account_field(account_id, "sentiment_set_at", &now)
@@ -1845,7 +1888,7 @@ pub fn set_user_health_sentiment(
         let attempt_id = uuid::Uuid::new_v4().to_string();
         db.upsert_risk_briefing_job_enqueued(account_id, &attempt_id)
             .map_err(|e| format!("persist risk briefing enqueue: {e}"))?;
-        spawn_risk_briefing_lifecycle(state, account_id.to_string(), attempt_id);
+        spawn_risk_briefing_lifecycle(ctx, state, account_id.to_string(), attempt_id);
     }
 
     // DOS-229: Read back the updated detail on the SAME writer connection so
@@ -1861,11 +1904,13 @@ pub fn set_user_health_sentiment(
 /// Emits the same `field_updated` signal as `set_user_health_sentiment` so
 /// the Intelligence Loop sees that the user touched this surface.
 pub fn update_latest_sentiment_note(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     note: Option<&str>,
 ) -> Result<AccountDetailResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let current_sentiment: Option<String> = db
         .get_account(account_id)
         .map_err(|e| e.to_string())?
@@ -1939,14 +1984,16 @@ pub struct TriageSnoozeRow {
 /// DOS-269: Snooze a triage card for N days. `days` must be positive; the
 /// frontend default is 14.
 pub fn snooze_triage_item(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     entity_type: &str,
     entity_id: &str,
     triage_key: &str,
     days: i64,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let days = days.max(1);
-    let until = Utc::now() + chrono::Duration::days(days);
+    let until = ctx.clock.now() + chrono::Duration::days(days);
     db.snooze_triage_item(entity_type, entity_id, triage_key, &until.to_rfc3339())
         .map_err(|e| e.to_string())
 }
@@ -1955,12 +2002,14 @@ pub fn snooze_triage_item(
 /// Emits a low-weight field_updated signal so the Intelligence Loop
 /// records that the user acted on this card (parity with DOS-41 confirm).
 pub fn resolve_triage_item(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     entity_type: &str,
     entity_id: &str,
     triage_key: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.resolve_triage_item(entity_type, entity_id, triage_key)
         .map_err(|e| e.to_string())?;
     // Best-effort signal emit — triage resolution is user-intent evidence
@@ -2013,10 +2062,15 @@ pub fn list_triage_snoozes(
 /// we bail out cleanly — preventing the "two racing retries corrupt each
 /// other" last-write-wins bug that the prior two-spawn design had.
 fn spawn_risk_briefing_lifecycle(
+    ctx: &ServiceContext<'_>,
     state: &std::sync::Arc<AppState>,
     account_id: String,
     attempt_id: String,
 ) {
+    if let Err(e) = ctx.check_mutation_allowed() {
+        log::warn!("risk briefing lifecycle spawn blocked by execution mode: {e}");
+        return;
+    }
     let state_clone = state.clone();
     let handle = state.app_handle();
 
@@ -2111,9 +2165,11 @@ fn spawn_risk_briefing_lifecycle(
 ///    CAS machinery ensures any stale runner from a prior attempt can't
 ///    clobber the new one's state.
 pub async fn retry_risk_briefing(
+    ctx: &ServiceContext<'_>,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let id_for_read = account_id.to_string();
     let (exists, current_status) = state
         .db_read(move |db| {
@@ -2151,7 +2207,7 @@ pub async fn retry_risk_briefing(
         })
         .await?;
 
-    spawn_risk_briefing_lifecycle(state, account_id.to_string(), attempt_id);
+    spawn_risk_briefing_lifecycle(ctx, state, account_id.to_string(), attempt_id);
     Ok(())
 }
 
@@ -2169,11 +2225,13 @@ pub fn is_health_relevant_field(field: &str) -> bool {
 /// Update account notes (narrative field).
 /// Writes to SQLite, then regenerates dashboard.json + dashboard.md.
 pub fn update_account_notes(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     account_id: &str,
     notes: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.update_account_field(account_id, "notes", notes)
         .map_err(|e| e.to_string())?;
 
@@ -2215,11 +2273,13 @@ pub fn update_account_notes(
 /// Update account strategic programs (narrative field).
 /// Validates JSON, writes to SQLite, then regenerates dashboard.json + dashboard.md.
 pub fn update_account_programs(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     account_id: &str,
     programs_json: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let _: Vec<crate::accounts::StrategicProgram> =
         serde_json::from_str(programs_json).map_err(|e| format!("Invalid programs JSON: {}", e))?;
 
@@ -2257,12 +2317,14 @@ pub fn update_account_programs(
 /// Create a new account. Creates SQLite record + workspace files.
 /// If `parent_id` is provided, creates a child (BU) account under that parent.
 pub fn create_account(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     name: &str,
     parent_id: Option<&str>,
     explicit_type: Option<crate::db::AccountType>,
 ) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let name = crate::util::validate_entity_name(name)?.to_string();
 
     let (id, tracker_path, account_type) = if let Some(pid) = parent_id {
@@ -2284,7 +2346,7 @@ pub fn create_account(
         (id, format!("Accounts/{}", name), at)
     };
 
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
 
     let account = crate::db::DbAccount {
         id: id.clone(),
@@ -2324,11 +2386,13 @@ pub fn create_account(
 /// account and its cascaded children so already-queued enrichments don't run
 /// against a now-archived target.
 pub fn archive_account(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &crate::state::AppState,
     id: &str,
     archived: bool,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let signal_type = if archived {
         "entity_archived"
     } else {
@@ -2381,11 +2445,13 @@ pub fn archive_account(
 
 /// Merge source account into target account with signal emission.
 pub fn merge_accounts(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &crate::state::AppState,
     from_id: &str,
     into_id: &str,
 ) -> Result<crate::db::MergeResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         let result = tx
             .merge_accounts(from_id, into_id)
@@ -2407,22 +2473,26 @@ pub fn merge_accounts(
 
 /// Restore an archived account with optional child restoration.
 pub fn restore_account(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     account_id: &str,
     restore_children: bool,
 ) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.restore_account(account_id, restore_children)
         .map_err(|e| e.to_string())
 }
 
 /// Add a person-role pair to an account team with signal emission.
 pub fn add_account_team_member(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &crate::state::AppState,
     account_id: &str,
     person_id: &str,
     role: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let role = role.trim().to_lowercase();
     if role.is_empty() {
         return Err("Role is required".to_string());
@@ -2450,12 +2520,14 @@ pub fn add_account_team_member(
 
 /// Replace all roles for a team member (single-select role change).
 pub fn set_team_member_role(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &crate::state::AppState,
     account_id: &str,
     person_id: &str,
     new_role: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.set_team_member_role(account_id, person_id, new_role)
             .map_err(|e| e.to_string())?;
@@ -2479,12 +2551,14 @@ pub fn set_team_member_role(
 
 /// Remove a person-role pair from an account team with signal emission.
 pub fn remove_account_team_member(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &crate::state::AppState,
     account_id: &str,
     person_id: &str,
     role: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.remove_account_team_member(account_id, person_id, role)
             .map_err(|e| e.to_string())?;
@@ -2507,7 +2581,10 @@ pub fn remove_account_team_member(
 }
 
 /// Record an account lifecycle event with signal emission.
+// DOS-209: ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
+#[allow(clippy::too_many_arguments)]
 pub fn record_account_event(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &crate::state::AppState,
     account_id: &str,
@@ -2516,6 +2593,7 @@ pub fn record_account_event(
     arr_impact: Option<f64>,
     notes: Option<&str>,
 ) -> Result<i64, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         let event_id = tx
             .record_account_event(account_id, event_type, event_date, arr_impact, notes)
@@ -2575,10 +2653,12 @@ pub fn record_account_event(
 
 /// Bulk-create accounts from a list of names. Returns created account IDs.
 pub fn bulk_create_accounts(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     workspace: &Path,
     names: &[String],
 ) -> Result<Vec<String>, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let mut created_ids = Vec::with_capacity(names.len());
 
     for raw_name in names {
@@ -2590,7 +2670,7 @@ pub fn bulk_create_accounts(
             continue;
         }
 
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = ctx.clock.now().to_rfc3339();
         let account = crate::db::DbAccount {
             id: id.clone(),
             name: name.to_string(),
@@ -2746,13 +2826,15 @@ pub fn get_accounts_for_picker(db: &ActionDb) -> Result<Vec<PickerAccount>, Stri
 ///
 /// Wraps all DB writes in a transaction. Filesystem writes are best-effort after commit.
 pub async fn create_internal_organization(
-    state: &AppState,
+    ctx: &ServiceContext<'_>,
+    state: &std::sync::Arc<AppState>,
     company_name: &str,
     domains: &[String],
     team_name: &str,
     colleagues: &[crate::commands::TeamColleagueInput],
     existing_person_ids: &[String],
 ) -> Result<crate::commands::CreateInternalOrganizationResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let company_name = crate::util::validate_entity_name(company_name)?.to_string();
     let team_name = crate::util::validate_entity_name(team_name)?.to_string();
     let domains = crate::helpers::normalize_domains(domains);
@@ -2768,9 +2850,11 @@ pub async fn create_internal_organization(
     let domains_clone = domains.clone();
     let company_name_clone = company_name.clone();
     let team_name_clone = team_name.clone();
+    let state_for_ctx = state.clone();
 
     let (root_account, initial_team, created_people, updated_people) = state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let workspace = std::path::Path::new(&workspace_path);
 
             let (root_account, initial_team, created_people, updated_people) = db
@@ -2799,7 +2883,7 @@ pub async fn create_internal_organization(
                         suffix += 1;
                     }
 
-                    let now = chrono::Utc::now().to_rfc3339();
+                    let now = ctx.clock.now().to_rfc3339();
                     let root_account = crate::db::DbAccount {
                         id: root_id.clone(),
                         name: company_name_clone.clone(),
@@ -2816,6 +2900,7 @@ pub async fn create_internal_organization(
                         .map_err(|e| e.to_string())?;
 
                     let initial_team = create_child_account_record(
+                        &ctx,
                         db,
                         None,
                         &root_account,
@@ -2939,12 +3024,14 @@ pub async fn create_internal_organization(
 
 /// Create a child account under a parent with intel queue enqueue.
 pub async fn create_child_account_cmd(
-    state: &AppState,
+    ctx: &ServiceContext<'_>,
+    state: &std::sync::Arc<AppState>,
     parent_id: &str,
     name: &str,
     description: Option<&str>,
     owner_person_id: Option<&str>,
 ) -> Result<crate::commands::CreateChildAccountResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let name = crate::util::validate_entity_name(name)?.to_string();
     let workspace_path = state
         .config
@@ -2955,15 +3042,18 @@ pub async fn create_child_account_cmd(
     let parent_id = parent_id.to_string();
     let description = description.map(|s| s.to_string());
     let owner_person_id = owner_person_id.map(|s| s.to_string());
+    let state_for_ctx = state.clone();
 
     let child_id = state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let workspace = workspace_path.as_deref().map(std::path::Path::new);
             let parent = db
                 .get_account(&parent_id)
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Parent account not found: {}", parent_id))?;
             let child = create_child_account_record(
+                &ctx,
                 db,
                 workspace,
                 &parent,
@@ -2987,7 +3077,11 @@ pub async fn create_child_account_cmd(
 }
 
 /// Backfill internal meeting → account associations for meetings missing entity links.
-pub fn backfill_internal_meeting_associations(db: &ActionDb) -> Result<usize, String> {
+pub fn backfill_internal_meeting_associations(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let mut stmt = db
         .conn_ref()
         .prepare(
@@ -3024,23 +3118,27 @@ pub fn backfill_internal_meeting_associations(db: &ActionDb) -> Result<usize, St
 
 /// Update engagement level for a stakeholder with signal emission.
 pub fn update_stakeholder_engagement(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     engagement: &str,
 ) -> Result<AccountDetailResult, String> {
-    update_stakeholder_engagement_inner(db, state, account_id, person_id, engagement)?;
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    update_stakeholder_engagement_inner(ctx, db, state, account_id, person_id, engagement)?;
     build_account_detail_result(db, account_id)
 }
 
 fn update_stakeholder_engagement_inner(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     engagement: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.conn_ref()
             .execute(
@@ -3078,23 +3176,27 @@ fn update_stakeholder_engagement_inner(
 
 /// Update assessment text for a stakeholder with signal emission.
 pub fn update_stakeholder_assessment(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     assessment: &str,
 ) -> Result<AccountDetailResult, String> {
-    update_stakeholder_assessment_inner(db, state, account_id, person_id, assessment)?;
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    update_stakeholder_assessment_inner(ctx, db, state, account_id, person_id, assessment)?;
     build_account_detail_result(db, account_id)
 }
 
 fn update_stakeholder_assessment_inner(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     assessment: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.conn_ref()
             .execute(
@@ -3127,29 +3229,33 @@ fn update_stakeholder_assessment_inner(
 
 /// Add a role to a stakeholder (multi-role — doesn't replace existing roles).
 pub fn add_stakeholder_role(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     role: &str,
 ) -> Result<AccountDetailResult, String> {
-    add_stakeholder_role_inner(db, state, account_id, person_id, role)?;
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    add_stakeholder_role_inner(ctx, db, state, account_id, person_id, role)?;
     build_account_detail_result(db, account_id)
 }
 
 fn add_stakeholder_role_inner(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     role: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let role = role.trim().to_lowercase();
     if role.is_empty() {
         return Err("Role is required".to_string());
     }
     db.with_transaction(|tx| {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = ctx.clock.now().to_rfc3339();
         // Re-adding a role must clear any prior soft-delete tombstone.
         // Without the `dismissed_at = NULL` in the ON CONFLICT clause,
         // a user who dismisses then re-adds would see the row written
@@ -3192,23 +3298,27 @@ fn add_stakeholder_role_inner(
 
 /// Remove a specific role from a stakeholder.
 pub fn remove_stakeholder_role(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     role: &str,
 ) -> Result<AccountDetailResult, String> {
-    remove_stakeholder_role_inner(db, state, account_id, person_id, role)?;
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    remove_stakeholder_role_inner(ctx, db, state, account_id, person_id, role)?;
     build_account_detail_result(db, account_id)
 }
 
 fn remove_stakeholder_role_inner(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     account_id: &str,
     person_id: &str,
     role: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         // Soft-delete: tombstone the row with `dismissed_at = now` and
         // flip provenance to 'user'. The hard-DELETE version let the
@@ -3251,10 +3361,12 @@ fn remove_stakeholder_role_inner(
 
 /// Accept a stakeholder suggestion: create person if needed, add to account.
 pub fn accept_stakeholder_suggestion(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &std::sync::Arc<AppState>,
     suggestion_id: i64,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let account_id = db.with_transaction(|tx| {
         let suggestion = tx
             .get_stakeholder_suggestion(suggestion_id)
@@ -3311,7 +3423,7 @@ pub fn accept_stakeholder_suggestion(
         };
 
         // Ensure stakeholder link exists
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = ctx.clock.now().to_rfc3339();
         tx.conn_ref()
             .execute(
                 "INSERT INTO account_stakeholders (account_id, person_id, data_source, created_at)
@@ -3385,10 +3497,12 @@ pub fn accept_stakeholder_suggestion(
 
 /// Dismiss a stakeholder suggestion.
 pub fn dismiss_stakeholder_suggestion(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     suggestion_id: i64,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         let suggestion = tx
             .get_stakeholder_suggestion(suggestion_id)
@@ -3423,8 +3537,18 @@ pub fn dismiss_stakeholder_suggestion(
 mod tests {
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount};
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
+    use chrono::TimeZone;
     use rusqlite::params;
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     fn make_account(id: &str, name: &str) -> DbAccount {
         DbAccount {
@@ -3522,7 +3646,11 @@ mod tests {
         );
 
         // Restore
-        super::restore_account(&db, "acc-ar", false).expect("restore");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        super::restore_account(&ctx, &db, "acc-ar", false).expect("restore");
         let archived_after: bool = db
             .conn_ref()
             .query_row(
@@ -3939,7 +4067,11 @@ mod tests {
         db.upsert_account(&account).unwrap();
 
         let domains = vec!["example.com".to_string(), "example.org".to_string()];
-        super::set_account_domains(&db, "acc-dom", &domains).expect("set_account_domains");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        super::set_account_domains(&ctx, &db, "acc-dom", &domains).expect("set_account_domains");
 
         let domain_count: i64 = db
             .conn_ref()
@@ -3964,9 +4096,13 @@ mod tests {
             "Beta Inc".to_string(),
             "Alpha Corp".to_string(), // duplicate
         ];
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         let created =
-            super::bulk_create_accounts(&db, workspace, &names).expect("bulk_create_accounts");
+            super::bulk_create_accounts(&ctx, &db, workspace, &names).expect("bulk_create_accounts");
 
         // First call: 2 unique accounts created, duplicate skipped
         assert_eq!(created.len(), 2, "Should create 2 unique accounts");
@@ -3978,7 +4114,7 @@ mod tests {
         assert_eq!(total, 2, "DB should have 2 accounts");
 
         // Second call with same names: all skipped as duplicates
-        let created_again = super::bulk_create_accounts(&db, workspace, &names)
+        let created_again = super::bulk_create_accounts(&ctx, &db, workspace, &names)
             .expect("bulk_create_accounts second run");
         assert_eq!(created_again.len(), 0, "Duplicates should be skipped");
     }
@@ -4044,7 +4180,12 @@ mod tests {
         account.contract_end = Some(contract_end);
         db.upsert_account(&account).expect("upsert");
 
-        super::ensure_account_lifecycle_state(&db, &engine, "acc-renew").expect("ensure_lifecycle");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        super::ensure_account_lifecycle_state(&ctx, &db, &engine, "acc-renew")
+            .expect("ensure_lifecycle");
 
         // Should have emitted renewal_stage_updated signal
         assert_eq!(signal_count(&db, "acc-renew", "renewal_stage_updated"), 1);
@@ -4080,7 +4221,11 @@ mod tests {
             )
             .expect("get change_id");
 
-        super::confirm_lifecycle_change(&db, &engine, change_id).expect("confirm");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        super::confirm_lifecycle_change(&ctx, &db, &engine, change_id).expect("confirm");
 
         // Signal weight alpha should increase for email_signal source (positive feedback)
         let (alpha, beta): (f64, f64) = db
@@ -4129,7 +4274,12 @@ mod tests {
             )
             .expect("get change_id");
 
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
         super::correct_lifecycle_change(
+            &ctx,
             &db,
             &engine,
             change_id,
