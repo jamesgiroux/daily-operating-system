@@ -222,22 +222,29 @@ pub async fn enrich_entity(
         let mut glean_result = None;
         if let (Some(_endpoint), Some(ref ctx)) = (&glean_endpoint, &input.intelligence_context) {
             // DOS-259 (W2-B): route through AppState-owned Glean provider Arc
-            // per ADR-0091 instead of constructing inline. Settings-change swap
-            // takes effect on next call. If the Arc is missing here despite
-            // is_remote being true, fall back to inline construction so we
-            // don't silently skip the user-initiated refresh.
-            let provider = match state.glean_intelligence_provider() {
-                Some(p) => p,
-                None => std::sync::Arc::new(
-                    crate::intelligence::glean_provider::GleanIntelligenceProvider::new(
-                        glean_endpoint.as_deref().unwrap_or(""),
-                    ),
-                ),
+            // per ADR-0091. Fail closed when the bridge is empty — that means
+            // a Local-mode swap raced this manual refresh; issuing an inline
+            // remote call would violate ADR-0091's "next dequeue" guarantee
+            // and call Glean after the user picked Local. Skip Glean and
+            // fall through to PTY (the existing fallback path below handles
+            // glean_result == None).
+            let provider_opt = state.glean_intelligence_provider();
+            let provider = match provider_opt {
+                Some(p) => Some(p),
+                None => {
+                    log::warn!(
+                        "[I535] Glean Arc bridge empty for manual refresh on {}; \
+                         settings switch likely raced this call. Falling through to PTY.",
+                        input.entity_name
+                    );
+                    None
+                }
             };
             // This path is the services::intelligence manual-refresh entry,
             // always user-initiated — pass is_background=false so the UI
             // gets degraded/fallback toasts.
-            match provider
+            if let Some(provider) = provider {
+                match provider
                 .enrich_entity(
                     &input.entity_id,
                     &input.entity_type,
@@ -300,6 +307,8 @@ pub async fn enrich_entity(
                     }
                 }
             }
+            } // end if let Some(provider) — bridge-empty case skipped Glean and
+              // falls through to the PTY path below via glean_result == None.
         }
 
         match glean_result {

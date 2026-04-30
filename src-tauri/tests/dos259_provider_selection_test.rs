@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use dailyos_lib::intelligence::glean_provider::GleanIntelligenceProvider;
 use dailyos_lib::intelligence::provider::{
-    IntelligenceProvider, ModelTier, ProviderKind, ReplayProvider,
+    Completion, FingerprintMetadata, IntelligenceProvider, ModelName, ModelTier, ProviderKind,
+    ReplayProvider,
 };
 use dailyos_lib::intelligence::pty_provider::PtyClaudeCode;
 use dailyos_lib::pty::AiUsageContext;
@@ -64,6 +65,86 @@ fn provider_selection_distinguishes_tiers() {
     assert_eq!(pty.current_model(ModelTier::Extraction).as_str(), "ext-model");
     assert_eq!(pty.current_model(ModelTier::Background).as_str(), "bg-model");
     assert_eq!(pty.current_model(ModelTier::Mechanical).as_str(), "mech-model");
+}
+
+#[test]
+fn pty_claude_code_propagates_tier_to_model_and_provider_kind() {
+    // L2 codex finding #3 regression: tests must exercise the actual
+    // PtyClaudeCode surface (timeout_for_tier already covered in the unit
+    // tests; here we verify the trait surface returns the right model
+    // for the right tier without spawning Claude Code).
+    let cfg = AiModelConfig {
+        synthesis: "syn-routed".into(),
+        extraction: "ext-routed".into(),
+        background: "bg-routed".into(),
+        mechanical: "mech-routed".into(),
+    };
+    let pty = PtyClaudeCode::new(
+        Arc::new(cfg),
+        std::env::temp_dir(),
+        AiUsageContext::new("test", "tier_propagation"),
+    );
+
+    // Each tier resolves to its configured model name.
+    assert_eq!(pty.current_model(ModelTier::Synthesis).as_str(), "syn-routed");
+    assert_eq!(pty.current_model(ModelTier::Extraction).as_str(), "ext-routed");
+    assert_eq!(pty.current_model(ModelTier::Background).as_str(), "bg-routed");
+    assert_eq!(
+        pty.current_model(ModelTier::Mechanical).as_str(),
+        "mech-routed"
+    );
+
+    // ProviderKind is invariant — every tier reports ClaudeCode.
+    assert_eq!(pty.provider_kind(), ProviderKind::ClaudeCode);
+}
+
+#[test]
+fn fingerprint_metadata_required_fields_match_adr_0106() {
+    // L2 codex finding #2 regression: ADR-0106 §3 makes
+    // provider/model/temperature REQUIRED. The struct shape must reject
+    // any attempt to construct a FingerprintMetadata without them — the
+    // type system is the gate.
+    let meta = FingerprintMetadata {
+        provider: ProviderKind::ClaudeCode,
+        model: ModelName::new("test"),
+        temperature: 1.0,
+        top_p: None,
+        seed: None,
+        tokens_input: None,
+        tokens_output: None,
+        provider_completion_id: None,
+    };
+    assert_eq!(meta.provider, ProviderKind::ClaudeCode);
+    assert_eq!(meta.model.as_str(), "test");
+    assert_eq!(meta.temperature, 1.0);
+
+    // Default impl supplies non-Option values so ReplayProvider fixtures
+    // can still call ::default() without leaving holes — and Default
+    // populates the required fields with documented placeholders.
+    let dflt = FingerprintMetadata::default();
+    assert_eq!(dflt.provider, ProviderKind::Other("replay"));
+    assert_eq!(dflt.model.as_str(), "replay");
+    assert_eq!(dflt.temperature, 0.0);
+}
+
+#[tokio::test]
+async fn completion_via_replay_provider_carries_required_fingerprint_fields() {
+    // The Completion struct returned by ReplayProvider must populate the
+    // ADR-0106 §3 required fields — provider/model/temperature — even
+    // for the smallest from_prompt_pairs constructor. Anything less
+    // would break DOS-213's canonical hash consumer.
+    let provider = ReplayProvider::from_prompt_pairs([("p", "r")]);
+    let prompt = dailyos_lib::intelligence::provider::PromptInput::new("p");
+    let got: Completion = provider
+        .complete(prompt, ModelTier::Synthesis)
+        .await
+        .expect("replay returns");
+    assert_eq!(got.text, "r");
+    assert_eq!(got.fingerprint_metadata.provider, ProviderKind::Other("replay"));
+    // temperature is f32 (not Option) — equality is well-defined here.
+    assert_eq!(got.fingerprint_metadata.temperature, 0.0);
+    // model is non-Option — assert it's a real ModelName, not absent.
+    assert!(!got.fingerprint_metadata.model.as_str().is_empty());
 }
 
 #[tokio::test]

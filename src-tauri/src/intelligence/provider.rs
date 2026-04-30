@@ -76,20 +76,46 @@ impl From<&str> for ModelName {
 
 /// Provider-known fingerprint fields per ADR-0106 §3.
 ///
-/// `tokens_input`/`tokens_output` are optional — PTY providers do not
-/// report token counts, Glean does not either today. DOS-213 lands the
-/// canonical hash; W2-B carries only the fields a provider knows at
-/// `complete()` time.
-#[derive(Debug, Clone, Default)]
+/// **Required fields** (per ADR-0106 §3 + L2 codex review 2026-04-30):
+/// - `provider`: which `ProviderKind` produced this completion
+/// - `model`: which model name was selected
+/// - `temperature`: the temperature the provider was configured for
+///
+/// **Optional fields** are genuinely unknown at `complete()` time today:
+/// - `top_p`/`seed`: not configured for PTY or Glean
+/// - `tokens_input`/`tokens_output`: PTY does not report; Glean does not either
+/// - `provider_completion_id`: provider-specific identifier when available
+///
+/// Required fields default for ReplayProvider via `Default` to
+/// `ProviderKind::Other("replay")` + `ModelName::new("replay")` +
+/// `temperature: 0.0`. Live providers MUST override at construction.
+///
+/// DOS-213 (W3) consumes this for canonical fingerprint hashing.
+#[derive(Debug, Clone)]
 pub struct FingerprintMetadata {
-    pub provider: Option<ProviderKind>,
-    pub model: Option<ModelName>,
-    pub temperature: Option<f32>,
+    pub provider: ProviderKind,
+    pub model: ModelName,
+    pub temperature: f32,
     pub top_p: Option<f32>,
     pub seed: Option<u64>,
     pub tokens_input: Option<u32>,
     pub tokens_output: Option<u32>,
     pub provider_completion_id: Option<String>,
+}
+
+impl Default for FingerprintMetadata {
+    fn default() -> Self {
+        Self {
+            provider: ProviderKind::Other("replay"),
+            model: ModelName::new("replay"),
+            temperature: 0.0,
+            top_p: None,
+            seed: None,
+            tokens_input: None,
+            tokens_output: None,
+            provider_completion_id: None,
+        }
+    }
 }
 
 /// Provider response.
@@ -236,10 +262,7 @@ impl ReplayProvider {
                 key,
                 Completion {
                     text: completion_text.into(),
-                    fingerprint_metadata: FingerprintMetadata {
-                        provider: Some(ProviderKind::Other("replay")),
-                        ..Default::default()
-                    },
+                    fingerprint_metadata: FingerprintMetadata::default(),
                 },
             );
         }
@@ -310,9 +333,10 @@ mod tests {
         Completion {
             text: text.to_string(),
             fingerprint_metadata: FingerprintMetadata {
-                provider: Some(ProviderKind::Other("replay")),
-                model: Some(ModelName::new("test-model")),
-                ..Default::default()
+                provider: ProviderKind::Other("replay"),
+                model: ModelName::new("test-model"),
+                temperature: 0.0,
+                ..FingerprintMetadata::default()
             },
         }
     }
@@ -328,7 +352,7 @@ mod tests {
         assert_eq!(got.text, "canned response");
         assert_eq!(
             got.fingerprint_metadata.provider,
-            Some(ProviderKind::Other("replay"))
+            ProviderKind::Other("replay")
         );
     }
 

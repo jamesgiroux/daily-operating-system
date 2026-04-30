@@ -29,12 +29,12 @@ FILES=(
 # Grandfathered allowlist: pre-W2-B `Utc::now()` calls in `glean_provider.rs`
 # that timestamp serializable response / manifest fields. These migrate to
 # `ctx.clock.now()` when W2-A's `ServiceContext` lands and the Glean impl
-# can take a clock reference. Until then the lint accepts existing line
-# numbers; any NEW clock call (added line, or shifted to a non-allowlisted
-# line) trips the lint.
+# can take a clock reference. Until then the lint accepts each call
+# annotated with a `// dos259-grandfathered: <reason>` marker within
+# 3 lines above. Line-number-only allowlists rotted on file edits per
+# the L2 codex review; the marker is stable across edits.
 #
-# When W2-A migrates these, this allowlist deletes entirely.
-GLEAN_GRANDFATHERED_LINES=(292 470 486 525 622 1023 1364 1815)
+# When W2-A migrates these, the markers and this comment block delete.
 
 # Pattern: clock or RNG call, in any qualified form.
 PATTERN='\b(chrono::offset::Utc::now|chrono::Utc::now|Utc::now|rand::thread_rng|thread_rng|rand::rng)[[:space:]]*\('
@@ -92,20 +92,14 @@ for file in "${FILES[@]}"; do
     if echo "$line" | grep -qE "$PATTERN"; then
       start=$((lineno - 3))
       [ "$start" -lt 1 ] && start=1
-      if sed -n "${start},${lineno}p" "$file" 2>/dev/null \
-          | grep -q "dos259-exempt:"; then
+      preceding="$(sed -n "${start},${lineno}p" "$file" 2>/dev/null)"
+      # New code uses `dos259-exempt:` markers; pre-W2-B grandfathered
+      # calls (currently in glean_provider.rs only) use
+      # `dos259-grandfathered:` markers. Both bypass the lint. Markers
+      # are content-stable across line shifts (per L2 codex review).
+      if echo "$preceding" | grep -q "dos259-exempt:" \
+        || echo "$preceding" | grep -q "dos259-grandfathered:"; then
         continue
-      fi
-      # Grandfathered glean_provider.rs lines (W2-A will migrate).
-      if [[ "$file" == *"intelligence/glean_provider.rs" ]]; then
-        skip=0
-        for gf_line in "${GLEAN_GRANDFATHERED_LINES[@]}"; do
-          if [ "$gf_line" -eq "$lineno" ]; then
-            skip=1
-            break
-          fi
-        done
-        [ "$skip" -eq 1 ] && continue
       fi
       printf '%s:%s:%s\n' "$file" "$lineno" "$line"
       violations=$((violations + 1))

@@ -985,7 +985,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     .context_provider()
                     .remote_endpoint()
                     .map(|s| s.to_string());
-                if let Some(endpoint) = endpoint {
+                if endpoint.is_some() {
                     let entity_name = input.entity_name.clone();
                     let entity_id = request.entity_id.clone();
                     let entity_type = request.entity_type.clone();
@@ -1004,16 +1004,23 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     let is_background = is_background_priority(request.priority);
                     tauri::async_runtime::spawn(async move {
                         // DOS-259 (W2-B): route through AppState-owned Glean
-                        // provider Arc per ADR-0091; fall back to inline
-                        // construction if the bridge is somehow empty despite
-                        // is_remote being true (defensive — should not happen).
+                        // provider Arc per ADR-0091. Fail closed when the
+                        // bridge is empty — that state means Local was
+                        // selected mid-flight and issuing a remote call here
+                        // would violate ADR-0091's "next dequeue" guarantee.
+                        // Leading-signals enrichment is supplemental, so
+                        // skipping it on bridge miss is the correct close.
                         let provider = match state_for_spawn.glean_intelligence_provider() {
                             Some(p) => p,
-                            None => std::sync::Arc::new(
-                                crate::intelligence::glean_provider::GleanIntelligenceProvider::new(
-                                    &endpoint,
-                                ),
-                            ),
+                            None => {
+                                log::warn!(
+                                    "[DOS-15] Glean Arc bridge empty for leading-signals \
+                                     on {}; settings switch likely raced this dequeue. \
+                                     Skipping leading-signals enrichment.",
+                                    entity_name
+                                );
+                                return;
+                            }
                         };
                         let ls_start = std::time::Instant::now();
                         match provider
@@ -1493,7 +1500,7 @@ async fn run_glean_enrichment_with_fallback(
         .remote_endpoint()
         .map(|s| s.to_string());
 
-    let endpoint = match glean_endpoint {
+    let _endpoint = match glean_endpoint {
         Some(ep) => ep,
         None => {
             log::warn!("[I535] Glean mode active but no endpoint found, falling back to PTY");
@@ -1522,14 +1529,51 @@ async fn run_glean_enrichment_with_fallback(
     };
 
     // DOS-259 (W2-B): route through AppState-owned Glean provider Arc per
-    // ADR-0091 instead of constructing inline. Settings-change swap takes
-    // effect on next batch. Defensive fallback to inline construction if
-    // the bridge is empty despite is_remote being true.
+    // ADR-0091. Fails closed if the bridge is empty: that state means a
+    // Local-mode swap completed mid-dequeue and this batch was already in
+    // flight with the old `is_remote` snapshot. Constructing an inline
+    // Glean provider here would issue a remote call AFTER the user picked
+    // Local — an ADR-0091 "switch mid-queue takes effect on next dequeue"
+    // violation flagged by L2 codex review. Skip Glean and fall through
+    // to PTY for the entire batch.
     let provider = match state.glean_intelligence_provider() {
         Some(p) => p,
-        None => std::sync::Arc::new(
-            crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint),
-        ),
+        None => {
+            log::warn!(
+                "IntelProcessor: Glean Arc bridge empty despite is_remote=true; \
+                 settings switch likely raced this batch. Falling through to PTY \
+                 for {} entities.",
+                inputs.len()
+            );
+            let mut pty_results = Vec::new();
+            for (request, input) in inputs {
+                let input_clone = input.clone();
+                let ai_cfg = ai_config.clone();
+                let usage_context = AiUsageContext::for_tier(ModelTier::Synthesis);
+                match tokio::task::spawn_blocking(move || {
+                    run_enrichment(&input_clone, &ai_cfg, None, usage_context)
+                })
+                .await
+                {
+                    Ok(Ok(parsed)) => pty_results.push((request, input, parsed)),
+                    Ok(Err(e)) => {
+                        log::warn!(
+                            "PTY fallback after Glean bridge miss failed for {}: {}",
+                            request.entity_id,
+                            e
+                        );
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "PTY fallback after Glean bridge miss panicked for {}: {}",
+                            request.entity_id,
+                            e
+                        );
+                    }
+                }
+            }
+            return pty_results;
+        }
     };
 
     let mut results = Vec::new();
