@@ -2740,9 +2740,14 @@ pub async fn set_context_mode(
         );
     }
 
-    // Hot-swap the context provider immediately (no restart needed).
-    let new_provider = state.build_context_provider(&parsed);
-    state.swap_context_provider(new_provider);
+    // DOS-259 (W2-B cycle 4): `build_context_provider` already installs
+    // the full atomic bundle (context_provider + intelligence_provider Arc
+    // + glean_intelligence_provider Arc) in one write-lock acquisition
+    // via `set_context_mode_atomic`. Calling `swap_context_provider` after
+    // it would reopen the L2-flagged race window where two concurrent
+    // settings flips can interleave atomic-then-single-field updates and
+    // leave a torn bundle. Drop the redundant single-field swap.
+    let _ = state.build_context_provider(&parsed);
 
     if let Ok(targets) = state
         .db_read(|db| {
@@ -2820,9 +2825,10 @@ pub async fn start_glean_auth(
                 log::error!("Failed to save Glean context mode: {}", e);
             }
 
-            // Hot-swap context provider immediately (no restart needed).
-            let new_provider = state.build_context_provider(&glean_mode);
-            state.swap_context_provider(new_provider);
+            // DOS-259 (W2-B cycle 4): `build_context_provider` performs
+            // the full atomic transition; redundant single-field swap
+            // removed (would reopen the L2 race window).
+            let _ = state.build_context_provider(&glean_mode);
 
             // Audit: context mode auto-set
             {
@@ -2929,8 +2935,9 @@ pub async fn disconnect_glean(
     {
         log::error!("Failed to save Local context mode on disconnect: {}", e);
     }
-    let new_provider = state.build_context_provider(&local_mode);
-    state.swap_context_provider(new_provider);
+    // DOS-259 (W2-B cycle 4): atomic transition; redundant single-field
+    // swap removed (would reopen the L2 race window).
+    let _ = state.build_context_provider(&local_mode);
 
     // Audit: context mode reverted
     {
