@@ -628,7 +628,12 @@ impl Scheduler {
         let _ = self
             .state
             .db_write(move |db| {
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 crate::services::mutations::resolve_pipeline_failures(
+                    &ctx,
                     db,
                     "scheduler",
                     Some(&entity_id),
@@ -650,7 +655,12 @@ impl Scheduler {
         let _ = self
             .state
             .db_write(move |db| {
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 crate::services::mutations::record_pipeline_failure(
+                    &ctx,
                     db,
                     "scheduler",
                     Some(&entity_id),

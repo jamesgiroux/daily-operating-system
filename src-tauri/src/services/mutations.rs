@@ -5,33 +5,41 @@ use serde_json::Value;
 use crate::db::person_relationships::UpsertRelationship;
 use crate::db::types::KeyAdvocateAssessment;
 use crate::db::{ActionDb, DbAction, DbChatSession, DbMeeting, DbProcessingLog};
+use crate::services::context::ServiceContext;
 use crate::signals::propagation::PropagationEngine;
 
 pub fn set_meeting_prep_context(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     meeting_id: &str,
     updated_json: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     crate::services::meetings::set_meeting_prep_context(db, meeting_id, updated_json)
 }
 
-pub fn reset_email_dismissals(db: &ActionDb) -> Result<u64, String> {
+pub fn reset_email_dismissals(ctx: &ServiceContext<'_>, db: &ActionDb) -> Result<u64, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.reset_email_dismissals().map_err(|e| e.to_string())
 }
 
 pub fn update_capture_content(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     capture_id: &str,
     content: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     crate::services::meetings::update_capture_content(db, capture_id, content)
 }
 
 pub fn upsert_account(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     account: &crate::db::DbAccount,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.upsert_account(account).map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
@@ -50,10 +58,12 @@ pub fn upsert_account(
 }
 
 pub fn upsert_project(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     project: &crate::db::DbProject,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.upsert_project(project).map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
@@ -72,10 +82,12 @@ pub fn upsert_project(
 }
 
 pub fn remove_project_keyword(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     project_id: &str,
     keyword: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.remove_project_keyword(project_id, keyword)
             .map_err(|e| e.to_string())?;
@@ -97,10 +109,12 @@ pub fn remove_project_keyword(
 }
 
 pub fn remove_account_keyword(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     account_id: &str,
     keyword: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.remove_account_keyword(account_id, keyword)
             .map_err(|e| e.to_string())?;
@@ -122,10 +136,12 @@ pub fn remove_account_keyword(
 }
 
 pub fn ensure_open_chat_session(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     entity_id: Option<&str>,
     entity_type: Option<&str>,
 ) -> Result<DbChatSession, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if let Some(existing) = db
         .get_open_chat_session(entity_id, entity_type)
         .map_err(|e| e.to_string())?
@@ -140,11 +156,13 @@ pub fn ensure_open_chat_session(
 }
 
 pub fn append_chat_exchange(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     session_id: &str,
     user_content: &str,
     assistant_json: &Value,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
     let first_idx = db
         .get_next_chat_turn_index(session_id)
@@ -177,12 +195,14 @@ pub fn append_chat_exchange(
 }
 
 pub fn update_meeting_user_layer(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     meeting_id: &str,
     agenda_json: Option<&str>,
     notes: Option<&str>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.update_meeting_user_layer(meeting_id, agenda_json, notes)
             .map_err(|e| e.to_string())?;
@@ -201,7 +221,10 @@ pub fn update_meeting_user_layer(
     })
 }
 
+// DOS-209: ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
+#[allow(clippy::too_many_arguments)]
 pub fn record_pipeline_failure(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     pipeline: &str,
     entity_id: Option<&str>,
@@ -210,6 +233,7 @@ pub fn record_pipeline_failure(
     error_message: Option<&str>,
     attempt: i32,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.insert_pipeline_failure(
         pipeline,
         entity_id,
@@ -222,16 +246,24 @@ pub fn record_pipeline_failure(
 }
 
 pub fn resolve_pipeline_failures(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     pipeline: &str,
     entity_id: Option<&str>,
     entity_type: Option<&str>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.resolve_pipeline_failures(pipeline, entity_id, entity_type)
         .map(|_| ())
 }
 
-pub fn upsert_app_state_kv_json(db: &ActionDb, key: &str, value_json: &str) -> Result<(), String> {
+pub fn upsert_app_state_kv_json(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    key: &str,
+    value_json: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.conn_ref()
         .execute(
             "INSERT OR REPLACE INTO app_state_kv (key, value_json, updated_at)
@@ -243,6 +275,7 @@ pub fn upsert_app_state_kv_json(db: &ActionDb, key: &str, value_json: &str) -> R
 }
 
 pub fn upsert_signal_weight(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     source: &str,
     entity_type: &str,
@@ -250,11 +283,17 @@ pub fn upsert_signal_weight(
     weight: f64,
     confidence: f64,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.upsert_signal_weight(source, entity_type, signal_type, weight, confidence)
         .map_err(|e| e.to_string())
 }
 
-pub fn queue_clay_sync_for_people(db: &ActionDb, person_ids: &[String]) -> Result<usize, String> {
+pub fn queue_clay_sync_for_people(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    person_ids: &[String],
+) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if person_ids.is_empty() {
         return Ok(0);
     }
@@ -273,21 +312,32 @@ pub fn queue_clay_sync_for_people(db: &ActionDb, person_ids: &[String]) -> Resul
 }
 
 pub fn create_linear_entity_link(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     linear_project_id: &str,
     entity_id: &str,
     entity_type: &str,
 ) -> Result<(), String> {
-    create_linear_entity_link_with_confirmed(db, linear_project_id, entity_id, entity_type, true)
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    create_linear_entity_link_with_confirmed(
+        ctx,
+        db,
+        linear_project_id,
+        entity_id,
+        entity_type,
+        true,
+    )
 }
 
 pub fn create_linear_entity_link_with_confirmed(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     linear_project_id: &str,
     entity_id: &str,
     entity_type: &str,
     confirmed: bool,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let confirmed_int: i32 = if confirmed { 1 } else { 0 };
     db.conn_ref()
         .execute(
@@ -299,7 +349,12 @@ pub fn create_linear_entity_link_with_confirmed(
     Ok(())
 }
 
-pub fn delete_linear_entity_link(db: &ActionDb, link_id: &str) -> Result<(), String> {
+pub fn delete_linear_entity_link(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    link_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.conn_ref()
         .execute(
             "DELETE FROM linear_entity_links WHERE id = ?1",
@@ -310,12 +365,14 @@ pub fn delete_linear_entity_link(db: &ActionDb, link_id: &str) -> Result<(), Str
 }
 
 pub fn update_entity_metadata(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     entity_type: &str,
     entity_id: &str,
     metadata: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.update_entity_metadata(entity_type, entity_id, metadata)?;
         crate::services::signals::emit_and_propagate(
@@ -334,10 +391,12 @@ pub fn update_entity_metadata(
 }
 
 pub fn upsert_email_feedback_signal(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     email_id: &str,
     corrected_priority: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let signal_text = format!(
         "User corrected auto-archived email to {}",
         corrected_priority
@@ -361,10 +420,12 @@ pub fn upsert_email_feedback_signal(
 }
 
 pub fn upsert_timeline_meeting_with_entities(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     meeting: &DbMeeting,
     links: &[(String, String)],
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.upsert_meeting(meeting).map_err(|e| e.to_string())?;
         for (entity_id, entity_type) in links {
@@ -386,10 +447,12 @@ pub fn upsert_timeline_meeting_with_entities(
 }
 
 pub fn upsert_person_relationship(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     rel: &UpsertRelationship<'_>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.upsert_person_relationship(rel)
             .map_err(|e| format!("Failed to upsert relationship: {}", e))?;
@@ -429,10 +492,12 @@ pub fn upsert_person_relationship(
 }
 
 pub fn delete_person_relationship(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         let person_ids = tx
             .get_person_relationship_by_id(id)
@@ -483,9 +548,11 @@ pub struct TranscriptOutcomesParams<'a> {
 }
 
 pub fn persist_transcript_outcomes(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     params: &TranscriptOutcomesParams<'_>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let entity_type = params.entity_type;
     let entity_id = params.entity_id;
     let meeting_id = params.meeting_id;
@@ -638,12 +705,22 @@ fn parse_evidence_quote(raw: &str) -> (&str, Option<&str>) {
     }
 }
 
-pub fn insert_processing_log(db: &ActionDb, log_entry: &DbProcessingLog) -> Result<(), String> {
+pub fn insert_processing_log(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    log_entry: &DbProcessingLog,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.insert_processing_log(log_entry)
         .map_err(|e| e.to_string())
 }
 
-pub fn upsert_action_if_not_completed(db: &ActionDb, action: &DbAction) -> Result<bool, String> {
+pub fn upsert_action_if_not_completed(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    action: &DbAction,
+) -> Result<bool, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         let wrote = tx
             .upsert_action_if_not_completed_with_status(action)
@@ -686,26 +763,35 @@ fn action_signal_target(action: &DbAction) -> (&'static str, String) {
 // ---------------------------------------------------------------------------
 
 pub fn persist_transcript_metadata(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     meeting_id: &str,
     transcript_path: &str,
     processed_at: &str,
     summary: Option<&str>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.update_meeting_transcript_metadata(meeting_id, transcript_path, processed_at, summary)
         .map_err(|e| e.to_string())
 }
 
 pub fn persist_key_advocate_health(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     meeting_id: &str,
     assessment: &KeyAdvocateAssessment,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.upsert_key_advocate_health(meeting_id, assessment)
         .map_err(|e| e.to_string())
 }
 
-pub fn clear_key_advocate_health(db: &ActionDb, meeting_id: &str) -> Result<(), String> {
+pub fn clear_key_advocate_health(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    meeting_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.conn_ref()
         .execute(
             "DELETE FROM meeting_champion_health WHERE meeting_id = ?1",
@@ -729,12 +815,14 @@ pub struct ParsedCapture<'a> {
 /// with reviewed data. Wraps the transactional DB writes for
 /// `processor::transcript` so the processor stays out of the DB layer.
 pub fn replace_transcript_outcome_captures(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     meeting_id: &str,
     meeting_title: &str,
     account_id: Option<&str>,
     captures: &[ParsedCapture<'_>],
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.conn
             .execute(
@@ -768,8 +856,18 @@ mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount, DbProject};
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
+    use chrono::TimeZone;
     use rusqlite::params;
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     fn make_account(id: &str, name: &str) -> DbAccount {
         DbAccount {
@@ -826,8 +924,12 @@ mod tests {
         let db = test_db();
         let engine = PropagationEngine::default();
         let account = make_account("acc-1", "Acme Corp");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
-        upsert_account(&db, &engine, &account).expect("upsert_account");
+        upsert_account(&ctx, &db, &engine, &account).expect("upsert_account");
 
         // Verify account in DB
         let exists: bool = db
@@ -852,8 +954,12 @@ mod tests {
         let db = test_db();
         let engine = PropagationEngine::default();
         let project = make_project("proj-1", "Alpha Project");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
-        upsert_project(&db, &engine, &project).expect("upsert_project");
+        upsert_project(&ctx, &db, &engine, &project).expect("upsert_project");
 
         let exists: bool = db
             .conn_ref()
@@ -874,6 +980,10 @@ mod tests {
     #[test]
     fn test_persist_transcript_outcomes() {
         let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         // Verify migration 070 created captures with sub_type column
         // by checking if the enriched insert path works.
@@ -912,6 +1022,7 @@ mod tests {
             let decisions = vec!["Decided to extend contract".to_string()];
 
             persist_transcript_outcomes(
+                &ctx,
                 &db,
                 &TranscriptOutcomesParams {
                     entity_type: "account",
@@ -948,9 +1059,14 @@ mod tests {
     #[test]
     fn test_upsert_signal_weight() {
         let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         // upsert_signal_weight passes alpha_delta and beta_delta to Bayesian weights
         upsert_signal_weight(
+            &ctx,
             &db,
             "calendar_sync",
             "account",
@@ -989,6 +1105,10 @@ mod tests {
     fn test_upsert_person_relationship() {
         let db = test_db();
         let engine = PropagationEngine::default();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         // Seed people
         db.conn_ref()
@@ -1005,6 +1125,7 @@ mod tests {
             .unwrap();
 
         upsert_person_relationship(
+            &ctx,
             &db,
             &engine,
             &UpsertRelationship {

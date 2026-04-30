@@ -243,13 +243,8 @@ pub async fn restore_meeting_entity(
     entity_type: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<bool, String> {
-    crate::services::meetings::restore_meeting_entity(
-        &state,
-        &meeting_id,
-        &entity_id,
-        &entity_type,
-    )
-    .await
+    crate::services::meetings::restore_meeting_entity(&state, &meeting_id, &entity_id, &entity_type)
+        .await
 }
 
 // =========================================================================
@@ -298,7 +293,10 @@ pub async fn dismiss_entity_link(
         state.inner().clone(),
         ot,
         owner_id,
-        crate::services::entity_linking::EntityRef { entity_id, entity_type },
+        crate::services::entity_linking::EntityRef {
+            entity_id,
+            entity_type,
+        },
     )
     .await
     .map(|_| ())
@@ -319,7 +317,10 @@ pub async fn restore_entity_link(
         state.inner().clone(),
         ot,
         owner_id,
-        crate::services::entity_linking::EntityRef { entity_id, entity_type },
+        crate::services::entity_linking::EntityRef {
+            entity_id,
+            entity_type,
+        },
     )
     .await
     .map(|_| ())
@@ -434,9 +435,11 @@ pub async fn remove_project_keyword(
     keyword: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
-            crate::services::mutations::remove_project_keyword(db, &project_id, &keyword)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::mutations::remove_project_keyword(&ctx, db, &project_id, &keyword)
         })
         .await
 }
@@ -448,9 +451,11 @@ pub async fn remove_account_keyword(
     keyword: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
-            crate::services::mutations::remove_account_keyword(db, &account_id, &keyword)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::mutations::remove_account_keyword(&ctx, db, &account_id, &keyword)
         })
         .await
 }
@@ -648,7 +653,7 @@ pub struct LinkedEntityDto {
     pub id: String,
     pub name: String,
     pub entity_type: String,
-    pub role: String,   // "primary" | "related" | "auto_suggested"
+    pub role: String, // "primary" | "related" | "auto_suggested"
     pub confidence: Option<f64>,
     pub applied_rule: Option<String>,
 }
@@ -713,9 +718,7 @@ pub async fn get_linked_entities_for_owner(
 /// Removes all rows where source='inferred'. User-entered ('user') and
 /// enrichment-sourced ('enrichment') domains are preserved.
 #[tauri::command]
-pub async fn rebuild_account_domains(
-    state: State<'_, Arc<AppState>>,
-) -> Result<String, String> {
+pub async fn rebuild_account_domains(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     state
         .db_write(|db| {
             crate::services::entity_linking::repository::raw_rebuild_account_domains(db)

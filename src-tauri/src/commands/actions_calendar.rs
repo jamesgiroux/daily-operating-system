@@ -277,10 +277,12 @@ pub async fn list_dismissed_email_items(
 pub async fn reset_email_preferences(
     services: State<'_, crate::services::ServiceLayer>,
 ) -> Result<String, String> {
-    let state = services.state();
+    let state = services.state_arc();
+    let state_for_ctx = state.clone();
     state
-        .db_write(|db| {
-            let count = crate::services::mutations::reset_email_dismissals(db)?;
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            let count = crate::services::mutations::reset_email_dismissals(&ctx, db)?;
             log::info!(
                 "reset_email_preferences: cleared {} dismissal records",
                 count
@@ -292,10 +294,7 @@ pub async fn reset_email_preferences(
 
 /// Resolve a decision: clear the needs_decision flag and emit signal (DOS-17).
 #[tauri::command]
-pub async fn resolve_decision(
-    id: String,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub async fn resolve_decision(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let engine = state.signals.engine.clone();
     state
         .db_write(move |db| crate::services::actions::resolve_decision(db, &engine, &id))
@@ -528,11 +527,7 @@ pub fn get_google_auth_status(state: State<'_, Arc<AppState>>) -> GoogleAuthStat
         }
     }
 
-    let cached = state
-        .calendar
-        .google_auth
-        .lock()
-        .clone();
+    let cached = state.calendar.google_auth.lock().clone();
 
     // If cached state says not configured, re-check storage — token may have
     // been written by a script or the browser auth flow completing late.
@@ -847,8 +842,7 @@ pub async fn attach_meeting_transcript_text(
     let ts = chrono::Utc::now().format("%Y%m%dT%H%M%S").to_string();
     let path = pasted_dir.join(format!("{}_{}.{}", safe_meeting, ts, ext));
 
-    std::fs::write(&path, &text)
-        .map_err(|e| format!("Could not write pasted transcript: {e}"))?;
+    std::fs::write(&path, &text).map_err(|e| format!("Could not write pasted transcript: {e}"))?;
 
     let path_str = path
         .to_str()
@@ -917,9 +911,13 @@ pub async fn update_capture(
     content: String,
     services: State<'_, crate::services::ServiceLayer>,
 ) -> Result<(), String> {
-    let state = services.state();
+    let state = services.state_arc();
+    let state_for_ctx = state.clone();
     state
-        .db_write(move |db| crate::services::mutations::update_capture_content(db, &id, &content))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::mutations::update_capture_content(&ctx, db, &id, &content)
+        })
         .await
 }
 

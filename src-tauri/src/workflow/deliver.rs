@@ -4375,7 +4375,12 @@ pub fn deliver_manifest(
     // I513: Also store manifest in app_state_kv for DB-based freshness checks
     if let Ok(db) = crate::db::ActionDb::open() {
         let manifest_str = serde_json::to_string(&manifest).unwrap_or_default();
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
         let _ = crate::services::mutations::upsert_app_state_kv_json(
+            &ctx,
             &db,
             "briefing_freshness",
             &manifest_str,

@@ -117,8 +117,7 @@ pub struct AccountDetailResult {
     /// advocacy, quote wall). Null when Glean is not configured or enrichment
     /// has not yet run for this account.
     #[serde(skip_serializing_if = "Option::is_none", rename = "gleanSignals")]
-    pub glean_signals:
-        Option<crate::intelligence::glean_leading_signals::HealthOutlookSignals>,
+    pub glean_signals: Option<crate::intelligence::glean_leading_signals::HealthOutlookSignals>,
     /// DOS-228 Fix 3: Current risk-briefing generation job status.
     /// Present when a briefing has ever been enqueued for this account; the
     /// frontend uses this to render progress, surface failures, and expose a
@@ -750,11 +749,7 @@ pub struct CreateChildAccountResult {
 pub async fn get_internal_team_setup_status(
     state: State<'_, Arc<AppState>>,
 ) -> Result<InternalTeamSetupStatus, String> {
-    let config = state
-        .config
-        .read()
-        .clone()
-        .ok_or("Config not loaded")?;
+    let config = state.config.read().clone().ok_or("Config not loaded")?;
 
     let suggested_team_name = if let Some(title) = config.user_title.as_deref() {
         if title.to_lowercase().contains("manager") || title.to_lowercase().contains("director") {
@@ -847,11 +842,7 @@ pub async fn create_team(
     owner_person_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<CreateChildAccountResult, String> {
-    let cfg = state
-        .config
-        .read()
-        .clone()
-        .ok_or("Config not loaded")?;
+    let cfg = state.config.read().clone().ok_or("Config not loaded")?;
 
     let root_id = if let Some(id) = cfg.internal_org_account_id {
         id
@@ -1083,7 +1074,8 @@ pub async fn get_pending_stakeholder_suggestions(
     state
         .db_read(move |db| {
             // Delegate to the entity_linking DB helper which also computes sibling hints.
-            let rows = db.get_pending_stakeholder_suggestions(&account_id)
+            let rows = db
+                .get_pending_stakeholder_suggestions(&account_id)
                 .map_err(|e| e.to_string())?;
             Ok(rows
                 .into_iter()
@@ -1212,7 +1204,8 @@ pub async fn index_entity_files(
             requested_at: std::time::Instant::now(),
         });
     state.integrations.embedding_queue_wake.notify_one();
-    let _ = state        .intel_queue
+    let _ = state
+        .intel_queue
         .enqueue(crate::intel_queue::IntelRequest::new(
             entity_id,
             entity_type,
@@ -1425,20 +1418,28 @@ fn markdown_to_simple_html(md: &str) -> String {
 use crate::types::{meetings_to_json, ChatEntityListItem};
 
 fn ensure_open_chat_session(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &crate::db::ActionDb,
     entity_id: Option<&str>,
     entity_type: Option<&str>,
 ) -> Result<crate::db::DbChatSession, String> {
-    crate::services::mutations::ensure_open_chat_session(db, entity_id, entity_type)
+    crate::services::mutations::ensure_open_chat_session(ctx, db, entity_id, entity_type)
 }
 
 fn append_chat_exchange(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &crate::db::ActionDb,
     session_id: &str,
     user_content: &str,
     assistant_json: &serde_json::Value,
 ) -> Result<(), String> {
-    crate::services::mutations::append_chat_exchange(db, session_id, user_content, assistant_json)
+    crate::services::mutations::append_chat_exchange(
+        ctx,
+        db,
+        session_id,
+        user_content,
+        assistant_json,
+    )
 }
 
 #[tauri::command]
@@ -1455,8 +1456,10 @@ pub async fn chat_search_content(
 
     let embedding_model = state.embedding_model.clone();
     let k = top_k.unwrap_or(10).clamp(1, 50);
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let matches = crate::queries::search::search_entity_content(
                 db,
                 Some(embedding_model.as_ref()),
@@ -1467,13 +1470,13 @@ pub async fn chat_search_content(
                 0.3,
             )?;
 
-            let session = ensure_open_chat_session(db, Some(&entity_id), None)?;
+            let session = ensure_open_chat_session(&ctx, db, Some(&entity_id), None)?;
             let response = serde_json::json!({
                 "entityId": entity_id,
                 "query": query_str,
                 "matches": matches,
             });
-            append_chat_exchange(db, &session.id, &query_str, &response)?;
+            append_chat_exchange(&ctx, db, &session.id, &query_str, &response)?;
 
             Ok(matches)
         })
@@ -1492,8 +1495,10 @@ pub async fn chat_query_entity(
     }
 
     let embedding_model = state.embedding_model.clone();
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let question = question_str.as_str();
 
             let (entity_type, entity_name, facts, open_actions, recent_meetings) =
@@ -1567,7 +1572,7 @@ pub async fn chat_query_entity(
             )?;
             let intelligence = db.get_entity_intelligence(&entity_id).ok().flatten();
 
-            let session = ensure_open_chat_session(db, Some(&entity_id), Some(entity_type))?;
+            let session = ensure_open_chat_session(&ctx, db, Some(&entity_id), Some(entity_type))?;
             let response = serde_json::json!({
                 "sessionId": session.id,
                 "entityId": entity_id,
@@ -1580,7 +1585,7 @@ pub async fn chat_query_entity(
                 "recentMeetings": recent_meetings,
                 "semanticMatches": semantic_matches,
             });
-            append_chat_exchange(db, &session.id, question, &response)?;
+            append_chat_exchange(&ctx, db, &session.id, question, &response)?;
 
             Ok(response)
         })
@@ -1611,10 +1616,12 @@ pub async fn chat_get_briefing(
         }),
     };
 
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
-            let session = ensure_open_chat_session(db, None, None)?;
-            append_chat_exchange(db, &session.id, "get briefing", &response)?;
+            let ctx = state_for_ctx.live_service_context();
+            let session = ensure_open_chat_session(&ctx, db, None, None)?;
+            append_chat_exchange(&ctx, db, &session.id, "get briefing", &response)?;
             Ok(response)
         })
         .await
@@ -1630,8 +1637,10 @@ pub async fn chat_list_entities(
         .map(|s| s.to_lowercase())
         .unwrap_or_else(|| "all".to_string());
 
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let mut items = Vec::new();
             if requested == "all" || requested == "account" || requested == "accounts" {
                 let accounts = db.get_all_accounts().map_err(|e| e.to_string())?;
@@ -1669,13 +1678,13 @@ pub async fn chat_list_entities(
                 }
             }
 
-            let session = ensure_open_chat_session(db, None, None)?;
+            let session = ensure_open_chat_session(&ctx, db, None, None)?;
             let response = serde_json::json!({
                 "entityType": requested,
                 "count": items.len(),
                 "items": items,
             });
-            append_chat_exchange(db, &session.id, "list entities", &response)?;
+            append_chat_exchange(&ctx, db, &session.id, "list entities", &response)?;
 
             Ok(items)
         })
