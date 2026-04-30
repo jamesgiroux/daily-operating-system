@@ -1,6 +1,7 @@
 use chrono::{Duration, Utc};
 
 use crate::db::ActionDb;
+use crate::services::context::ServiceContext;
 use crate::state::AppState;
 use crate::types::{
     AccountMilestone, AccountObjective, MilestoneCandidate, StatedObjective, SuccessPlanSignals,
@@ -495,6 +496,7 @@ pub fn get_objective_suggestions(
 }
 
 pub fn create_objective(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     account_id: &str,
     title: &str,
@@ -502,11 +504,15 @@ pub fn create_objective(
     target_date: Option<&str>,
     source: &str,
 ) -> Result<AccountObjective, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.create_objective(account_id, title, description, target_date, source)
         .map_err(|e: crate::db::DbError| e.to_string())
 }
 
+// DOS-209: ServiceContext adds 1 arg; request-object refactor is outside W2-A.
+#[allow(clippy::too_many_arguments)]
 pub fn update_objective(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     objective_id: &str,
     title: Option<&str>,
@@ -515,6 +521,7 @@ pub fn update_objective(
     sort_order: Option<i32>,
     status: Option<&str>,
 ) -> Result<AccountObjective, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.update_objective(
         objective_id,
         title,
@@ -527,10 +534,12 @@ pub fn update_objective(
 }
 
 pub fn complete_objective(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     objective_id: &str,
 ) -> Result<AccountObjective, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         let objective = tx
             .complete_objective(objective_id)
@@ -555,23 +564,33 @@ pub fn abandon_objective(db: &ActionDb, objective_id: &str) -> Result<AccountObj
         .map_err(|e: crate::db::DbError| e.to_string())
 }
 
-pub fn delete_objective(db: &ActionDb, objective_id: &str) -> Result<(), String> {
+pub fn delete_objective(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    objective_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.delete_objective(objective_id)
         .map_err(|e: crate::db::DbError| e.to_string())
 }
 
 pub fn create_milestone(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     objective_id: &str,
     title: &str,
     target_date: Option<&str>,
     auto_detect_signal: Option<&str>,
 ) -> Result<AccountMilestone, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.create_milestone(objective_id, title, target_date, auto_detect_signal)
         .map_err(|e: crate::db::DbError| e.to_string())
 }
 
+// DOS-209: ServiceContext adds 1 arg; request-object refactor is outside W2-A.
+#[allow(clippy::too_many_arguments)]
 pub fn update_milestone(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     milestone_id: &str,
     title: Option<&str>,
@@ -580,6 +599,7 @@ pub fn update_milestone(
     sort_order: Option<i32>,
     status: Option<&str>,
 ) -> Result<AccountMilestone, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.update_milestone(
         milestone_id,
         title,
@@ -592,10 +612,12 @@ pub fn update_milestone(
 }
 
 pub fn complete_milestone(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     milestone_id: &str,
 ) -> Result<AccountMilestone, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         let (milestone, objective) = tx
             .complete_milestone(milestone_id)
@@ -632,10 +654,12 @@ pub fn complete_milestone(
 }
 
 pub fn skip_milestone(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     milestone_id: &str,
 ) -> Result<AccountMilestone, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         let (milestone, objective) = tx
             .skip_milestone(milestone_id)
@@ -657,25 +681,34 @@ pub fn skip_milestone(
     })
 }
 
-pub fn delete_milestone(db: &ActionDb, milestone_id: &str) -> Result<(), String> {
+pub fn delete_milestone(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    milestone_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.delete_milestone(milestone_id)
         .map_err(|e: crate::db::DbError| e.to_string())
 }
 
 pub fn link_action_to_objective(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     action_id: &str,
     objective_id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.link_action_to_objective(action_id, objective_id)
         .map_err(|e: crate::db::DbError| e.to_string())
 }
 
 pub fn unlink_action_from_objective(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     action_id: &str,
     objective_id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.unlink_action_from_objective(action_id, objective_id)
         .map_err(|e: crate::db::DbError| e.to_string())
 }
@@ -699,10 +732,12 @@ pub fn reorder_milestones(
 }
 
 pub fn create_objective_from_suggestion(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     account_id: &str,
     suggestion: &SuggestedObjective,
 ) -> Result<AccountObjective, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         let objective = tx
             .create_objective(
@@ -733,14 +768,17 @@ pub fn create_objective_from_suggestion(
 }
 
 pub fn apply_success_plan_template(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     account_id: &str,
     template_id: &str,
 ) -> Result<Vec<AccountObjective>, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let template = default_template_catalog()
         .into_iter()
         .find(|item| item.id == template_id)
         .ok_or_else(|| format!("Unknown success plan template: {template_id}"))?;
+    let today = ctx.clock.now().date_naive();
     db.with_transaction(|tx| {
         let mut created = Vec::new();
         for objective in &template.objectives {
@@ -754,10 +792,9 @@ pub fn apply_success_plan_template(
                 )
                 .map_err(|e: crate::db::DbError| e.to_string())?;
             for milestone in &objective.milestones {
-                let target_date = (Utc::now().date_naive()
-                    + Duration::days(milestone.offset_days as i64))
-                .format("%Y-%m-%d")
-                .to_string();
+                let target_date = (today + Duration::days(milestone.offset_days as i64))
+                    .format("%Y-%m-%d")
+                    .to_string();
                 tx.create_milestone(
                     &created_objective.id,
                     &milestone.title,
@@ -782,7 +819,12 @@ pub fn apply_success_plan_template(
 /// pending milestones across active objectives. If similarity > 0.7, links the
 /// commitment to the milestone (and optionally backfills the milestone's target_date).
 /// Emits a `commitment_milestone_linked` signal per match.
-pub fn match_commitments_to_milestones(db: &ActionDb, account_id: &str) -> Result<usize, String> {
+pub fn match_commitments_to_milestones(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    account_id: &str,
+) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let commitments = db
         .get_unconsumed_commitments(account_id)
         .map_err(|e| e.to_string())?;
@@ -872,7 +914,17 @@ pub fn match_commitments_to_milestones(db: &ActionDb, account_id: &str) -> Resul
 mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::TimeZone;
     use rusqlite::params;
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     fn seed_account(db: &crate::db::ActionDb, id: &str) {
         db.conn_ref()
@@ -888,8 +940,13 @@ mod tests {
     fn test_create_objective() {
         let db = test_db();
         seed_account(&db, "acc-sp");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         let obj = create_objective(
+            &ctx,
             &db,
             "acc-sp",
             "Onboard customer",
@@ -918,8 +975,12 @@ mod tests {
     fn test_apply_template() {
         let db = test_db();
         seed_account(&db, "acc-tmpl");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
-        let objectives = apply_success_plan_template(&db, "acc-tmpl", "onboarding-standard")
+        let objectives = apply_success_plan_template(&ctx, &db, "acc-tmpl", "onboarding-standard")
             .expect("apply_success_plan_template");
         // Onboarding template has 3 objectives
         assert_eq!(
@@ -955,8 +1016,12 @@ mod tests {
     fn test_link_action_to_objective() {
         let db = test_db();
         seed_account(&db, "acc-link");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
-        let obj = create_objective(&db, "acc-link", "Goal A", None, None, "user")
+        let obj = create_objective(&ctx, &db, "acc-link", "Goal A", None, None, "user")
             .expect("create objective");
 
         // Seed a minimal action row (status must match CHECK constraint)
@@ -968,7 +1033,7 @@ mod tests {
             )
             .expect("seed action");
 
-        link_action_to_objective(&db, "act-1", &obj.id).expect("link_action_to_objective");
+        link_action_to_objective(&ctx, &db, "act-1", &obj.id).expect("link_action_to_objective");
 
         let link_count: i64 = db
             .conn_ref()
@@ -985,10 +1050,14 @@ mod tests {
     fn test_reorder_objectives() {
         let db = test_db();
         seed_account(&db, "acc-ro");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
-        let obj1 = create_objective(&db, "acc-ro", "First", None, None, "user").unwrap();
-        let obj2 = create_objective(&db, "acc-ro", "Second", None, None, "user").unwrap();
-        let obj3 = create_objective(&db, "acc-ro", "Third", None, None, "user").unwrap();
+        let obj1 = create_objective(&ctx, &db, "acc-ro", "First", None, None, "user").unwrap();
+        let obj2 = create_objective(&ctx, &db, "acc-ro", "Second", None, None, "user").unwrap();
+        let obj3 = create_objective(&ctx, &db, "acc-ro", "Third", None, None, "user").unwrap();
 
         // Reorder: Third, First, Second
         let new_order = vec![obj3.id.clone(), obj1.id.clone(), obj2.id.clone()];
@@ -1021,9 +1090,14 @@ mod tests {
     fn test_create_milestone() {
         let db = test_db();
         seed_account(&db, "acc-ms");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
-        let obj = create_objective(&db, "acc-ms", "Goal", None, None, "user").unwrap();
+        let obj = create_objective(&ctx, &db, "acc-ms", "Goal", None, None, "user").unwrap();
         let ms = create_milestone(
+            &ctx,
             &db,
             &obj.id,
             "Kickoff done",
@@ -1042,10 +1116,14 @@ mod tests {
         let db = test_db();
         seed_account(&db, "acc-auto");
         let engine = crate::signals::propagation::PropagationEngine::default();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
-        let obj = create_objective(&db, "acc-auto", "Onboard", None, None, "user").unwrap();
-        let ms1 = create_milestone(&db, &obj.id, "Kickoff", None, None).unwrap();
-        let ms2 = create_milestone(&db, &obj.id, "Go-live", None, None).unwrap();
+        let obj = create_objective(&ctx, &db, "acc-auto", "Onboard", None, None, "user").unwrap();
+        let ms1 = create_milestone(&ctx, &db, &obj.id, "Kickoff", None, None).unwrap();
+        let ms2 = create_milestone(&ctx, &db, &obj.id, "Go-live", None, None).unwrap();
 
         // Complete first milestone — objective should stay active
         db.with_transaction(|tx| {
@@ -1119,7 +1197,12 @@ mod tests {
 /// For each statedObjective from enrichment:
 /// - If it fuzzy-matches an existing objective: append evidence
 /// - If no match: leave it as a suggestion candidate (surfaced by get_objective_suggestions)
-pub fn reconcile_objectives(db: &ActionDb, account_id: &str) -> Result<u32, String> {
+pub fn reconcile_objectives(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    account_id: &str,
+) -> Result<u32, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let signals_json = db
         .get_success_plan_signals_json(account_id)
         .map_err(|e| e.to_string())?;
@@ -1136,7 +1219,7 @@ pub fn reconcile_objectives(db: &ActionDb, account_id: &str) -> Result<u32, Stri
         .get_account_objectives(account_id)
         .map_err(|e| e.to_string())?;
 
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
     let mut matches_found = 0u32;
 
     for ai_obj in &stated {

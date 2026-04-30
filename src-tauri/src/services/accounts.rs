@@ -800,7 +800,12 @@ pub fn apply_lifecycle_transition(
             }
         }
 
-        let _ = crate::services::intelligence::recompute_entity_health(tx, account_id, "account");
+        let _ = crate::services::intelligence::recompute_entity_health(
+            ctx,
+            tx,
+            account_id,
+            "account",
+        );
         let health_after = current_health_score(tx, account_id);
 
         let change_id = if previous_lifecycle.as_deref() != Some(next_lifecycle.as_str()) {

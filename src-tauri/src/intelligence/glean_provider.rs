@@ -1044,7 +1044,11 @@ fn write_progressive_glean_dimension(
     // dos259-grandfathered: progressive-write enrichment timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
     merged.enriched_at = chrono::Utc::now().to_rfc3339();
 
-    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&db, &merged) {
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&ctx, &db, &merged) {
         log::warn!(
             "[I575] Glean progressive write failed for {}: {}",
             entity_id,
@@ -1351,8 +1355,12 @@ pub fn emit_glean_signals(
     // Recompute health after Glean signals are emitted so that new CRM/Gong/Zendesk
     // data flows immediately into the 6 health dimensions.
     if entity_type == "account" {
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
         if let Err(e) = crate::services::intelligence::recompute_entity_health_with_preset(
-            db, entity_id, "account", preset,
+            &ctx, db, entity_id, "account", preset,
         ) {
             log::warn!(
                 "Health recompute failed for {} after Glean signals: {}",

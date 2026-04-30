@@ -124,7 +124,11 @@ pub fn schedule_recompute(state: &Arc<AppState>, account_id: &str) {
         let id_for_write = account_id.clone();
         let write_result = state_clone
             .db_write(move |db| {
-                crate::services::intelligence::recompute_entity_health(db, &id_for_write, "account")
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                crate::services::intelligence::recompute_entity_health(&ctx, db, &id_for_write, "account")
             })
             .await;
 
@@ -189,7 +193,12 @@ pub async fn drain_pending(state: &Arc<AppState>) {
         let id_for_write = account_id.clone();
         let recompute_result = state
             .db_write(move |db| {
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 crate::services::intelligence::recompute_entity_health(
+                    &ctx,
                     db,
                     &id_for_write,
                     "account",

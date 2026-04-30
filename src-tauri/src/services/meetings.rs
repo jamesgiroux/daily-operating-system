@@ -3077,6 +3077,7 @@ pub async fn refresh_meeting_briefing_full(
         )?;
 
         match crate::services::intelligence::enrich_entity(
+            ctx,
             entity_id.clone(),
             entity_type.clone(),
             state,

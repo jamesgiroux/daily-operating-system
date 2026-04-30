@@ -173,12 +173,15 @@ pub async fn update_intelligence_field(
     value: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::intelligence::update_intelligence_field(
+        &ctx,
         &entity_id,
         &entity_type,
         &field_path,
         &value,
-        &state,
+        &app_state,
     )
     .await
 }
@@ -192,12 +195,15 @@ pub async fn dismiss_intelligence_item(
     item_text: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::intelligence::dismiss_intelligence_item(
+        &ctx,
         &entity_id,
         &entity_type,
         &field,
         &item_text,
-        &state,
+        &app_state,
     )
     .await
 }
@@ -210,7 +216,15 @@ pub async fn track_recommendation(
     index: usize,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    crate::services::intelligence::track_recommendation(&entity_id, &entity_type, index, &state)
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::intelligence::track_recommendation(
+        &ctx,
+        &entity_id,
+        &entity_type,
+        index,
+        &app_state,
+    )
         .await
 }
 
@@ -222,7 +236,15 @@ pub async fn dismiss_recommendation(
     index: usize,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::intelligence::dismiss_recommendation(&entity_id, &entity_type, index, &state)
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::intelligence::dismiss_recommendation(
+        &ctx,
+        &entity_id,
+        &entity_type,
+        index,
+        &app_state,
+    )
         .await
 }
 
@@ -235,7 +257,15 @@ pub async fn mark_commitment_done(
     index: usize,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::intelligence::mark_commitment_done(&entity_id, &entity_type, index, &state)
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::intelligence::mark_commitment_done(
+        &ctx,
+        &entity_id,
+        &entity_type,
+        index,
+        &app_state,
+    )
         .await
 }
 
@@ -250,11 +280,14 @@ pub async fn update_stakeholders(
     let stakeholders: Vec<crate::intelligence::StakeholderInsight> =
         serde_json::from_str(&stakeholders_json)
             .map_err(|e| format!("Invalid stakeholders JSON: {}", e))?;
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::intelligence::update_stakeholders(
+        &ctx,
         &entity_id,
         &entity_type,
         stakeholders,
-        &state,
+        &app_state,
     )
     .await
 }

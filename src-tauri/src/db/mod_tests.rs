@@ -5637,10 +5637,15 @@ fn drain_pending_sync(db: &ActionDb) -> (usize, usize) {
     let ids = db.list_health_recompute_pending().expect("list pending");
     let mut ran = 0;
     let mut cleared = 0;
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
     for id in ids {
         // We intentionally call the same service-level function the real
         // drain uses, so test coverage tracks the production path.
-        if crate::services::intelligence::recompute_entity_health(db, &id, "account").is_ok() {
+        if crate::services::intelligence::recompute_entity_health(&ctx, db, &id, "account").is_ok()
+        {
             ran += 1;
             db.clear_health_recompute_pending(&id)
                 .expect("clear marker after recompute");
