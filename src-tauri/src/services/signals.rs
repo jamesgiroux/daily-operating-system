@@ -16,7 +16,10 @@ use crate::signals::callouts::BriefingCallout;
 use crate::signals::propagation::PropagationEngine;
 
 /// Emit a signal event (no propagation). Convenience wrapper around bus::emit_signal.
+// DOS-209: ServiceContext adds one arg; signal facade mirrors bus shape.
+#[allow(clippy::too_many_arguments)]
 pub fn emit(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     entity_type: &str,
     entity_id: &str,
@@ -24,7 +27,8 @@ pub fn emit(
     source: &str,
     value: Option<&str>,
     confidence: f64,
-) -> Result<String, crate::db::DbError> {
+) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     bus::emit_signal(
         db,
         entity_type,
@@ -34,11 +38,14 @@ pub fn emit(
         value,
         confidence,
     )
+    .map_err(|e| e.to_string())
 }
 
 /// Emit a signal and run cross-entity propagation rules.
+// DOS-209: ServiceContext adds one arg; signal facade mirrors bus shape.
 #[allow(clippy::too_many_arguments)]
 pub fn emit_and_propagate(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     entity_type: &str,
@@ -47,7 +54,8 @@ pub fn emit_and_propagate(
     source: &str,
     value: Option<&str>,
     confidence: f64,
-) -> Result<(String, Vec<String>), crate::db::DbError> {
+) -> Result<(String, Vec<String>), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     bus::emit_signal_and_propagate(
         db,
         engine,
@@ -58,11 +66,14 @@ pub fn emit_and_propagate(
         value,
         confidence,
     )
+    .map_err(|e| e.to_string())
 }
 
 /// Emit a signal, propagate, and evaluate for self-healing re-enrichment.
+// DOS-209: ServiceContext adds one arg; signal facade mirrors bus shape.
 #[allow(clippy::too_many_arguments)]
 pub fn emit_propagate_and_evaluate(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     entity_type: &str,
@@ -72,7 +83,8 @@ pub fn emit_propagate_and_evaluate(
     value: Option<&str>,
     confidence: f64,
     queue: &crate::intel_queue::IntelligenceQueue,
-) -> Result<(String, Vec<String>), crate::db::DbError> {
+) -> Result<(String, Vec<String>), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     bus::emit_signal_propagate_and_evaluate(
         db,
         engine,
@@ -84,6 +96,7 @@ pub fn emit_propagate_and_evaluate(
         confidence,
         queue,
     )
+    .map_err(|e| e.to_string())
 }
 
 /// Get all active (non-superseded) signals for an entity.

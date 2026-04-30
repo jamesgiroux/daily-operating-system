@@ -15,6 +15,7 @@ use crate::state::AppState;
 /// I547: For `book_of_business`, uses parallel section generation with
 /// optional Glean pre-fetch. Falls back to monolithic on failure.
 pub async fn generate_report(
+    ctx: &crate::services::context::ServiceContext<'_>,
     state: &Arc<AppState>,
     entity_id: &str,
     entity_type: &str,
@@ -22,6 +23,7 @@ pub async fn generate_report(
     spotlight_account_ids: Option<&[String]>,
     app_handle: Option<AppHandle>,
 ) -> Result<ReportRow, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let state = state.clone();
     let entity_id = entity_id.to_string();
     let entity_type = entity_type.to_string();
@@ -31,14 +33,23 @@ pub async fn generate_report(
     let task = tauri::async_runtime::spawn_blocking(move || -> Result<ReportRow, String> {
         // Phase 1: Gather input under brief DB lock
         if report_type_str == "book_of_business" {
+            let ctx = state.live_service_context();
             return generate_book_of_business(
+                &ctx,
                 &state,
                 spotlight_account_ids.as_deref(),
                 app_handle.as_ref(),
             );
         }
         if report_type_str == "swot" {
-            return generate_swot_report(&state, &entity_id, &entity_type, app_handle.as_ref());
+            let ctx = state.live_service_context();
+            return generate_swot_report(
+                &ctx,
+                &state,
+                &entity_id,
+                &entity_type,
+                app_handle.as_ref(),
+            );
         }
 
         let mut input = {
@@ -178,11 +189,13 @@ pub async fn generate_report(
 }
 
 fn generate_swot_report(
+    ctx: &crate::services::context::ServiceContext<'_>,
     state: &Arc<AppState>,
     entity_id: &str,
     entity_type: &str,
     app_handle: Option<&AppHandle>,
 ) -> Result<ReportRow, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let gathered = {
         let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
 
@@ -230,10 +243,12 @@ fn generate_swot_report(
 /// Phase 4: Wave 2 — executiveSummary sequential
 /// Phase 5: Merge + write to DB
 fn generate_book_of_business(
+    ctx: &crate::services::context::ServiceContext<'_>,
     state: &Arc<AppState>,
     spotlight_account_ids: Option<&[String]>,
     app_handle: Option<&AppHandle>,
 ) -> Result<ReportRow, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     use crate::reports::book_of_business::*;
 
     // Phase 1: Gather data under brief DB lock
@@ -407,18 +422,30 @@ pub async fn generate_monthly_wrapped_if_needed(
         "Scheduler: auto-generating monthly wrapped for {}",
         intel_hash_key
     );
-    generate_report(state, "user", "user", "monthly_wrapped", None, None).await?;
+    let ctx = state.live_service_context();
+    generate_report(
+        &ctx,
+        state,
+        "user",
+        "user",
+        "monthly_wrapped",
+        None,
+        None,
+    )
+    .await?;
     Ok(())
 }
 
 /// Save user edits to a report's content_json.
 pub fn save_report(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &crate::db::ActionDb,
     entity_id: &str,
     entity_type: &str,
     report_type: &str,
     content_json: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     crate::reports::save_report_content(db, entity_id, entity_type, report_type, content_json)
 }
 
@@ -462,7 +489,8 @@ pub async fn generate_weekly_impact_if_needed(
         "Scheduler: auto-generating weekly impact for {}",
         intel_hash_key
     );
-    generate_report(state, "user", "user", "weekly_impact", None, None).await?;
+    let ctx = state.live_service_context();
+    generate_report(&ctx, state, "user", "user", "weekly_impact", None, None).await?;
     Ok(())
 }
 
@@ -471,13 +499,28 @@ mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
     use crate::reports::upsert_report;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::TimeZone;
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     #[test]
     fn test_save_and_get_report() {
         let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         // Save via service layer
         save_report(
+            &ctx,
             &db,
             "acc-1",
             "account",
@@ -579,10 +622,22 @@ mod tests {
     #[test]
     fn test_save_report_updates_content() {
         let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         upsert_report(&db, "acc-4", "account", "swot", r#"{"old": true}"#, "h1")
             .expect("initial upsert");
-        save_report(&db, "acc-4", "account", "swot", r#"{"edited": true}"#).expect("save_report");
+        save_report(
+            &ctx,
+            &db,
+            "acc-4",
+            "account",
+            "swot",
+            r#"{"edited": true}"#,
+        )
+        .expect("save_report");
 
         let report = get_report_cached(&db, "acc-4", "account", "swot")
             .expect("get")

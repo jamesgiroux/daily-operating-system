@@ -100,16 +100,19 @@ pub fn get_claude_desktop_status() -> ClaudeDesktopConfigResult {
 ///
 /// Reads (or creates) `~/Library/Application Support/Claude/claude_desktop_config.json`
 /// and adds/updates the `mcpServers.dailyos` entry pointing to the bundled binary.
-pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
+pub fn configure_claude_desktop(
+    ctx: &crate::services::context::ServiceContext<'_>,
+) -> Result<ClaudeDesktopConfigResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let home = match dirs::home_dir() {
         Some(h) => h,
         None => {
-            return ClaudeDesktopConfigResult {
+            return Ok(ClaudeDesktopConfigResult {
                 success: false,
                 message: "Could not find home directory".to_string(),
                 config_path: None,
                 binary_path: None,
-            }
+            });
         }
     };
 
@@ -135,7 +138,7 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
             p.to_string_lossy().to_string()
         }
         None => {
-            return ClaudeDesktopConfigResult {
+            return Ok(ClaudeDesktopConfigResult {
                 success: false,
                 message: format!(
                     "The {binary_name} component is missing from this installation. \
@@ -143,7 +146,7 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
                 ),
                 config_path: None,
                 binary_path: None,
-            }
+            });
         }
     };
 
@@ -180,12 +183,12 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
     if let Some(parent) = config_path.parent() {
         if !parent.exists() {
             if let Err(e) = std::fs::create_dir_all(parent) {
-                return ClaudeDesktopConfigResult {
+                return Ok(ClaudeDesktopConfigResult {
                     success: false,
                     message: format!("Failed to create config directory: {e}"),
                     config_path: None,
                     binary_path: Some(binary_path_str),
-                };
+                });
             }
         }
     }
@@ -194,28 +197,28 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
     let formatted = match serde_json::to_string_pretty(&config) {
         Ok(s) => s,
         Err(e) => {
-            return ClaudeDesktopConfigResult {
+            return Ok(ClaudeDesktopConfigResult {
                 success: false,
                 message: format!("Failed to serialize config: {e}"),
                 config_path: Some(config_path.to_string_lossy().to_string()),
                 binary_path: Some(binary_path_str),
-            }
+            });
         }
     };
 
     match std::fs::write(&config_path, formatted) {
-        Ok(()) => ClaudeDesktopConfigResult {
+        Ok(()) => Ok(ClaudeDesktopConfigResult {
             success: true,
             message: "Claude Desktop configured. Restart Claude Desktop to connect.".to_string(),
             config_path: Some(config_path.to_string_lossy().to_string()),
             binary_path: Some(binary_path_str),
-        },
-        Err(e) => ClaudeDesktopConfigResult {
+        }),
+        Err(e) => Ok(ClaudeDesktopConfigResult {
             success: false,
             message: format!("Failed to write config: {e}"),
             config_path: Some(config_path.to_string_lossy().to_string()),
             binary_path: Some(binary_path_str),
-        },
+        }),
     }
 }
 

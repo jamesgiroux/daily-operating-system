@@ -1,14 +1,17 @@
 use crate::db::ActionDb;
 
 pub fn update_person_relationship(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     person_id: &str,
     relationship: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.update_person_relationship(person_id, relationship)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit(
+            ctx,
             tx,
             "person",
             person_id,
@@ -23,11 +26,13 @@ pub fn update_person_relationship(
 }
 
 pub fn mark_content_index_summary(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     file_id: &str,
     extracted_at: &str,
     summary: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.conn_ref()
         .execute(
             "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
@@ -43,6 +48,7 @@ pub fn recompute_person_meeting_count(db: &ActionDb, person_id: &str) -> Result<
 }
 
 pub fn rollover_account_renewal(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     account_id: &str,
     account_name: &str,
@@ -50,6 +56,7 @@ pub fn rollover_account_renewal(
     arr: Option<f64>,
     next_contract_end: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.record_account_event(
             account_id,
@@ -68,6 +75,7 @@ pub fn rollover_account_renewal(
             .map_err(|e| e.to_string())?;
 
         crate::services::signals::emit(
+            ctx,
             tx,
             "account",
             account_id,
@@ -87,21 +95,29 @@ pub fn rollover_account_renewal(
     })
 }
 
-pub fn reset_quill_sync_for_retry(db: &ActionDb, sync_id: &str) -> Result<(), String> {
+pub fn reset_quill_sync_for_retry(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    sync_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.reset_quill_sync_for_retry(sync_id)
         .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 pub fn update_person_name(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     person_id: &str,
     display_name: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.update_person_name(person_id, display_name)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit(
+            ctx,
             tx,
             "person",
             person_id,
@@ -119,15 +135,18 @@ pub fn update_person_name(
 }
 
 pub fn merge_people(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     keep_id: &str,
     remove_id: &str,
     source: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.merge_people(keep_id, remove_id)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit(
+            ctx,
             tx,
             "person",
             keep_id,
@@ -142,6 +161,7 @@ pub fn merge_people(
 }
 
 pub fn link_person_to_entity(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     person_id: &str,
     entity_id: &str,
@@ -149,10 +169,12 @@ pub fn link_person_to_entity(
     signal_confidence: f64,
     signal_value: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.link_person_to_entity(person_id, entity_id, relationship_type)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit(
+            ctx,
             tx,
             "person",
             person_id,
@@ -167,13 +189,16 @@ pub fn link_person_to_entity(
 }
 
 pub fn emit_low_confidence_match(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     entity_type: &str,
     entity_id: &str,
     value: &str,
     confidence: f64,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     crate::services::signals::emit(
+        ctx,
         db,
         entity_type,
         entity_id,

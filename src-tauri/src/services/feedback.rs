@@ -331,6 +331,7 @@ pub fn submit_intelligence_correction(
     })
     .to_string();
     let _ = crate::services::signals::emit(
+            ctx,
         db,
         entity_type,
         entity_id,

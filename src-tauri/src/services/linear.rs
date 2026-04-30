@@ -27,12 +27,14 @@ pub struct LinearPushResult {
 /// 5. Records the link in action_linear_links.
 /// 6. Emits `action_pushed_to_linear` signal.
 pub async fn push_action_to_linear(
+    ctx: &crate::services::context::ServiceContext<'_>,
     state: &AppState,
     action_id: &str,
     team_id: &str,
     project_id: Option<&str>,
     title_override: Option<&str>,
 ) -> Result<LinearPushResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // 1. Read action from DB
     let action = state.with_db_read(|db| {
         db.get_action_by_id(action_id)
@@ -122,7 +124,7 @@ pub async fn push_action_to_linear(
 
     // 7. Store mapping + set status to 'started'
     let link_id = Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
     let created_id = created.id.clone();
     let created_identifier = created.identifier.clone();
     let created_url = created.url.clone();
@@ -171,6 +173,7 @@ pub async fn push_action_to_linear(
 
     state.with_db_write(|db| {
         let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             &state.signals.engine,
             entity_type,
@@ -185,6 +188,7 @@ pub async fn push_action_to_linear(
         // pushed to Linear — validates the suggestion quality.
         if is_ai_suggested {
             let _ = crate::services::signals::emit_and_propagate(
+            ctx,
                 db,
                 &state.signals.engine,
                 entity_type,

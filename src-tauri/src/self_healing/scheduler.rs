@@ -90,7 +90,12 @@ pub fn on_enrichment_complete(
 
     // Coherence failed — emit signal (I407 AC#6)
     if let Some(engine) = signal_engine {
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
         let _ = crate::services::signals::emit_and_propagate(
+            &ctx,
             db,
             engine,
             entity_type,

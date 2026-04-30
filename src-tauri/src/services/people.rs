@@ -73,6 +73,7 @@ pub fn delete_person(
 
     // Emit deletion signal (I308)
     let _ = crate::services::signals::emit_and_propagate(
+            ctx,
         db,
         &state.signals.engine,
         "person",
@@ -212,6 +213,7 @@ pub fn update_person_field(
 
     // Emit field update signal + self-healing evaluation (I377, I410)
     let _ = crate::services::signals::emit_propagate_and_evaluate(
+            ctx,
         db,
         &state.signals.engine,
         "person",
@@ -280,6 +282,7 @@ pub fn link_person_entity(
 
     // Emit person linked signal (I308)
     let _ = crate::services::signals::emit_and_propagate(
+            ctx,
         db,
         &state.signals.engine,
         relationship_type,
@@ -317,6 +320,7 @@ pub fn unlink_person_entity(
 
     // Emit person unlinked signal (I308)
     let _ = crate::services::signals::emit_and_propagate(
+            ctx,
         db,
         &state.signals.engine,
         "entity",
@@ -424,6 +428,7 @@ pub fn archive_person(
         "entity_unarchived"
     };
     let _ = crate::services::signals::emit_and_propagate(
+            ctx,
         db,
         &state.signals.engine,
         "person",

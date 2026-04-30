@@ -64,13 +64,15 @@ struct BridgeRow {
 ///
 /// Commitments without `commitment_id` are skipped (legacy / unbridgeable).
 pub fn sync_ai_commitments(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     entity_type: &str,
     entity_id: &str,
     commitments: &[OpenCommitment],
 ) -> Result<BridgeSyncSummary, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let mut summary = BridgeSyncSummary::default();
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
 
     for commitment in commitments {
         let commitment_id = match commitment.commitment_id.as_deref() {
@@ -88,7 +90,7 @@ pub fn sync_ai_commitments(
                 summary.skipped_tombstoned += 1;
                 // Still refresh last_seen_at so we can see the LLM kept
                 // re-emitting it (useful for debugging tombstone churn).
-                touch_bridge_row(db, commitment_id, &now).map_err(|e| e.to_string())?;
+                touch_bridge_row(ctx, db, commitment_id, &now).map_err(|e| e.to_string())?;
             }
             Some(row) => {
                 // Existing non-tombstoned row. Only update Action metadata
@@ -139,7 +141,7 @@ pub fn sync_ai_commitments(
                         let _ = OPEN_STATUSES;
                     }
                 }
-                touch_bridge_row(db, commitment_id, &now).map_err(|e| e.to_string())?;
+                touch_bridge_row(ctx, db, commitment_id, &now).map_err(|e| e.to_string())?;
             }
             None => {
                 // Brand-new commitment_id. Two sub-cases:
@@ -159,6 +161,7 @@ pub fn sync_ai_commitments(
                         .map_err(|e| e.to_string())?
                 {
                     insert_bridge_row(
+                        ctx,
                         db,
                         commitment_id,
                         entity_type,
@@ -218,7 +221,7 @@ pub fn sync_ai_commitments(
                 };
                 db.upsert_action(&action).map_err(|e| e.to_string())?;
 
-                insert_bridge_row(db, commitment_id, entity_type, entity_id, &action_id, &now)
+                insert_bridge_row(ctx, db, commitment_id, entity_type, entity_id, &action_id, &now)
                     .map_err(|e| e.to_string())?;
                 summary.created += 1;
             }
@@ -280,8 +283,13 @@ fn find_existing_open_commitment_by_title(
 /// when `action_kind == KIND_COMMITMENT` and the transition is terminal.
 ///
 /// Looks up the bridge row by `action_id`. No-op if none exists.
-pub fn tombstone_commitment_bridge(db: &ActionDb, action_id: &str) -> Result<(), String> {
-    let now = chrono::Utc::now().to_rfc3339();
+pub fn tombstone_commitment_bridge(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    action_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let now = ctx.clock.now().to_rfc3339();
     let changed = db
         .conn_ref()
         .execute(
@@ -335,32 +343,38 @@ fn read_bridge_row(
 }
 
 fn insert_bridge_row(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     commitment_id: &str,
     entity_type: &str,
     entity_id: &str,
     action_id: &str,
     now: &str,
-) -> Result<(), rusqlite::Error> {
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.conn_ref().execute(
         "INSERT INTO ai_commitment_bridge
              (commitment_id, entity_type, entity_id, action_id,
               first_seen_at, last_seen_at, tombstoned)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5, 0)",
         rusqlite::params![commitment_id, entity_type, entity_id, action_id, now],
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 fn touch_bridge_row(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     commitment_id: &str,
     now: &str,
-) -> Result<(), rusqlite::Error> {
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.conn_ref().execute(
         "UPDATE ai_commitment_bridge SET last_seen_at = ?1 WHERE commitment_id = ?2",
         rusqlite::params![now, commitment_id],
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -372,6 +386,18 @@ fn touch_bridge_row(
 mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::TimeZone;
+
+    macro_rules! make_ctx {
+        ($ctx:ident) => {
+            let clock =
+                FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+            let rng = SeedableRng::new(42);
+            let ext = ExternalClients::default();
+            let $ctx = ServiceContext::test_live(&clock, &rng, &ext);
+        };
+    }
 
     fn make_commitment(id: Option<&str>, description: &str) -> OpenCommitment {
         OpenCommitment {
@@ -389,9 +415,11 @@ mod tests {
     #[test]
     fn test_sync_creates_new_commitment() {
         let db = test_db();
+        make_ctx!(ctx);
         let commitments = vec![make_commitment(Some("meeting:abc:1"), "Send renewal deck")];
 
-        let summary = sync_ai_commitments(&db, "account", "acct-1", &commitments).expect("sync");
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("sync");
         assert_eq!(summary.created, 1);
         assert_eq!(summary.updated, 0);
         assert_eq!(summary.skipped_tombstoned, 0);
@@ -426,9 +454,11 @@ mod tests {
     #[test]
     fn test_sync_skips_tombstoned() {
         let db = test_db();
+        make_ctx!(ctx);
         let commitments = vec![make_commitment(Some("c:1"), "Tombstoned item")];
 
-        sync_ai_commitments(&db, "account", "acct-1", &commitments).expect("initial sync");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments)
+            .expect("initial sync");
 
         // Fetch the action_id we just created, tombstone it.
         let action_id: String = db
@@ -439,10 +469,11 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        tombstone_commitment_bridge(&db, &action_id).expect("tombstone");
+        tombstone_commitment_bridge(&ctx, &db, &action_id).expect("tombstone");
 
         // Re-sync with the same commitment — should be skipped, no new action.
-        let summary = sync_ai_commitments(&db, "account", "acct-1", &commitments).expect("resync");
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("resync");
         assert_eq!(summary.created, 0);
         assert_eq!(summary.skipped_tombstoned, 1);
 
@@ -456,8 +487,10 @@ mod tests {
     #[test]
     fn test_sync_skips_missing_id() {
         let db = test_db();
+        make_ctx!(ctx);
         let commitments = vec![make_commitment(None, "Legacy item")];
-        let summary = sync_ai_commitments(&db, "account", "acct-1", &commitments).expect("sync");
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("sync");
         assert_eq!(summary.created, 0);
         assert_eq!(summary.skipped_missing_id, 1);
 
@@ -471,8 +504,9 @@ mod tests {
     #[test]
     fn test_tombstone_sets_flag() {
         let db = test_db();
+        make_ctx!(ctx);
         let commitments = vec![make_commitment(Some("c:2"), "Thing to kill")];
-        sync_ai_commitments(&db, "account", "acct-1", &commitments).expect("sync");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("sync");
 
         let action_id: String = db
             .conn_ref()
@@ -482,7 +516,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        tombstone_commitment_bridge(&db, &action_id).expect("tombstone");
+        tombstone_commitment_bridge(&ctx, &db, &action_id).expect("tombstone");
 
         let flag: i32 = db
             .conn_ref()
@@ -498,10 +532,11 @@ mod tests {
     #[test]
     fn test_resurrection_blocked() {
         let db = test_db();
+        make_ctx!(ctx);
         let commitments = vec![make_commitment(Some("c:3"), "Resurrect me?")];
 
         // Initial sync creates action
-        sync_ai_commitments(&db, "account", "acct-1", &commitments).expect("sync");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("sync");
         let action_id: String = db
             .conn_ref()
             .query_row(
@@ -513,10 +548,11 @@ mod tests {
 
         // Complete + tombstone
         db.complete_action(&action_id).expect("complete");
-        tombstone_commitment_bridge(&db, &action_id).expect("tombstone");
+        tombstone_commitment_bridge(&ctx, &db, &action_id).expect("tombstone");
 
         // Re-sync with same commitment — no new action.
-        let summary = sync_ai_commitments(&db, "account", "acct-1", &commitments).expect("resync");
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("resync");
         assert_eq!(summary.created, 0);
         assert_eq!(summary.skipped_tombstoned, 1);
 
@@ -530,10 +566,11 @@ mod tests {
     #[test]
     fn test_resurrection_blocked_on_rephrase() {
         let db = test_db();
+        make_ctx!(ctx);
         let original = vec![make_commitment(Some("c:4"), "Original phrasing")];
         let rephrased = vec![make_commitment(Some("c:4"), "Totally different wording")];
 
-        sync_ai_commitments(&db, "account", "acct-1", &original).expect("sync");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &original).expect("sync");
         let action_id: String = db
             .conn_ref()
             .query_row(
@@ -542,11 +579,11 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        tombstone_commitment_bridge(&db, &action_id).expect("tombstone");
+        tombstone_commitment_bridge(&ctx, &db, &action_id).expect("tombstone");
 
         // Same id, rephrased description — bridge still blocks.
         let summary =
-            sync_ai_commitments(&db, "account", "acct-1", &rephrased).expect("resync");
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &rephrased).expect("resync");
         assert_eq!(summary.created, 0);
         assert_eq!(summary.skipped_tombstoned, 1);
 
@@ -565,11 +602,13 @@ mod tests {
     #[test]
     fn test_description_update_propagates() {
         let db = test_db();
+        make_ctx!(ctx);
         let original = vec![make_commitment(Some("c:5"), "Original")];
         let updated = vec![make_commitment(Some("c:5"), "Updated description")];
 
-        sync_ai_commitments(&db, "account", "acct-1", &original).expect("sync");
-        let summary = sync_ai_commitments(&db, "account", "acct-1", &updated).expect("resync");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &original).expect("sync");
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &updated).expect("resync");
 
         assert_eq!(summary.created, 0);
         assert_eq!(summary.updated, 1);
@@ -595,8 +634,9 @@ mod tests {
         // metadata while the row is still backlog (AI-owned). Once accepted,
         // the row is USER-OWNED and only last_seen_at gets refreshed.
         let db = test_db();
+        make_ctx!(ctx);
         let original = vec![make_commitment(Some("c:user-owned"), "AI phrasing")];
-        sync_ai_commitments(&db, "account", "acct-1", &original).expect("initial sync");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &original).expect("initial sync");
 
         let action_id: String = db
             .conn_ref()
@@ -619,7 +659,8 @@ mod tests {
 
         // Next enrichment pass emits the SAME commitment_id with the
         // original AI phrasing — this must NOT clobber the user's edit.
-        let summary = sync_ai_commitments(&db, "account", "acct-1", &original).expect("resync");
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &original).expect("resync");
         assert_eq!(summary.created, 0);
         assert_eq!(summary.updated, 0, "user-owned title must not be overwritten");
 
@@ -640,11 +681,12 @@ mod tests {
         // backlog (unaccepted), the AI is the owner and enrichment MUST keep
         // metadata up to date — otherwise we'd freeze bad early phrasing.
         let db = test_db();
+        make_ctx!(ctx);
         let v1 = vec![make_commitment(Some("c:ai-owned"), "Early phrasing")];
         let v2 = vec![make_commitment(Some("c:ai-owned"), "Refined phrasing")];
 
-        sync_ai_commitments(&db, "account", "acct-1", &v1).expect("initial sync");
-        let summary = sync_ai_commitments(&db, "account", "acct-1", &v2).expect("resync");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &v1).expect("initial sync");
+        let summary = sync_ai_commitments(&ctx, &db, "account", "acct-1", &v2).expect("resync");
         assert_eq!(summary.updated, 1, "backlog rows still track AI updates");
 
         let title: String = db
@@ -686,17 +728,24 @@ mod tests {
         // we would create two action rows; with dedup the second emit
         // creates a bridge row pointing at the first action's id.
         let db = test_db();
+        make_ctx!(ctx);
         let title = "Consolidate Globex subsidiary domains onto VIP";
 
         // First emit: source = meeting transcript.
-        let first =
-            sync_ai_commitments(&db, "account", "acct-1", &[make_commitment(Some("meeting:1"), title)])
-                .expect("first sync");
+        let first = sync_ai_commitments(
+            &ctx,
+            &db,
+            "account",
+            "acct-1",
+            &[make_commitment(Some("meeting:1"), title)],
+        )
+        .expect("first sync");
         assert_eq!(first.created, 1);
         assert_eq!(first.aliased_to_existing, 0);
 
         // Second emit: same title, different commitment_id (source = Gong).
         let second = sync_ai_commitments(
+            &ctx,
             &db,
             "account",
             "acct-1",
@@ -731,7 +780,9 @@ mod tests {
     #[test]
     fn dos321_alias_dedup_is_case_and_whitespace_insensitive_at_edges() {
         let db = test_db();
+        make_ctx!(ctx);
         sync_ai_commitments(
+            &ctx,
             &db,
             "account",
             "acct-1",
@@ -741,6 +792,7 @@ mod tests {
 
         // Different commitment_id, leading/trailing whitespace, different case.
         let s = sync_ai_commitments(
+            &ctx,
             &db,
             "account",
             "acct-1",
@@ -759,7 +811,9 @@ mod tests {
         // for a *different* commitment_id pointing at a completed action,
         // a brand-new action is the right shape.
         let db = test_db();
+        make_ctx!(ctx);
         sync_ai_commitments(
+            &ctx,
             &db,
             "account",
             "acct-1",
@@ -777,6 +831,7 @@ mod tests {
         db.complete_action(&action_id).expect("complete");
 
         let s = sync_ai_commitments(
+            &ctx,
             &db,
             "account",
             "acct-1",
@@ -793,8 +848,9 @@ mod tests {
         // Regression guard: after complete_action on a commitment action,
         // the bridge row must be tombstoned (so re-enrichment can't resurrect).
         let db = test_db();
+        make_ctx!(ctx);
         let commitments = vec![make_commitment(Some("c:6"), "Will complete")];
-        sync_ai_commitments(&db, "account", "acct-1", &commitments).expect("sync");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("sync");
 
         let action_id: String = db
             .conn_ref()
@@ -806,7 +862,7 @@ mod tests {
             .unwrap();
 
         db.complete_action(&action_id).expect("complete");
-        tombstone_commitment_bridge(&db, &action_id).expect("tombstone");
+        tombstone_commitment_bridge(&ctx, &db, &action_id).expect("tombstone");
 
         let flag: i32 = db
             .conn_ref()

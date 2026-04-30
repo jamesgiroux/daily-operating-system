@@ -41,6 +41,7 @@ pub fn complete_action(
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             engine,
             entity_type,
@@ -54,6 +55,7 @@ pub fn complete_action(
         // DOS Work-tab: Commitment lifecycle — delivered + tombstone the bridge.
         if action.action_kind == crate::action_status::KIND_COMMITMENT {
             let _ = crate::services::signals::emit_and_propagate(
+            ctx,
                 db,
                 engine,
                 entity_type,
@@ -67,7 +69,8 @@ pub fn complete_action(
                 )),
                 0.8,
             );
-            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(db, id)
+            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(            ctx,
+db, id)
             {
                 log::warn!("commitment_bridge tombstone on complete failed (non-fatal): {e}");
             }
@@ -91,6 +94,7 @@ pub fn reopen_action(
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             engine,
             entity_type,
@@ -119,6 +123,7 @@ pub fn accept_suggested_action(
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             engine,
             entity_type,
@@ -136,6 +141,7 @@ pub fn accept_suggested_action(
         // DOS Work-tab: Commitment lifecycle — accepted (backlog → unstarted).
         if action.action_kind == crate::action_status::KIND_COMMITMENT {
             let _ = crate::services::signals::emit_and_propagate(
+            ctx,
                 db,
                 engine,
                 entity_type,
@@ -172,6 +178,7 @@ pub fn reject_suggested_action(
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             engine,
             entity_type,
@@ -194,6 +201,7 @@ pub fn reject_suggested_action(
         // DOS Work-tab: Commitment lifecycle — rejected + tombstone the bridge.
         if action.action_kind == crate::action_status::KIND_COMMITMENT {
             let _ = crate::services::signals::emit_and_propagate(
+            ctx,
                 db,
                 engine,
                 entity_type,
@@ -207,7 +215,8 @@ pub fn reject_suggested_action(
                 )),
                 0.5,
             );
-            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(db, id)
+            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(            ctx,
+db, id)
             {
                 log::warn!("commitment_bridge tombstone on reject failed (non-fatal): {e}");
             }
@@ -249,7 +258,8 @@ pub fn dismiss_suggested_action(
         // For commitment-kind actions still tombstone the bridge so the
         // commitment view doesn't resurrect it from the source artifact.
         if action.action_kind == crate::action_status::KIND_COMMITMENT {
-            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(db, id)
+            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(            ctx,
+db, id)
             {
                 log::warn!("commitment_bridge tombstone on dismiss failed (non-fatal): {e}");
             }
@@ -260,6 +270,7 @@ pub fn dismiss_suggested_action(
         // a non-scoring observation.
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             engine,
             entity_type,
@@ -294,6 +305,7 @@ pub fn update_action_priority(
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             engine,
             entity_type,
@@ -452,6 +464,7 @@ pub async fn create_action(
             // Emit signal for manually created actions
             let (entity_type, entity_id) = action_entity_info(&action, &action.id);
             let _ = crate::services::signals::emit_and_propagate(
+                &ctx,
                 db,
                 &engine,
                 entity_type,
@@ -794,6 +807,7 @@ pub fn resolve_decision(
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             engine,
             entity_type,

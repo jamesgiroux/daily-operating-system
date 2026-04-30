@@ -1013,7 +1013,9 @@ pub async fn generate_report(
     report_type: String,
     spotlight_account_ids: Option<Vec<String>>,
 ) -> Result<crate::reports::ReportRow, String> {
+    let ctx = state.live_service_context();
     crate::services::reports::generate_report(
+        &ctx,
         state.inner(),
         &entity_id,
         &entity_type,
@@ -1048,9 +1050,12 @@ pub async fn save_report(
     report_type: String,
     content_json: String,
 ) -> Result<(), String> {
+    let app_state = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = app_state.live_service_context();
             crate::services::reports::save_report(
+                &ctx,
                 db,
                 &entity_id,
                 &entity_type,

@@ -224,13 +224,16 @@ pub async fn get_project_detail(
 
 /// Create a new project with workspace files.
 pub async fn create_project(
+    ctx: &crate::services::context::ServiceContext<'_>,
     name: &str,
     parent_id: Option<String>,
     state: &AppState,
 ) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let validated_name = crate::util::validate_entity_name(name)?;
     let id = crate::util::slugify(validated_name);
     let validated_name = validated_name.to_string();
+    let now = ctx.clock.now().to_rfc3339();
 
     let config = state.config.read().clone();
 
@@ -238,8 +241,6 @@ pub async fn create_project(
     let validated_name_clone = validated_name.clone();
     state
         .db_write(move |db| {
-            let now = chrono::Utc::now().to_rfc3339();
-
             if let Ok(Some(_)) = db.get_project(&id_clone) {
                 return Err(format!("Project '{}' already exists", validated_name_clone));
             }
@@ -282,11 +283,13 @@ pub async fn create_project(
 
 /// Update a single structured field on a project.
 pub async fn update_project_field(
+    ctx: &crate::services::context::ServiceContext<'_>,
     project_id: &str,
     field: &str,
     value: &str,
     state: &AppState,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state.config.read().clone();
     let intel_queue = state.intel_queue.clone();
 
@@ -298,7 +301,12 @@ pub async fn update_project_field(
             db.update_project_field(&project_id, &field, &value)
                 .map_err(|e| e.to_string())?;
 
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             let _ = crate::services::signals::emit(
+                &ctx,
                 db,
                 "project",
                 &project_id,
@@ -405,7 +413,12 @@ pub async fn update_project_notes(
                 crate::projects::write_project_json(workspace, &project, Some(&json), db)?;
                 crate::projects::write_project_markdown(workspace, &project, Some(&json), db)?;
 
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 let _ = crate::services::signals::emit(
+                    &ctx,
                     db,
                     "project",
                     &project_id,
@@ -430,10 +443,12 @@ pub async fn update_project_notes(
 
 /// Bulk-create projects from a list of names.
 pub fn bulk_create_projects(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     workspace: &Path,
     names: &[String],
 ) -> Result<Vec<String>, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let mut created_ids = Vec::with_capacity(names.len());
 
     for raw_name in names {
@@ -444,7 +459,7 @@ pub fn bulk_create_projects(
             continue;
         }
 
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = ctx.clock.now().to_rfc3339();
         let project = crate::db::DbProject {
             id: id.clone(),
             name: name.to_string(),
@@ -477,11 +492,13 @@ pub fn bulk_create_projects(
 /// project and its cascaded children so already-queued enrichments don't run
 /// against a now-archived target.
 pub fn archive_project(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     state: &crate::state::AppState,
     id: &str,
     archived: bool,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // DOS-286: collect child project IDs before archiving so we can drop their
     // queued enrichments too (cascade archives children).
     let child_ids: Vec<String> = if archived {
@@ -506,8 +523,16 @@ pub fn archive_project(
     } else {
         "entity_unarchived"
     };
-    let _ =
-        crate::services::signals::emit(db, "project", id, signal_type, "user_action", None, 0.9);
+    let _ = crate::services::signals::emit(
+        ctx,
+        db,
+        "project",
+        id,
+        signal_type,
+        "user_action",
+        None,
+        0.9,
+    );
 
     // DOS-286: drop any in-flight enrichments for the archived project and its children.
     if archived {

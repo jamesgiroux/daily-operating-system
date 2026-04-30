@@ -49,12 +49,14 @@ pub async fn get_entries(
 
 /// Create a new entity context entry with embedding.
 pub async fn create_entry(
+    ctx: &crate::services::context::ServiceContext<'_>,
     entity_type: &str,
     entity_id: &str,
     title: &str,
     content: &str,
     state: &AppState,
 ) -> Result<EntityContextEntry, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let id = uuid::Uuid::new_v4().to_string();
 
     // Generate embedding before acquiring DB lock
@@ -114,11 +116,13 @@ pub async fn create_entry(
 
 /// Update an existing entity context entry.
 pub async fn update_entry(
+    ctx: &crate::services::context::ServiceContext<'_>,
     id: &str,
     title: &str,
     content: &str,
     state: &AppState,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // Regenerate embedding before acquiring DB lock
     let embedding_blob =
         super::user_entity::embed_context_text(&state.embedding_model, title, content);
@@ -170,7 +174,12 @@ pub async fn update_entry(
 }
 
 /// Delete an entity context entry.
-pub async fn delete_entry(id: &str, state: &AppState) -> Result<(), String> {
+pub async fn delete_entry(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    id: &str,
+    state: &AppState,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let id = id.to_string();
     let engine = std::sync::Arc::clone(&state.signals.engine);
     state
@@ -218,7 +227,11 @@ pub async fn delete_entry(id: &str, state: &AppState) -> Result<(), String> {
 /// Called once at startup. For each person with non-empty notes, creates
 /// a context entry with title "Notes". Idempotent — skips entities that
 /// already have entries.
-pub fn migrate_legacy_notes(db: &crate::db::ActionDb) -> Result<usize, String> {
+pub fn migrate_legacy_notes(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let conn = db.conn_ref();
     let mut count = 0usize;
 

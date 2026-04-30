@@ -21,6 +21,7 @@ pub fn upsert_meeting_for_reconcile(
     db.with_transaction(|tx| {
         tx.upsert_meeting(meeting).map_err(|e| e.to_string())?;
         crate::services::signals::emit(
+            ctx,
             tx,
             "meeting",
             &meeting.id,
@@ -56,6 +57,7 @@ pub fn update_capture_content(
         tx.update_capture(capture_id, content)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit(
+            ctx,
             tx,
             "capture",
             capture_id,
@@ -83,6 +85,7 @@ pub fn clear_meeting_prep_frozen(
             )
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit(
+            ctx,
             tx,
             "meeting",
             meeting_id,
@@ -667,7 +670,13 @@ async fn mutate_meeting_entities_and_refresh_briefing(
 
                 if let Some((entity_id, entity_type, meeting_title)) = keyword_target {
                     if entity_type == "account" || entity_type == "project" {
+                        let clock = crate::services::context::SystemClock;
+                        let rng = crate::services::context::SystemRng;
+                        let ext = crate::services::context::ExternalClients::default();
+                        let ctx =
+                            crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                         let _ = crate::services::entities::auto_extract_title_keywords(
+                            &ctx,
                             db,
                             &entity_id,
                             &entity_type,
@@ -2507,6 +2516,7 @@ pub fn update_meeting_user_agenda(
             .map(|e| (e.entity_type.as_str().to_string(), e.id))
             .unwrap_or_else(|| ("meeting".to_string(), meeting_id.to_string()));
         let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db, &state.signals.engine,
             &etype,
             &eid,
@@ -2644,6 +2654,7 @@ pub fn update_meeting_prep_field(
                 _ => continue,
             };
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 &state.signals.engine,
                 entity_type_str,
@@ -2662,6 +2673,7 @@ pub fn update_meeting_prep_field(
         // Attendee assessment edits: also target the specific person entity
         if let Some(person_id) = target_person_id {
             crate::services::signals::emit_and_propagate(
+            ctx,
                 tx,
                 &state.signals.engine,
                 "person",
@@ -2679,6 +2691,7 @@ pub fn update_meeting_prep_field(
 
         // Also emit a signal for the meeting itself
         crate::services::signals::emit(
+            ctx,
             tx,
             "meeting",
             meeting_id,

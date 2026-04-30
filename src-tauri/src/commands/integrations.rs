@@ -9,8 +9,17 @@ pub fn get_claude_desktop_status() -> ClaudeDesktopConfigResult {
 
 /// Configure Claude Desktop to use the DailyOS MCP server.
 #[tauri::command]
-pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
-    crate::services::integrations::configure_claude_desktop()
+pub fn configure_claude_desktop(state: State<'_, Arc<AppState>>) -> ClaudeDesktopConfigResult {
+    let ctx = state.live_service_context();
+    match crate::services::integrations::configure_claude_desktop(&ctx) {
+        Ok(result) => result,
+        Err(message) => ClaudeDesktopConfigResult {
+            success: false,
+            message,
+            config_path: None,
+            binary_path: None,
+        },
+    }
 }
 
 // =============================================================================
@@ -1972,7 +1981,9 @@ pub async fn push_action_to_linear(
     title: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::services::linear::LinearPushResult, String> {
+    let ctx = state.live_service_context();
     crate::services::linear::push_action_to_linear(
+        &ctx,
         &state,
         &action_id,
         &team_id,
@@ -3572,6 +3583,7 @@ async fn import_account_from_glean_internal(
             .to_string();
 
             crate::services::signals::emit_and_propagate(
+                &ctx,
                 db,
                 &state_for_db.signals.engine,
                 "account",
@@ -3598,7 +3610,9 @@ async fn import_account_from_glean_internal(
             } else {
                 "Glean discovery"
             };
+            let ctx = state.live_service_context();
             crate::services::entity_context::create_entry(
+                &ctx,
                 "account",
                 &account_id,
                 title,
