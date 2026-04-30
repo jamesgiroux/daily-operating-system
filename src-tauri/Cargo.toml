@@ -108,6 +108,10 @@ required-features = ["mcp"]
 name = "reconcile_post_migration"
 path = "src/bin/reconcile_post_migration.rs"
 
+[[bin]]
+name = "repair_entity_linking"
+path = "src/bin/repair_entity_linking.rs"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = "0.3"

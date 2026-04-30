@@ -4,6 +4,7 @@ pub mod email_adapter;
 pub mod evidence;
 pub mod phases;
 pub mod primitives;
+pub mod repair;
 pub mod repository;
 pub mod rescan;
 pub mod rules;
