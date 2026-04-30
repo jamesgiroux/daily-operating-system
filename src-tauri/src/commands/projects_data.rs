@@ -426,8 +426,12 @@ pub async fn archive_person(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
-        .db_write(move |db| crate::services::people::archive_person(db, &app_state, &id, archived))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::people::archive_person(&ctx, db, &app_state, &id, archived)
+        })
         .await
 }
 

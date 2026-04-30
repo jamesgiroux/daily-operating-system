@@ -5,17 +5,20 @@ use std::path::Path;
 
 use crate::commands::{EntitySummary, MeetingSummary, PersonDetailResult};
 use crate::db::ActionDb;
+use crate::services::context::ServiceContext;
 use crate::state::AppState;
 
 /// Merge two people: transfer all references from `remove_id` to `keep_id`,
 /// then delete the removed person. Also cleans up filesystem directories
 /// and regenerates the kept person's files.
 pub fn merge_people(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     keep_id: &str,
     remove_id: &str,
 ) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // Get removed person's info before merge (for filesystem cleanup)
     let removed = db
         .get_person(remove_id)
@@ -52,7 +55,13 @@ pub fn merge_people(
 }
 
 /// Delete a person and all their references. Also removes their filesystem directory.
-pub fn delete_person(db: &ActionDb, state: &AppState, person_id: &str) -> Result<(), String> {
+pub fn delete_person(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    state: &AppState,
+    person_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // Get person info before delete (for filesystem cleanup)
     let person = db
         .get_person(person_id)
@@ -177,12 +186,14 @@ pub async fn get_person_detail(
 
 /// Update a single field on a person, emit signal, and regenerate workspace files.
 pub fn update_person_field(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     person_id: &str,
     field: &str,
     value: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let prior_source = db
         .get_person(person_id)
         .ok()
@@ -256,12 +267,14 @@ pub fn update_person_field(
 
 /// Link a person to an entity and regenerate workspace files.
 pub fn link_person_entity(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     person_id: &str,
     entity_id: &str,
     relationship_type: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.link_person_to_entity(person_id, entity_id, relationship_type)
         .map_err(|e| e.to_string())?;
 
@@ -292,11 +305,13 @@ pub fn link_person_entity(
 
 /// Unlink a person from an entity and regenerate workspace files.
 pub fn unlink_person_entity(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     person_id: &str,
     entity_id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.unlink_person_from_entity(person_id, entity_id)
         .map_err(|e| e.to_string())?;
 
@@ -326,7 +341,10 @@ pub fn unlink_person_entity(
 }
 
 /// Create a new person manually. Returns the generated person ID.
+// DOS-209 adds ServiceContext to this existing command-shaped API during W2-A.
+#[allow(clippy::too_many_arguments)]
 pub fn create_person(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     email: &str,
@@ -335,8 +353,9 @@ pub fn create_person(
     role: Option<&str>,
     relationship: Option<&str>,
 ) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let id = crate::util::slugify(email);
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
 
     let person = crate::db::DbPerson {
         id: id.clone(),
@@ -390,11 +409,13 @@ pub fn create_person(
 /// DOS-286: when archiving, drops any pending intel queue entries for this
 /// person so already-queued enrichments don't run against a now-archived target.
 pub fn archive_person(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     id: &str,
     archived: bool,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.archive_person(id, archived).map_err(|e| e.to_string())?;
 
     let signal_type = if archived {
@@ -424,6 +445,7 @@ pub fn archive_person(
 /// Create a person entity from a stakeholder name (no email required).
 /// Links to the parent entity and writes workspace files.
 pub fn create_person_from_stakeholder(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     entity_id: &str,
@@ -431,13 +453,14 @@ pub fn create_person_from_stakeholder(
     name: &str,
     role: Option<&str>,
 ) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err("Name is required".to_string());
     }
 
     let id = crate::util::slugify(&name);
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
 
     let person = crate::db::DbPerson {
         id: id.clone(),

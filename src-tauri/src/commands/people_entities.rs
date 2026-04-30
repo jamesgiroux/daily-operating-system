@@ -89,9 +89,13 @@ pub async fn update_person(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            crate::services::people::update_person_field(db, &app_state, &person_id, &field, &value)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::people::update_person_field(
+                &ctx, db, &app_state, &person_id, &field, &value,
+            )
         })
         .await
 }
@@ -106,9 +110,12 @@ pub async fn link_person_entity(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::people::link_person_entity(
+                &ctx,
                 db,
                 &app_state,
                 &person_id,
@@ -128,9 +135,13 @@ pub async fn unlink_person_entity(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            crate::services::people::unlink_person_entity(db, &app_state, &person_id, &entity_id)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::people::unlink_person_entity(
+                &ctx, db, &app_state, &person_id, &entity_id,
+            )
         })
         .await
 }
@@ -460,9 +471,12 @@ pub async fn create_person(
 ) -> Result<String, String> {
     let email = crate::util::validate_email(&email)?;
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::people::create_person(
+                &ctx,
                 db,
                 &app_state,
                 &email,
@@ -484,9 +498,11 @@ pub async fn merge_people(
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
-            crate::services::people::merge_people(db, &app_state, &keep_id, &remove_id)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::people::merge_people(&ctx, db, &app_state, &keep_id, &remove_id)
         })
         .await
 }
@@ -498,8 +514,12 @@ pub async fn delete_person(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
-        .db_write(move |db| crate::services::people::delete_person(db, &app_state, &person_id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::people::delete_person(&ctx, db, &app_state, &person_id)
+        })
         .await
 }
 
