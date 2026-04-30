@@ -313,11 +313,7 @@ pub struct QuillStatus {
 /// Get the current status of the Quill integration.
 #[tauri::command]
 pub async fn get_quill_status(state: State<'_, Arc<AppState>>) -> Result<QuillStatus, String> {
-    let config = state
-        .config
-        .read()
-        .as_ref()
-        .map(|c| c.quill.clone());
+    let config = state.config.read().as_ref().map(|c| c.quill.clone());
 
     let quill_config = config.unwrap_or_default();
     let bridge_exists = std::path::Path::new(&quill_config.bridge_path).exists();
@@ -610,11 +606,7 @@ pub struct GranolaManualSyncResponse {
 /// Get the current status of the Granola integration.
 #[tauri::command]
 pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<GranolaStatus, String> {
-    let config = state
-        .config
-        .read()
-        .as_ref()
-        .map(|c| c.granola.clone());
+    let config = state.config.read().as_ref().map(|c| c.granola.clone());
 
     let granola_config = config.unwrap_or_default();
     let resolved_path = crate::granola::resolve_cache_path(&granola_config);
@@ -811,11 +803,7 @@ pub struct GravatarStatus {
 /// Get Gravatar integration status.
 #[tauri::command]
 pub fn get_gravatar_status(state: State<'_, Arc<AppState>>) -> GravatarStatus {
-    let config = state
-        .config
-        .read()
-        .as_ref()
-        .map(|c| c.gravatar.clone());
+    let config = state.config.read().as_ref().map(|c| c.gravatar.clone());
 
     let gravatar_config = config.unwrap_or_default();
 
@@ -1056,11 +1044,7 @@ pub struct ClayStatusData {
 /// Get Clay integration status.
 #[tauri::command]
 pub async fn get_clay_status(state: State<'_, Arc<AppState>>) -> Result<ClayStatusData, String> {
-    let config = state
-        .config
-        .read()
-        .as_ref()
-        .map(|c| c.clay.clone());
+    let config = state.config.read().as_ref().map(|c| c.clay.clone());
 
     let clay_config = config.unwrap_or_default();
 
@@ -1139,11 +1123,7 @@ pub fn set_clay_auto_enrich(enabled: bool, state: State<'_, Arc<AppState>>) -> R
 fn resolve_smithery_config(state: &AppState) -> Result<(String, String, String), String> {
     let api_key = crate::clay::oauth::get_smithery_api_key()
         .ok_or("No Smithery API key. Configure in Settings \u{2192} Connectors \u{2192} Clay.")?;
-    let config = state
-        .config
-        .read()
-        .as_ref()
-        .map(|c| c.clay.clone());
+    let config = state.config.read().as_ref().map(|c| c.clay.clone());
     let clay = config.ok_or("Config not loaded")?;
     let ns = clay
         .smithery_namespace
@@ -1273,8 +1253,12 @@ pub async fn start_clay_bulk_enrich(
             Ok(unenriched)
         })
         .await?;
+    let state_for_ctx = state.inner().clone();
     let total = state
-        .db_write(move |db| crate::services::mutations::queue_clay_sync_for_people(db, &unenriched))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::mutations::queue_clay_sync_for_people(&ctx, db, &unenriched)
+        })
         .await?;
 
     // Wake the enrichment processor immediately to process queued items
@@ -1503,11 +1487,7 @@ pub struct LinearStatusData {
 /// Get Linear integration status.
 #[tauri::command]
 pub fn get_linear_status(state: State<'_, Arc<AppState>>) -> LinearStatusData {
-    let config = state
-        .config
-        .read()
-        .as_ref()
-        .map(|c| c.linear.clone());
+    let config = state.config.read().as_ref().map(|c| c.linear.clone());
 
     let linear_config = config.unwrap_or_default();
 
@@ -1678,8 +1658,10 @@ fn fuzzy_name_similarity(a: &str, b: &str) -> f64 {
 pub async fn run_linear_auto_link(
     state: State<'_, Arc<AppState>>,
 ) -> Result<serde_json::Value, String> {
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(|db| {
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let conn = db.conn_ref();
             let mut auto_linked: Vec<serde_json::Value> = Vec::new();
             let mut suggested: Vec<serde_json::Value> = Vec::new();
@@ -1797,11 +1779,7 @@ pub async fn run_linear_auto_link(
                     let proj_lower = project_name.to_lowercase();
                     for (account_id, domain) in &account_domains {
                         // Extract the domain base (e.g., "acme" from "acme.com")
-                        let domain_base = domain
-                            .split('.')
-                            .next()
-                            .unwrap_or("")
-                            .to_lowercase();
+                        let domain_base = domain.split('.').next().unwrap_or("").to_lowercase();
                         if domain_base.len() >= 3 && proj_lower.contains(&domain_base) {
                             // Find the account name for the suggestion
                             if let Some((_, acct_name)) =
@@ -1823,6 +1801,7 @@ pub async fn run_linear_auto_link(
                         (&best_entity_id, best_entity_type)
                     {
                         crate::services::mutations::create_linear_entity_link_with_confirmed(
+                            &ctx,
                             db,
                             project_id,
                             entity_id,
@@ -1869,8 +1848,12 @@ pub async fn delete_linear_entity_link(
     state: State<'_, Arc<AppState>>,
     link_id: String,
 ) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(move |db| crate::services::mutations::delete_linear_entity_link(db, &link_id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::mutations::delete_linear_entity_link(&ctx, db, &link_id)
+        })
         .await
 }
 
@@ -1908,13 +1891,16 @@ pub async fn create_linear_entity_link(
     entity_id: String,
     entity_type: String,
 ) -> Result<(), String> {
-    let state = services.state();
+    let state = services.state_arc();
     if !["account", "project"].contains(&entity_type.as_str()) {
         return Err("entity_type must be 'account' or 'project'".to_string());
     }
+    let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::mutations::create_linear_entity_link(
+                &ctx,
                 db,
                 &linear_project_id,
                 &entity_id,
@@ -2019,9 +2005,12 @@ pub async fn update_entity_metadata(
     serde_json::from_str::<serde_json::Value>(&metadata)
         .map_err(|e| format!("Invalid JSON metadata: {}", e))?;
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::mutations::update_entity_metadata(
+                &ctx,
                 db,
                 &engine,
                 &entity_type,
@@ -2066,20 +2055,24 @@ pub async fn correct_email_disposition(
         ));
     }
 
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let scoring_source = db
                 .get_email_signal_source_for_feedback(&email_id)
                 .map_err(|e| format!("Failed to resolve email signal source: {}", e))?
                 .unwrap_or_else(|| "email_enrichment".to_string());
 
             crate::services::mutations::upsert_email_feedback_signal(
+                &ctx,
                 db,
                 &email_id,
                 &corrected_priority,
             )?;
 
             crate::services::mutations::upsert_signal_weight(
+                &ctx,
                 db,
                 &scoring_source,
                 "email",
@@ -2223,8 +2216,10 @@ pub async fn get_meeting_timeline(
     }
 
     // Batch upsert in a single DB write
+    let state_for_ctx = state.inner().clone();
     let upserted_ids = state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let mut ids: Vec<String> = Vec::new();
             for (event, resolved_entities) in &to_upsert {
                 // Only insert if not already present
@@ -2276,6 +2271,7 @@ pub async fn get_meeting_timeline(
                     .map(|re| (re.entity_id.clone(), re.entity_type.clone()))
                     .collect();
                 if let Err(e) = crate::services::mutations::upsert_timeline_meeting_with_entities(
+                    &ctx,
                     db,
                     &db_meeting,
                     &links,
@@ -2367,12 +2363,15 @@ pub async fn upsert_person_relationship(
         .map_err(|e| format!("Invalid relationship type: {}", e))?;
 
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let id = payload
                 .id
                 .unwrap_or_else(|| format!("rel-{}", uuid::Uuid::new_v4()));
             crate::services::mutations::upsert_person_relationship(
+                &ctx,
                 db,
                 &engine,
                 &crate::db::person_relationships::UpsertRelationship {
@@ -2399,9 +2398,11 @@ pub async fn delete_person_relationship(
     id: String,
 ) -> Result<(), String> {
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
-            crate::services::mutations::delete_person_relationship(db, &engine, &id)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::mutations::delete_person_relationship(&ctx, db, &engine, &id)
         })
         .await
 }
@@ -2456,11 +2457,7 @@ pub fn get_google_client_id() -> String {
 pub async fn get_google_drive_status(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::commands::DriveStatusData, String> {
-    let config = state
-        .config
-        .read()
-        .as_ref()
-        .map(|c| c.drive.clone());
+    let config = state.config.read().as_ref().map(|c| c.drive.clone());
 
     let drive_config = config.unwrap_or_default();
 
@@ -2769,7 +2766,8 @@ pub async fn set_context_mode(
     {
         use crate::intel_queue::{IntelPriority, IntelRequest};
         for (id, typ) in &targets {
-            let _ = state.intel_queue.enqueue(IntelRequest::new(                id.clone(),
+            let _ = state.intel_queue.enqueue(IntelRequest::new(
+                id.clone(),
                 typ.clone(),
                 IntelPriority::ProactiveHygiene,
             ));
@@ -2806,7 +2804,7 @@ pub async fn start_glean_auth(
 
             // Audit: oauth_connected
             {
-        let mut audit = state.audit_log.lock();
+                let mut audit = state.audit_log.lock();
                 let _ = audit.append(
                     "security",
                     "oauth_connected",
@@ -2835,7 +2833,7 @@ pub async fn start_glean_auth(
 
             // Audit: context mode auto-set
             {
-        let mut audit = state.audit_log.lock();
+                let mut audit = state.audit_log.lock();
                 let _ = audit.append(
                     "config",
                     "context_mode_changed",
@@ -2865,7 +2863,8 @@ pub async fn start_glean_auth(
                     use crate::intel_queue::{IntelPriority, IntelRequest};
                     let count = entities_to_enqueue.len();
                     for (entity_id, entity_type) in entities_to_enqueue {
-                        let _ = state.intel_queue.enqueue(IntelRequest::new(                            entity_id,
+                        let _ = state.intel_queue.enqueue(IntelRequest::new(
+                            entity_id,
                             entity_type,
                             IntelPriority::ProactiveHygiene,
                         ));
@@ -3583,11 +3582,7 @@ async fn import_account_from_glean_internal(
     // EnqueueError::Paused as a retry message rather than silently dropping.
     crate::intel_queue::enqueue_user_facing(
         &state.intel_queue,
-        crate::intel_queue::IntelRequest::new(
-            account_id.clone(),
-            "account".to_string(),
-            priority,
-        ),
+        crate::intel_queue::IntelRequest::new(account_id.clone(), "account".to_string(), priority),
     )?;
 
     Ok(account_id)

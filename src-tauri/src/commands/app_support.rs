@@ -60,17 +60,13 @@ pub async fn get_processing_history(
 /// Writes fixture files if a workspace path is configured.
 #[tauri::command]
 pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    let workspace_path = state
-        .config
-        .read()
-        .as_ref()
-        .and_then(|c| {
-            if c.workspace_path.is_empty() {
-                None
-            } else {
-                Some(c.workspace_path.clone())
-            }
-        });
+    let workspace_path = state.config.read().as_ref().and_then(|c| {
+        if c.workspace_path.is_empty() {
+            None
+        } else {
+            Some(c.workspace_path.clone())
+        }
+    });
 
     let ws = workspace_path.clone();
     state
@@ -83,17 +79,13 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
 /// Clear all demo data and reset demo mode (I56).
 #[tauri::command]
 pub async fn clear_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    let workspace_path = state
-        .config
-        .read()
-        .as_ref()
-        .and_then(|c| {
-            if c.workspace_path.is_empty() {
-                None
-            } else {
-                Some(c.workspace_path.clone())
-            }
-        });
+    let workspace_path = state.config.read().as_ref().and_then(|c| {
+        if c.workspace_path.is_empty() {
+            None
+        } else {
+            Some(c.workspace_path.clone())
+        }
+    });
 
     let ws = workspace_path.clone();
     state
@@ -233,8 +225,10 @@ pub async fn populate_workspace(
     // Batch DB operations
     let engine = std::sync::Arc::clone(&state.signals.engine);
     let wp = workspace_path.clone();
+    let state_for_ctx = state.inner().clone();
     let _ = state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let workspace = std::path::Path::new(&wp);
             // Upsert accounts
             for name in &valid_account_names {
@@ -311,17 +305,21 @@ pub async fn populate_workspace(
                         .as_ref()
                         .and_then(|e| e.strategic_programs.clone()),
                     notes: existing.as_ref().and_then(|e| e.notes.clone()),
-                    user_health_sentiment: existing.as_ref().and_then(|e| e.user_health_sentiment.clone()),
+                    user_health_sentiment: existing
+                        .as_ref()
+                        .and_then(|e| e.user_health_sentiment.clone()),
                     sentiment_set_at: existing.as_ref().and_then(|e| e.sentiment_set_at.clone()),
                 };
-                if let Err(e) = crate::services::mutations::upsert_account(db, &engine, &db_account)
+                if let Err(e) =
+                    crate::services::mutations::upsert_account(&ctx, db, &engine, &db_account)
                 {
                     log::warn!("Failed to upsert account '{}': {}", name, e);
                 }
             }
             // Upsert projects + write dashboard files
             for db_project in &valid_projects {
-                if let Err(e) = crate::services::mutations::upsert_project(db, &engine, db_project)
+                if let Err(e) =
+                    crate::services::mutations::upsert_project(&ctx, db, &engine, db_project)
                 {
                     log::warn!("Failed to upsert project '{}': {}", db_project.name, e);
                 }
@@ -364,11 +362,7 @@ pub struct OnboardingPrimingContext {
 pub async fn get_onboarding_priming_context(
     state: State<'_, Arc<AppState>>,
 ) -> Result<OnboardingPrimingContext, String> {
-    let config = state
-        .config
-        .read()
-        .clone()
-        .ok_or("Config not loaded")?;
+    let config = state.config.read().clone().ok_or("Config not loaded")?;
     let user_domains = config.resolved_user_domains();
 
     let access_token = match crate::google_api::get_valid_access_token().await {
@@ -758,8 +752,7 @@ static INSTALL_IN_PROGRESS: std::sync::atomic::AtomicBool =
 
 // Pinned Node.js LTS version + checksum for integrity verification (DOS-65)
 const NODE_VERSION: &str = "22.15.0";
-const NODE_PKG_SHA256: &str =
-    "0bc096a279cd7cbc57bf3a6c6570f3ca03b3ab684d1878a1425919e9b6b76317";
+const NODE_PKG_SHA256: &str = "0bc096a279cd7cbc57bf3a6c6570f3ca03b3ab684d1878a1425919e9b6b76317";
 
 /// Download and install Node.js via the official macOS .pkg installer.
 ///
@@ -772,7 +765,11 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
     let pkg_name = format!("node-v{}.pkg", NODE_VERSION);
     let download_url = format!("https://nodejs.org/dist/v{}/{}", NODE_VERSION, pkg_name);
 
-    log::info!("DOS-65: downloading Node.js {} from {}", NODE_VERSION, download_url);
+    log::info!(
+        "DOS-65: downloading Node.js {} from {}",
+        NODE_VERSION,
+        download_url
+    );
 
     // --- Download .pkg to temp file ---
     let _ = app.emit(
@@ -785,7 +782,10 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
     );
 
     let response = reqwest::blocking::get(&download_url).map_err(|e| {
-        let msg = format!("Failed to download Node.js — check your internet connection: {}", e);
+        let msg = format!(
+            "Failed to download Node.js — check your internet connection: {}",
+            e
+        );
         let _ = app.emit(
             "install-claude-progress",
             InstallProgress {
@@ -1432,11 +1432,9 @@ pub async fn get_feedback_diagnostics(
         .db_read(move |db| {
             let event_count: i64 = db
                 .conn_ref()
-                .query_row(
-                    "SELECT COUNT(*) FROM entity_feedback_events",
-                    [],
-                    |row| row.get(0),
-                )
+                .query_row("SELECT COUNT(*) FROM entity_feedback_events", [], |row| {
+                    row.get(0)
+                })
                 .unwrap_or(0);
             let suppression_count: i64 = db
                 .conn_ref()

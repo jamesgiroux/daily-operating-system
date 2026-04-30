@@ -87,6 +87,7 @@ fn merge_user_notes(existing: Option<&str>, notes_append: &str) -> (Option<Strin
 }
 
 fn apply_meeting_prep_prefill_inner(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &crate::db::ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     meeting_id: &str,
@@ -114,6 +115,7 @@ fn apply_meeting_prep_prefill_inner(
     let (merged_notes, notes_appended) =
         merge_user_notes(meeting.user_notes.as_deref(), notes_append);
     crate::services::mutations::update_meeting_user_layer(
+        ctx,
         db,
         engine,
         meeting_id,
@@ -240,8 +242,12 @@ pub async fn apply_meeting_prep_prefill(
     let mid = meeting_id.clone();
     let ai = agenda_items.clone();
     let na = notes_append.clone();
+    let state_for_ctx = state.inner().clone();
     let result = state
-        .db_write(move |db| apply_meeting_prep_prefill_inner(db, &engine, &mid, &ai, &na))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            apply_meeting_prep_prefill_inner(&ctx, db, &engine, &mid, &ai, &na)
+        })
         .await?;
 
     // Mirror write to active prep JSON (best-effort) for immediate UI coherence.
@@ -411,9 +417,18 @@ fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path::Pa
 mod tests {
     use super::*;
     use crate::db::{ActionDb, DbMeeting};
-    use chrono::Utc;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::{TimeZone, Utc};
     use serde_json::json;
     use tempfile::tempdir;
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     #[test]
     fn test_backfill_prep_semantics_value_derives_recent_wins_and_sources() {
@@ -532,8 +547,12 @@ mod tests {
             last_viewed_at: None,
         };
         db.upsert_meeting(&meeting).expect("insert meeting");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
-        let dry_counts = backfill_db_prep_contexts(&db, true).expect("dry-run");
+        let dry_counts = backfill_db_prep_contexts(&ctx, &db, true).expect("dry-run");
         assert_eq!(dry_counts.candidate, 1);
         assert_eq!(dry_counts.transformed, 1);
 
@@ -545,7 +564,7 @@ mod tests {
             .unwrap();
         assert!(!before.contains("recentWins"));
 
-        let apply_counts = backfill_db_prep_contexts(&db, false).expect("apply");
+        let apply_counts = backfill_db_prep_contexts(&ctx, &db, false).expect("apply");
         assert_eq!(apply_counts.candidate, 1);
         assert_eq!(apply_counts.transformed, 1);
 
@@ -595,8 +614,13 @@ mod tests {
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
         let engine = crate::signals::propagation::PropagationEngine::new();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         let first = apply_meeting_prep_prefill_inner(
+            &ctx,
             &db,
             &engine,
             "mtg-prefill",
@@ -608,6 +632,7 @@ mod tests {
         assert!(first.notes_appended);
 
         let second = apply_meeting_prep_prefill_inner(
+            &ctx,
             &db,
             &engine,
             "mtg-prefill",
@@ -667,8 +692,13 @@ mod tests {
         };
         db.upsert_meeting(&past).expect("upsert past meeting");
         let engine = crate::signals::propagation::PropagationEngine::new();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         let err = apply_meeting_prep_prefill_inner(
+            &ctx,
             &db,
             &engine,
             "mtg-past",
@@ -709,6 +739,7 @@ mod tests {
         db.upsert_meeting(&frozen).expect("upsert frozen meeting");
 
         let frozen_err = apply_meeting_prep_prefill_inner(
+            &ctx,
             &db,
             &engine,
             "mtg-frozen",
@@ -871,11 +902,10 @@ pub async fn backfill_account_domains(
                             .collect()
                     };
 
-                let discovered =
-                    crate::signals::event_trigger::extract_domains_from_attendees(
-                        &attendees,
-                        &user_domains,
-                    );
+                let discovered = crate::signals::event_trigger::extract_domains_from_attendees(
+                    &attendees,
+                    &user_domains,
+                );
 
                 if discovered.is_empty() {
                     continue;

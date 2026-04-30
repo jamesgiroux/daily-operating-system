@@ -604,6 +604,7 @@ pub(crate) fn backfill_prep_files_in_dir(
 }
 
 pub(crate) fn backfill_db_prep_contexts(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &crate::db::ActionDb,
     dry_run: bool,
 ) -> Result<BackfillCounts, String> {
@@ -627,6 +628,7 @@ pub(crate) fn backfill_db_prep_contexts(
                 let updated_json = serde_json::to_string(&prep)
                     .map_err(|e| format!("Failed to serialize backfilled prep context: {}", e))?;
                 crate::services::mutations::set_meeting_prep_context(
+                    ctx,
                     db,
                     &meeting_id,
                     &updated_json,
@@ -671,8 +673,12 @@ pub async fn backfill_prep_semantics(
     report.skipped_file_count = file_counts.skipped;
     report.parse_error_file_count = file_counts.parse_errors;
 
+    let state_for_ctx = state.inner().clone();
     let db_counts = state
-        .db_write(move |db| backfill_db_prep_contexts(db, dry_run))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            backfill_db_prep_contexts(&ctx, db, dry_run)
+        })
         .await?;
     report.candidate_db_row_count = db_counts.candidate;
     report.transformed_db_row_count = db_counts.transformed;

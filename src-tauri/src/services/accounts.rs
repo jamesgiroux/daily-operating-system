@@ -3590,8 +3590,14 @@ mod tests {
         let engine = PropagationEngine::default();
         let account = make_account("acc-new", "New Corp");
 
+        // DOS-209: ServiceContext required for mutations service.
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
         // Use the mutations service which wraps upsert + signal
-        crate::services::mutations::upsert_account(&db, &engine, &account).expect("upsert_account");
+        crate::services::mutations::upsert_account(&ctx, &db, &engine, &account)
+            .expect("upsert_account");
 
         let name: String = db
             .conn_ref()

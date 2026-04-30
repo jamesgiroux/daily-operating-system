@@ -497,7 +497,12 @@ pub fn process_transcript_with_kind(
             .unwrap_or(&meeting.id);
 
         if !wins.is_empty() || !risks.is_empty() || !decisions.is_empty() {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             if let Err(e) = crate::services::mutations::persist_transcript_outcomes(
+                &ctx,
                 db,
                 &crate::services::mutations::TranscriptOutcomesParams {
                     entity_type,
@@ -633,7 +638,12 @@ pub fn process_transcript_with_kind(
         if let Some(db) = db {
             let processed_at = Utc::now().to_rfc3339();
             let summary_ref = (!summary.trim().is_empty()).then_some(summary.as_str());
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             if let Err(e) = crate::services::mutations::persist_transcript_metadata(
+                &ctx,
                 db,
                 &meeting.id,
                 &destination.display().to_string(),
@@ -678,7 +688,12 @@ pub fn process_transcript_with_kind(
                     evidence_quote,
                 });
             }
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             if let Err(e) = crate::services::mutations::replace_transcript_outcome_captures(
+                &ctx,
                 db,
                 &meeting.id,
                 &meeting.title,
@@ -699,8 +714,16 @@ pub fn process_transcript_with_kind(
                     champion_evidence: health.champion_evidence.clone(),
                     champion_risk: health.champion_risk.clone(),
                 };
-                if let Err(e) =
-                    crate::services::mutations::persist_key_advocate_health(db, &meeting.id, &db_health)
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                if let Err(e) = crate::services::mutations::persist_key_advocate_health(
+                    &ctx,
+                    db,
+                    &meeting.id,
+                    &db_health,
+                )
                 {
                     log::warn!(
                         "Failed to persist reviewed champion health for {}: {}",
@@ -708,14 +731,20 @@ pub fn process_transcript_with_kind(
                         e
                     );
                 }
-            } else if let Err(e) =
-                crate::services::mutations::clear_key_advocate_health(db, &meeting.id)
-            {
-                log::warn!(
-                    "Failed to clear reviewed champion health for {}: {}",
-                    meeting.id,
-                    e
-                );
+            } else {
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                if let Err(e) =
+                    crate::services::mutations::clear_key_advocate_health(&ctx, db, &meeting.id)
+                {
+                    log::warn!(
+                        "Failed to clear reviewed champion health for {}: {}",
+                        meeting.id,
+                        e
+                    );
+                }
             }
         }
     }
@@ -825,7 +854,11 @@ pub fn process_transcript_with_kind(
             error_message: None,
             created_at: Utc::now().to_rfc3339(),
         };
-        if let Err(e) = crate::services::mutations::insert_processing_log(db, &log_entry) {
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+        if let Err(e) = crate::services::mutations::insert_processing_log(&ctx, db, &log_entry) {
             log::warn!("Failed to log transcript processing: {}", e);
         }
     }
@@ -1874,7 +1907,11 @@ fn extract_transcript_actions(
             linear_url: None,
         };
 
-        match crate::services::mutations::upsert_action_if_not_completed(db, &action) {
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+        match crate::services::mutations::upsert_action_if_not_completed(&ctx, db, &action) {
             Err(e) => {
                 log::warn!("Failed to insert transcript action: {}", e);
             }
