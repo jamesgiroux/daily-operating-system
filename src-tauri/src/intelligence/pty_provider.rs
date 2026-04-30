@@ -42,6 +42,15 @@ const DEFAULT_MECHANICAL_TIMEOUT_SECS: u64 = 90;
 /// Default `nice` priority for Claude Code subprocesses.
 const DEFAULT_NICE_PRIORITY: i32 = 10;
 
+/// Documented temperature placeholder for Claude Code completions.
+///
+/// Claude Code does not expose a temperature flag; the underlying model
+/// uses its native default sampling temperature (effectively `1.0` for
+/// the Claude family). Recorded here for ADR-0106 §3 fingerprint metadata
+/// completeness. DOS-213 (W3) replaces this with the actual configured
+/// temperature when canonical fingerprint hashing lands.
+const CLAUDE_CODE_DEFAULT_TEMPERATURE: f32 = 1.0;
+
 /// PTY-based Claude Code provider.
 pub struct PtyClaudeCode {
     ai_config: Arc<AiModelConfig>,
@@ -109,9 +118,14 @@ impl PtyClaudeCode {
         Ok(Completion {
             text: output.stdout,
             fingerprint_metadata: FingerprintMetadata {
-                provider: Some(ProviderKind::ClaudeCode),
-                model: Some(model_name),
-                ..Default::default()
+                provider: ProviderKind::ClaudeCode,
+                model: model_name,
+                temperature: CLAUDE_CODE_DEFAULT_TEMPERATURE,
+                top_p: None,
+                seed: None,
+                tokens_input: None,
+                tokens_output: None,
+                provider_completion_id: None,
             },
         })
     }
@@ -158,9 +172,14 @@ impl IntelligenceProvider for PtyClaudeCode {
         Ok(Completion {
             text: output.stdout,
             fingerprint_metadata: FingerprintMetadata {
-                provider: Some(ProviderKind::ClaudeCode),
-                model: Some(model_name),
-                ..Default::default()
+                provider: ProviderKind::ClaudeCode,
+                model: model_name,
+                temperature: CLAUDE_CODE_DEFAULT_TEMPERATURE,
+                top_p: None,
+                seed: None,
+                tokens_input: None,
+                tokens_output: None,
+                provider_completion_id: None,
             },
         })
     }
@@ -236,12 +255,14 @@ mod tests {
         let kind = p.provider_kind();
         let model = p.current_model(ModelTier::Synthesis);
         let meta = FingerprintMetadata {
-            provider: Some(kind.clone()),
-            model: Some(model.clone()),
-            ..Default::default()
+            provider: kind.clone(),
+            model: model.clone(),
+            temperature: CLAUDE_CODE_DEFAULT_TEMPERATURE,
+            ..FingerprintMetadata::default()
         };
-        assert_eq!(meta.provider, Some(ProviderKind::ClaudeCode));
-        assert_eq!(meta.model, Some(ModelName::new("model-syn")));
+        assert_eq!(meta.provider, ProviderKind::ClaudeCode);
+        assert_eq!(meta.model, ModelName::new("model-syn"));
+        assert_eq!(meta.temperature, CLAUDE_CODE_DEFAULT_TEMPERATURE);
         assert_eq!(kind, ProviderKind::ClaudeCode);
     }
 }

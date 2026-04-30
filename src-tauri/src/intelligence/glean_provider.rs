@@ -54,6 +54,17 @@ fn discovery_cache() -> &'static Mutex<HashMap<String, DiscoveryCacheEntry>> {
     DISCOVERY_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// DOS-259 (W2-B): documented temperature placeholder for Glean MCP chat.
+///
+/// Glean's MCP `chat` tool does not expose a temperature flag; the
+/// underlying retrieval-augmented generation runs deterministically (the
+/// agentic search is what introduces variation, not sampling temperature).
+/// `0.0` is the documented placeholder for ADR-0106 §3 fingerprint
+/// metadata completeness; DOS-213 (W3) revisits when canonical
+/// fingerprint hashing lands and may model Glean's effective entropy
+/// differently.
+const GLEAN_CHAT_DEFAULT_TEMPERATURE: f32 = 0.0;
+
 /// I535: Canonical `DiscoveredAccount` type (referenced by I494, I561).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -289,6 +300,7 @@ impl GleanIntelligenceProvider {
                     filename: format!("glean_chat_{}", dim_name),
                     content_type: Some("glean_synthesis".to_string()),
                     format: Some("json".to_string()),
+                    // dos259-grandfathered: source manifest timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
                     modified_at: chrono::Utc::now().to_rfc3339(),
                     selected: true,
                     skip_reason: None,
@@ -466,7 +478,8 @@ impl GleanIntelligenceProvider {
             return Err(format!("All 6 Glean dimensions failed for {}", entity_name));
         }
 
-        // Set metadata on combined result
+        // Set metadata on combined result.
+        // dos259-grandfathered: enrichment timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
         combined.enriched_at = chrono::Utc::now().to_rfc3339();
         // Surface the count of indexed source files we had to work with —
         // the manifest below records "glean_chat" as the synthesis channel,
@@ -483,6 +496,7 @@ impl GleanIntelligenceProvider {
                 filename: "glean_chat".to_string(),
                 content_type: Some("glean_synthesis".to_string()),
                 format: Some("json".to_string()),
+                // dos259-grandfathered: source manifest timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
                 modified_at: chrono::Utc::now().to_rfc3339(),
                 selected: true,
                 skip_reason: None,
@@ -522,6 +536,7 @@ impl GleanIntelligenceProvider {
                         {
                             existing.user_edits.push(crate::intelligence::io::UserEdit {
                                 field_path: "stakeholderInsights".to_string(),
+                                // dos259-grandfathered: synthetic user-edit timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
                                 edited_at: chrono::Utc::now().to_rfc3339(),
                             });
                         }
@@ -619,6 +634,7 @@ impl GleanIntelligenceProvider {
                 filename: "glean_chat".to_string(),
                 content_type: Some("glean_synthesis".to_string()),
                 format: Some("json".to_string()),
+                // dos259-grandfathered: source manifest timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
                 modified_at: chrono::Utc::now().to_rfc3339(),
                 selected: true,
                 skip_reason: None,
@@ -888,9 +904,14 @@ impl IntelligenceProvider for GleanIntelligenceProvider {
         Ok(Completion {
             text,
             fingerprint_metadata: FingerprintMetadata {
-                provider: Some(ProviderKind::Other("glean")),
-                model: Some(self.current_model(tier)),
-                ..Default::default()
+                provider: ProviderKind::Other("glean"),
+                model: self.current_model(tier),
+                temperature: GLEAN_CHAT_DEFAULT_TEMPERATURE,
+                top_p: None,
+                seed: None,
+                tokens_input: None,
+                tokens_output: None,
+                provider_completion_id: None,
             },
         })
     }
@@ -1020,6 +1041,7 @@ fn write_progressive_glean_dimension(
 
     merged.entity_id = entity_id.to_string();
     merged.entity_type = entity_type.to_string();
+    // dos259-grandfathered: progressive-write enrichment timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
     merged.enriched_at = chrono::Utc::now().to_rfc3339();
 
     if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&db, &merged) {
@@ -1361,6 +1383,7 @@ fn promote_glean_facts_to_accounts(
     intel: &IntelligenceJson,
 ) {
     use crate::db::types::AccountSourceRef;
+    // dos259-grandfathered: fact-promotion observed_at timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
     let now = chrono::Utc::now().to_rfc3339();
     let mut promoted = 0u32;
     let mut skipped = 0u32;
@@ -1812,6 +1835,7 @@ fn reconcile_vec_items<T: super::io::HasSource + Clone>(
 
     // 2. Add new items, filtering against dismissed tombstones and existing duplicates
     // I645: Only enforce dismissals from the last 90 days
+    // dos259-grandfathered: 90-day dismissal cutoff; migrates to ctx.clock.now() when W2-A lands ServiceContext.
     let cutoff_90d = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
     for item in new_items {
         let item_text = get_text(item).to_lowercase();
