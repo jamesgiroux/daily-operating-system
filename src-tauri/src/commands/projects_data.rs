@@ -502,7 +502,8 @@ pub async fn set_user_domains(
     domains: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
-    crate::services::settings::set_user_domains(&domains, &state).await
+    let ctx = state.live_service_context();
+    crate::services::settings::set_user_domains(&ctx, &domains, &state).await
 }
 
 // =============================================================================

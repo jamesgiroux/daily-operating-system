@@ -284,8 +284,11 @@ pub async fn set_entity_link_primary(
         entity_id: id,
         entity_type: entity_type.unwrap_or_else(|| "account".to_string()),
     });
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::entity_linking::manual_set_primary(
-        state.inner().clone(),
+        &ctx,
+        app_state.clone(),
         ot,
         owner_id,
         entity_ref,
@@ -306,8 +309,11 @@ pub async fn dismiss_entity_link(
 ) -> Result<(), String> {
     let ot = crate::services::entity_linking::OwnerType::try_from(owner_type.as_str())
         .map_err(|e| format!("invalid owner_type: {e}"))?;
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::entity_linking::manual_dismiss(
-        state.inner().clone(),
+        &ctx,
+        app_state.clone(),
         ot,
         owner_id,
         crate::services::entity_linking::EntityRef {
@@ -330,8 +336,11 @@ pub async fn restore_entity_link(
 ) -> Result<(), String> {
     let ot = crate::services::entity_linking::OwnerType::try_from(owner_type.as_str())
         .map_err(|e| format!("invalid owner_type: {e}"))?;
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::entity_linking::manual_undismiss(
-        state.inner().clone(),
+        &ctx,
+        app_state.clone(),
         ot,
         owner_id,
         crate::services::entity_linking::EntityRef {
@@ -748,9 +757,11 @@ pub async fn get_linked_entities_for_owner(
 /// enrichment-sourced ('enrichment') domains are preserved.
 #[tauri::command]
 pub async fn rebuild_account_domains(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(|db| {
-            crate::services::entity_linking::repository::raw_rebuild_account_domains(db)
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::entity_linking::repository::raw_rebuild_account_domains(&ctx, db)
                 .map(|_| "account_domains rebuild complete".to_string())
         })
         .await

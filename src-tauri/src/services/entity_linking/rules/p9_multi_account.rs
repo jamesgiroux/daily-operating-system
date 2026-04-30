@@ -10,8 +10,13 @@ pub struct P9MultiAccount;
 impl super::super::phases::Rule for P9MultiAccount {
     fn id(&self) -> &'static str { "P9" }
 
-    fn evaluate(&self, _ctx: &LinkingContext, _db: &ActionDb) -> RuleOutcome {
+    fn evaluate(
+        &self,
+        _service_ctx: &crate::services::context::ServiceContext<'_>,
+        _ctx: &LinkingContext,
+        _db: &ActionDb,
+    ) -> Result<RuleOutcome, String> {
         // Always skips inline — the dispatcher handles multi-account detection.
-        RuleOutcome::Skip
+        Ok(RuleOutcome::Skip)
     }
 }

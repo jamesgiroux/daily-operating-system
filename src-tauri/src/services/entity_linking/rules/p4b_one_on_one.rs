@@ -12,34 +12,39 @@ pub struct P4bOneOnOne;
 impl super::super::phases::Rule for P4bOneOnOne {
     fn id(&self) -> &'static str { "P4b" }
 
-    fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
+    fn evaluate(
+        &self,
+        _service_ctx: &crate::services::context::ServiceContext<'_>,
+        ctx: &LinkingContext,
+        db: &ActionDb,
+    ) -> Result<RuleOutcome, String> {
         if !ctx.is_one_on_one() {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         let internal: Vec<_> = ctx.internal_participants().collect();
         let external: Vec<_> = ctx.external_participants().collect();
 
         if internal.len() != 1 || external.len() != 1 {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         let ext = external[0];
         let domain = match primitives::domain_from_email(&ext.email) {
             Some(d) => d,
-            None => return RuleOutcome::Skip,
+            None => return Ok(RuleOutcome::Skip),
         };
 
         let candidates = match primitives::lookup_account_candidates_by_domain(db, &domain) {
             Ok(c) => c,
             Err(e) => {
                 log::warn!("P4b domain lookup error: {e}");
-                return RuleOutcome::Skip;
+                return Ok(RuleOutcome::Skip);
             }
         };
 
         if candidates.len() != 1 {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         let account = &candidates[0];
@@ -48,7 +53,7 @@ impl super::super::phases::Rule for P4bOneOnOne {
         // on 2+ accounts, fall through to P7 (person primary).
         if let Some(person_id) = &ext.person_id {
             match db.is_person_multi_account_active(person_id) {
-                Ok(true) => return RuleOutcome::Skip,
+                Ok(true) => return Ok(RuleOutcome::Skip),
                 Err(e) => log::warn!("P4b multi-account-active check error: {e}"),
                 Ok(false) => {}
             }
@@ -66,12 +71,12 @@ impl super::super::phases::Rule for P4bOneOnOne {
             &[],
         );
 
-        RuleOutcome::Matched(Candidate {
+        Ok(RuleOutcome::Matched(Candidate {
             entity: EntityRef { entity_id: account.id.clone(), entity_type: "account".to_string() },
             role: LinkRole::Primary,
             confidence: 0.95,
             rule_id: "P4b".to_string(),
             evidence: ev,
-        })
+        }))
     }
 }

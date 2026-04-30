@@ -6,11 +6,16 @@ pub struct P3SeriesInheritance;
 impl super::super::phases::Rule for P3SeriesInheritance {
     fn id(&self) -> &'static str { "P3" }
 
-    fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
+    fn evaluate(
+        &self,
+        _service_ctx: &crate::services::context::ServiceContext<'_>,
+        ctx: &LinkingContext,
+        db: &ActionDb,
+    ) -> Result<RuleOutcome, String> {
         let Some(series_id) = &ctx.series_id else {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         };
-        match db.get_series_primary_link(series_id, &ctx.owner.owner_id) {
+        Ok(match db.get_series_primary_link(series_id, &ctx.owner.owner_id) {
             Ok(Some((entity_id, entity_type))) => RuleOutcome::Matched(Candidate {
                 entity: EntityRef { entity_id, entity_type },
                 role: LinkRole::Primary,
@@ -23,6 +28,6 @@ impl super::super::phases::Rule for P3SeriesInheritance {
                 log::warn!("P3 error: {e}");
                 RuleOutcome::Skip
             }
-        }
+        })
     }
 }

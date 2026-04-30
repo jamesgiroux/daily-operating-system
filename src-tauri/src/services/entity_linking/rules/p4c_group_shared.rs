@@ -12,10 +12,15 @@ pub struct P4cGroupShared;
 impl super::super::phases::Rule for P4cGroupShared {
     fn id(&self) -> &'static str { "P4c" }
 
-    fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
+    fn evaluate(
+        &self,
+        _service_ctx: &crate::services::context::ServiceContext<'_>,
+        ctx: &LinkingContext,
+        db: &ActionDb,
+    ) -> Result<RuleOutcome, String> {
         let external: Vec<_> = ctx.external_participants().collect();
         if external.len() < 2 {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         // Build a frequency map of account_id → count of external participants
@@ -38,7 +43,7 @@ impl super::super::phases::Rule for P4cGroupShared {
             .collect();
 
         if top.len() != 1 {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         let (account_id, &vote_count) = top[0];
@@ -56,12 +61,12 @@ impl super::super::phases::Rule for P4cGroupShared {
         );
         let _ = vote_count;
 
-        RuleOutcome::Matched(Candidate {
+        Ok(RuleOutcome::Matched(Candidate {
             entity: EntityRef { entity_id: account_id.clone(), entity_type: "account".to_string() },
             role: LinkRole::Primary,
             confidence: 0.90,
             rule_id: "P4c".to_string(),
             evidence: ev,
-        })
+        }))
     }
 }

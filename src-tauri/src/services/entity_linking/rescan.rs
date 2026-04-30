@@ -27,7 +27,11 @@ const PASS_LIMIT: i64 = 50;
 /// Re-evaluate owners whose current primary was elected via a weak rule and
 /// whose graph_version has since drifted. Returns the number of owners the
 /// rescan successfully re-evaluated.
-pub async fn rescan_stale_weak_primaries(state: Arc<AppState>) -> Result<usize, String> {
+pub async fn rescan_stale_weak_primaries(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    state: Arc<AppState>,
+) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let stale = state
         .db_read(|db| {
             let current: i64 = db
@@ -99,7 +103,7 @@ pub async fn rescan_stale_weak_primaries(state: Arc<AppState>) -> Result<usize, 
 
     // Record that a sweep happened so the one-shot upgrade sweep doesn't
     // re-fire. Periodic rescans overwrite the timestamp harmlessly.
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
     let _ = state
         .db_write(move |db| {
             db.conn_ref()
@@ -155,7 +159,8 @@ pub async fn run_one_shot_upgrade_sweep(state: Arc<AppState>) -> Result<usize, S
     }
 
     log::info!("entity_linking: running one-shot post-upgrade weak-primary sweep");
-    rescan_stale_weak_primaries(state).await
+    let ctx = state.live_service_context();
+    rescan_stale_weak_primaries(&ctx, state.clone()).await
 }
 
 #[cfg(test)]
@@ -300,4 +305,3 @@ mod tests {
         );
     }
 }
-

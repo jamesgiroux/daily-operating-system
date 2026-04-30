@@ -2,6 +2,7 @@
 // Business logic for configuration and settings mutations.
 
 use crate::state::AppState;
+use crate::services::context::ServiceContext;
 use crate::types::{Config, WorkflowId};
 
 fn validate_ai_model_choice(tier: &str, model: &str) -> Result<(), String> {
@@ -27,7 +28,12 @@ fn validate_ai_model_choice(tier: &str, model: &str) -> Result<(), String> {
 }
 
 /// Set entity mode (account, project, or both) with workspace dir creation.
-pub fn set_entity_mode(mode: &str, state: &AppState) -> Result<Config, String> {
+pub fn set_entity_mode(
+    ctx: &ServiceContext<'_>,
+    mode: &str,
+    state: &AppState,
+) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     crate::types::validate_entity_mode(mode)?;
 
     let mode = mode.to_string();
@@ -58,7 +64,12 @@ pub fn set_entity_mode(mode: &str, state: &AppState) -> Result<Config, String> {
 }
 
 /// Set workspace path, scaffold directory structure, and sync entities.
-pub async fn set_workspace_path(path: &str, state: &AppState) -> Result<Config, String> {
+pub async fn set_workspace_path(
+    ctx: &ServiceContext<'_>,
+    path: &str,
+    state: &AppState,
+) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let workspace = std::path::Path::new(path);
 
     if !workspace.is_absolute() {
@@ -95,7 +106,13 @@ pub async fn set_workspace_path(path: &str, state: &AppState) -> Result<Config, 
 }
 
 /// Set AI model for a tier (synthesis, extraction, background, mechanical).
-pub fn set_ai_model(tier: &str, model: &str, state: &AppState) -> Result<Config, String> {
+pub fn set_ai_model(
+    ctx: &ServiceContext<'_>,
+    tier: &str,
+    model: &str,
+    state: &AppState,
+) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     validate_ai_model_choice(tier, model)?;
 
     let model = model.to_string();
@@ -109,7 +126,11 @@ pub fn set_ai_model(tier: &str, model: &str, state: &AppState) -> Result<Config,
 }
 
 /// Reset AI model routing to the recommended default bundle.
-pub fn reset_ai_models_to_recommended(state: &AppState) -> Result<Config, String> {
+pub fn reset_ai_models_to_recommended(
+    ctx: &ServiceContext<'_>,
+    state: &AppState,
+) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     crate::state::create_or_update_config(state, |config| {
         config.ai_models = crate::types::AiModelConfig::default();
         config.ai_model_routing_version = crate::types::AI_MODEL_ROUTING_VERSION;
@@ -118,10 +139,12 @@ pub fn reset_ai_models_to_recommended(state: &AppState) -> Result<Config, String
 
 /// Set Google calendar and email poll intervals in minutes.
 pub fn set_google_poll_settings(
+    ctx: &ServiceContext<'_>,
     calendar_poll_interval_minutes: Option<u32>,
     email_poll_interval_minutes: Option<u32>,
     state: &AppState,
 ) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if let Some(v) = calendar_poll_interval_minutes {
         if !(1..=60).contains(&v) {
             return Err(format!(
@@ -155,11 +178,13 @@ pub fn set_google_poll_settings(
 /// replaced by the single daily AI token budget (DOS-279). Callers should use
 /// `set_daily_ai_budget` instead.
 pub fn set_hygiene_config(
+    ctx: &ServiceContext<'_>,
     scan_interval_hours: Option<u32>,
     _ai_budget: Option<u32>,
     pre_meeting_hours: Option<u32>,
     state: &AppState,
 ) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if let Some(v) = scan_interval_hours {
         if ![1, 2, 4, 8].contains(&v) {
             return Err(format!(
@@ -200,7 +225,12 @@ pub(super) fn set_daily_ai_budget_validate(budget: u32) -> bool {
 ///
 /// Valid tiers: 50_000, 100_000, 250_000.
 /// Persists to config and syncs to KV store for the preflight gate.
-pub fn set_daily_ai_budget(budget: u32, state: &AppState) -> Result<Config, String> {
+pub fn set_daily_ai_budget(
+    ctx: &ServiceContext<'_>,
+    budget: u32,
+    state: &AppState,
+) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     const VALID_TIERS: &[u32] = &[50_000, 100_000, 250_000];
     if !VALID_TIERS.contains(&budget) {
         return Err(format!(
@@ -223,9 +253,11 @@ pub fn set_daily_ai_budget(budget: u32, state: &AppState) -> Result<Config, Stri
 
 /// Update notification preferences.
 pub fn set_notification_config(
+    ctx: &ServiceContext<'_>,
     config_update: crate::types::NotificationConfig,
     state: &AppState,
 ) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // Validate quiet hours
     if let Some(start) = config_update.quiet_hours_start {
         if start > 23 {
@@ -248,7 +280,12 @@ pub fn set_notification_config(
 }
 
 /// Set UI text scale percentage (DOS-45).
-pub fn set_text_scale(percent: u32, state: &AppState) -> Result<Config, String> {
+pub fn set_text_scale(
+    ctx: &ServiceContext<'_>,
+    percent: u32,
+    state: &AppState,
+) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if !(80..=150).contains(&percent) {
         return Err(format!(
             "Invalid text scale: {}%. Must be between 80% and 150%.",
@@ -263,12 +300,14 @@ pub fn set_text_scale(percent: u32, state: &AppState) -> Result<Config, String> 
 
 /// Set schedule for a workflow.
 pub fn set_schedule(
+    ctx: &ServiceContext<'_>,
     workflow: &str,
     hour: u32,
     minute: u32,
     timezone: &str,
     state: &AppState,
 ) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if hour > 23 {
         return Err("Hour must be 0-23".to_string());
     }
@@ -304,7 +343,10 @@ pub fn set_schedule(
 }
 
 /// Save user profile fields with internal org entity sync.
+// DOS-209: ServiceContext adds 1 arg; request-object refactor deferred.
+#[allow(clippy::too_many_arguments)]
 pub async fn set_user_profile(
+    ctx: &ServiceContext<'_>,
     name: Option<String>,
     company: Option<String>,
     title: Option<String>,
@@ -313,6 +355,7 @@ pub async fn set_user_profile(
     domains: Option<Vec<String>>,
     state: &AppState,
 ) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // Clean helper shared by identity fields and domain writes
     fn clean(val: Option<String>) -> Option<String> {
         val.and_then(|s| {
@@ -440,7 +483,12 @@ mod tests {
 }
 
 /// Set multiple user domains with reclassification of people and meetings.
-pub async fn set_user_domains(domains: &str, state: &AppState) -> Result<Config, String> {
+pub async fn set_user_domains(
+    ctx: &ServiceContext<'_>,
+    domains: &str,
+    state: &AppState,
+) -> Result<Config, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let parsed: Vec<String> = domains
         .split(',')
         .map(|s| s.trim().to_lowercase())

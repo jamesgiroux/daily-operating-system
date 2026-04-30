@@ -511,8 +511,11 @@ pub async fn update_email_entity(
         entity_id: id,
         entity_type: entity_type.unwrap_or_else(|| "account".to_string()),
     });
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::entity_linking::manual_set_primary(
-        state.inner().clone(),
+        &ctx,
+        app_state.clone(),
         crate::services::entity_linking::OwnerType::Email,
         email_id,
         entity_ref,
@@ -708,7 +711,8 @@ pub fn set_entity_mode(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<Config, String> {
-    let config = crate::services::settings::set_entity_mode(&mode, &state)?;
+    let ctx = state.live_service_context();
+    let config = crate::services::settings::set_entity_mode(&ctx, &mode, &state)?;
     let _ = app_handle.emit("config-updated", ());
     Ok(config)
 }
@@ -719,7 +723,8 @@ pub async fn set_workspace_path(
     path: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
-    let result = crate::services::settings::set_workspace_path(&path, &state).await;
+    let ctx = state.live_service_context();
+    let result = crate::services::settings::set_workspace_path(&ctx, &path, &state).await;
     if result.is_ok() {
         let mut audit = state.audit_log.lock();
         let category = {
@@ -1039,7 +1044,8 @@ pub fn set_personality(
 /// Set UI text scale percentage (DOS-45)
 #[tauri::command]
 pub fn set_text_scale(percent: u32, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
-    crate::services::settings::set_text_scale(percent, &state)
+    let ctx = state.live_service_context();
+    crate::services::settings::set_text_scale(&ctx, percent, &state)
 }
 
 /// Set AI model for a tier (synthesis, extraction, background, mechanical)
@@ -1049,13 +1055,15 @@ pub fn set_ai_model(
     model: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
-    crate::services::settings::set_ai_model(&tier, &model, &state)
+    let ctx = state.live_service_context();
+    crate::services::settings::set_ai_model(&ctx, &tier, &model, &state)
 }
 
 /// Reset AI model routing to the recommended defaults.
 #[tauri::command]
 pub fn reset_ai_models_to_recommended(state: State<'_, Arc<AppState>>) -> Result<Config, String> {
-    crate::services::settings::reset_ai_models_to_recommended(&state)
+    let ctx = state.live_service_context();
+    crate::services::settings::reset_ai_models_to_recommended(&ctx, &state)
 }
 
 /// Set Google poll intervals in minutes.
@@ -1065,7 +1073,9 @@ pub fn set_google_poll_settings(
     email_poll_interval_minutes: Option<u32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
+    let ctx = state.live_service_context();
     crate::services::settings::set_google_poll_settings(
+        &ctx,
         calendar_poll_interval_minutes,
         email_poll_interval_minutes,
         &state,
@@ -1083,7 +1093,9 @@ pub fn set_hygiene_config(
     pre_meeting_hours: Option<u32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
+    let ctx = state.live_service_context();
     crate::services::settings::set_hygiene_config(
+        &ctx,
         scan_interval_hours,
         ai_budget,
         pre_meeting_hours,
@@ -1096,7 +1108,8 @@ pub fn set_hygiene_config(
 /// Valid tiers: 50000, 100000, 250000.
 #[tauri::command]
 pub fn set_daily_ai_budget(budget: u32, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
-    crate::services::settings::set_daily_ai_budget(budget, &state)
+    let ctx = state.live_service_context();
+    crate::services::settings::set_daily_ai_budget(&ctx, budget, &state)
 }
 
 /// Set schedule for a workflow
@@ -1108,8 +1121,9 @@ pub fn set_schedule(
     timezone: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
+    let ctx = state.live_service_context();
     let config =
-        crate::services::settings::set_schedule(&workflow, hour, minute, &timezone, &state)?;
+        crate::services::settings::set_schedule(&ctx, &workflow, hour, minute, &timezone, &state)?;
 
     // Invalidate briefing cache when timezone changes (schedule.json is rendered with new tz)
     {
@@ -1130,7 +1144,8 @@ pub fn set_notification_config(
     config: crate::types::NotificationConfig,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
-    crate::services::settings::set_notification_config(config, &state)
+    let ctx = state.live_service_context();
+    crate::services::settings::set_notification_config(&ctx, config, &state)
 }
 
 /// Save user profile fields (name, company, title, focus, domains)
@@ -1144,8 +1159,9 @@ pub async fn set_user_profile(
     domains: Option<Vec<String>>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
+    let ctx = state.live_service_context();
     crate::services::settings::set_user_profile(
-        name, company, title, focus, domain, domains, &state,
+        &ctx, name, company, title, focus, domain, domains, &state,
     )
     .await
 }

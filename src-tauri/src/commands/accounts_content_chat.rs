@@ -1099,8 +1099,11 @@ pub async fn confirm_pending_stakeholder(
     person_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::entity_linking::confirm_stakeholder_suggestion(
-        state.inner().clone(),
+        &ctx,
+        app_state.clone(),
         account_id,
         person_id,
     )
@@ -1114,8 +1117,11 @@ pub async fn dismiss_pending_stakeholder(
     person_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     crate::services::entity_linking::dismiss_stakeholder_suggestion(
-        state.inner().clone(),
+        &ctx,
+        app_state.clone(),
         account_id,
         person_id,
     )

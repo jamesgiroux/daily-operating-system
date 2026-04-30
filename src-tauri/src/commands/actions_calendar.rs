@@ -40,8 +40,12 @@ pub async fn get_actions_from_db(
 #[tauri::command]
 pub async fn complete_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(move |db| crate::services::actions::complete_action(db, &engine, &id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::complete_action(&ctx, db, &engine, &id)
+        })
         .await
 }
 
@@ -49,8 +53,12 @@ pub async fn complete_action(id: String, state: State<'_, Arc<AppState>>) -> Res
 #[tauri::command]
 pub async fn reopen_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(move |db| crate::services::actions::reopen_action(db, &engine, &id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::reopen_action(&ctx, db, &engine, &id)
+        })
         .await
 }
 
@@ -61,8 +69,12 @@ pub async fn accept_suggested_action(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(move |db| crate::services::actions::accept_suggested_action(db, &engine, &id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::accept_suggested_action(&ctx, db, &engine, &id)
+        })
         .await
 }
 
@@ -85,9 +97,11 @@ pub async fn reject_suggested_action(
         ],
     )?;
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
-            crate::services::actions::reject_suggested_action(db, &engine, &id, &source)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::reject_suggested_action(&ctx, db, &engine, &id, &source)
         })
         .await
 }
@@ -117,9 +131,11 @@ pub async fn dismiss_suggested_action(
         ],
     )?;
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
-            crate::services::actions::dismiss_suggested_action(db, &engine, &id, &source)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::dismiss_suggested_action(&ctx, db, &engine, &id, &source)
         })
         .await
 }
@@ -314,8 +330,12 @@ pub async fn reset_email_preferences(
 #[tauri::command]
 pub async fn resolve_decision(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(move |db| crate::services::actions::resolve_decision(db, &engine, &id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::resolve_decision(&ctx, db, &engine, &id)
+        })
         .await
 }
 
@@ -969,9 +989,11 @@ pub async fn update_action_priority(
         return Err(format!("Invalid priority: {pv}. Must be 0-4."));
     }
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
-            crate::services::actions::update_action_priority(db, &engine, &id, &priority)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::update_action_priority(&ctx, db, &engine, &id, &priority)
         })
         .await
 }
@@ -1005,7 +1027,9 @@ pub async fn create_action(
     request: CreateActionRequest,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    crate::services::actions::create_action(request, &state).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::actions::create_action(&ctx, request, &app_state).await
 }
 
 /// Update arbitrary fields on an existing action (I128).
@@ -1037,7 +1061,9 @@ pub async fn update_action(
     request: UpdateActionRequest,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::actions::update_action(request, &state).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::actions::update_action(&ctx, request, &app_state).await
 }
 
 // =============================================================================

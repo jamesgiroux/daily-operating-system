@@ -33,12 +33,14 @@ pub async fn evaluate(
     mut ctx: LinkingContext,
     trigger: Trigger,
 ) -> Result<LinkOutcome, String> {
+    let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
+            let service_ctx = state_for_ctx.live_service_context();
             let user_domains = ctx.user_domains.clone();
             // Phase 1: suppress check. Run BEFORE Phase 2 so S1 (self-meeting)
             // doesn't generate person stubs. S2 (broadcast) still writes facts.
-            match phases::phase1_suppress(&ctx, db, trigger)? {
+            match phases::phase1_suppress(&service_ctx, &ctx, db, trigger)? {
                 phases::Phase1Result::Declined(outcome) => {
                     // S1: no facts, no primary.
                     return Ok(outcome);
@@ -53,7 +55,7 @@ pub async fn evaluate(
             // Phase 2: person stub creation (independent txn per stub).
             phases::phase2_record_facts(&mut ctx, db, &user_domains);
             // Phases 3 + 4 inside a single write transaction.
-            phases::run_phases(&ctx, db)
+            phases::run_phases(&service_ctx, &ctx, db)
         })
         .await
 }
@@ -179,13 +181,17 @@ fn parse_meeting_attendees(attendees_str: &str) -> Vec<Participant> {
 }
 
 pub async fn manual_set_primary(
+    ctx: &crate::services::context::ServiceContext<'_>,
     state: Arc<AppState>,
     owner_type: OwnerType,
     owner_id: String,
     entity: Option<EntityRef>,
 ) -> Result<LinkOutcome, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
+            let service_ctx = state_for_ctx.live_service_context();
             db.with_transaction(|_| {
                 // Delete ALL prior primary rows for this owner (user and auto)
                 // so idx_one_primary never blocks the new user-override insert.
@@ -198,7 +204,7 @@ pub async fn manual_set_primary(
                     .map_err(|e| format!("manual_set_primary clear: {e}"))?;
 
                 if let Some(ref ent) = entity {
-                    let now = chrono::Utc::now().to_rfc3339();
+                    let now = service_ctx.clock.now().to_rfc3339();
                     let version = db.get_entity_graph_version().unwrap_or(0);
                     db.conn_ref()
                         .execute(
@@ -224,19 +230,23 @@ pub async fn manual_set_primary(
             // downstream cascade rules (including the stakeholder-domain
             // backfill in cascade::run_cascade) see real participants.
             let ctx = build_manual_context(db, owner_type, owner_id);
-            phases::run_phases(&ctx, db)
+            phases::run_phases(&service_ctx, &ctx, db)
         })
         .await
 }
 
 pub async fn manual_dismiss(
+    ctx: &crate::services::context::ServiceContext<'_>,
     state: Arc<AppState>,
     owner_type: OwnerType,
     owner_id: String,
     entity: EntityRef,
 ) -> Result<LinkOutcome, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
+            let service_ctx = state_for_ctx.live_service_context();
             db.with_transaction(|_| {
                 // Write dismissal row first.
                 db.upsert_linking_dismissal(
@@ -257,19 +267,23 @@ pub async fn manual_dismiss(
             })?;
 
             let ctx = build_manual_context(db, owner_type, owner_id);
-            phases::run_phases(&ctx, db)
+            phases::run_phases(&service_ctx, &ctx, db)
         })
         .await
 }
 
 pub async fn manual_undismiss(
+    ctx: &crate::services::context::ServiceContext<'_>,
     state: Arc<AppState>,
     owner_type: OwnerType,
     owner_id: String,
     entity: EntityRef,
 ) -> Result<LinkOutcome, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
+            let service_ctx = state_for_ctx.live_service_context();
             db.delete_linking_dismissal(
                 owner_type.as_str(),
                 &owner_id,
@@ -295,7 +309,7 @@ pub async fn manual_undismiss(
                 .map_err(|e| format!("manual_undismiss restore: {e}"))?;
 
             let ctx = build_manual_context(db, owner_type, owner_id);
-            phases::run_phases(&ctx, db)
+            phases::run_phases(&service_ctx, &ctx, db)
         })
         .await
 }
@@ -305,10 +319,12 @@ pub async fn manual_undismiss(
 // ---------------------------------------------------------------------------
 
 pub async fn confirm_stakeholder_suggestion(
+    ctx: &crate::services::context::ServiceContext<'_>,
     state: Arc<AppState>,
     account_id: String,
     person_id: String,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // DOS-258: after confirming, sweep the whole account's stakeholder graph
     // for domains that aren't yet registered. Catches sibling stakeholders
     // whose domain wasn't registered by an earlier confirmation that
@@ -320,10 +336,13 @@ pub async fn confirm_stakeholder_suggestion(
         .as_ref()
         .map(|c| c.resolved_user_domains())
         .unwrap_or_default();
+    let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
+            let service_ctx = state_for_ctx.live_service_context();
             db.confirm_stakeholder(&account_id, &person_id)?;
             if let Err(e) = stakeholder_domains::backfill_domains_for_account(
+                &service_ctx,
                 db,
                 &account_id,
                 &user_domains,
@@ -338,10 +357,12 @@ pub async fn confirm_stakeholder_suggestion(
 }
 
 pub async fn dismiss_stakeholder_suggestion(
+    ctx: &crate::services::context::ServiceContext<'_>,
     state: Arc<AppState>,
     account_id: String,
     person_id: String,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     state
         .db_write(move |db| db.dismiss_stakeholder_suggestion(&account_id, &person_id))
         .await

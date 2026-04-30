@@ -9,32 +9,37 @@ pub struct P10SharedInbox;
 impl super::super::phases::Rule for P10SharedInbox {
     fn id(&self) -> &'static str { "P10" }
 
-    fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
+    fn evaluate(
+        &self,
+        _service_ctx: &crate::services::context::ServiceContext<'_>,
+        ctx: &LinkingContext,
+        db: &ActionDb,
+    ) -> Result<RuleOutcome, String> {
         if ctx.owner.owner_type != OwnerType::Email {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         let sender = match ctx.from_participant() {
             Some(p) => p,
-            None => return RuleOutcome::Skip,
+            None => return Ok(RuleOutcome::Skip),
         };
 
         if ctx.is_internal_email(&sender.email) {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         let links = match db.count_sender_account_links(&sender.email, 90) {
             Ok(l) => l,
             Err(e) => {
                 log::warn!("P10 count_sender_account_links error: {e}");
-                return RuleOutcome::Skip;
+                return Ok(RuleOutcome::Skip);
             }
         };
 
         // If the top account has ≥3 prior links, surface as auto_suggested (not primary).
         if let Some((account_id, count)) = links.first() {
             if *count >= 3 {
-                return RuleOutcome::Matched(Candidate {
+                return Ok(RuleOutcome::Matched(Candidate {
                     entity: EntityRef {
                         entity_id: account_id.clone(),
                         entity_type: "account".to_string(),
@@ -48,10 +53,10 @@ impl super::super::phases::Rule for P10SharedInbox {
                         "account_id": account_id,
                         "prior_link_count": count,
                     }),
-                });
+                }));
             }
         }
 
-        RuleOutcome::Skip
+        Ok(RuleOutcome::Skip)
     }
 }
