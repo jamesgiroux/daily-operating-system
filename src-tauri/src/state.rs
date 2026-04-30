@@ -844,15 +844,22 @@ impl AppState {
 
     /// Hot-swap ONLY the context provider (ADR-0095 dynamic mode switch).
     ///
-    /// **Prefer `set_context_mode_atomic`** which updates all three Arcs
-    /// together. This single-field swap exists for legacy callers that
-    /// only manage `context_provider`; it leaves `intelligence_provider`
-    /// and `glean_intelligence_provider` unchanged.
+    /// **DEPRECATED FOR PRODUCTION**: production settings flows must use
+    /// `set_context_mode_atomic` (or `build_context_provider`, which now
+    /// delegates to it). This single-field swap mutates only
+    /// `context_provider` and leaves `intelligence_provider` /
+    /// `glean_intelligence_provider` from a previous mode in place — that
+    /// asymmetry was the L2 cycle-3 codex finding (concurrent
+    /// `build_context_provider` + `swap_context_provider` interleaves
+    /// would leave a torn bundle).
+    ///
+    /// Kept for tests that need to install a stub context provider
+    /// without rebuilding the trait Arcs.
     pub fn swap_context_provider(&self, new: Arc<dyn crate::context_provider::ContextProvider>) {
         let mut guard = self.context_state.write();
         guard.context_provider = new;
         log::info!(
-            "Context provider swapped to: {}",
+            "Context provider single-field-swapped to: {} (test-only path)",
             guard.context_provider.provider_name()
         );
     }

@@ -149,6 +149,77 @@ fn context_snapshot_returns_coherent_view_under_one_lock() {
 }
 
 #[test]
+fn build_context_provider_never_lets_reader_observe_torn_state() {
+    // L2 cycle-3 finding regression: codex flagged that the prior
+    // interleaving test only drove `set_context_mode_atomic` directly,
+    // not the public `build_context_provider` settings command path.
+    // After the cycle-4 fix (callers stopped doing `build + swap` two-step),
+    // `build_context_provider` is the production entry point — so the
+    // race must be closed when interleaving THAT method.
+    let state = fresh_state();
+    state.build_context_provider(&ContextMode::Glean {
+        endpoint: "https://example.invalid/glean".to_string(),
+    });
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let torn_observed = Arc::new(AtomicBool::new(false));
+
+    let mut readers = Vec::new();
+    for _ in 0..4 {
+        let s = Arc::clone(&state);
+        let stop_r = Arc::clone(&stop);
+        let torn_r = Arc::clone(&torn_observed);
+        readers.push(std::thread::spawn(move || {
+            while !stop_r.load(Ordering::Relaxed) {
+                let snap = s.context_snapshot();
+                let remote = snap.is_remote();
+                let trait_arc = snap.intelligence_provider.is_some();
+                let glean_arc = snap.glean_intelligence_provider.is_some();
+                if !(remote == trait_arc && trait_arc == glean_arc) {
+                    torn_r.store(true, Ordering::Relaxed);
+                    return;
+                }
+            }
+        }));
+    }
+
+    // Two writer threads racing the public `build_context_provider`
+    // settings entry point — the same call shape commands/integrations.rs
+    // uses for set/auto-set/disconnect. Any torn state observed during
+    // these flips would mean the production settings race is still live.
+    let s1 = Arc::clone(&state);
+    let writer1 = std::thread::spawn(move || {
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_millis(200) {
+            s1.build_context_provider(&ContextMode::Glean {
+                endpoint: "https://example.invalid/glean".to_string(),
+            });
+        }
+    });
+    let s2 = Arc::clone(&state);
+    let writer2 = std::thread::spawn(move || {
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_millis(200) {
+            s2.build_context_provider(&ContextMode::Local);
+        }
+    });
+
+    writer1.join().expect("writer1");
+    writer2.join().expect("writer2");
+    stop.store(true, Ordering::Relaxed);
+    for r in readers {
+        r.join().expect("reader thread");
+    }
+
+    assert!(
+        !torn_observed.load(Ordering::Relaxed),
+        "build_context_provider must close the L2 cycle-3 settings race \
+         (concurrent settings flips through the public entry point must \
+         never produce torn-bundle reads)"
+    );
+}
+
+#[test]
 fn set_context_mode_atomic_never_lets_reader_observe_torn_state() {
     // L2 cycle-2 finding #1: the previous fix-up updated 3 Arcs as 3
     // separate writes; a parallel reader could observe is_remote=true +
