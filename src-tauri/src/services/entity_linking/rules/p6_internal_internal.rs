@@ -9,15 +9,20 @@ pub struct P6InternalInternal;
 impl super::super::phases::Rule for P6InternalInternal {
     fn id(&self) -> &'static str { "P6" }
 
-    fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
+    fn evaluate(
+        &self,
+        _service_ctx: &crate::services::context::ServiceContext<'_>,
+        ctx: &LinkingContext,
+        db: &ActionDb,
+    ) -> Result<RuleOutcome, String> {
         let _ = db;
         if !ctx.is_one_on_one() {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         let internal: Vec<_> = ctx.internal_participants().collect();
         if internal.len() != 2 {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         // The "other" person is whichever participant is not the From sender.
@@ -29,15 +34,15 @@ impl super::super::phases::Rule for P6InternalInternal {
 
         let other = match other {
             Some(p) => p,
-            None => return RuleOutcome::Skip,
+            None => return Ok(RuleOutcome::Skip),
         };
 
         let person_id = match &other.person_id {
             Some(id) => id.clone(),
-            None => return RuleOutcome::Skip,
+            None => return Ok(RuleOutcome::Skip),
         };
 
-        RuleOutcome::Matched(Candidate {
+        Ok(RuleOutcome::Matched(Candidate {
             entity: EntityRef { entity_id: person_id, entity_type: "person".to_string() },
             role: LinkRole::Primary,
             confidence: 0.80,
@@ -47,6 +52,6 @@ impl super::super::phases::Rule for P6InternalInternal {
                 "shape": "1:1_internal_internal",
                 "other_email": other.email,
             }),
-        })
+        }))
     }
 }

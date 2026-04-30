@@ -75,13 +75,20 @@ impl super::super::phases::Rule for P4aStakeholder {
         "P4a"
     }
 
-    fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
+    fn evaluate(
+        &self,
+        _service_ctx: &crate::services::context::ServiceContext<'_>,
+        ctx: &LinkingContext,
+        db: &ActionDb,
+    ) -> Result<RuleOutcome, String> {
         let candidates = Self::collect_candidates(ctx, db);
         if candidates.len() != 1 {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
-        RuleOutcome::Matched(candidates.into_iter().next().expect("one P4a candidate"))
+        Ok(RuleOutcome::Matched(
+            candidates.into_iter().next().expect("one P4a candidate"),
+        ))
     }
 }
 
@@ -92,6 +99,16 @@ mod tests {
     use super::super::super::types::{OwnerRef, OwnerType, Participant, ParticipantRole};
     use crate::db::test_utils::test_db;
     use crate::db::ActionDb;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::{TimeZone, Utc};
+
+    fn with_test_ctx<T>(f: impl FnOnce(&ServiceContext<'_>) -> T) -> T {
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = ServiceContext::test_live(&clock, &rng, &ext);
+        f(&ctx)
+    }
 
     fn seed_account(db: &ActionDb, id: &str, name: &str) {
         db.conn_ref()
@@ -158,7 +175,8 @@ mod tests {
         seed_stakeholder(&db, "acc-jane", "p-jane", "active");
 
         let ctx = mk_ctx(Some("p-jane"), "jane@example.test");
-        let outcome = P4aStakeholder.evaluate(&ctx, &db);
+        let outcome = with_test_ctx(|service_ctx| P4aStakeholder.evaluate(service_ctx, &ctx, &db))
+            .expect("evaluate");
         match outcome {
             RuleOutcome::Matched(c) => {
                 assert_eq!(c.entity.entity_id, "acc-jane");
@@ -177,7 +195,11 @@ mod tests {
         seed_stakeholder(&db, "acc-jane", "p-jane", "dismissed");
 
         let ctx = mk_ctx(Some("p-jane"), "jane@example.test");
-        matches!(P4aStakeholder.evaluate(&ctx, &db), RuleOutcome::Skip)
+        matches!(
+            with_test_ctx(|service_ctx| P4aStakeholder.evaluate(service_ctx, &ctx, &db))
+                .expect("evaluate"),
+            RuleOutcome::Skip
+        )
             .then_some(())
             .expect("dismissed stakeholder should not match");
     }
@@ -190,7 +212,11 @@ mod tests {
         seed_stakeholder(&db, "acc-jane", "p-jane", "pending_review");
 
         let ctx = mk_ctx(Some("p-jane"), "jane@example.test");
-        matches!(P4aStakeholder.evaluate(&ctx, &db), RuleOutcome::Skip)
+        matches!(
+            with_test_ctx(|service_ctx| P4aStakeholder.evaluate(service_ctx, &ctx, &db))
+                .expect("evaluate"),
+            RuleOutcome::Skip
+        )
             .then_some(())
             .expect("pending_review stakeholder should not match");
     }
@@ -207,7 +233,8 @@ mod tests {
         seed_stakeholder(&db, "acc-b", "p-jane", "active");
 
         let ctx = mk_ctx(Some("p-jane"), "jane@example.test");
-        let outcome = P4aStakeholder.evaluate(&ctx, &db);
+        let outcome = with_test_ctx(|service_ctx| P4aStakeholder.evaluate(service_ctx, &ctx, &db))
+            .expect("evaluate");
         assert!(matches!(outcome, RuleOutcome::Skip));
 
         let candidates = P4aStakeholder::collect_candidates(&ctx, &db);
@@ -249,7 +276,11 @@ mod tests {
             graph_version: 0,
             user_domains: vec!["company.com".to_string()],
         };
-        matches!(P4aStakeholder.evaluate(&ctx, &db), RuleOutcome::Skip)
+        matches!(
+            with_test_ctx(|service_ctx| P4aStakeholder.evaluate(service_ctx, &ctx, &db))
+                .expect("evaluate"),
+            RuleOutcome::Skip
+        )
             .then_some(())
             .expect("internal participants must never drive P4a");
     }

@@ -6,26 +6,32 @@ pub struct P2ThreadInheritance;
 impl super::super::phases::Rule for P2ThreadInheritance {
     fn id(&self) -> &'static str { "P2" }
 
-    fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
+    fn evaluate(
+        &self,
+        ctx: &crate::services::context::ServiceContext<'_>,
+        link_ctx: &LinkingContext,
+        db: &ActionDb,
+    ) -> Result<RuleOutcome, String> {
+        ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
         // Email surface only.
-        let Some(thread_id) = &ctx.thread_id else {
-            return RuleOutcome::Skip;
+        let Some(thread_id) = &link_ctx.thread_id else {
+            return Ok(RuleOutcome::Skip);
         };
 
-        let parent = match db.get_thread_primary_link(thread_id, &ctx.owner.owner_id) {
+        let parent = match db.get_thread_primary_link(thread_id, &link_ctx.owner.owner_id) {
             Ok(Some(p)) => p,
             Ok(None) => {
                 // Parent not yet evaluated — enqueue for later flush.
-                let _ = db.enqueue_thread_inheritance(thread_id, &ctx.owner.owner_id);
-                return RuleOutcome::Skip;
+                let _ = db.enqueue_thread_inheritance(thread_id, &link_ctx.owner.owner_id);
+                return Ok(RuleOutcome::Skip);
             }
             Err(e) => {
                 log::warn!("P2 get_thread_primary_link error: {e}");
-                return RuleOutcome::Skip;
+                return Ok(RuleOutcome::Skip);
             }
         };
 
-        let sender = ctx.from_participant();
+        let sender = link_ctx.from_participant();
         let sender_email = sender.map(|p| p.email.as_str()).unwrap_or("");
         let sender_domain = sender.and_then(|p| primitives::domain_from_email(&p.email));
 
@@ -50,16 +56,16 @@ impl super::super::phases::Rule for P2ThreadInheritance {
             .unwrap_or(false);
 
         if !domain_ok && !same_sender {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         let ev = evidence::thread_inheritance_evidence(
-            ctx,
-            &ctx.owner.owner_id,
+            link_ctx,
+            &link_ctx.owner.owner_id,
             &parent.entity_id,
             domain_ok,
         );
-        RuleOutcome::Matched(Candidate {
+        Ok(RuleOutcome::Matched(Candidate {
             entity: EntityRef {
                 entity_id: parent.entity_id,
                 entity_type: parent.entity_type,
@@ -68,6 +74,6 @@ impl super::super::phases::Rule for P2ThreadInheritance {
             confidence: 0.9,
             rule_id: "P2".to_string(),
             evidence: ev,
-        })
+        }))
     }
 }

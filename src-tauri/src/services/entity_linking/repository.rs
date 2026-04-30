@@ -15,7 +15,11 @@
 ///
 /// Run this function once, then perform the dry-run diff (DOS-258 step 5)
 /// before flipping the entity_linking_v2 feature flag.
-pub fn raw_rebuild_account_domains(db: &crate::db::ActionDb) -> Result<(), String> {
+pub fn raw_rebuild_account_domains(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let deleted = db
         .conn_ref()
         .execute(

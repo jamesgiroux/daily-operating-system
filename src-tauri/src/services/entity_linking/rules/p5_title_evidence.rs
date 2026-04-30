@@ -24,7 +24,12 @@ const STOPLIST: &[&str] = &[
 impl super::super::phases::Rule for P5TitleEvidence {
     fn id(&self) -> &'static str { "P5" }
 
-    fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
+    fn evaluate(
+        &self,
+        _service_ctx: &crate::services::context::ServiceContext<'_>,
+        ctx: &LinkingContext,
+        db: &ActionDb,
+    ) -> Result<RuleOutcome, String> {
         // P5 deliberately runs for 1:1 internal × internal meetings (AC#5: "Acme
         // renewal plan" internal sync → P5 links to Acme, beats P6). The old
         // name-collision bug (AC#1) was from fuzzy/keyword signals that are now
@@ -32,7 +37,7 @@ impl super::super::phases::Rule for P5TitleEvidence {
         // person first names, so phantom links from shared first names cannot occur.
         let title = match &ctx.title {
             Some(t) if !t.is_empty() => t.to_lowercase(),
-            _ => return RuleOutcome::Skip,
+            _ => return Ok(RuleOutcome::Skip),
         };
 
         // Extract whole-word tokens ≥ 4 chars
@@ -42,14 +47,14 @@ impl super::super::phases::Rule for P5TitleEvidence {
             .collect();
 
         if tokens.is_empty() {
-            return RuleOutcome::Skip;
+            return Ok(RuleOutcome::Skip);
         }
 
         let entities = match db.get_entities_for_title_match() {
             Ok(e) => e,
             Err(e) => {
                 log::warn!("P5 get_entities_for_title_match error: {e}");
-                return RuleOutcome::Skip;
+                return Ok(RuleOutcome::Skip);
             }
         };
 
@@ -100,14 +105,14 @@ impl super::super::phases::Rule for P5TitleEvidence {
 
         let (entity_id, entity_type, entity_name, confidence) = match best {
             Some(b) => b,
-            None => return RuleOutcome::Skip,
+            None => return Ok(RuleOutcome::Skip),
         };
 
         // Consistency check: if P4 found a different entity, block this as primary.
         if let Some(p4_id) = &self.p4_entity_id {
             if *p4_id != entity_id {
                 // P5 title match conflicts with domain evidence — write as related, not primary.
-                return RuleOutcome::Matched(Candidate {
+                return Ok(RuleOutcome::Matched(Candidate {
                     entity: EntityRef { entity_id, entity_type },
                     role: LinkRole::Related,
                     confidence,
@@ -115,7 +120,7 @@ impl super::super::phases::Rule for P5TitleEvidence {
                     evidence: evidence::title_match_evidence(
                         ctx, &entity_name, p4_id, &entity_name, false, false,
                     ),
-                });
+                }));
             }
         }
 
@@ -137,7 +142,7 @@ impl super::super::phases::Rule for P5TitleEvidence {
         // P5 can elect Primary on title alone, since an internal sync titled
         // "Acme renewal plan" is legitimately about Acme.
         if self.p4_entity_id.is_none() && ctx.has_external_participant() {
-            return RuleOutcome::Matched(Candidate {
+            return Ok(RuleOutcome::Matched(Candidate {
                 entity: EntityRef { entity_id, entity_type },
                 role: LinkRole::Related,
                 confidence,
@@ -145,19 +150,19 @@ impl super::super::phases::Rule for P5TitleEvidence {
                 evidence: evidence::title_match_evidence(
                     ctx, &entity_name, &entity_name, &entity_name, false, false,
                 ),
-            });
+            }));
         }
 
         let ev = evidence::title_match_evidence(
             ctx, &entity_name, &entity_id, &entity_name, false, true,
         );
-        RuleOutcome::Matched(Candidate {
+        Ok(RuleOutcome::Matched(Candidate {
             entity: EntityRef { entity_id, entity_type },
             role: LinkRole::Primary,
             confidence,
             rule_id: "P5".to_string(),
             evidence: ev,
-        })
+        }))
     }
 }
 
@@ -167,6 +172,16 @@ mod tests {
     use super::super::super::phases::Rule;
     use super::super::super::types::{OwnerRef, OwnerType, Participant, ParticipantRole};
     use crate::db::test_utils::test_db;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::{TimeZone, Utc};
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     fn ctx_with_participants(
         participants: Vec<Participant>,
@@ -220,7 +235,11 @@ mod tests {
         );
 
         let rule = P5TitleEvidence { p4_entity_id: None };
-        match rule.evaluate(&ctx, &db) {
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let service_ctx = test_ctx(&clock, &rng, &ext);
+        match rule.evaluate(&service_ctx, &ctx, &db).expect("evaluate") {
             RuleOutcome::Matched(c) => {
                 assert_eq!(c.role, LinkRole::Related, "must demote to Related when externals exist and P4 found nothing");
                 assert_eq!(c.entity.entity_id, "acc-wp");
@@ -248,7 +267,11 @@ mod tests {
         );
 
         let rule = P5TitleEvidence { p4_entity_id: None };
-        match rule.evaluate(&ctx, &db) {
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let service_ctx = test_ctx(&clock, &rng, &ext);
+        match rule.evaluate(&service_ctx, &ctx, &db).expect("evaluate") {
             RuleOutcome::Matched(c) => {
                 assert_eq!(c.role, LinkRole::Primary, "all-internal meetings keep Primary on title match");
                 assert_eq!(c.entity.entity_id, "acc-acme");
@@ -257,4 +280,3 @@ mod tests {
         }
     }
 }
-

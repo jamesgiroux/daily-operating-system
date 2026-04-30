@@ -1,10 +1,11 @@
 // Actions service — extracted from commands.rs
 // Business logic for action status transitions with signal emission.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::commands::{ActionDetail, ActionListItem, CreateActionRequest, UpdateActionRequest};
 use crate::db::ActionDb;
+use crate::services::context::ServiceContext;
 use crate::state::AppState;
 use crate::types::{Action, Priority};
 
@@ -28,10 +29,12 @@ fn action_entity_info(action: &crate::db::DbAction, fallback_id: &str) -> (&'sta
 
 /// Complete an action and emit the completion signal.
 pub fn complete_action(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = db.get_action_by_id(id).ok().flatten();
     db.complete_action(id).map_err(|e| e.to_string())?;
 
@@ -76,10 +79,12 @@ pub fn complete_action(
 
 /// Reopen a completed action, setting it back to pending.
 pub fn reopen_action(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = db.get_action_by_id(id).ok().flatten();
     db.reopen_action(id).map_err(|e| e.to_string())?;
 
@@ -102,10 +107,12 @@ pub fn reopen_action(
 
 /// Accept a suggested action, moving it to pending (I256).
 pub fn accept_suggested_action(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = db.get_action_by_id(id).ok().flatten();
     db.accept_suggested_action(id).map_err(|e| e.to_string())?;
 
@@ -150,11 +157,13 @@ pub fn accept_suggested_action(
 
 /// Reject a suggested action by archiving it (I256).
 pub fn reject_suggested_action(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
     source: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = db.get_action_by_id(id).ok().flatten();
     db.reject_suggested_action_with_source(id, source)
         .map_err(|e| e.to_string())?;
@@ -219,11 +228,13 @@ pub fn reject_suggested_action(
 /// Pairs with `reject_suggested_action` (the "Not accurate" path), which
 /// keeps the quality-penalty signal.
 pub fn dismiss_suggested_action(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
     source: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = db.get_action_by_id(id).ok().flatten();
     db.reject_suggested_action_with_source(id, source)
         .map_err(|e| e.to_string())?;
@@ -269,11 +280,13 @@ pub fn dismiss_suggested_action(
 
 /// Cycle an action's priority with signal emission.
 pub fn update_action_priority(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
     priority: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = db.get_action_by_id(id).ok().flatten();
     db.update_action_priority(id, priority)
         .map_err(|e| e.to_string())?;
@@ -347,9 +360,11 @@ pub async fn get_all_actions(state: &AppState) -> ActionsResult {
 
 /// Create a new action with validation and signal emission.
 pub async fn create_action(
+    ctx: &ServiceContext<'_>,
     request: CreateActionRequest,
-    state: &AppState,
+    state: &Arc<AppState>,
 ) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let CreateActionRequest {
         title,
         priority,
@@ -389,7 +404,7 @@ pub async fn create_action(
         crate::util::validate_bounded_string(value, "source_label", 1, 200)?;
     }
 
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
     let id = uuid::Uuid::new_v4().to_string();
 
     let action_kind = action_kind
@@ -428,8 +443,10 @@ pub async fn create_action(
     };
 
     let engine = state.signals.engine.clone();
+    let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             db.upsert_action(&action).map_err(|e| e.to_string())?;
 
             // Emit signal for manually created actions
@@ -455,7 +472,7 @@ pub async fn create_action(
             // DOS-15: Best-effort auto-link to matching objectives
             if let Some(ref acct_id) = action.account_id {
                 if let Err(e) =
-                    auto_link_action_to_objectives(db, &action.id, &action.title, acct_id)
+                    auto_link_action_to_objectives(&ctx, db, &action.id, &action.title, acct_id)
                 {
                     log::warn!("Auto-link action to objectives failed (non-fatal): {}", e);
                 }
@@ -471,11 +488,13 @@ pub async fn create_action(
 /// Uses Jaccard word similarity (threshold 0.6) to find matching objectives
 /// for the action's account. Emits an `action_auto_linked` signal per match.
 fn auto_link_action_to_objectives(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     action_id: &str,
     action_title: &str,
     account_id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let objectives = db
         .get_account_objectives(account_id)
         .map_err(|e| e.to_string())?;
@@ -520,7 +539,12 @@ fn auto_link_action_to_objectives(
 }
 
 /// Update arbitrary fields on an existing action (I128).
-pub async fn update_action(request: UpdateActionRequest, state: &AppState) -> Result<(), String> {
+pub async fn update_action(
+    ctx: &ServiceContext<'_>,
+    request: UpdateActionRequest,
+    state: &Arc<AppState>,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let UpdateActionRequest {
         id,
         title,
@@ -568,8 +592,10 @@ pub async fn update_action(request: UpdateActionRequest, state: &AppState) -> Re
         crate::util::validate_id_slug(p, "person_id")?;
     }
 
+    let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let mut action = db
                 .get_action_by_id(&id)
                 .map_err(|e| e.to_string())?
@@ -612,7 +638,7 @@ pub async fn update_action(request: UpdateActionRequest, state: &AppState) -> Re
                 action.person_id = Some(p);
             }
 
-            action.updated_at = chrono::Utc::now().to_rfc3339();
+            action.updated_at = ctx.clock.now().to_rfc3339();
             db.upsert_action(&action).map_err(|e| e.to_string())
         })
         .await
@@ -753,10 +779,12 @@ pub fn get_account_recently_landed(
 
 /// Resolve a decision: clear needs_decision flag and emit signal (DOS-17).
 pub fn resolve_decision(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = db.get_action_by_id(id).ok().flatten();
     let updated = db.resolve_decision(id).map_err(|e| e.to_string())?;
     if !updated {

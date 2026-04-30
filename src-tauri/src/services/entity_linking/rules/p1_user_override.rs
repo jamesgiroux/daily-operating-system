@@ -6,8 +6,13 @@ pub struct P1UserOverride;
 impl super::super::phases::Rule for P1UserOverride {
     fn id(&self) -> &'static str { "P1" }
 
-    fn evaluate(&self, ctx: &LinkingContext, db: &ActionDb) -> RuleOutcome {
-        match db.get_user_override_link(ctx.owner.owner_type.as_str(), &ctx.owner.owner_id) {
+    fn evaluate(
+        &self,
+        _service_ctx: &crate::services::context::ServiceContext<'_>,
+        ctx: &LinkingContext,
+        db: &ActionDb,
+    ) -> Result<RuleOutcome, String> {
+        Ok(match db.get_user_override_link(ctx.owner.owner_type.as_str(), &ctx.owner.owner_id) {
             Ok(Some((entity_id, entity_type))) => RuleOutcome::Matched(Candidate {
                 entity: EntityRef { entity_id: entity_id.clone(), entity_type: entity_type.clone() },
                 role: LinkRole::Primary,
@@ -26,6 +31,6 @@ impl super::super::phases::Rule for P1UserOverride {
                 log::warn!("P1 DB error for {}/{}: {e}", ctx.owner.owner_type.as_str(), ctx.owner.owner_id);
                 RuleOutcome::Skip
             }
-        }
+        })
     }
 }

@@ -15,6 +15,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use crate::db::ActionDb;
 use crate::google_api::classify::PERSONAL_EMAIL_DOMAINS;
+use crate::services::context::ServiceContext;
 
 /// Bot / integration hosts that should NEVER be registered as a customer
 /// account's domain.
@@ -75,6 +76,16 @@ fn filter_domain(email: &str, user_domains: &[String]) -> Option<String> {
 /// emitted with `source="stakeholder_inference"`. No signal fires when the
 /// merge is a no-op.
 pub fn backfill_domains_for_account(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    account_id: &str,
+    user_domains: &[String],
+) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    backfill_domains_for_account_inner(db, account_id, user_domains)
+}
+
+fn backfill_domains_for_account_inner(
     db: &ActionDb,
     account_id: &str,
     user_domains: &[String],
@@ -152,7 +163,7 @@ pub fn backfill_domains_for_all_accounts(
     for account_id in by_account.keys() {
         // Delegate to the single-account path so the filter + signal logic
         // lives in one place.
-        match backfill_domains_for_account(db, account_id, user_domains) {
+        match backfill_domains_for_account_inner(db, account_id, user_domains) {
             Ok(n) if n > 0 => {
                 accounts_touched += 1;
                 total_new += n;
@@ -178,8 +189,17 @@ mod tests {
     use super::*;
     use crate::db::ActionDb;
     use crate::db::types::{DbAccount, DbPerson};
-    use chrono::Utc;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::{TimeZone, Utc};
     use rusqlite::params;
+
+    fn with_test_ctx<T>(f: impl FnOnce(&ServiceContext<'_>) -> T) -> T {
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = ServiceContext::test_live(&clock, &rng, &ext);
+        f(&ctx)
+    }
 
     fn seed_account(db: &ActionDb, id: &str, account_type: crate::db::AccountType) {
         let now = Utc::now().to_rfc3339();
@@ -267,7 +287,8 @@ mod tests {
         seed_person(&db, "p1", "alice@customer.com", "external");
         link_stakeholder(&db, "acme", "p1", "active");
 
-        let new = backfill_domains_for_account(&db, "acme", &[]).unwrap();
+        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[]))
+            .unwrap();
         assert_eq!(new, 1);
 
         let domains = db.get_account_domains("acme").unwrap();
@@ -281,7 +302,8 @@ mod tests {
         seed_person(&db, "p1", "bob@customer.com", "internal");
         link_stakeholder(&db, "acme", "p1", "active");
 
-        let new = backfill_domains_for_account(&db, "acme", &[]).unwrap();
+        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[]))
+            .unwrap();
         assert_eq!(new, 0);
         assert!(db.get_account_domains("acme").unwrap().is_empty());
     }
@@ -293,7 +315,8 @@ mod tests {
         seed_person(&db, "p1", "carol@gmail.com", "external");
         link_stakeholder(&db, "acme", "p1", "active");
 
-        let new = backfill_domains_for_account(&db, "acme", &[]).unwrap();
+        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[]))
+            .unwrap();
         assert_eq!(new, 0);
         assert!(db.get_account_domains("acme").unwrap().is_empty());
     }
@@ -311,7 +334,8 @@ mod tests {
         link_stakeholder(&db, "acme", "p3", "active");
         link_stakeholder(&db, "acme", "p4", "active");
 
-        let new = backfill_domains_for_account(&db, "acme", &[]).unwrap();
+        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[]))
+            .unwrap();
         assert_eq!(new, 0);
         assert!(db.get_account_domains("acme").unwrap().is_empty());
     }
@@ -324,7 +348,9 @@ mod tests {
         link_stakeholder(&db, "acme", "p1", "active");
 
         let user_domains = vec!["a8c.com".to_string()];
-        let new = backfill_domains_for_account(&db, "acme", &user_domains).unwrap();
+        let new =
+            with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &user_domains))
+                .unwrap();
         assert_eq!(new, 0);
         assert!(db.get_account_domains("acme").unwrap().is_empty());
     }
@@ -338,7 +364,8 @@ mod tests {
         link_stakeholder(&db, "acme", "p1", "pending_review");
         link_stakeholder(&db, "acme", "p2", "dismissed");
 
-        let new = backfill_domains_for_account(&db, "acme", &[]).unwrap();
+        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[]))
+            .unwrap();
         assert_eq!(new, 0);
         assert!(db.get_account_domains("acme").unwrap().is_empty());
     }
@@ -350,8 +377,14 @@ mod tests {
         seed_person(&db, "p1", "alice@customer.com", "external");
         link_stakeholder(&db, "acme", "p1", "active");
 
-        assert_eq!(backfill_domains_for_account(&db, "acme", &[]).unwrap(), 1);
-        assert_eq!(backfill_domains_for_account(&db, "acme", &[]).unwrap(), 0);
+        assert_eq!(
+            with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[])).unwrap(),
+            1
+        );
+        assert_eq!(
+            with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[])).unwrap(),
+            0
+        );
         assert_eq!(count_domain_signals(&db, "acme"), 1);
     }
 
@@ -365,14 +398,20 @@ mod tests {
         link_stakeholder(&db, "acme", "p2", "active");
 
         // First pass registers customer.com once (two stakeholders, same domain).
-        assert_eq!(backfill_domains_for_account(&db, "acme", &[]).unwrap(), 1);
+        assert_eq!(
+            with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[])).unwrap(),
+            1
+        );
         assert_eq!(count_domain_signals(&db, "acme"), 1);
 
         // Add a third stakeholder on a new domain → one more signal only.
         seed_person(&db, "p3", "carol@subsidiary.com", "external");
         link_stakeholder(&db, "acme", "p3", "active");
 
-        assert_eq!(backfill_domains_for_account(&db, "acme", &[]).unwrap(), 1);
+        assert_eq!(
+            with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[])).unwrap(),
+            1
+        );
         assert_eq!(count_domain_signals(&db, "acme"), 2);
     }
 
