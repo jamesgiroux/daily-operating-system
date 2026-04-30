@@ -415,7 +415,7 @@ pub fn submit_intelligence_correction(
         && is_health_affecting_field(field)
     {
         if let Err(e) =
-            crate::services::intelligence::recompute_entity_health(db, entity_id, "account")
+            crate::services::intelligence::recompute_entity_health(ctx, db, entity_id, "account")
         {
             log::warn!(
                 "recompute_entity_health failed after correction of {field} on {entity_id}: {e}"
@@ -1047,7 +1047,11 @@ mod correction_tests {
         // Capture the pre-correction health score by running the same
         // pipeline with the old ARR. We do this directly rather than via
         // a sentinel correction to avoid polluting the feedback log.
-        crate::services::intelligence::recompute_entity_health(&db, account_id, "account")
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        crate::services::intelligence::recompute_entity_health(&ctx, &db, account_id, "account")
             .expect("pre recompute");
         let score_before: f64 = db
             .conn_ref()

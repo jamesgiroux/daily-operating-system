@@ -29,9 +29,12 @@ pub async fn create_objective(
     source: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::AccountObjective, String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::success_plans::create_objective(
+                &ctx,
                 db,
                 &account_id,
                 &title,
@@ -49,9 +52,12 @@ pub async fn update_objective(
     fields: ObjectiveUpdateRequest,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::AccountObjective, String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::success_plans::update_objective(
+                &ctx,
                 db,
                 &id,
                 fields.title.as_deref(),
@@ -70,8 +76,12 @@ pub async fn complete_objective(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::AccountObjective, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
-        .db_write(move |db| crate::services::success_plans::complete_objective(db, &app_state, &id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::success_plans::complete_objective(&ctx, db, &app_state, &id)
+        })
         .await
 }
 
@@ -87,8 +97,12 @@ pub async fn abandon_objective(
 
 #[tauri::command]
 pub async fn delete_objective(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(move |db| crate::services::success_plans::delete_objective(db, &id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::success_plans::delete_objective(&ctx, db, &id)
+        })
         .await
 }
 
@@ -100,9 +114,12 @@ pub async fn create_milestone(
     auto_detect_signal: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::AccountMilestone, String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::success_plans::create_milestone(
+                &ctx,
                 db,
                 &objective_id,
                 &title,
@@ -119,9 +136,12 @@ pub async fn update_milestone(
     fields: MilestoneUpdateRequest,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::AccountMilestone, String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::success_plans::update_milestone(
+                &ctx,
                 db,
                 &id,
                 fields.title.as_deref(),
@@ -140,8 +160,12 @@ pub async fn complete_milestone(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::AccountMilestone, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
-        .db_write(move |db| crate::services::success_plans::complete_milestone(db, &app_state, &id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::success_plans::complete_milestone(&ctx, db, &app_state, &id)
+        })
         .await
 }
 
@@ -151,15 +175,23 @@ pub async fn skip_milestone(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::AccountMilestone, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
-        .db_write(move |db| crate::services::success_plans::skip_milestone(db, &app_state, &id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::success_plans::skip_milestone(&ctx, db, &app_state, &id)
+        })
         .await
 }
 
 #[tauri::command]
 pub async fn delete_milestone(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(move |db| crate::services::success_plans::delete_milestone(db, &id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::success_plans::delete_milestone(&ctx, db, &id)
+        })
         .await
 }
 
@@ -169,9 +201,16 @@ pub async fn link_action_to_objective(
     objective_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
-            crate::services::success_plans::link_action_to_objective(db, &action_id, &objective_id)
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::success_plans::link_action_to_objective(
+                &ctx,
+                db,
+                &action_id,
+                &objective_id,
+            )
         })
         .await
 }
@@ -182,9 +221,12 @@ pub async fn unlink_action_from_objective(
     objective_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::success_plans::unlink_action_from_objective(
+                &ctx,
                 db,
                 &action_id,
                 &objective_id,
@@ -239,9 +281,12 @@ pub async fn create_objective_from_suggestion(
 ) -> Result<crate::types::AccountObjective, String> {
     let suggestion: crate::types::SuggestedObjective = serde_json::from_str(&suggestion_json)
         .map_err(|e| format!("Invalid suggestion JSON: {e}"))?;
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::success_plans::create_objective_from_suggestion(
+                &ctx,
                 db,
                 &account_id,
                 &suggestion,
@@ -261,9 +306,12 @@ pub async fn apply_success_plan_template(
     template_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::types::AccountObjective>, String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::success_plans::apply_success_plan_template(
+                &ctx,
                 db,
                 &account_id,
                 &template_id,

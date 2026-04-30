@@ -1038,8 +1038,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         {
                             Ok(signals) => {
                                 if let Ok(db) = crate::db::ActionDb::open() {
+                                    let ctx = state_for_spawn.live_service_context();
                                     if let Err(e) =
                                         crate::services::intelligence::upsert_health_outlook_signals(
+                                            &ctx,
                                             &db,
                                             &engine,
                                             &entity_type,
@@ -1101,13 +1103,14 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                                 if let Ok(db) = crate::db::ActionDb::open() {
                                     match db.get_entity_intelligence(&entity_id) {
                                         Ok(Some(mut current)) => {
+                                            let ctx = state_for_spawn.live_service_context();
                                             let outlook = current
                                                 .agreement_outlook
                                                 .get_or_insert_with(Default::default);
                                             outlook.peer_benchmark = Some(peer_benchmark);
                                             if let Err(e) =
                                                 crate::services::intelligence::upsert_assessment_snapshot(
-                                                    &db, &current,
+                                                    &ctx, &db, &current,
                                                 )
                                             {
                                                 log::warn!(
@@ -1162,8 +1165,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         continue;
                     }
                 };
+                let ctx = state.live_service_context();
                 if let Err(e) =
                     crate::services::intelligence::upsert_inferred_relationships_from_enrichment(
+                        &ctx,
                         &db,
                         state.signals.engine.as_ref(),
                         &request.entity_type,
@@ -1936,7 +1941,12 @@ fn run_parallel_enrichment(
         crate::intelligence::extract_keywords_from_response(&all_raw_output)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             if let Err(err) = crate::services::intelligence::persist_entity_keywords(
+                &ctx,
                 &db,
                 &input.entity_type,
                 &input.entity_id,
@@ -2009,7 +2019,11 @@ fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &In
     merged.entity_type = entity_type.to_string();
     merged.enriched_at = chrono::Utc::now().to_rfc3339();
 
-    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&db, &merged) {
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&ctx, &db, &merged) {
         log::warn!("[I575] Progressive write failed for {}: {}", entity_id, e);
     } else {
         log::debug!("[I575] Progressive write succeeded for {}", entity_id,);
@@ -2045,7 +2059,12 @@ fn run_enrichment_legacy(
     if let Some(keywords_json) = crate::intelligence::extract_keywords_from_response(&output.stdout)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             if let Err(err) = crate::services::intelligence::persist_entity_keywords(
+                &ctx,
                 &db,
                 &input.entity_type,
                 &input.entity_id,
@@ -2139,7 +2158,7 @@ fn run_consistency_repair_retry(
 /// Opens own DB connection to avoid blocking foreground IPC commands.
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
 pub fn write_enrichment_results(
-    _state: &AppState,
+    state: &AppState,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
     ai_config: Option<&AiModelConfig>,
@@ -2497,7 +2516,7 @@ pub fn write_enrichment_results(
                 );
 
                 // Emit a Tauri event so the frontend can surface a toast.
-                if let Some(handle) = _state.app_handle() {
+                if let Some(handle) = state.app_handle() {
                     let _ = handle.emit(
                         "enrichment-contamination-rejected",
                         serde_json::json!({
@@ -2565,9 +2584,11 @@ pub fn write_enrichment_results(
             }
         }
     }
+    let ctx = state.live_service_context();
     crate::services::intelligence::upsert_assessment_from_enrichment(
+        &ctx,
         &db,
-        &_state.signals.engine,
+        &state.signals.engine,
         &input.entity_type,
         &input.entity_id,
         &final_intel,
@@ -2596,13 +2617,13 @@ pub fn write_enrichment_results(
     if input.entity_type == "account" {
         if let Ok(Some(account)) = db.get_account(&input.entity_id) {
             if let Some(ref parent_id) = account.parent_id {
-                let _ = _state.intel_queue.enqueue(IntelRequest {                    entity_id: parent_id.clone(),
+                let _ = state.intel_queue.enqueue(IntelRequest {                    entity_id: parent_id.clone(),
                     entity_type: "account".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: std::time::Instant::now(),
                     retry_count: 0,
                 });
-                _state.integrations.intel_queue_wake.notify_one();
+                state.integrations.intel_queue_wake.notify_one();
                 log::info!(
                     "IntelProcessor: enqueued parent {} for portfolio refresh after child {} update",
                     parent_id,
@@ -2614,13 +2635,13 @@ pub fn write_enrichment_results(
     if input.entity_type == "project" {
         if let Ok(Some(project)) = db.get_project(&input.entity_id) {
             if let Some(ref parent_id) = project.parent_id {
-                let _ = _state.intel_queue.enqueue(IntelRequest {                    entity_id: parent_id.clone(),
+                let _ = state.intel_queue.enqueue(IntelRequest {                    entity_id: parent_id.clone(),
                     entity_type: "project".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: std::time::Instant::now(),
                     retry_count: 0,
                 });
-                _state.integrations.intel_queue_wake.notify_one();
+                state.integrations.intel_queue_wake.notify_one();
                 log::info!(
                     "IntelProcessor: enqueued parent project {} for portfolio refresh after child {} update",
                     parent_id,

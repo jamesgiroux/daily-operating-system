@@ -793,8 +793,12 @@ pub fn process_transcript_with_kind(
 
             if let Some((eid, etype)) = transcript_entity_id {
                 if etype == "account" {
+                    let clock = crate::services::context::SystemClock;
+                    let rng = crate::services::context::SystemRng;
+                    let ext = crate::services::context::ExternalClients::default();
+                    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                     if let Err(e) =
-                        crate::services::intelligence::recompute_entity_health(db, eid, "account")
+                        crate::services::intelligence::recompute_entity_health(&ctx, db, eid, "account")
                     {
                         log::warn!(
                             "Health recompute failed for {} after transcript: {}",
@@ -2070,7 +2074,11 @@ fn persist_enriched_transcript_data(db: &crate::db::ActionDb, data: &EnrichedTra
 
         // DOS-16: After persisting commitments, match them to milestones
         if let Some(acct_id) = account_id {
-            match crate::services::success_plans::match_commitments_to_milestones(db, acct_id) {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            match crate::services::success_plans::match_commitments_to_milestones(&ctx, db, acct_id) {
                 Ok(count) if count > 0 => {
                     log::info!(
                         "Matched {} commitments to milestones for account {}",

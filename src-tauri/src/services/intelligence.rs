@@ -4,7 +4,11 @@
 use std::path::Path;
 
 use crate::db::ActionDb;
+use crate::intel_queue::{
+    gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority, IntelRequest,
+};
 use crate::pty::AiUsageContext;
+use crate::services::context::ServiceContext;
 use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 use tauri::Emitter;
@@ -63,13 +67,15 @@ fn stage_failure_message(stage: &str) -> &str {
 }
 
 fn emit_manual_refresh_failed(
+    ctx: &ServiceContext<'_>,
     app_handle: Option<&tauri::AppHandle>,
     entity_id: &str,
     entity_type: &str,
     entity_label: &str,
     stage: &str,
     error: &str,
-) {
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if let Some(app) = app_handle {
         let payload = serde_json::json!({
             "phase": "failed",
@@ -88,6 +94,7 @@ fn emit_manual_refresh_failed(
         let _ = app.emit("background-work-status", payload.clone());
         let _ = app.emit("intelligence-refresh-failed", payload);
     }
+    Ok(())
 }
 
 fn manual_refresh_error(stage: &str, error: &str) -> String {
@@ -100,15 +107,13 @@ fn manual_refresh_error(stage: &str, error: &str) -> String {
 
 /// Enrich an entity via the intelligence queue (split-lock pattern).
 pub async fn enrich_entity(
+    ctx: &ServiceContext<'_>,
     entity_id: String,
     entity_type: String,
-    state: &AppState,
+    state: &std::sync::Arc<AppState>,
     app_handle: Option<&tauri::AppHandle>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
-    use crate::intel_queue::{
-        gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
-        IntelRequest,
-    };
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
 
     log::warn!(
         "[I535] enrich_entity ENTERED: entity_id={}, type={}, provider={}",
@@ -149,7 +154,8 @@ pub async fn enrich_entity(
                 request.entity_id,
                 e
             );
-            emit_manual_refresh_failed(
+            let _ = emit_manual_refresh_failed(
+                ctx,
                 app_handle,
                 &request.entity_id,
                 &request.entity_type,
@@ -181,7 +187,8 @@ pub async fn enrich_entity(
         Ok(Ok(permit)) => permit,
         Ok(Err(_)) => {
             let error = "PTY permit closed";
-            emit_manual_refresh_failed(
+            let _ = emit_manual_refresh_failed(
+                ctx,
                 app_handle,
                 &input.entity_id,
                 &input.entity_type,
@@ -193,7 +200,8 @@ pub async fn enrich_entity(
         }
         Err(_) => {
             let error = "Background work in progress — your refresh is queued and will run shortly";
-            emit_manual_refresh_failed(
+            let _ = emit_manual_refresh_failed(
+                ctx,
                 app_handle,
                 &input.entity_id,
                 &input.entity_type,
@@ -335,7 +343,8 @@ pub async fn enrich_entity(
                 match pty_result {
                     Ok(Ok(parsed)) => parsed,
                     Ok(Err(e)) => {
-                        emit_manual_refresh_failed(
+                        let _ = emit_manual_refresh_failed(
+                            ctx,
                             app_handle,
                             &input.entity_id,
                             &input.entity_type,
@@ -347,7 +356,8 @@ pub async fn enrich_entity(
                     }
                     Err(e) => {
                         let error = format!("Enrichment task panicked: {}", e);
-                        emit_manual_refresh_failed(
+                        let _ = emit_manual_refresh_failed(
+                            ctx,
                             app_handle,
                             &input.entity_id,
                             &input.entity_type,
@@ -379,7 +389,8 @@ pub async fn enrich_entity(
         match pty_result {
             Ok(Ok(parsed)) => parsed,
             Ok(Err(e)) => {
-                emit_manual_refresh_failed(
+                let _ = emit_manual_refresh_failed(
+                    ctx,
                     app_handle,
                     &input.entity_id,
                     &input.entity_type,
@@ -391,7 +402,8 @@ pub async fn enrich_entity(
             }
             Err(e) => {
                 let error = format!("Enrichment task panicked: {}", e);
-                emit_manual_refresh_failed(
+                let _ = emit_manual_refresh_failed(
+                    ctx,
                     app_handle,
                     &input.entity_id,
                     &input.entity_type,
@@ -408,7 +420,8 @@ pub async fn enrich_entity(
     {
         Ok(intel) => intel,
         Err(e) => {
-            emit_manual_refresh_failed(
+            let _ = emit_manual_refresh_failed(
+                ctx,
                 app_handle,
                 &input.entity_id,
                 &input.entity_type,
@@ -424,9 +437,12 @@ pub async fn enrich_entity(
         let entity_id_for_persist = input.entity_id.clone();
         let entity_type_for_persist = input.entity_type.clone();
         let inferred = parsed.inferred_relationships.clone();
+        let state_for_ctx = state.clone();
         state
             .db_write(move |db| {
+                let ctx = state_for_ctx.live_service_context();
                 upsert_inferred_relationships_from_enrichment(
+                    &ctx,
                     db,
                     engine.as_ref(),
                     &entity_type_for_persist,
@@ -437,7 +453,8 @@ pub async fn enrich_entity(
             })
             .await
             .map_err(|e| {
-                emit_manual_refresh_failed(
+                let _ = emit_manual_refresh_failed(
+                    ctx,
                     app_handle,
                     &input.entity_id,
                     &input.entity_type,
@@ -465,11 +482,13 @@ pub async fn enrich_entity(
 }
 
 pub fn persist_entity_keywords(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     entity_type: &str,
     entity_id: &str,
     keywords_json: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if entity_type != "account" && entity_type != "project" {
         return Ok(());
     }
@@ -501,12 +520,14 @@ pub fn persist_entity_keywords(
 }
 
 pub fn upsert_assessment_from_enrichment(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     entity_type: &str,
     entity_id: &str,
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // DOS-12: Merge value_delivered — preserve user-confirmed items during re-enrichment.
     let mut intel = intel.clone();
     if let Ok(Some(existing)) = db.get_entity_intelligence(entity_id) {
@@ -531,7 +552,7 @@ pub fn upsert_assessment_from_enrichment(
 
     // DOS-14: After enrichment, reconcile AI objectives with user objectives
     if entity_type == "account" {
-        if let Err(e) = crate::services::success_plans::reconcile_objectives(db, entity_id) {
+        if let Err(e) = crate::services::success_plans::reconcile_objectives(ctx, db, entity_id) {
             log::warn!("Objective reconciliation failed for {entity_id}: {e}");
         }
     }
@@ -570,9 +591,11 @@ pub fn upsert_assessment_from_enrichment(
 /// Progressive-write paths use this helper so the final authoritative write can
 /// remain the single point for signal emission and downstream invalidation.
 pub fn upsert_assessment_snapshot(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // Write intelligence snapshot
     db.upsert_entity_intelligence(intel)
         .map_err(|e| e.to_string())?;
@@ -608,12 +631,14 @@ pub fn upsert_assessment_snapshot(
 /// (sentiment_divergence), 0.75 (budget_cycle_locked) — matching the tier policy
 /// of other Glean-derived signals registered in `signals/callouts.rs`.
 pub fn upsert_health_outlook_signals(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     entity_type: &str,
     entity_id: &str,
     signals: &crate::intelligence::glean_leading_signals::HealthOutlookSignals,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let blob = serde_json::to_string(signals)
         .map_err(|e| format!("Failed to serialize health_outlook_signals: {e}"))?;
 
@@ -704,12 +729,14 @@ pub fn upsert_health_outlook_signals(
 /// - Uses deterministic IDs so re-enrichment reinforces instead of duplicating.
 /// - Emits `relationship_inferred` only when creating a new AI edge.
 pub fn upsert_inferred_relationships_from_enrichment(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     entity_type: &str,
     entity_id: &str,
     inferred: &[crate::intelligence::prompts::InferredRelationship],
 ) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if inferred.is_empty() {
         return Ok(0);
     }
@@ -803,12 +830,14 @@ pub fn upsert_inferred_relationships_from_enrichment(
 
 /// Update a single field in an entity's intelligence.json with signal emission.
 pub async fn update_intelligence_field(
+    ctx: &ServiceContext<'_>,
     entity_id: &str,
     entity_type: &str,
     field_path: &str,
     value: &str,
     state: &AppState,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state.config.read().clone();
     let config = config.ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
@@ -922,11 +951,13 @@ pub async fn update_intelligence_field(
 
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.
 pub async fn update_stakeholders(
+    ctx: &ServiceContext<'_>,
     entity_id: &str,
     entity_type: &str,
     stakeholders: Vec<crate::intelligence::StakeholderInsight>,
     state: &AppState,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state.config.read().clone();
     let config = config.ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
@@ -935,6 +966,7 @@ pub async fn update_stakeholders(
     let engine = state.signals.engine.clone();
     let entity_id = entity_id.to_string();
     let entity_type = entity_type.to_string();
+    let sourced_at = ctx.clock.now().to_rfc3339();
     let stakeholders = stakeholders
         .into_iter()
         .map(|mut stakeholder| {
@@ -942,7 +974,7 @@ pub async fn update_stakeholders(
             stakeholder.item_source = Some(crate::intelligence::ItemSource {
                 source: "user_correction".to_string(),
                 confidence: 1.0,
-                sourced_at: chrono::Utc::now().to_rfc3339(),
+                sourced_at: sourced_at.clone(),
                 reference: Some("user stakeholder edit".to_string()),
             });
             stakeholder
@@ -1099,12 +1131,14 @@ pub async fn update_stakeholders(
 /// Removes the item from the specified Vec field and adds a `DismissedItem`
 /// tombstone that prevents future enrichment from re-creating it.
 pub async fn dismiss_intelligence_item(
+    ctx: &ServiceContext<'_>,
     entity_id: &str,
     entity_type: &str,
     field: &str,
     item_text: &str,
     state: &AppState,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state.config.read().clone();
     let config = config.ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
@@ -1114,6 +1148,7 @@ pub async fn dismiss_intelligence_item(
     let entity_type = entity_type.to_string();
     let field = field.to_string();
     let item_text = item_text.to_string();
+    let dismissed_at = ctx.clock.now().to_rfc3339();
     state
         .db_write(move |db| {
             let workspace = Path::new(&workspace_path);
@@ -1164,7 +1199,7 @@ pub async fn dismiss_intelligence_item(
                 .push(crate::intelligence::DismissedItem {
                     field: field.clone(),
                     content: item_text.clone(),
-                    dismissed_at: chrono::Utc::now().to_rfc3339(),
+                    dismissed_at: dismissed_at.clone(),
                 });
 
             // Remove item from the relevant Vec by matching text
@@ -1280,20 +1315,23 @@ pub async fn dismiss_intelligence_item(
 /// Updates both the DB (entity_assessment.health_json + entity_quality) and the
 /// in-memory IntelligenceJson so downstream surfaces see fresh scores.
 pub fn recompute_entity_health(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     entity_id: &str,
     entity_type: &str,
 ) -> Result<(), String> {
-    recompute_entity_health_with_preset(db, entity_id, entity_type, None)
+    recompute_entity_health_with_preset(ctx, db, entity_id, entity_type, None)
 }
 
 /// Recompute health dimensions with active preset weights when available.
 pub fn recompute_entity_health_with_preset(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     entity_id: &str,
     entity_type: &str,
     preset: Option<&crate::presets::schema::RolePreset>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if entity_type != "account" {
         return Ok(()); // Health scoring is account-only for now
     }
@@ -1361,9 +1399,13 @@ pub fn recompute_entity_health_with_preset(
 pub fn bulk_recompute_health(db: &crate::db::ActionDb) -> Result<usize, String> {
     let accounts = db.get_all_accounts().map_err(|e| e.to_string())?;
     let mut recomputed = 0;
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = ServiceContext::new_live(&clock, &rng, &ext);
 
     for account in &accounts {
-        if let Err(e) = recompute_entity_health(db, &account.id, "account") {
+        if let Err(e) = recompute_entity_health(&ctx, db, &account.id, "account") {
             log::warn!("Health recompute failed for {}: {}", account.id, e);
             continue;
         }
@@ -1458,14 +1500,17 @@ pub fn get_risk_briefing(
 /// DOS-13: Track (accept) a recommended action — creates a real action with
 /// source_type "intelligence" and emits a recommendation_accepted signal.
 pub async fn track_recommendation(
+    ctx: &ServiceContext<'_>,
     entity_id: &str,
     entity_type: &str,
     index: usize,
     state: &AppState,
 ) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let engine = state.signals.engine.clone();
     let entity_id = entity_id.to_string();
     let entity_type = entity_type.to_string();
+    let now = ctx.clock.now().to_rfc3339();
 
     state
         .db_write(move |db| {
@@ -1481,7 +1526,6 @@ pub async fn track_recommendation(
                 .ok_or_else(|| format!("Recommendation index {} out of bounds", index))?;
 
             // Create the action
-            let now = chrono::Utc::now().to_rfc3339();
             let id = uuid::Uuid::new_v4().to_string();
             let action = crate::db::DbAction {
                 id: id.clone(),
@@ -1556,11 +1600,13 @@ pub async fn track_recommendation(
 /// DOS-13: Dismiss a recommended action — removes it from intelligence and
 /// emits a recommendation_rejected signal (low confidence correction).
 pub async fn dismiss_recommendation(
+    ctx: &ServiceContext<'_>,
     entity_id: &str,
     entity_type: &str,
     index: usize,
     state: &AppState,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state.config.read().clone();
     let config = config.ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
@@ -1667,11 +1713,13 @@ pub async fn dismiss_recommendation(
 /// Entity lookup and filesystem write mirror `dismiss_recommendation` so
 /// the DB and on-disk intelligence.json stay in lockstep.
 pub async fn mark_commitment_done(
+    ctx: &ServiceContext<'_>,
     entity_id: &str,
     entity_type: &str,
     index: usize,
     state: &AppState,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state.config.read().clone();
     let config = config.ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
@@ -1679,6 +1727,7 @@ pub async fn mark_commitment_done(
     let engine = state.signals.engine.clone();
     let entity_id = entity_id.to_string();
     let entity_type = entity_type.to_string();
+    let now = ctx.clock.now().to_rfc3339();
 
     state
         .db_write(move |db| {
@@ -1735,7 +1784,6 @@ pub async fn mark_commitment_done(
             // Promote into value_delivered as a completion record. The
             // "date" field takes now(); the original source is preserved so
             // the Context value-delivered chapter can show provenance.
-            let now = chrono::Utc::now().to_rfc3339();
             intel
                 .value_delivered
                 .push(crate::intelligence::io::ValueItem {
@@ -1825,8 +1873,18 @@ mod mutation_smoke_tests {
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount};
     use crate::intelligence::io::IntelligenceJson;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
+    use chrono::TimeZone;
     use rusqlite::params;
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     fn make_account(id: &str) -> DbAccount {
         DbAccount {
@@ -1865,9 +1923,13 @@ mod mutation_smoke_tests {
         let db = test_db();
         let account = make_account("acc-kw");
         db.upsert_account(&account).unwrap();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         let keywords_json = r#"["onboarding", "enterprise", "SaaS"]"#;
-        super::persist_entity_keywords(&db, "account", "acc-kw", keywords_json)
+        super::persist_entity_keywords(&ctx, &db, "account", "acc-kw", keywords_json)
             .expect("persist_entity_keywords");
 
         // Verify keywords stored
@@ -1900,8 +1962,12 @@ mod mutation_smoke_tests {
         intel.entity_type = "account".to_string();
         intel.enriched_at = chrono::Utc::now().to_rfc3339();
         intel.executive_assessment = Some("Strong account with growing adoption.".to_string());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
-        super::upsert_assessment_from_enrichment(&db, &engine, "account", "acc-intel", &intel)
+        super::upsert_assessment_from_enrichment(&ctx, &db, &engine, "account", "acc-intel", &intel)
             .expect("upsert_assessment_from_enrichment");
 
         // Verify entity_assessment row exists
@@ -1934,8 +2000,12 @@ mod mutation_smoke_tests {
         intel.entity_type = "account".to_string();
         intel.enriched_at = chrono::Utc::now().to_rfc3339();
         db.upsert_entity_intelligence(&intel).unwrap();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
-        super::recompute_entity_health(&db, "acc-health", "account")
+        super::recompute_entity_health(&ctx, &db, "acc-health", "account")
             .expect("recompute_entity_health");
 
         // Verify entity_quality updated with health_score
@@ -1953,18 +2023,26 @@ mod mutation_smoke_tests {
     #[test]
     fn test_recompute_health_skips_non_account() {
         let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         // Should silently succeed for non-account types
-        let result = super::recompute_entity_health(&db, "proj-1", "project");
+        let result = super::recompute_entity_health(&ctx, &db, "proj-1", "project");
         assert!(result.is_ok(), "Should be Ok for non-account entity type");
     }
 
     #[test]
     fn test_persist_keywords_skips_unsupported_type() {
         let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         // Should silently succeed for unsupported entity types
-        let result = super::persist_entity_keywords(&db, "person", "p-1", r#"["test"]"#);
+        let result = super::persist_entity_keywords(&ctx, &db, "person", "p-1", r#"["test"]"#);
         assert!(result.is_ok(), "Should be Ok for unsupported entity type");
 
         // No signal should be emitted
@@ -1989,7 +2067,17 @@ mod dos15_leading_signals_db_tests {
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount};
     use crate::intelligence::glean_leading_signals::{parse_leading_signals, HealthOutlookSignals};
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
+    use chrono::TimeZone;
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     fn seed_account(db: &crate::db::ActionDb, id: &str) {
         let account = DbAccount {
@@ -2026,6 +2114,10 @@ mod dos15_leading_signals_db_tests {
         let engine = PropagationEngine::default();
         let entity_id = "dos15-roundtrip-test";
         seed_account(&db, entity_id);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         let glean_output = r#"{
             "champion_risk": {
@@ -2080,7 +2172,7 @@ mod dos15_leading_signals_db_tests {
         }
 
         // Step 2: upsert to DB via the service function (also emits signals).
-        super::upsert_health_outlook_signals(&db, &engine, "account", entity_id, &parsed)
+        super::upsert_health_outlook_signals(&ctx, &db, &engine, "account", entity_id, &parsed)
             .expect("upsert_health_outlook_signals should succeed");
 
         // Step 3: re-read from DB column (mirrors AccountDetailResult assembly).
@@ -2165,17 +2257,21 @@ mod dos15_leading_signals_db_tests {
         let engine = PropagationEngine::default();
         let entity_id = "dos15-idempotent";
         seed_account(&db, entity_id);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         let first = parse_leading_signals(r#"{"champion_risk": null, "quote_wall": []}"#)
             .expect("parse first");
-        super::upsert_health_outlook_signals(&db, &engine, "account", entity_id, &first)
+        super::upsert_health_outlook_signals(&ctx, &db, &engine, "account", entity_id, &first)
             .expect("first upsert");
 
         let second = parse_leading_signals(
             r#"{"champion_risk": {"champion_name": "New Champion", "at_risk": false, "risk_evidence": []}, "quote_wall": []}"#,
         )
         .expect("parse second");
-        super::upsert_health_outlook_signals(&db, &engine, "account", entity_id, &second)
+        super::upsert_health_outlook_signals(&ctx, &db, &engine, "account", entity_id, &second)
             .expect("second upsert");
 
         // Read back — should reflect second write.
@@ -2202,6 +2298,16 @@ mod inferred_relationship_tests {
     use crate::db::person_relationships::UpsertRelationship;
     use crate::db::test_utils::test_db;
     use crate::intelligence::prompts::InferredRelationship;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::TimeZone;
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     fn seed_people(db: &crate::db::ActionDb) {
         db.conn_ref()
@@ -2223,6 +2329,10 @@ mod inferred_relationship_tests {
         let db = test_db();
         seed_people(&db);
         let engine = crate::signals::propagation::PropagationEngine::default();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
         let inferred = vec![InferredRelationship {
             from_person_id: "p1".to_string(),
             to_person_id: "p2".to_string(),
@@ -2231,7 +2341,7 @@ mod inferred_relationship_tests {
         }];
 
         let inserted = upsert_inferred_relationships_from_enrichment(
-            &db, &engine, "account", "acc-1", &inferred,
+            &ctx, &db, &engine, "account", "acc-1", &inferred,
         )
         .expect("first upsert");
         assert_eq!(inserted, 1);
@@ -2264,7 +2374,7 @@ mod inferred_relationship_tests {
         assert_eq!(signal_count, 1);
 
         let inserted_second = upsert_inferred_relationships_from_enrichment(
-            &db, &engine, "account", "acc-1", &inferred,
+            &ctx, &db, &engine, "account", "acc-1", &inferred,
         )
         .expect("second upsert");
         assert_eq!(
@@ -2284,6 +2394,10 @@ mod inferred_relationship_tests {
         let db = test_db();
         seed_people(&db);
         let engine = crate::signals::propagation::PropagationEngine::default();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
         db.upsert_person_relationship(&UpsertRelationship {
             id: "rel-user-1",
             from_person_id: "p1",
@@ -2306,7 +2420,7 @@ mod inferred_relationship_tests {
         }];
 
         let inserted = upsert_inferred_relationships_from_enrichment(
-            &db, &engine, "account", "acc-1", &inferred,
+            &ctx, &db, &engine, "account", "acc-1", &inferred,
         )
         .expect("upsert");
         assert_eq!(inserted, 0);
@@ -2396,7 +2510,8 @@ mod live_acceptance_tests {
 
         // End-to-end path: gather context -> AI enrichment -> deterministic consistency pass ->
         // write intelligence.json + DB cache.
-        let intel = enrich_entity(entity_id.clone(), entity_type.clone(), &state, None)
+        let ctx = state.live_service_context();
+        let intel = enrich_entity(&ctx, entity_id.clone(), entity_type.clone(), &state, None)
             .await
             .expect("manual enrich_entity failed");
 
@@ -2450,7 +2565,6 @@ mod live_acceptance_tests {
             .expect("meeting lookup query failed")
             .expect("no linked meeting found for entity");
 
-        let ctx = state.live_service_context();
         let refresh = crate::services::meetings::refresh_meeting_briefing_full(
             &ctx,
             &state,
@@ -3412,7 +3526,8 @@ mod live_acceptance_tests {
             .await
             .expect("read i504 pre-state failed");
 
-        let _ = enrich_entity(account_id.clone(), "account".to_string(), &state, None)
+        let ctx = state.live_service_context();
+        let _ = enrich_entity(&ctx, account_id.clone(), "account".to_string(), &state, None)
             .await
             .expect("manual enrich_entity for i504 validation failed");
 
@@ -3543,7 +3658,7 @@ mod live_acceptance_tests {
             );
         }
 
-        let _ = enrich_entity(account_id.clone(), "account".to_string(), &state, None)
+        let _ = enrich_entity(&ctx, account_id.clone(), "account".to_string(), &state, None)
             .await
             .expect("second enrich_entity for i504 validation failed");
 
