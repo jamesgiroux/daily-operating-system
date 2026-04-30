@@ -272,9 +272,12 @@ pub async fn create_person_from_stakeholder(
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let app_state = state.inner().clone();
+    let state_for_ctx = app_state.clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::people::create_person_from_stakeholder(
+                &ctx,
                 db,
                 &app_state,
                 &entity_id,
