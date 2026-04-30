@@ -471,7 +471,9 @@ fn db_email_to_email(dbe: crate::db::DbEmail) -> crate::types::Email {
 pub async fn get_emails_enriched(
     state: State<'_, Arc<AppState>>,
 ) -> Result<EmailBriefingData, String> {
-    crate::services::emails::get_emails_enriched(&state).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::emails::get_emails_enriched(&ctx, &app_state).await
 }
 
 /// Update the entity assignment for an email (I395 — user correction).
@@ -489,9 +491,12 @@ pub async fn update_email_entity(
     let eid = email_id.clone();
     let et_id = entity_id.clone();
     let et_type = entity_type.clone();
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             crate::services::emails::update_email_entity(
+                &ctx,
                 db,
                 &eid,
                 et_id.as_deref(),
@@ -525,8 +530,12 @@ pub async fn dismiss_email_signal(
     state: State<'_, Arc<AppState>>,
     signal_id: i64,
 ) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(move |db| crate::services::emails::dismiss_email_signal(db, signal_id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::emails::dismiss_email_signal(&ctx, db, signal_id)
+        })
         .await
 }
 
@@ -538,8 +547,12 @@ pub async fn mark_reply_sent(
     email_id: String,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
-        .db_write(move |db| crate::services::emails::mark_reply_sent(db, &email_id))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::emails::mark_reply_sent(&ctx, db, &email_id)
+        })
         .await?;
     let _ = app_handle.emit("emails-updated", ());
     Ok(())
@@ -552,10 +565,12 @@ pub async fn dismiss_gone_quiet(
     state: State<'_, Arc<AppState>>,
     entity_id: String,
 ) -> Result<(), String> {
+    let state_for_ctx = state.inner().clone();
     state
         .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
             let engine = crate::signals::propagation::PropagationEngine::new();
-            crate::services::emails::dismiss_gone_quiet(db, &engine, &entity_id)
+            crate::services::emails::dismiss_gone_quiet(&ctx, db, &engine, &entity_id)
         })
         .await
 }
@@ -588,7 +603,9 @@ pub async fn refresh_emails(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
-    crate::services::emails::refresh_emails(state.inner(), app_handle).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::emails::refresh_emails(&ctx, &app_state, app_handle).await
 }
 
 /// Reconcile local inbox presence with Gmail inbox in lightweight mode.
@@ -598,13 +615,17 @@ pub async fn sync_email_inbox_presence(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<bool, String> {
-    crate::services::emails::sync_email_inbox_presence(state.inner(), app_handle).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::emails::sync_email_inbox_presence(&ctx, &app_state, app_handle).await
 }
 
 /// Archive low-priority emails in Gmail and remove them from local data (I144).
 #[tauri::command]
 pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
-    crate::services::emails::archive_low_priority_emails(&state).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::emails::archive_low_priority_emails(&ctx, &app_state).await
 }
 
 /// Reset failed email enrichments and trigger re-enrichment (DOS-195, DOS-226).
@@ -622,7 +643,9 @@ pub async fn retry_failed_emails(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<usize, String> {
-    crate::services::emails::retry_failed_emails(state.inner(), app_handle).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::emails::retry_failed_emails(&ctx, &app_state, app_handle).await
 }
 
 /// DOS-29: List the permanently-failed emails (above the auto-retry cap)

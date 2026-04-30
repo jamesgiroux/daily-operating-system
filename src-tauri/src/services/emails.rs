@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use tauri::Emitter;
 
+use crate::services::context::ServiceContext;
 use crate::state::AppState;
 use crate::types::{
     EmailBriefingData, EmailBriefingStats, EmailSignal, EnrichedEmail, EntityEmailThread,
@@ -15,7 +16,11 @@ use crate::types::{
 ///
 /// Tries to load emails from the DB first (I368). If the DB has active emails,
 /// uses those. Otherwise falls back to JSON loading for first-run compatibility.
-pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, String> {
+pub async fn get_emails_enriched(
+    ctx: &ServiceContext<'_>,
+    state: &AppState,
+) -> Result<EmailBriefingData, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state
         .config
         .read()
@@ -145,7 +150,8 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         .iter()
         .filter_map(|em| em.entity_name.as_ref().map(|n| (em.id.clone(), n.clone())))
         .collect();
-    let now_utc = chrono::Utc::now();
+    let now_utc = ctx.clock.now();
+    let replies_needed_now = ctx.clock.now();
     let reply_debt: Vec<ReplyDebtItem> = thread_emails
         .iter()
         .filter(|dbe| {
@@ -196,8 +202,8 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
 
     // I513: Build replies_needed from DB instead of directive file.
     let replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded> = state
-        .db_read(|db| {
-            let now = chrono::Utc::now();
+        .db_read(move |db| {
+            let now = replies_needed_now;
             Ok(db
                 .get_threads_awaiting_reply()
                 .unwrap_or_default()
@@ -1007,11 +1013,13 @@ pub fn get_entity_emails(
 
 /// Update the entity assignment for an email with signal emission.
 pub fn update_email_entity(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     email_id: &str,
     entity_id: Option<&str>,
     entity_type: Option<&str>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.update_email_entity(email_id, entity_id, entity_type)
         .map_err(|e| e.to_string())?;
 
@@ -1031,7 +1039,12 @@ pub fn update_email_entity(
 }
 
 /// Dismiss a single email signal by ID with relevance learning signal.
-pub fn dismiss_email_signal(db: &crate::db::ActionDb, signal_id: i64) -> Result<(), String> {
+pub fn dismiss_email_signal(
+    ctx: &ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    signal_id: i64,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let context = db
         .dismiss_email_signal(signal_id)
         .map_err(|e| e.to_string())?;
@@ -1057,7 +1070,12 @@ pub fn dismiss_email_signal(db: &crate::db::ActionDb, signal_id: i64) -> Result<
 /// Mark an email as replied to (I577 reply debt).
 /// Sets `user_is_last_sender` and emits a `reply_debt_cleared` signal via the bus
 /// with propagation so downstream effects (health scoring, prep invalidation) fire.
-pub fn mark_reply_sent(db: &crate::db::ActionDb, email_id: &str) -> Result<(), String> {
+pub fn mark_reply_sent(
+    ctx: &ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    email_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let entity_info = db.mark_reply_sent(email_id).map_err(|e| e.to_string())?;
 
     // Emit engagement signal if the email is linked to an entity
@@ -1082,7 +1100,12 @@ pub fn mark_reply_sent(db: &crate::db::ActionDb, email_id: &str) -> Result<(), S
 
 /// Archive an email: set resolved_at locally AND archive in Gmail.
 /// Signal emission for Intelligence Loop compliance.
-pub async fn archive_email(state: &AppState, email_id: &str) -> Result<String, String> {
+pub async fn archive_email(
+    ctx: &ServiceContext<'_>,
+    state: &AppState,
+    email_id: &str,
+) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let eid = email_id.to_string();
     let thread_email_ids = state
         .db_read({
@@ -1121,7 +1144,12 @@ pub async fn archive_email(state: &AppState, email_id: &str) -> Result<String, S
 }
 
 /// Unarchive an email: clear resolved_at locally AND move back to Gmail inbox.
-pub async fn unarchive_email(state: &AppState, email_id: &str) -> Result<(), String> {
+pub async fn unarchive_email(
+    ctx: &ServiceContext<'_>,
+    state: &AppState,
+    email_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let eid = email_id.to_string();
     let thread_email_ids = state
         .db_read({
@@ -1135,7 +1163,7 @@ pub async fn unarchive_email(state: &AppState, email_id: &str) -> Result<(), Str
 
     // Move the same thread back to INBOX in Gmail
     if let Ok(token) = crate::google_api::get_valid_access_token().await {
-        if let Err(e) = unarchive_emails_in_gmail(&token, &thread_email_ids).await {
+        if let Err(e) = unarchive_emails_in_gmail(ctx, &token, &thread_email_ids).await {
             log::warn!("Gmail unarchive failed for {email_id}: {e} — unarchived locally only");
         }
     }
@@ -1144,9 +1172,11 @@ pub async fn unarchive_email(state: &AppState, email_id: &str) -> Result<(), Str
 }
 
 async fn unarchive_emails_in_gmail(
+    ctx: &ServiceContext<'_>,
     access_token: &str,
     message_ids: &[String],
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if message_ids.is_empty() {
         return Ok(());
     }
@@ -1178,16 +1208,23 @@ async fn unarchive_emails_in_gmail(
 /// DOS-242 rescue: clear `is_noise` on an email so it surfaces again in inbox
 /// and Records. Used by the "this isn't noise" affordance (DOS-41 wires UI).
 /// All mutations go through services per CLAUDE.md.
-pub fn unsuppress_email(db: &crate::db::ActionDb, email_id: &str) -> Result<(), String> {
+pub fn unsuppress_email(
+    ctx: &ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    email_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.unsuppress_email(email_id).map_err(|e| e.to_string())
 }
 
 /// Toggle pin on an email. Returns the new pinned state.
 pub fn pin_email(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     email_id: &str,
 ) -> Result<bool, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let now_pinned = db.toggle_pin_email(email_id).map_err(|e| e.to_string())?;
     if now_pinned {
         let (entity_type, entity_id) = email_entity_context(db, email_id);
@@ -1222,16 +1259,18 @@ pub struct PromoteCommitmentParams<'a> {
 
 /// Promote an email commitment to a tracked action.
 pub fn promote_commitment_to_action(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     params: &PromoteCommitmentParams<'_>,
 ) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let email_id = params.email_id;
     let commitment_text = params.commitment_text;
     let action_title = params.action_title;
     let entity_id = params.entity_id;
     let entity_type = params.entity_type;
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = ctx.clock.now().to_rfc3339();
     let action_id = uuid::Uuid::new_v4().to_string();
     let trimmed_title = action_title
         .map(str::trim)
@@ -1336,10 +1375,12 @@ fn email_entity_context(db: &crate::db::ActionDb, email_id: &str) -> (String, St
 
 /// Dismiss a gone-quiet cadence alert for an account (I581).
 pub fn dismiss_gone_quiet(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     entity_id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let _ = crate::services::signals::emit_and_propagate(
         db,
         engine,
@@ -1359,7 +1400,10 @@ pub fn dismiss_gone_quiet(
 }
 
 /// Dismiss an email item (commitment, question, etc.) with signal emission.
+// DOS-209: ServiceContext adds one arg; request-object refactor deferred.
+#[allow(clippy::too_many_arguments)]
 pub fn dismiss_email_item(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     item_type: &str,
     email_id: &str,
@@ -1368,6 +1412,7 @@ pub fn dismiss_email_item(
     email_type: Option<&str>,
     entity_id: Option<&str>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.dismiss_email_item(
         item_type,
         email_id,
@@ -1402,9 +1447,11 @@ struct InboxPresenceReconcileResult {
 }
 
 fn reconcile_inbox_presence_from_ids(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     inbox_ids: &HashSet<String>,
 ) -> Result<InboxPresenceReconcileResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let active_db_emails = db.get_all_active_emails().map_err(|e| e.to_string())?;
     let db_ids: HashSet<String> = active_db_emails
         .iter()
@@ -1470,9 +1517,11 @@ fn reconcile_inbox_presence_from_ids(
 /// Reconciles local active emails against current Gmail inbox IDs without
 /// triggering enrichment PTY work. This keeps archived emails from lingering.
 pub async fn sync_email_inbox_presence(
+    ctx: &ServiceContext<'_>,
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<bool, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let access_token = crate::google_api::get_valid_access_token()
         .await
         .map_err(|e| format!("Gmail auth failed: {}", e))?;
@@ -1480,8 +1529,12 @@ pub async fn sync_email_inbox_presence(
         .await
         .map_err(|e| format!("Gmail inbox sync failed: {}", e))?;
 
+    let state_for_ctx = state.clone();
     let result = state
-        .db_write(move |db| reconcile_inbox_presence_from_ids(db, &inbox_ids))
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            reconcile_inbox_presence_from_ids(&ctx, db, &inbox_ids)
+        })
         .await?;
 
     if result.changed {
@@ -1498,7 +1551,11 @@ pub async fn sync_email_inbox_presence(
 }
 
 /// Archive low-priority emails in Gmail and remove from local data (I144).
-pub async fn archive_low_priority_emails(state: &AppState) -> Result<usize, String> {
+pub async fn archive_low_priority_emails(
+    ctx: &ServiceContext<'_>,
+    state: &AppState,
+) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state
         .config
         .read()
@@ -1609,9 +1666,11 @@ const STALE_FAILED_AFTER_SECS: i64 = 24 * 60 * 60;
 /// meant enrichment's `attempts < 3` filter skipped the retried rows
 /// (Codex finding 1).
 pub async fn refresh_emails(
+    ctx: &ServiceContext<'_>,
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state
         .config
         .read()
@@ -1767,9 +1826,11 @@ pub async fn refresh_emails(
 /// the retry was kicked off (regardless of whether they ultimately re-enriched
 /// successfully — that lands in the sync-stats query on the next UI poll).
 pub async fn retry_failed_emails(
+    ctx: &ServiceContext<'_>,
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // DOS-226 (Codex finding 2): include `pending_retry` in the retriable
     // count so rows orphaned by a prior crashed refresh don't silently
     // drop to "nothing to retry". The refresh's phase-0 recovery will
@@ -1786,7 +1847,7 @@ pub async fn retry_failed_emails(
     log::info!(
         "DOS-226: retry_failed_emails starting; {retriable_before} failed/pending_retry rows will be retried"
     );
-    refresh_emails(state, app_handle).await?;
+    refresh_emails(ctx, state, app_handle).await?;
     Ok(retriable_before)
 }
 

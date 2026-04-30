@@ -6276,7 +6276,12 @@ fn test_dos224_title_only_never_primary_on_calendar_sync() {
     setup_meeting(&db, "m_sync_1", "Acme Ops Planning");
 
     let entities = vec![rme("acme", 0.50, "title")];
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
     let linked = crate::services::meetings::persist_classification_entities_scored(
+        &ctx,
         &db,
         "m_sync_1",
         &entities,
@@ -6311,7 +6316,12 @@ fn test_dos224_multi_bu_single_primary_on_calendar_sync() {
         rme("parent-bu", 0.85, "domain"),
         rme("sub-bu", 0.80, "domain"),
     ];
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
     let linked = crate::services::meetings::persist_classification_entities_scored(
+        &ctx,
         &db,
         "m_sync_2",
         &entities,
@@ -6346,7 +6356,12 @@ fn test_dos240_dismissal_blocks_calendar_sync_relink() {
         .expect("record dismissal");
 
     let entities = vec![rme("acme", 0.85, "domain")];
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
     let linked = crate::services::meetings::persist_classification_entities_scored(
+        &ctx,
         &db,
         "m_dismiss_1",
         &entities,
@@ -6370,7 +6385,12 @@ fn test_dos240_restore_allows_relink() {
     db.record_meeting_entity_dismissal("m_dismiss_2", "acme", "account", None)
         .expect("dismiss");
     let entities = vec![rme("acme", 0.85, "domain")];
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
     let linked = crate::services::meetings::persist_classification_entities_scored(
+        &ctx,
         &db,
         "m_dismiss_2",
         &entities,
@@ -6386,6 +6406,7 @@ fn test_dos240_restore_allows_relink() {
 
     // Next sync re-matches and this time the link lands.
     let linked = crate::services::meetings::persist_classification_entities_scored(
+        &ctx,
         &db,
         "m_dismiss_2",
         &entities,

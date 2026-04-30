@@ -11,6 +11,59 @@ use crate::error::ExecutionError;
 use crate::state::AppState;
 use crate::types::{IntelligenceQuality, QualityLevel, Staleness};
 
+pub trait MeetingIntelligenceState {
+    fn app_state(&self) -> &AppState;
+    fn app_state_arc(&self) -> Option<&std::sync::Arc<AppState>>;
+}
+
+impl MeetingIntelligenceState for AppState {
+    fn app_state(&self) -> &AppState {
+        self
+    }
+
+    fn app_state_arc(&self) -> Option<&std::sync::Arc<AppState>> {
+        None
+    }
+}
+
+impl MeetingIntelligenceState for std::sync::Arc<AppState> {
+    fn app_state(&self) -> &AppState {
+        self.as_ref()
+    }
+
+    fn app_state_arc(&self) -> Option<&std::sync::Arc<AppState>> {
+        Some(self)
+    }
+}
+
+impl<'a> MeetingIntelligenceState for tauri::State<'a, std::sync::Arc<AppState>> {
+    fn app_state(&self) -> &AppState {
+        self.inner().as_ref()
+    }
+
+    fn app_state_arc(&self) -> Option<&std::sync::Arc<AppState>> {
+        Some(self.inner())
+    }
+}
+
+async fn refresh_meeting_briefing_from_state<S: MeetingIntelligenceState + ?Sized>(
+    state: &S,
+    meeting_id: &str,
+) -> Result<IntelligenceQuality, ExecutionError> {
+    let app_state = state.app_state();
+    let state_arc = state.app_state_arc().ok_or_else(|| {
+        ExecutionError::ConfigurationError(
+            "Full meeting briefing refresh requires Arc<AppState>".to_string(),
+        )
+    })?;
+    let ctx = app_state.live_service_context();
+    let refreshed =
+        crate::services::meetings::refresh_meeting_briefing_full(&ctx, state_arc, meeting_id, None)
+            .await
+            .map_err(ExecutionError::ConfigurationError)?;
+    Ok(refreshed.quality)
+}
+
 /// Compute staleness from an optional `last_enriched_at` timestamp.
 fn compute_staleness(last_enriched_at: Option<&str>) -> Staleness {
     match last_enriched_at {
@@ -183,13 +236,14 @@ pub fn assess_intelligence_quality(db: &ActionDb, meeting_id: &str) -> Intellige
 /// `force_full=true` delegates to the single-service full briefing refresh
 /// (`services::meetings::refresh_meeting_briefing_full`).
 pub async fn generate_meeting_intelligence(
-    state: &AppState,
+    state: &(impl MeetingIntelligenceState + ?Sized),
     meeting_id: &str,
     force_full: bool,
 ) -> Result<IntelligenceQuality, ExecutionError> {
+    let app_state = state.app_state();
     // 1. Load meeting from DB
     let meeting_id_owned = meeting_id.to_string();
-    let (meeting_state, has_new) = state
+    let (meeting_state, has_new) = app_state
         .db_read(move |db| {
             let meeting = db
                 .get_meeting_by_id(&meeting_id_owned)
@@ -203,11 +257,7 @@ pub async fn generate_meeting_intelligence(
         .map_err(ExecutionError::ConfigurationError)?;
 
     if force_full {
-        let refreshed =
-            crate::services::meetings::refresh_meeting_briefing_full(state, meeting_id, None)
-                .await
-                .map_err(ExecutionError::ConfigurationError)?;
-        return Ok(refreshed.quality);
+        return refresh_meeting_briefing_from_state(state, meeting_id).await;
     }
 
     // 2. Decide whether work is needed
@@ -216,7 +266,7 @@ pub async fn generate_meeting_intelligence(
             // No new signals: only skip if intelligence is still current.
             // Stale/aging meetings need a full rebuild to refresh temporal framing.
             let mid = meeting_id.to_string();
-            let quality = state
+            let quality = app_state
                 .db_read(move |db| Ok(assess_intelligence_quality(db, &mid)))
                 .await
                 .map_err(ExecutionError::ConfigurationError)?;
@@ -227,15 +277,11 @@ pub async fn generate_meeting_intelligence(
                 "generate_meeting_intelligence: {} stale without new signals; forcing full refresh",
                 meeting_id
             );
-            let refreshed =
-                crate::services::meetings::refresh_meeting_briefing_full(state, meeting_id, None)
-                    .await
-                    .map_err(ExecutionError::ConfigurationError)?;
-            return Ok(refreshed.quality);
+            return refresh_meeting_briefing_from_state(state, meeting_id).await;
         }
         // Has new signals: set state to "refreshing"
         let mid = meeting_id.to_string();
-        let _ = state
+        let _ = app_state
             .db_write(move |db| {
                 let _ = db.update_intelligence_state(&mid, "refreshing", None, None);
                 Ok(())
@@ -244,7 +290,7 @@ pub async fn generate_meeting_intelligence(
     } else if meeting_state.as_deref() != Some("enriched") {
         // No intelligence exists (detected): set state to "enriching"
         let mid = meeting_id.to_string();
-        let _ = state
+        let _ = app_state
             .db_write(move |db| {
                 let _ = db.update_intelligence_state(&mid, "enriching", None, None);
                 Ok(())
@@ -254,19 +300,19 @@ pub async fn generate_meeting_intelligence(
 
     // 3. Run mechanical quality assessment
     let mid = meeting_id.to_string();
-    let quality = state
+    let quality = app_state
         .db_read(move |db| Ok(assess_intelligence_quality(db, &mid)))
         .await
         .map_err(ExecutionError::ConfigurationError)?;
 
     // 4. Enqueue meeting prep regeneration.
-    state
+    app_state
         .meeting_prep_queue
         .enqueue(crate::meeting_prep_queue::PrepRequest::new(
             meeting_id.to_string(),
             crate::meeting_prep_queue::PrepPriority::Manual,
         ));
-    state.integrations.prep_queue_wake.notify_one();
+    app_state.integrations.prep_queue_wake.notify_one();
 
     log::info!(
         "generate_meeting_intelligence: processed {} (force={}, quality={:?})",
@@ -279,7 +325,7 @@ pub async fn generate_meeting_intelligence(
     // meeting prep is mechanical assembly.
     let mid = meeting_id.to_string();
     let quality_level = quality.level.to_string();
-    state
+    app_state
         .db_write(move |db| {
             db.update_intelligence_state(
                 &mid,

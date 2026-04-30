@@ -8,13 +8,16 @@ use tauri::Emitter;
 
 use crate::commands::{MeetingHistoryDetail, MeetingSearchResult, PrepContext};
 use crate::db::ActionDb;
+use crate::services::context::ServiceContext;
 use crate::state::AppState;
 use crate::types::{CapturedOutcome, IntelligenceQuality, MeetingIntelligence};
 
 pub fn upsert_meeting_for_reconcile(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     meeting: &crate::db::DbMeeting,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.upsert_meeting(meeting).map_err(|e| e.to_string())?;
         crate::services::signals::emit(
@@ -32,19 +35,23 @@ pub fn upsert_meeting_for_reconcile(
 }
 
 pub fn set_meeting_prep_context(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     meeting_id: &str,
     updated_json: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.update_meeting_prep_context(meeting_id, updated_json)
         .map_err(|e| e.to_string())
 }
 
 pub fn update_capture_content(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     capture_id: &str,
     content: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.update_capture(capture_id, content)
             .map_err(|e| e.to_string())?;
@@ -62,7 +69,12 @@ pub fn update_capture_content(
     })
 }
 
-pub fn clear_meeting_prep_frozen(db: &ActionDb, meeting_id: &str) -> Result<(), String> {
+pub fn clear_meeting_prep_frozen(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    meeting_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
         tx.conn_ref()
             .execute(
@@ -423,17 +435,21 @@ fn cascade_targets<'a>(
 /// immediate rebuild fails. Emits `prep-ready` event on successful rebuild
 /// so the frontend auto-refreshes (I477).
 async fn mutate_meeting_entities_and_refresh_briefing(
+    ctx: &ServiceContext<'_>,
     state: &AppState,
     meeting_id: &str,
     mutation: MeetingEntityMutation,
     app_handle: Option<&tauri::AppHandle>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let meeting_id_s = meeting_id.to_string();
+    let mutation_now = ctx.clock.now().to_rfc3339();
 
     let mutation_result = state
         .db_write({
             let meeting_id = meeting_id_s.clone();
             let mutation = mutation.clone();
+            let mutation_now = mutation_now.clone();
             move |db| {
                 let mut result = MeetingEntityMutationOutcome {
                     old_entity_ids: db
@@ -478,7 +494,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         // the view) sees the selection. Preserves user
                         // dismissals so the next engine pass won't resurrect
                         // them.
-                        let now = chrono::Utc::now().to_rfc3339();
+                        let now = mutation_now.clone();
                         let version = db.get_entity_graph_version().unwrap_or(0);
                         let _ = db.conn_ref().execute(
                             "DELETE FROM linked_entities_raw \
@@ -558,7 +574,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         // primary (P1) so the DOS-258 read path surfaces the
                         // user's pick. Replaces any existing auto-resolved
                         // primary; preserves user dismissals.
-                        let now = chrono::Utc::now().to_rfc3339();
+                        let now = mutation_now.clone();
                         let version = db.get_entity_graph_version().unwrap_or(0);
                         let _ = db.conn_ref().execute(
                             "DELETE FROM linked_entities_raw \
@@ -602,7 +618,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         // engine won't re-link this entity on the next pass,
                         // and mark the raw row user_dismissed so the view
                         // filters it out immediately.
-                        let now = chrono::Utc::now().to_rfc3339();
+                        let now = mutation_now.clone();
                         let _ = db.conn_ref().execute(
                             "INSERT OR IGNORE INTO linking_dismissals \
                              (owner_type, owner_id, entity_id, entity_type, created_at) \
@@ -768,6 +784,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
 /// Groups common meeting metadata fields to keep function signatures
 /// within clippy's 7-argument limit.
 pub struct MeetingMutationCtx<'a> {
+    pub service_ctx: &'a ServiceContext<'a>,
     pub state: &'a AppState,
     pub meeting_id: &'a str,
     pub app_handle: Option<&'a tauri::AppHandle>,
@@ -784,6 +801,7 @@ pub async fn update_meeting_entity(
     meeting_type_str: &str,
 ) -> Result<(), String> {
     mutate_meeting_entities_and_refresh_briefing(
+        ctx.service_ctx,
         ctx.state,
         ctx.meeting_id,
         MeetingEntityMutation::Replace {
@@ -809,6 +827,7 @@ pub async fn add_meeting_entity(
     meeting_type_str: &str,
 ) -> Result<(), String> {
     mutate_meeting_entities_and_refresh_briefing(
+        ctx.service_ctx,
         ctx.state,
         ctx.meeting_id,
         MeetingEntityMutation::Add {
@@ -830,6 +849,7 @@ pub async fn remove_meeting_entity(
     entity_type: &str,
 ) -> Result<(), String> {
     mutate_meeting_entities_and_refresh_briefing(
+        ctx.service_ctx,
         ctx.state,
         ctx.meeting_id,
         MeetingEntityMutation::Remove {
@@ -997,9 +1017,11 @@ pub async fn search_meetings(
 
 /// Capture meeting outcomes (actions, wins, risks) from post-meeting capture UI.
 pub async fn capture_meeting_outcome(
+    ctx: &ServiceContext<'_>,
     outcome: &CapturedOutcome,
     state: &AppState,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state
         .config
         .read()
@@ -1016,6 +1038,7 @@ pub async fn capture_meeting_outcome(
 
     // Persist actions and captures to SQLite
     let outcome_clone = outcome.clone();
+    let action_now = ctx.clock.now().to_rfc3339();
     let _ = state
         .db_write(move |db| {
             // Resolve stable entity IDs so post-meeting actions/captures attach even when
@@ -1064,7 +1087,7 @@ pub async fn capture_meeting_outcome(
             }
 
             for action in &outcome_clone.actions {
-                let now = chrono::Utc::now().to_rfc3339();
+                let now = action_now.clone();
                 let db_action = crate::db::DbAction {
                     id: uuid::Uuid::new_v4().to_string(),
                     title: action.title.clone(),
@@ -1472,9 +1495,11 @@ pub fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path
 /// clear_meeting_new_signals). Disk I/O for prep files happens inside the
 /// read closure to avoid a second round-trip, but doesn't block the writer.
 pub async fn get_meeting_intelligence(
+    ctx: &ServiceContext<'_>,
     state: &AppState,
     meeting_id: &str,
 ) -> Result<MeetingIntelligence, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state
         .config
         .read()
@@ -1554,6 +1579,7 @@ pub async fn get_meeting_intelligence(
     }
 
     // Phase 1: Read-only — all queries, prep loading, quality assessment
+    let current_time = ctx.clock.now();
     let intel = state
         .db_read(move |db| {
             let workspace = Path::new(&config.workspace_path);
@@ -1596,7 +1622,7 @@ pub async fn get_meeting_intelligence(
                 }
             }
 
-            let now = chrono::Utc::now();
+            let now = current_time;
             let start_dt = parse_meeting_datetime(&meeting.start_time);
             let end_dt = meeting
                 .end_time
@@ -1733,14 +1759,17 @@ pub async fn get_meeting_intelligence(
 
 /// Link meeting entity: DB link, clear prep, enqueue re-assembly.
 pub async fn link_meeting_entity_with_prep_queue(
+    ctx: &ServiceContext<'_>,
     state: &AppState,
     meeting_id: &str,
     entity_id: &str,
     entity_type: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let meeting_id_s = meeting_id.to_string();
     let entity_id_s = entity_id.to_string();
     let entity_type_s = entity_type.to_string();
+    let linked_at = ctx.clock.now().to_rfc3339();
     state
         .db_write(move |db| {
             // Legacy write (meeting_entities table) — kept during cutover window.
@@ -1751,7 +1780,7 @@ pub async fn link_meeting_entity_with_prep_queue(
                 rusqlite::params![meeting_id_s],
             );
             // DOS-258 dual-write: record user override in linked_entities_raw (P1 source).
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = linked_at;
             let version = db.get_entity_graph_version().unwrap_or(0);
             let _ = db.conn_ref().execute(
                 "DELETE FROM linked_entities_raw \
@@ -1790,16 +1819,19 @@ pub async fn link_meeting_entity_with_prep_queue(
 /// tuple on subsequent sweeps. Prep is invalidated and re-enqueued so the
 /// meeting briefing reflects the removal immediately.
 pub async fn dismiss_meeting_entity(
+    ctx: &ServiceContext<'_>,
     state: &AppState,
     meeting_id: &str,
     entity_id: &str,
     entity_type: &str,
     dismissed_by: Option<&str>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let meeting_id_s = meeting_id.to_string();
     let entity_id_s = entity_id.to_string();
     let entity_type_s = entity_type.to_string();
     let dismissed_by_s = dismissed_by.map(|s| s.to_string());
+    let dismissed_at = ctx.clock.now().to_rfc3339();
     state
         .db_write(move |db| {
             // Legacy write — kept during cutover window.
@@ -1817,7 +1849,7 @@ pub async fn dismiss_meeting_entity(
                 rusqlite::params![meeting_id_s],
             );
             // DOS-258 dual-write: tombstone in linking_dismissals + mark raw row.
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = dismissed_at;
             let _ = db.conn_ref().execute(
                 "INSERT OR IGNORE INTO linking_dismissals \
                  (owner_type, owner_id, entity_id, entity_type, dismissed_by, created_at) \
@@ -1853,11 +1885,13 @@ pub async fn dismiss_meeting_entity(
 /// dismissal record. The entity will not appear immediately; it will reappear
 /// on the next calendar-sync or resolver pass that produces the same match.
 pub async fn restore_meeting_entity(
+    ctx: &ServiceContext<'_>,
     state: &AppState,
     meeting_id: &str,
     entity_id: &str,
     entity_type: &str,
 ) -> Result<bool, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let meeting_id_s = meeting_id.to_string();
     let entity_id_s = entity_id.to_string();
     let entity_type_s = entity_type.to_string();
@@ -1896,12 +1930,15 @@ pub async fn restore_meeting_entity(
 
 /// Unlink meeting entity: DB unlink, clear prep, enqueue re-assembly.
 pub async fn unlink_meeting_entity_with_prep_queue(
+    ctx: &ServiceContext<'_>,
     state: &AppState,
     meeting_id: &str,
     entity_id: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let meeting_id_s = meeting_id.to_string();
     let entity_id_s = entity_id.to_string();
+    let unlinked_at = ctx.clock.now().to_rfc3339();
     state
         .db_write(move |db| {
             // Legacy write — kept during cutover window.
@@ -1922,7 +1959,7 @@ pub async fn unlink_meeting_entity_with_prep_queue(
                     |row| row.get(0),
                 )
                 .unwrap_or_else(|_| "account".to_string());
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = unlinked_at;
             let _ = db.conn_ref().execute(
                 "INSERT OR IGNORE INTO linking_dismissals \
                  (owner_type, owner_id, entity_id, entity_type, created_at) \
@@ -1967,10 +2004,12 @@ pub async fn unlink_meeting_entity_with_prep_queue(
 /// DOS-240: Filters out any (entity_id, entity_type) the user previously
 /// dismissed so dismissals survive calendar-sync sweeps.
 pub fn persist_classification_entities(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     meeting_id: &str,
     entities: &[(String, String)], // (entity_id, entity_type)
 ) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let scored: Vec<crate::google_api::classify::ResolvedMeetingEntity> = entities
         .iter()
         .map(
@@ -1983,7 +2022,7 @@ pub fn persist_classification_entities(
             },
         )
         .collect();
-    persist_classification_entities_scored(db, meeting_id, &scored)
+    persist_classification_entities_scored(ctx, db, meeting_id, &scored)
 }
 
 /// DOS-224: Scored variant of `persist_classification_entities`. Writes each
@@ -2008,10 +2047,12 @@ pub fn persist_classification_entities(
 /// edge, mirroring the guard in
 /// `persist_and_invalidate_entity_links_sync_scored` for the resolver edge.
 pub fn persist_classification_entities_scored(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     meeting_id: &str,
     entities: &[crate::google_api::classify::ResolvedMeetingEntity],
 ) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if entities.is_empty() {
         return Ok(0);
     }
@@ -2107,10 +2148,12 @@ pub fn persist_classification_entities_scored(
 /// minutes to hours after meeting creation. Prep may already exist and be stale.
 /// If prep exists: clears prep_frozen_json and enqueues re-generation.
 pub async fn persist_and_invalidate_entity_links(
+    ctx: &ServiceContext<'_>,
     state: &AppState,
     meeting_id: &str,
     entities: &[(String, String)], // (entity_id, entity_type)
 ) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if entities.is_empty() {
         return Ok(0);
     }
@@ -2199,12 +2242,14 @@ pub struct EntityLinkCandidate {
 /// inputs as high-confidence primaries (confidence 0.95, is_primary true).
 /// New callers with scored outcomes should use the scored variant directly.
 pub fn persist_and_invalidate_entity_links_sync(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     meeting_id: &str,
     entities: &[(String, String)],
     prep_queue: &crate::meeting_prep_queue::MeetingPrepQueue,
     prep_queue_wake: &tokio::sync::Notify,
 ) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let candidates: Vec<EntityLinkCandidate> = entities
         .iter()
         .map(|(id, typ)| EntityLinkCandidate {
@@ -2215,6 +2260,7 @@ pub fn persist_and_invalidate_entity_links_sync(
         })
         .collect();
     persist_and_invalidate_entity_links_sync_scored(
+        ctx,
         db,
         meeting_id,
         &candidates,
@@ -2227,12 +2273,14 @@ pub fn persist_and_invalidate_entity_links_sync(
 /// Writes each junction row with its per-link confidence + is_primary flag
 /// so the frontend can render one primary entity and N muted suggestions.
 pub fn persist_and_invalidate_entity_links_sync_scored(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     meeting_id: &str,
     candidates: &[EntityLinkCandidate],
     prep_queue: &crate::meeting_prep_queue::MeetingPrepQueue,
     prep_queue_wake: &tokio::sync::Notify,
 ) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if candidates.is_empty() {
         return Ok(0);
     }
@@ -2360,6 +2408,7 @@ pub fn list_meeting_preps(state: &AppState) -> Result<Vec<String>, String> {
 
 /// Update user-authored agenda items on a meeting.
 pub fn update_meeting_user_agenda(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     meeting_id: &str,
@@ -2367,6 +2416,7 @@ pub fn update_meeting_user_agenda(
     dismissed_topics: Option<Vec<String>>,
     hidden_attendees: Option<Vec<String>>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let meeting = db
         .get_meeting_intelligence_row(meeting_id)
         .map_err(|e| e.to_string())?
@@ -2478,11 +2528,13 @@ pub fn update_meeting_user_agenda(
 
 /// Update user-authored notes on a meeting.
 pub fn update_meeting_user_notes(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     meeting_id: &str,
     notes: &str,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let meeting = db
         .get_meeting_intelligence_row(meeting_id)
         .map_err(|e| e.to_string())?
@@ -2530,6 +2582,7 @@ pub fn update_meeting_user_notes(
 /// - `"risks[0]"` (array index)
 /// - `"attendeeContext[2].assessment"` (nested array + key)
 pub fn update_meeting_prep_field(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     state: &AppState,
     meeting_id: &str,
@@ -2537,6 +2590,7 @@ pub fn update_meeting_prep_field(
     value: &str,
     target_person_id: Option<&str>,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let meeting = db
         .get_meeting_intelligence_row(meeting_id)
         .map_err(|e| e.to_string())?
@@ -2845,10 +2899,12 @@ fn plan_refresh_completion(
 }
 
 fn restore_meeting_briefing_snapshot(
+    ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
     meeting_id: &str,
     snapshot: &MeetingBriefingSnapshot,
 ) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.conn_ref()
         .execute(
             "UPDATE meeting_prep
@@ -2884,12 +2940,15 @@ fn restore_meeting_briefing_snapshot(
 }
 
 fn emit_briefing_refresh_progress(
+    ctx: &ServiceContext<'_>,
     app_handle: Option<&tauri::AppHandle>,
     payload: MeetingBriefingRefreshProgress,
-) {
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if let Some(app) = app_handle {
         let _ = app.emit("meeting-briefing-refresh-progress", &payload);
     }
+    Ok(())
 }
 
 /// Single-service full briefing refresh for one meeting.
@@ -2900,13 +2959,16 @@ fn emit_briefing_refresh_progress(
 /// 3) rebuild prep,
 /// 4) swap only when the replacement is ready.
 pub async fn refresh_meeting_briefing_full(
-    state: &AppState,
+    ctx: &ServiceContext<'_>,
+    state: &std::sync::Arc<AppState>,
     meeting_id: &str,
     app_handle: Option<&tauri::AppHandle>,
 ) -> Result<MeetingBriefingRefreshResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let meeting_id_owned = meeting_id.to_string();
 
     emit_briefing_refresh_progress(
+        ctx,
         app_handle,
         MeetingBriefingRefreshProgress {
             meeting_id: meeting_id_owned.clone(),
@@ -2918,10 +2980,11 @@ pub async fn refresh_meeting_briefing_full(
             current: None,
             total: None,
         },
-    );
+    )?;
 
     // Phase 1: snapshot current prep + collect linked entities.
     emit_briefing_refresh_progress(
+        ctx,
         app_handle,
         MeetingBriefingRefreshProgress {
             meeting_id: meeting_id_owned.clone(),
@@ -2933,7 +2996,7 @@ pub async fn refresh_meeting_briefing_full(
             current: None,
             total: None,
         },
-    );
+    )?;
 
     let meeting_id_for_phase1 = meeting_id_owned.clone();
     let (linked_entities, previous_snapshot) = state
@@ -2970,6 +3033,7 @@ pub async fn refresh_meeting_briefing_full(
     let total_entities = linked_entities.len() as u32;
     if total_entities > 0 {
         emit_briefing_refresh_progress(
+            ctx,
             app_handle,
             MeetingBriefingRefreshProgress {
                 meeting_id: meeting_id_owned.clone(),
@@ -2981,7 +3045,7 @@ pub async fn refresh_meeting_briefing_full(
                 current: Some(0),
                 total: Some(total_entities),
             },
-        );
+        )?;
     }
 
     // Step 2: refresh linked entity intelligence synchronously.
@@ -2995,6 +3059,7 @@ pub async fn refresh_meeting_briefing_full(
         let entity_name = entity.name.clone();
 
         emit_briefing_refresh_progress(
+            ctx,
             app_handle,
             MeetingBriefingRefreshProgress {
                 meeting_id: meeting_id_owned.clone(),
@@ -3009,7 +3074,7 @@ pub async fn refresh_meeting_briefing_full(
                 current: Some(current),
                 total: Some(total_entities),
             },
-        );
+        )?;
 
         match crate::services::intelligence::enrich_entity(
             entity_id.clone(),
@@ -3023,6 +3088,7 @@ pub async fn refresh_meeting_briefing_full(
                 refreshed_entities += 1;
                 crate::intel_queue::invalidate_and_requeue_meeting_preps(state, &entity_id);
                 emit_briefing_refresh_progress(
+                    ctx,
                     app_handle,
                     MeetingBriefingRefreshProgress {
                         meeting_id: meeting_id_owned.clone(),
@@ -3034,7 +3100,7 @@ pub async fn refresh_meeting_briefing_full(
                         current: Some(current),
                         total: Some(total_entities),
                     },
-                );
+                )?;
             }
             Err(err) => {
                 log::warn!(
@@ -3045,6 +3111,7 @@ pub async fn refresh_meeting_briefing_full(
                 );
                 failed_entities.push((entity.id.clone(), entity.entity_type.as_str().to_string()));
                 emit_briefing_refresh_progress(
+                    ctx,
                     app_handle,
                     MeetingBriefingRefreshProgress {
                         meeting_id: meeting_id_owned.clone(),
@@ -3056,7 +3123,7 @@ pub async fn refresh_meeting_briefing_full(
                         current: Some(current),
                         total: Some(total_entities),
                     },
-                );
+                )?;
             }
         }
     }
@@ -3091,6 +3158,7 @@ pub async fn refresh_meeting_briefing_full(
     // previous snapshot exists. Snapshot-backed refreshes keep the prior prep
     // visible instead of queueing a no-op rebuild behind the existing snapshot.
     emit_briefing_refresh_progress(
+        ctx,
         app_handle,
         MeetingBriefingRefreshProgress {
             meeting_id: meeting_id_owned.clone(),
@@ -3102,7 +3170,7 @@ pub async fn refresh_meeting_briefing_full(
             current: None,
             total: None,
         },
-    );
+    )?;
 
     let prep_rebuilt_sync = match crate::meeting_prep_queue::meeting_prep_blocking_inputs(state) {
         Ok((workspace, embedding_model, active_preset)) => {
@@ -3164,9 +3232,12 @@ pub async fn refresh_meeting_briefing_full(
     if completion_plan.restore_snapshot {
         let meeting_id_for_restore = meeting_id_owned.clone();
         let snapshot_for_restore = previous_snapshot.clone();
+        let state_for_ctx = state.clone();
         state
             .db_write(move |db| {
+                let ctx = state_for_ctx.live_service_context();
                 restore_meeting_briefing_snapshot(
+                    &ctx,
                     db,
                     &meeting_id_for_restore,
                     &snapshot_for_restore,
@@ -3175,6 +3246,7 @@ pub async fn refresh_meeting_briefing_full(
             .await?;
 
         emit_briefing_refresh_progress(
+            ctx,
             app_handle,
             MeetingBriefingRefreshProgress {
                 meeting_id: meeting_id_owned.clone(),
@@ -3186,7 +3258,7 @@ pub async fn refresh_meeting_briefing_full(
                 current: Some(refreshed_entities),
                 total: Some(total_entities),
             },
-        );
+        )?;
 
         if completion_plan.return_error {
             return Err("Update failed - showing previous briefing".to_string());
@@ -3246,6 +3318,7 @@ pub async fn refresh_meeting_briefing_full(
         "Briefing refreshed".to_string()
     };
     emit_briefing_refresh_progress(
+        ctx,
         app_handle,
         MeetingBriefingRefreshProgress {
             meeting_id: meeting_id_owned,
@@ -3257,42 +3330,47 @@ pub async fn refresh_meeting_briefing_full(
             current: Some(refreshed_entities),
             total: Some(total_entities),
         },
-    );
+    )?;
 
     Ok(result)
 }
 
 /// Refresh all future meeting preps: clear frozen JSON and re-enqueue.
-pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
-    let meeting_ids: Vec<String> = state.db_write(|db| {
-        let now = chrono::Utc::now().to_rfc3339();
-
-        let meeting_ids: Vec<String> = db
-            .conn_ref()
-            .prepare(
-                "SELECT m.id FROM meetings m
+pub async fn refresh_meeting_preps(
+    ctx: &ServiceContext<'_>,
+    state: &AppState,
+) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let now = ctx.clock.now().to_rfc3339();
+    let meeting_ids: Vec<String> = state
+        .db_write(move |db| {
+            let meeting_ids: Vec<String> = db
+                .conn_ref()
+                .prepare(
+                    "SELECT m.id FROM meetings m
                  LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
                  WHERE m.start_time > ?1
                    AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')
                    AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
-            )
-            .and_then(|mut stmt| {
-                let rows = stmt.query_map(rusqlite::params![now], |row| {
-                    row.get::<_, String>(0)
-                })?;
-                Ok(rows.filter_map(|r| r.ok()).collect())
-            })
-            .map_err(|e| format!("Failed to query future meetings: {}", e))?;
+                )
+                .and_then(|mut stmt| {
+                    let rows = stmt.query_map(rusqlite::params![now], |row| {
+                        row.get::<_, String>(0)
+                    })?;
+                    Ok(rows.filter_map(|r| r.ok()).collect())
+                })
+                .map_err(|e| format!("Failed to query future meetings: {}", e))?;
 
-        for mid in &meeting_ids {
-            let _ = db.conn_ref().execute(
-                "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE meeting_id = ?1",
-                rusqlite::params![mid],
-            );
-        }
+            for mid in &meeting_ids {
+                let _ = db.conn_ref().execute(
+                    "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE meeting_id = ?1",
+                    rusqlite::params![mid],
+                );
+            }
 
-        Ok(meeting_ids)
-    }).await?;
+            Ok(meeting_ids)
+        })
+        .await?;
 
     if meeting_ids.is_empty() {
         return Ok("No future meetings to refresh".to_string());
@@ -3318,10 +3396,12 @@ pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
 /// Reprocess an already-attached transcript: clear all extraction data, remove
 /// the TOCTOU guard, then re-run the full pipeline as a fresh extraction.
 pub async fn reprocess_meeting_transcript(
+    ctx: &ServiceContext<'_>,
     meeting_id: &str,
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<crate::types::TranscriptResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // Look up the meeting and its transcript path
     let mid = meeting_id.to_string();
     let meeting_data = state
@@ -3366,13 +3446,13 @@ pub async fn reprocess_meeting_transcript(
         title: meeting_row.title.clone(),
         start: chrono::DateTime::parse_from_rfc3339(&meeting_row.start_time)
             .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(|_| chrono::Utc::now()),
+            .unwrap_or_else(|_| ctx.clock.now()),
         end: meeting_row
             .end_time
             .as_deref()
             .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
             .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(chrono::Utc::now),
+            .unwrap_or_else(|| ctx.clock.now()),
         meeting_type: crate::parser::parse_meeting_type(&meeting_row.meeting_type),
         attendees: Vec::new(),
         is_all_day: false,
@@ -3384,16 +3464,18 @@ pub async fn reprocess_meeting_transcript(
     };
 
     // Re-run the full pipeline via the existing attach path
-    attach_meeting_transcript(transcript_path, cal_event, state, app_handle).await
+    attach_meeting_transcript(ctx, transcript_path, cal_event, state, app_handle).await
 }
 
 /// Attach a meeting transcript with TOCTOU guard, async processing, and event emission.
 pub async fn attach_meeting_transcript(
+    ctx: &ServiceContext<'_>,
     file_path: String,
     meeting: crate::types::CalendarEvent,
     state: &std::sync::Arc<AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<crate::types::TranscriptResult, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     {
         let mut guard = state.capture.transcript_processed.lock();
         if guard.contains_key(&meeting.id) {
@@ -3470,7 +3552,7 @@ pub async fn attach_meeting_transcript(
             || !result.actions.is_empty());
 
     if result.status == "success" {
-        let processed_at = chrono::Utc::now().to_rfc3339();
+        let processed_at = ctx.clock.now().to_rfc3339();
         let transcript_destination = result.destination.clone().unwrap_or_default();
 
         // Always persist transcript metadata so the meeting is marked as having a
@@ -3764,6 +3846,16 @@ mod tests {
     use super::persist_classification_entities_scored;
     use crate::db::test_utils::test_db;
     use crate::google_api::classify::ResolvedMeetingEntity;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::TimeZone;
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        ext: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, ext)
+    }
 
     /// DOS-240 (chip-X → dismissal contract): after the UI dismisses an
     /// auto-linked entity (via `dismiss_meeting_entity` writing a row to
@@ -3779,6 +3871,10 @@ mod tests {
         let meeting_id = "mtg-dos240";
         let entity_id = "acct-dos240";
         let entity_type = "account";
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
 
         // First pass: scored persist links the entity (simulates initial
         // auto-resolution from calendar sync).
@@ -3789,7 +3885,7 @@ mod tests {
             confidence: 0.95,
             source: "keyword".to_string(),
         }];
-        let linked = persist_classification_entities_scored(&db, meeting_id, &entities)
+        let linked = persist_classification_entities_scored(&ctx, &db, meeting_id, &entities)
             .expect("first persist pass");
         assert_eq!(linked, 1, "initial persist should link one entity");
 
@@ -3812,7 +3908,7 @@ mod tests {
         // Second pass: the next calendar-sync classification runs again
         // with the same scored outcome. The dismissal filter inside
         // `persist_classification_entities_scored` MUST skip the write.
-        let linked2 = persist_classification_entities_scored(&db, meeting_id, &entities)
+        let linked2 = persist_classification_entities_scored(&ctx, &db, meeting_id, &entities)
             .expect("second persist pass");
         assert_eq!(
             linked2, 0,

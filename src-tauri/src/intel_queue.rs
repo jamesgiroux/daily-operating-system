@@ -2892,8 +2892,9 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
     }
 
     // Clear prep_frozen_json so the queue processor regenerates them
+    let ctx = state.live_service_context();
     for mid in &meeting_ids {
-        let _ = crate::services::meetings::clear_meeting_prep_frozen(&db, mid);
+        let _ = crate::services::meetings::clear_meeting_prep_frozen(&ctx, &db, mid);
     }
 
     // Enqueue for regeneration at Background priority

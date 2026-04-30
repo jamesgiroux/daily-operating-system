@@ -15,7 +15,7 @@ pub fn set_meeting_prep_context(
     updated_json: &str,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    crate::services::meetings::set_meeting_prep_context(db, meeting_id, updated_json)
+    crate::services::meetings::set_meeting_prep_context(ctx, db, meeting_id, updated_json)
 }
 
 pub fn reset_email_dismissals(ctx: &ServiceContext<'_>, db: &ActionDb) -> Result<u64, String> {
@@ -30,7 +30,7 @@ pub fn update_capture_content(
     content: &str,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    crate::services::meetings::update_capture_content(db, capture_id, content)
+    crate::services::meetings::update_capture_content(ctx, db, capture_id, content)
 }
 
 pub fn upsert_account(

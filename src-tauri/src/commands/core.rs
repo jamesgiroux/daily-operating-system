@@ -186,7 +186,9 @@ pub async fn get_meeting_intelligence(
     meeting_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<MeetingIntelligence, String> {
-    crate::services::meetings::get_meeting_intelligence(&state, &meeting_id).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::meetings::get_meeting_intelligence(&ctx, &app_state, &meeting_id).await
 }
 
 /// Single-service full refresh for a meeting briefing.
@@ -199,8 +201,11 @@ pub async fn refresh_meeting_briefing(
     app_handle: tauri::AppHandle,
     meeting_id: String,
 ) -> Result<crate::services::meetings::MeetingBriefingRefreshResult, String> {
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
     let result = crate::services::meetings::refresh_meeting_briefing_full(
-        &state,
+        &ctx,
+        &app_state,
         &meeting_id,
         Some(&app_handle),
     )
@@ -220,8 +225,11 @@ pub async fn generate_meeting_intelligence(
 ) -> Result<crate::types::IntelligenceQuality, String> {
     let force_full = force.unwrap_or(false);
     if force_full {
+        let app_state = state.inner().clone();
+        let ctx = app_state.live_service_context();
         let result = crate::services::meetings::refresh_meeting_briefing_full(
-            &state,
+            &ctx,
+            &app_state,
             &meeting_id,
             Some(&app_handle),
         )
@@ -776,5 +784,7 @@ async fn refresh_week_calendar_cache(
 /// MeetingPrepQueue at Manual priority. Used by the WeekPage refresh button.
 #[tauri::command]
 pub async fn refresh_meeting_preps(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    crate::services::meetings::refresh_meeting_preps(&state).await
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    crate::services::meetings::refresh_meeting_preps(&ctx, &app_state).await
 }
