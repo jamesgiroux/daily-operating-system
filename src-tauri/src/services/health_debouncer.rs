@@ -100,7 +100,14 @@ impl HealthRecomputeDebouncer {
 /// silently lose the pending recompute. The startup `drain_pending` is the
 /// backstop, so the marker must be committed in the same transaction
 /// boundary as the edit that triggered it.
-pub fn schedule_recompute(state: &Arc<AppState>, account_id: &str) {
+pub fn schedule_recompute(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    state: &Arc<AppState>,
+    account_id: &str,
+) {
+    if ctx.check_mutation_allowed().is_err() {
+        return;
+    }
     let captured = state.health_recompute_debouncer.record(account_id);
     let state_clone = state.clone();
     let account_id = account_id.to_string();
@@ -165,7 +172,13 @@ pub fn schedule_recompute(state: &Arc<AppState>, account_id: &str) {
 ///
 /// Call this once during `AppState` initialization, after migrations have
 /// run and before any user-facing command handlers are registered.
-pub async fn drain_pending(state: &Arc<AppState>) {
+pub async fn drain_pending(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    state: &Arc<AppState>,
+) {
+    if ctx.check_mutation_allowed().is_err() {
+        return;
+    }
     let pending = match state
         .db_read(|db| db.list_health_recompute_pending().map_err(|e| e.to_string()))
         .await

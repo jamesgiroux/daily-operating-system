@@ -1687,7 +1687,7 @@ fn update_account_field_inner(
     if is_health_relevant_field(field) {
         db.mark_health_recompute_pending(account_id)
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
-        crate::services::health_debouncer::schedule_recompute(state, account_id);
+        crate::services::health_debouncer::schedule_recompute(ctx, state, account_id);
     }
 
     // Regenerate workspace files
@@ -3200,7 +3200,7 @@ fn update_stakeholder_engagement_inner(
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
     })?;
-    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    crate::services::health_debouncer::schedule_recompute(ctx, state, account_id);
     Ok(())
 }
 
@@ -3254,7 +3254,7 @@ fn update_stakeholder_assessment_inner(
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
     })?;
-    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    crate::services::health_debouncer::schedule_recompute(ctx, state, account_id);
     Ok(())
 }
 
@@ -3324,7 +3324,7 @@ fn add_stakeholder_role_inner(
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
     })?;
-    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    crate::services::health_debouncer::schedule_recompute(ctx, state, account_id);
     Ok(())
 }
 
@@ -3388,7 +3388,7 @@ fn remove_stakeholder_role_inner(
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(())
     })?;
-    crate::services::health_debouncer::schedule_recompute(state, account_id);
+    crate::services::health_debouncer::schedule_recompute(ctx, state, account_id);
     Ok(())
 }
 
@@ -3525,7 +3525,7 @@ pub fn accept_stakeholder_suggestion(
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
         Ok(suggestion.account_id.clone())
     })?;
-    crate::services::health_debouncer::schedule_recompute(state, &account_id);
+    crate::services::health_debouncer::schedule_recompute(ctx, state, &account_id);
     Ok(())
 }
 

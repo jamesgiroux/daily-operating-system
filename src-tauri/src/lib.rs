@@ -136,7 +136,11 @@ pub fn run() {
                         // health_recompute_pending markers that survived a
                         // prior crash. Runs once on startup; failures leave
                         // markers in place for the next attempt.
-                        crate::services::health_debouncer::drain_pending(&init_state).await;
+                        let clock = crate::services::context::SystemClock;
+                        let rng = crate::services::context::SystemRng;
+                        let ext = crate::services::context::ExternalClients::default();
+                        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                        crate::services::health_debouncer::drain_pending(&ctx, &init_state).await;
                     }
                 });
             } else {
