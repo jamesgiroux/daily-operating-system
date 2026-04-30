@@ -812,13 +812,6 @@ fn populate_people_from_events(
                 }
             };
             if let Some(ref person) = existing {
-                // Person already tracked — auto-link to entity if applicable (I653 FIX 2)
-                // Use entity IDs from classification, not account name string
-                if let Some(ref entities) = event.classified_entities {
-                    for (entity_id, _entity_type) in entities {
-                        let _ = db.link_person_to_entity(&person.id, entity_id, "associated");
-                    }
-                }
                 // Record attendance (idempotent — safe across repeated polls)
                 let _ = db.record_meeting_attendance(&meeting_id, &person.id);
                 continue;
@@ -879,13 +872,6 @@ fn populate_people_from_events(
                         None,
                         0.95,
                     );
-                }
-
-                // Auto-link to entity if meeting has classified entities (I653 FIX 2)
-                if let Some(ref entities) = event.classified_entities {
-                    for (entity_id, _entity_type) in entities {
-                        let _ = db.link_person_to_entity(&id, entity_id, "associated");
-                    }
                 }
 
                 // Record attendance for the new person

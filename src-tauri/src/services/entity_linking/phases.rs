@@ -208,16 +208,27 @@ fn phase3(ctx: &LinkingContext, db: &ActionDb) -> Phase3Result {
 ///
 /// Includes P4a stakeholder-inference alongside P4b/P4c/P4d domain rules
 /// so a stakeholder match + domain match on the same account dedupes to
-/// one candidate, while stakeholder(Jane) + domain(Acme) produces two
-/// distinct candidates and triggers the P9 picker.
+/// one candidate, while stakeholder evidence and domain evidence for
+/// different accounts produce distinct candidates and trigger the P9 picker.
 fn collect_p4_candidates(ctx: &LinkingContext, db: &ActionDb) -> Vec<super::types::Candidate> {
     use rules::{
         p4a_stakeholder::P4aStakeholder, p4b_one_on_one::P4bOneOnOne,
         p4c_group_shared::P4cGroupShared, p4d_sender_domain::P4dSenderDomain,
     };
     let mut candidates = Vec::new();
+
+    for c in P4aStakeholder::collect_candidates(ctx, db) {
+        if !candidates
+            .iter()
+            .any(|existing: &super::types::Candidate| {
+                existing.entity.entity_id == c.entity.entity_id
+            })
+        {
+            candidates.push(c);
+        }
+    }
+
     for rule in [
-        &P4aStakeholder as &dyn Rule,
         &P4bOneOnOne as &dyn Rule,
         &P4cGroupShared as &dyn Rule,
         &P4dSenderDomain as &dyn Rule,
@@ -357,4 +368,111 @@ pub fn run_phases(ctx: &LinkingContext, db: &ActionDb) -> Result<LinkOutcome, St
         &phase3_result.related_candidates,
         db,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::types::{LinkRole, OwnerRef, OwnerType, Participant, ParticipantRole};
+    use crate::db::test_utils::test_db;
+
+    fn seed_account(db: &ActionDb, id: &str, name: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at, archived) VALUES (?1, ?2, '2026-01-01', 0)",
+                rusqlite::params![id, name],
+            )
+            .expect("insert account");
+    }
+
+    fn seed_person(db: &ActionDb, id: &str, email: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, name, email, relationship, updated_at) \
+                 VALUES (?1, ?1, ?2, 'external', '2026-01-01')",
+                rusqlite::params![id, email],
+            )
+            .expect("insert person");
+    }
+
+    fn seed_active_stakeholder(db: &ActionDb, account_id: &str, person_id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source, status, confidence, created_at) \
+                 VALUES (?1, ?2, 'test', 'active', 1.0, '2026-01-01')",
+                rusqlite::params![account_id, person_id],
+            )
+            .expect("insert stakeholder");
+    }
+
+    fn one_on_one_ctx(person_id: &str) -> LinkingContext {
+        LinkingContext {
+            owner: OwnerRef {
+                owner_type: OwnerType::Meeting,
+                owner_id: "meeting-1".to_string(),
+            },
+            participants: vec![
+                Participant {
+                    email: "user@example.test".to_string(),
+                    name: None,
+                    role: ParticipantRole::Attendee,
+                    person_id: Some("self".to_string()),
+                    domain: Some("example.test".to_string()),
+                },
+                Participant {
+                    email: "contact@external.test".to_string(),
+                    name: None,
+                    role: ParticipantRole::Attendee,
+                    person_id: Some(person_id.to_string()),
+                    domain: Some("external.test".to_string()),
+                },
+            ],
+            title: Some("Working session".to_string()),
+            attendee_count: 2,
+            thread_id: None,
+            series_id: None,
+            graph_version: 0,
+            user_domains: vec!["example.test".to_string()],
+        }
+    }
+
+    #[test]
+    fn p4_collection_surfaces_every_stakeholder_candidate_for_p9() {
+        let db = test_db();
+        seed_account(&db, "acc-a", "Account A");
+        seed_account(&db, "acc-b", "Account B");
+        seed_person(&db, "person-1", "contact@external.test");
+        seed_active_stakeholder(&db, "acc-a", "person-1");
+        seed_active_stakeholder(&db, "acc-b", "person-1");
+
+        let ctx = one_on_one_ctx("person-1");
+        let candidates = collect_p4_candidates(&ctx, &db);
+        let ids: Vec<_> = candidates
+            .iter()
+            .map(|candidate| candidate.entity.entity_id.as_str())
+            .collect();
+
+        assert_eq!(ids, vec!["acc-a", "acc-b"]);
+    }
+
+    #[test]
+    fn phase3_turns_multi_account_stakeholder_evidence_into_p9() {
+        let db = test_db();
+        seed_account(&db, "acc-a", "Account A");
+        seed_account(&db, "acc-b", "Account B");
+        seed_person(&db, "person-1", "contact@external.test");
+        seed_active_stakeholder(&db, "acc-a", "person-1");
+        seed_active_stakeholder(&db, "acc-b", "person-1");
+
+        let ctx = one_on_one_ctx("person-1");
+        let result = phase3(&ctx, &db);
+
+        assert!(result.primary_candidate.is_none());
+        assert_eq!(result.applied_rule.as_deref(), Some("P9"));
+        assert_eq!(result.related_candidates.len(), 2);
+        assert!(result
+            .related_candidates
+            .iter()
+            .all(|candidate| candidate.role == LinkRole::Related));
+    }
 }

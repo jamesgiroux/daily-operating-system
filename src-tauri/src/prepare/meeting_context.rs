@@ -124,17 +124,24 @@ fn resolve_primary_entity(
         .and_then(|mut stmt| {
             let rows = stmt.query_map(rusqlite::params![meeting_db_id], |row| {
                 let et: String = row.get(1)?;
+                let role: String = row.get(2)?;
                 let confidence: Option<f64> = row.get(3)?;
                 let rule_id: Option<String> = row.get(4)?;
                 let source: String = row.get(5)?;
                 Ok(LinkRow {
                     entity_id: row.get(0)?,
                     entity_type: EntityType::from_str_lossy(&et),
-                    role: row.get(2)?,
-                    // DOS-258: engine rows always carry confidence; default
-                    // high if any legacy backfill row is missing it so we
-                    // don't spuriously drop links below threshold.
-                    confidence: confidence.unwrap_or(0.95),
+                    role: role.clone(),
+                    // Primary engine rows carry confidence; keep a high
+                    // fallback only for legacy primary rows. Related chips are
+                    // never allowed to become the resolved primary context.
+                    confidence: confidence.unwrap_or_else(|| {
+                        if role == "primary" {
+                            0.95
+                        } else {
+                            0.0
+                        }
+                    }),
                     // Prefer the rule_id for provenance; fall back to source.
                     source: rule_id.unwrap_or(source),
                 })
@@ -147,14 +154,14 @@ fn resolve_primary_entity(
     // Build candidates: id -> (confidence, source, name).
     let mut candidates: HashMap<(String, EntityType), (f64, String, String)> = HashMap::new();
     for row in link_rows {
+        if row.role != "primary" {
+            continue;
+        }
+
         // Primary rows anchor the decision regardless of the raw confidence
-        // score — the engine already earned the primary designation via a
-        // deterministic rule. Related rows stay in the pool for tie-breaking.
-        let effective_confidence = if row.role == "primary" {
-            row.confidence.max(PRIMARY_ENTITY_MIN_CONFIDENCE)
-        } else {
-            row.confidence
-        };
+        // score because the engine already earned the designation via a
+        // deterministic rule.
+        let effective_confidence = row.confidence.max(PRIMARY_ENTITY_MIN_CONFIDENCE);
         let name = db
             .get_entity(&row.entity_id)
             .ok()
@@ -2430,6 +2437,80 @@ mod tests {
         assert!(ctx.get("project_data").is_some());
         assert_eq!(ctx["project_data"]["status"].as_str(), Some("active"));
         assert_eq!(ctx["project_data"]["milestone"].as_str(), Some("Phase 2"));
+    }
+
+    #[test]
+    fn test_resolve_primary_entity_ignores_related_account_context() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Projects").join("launch-v2")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Accounts").join("Customer Account")).unwrap();
+
+        let db = setup_entity_db(
+            dir.path(),
+            "proj-launch",
+            "Launch V2",
+            crate::entity::EntityType::Project,
+            "evt-proj-related",
+        );
+        let now = chrono::Utc::now().to_rfc3339();
+        db.upsert_entity(&crate::entity::DbEntity {
+            id: "acc-customer".to_string(),
+            name: "Customer Account".to_string(),
+            entity_type: crate::entity::EntityType::Account,
+            tracker_path: None,
+            updated_at: now.clone(),
+        })
+        .expect("upsert account entity");
+        db.upsert_account(&crate::db::DbAccount {
+            id: "acc-customer".to_string(),
+            name: "Customer Account".to_string(),
+            lifecycle: None,
+            health: None,
+            arr: None,
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            parent_id: None,
+            account_type: crate::db::AccountType::Customer,
+            tracker_path: None,
+            updated_at: now.clone(),
+            archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
+            metadata: None,
+            ..Default::default()
+        })
+        .expect("upsert account");
+        db.conn_ref()
+            .execute(
+                "INSERT OR REPLACE INTO linked_entities_raw \
+                 (owner_type, owner_id, entity_id, entity_type, role, source, \
+                  rule_id, confidence, graph_version, created_at) \
+                 VALUES ('meeting', 'evt-proj-related', 'acc-customer', 'account', \
+                         'related', 'rule:C4', 'C4', NULL, 0, ?1)",
+                rusqlite::params![now],
+            )
+            .expect("seed related account");
+
+        let meeting = json!({
+            "id": "evt-proj-related",
+            "title": "Launch V2 Planning",
+            "type": "customer",
+            "start": "2026-02-18T14:00:00Z",
+        });
+
+        let matched = resolve_primary_entity(
+            Some(&db),
+            "evt-proj-related",
+            &meeting,
+            dir.path(),
+            None,
+        )
+        .expect("project primary should resolve");
+
+        assert_eq!(matched.entity_id, "proj-launch");
+        assert_eq!(matched.entity_type, crate::entity::EntityType::Project);
+        assert_eq!(matched.name, "Launch V2");
     }
 
     #[test]
