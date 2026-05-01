@@ -4331,7 +4331,7 @@ mod eval_tests {
 
         // Value delivered with quantification
         assert!(
-            intel.value_delivered.len() >= 1,
+            !intel.value_delivered.is_empty(),
             "Must have value delivered"
         );
 

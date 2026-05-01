@@ -3672,7 +3672,7 @@ mod tests {
                 None,
                 0.9,
             )
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| e.to_string())?;
             Ok(())
         })
         .expect("archive");
@@ -3739,7 +3739,7 @@ mod tests {
                 None,
                 0.8,
             )
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| e.to_string())?;
             Ok(())
         })
         .expect("add team member");
@@ -3783,7 +3783,7 @@ mod tests {
                 None,
                 0.7,
             )
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| e.to_string())?;
             Ok(())
         })
         .expect("remove team member");
@@ -4092,7 +4092,7 @@ mod tests {
                 Some(r#"{"event_type":"renewal","event_date":"2026-06-15"}"#),
                 0.8,
             )
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| e.to_string())?;
             Ok(())
         })
         .expect("record event");

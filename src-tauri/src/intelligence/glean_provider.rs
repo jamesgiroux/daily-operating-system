@@ -1935,6 +1935,7 @@ pub fn extract_products_from_response(
     }
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod provider_trait_tests {
     use super::*;

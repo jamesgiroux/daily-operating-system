@@ -915,6 +915,7 @@ pub fn match_commitments_to_milestones(
     Ok(matched)
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1167,7 +1168,7 @@ mod tests {
                 Some(&format!("{{\"objective_id\":\"{}\"}}", completed_obj.id)),
                 0.95,
             )
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| e.to_string())?;
             Ok(())
         })
         .unwrap();
