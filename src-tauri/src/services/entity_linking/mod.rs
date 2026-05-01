@@ -29,10 +29,12 @@ use crate::state::AppState;
 // ---------------------------------------------------------------------------
 
 pub async fn evaluate(
+    svc_ctx: &crate::services::context::ServiceContext<'_>,
     state: Arc<AppState>,
     mut ctx: LinkingContext,
     trigger: Trigger,
 ) -> Result<LinkOutcome, String> {
+    svc_ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let state_for_ctx = state.clone();
     state
         .db_write(move |db| {

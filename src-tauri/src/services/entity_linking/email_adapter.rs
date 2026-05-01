@@ -87,14 +87,16 @@ pub fn build_context(
 /// (because they arrived before their parent) have their auto links invalidated so
 /// the next enrichment pass re-evaluates them with the parent's primary available.
 pub async fn evaluate_email(
+    svc_ctx: &crate::services::context::ServiceContext<'_>,
     state: Arc<AppState>,
     email: &DbEmail,
     trigger: Trigger,
 ) -> Result<LinkOutcome, String> {
+    svc_ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let thread_id = email.thread_id.clone();
 
     let ctx = state.with_db_read(|db| build_context(email, None, db))?;
-    let outcome = super::evaluate(state.clone(), ctx, trigger).await?;
+    let outcome = super::evaluate(svc_ctx, state.clone(), ctx, trigger).await?;
 
     // Flush thread inheritance queue when a primary was just set.
     // For each waiting child email: fetch it and re-evaluate so P2 can now
@@ -119,6 +121,7 @@ pub async fn evaluate_email(
                             // Box::pin required because evaluate_email calls itself
                             // (async recursion needs explicit boxing in Rust).
                             if let Err(e) = Box::pin(evaluate_email(
+                                svc_ctx,
                                 state.clone(),
                                 &child_email,
                                 Trigger::EmailThreadUpdate,

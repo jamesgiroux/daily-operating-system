@@ -491,7 +491,12 @@ async fn process_sync_row(
     // the transcript can refine attendee/title context. Best-effort —
     // never fails the sync.
     if result.is_ok() {
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let svc_ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
         match crate::services::entity_linking::calendar_adapter::evaluate_meeting(
+            &svc_ctx,
             state.clone(),
             &calendar_event,
             crate::services::entity_linking::Trigger::TranscriptIngest,

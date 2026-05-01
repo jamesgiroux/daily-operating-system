@@ -70,10 +70,12 @@ pub fn build_context(event: &CalendarEvent, db: &ActionDb) -> Result<LinkingCont
 /// list (Google doesn't guarantee the organiser is included), then calls
 /// the four-phase engine.
 pub async fn evaluate_meeting(
+    svc_ctx: &crate::services::context::ServiceContext<'_>,
     state: Arc<AppState>,
     event: &CalendarEvent,
     trigger: Trigger,
 ) -> Result<LinkOutcome, String> {
+    svc_ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let event_clone = event.clone();
 
     // Snapshot the authenticated calendar owner email (sync, no await).
@@ -109,5 +111,5 @@ pub async fn evaluate_meeting(
         }
     }
 
-    super::evaluate(state, ctx, trigger).await
+    super::evaluate(svc_ctx, state, ctx, trigger).await
 }
