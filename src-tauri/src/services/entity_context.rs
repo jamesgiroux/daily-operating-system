@@ -78,7 +78,12 @@ pub async fn create_entry(
                 )
                 .map_err(|e| format!("Failed to create entity context entry: {}", e))?;
 
-            let _ = crate::signals::bus::emit_signal_and_propagate(
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            let _ = crate::services::signals::emit_and_propagate(
+                &ctx,
                 db,
                 &engine,
                 &entity_type,
@@ -157,7 +162,12 @@ pub async fn update_entry(
                 return Err(format!("Entity context entry not found: {}", id));
             }
 
-            let _ = crate::signals::bus::emit_signal_and_propagate(
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            let _ = crate::services::signals::emit_and_propagate(
+                &ctx,
                 db,
                 &engine,
                 &entity_type,
@@ -206,7 +216,12 @@ pub async fn delete_entry(
                 return Err(format!("Entity context entry not found: {}", id));
             }
 
-            let _ = crate::signals::bus::emit_signal_and_propagate(
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            let _ = crate::services::signals::emit_and_propagate(
+                &ctx,
                 db,
                 &engine,
                 &entity_type,

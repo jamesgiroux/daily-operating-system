@@ -82,10 +82,11 @@ pub fn backfill_domains_for_account(
     user_domains: &[String],
 ) -> Result<usize, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    backfill_domains_for_account_inner(db, account_id, user_domains)
+    backfill_domains_for_account_inner(ctx, db, account_id, user_domains)
 }
 
 fn backfill_domains_for_account_inner(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     account_id: &str,
     user_domains: &[String],
@@ -119,7 +120,8 @@ fn backfill_domains_for_account_inner(
         .map_err(|e| format!("merge_account_domains for {account_id}: {e}"))?;
 
     for domain in &new_domains {
-        let _ = crate::signals::bus::emit_signal(
+        let _ = crate::services::signals::emit(
+            ctx,
             db,
             "account",
             account_id,
@@ -159,11 +161,15 @@ pub fn backfill_domains_for_all_accounts(
 
     let mut accounts_touched = 0usize;
     let mut total_new = 0usize;
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
     for account_id in by_account.keys() {
         // Delegate to the single-account path so the filter + signal logic
         // lives in one place.
-        match backfill_domains_for_account_inner(db, account_id, user_domains) {
+        match backfill_domains_for_account_inner(&ctx, db, account_id, user_domains) {
             Ok(n) if n > 0 => {
                 accounts_touched += 1;
                 total_new += n;

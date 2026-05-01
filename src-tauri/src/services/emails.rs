@@ -455,6 +455,10 @@ pub async fn get_emails_enriched(
         let _ = state
             .db_read(move |db| {
                 let engine = crate::signals::propagation::PropagationEngine::default();
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 for acct in &gq_accounts {
                     // Dedup: skip if a recent email_cadence_drop signal already exists
                     let recent_exists: bool = db
@@ -475,7 +479,8 @@ pub async fn get_emails_enriched(
                         "{{\"normal_interval_days\":{:.1},\"days_since_last\":{:.0}}}",
                         acct.normal_interval_days, acct.days_since_last_email
                     );
-                    let _ = crate::signals::bus::emit_signal_and_propagate(
+                    let _ = crate::services::signals::emit_and_propagate(
+                        &ctx,
                         db,
                         &engine,
                         &acct.entity_type,
@@ -1083,7 +1088,8 @@ pub fn mark_reply_sent(
     // Emit engagement signal if the email is linked to an entity
     if let Some((entity_id, entity_type)) = entity_info {
         let engine = crate::signals::propagation::PropagationEngine::default();
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
+            ctx,
             db,
             &engine,
             &entity_type,
