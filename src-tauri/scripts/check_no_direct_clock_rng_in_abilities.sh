@@ -10,9 +10,9 @@ fi
 pattern='(chrono::)?Utc::now\s*\(\)|rand::thread_rng\s*\(\)|thread_rng\s*\(\)|rand::rng\s*\(\)'
 
 matches="$(
-  rg -n "$pattern" "${roots[@]}" \
-    | rg -v 'dos-210-grandfathered:' \
-    | rg -v '(^|/)src/abilities/registry\.rs:' \
+  grep -rEn --include='*.rs' "$pattern" "${roots[@]}" 2>/dev/null \
+    | grep -v 'dos-210-grandfathered:' \
+    | grep -Ev 'src/abilities/registry\.rs:' \
     || true
 )"
 

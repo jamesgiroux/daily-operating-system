@@ -1,4 +1,6 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 use schemars::schema::{Schema, SchemaObject};
@@ -9,6 +11,7 @@ use super::field::{FieldAttribution, FieldPath};
 use super::source::{EntityId, SourceAttribution, SourceIndex};
 use super::subject::SubjectAttribution;
 use super::trust::{EffectiveTrust, TrustAssessment};
+use crate::abilities::registry::AbilityCategory;
 
 pub const PROVENANCE_SCHEMA_VERSION: u32 = 1;
 
@@ -46,15 +49,83 @@ impl InvocationId {
     }
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
-#[serde(transparent)]
-pub struct CompositionId(pub String);
+#[derive(Debug, Clone)]
+pub struct CompositionId(CompositionIdValue);
+
+#[derive(Debug, Clone)]
+enum CompositionIdValue {
+    Static(&'static str),
+    Owned(String),
+}
 
 impl CompositionId {
     pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+        Self(CompositionIdValue::Owned(value.into()))
+    }
+
+    pub const fn from_static(value: &'static str) -> Self {
+        Self(CompositionIdValue::Static(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        match &self.0 {
+            CompositionIdValue::Static(value) => value,
+            CompositionIdValue::Owned(value) => value.as_str(),
+        }
+    }
+}
+
+impl PartialEq for CompositionId {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for CompositionId {}
+
+impl PartialOrd for CompositionId {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CompositionId {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl Hash for CompositionId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
+    }
+}
+
+impl Serialize for CompositionId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for CompositionId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(Self::new)
+    }
+}
+
+impl JsonSchema for CompositionId {
+    fn schema_name() -> String {
+        "CompositionId".into()
+    }
+
+    fn json_schema(gen: &mut SchemaGenerator) -> Schema {
+        String::json_schema(gen)
     }
 }
 
@@ -181,10 +252,37 @@ impl Default for InputsSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AbilityOutput<T> {
-    pub data: T,
-    pub provenance: Provenance,
-    pub ability_version: AbilityVersion,
-    pub diagnostics: Diagnostics,
+    pub(in crate::abilities) data: T,
+    pub(in crate::abilities) provenance: Provenance,
+    pub(in crate::abilities) ability_version: AbilityVersion,
+    pub(in crate::abilities) diagnostics: Diagnostics,
+}
+
+impl<T> AbilityOutput<T> {
+    pub(in crate::abilities) fn new(data: T, provenance: Provenance) -> Self {
+        Self {
+            data,
+            ability_version: provenance.ability_version.clone(),
+            diagnostics: Diagnostics::default(),
+            provenance,
+        }
+    }
+
+    pub fn provenance(&self) -> &Provenance {
+        &self.provenance
+    }
+
+    pub fn data(&self) -> &T {
+        &self.data
+    }
+
+    pub fn into_data(self) -> T {
+        self.data
+    }
+
+    pub fn into_parts(self) -> (T, Provenance) {
+        (self.data, self.provenance)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -339,7 +437,13 @@ pub fn provenance_for_test(
     prompt_fingerprint: Option<PromptFingerprint>,
     warnings: Vec<ProvenanceWarning>,
 ) -> Provenance {
-    let trust = TrustAssessment::compute(&sources, &children, prompt_fingerprint.is_some());
+    let trust = TrustAssessment::compute(
+        &sources,
+        &children,
+        &field_attributions,
+        AbilityCategory::Read,
+        prompt_fingerprint.is_some(),
+    );
     Provenance {
         provenance_schema_version: PROVENANCE_SCHEMA_VERSION,
         ability_name: ability_name.into(),

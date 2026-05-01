@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use chrono::TimeZone;
 use dailyos_abilities_macro::ability;
 use dailyos_lib::abilities::provenance::{
-    provenance_for_test, AbilityOutput, Diagnostics, SubjectAttribution, SubjectRef,
+    FieldAttribution, FieldPath, ProvenanceBuilder, ProvenanceBuilderConfig, SubjectAttribution,
+    SubjectRef,
 };
 use dailyos_lib::abilities::{AbilityContext, AbilityResult, Actor};
 use dailyos_lib::observability::{EvaluateModeSubscriber, Outcome};
@@ -65,25 +65,26 @@ async fn dos210_span_fixture(
     input: SpanInput,
 ) -> AbilityResult<SpanOutput> {
     let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-fixture".into()));
-    let provenance = provenance_for_test(
+    let mut builder = ProvenanceBuilder::new(ProvenanceBuilderConfig::new(
         "dos210_span_fixture",
         ctx.services().clock.now(),
-        subject,
-        Vec::new(),
-        Vec::new(),
-        BTreeMap::new(),
-        None,
-        Vec::new(),
-    );
+    ));
+    builder.set_subject(subject.clone());
+    builder
+        .attribute(
+            FieldPath::new("/ok").unwrap(),
+            FieldAttribution::constant(subject),
+        )
+        .unwrap();
 
-    Ok(AbilityOutput {
-        data: SpanOutput {
+    builder
+        .finalize(SpanOutput {
             ok: !input.value.is_empty(),
-        },
-        ability_version: provenance.ability_version.clone(),
-        diagnostics: Diagnostics::default(),
-        provenance,
-    })
+        })
+        .map_err(|error| dailyos_lib::abilities::AbilityError {
+            kind: dailyos_lib::abilities::AbilityErrorKind::Validation,
+            message: error.to_string(),
+        })
 }
 
 #[traced_test]
@@ -113,7 +114,7 @@ fn span_carries_required_fields_and_redacts_payload() {
         },
     ))
     .unwrap();
-    assert!(output.data.ok);
+    assert!(output.data().ok);
 
     let records = subscriber.snapshot();
     assert_eq!(records.len(), 1);

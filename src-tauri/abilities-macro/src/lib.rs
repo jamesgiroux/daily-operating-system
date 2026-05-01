@@ -77,6 +77,11 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     let descriptor_ident = format_ident!("__ABILITY_DESCRIPTOR_{}", static_suffix);
     let full_descriptor_ident = format_ident!("__ABILITY_DESCRIPTOR_FULL_{}", static_suffix);
     let subscriber_ident = format_ident!("__ABILITY_EVALUATE_SUBSCRIBER_{}", static_suffix);
+    let actors_ident = format_ident!("__ABILITY_DESCRIPTOR_ACTORS_{}", static_suffix);
+    let modes_ident = format_ident!("__ABILITY_DESCRIPTOR_MODES_{}", static_suffix);
+    let composes_ident = format_ident!("__ABILITY_DESCRIPTOR_COMPOSES_{}", static_suffix);
+    let mutates_ident = format_ident!("__ABILITY_DESCRIPTOR_MUTATES_{}", static_suffix);
+    let signals_ident = format_ident!("__ABILITY_DESCRIPTOR_SIGNALS_{}", static_suffix);
 
     let mut inner_fn = item_fn.clone();
     inner_fn.sig.ident = inner_ident.clone();
@@ -99,15 +104,29 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     let category_expr = args.category.registry_expr();
     let category_str = args.category.as_str();
 
-    let actor_exprs = args.allowed_actors.iter().map(ActorArg::registry_expr);
-    let mode_exprs = args.allowed_modes.iter().map(ExecutionModeArg::registry_expr);
-    let compose_exprs = args.composes.iter().map(ComposeArg::registry_expr);
-    let mutates_exprs = detected.iter().map(|path| quote! { #path });
+    let actor_exprs: Vec<_> = args
+        .allowed_actors
+        .iter()
+        .map(ActorArg::registry_expr)
+        .collect();
+    let mode_exprs: Vec<_> = args
+        .allowed_modes
+        .iter()
+        .map(ExecutionModeArg::registry_expr)
+        .collect();
+    let compose_exprs: Vec<_> = args.composes.iter().map(ComposeArg::registry_expr).collect();
+    let mutates_exprs: Vec<_> = detected.iter().map(|path| quote! { #path }).collect();
     let signal_exprs = args
         .signal_policy
         .emits_on_output_change
         .iter()
-        .map(|signal| quote! { #signal.to_string() });
+        .map(|signal| quote! { #signal })
+        .collect::<Vec<_>>();
+    let actor_count = actor_exprs.len();
+    let mode_count = mode_exprs.len();
+    let compose_count = compose_exprs.len();
+    let mutates_count = mutates_exprs.len();
+    let signal_count = signal_exprs.len();
     let signal_coalesce = args.signal_policy.coalesce;
 
     let expanded = quote! {
@@ -211,7 +230,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                     message: format!("failed to create ability runtime: {}", error),
                 })?;
             let output = __runtime.block_on(#fn_ident(ctx, input))?;
-            ::serde_json::to_value(output.data).map_err(|error| {
+            ::serde_json::to_value(&output).map_err(|error| {
                 crate::abilities::registry::AbilityError {
                     kind: crate::abilities::registry::AbilityErrorKind::Validation,
                     message: format!("invalid output for ability `{}`: {}", #name, error),
@@ -225,9 +244,22 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
         }
 
         fn #output_schema_ident() -> ::serde_json::Value {
-            ::serde_json::to_value(::schemars::schema_for!(#output_ty))
+            ::serde_json::to_value(::schemars::schema_for!(
+                crate::abilities::provenance::AbilityOutput::<#output_ty>
+            ))
                 .expect("schemars output schema should serialize")
         }
+
+        pub static #actors_ident: [crate::abilities::registry::Actor; #actor_count] =
+            [#(#actor_exprs),*];
+        pub static #modes_ident: [crate::services::context::ExecutionMode; #mode_count] =
+            [#(#mode_exprs),*];
+        pub static #composes_ident: [crate::abilities::registry::ComposesEntry; #compose_count] =
+            [#(#compose_exprs),*];
+        pub static #mutates_ident: [&'static str; #mutates_count] =
+            [#(#mutates_exprs),*];
+        pub static #signals_ident: [&'static str; #signal_count] =
+            [#(#signal_exprs),*];
 
         #[allow(dead_code)]
         pub fn #full_descriptor_ident() -> crate::abilities::registry::AbilityDescriptor {
@@ -237,17 +269,17 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                 schema_version: #schema_version,
                 category: #category_expr,
                 policy: crate::abilities::registry::AbilityPolicy {
-                    allowed_actors: vec![#(#actor_exprs),*],
-                    allowed_modes: vec![#(#mode_exprs),*],
+                    allowed_actors: &#actors_ident,
+                    allowed_modes: &#modes_ident,
                     requires_confirmation: #requires_confirmation,
                     may_publish: #may_publish,
                 },
-                composes: vec![#(#compose_exprs),*],
-                mutates: vec![#(#mutates_exprs),*],
+                composes: &#composes_ident,
+                mutates: &#mutates_ident,
                 experimental: #experimental,
                 registered_at: #registered_at_static,
                 signal_policy: crate::abilities::registry::SignalPolicy {
-                    emits_on_output_change: vec![#(#signal_exprs),*],
+                    emits_on_output_change: &#signals_ident,
                     coalesce: #signal_coalesce,
                 },
                 invoke_erased: #erased_ident,
@@ -263,17 +295,17 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                 schema_version: #schema_version,
                 category: #category_expr,
                 policy: crate::abilities::registry::AbilityPolicy {
-                    allowed_actors: Vec::new(),
-                    allowed_modes: Vec::new(),
+                    allowed_actors: &#actors_ident,
+                    allowed_modes: &#modes_ident,
                     requires_confirmation: #requires_confirmation,
                     may_publish: #may_publish,
                 },
-                composes: Vec::new(),
-                mutates: Vec::new(),
+                composes: &#composes_ident,
+                mutates: &#mutates_ident,
                 experimental: #experimental,
                 registered_at: #registered_at_static,
                 signal_policy: crate::abilities::registry::SignalPolicy {
-                    emits_on_output_change: Vec::new(),
+                    emits_on_output_change: &#signals_ident,
                     coalesce: #signal_coalesce,
                 },
                 invoke_erased: #erased_ident,
@@ -288,17 +320,17 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                 schema_version: #schema_version,
                 category: #category_expr,
                 policy: crate::abilities::registry::AbilityPolicy {
-                    allowed_actors: Vec::new(),
-                    allowed_modes: Vec::new(),
+                    allowed_actors: &#actors_ident,
+                    allowed_modes: &#modes_ident,
                     requires_confirmation: #requires_confirmation,
                     may_publish: #may_publish,
                 },
-                composes: Vec::new(),
-                mutates: Vec::new(),
+                composes: &#composes_ident,
+                mutates: &#mutates_ident,
                 experimental: #experimental,
                 registered_at: #registered_at_static,
                 signal_policy: crate::abilities::registry::SignalPolicy {
-                    emits_on_output_change: Vec::new(),
+                    emits_on_output_change: &#signals_ident,
                     coalesce: #signal_coalesce,
                 },
                 invoke_erased: #erased_ident,
@@ -651,8 +683,8 @@ impl ComposeArg {
         let optional = self.optional;
         quote! {
             crate::abilities::registry::ComposesEntry {
-                id: crate::abilities::provenance::CompositionId::new(#id),
-                ability: #ability.to_string(),
+                id: crate::abilities::provenance::CompositionId::from_static(#id),
+                ability: #ability,
                 optional: #optional,
             }
         }
