@@ -1,0 +1,5 @@
+error: first #[ability] parameter must be &AbilityContext
+  --> tests/trybuild/ability_cannot_import_actiondb_fails.rs:29:10
+   |
+29 |     _db: &ActionDb,
+   |          ^^^^^^^^^

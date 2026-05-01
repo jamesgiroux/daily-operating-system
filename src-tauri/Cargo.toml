@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "abilities-macro"]
+resolver = "2"
+
 [package]
 name = "dailyos"
 version = "1.2.1"
@@ -30,7 +34,7 @@ cron = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
 portable-pty = "0.8"
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 thiserror = "2"
 tokio = { version = "1", features = ["sync", "time", "process", "rt", "fs", "macros", "rt-multi-thread"] }
 log = "0.4"
@@ -80,14 +84,19 @@ tempfile = "3"
 
 # MCP Server (ADR-0075) + Quill MCP client
 rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-child-process", "macros"] }
-schemars = { version = "0.8", optional = true }
+schemars = "0.8.22"
+inventory = "0.3"
+dailyos-abilities-macro = { path = "abilities-macro" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 anyhow = { version = "1", optional = true }
 
 [dev-dependencies]
 filetime = "0.2.27"
+tracing-test = "0.2"
 
 [features]
-mcp = ["dep:schemars", "dep:anyhow"]
+mcp = ["dep:anyhow"]
 
 [[bin]]
 name = "dailyos"
