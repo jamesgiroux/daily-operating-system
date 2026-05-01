@@ -3841,6 +3841,7 @@ pub async fn attach_meeting_transcript(
     // failures are logged but never block the transcript attachment.
     if result.status == "success" {
         match crate::services::entity_linking::calendar_adapter::evaluate_meeting(
+            ctx,
             state.clone(),
             &meeting,
             crate::services::entity_linking::Trigger::TranscriptIngest,

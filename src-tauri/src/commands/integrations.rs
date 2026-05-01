@@ -731,7 +731,12 @@ pub async fn trigger_granola_sync_for_meeting(
     // Re-run entity linking with the post-transcript context (DOS-258).
     // Best-effort — failure here never blocks the manual-sync response.
     if let Some(event) = attached_event {
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let svc_ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
         if let Err(e) = crate::services::entity_linking::calendar_adapter::evaluate_meeting(
+            &svc_ctx,
             state,
             &event,
             crate::services::entity_linking::Trigger::TranscriptIngest,

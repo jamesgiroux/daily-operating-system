@@ -128,7 +128,11 @@ async fn rescan_email(state: Arc<AppState>, email_id: &str) -> Result<(), String
         Some(e) => e,
         None => return Err(format!("email {email_id} not found for rescan")),
     };
-    super::email_adapter::evaluate_email(state, &email, Trigger::EntityGraphChange)
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let svc_ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+    super::email_adapter::evaluate_email(&svc_ctx, state, &email, Trigger::EntityGraphChange)
         .await
         .map(|_| ())
 }
