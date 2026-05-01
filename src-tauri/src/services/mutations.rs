@@ -1024,7 +1024,7 @@ mod tests {
                     "transcript",
                     Some(r#"{"meeting_id":"mtg-1","wins":1,"risks":0,"decisions":0}"#),
                     0.75,
-                ).map_err(|e| format!("{e}")).unwrap();
+                ).map_err(|e| e.to_string()).unwrap();
                 Ok(())
             }).unwrap();
         } else {

@@ -427,6 +427,7 @@ pub async fn set_user_profile(
     Ok("ok".to_string())
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
     use super::validate_ai_model_choice;

@@ -10,9 +10,10 @@ mod tests {
 
     // Helper: create a test IntelligenceJson with product classification
     fn intel_with_products(products: Vec<ProductInfo>) -> IntelligenceJson {
-        let mut intel = IntelligenceJson::default();
-        intel.product_classification = Some(ProductClassification { products });
-        intel
+        IntelligenceJson {
+            product_classification: Some(ProductClassification { products }),
+            ..Default::default()
+        }
     }
 
     // =========================================================================
@@ -172,15 +173,17 @@ mod tests {
     #[test]
     fn test_product_classification_in_intelligence_context() {
         // Verify products appear in intelligence JSON serialization
-        let mut intel = IntelligenceJson::default();
-        intel.product_classification = Some(ProductClassification {
-            products: vec![ProductInfo {
-                type_: Some("cms".to_string()),
-                tier: Some("enhanced".to_string()),
-                arr: Some(185400.0),
-                billing_terms: Some("annual".to_string()),
-            }],
-        });
+        let intel = IntelligenceJson {
+            product_classification: Some(ProductClassification {
+                products: vec![ProductInfo {
+                    type_: Some("cms".to_string()),
+                    tier: Some("enhanced".to_string()),
+                    arr: Some(185400.0),
+                    billing_terms: Some("annual".to_string()),
+                }],
+            }),
+            ..Default::default()
+        };
 
         let json = serde_json::to_string(&intel).unwrap();
         assert!(json.contains("productClassification"));

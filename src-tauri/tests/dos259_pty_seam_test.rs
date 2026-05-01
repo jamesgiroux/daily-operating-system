@@ -7,7 +7,7 @@
 //! captures the args `PtyClaudeCode` actually feeds to the spawn step
 //! and asserts they match the expected propagation contract.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use parking_lot::Mutex;

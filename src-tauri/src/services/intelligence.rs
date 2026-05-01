@@ -1995,11 +1995,13 @@ mod mutation_smoke_tests {
         let account = make_account("acc-intel");
         db.upsert_account(&account).unwrap();
 
-        let mut intel = IntelligenceJson::default();
-        intel.entity_id = "acc-intel".to_string();
-        intel.entity_type = "account".to_string();
-        intel.enriched_at = chrono::Utc::now().to_rfc3339();
-        intel.executive_assessment = Some("Strong account with growing adoption.".to_string());
+        let intel = IntelligenceJson {
+            entity_id: "acc-intel".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: chrono::Utc::now().to_rfc3339(),
+            executive_assessment: Some("Strong account with growing adoption.".to_string()),
+            ..Default::default()
+        };
         let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
@@ -2033,10 +2035,12 @@ mod mutation_smoke_tests {
         db.upsert_account(&account).unwrap();
 
         // Seed minimal intelligence so recompute has something to work with
-        let mut intel = IntelligenceJson::default();
-        intel.entity_id = "acc-health".to_string();
-        intel.entity_type = "account".to_string();
-        intel.enriched_at = chrono::Utc::now().to_rfc3339();
+        let intel = IntelligenceJson {
+            entity_id: "acc-health".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: chrono::Utc::now().to_rfc3339(),
+            ..Default::default()
+        };
         db.upsert_entity_intelligence(&intel).unwrap();
         let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);

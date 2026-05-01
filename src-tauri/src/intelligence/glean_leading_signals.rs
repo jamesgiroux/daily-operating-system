@@ -812,14 +812,16 @@ mod tests {
 
     #[test]
     fn derives_champion_at_risk_signal() {
-        let mut signals = HealthOutlookSignals::default();
-        signals.champion_risk = Some(ChampionRisk {
-            champion_name: Some("Ada".into()),
-            at_risk: true,
-            risk_level: Some("high".into()),
-            risk_evidence: vec!["promotion".into()],
+        let signals = HealthOutlookSignals {
+            champion_risk: Some(ChampionRisk {
+                champion_name: Some("Ada".into()),
+                at_risk: true,
+                risk_level: Some("high".into()),
+                risk_evidence: vec!["promotion".into()],
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         let derived = signals.derive_signals();
         assert!(derived.champion_at_risk.is_some());
         assert!(derived.sentiment_divergence.is_none());
@@ -827,11 +829,13 @@ mod tests {
 
     #[test]
     fn derives_divergence_only_when_flagged() {
-        let mut signals = HealthOutlookSignals::default();
-        signals.channel_sentiment = Some(ChannelSentiment {
-            divergence_detected: false,
+        let mut signals = HealthOutlookSignals {
+            channel_sentiment: Some(ChannelSentiment {
+                divergence_detected: false,
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         assert!(signals.derive_signals().sentiment_divergence.is_none());
 
         signals.channel_sentiment = Some(ChannelSentiment {
@@ -844,49 +848,53 @@ mod tests {
 
     #[test]
     fn derives_only_decision_relevant_competitors() {
-        let mut signals = HealthOutlookSignals::default();
-        signals.transcript_extraction = Some(TranscriptExtraction {
-            competitor_benchmarks: vec![
-                CompetitorBenchmark {
-                    competitor: "A".into(),
-                    threat_level: Some("mentioned".into()),
-                    ..Default::default()
-                },
-                CompetitorBenchmark {
-                    competitor: "B".into(),
-                    threat_level: Some("decision_relevant".into()),
-                    ..Default::default()
-                },
-                CompetitorBenchmark {
-                    competitor: "C".into(),
-                    threat_level: Some("actively_comparing".into()),
-                    ..Default::default()
-                },
-            ],
+        let signals = HealthOutlookSignals {
+            transcript_extraction: Some(TranscriptExtraction {
+                competitor_benchmarks: vec![
+                    CompetitorBenchmark {
+                        competitor: "A".into(),
+                        threat_level: Some("mentioned".into()),
+                        ..Default::default()
+                    },
+                    CompetitorBenchmark {
+                        competitor: "B".into(),
+                        threat_level: Some("decision_relevant".into()),
+                        ..Default::default()
+                    },
+                    CompetitorBenchmark {
+                        competitor: "C".into(),
+                        threat_level: Some("actively_comparing".into()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         let derived = signals.derive_signals();
         assert_eq!(derived.competitor_decision_relevant.len(), 2);
     }
 
     #[test]
     fn derives_budget_locked_only_when_locked_flag_set() {
-        let mut signals = HealthOutlookSignals::default();
-        signals.transcript_extraction = Some(TranscriptExtraction {
-            budget_cycle_signals: vec![
-                BudgetCycleSignal {
-                    signal: "planning".into(),
-                    locked: false,
-                    ..Default::default()
-                },
-                BudgetCycleSignal {
-                    signal: "Q3 locked".into(),
-                    locked: true,
-                    ..Default::default()
-                },
-            ],
+        let signals = HealthOutlookSignals {
+            transcript_extraction: Some(TranscriptExtraction {
+                budget_cycle_signals: vec![
+                    BudgetCycleSignal {
+                        signal: "planning".into(),
+                        locked: false,
+                        ..Default::default()
+                    },
+                    BudgetCycleSignal {
+                        signal: "Q3 locked".into(),
+                        locked: true,
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         assert!(signals.derive_signals().budget_cycle_locked.is_some());
     }
 
