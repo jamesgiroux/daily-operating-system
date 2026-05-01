@@ -135,6 +135,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     };
 
     let expanded = quote! {
+        #experimental_cfg
         #inner_fn
 
         #experimental_cfg
