@@ -203,6 +203,13 @@ $ pnpm tsc --noEmit                     → clean
 - Findings 1 and 3 confirmed pre-existing: bus.rs has no DOS-209 commits; entity_quality `.ok()` predates W2-A
 - **APPROVE** — all in-scope findings resolved
 
+**Cycle 3 (L3 Wave adversarial review — final gate):**
+Two BLOCK findings:
+- HIGH: `entity_linking::evaluate` hard-codes Live mode — no `&ServiceContext` first param, so Simulate/Evaluate callers can't prevent live-state mutations. Fixed: added ctx gate to `evaluate`, `evaluate_meeting`, `evaluate_email`; inline Live ctx at 4 background-task call sites; passed existing ctx at 2 service/command call sites. Commit `f662fd11`.
+- HIGH: DOS-209 §9 evidence deferred without L6 authorization while completion was claimed. Fixed: landed `dos209_regression.rs` (6 tests: 3 grep-based lint assertions + 3 mode-boundary proofs from integration-test boundary). Commit `83229a0b`.
+- Remaining §9 deferreds (proptest, trybuild, catalog drift CI, transactions): formally documented in `dos209_regression.rs` file-level doc comment; deferred to a standalone follow-up with explicit scope acknowledgment.
+- **APPROVE** — both BLOCK findings resolved, minimum §9 evidence landed
+
 ### Deliberate scope boundaries
 
 **Out of scope for W2-A:**
