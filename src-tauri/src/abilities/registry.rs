@@ -36,27 +36,26 @@ pub enum Actor {
 }
 
 /// Per-ability policy (which actors may invoke, which modes, etc.).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbilityPolicy {
-    pub allowed_actors: Vec<Actor>,
-    pub allowed_modes: Vec<ExecutionMode>,
+    pub allowed_actors: &'static [Actor],
+    pub allowed_modes: &'static [ExecutionMode],
     pub requires_confirmation: bool,
     pub may_publish: bool,
 }
 
 /// Composition entry per descriptor.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ComposesEntry {
     pub id: CompositionId,
-    pub ability: String,
-    #[serde(default)]
+    pub ability: &'static str,
     pub optional: bool,
 }
 
 /// Signal policy metadata for ADR-0115. W3-A records, does not emit.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SignalPolicy {
-    pub emits_on_output_change: Vec<String>,
+    pub emits_on_output_change: &'static [&'static str],
     pub coalesce: bool,
 }
 
@@ -70,8 +69,8 @@ pub struct AbilityDescriptor {
     pub schema_version: u32,
     pub category: AbilityCategory,
     pub policy: AbilityPolicy,
-    pub composes: Vec<ComposesEntry>,
-    pub mutates: Vec<&'static str>,
+    pub composes: &'static [ComposesEntry],
+    pub mutates: &'static [&'static str],
     pub experimental: bool,
     pub registered_at: Option<&'static str>,
     pub signal_policy: SignalPolicy,
@@ -387,11 +386,11 @@ fn validate_unknown_composes(
     violations: &mut Vec<RegistryViolation>,
 ) {
     for descriptor in descriptors_sorted(by_name) {
-        for entry in &descriptor.composes {
-            if !by_name.contains_key(entry.ability.as_str()) {
+        for entry in descriptor.composes {
+            if !by_name.contains_key(entry.ability) {
                 violations.push(RegistryViolation::UnknownComposes {
                     ability: descriptor.name.to_string(),
-                    target: entry.ability.clone(),
+                    target: entry.ability.to_string(),
                 });
             }
         }
@@ -423,7 +422,7 @@ fn validate_cycles(
             let mut targets: Vec<&'static str> = descriptor
                 .composes
                 .iter()
-                .filter_map(|entry| by_name.get(entry.ability.as_str()).map(|target| target.name))
+                .filter_map(|entry| by_name.get(entry.ability).map(|target| target.name))
                 .collect();
             targets.sort_unstable();
 
@@ -599,7 +598,7 @@ fn descendant_names(
         let mut targets: Vec<&'static str> = descriptor
             .composes
             .iter()
-            .filter_map(|entry| by_name.get(entry.ability.as_str()).map(|target| target.name))
+            .filter_map(|entry| by_name.get(entry.ability).map(|target| target.name))
             .collect();
         targets.sort_unstable();
 
@@ -676,9 +675,9 @@ fn render_descriptor_doc(
         out.push_str(" []\n");
     } else {
         out.push('\n');
-        for entry in &descriptor.composes {
-            out.push_str(&format!("  - id: {}\n", yaml_string(&entry.id.0)));
-            out.push_str(&format!("    ability: {}\n", yaml_string(&entry.ability)));
+        for entry in descriptor.composes {
+            out.push_str(&format!("  - id: {}\n", yaml_string(entry.id.as_str())));
+            out.push_str(&format!("    ability: {}\n", yaml_string(entry.ability)));
             out.push_str(&format!("    optional: {}\n", entry.optional));
         }
     }
@@ -690,7 +689,7 @@ fn render_descriptor_doc(
             .signal_policy
             .emits_on_output_change
             .iter()
-            .cloned(),
+            .map(|value| (*value).to_string()),
         "  ",
     );
     out.push_str(&format!(
@@ -782,17 +781,17 @@ mod tests {
             schema_version: 1,
             category: AbilityCategory::Read,
             policy: AbilityPolicy {
-                allowed_actors: Vec::new(),
-                allowed_modes: Vec::new(),
+                allowed_actors: &[],
+                allowed_modes: &[],
                 requires_confirmation: false,
                 may_publish: false,
             },
-            composes: Vec::new(),
-            mutates: Vec::new(),
+            composes: &[],
+            mutates: &[],
             experimental: false,
             registered_at: None,
             signal_policy: SignalPolicy {
-                emits_on_output_change: Vec::new(),
+                emits_on_output_change: &[],
                 coalesce: false,
             },
             invoke_erased: ok_erased,
@@ -808,8 +807,8 @@ mod tests {
             schema_version: 1,
             category,
             policy: AbilityPolicy {
-                allowed_actors: vec![Actor::Agent, Actor::User, Actor::System],
-                allowed_modes: vec![
+                allowed_actors: &[Actor::Agent, Actor::User, Actor::System],
+                allowed_modes: &[
                     ExecutionMode::Live,
                     ExecutionMode::Simulate,
                     ExecutionMode::Evaluate,
@@ -817,8 +816,8 @@ mod tests {
                 requires_confirmation: false,
                 may_publish: false,
             },
-            composes: Vec::new(),
-            mutates: Vec::new(),
+            composes: &[],
+            mutates: &[],
             experimental: false,
             registered_at: None,
             signal_policy: SignalPolicy::default(),
@@ -828,10 +827,21 @@ mod tests {
         }
     }
 
-    fn compose(mut descriptor: AbilityDescriptor, target: &str) -> AbilityDescriptor {
-        descriptor.composes.push(ComposesEntry {
-            id: CompositionId::new(format!("{}_to_{target}", descriptor.name)),
-            ability: target.to_string(),
+    fn static_slice<T>(values: Vec<T>) -> &'static [T] {
+        Box::leak(values.into_boxed_slice())
+    }
+
+    fn push_compose(descriptor: &mut AbilityDescriptor, entry: ComposesEntry) {
+        let mut composes = descriptor.composes.to_vec();
+        composes.push(entry);
+        descriptor.composes = static_slice(composes);
+    }
+
+    fn compose(mut descriptor: AbilityDescriptor, target: &'static str) -> AbilityDescriptor {
+        let id = CompositionId::new(format!("{}_to_{target}", descriptor.name));
+        push_compose(&mut descriptor, ComposesEntry {
+            id,
+            ability: target,
             optional: false,
         });
         descriptor
@@ -841,12 +851,12 @@ mod tests {
         mut descriptor: AbilityDescriptor,
         mutates: Vec<&'static str>,
     ) -> AbilityDescriptor {
-        descriptor.mutates = mutates;
+        descriptor.mutates = static_slice(mutates);
         descriptor
     }
 
     fn with_actor_policy(mut descriptor: AbilityDescriptor, actors: Vec<Actor>) -> AbilityDescriptor {
-        descriptor.policy.allowed_actors = actors;
+        descriptor.policy.allowed_actors = static_slice(actors);
         descriptor
     }
 
@@ -995,9 +1005,9 @@ mod tests {
             for i in 0..descriptors.len() {
                 for target in (i + 1)..descriptors.len() {
                     if lcg(&mut seed) % 4 == 0 {
-                        descriptors[i].composes.push(ComposesEntry {
+                        push_compose(&mut descriptors[i], ComposesEntry {
                             id: CompositionId::new(format!("{i}_{target}")),
-                            ability: names[target].to_string(),
+                            ability: names[target],
                             optional: false,
                         });
                     }
@@ -1022,16 +1032,16 @@ mod tests {
 
             for i in 0..descriptors.len() {
                 let target = (i + 1) % descriptors.len();
-                descriptors[i].composes.push(ComposesEntry {
+                push_compose(&mut descriptors[i], ComposesEntry {
                     id: CompositionId::new(format!("{i}_{target}")),
-                    ability: names[target].to_string(),
+                    ability: names[target],
                     optional: false,
                 });
                 if lcg(&mut seed) % 3 == 0 {
                     let extra = ((lcg(&mut seed) as usize) % descriptors.len()).max(i);
-                    descriptors[i].composes.push(ComposesEntry {
+                    push_compose(&mut descriptors[i], ComposesEntry {
                         id: CompositionId::new(format!("{i}_{extra}_extra")),
-                        ability: names[extra].to_string(),
+                        ability: names[extra],
                         optional: false,
                     });
                 }

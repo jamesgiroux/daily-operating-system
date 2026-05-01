@@ -1,9 +1,13 @@
+use std::collections::BTreeMap;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::envelope::ComposedProvenance;
+use super::field::{DerivationKind, FieldAttribution, FieldPath, SourceRef};
 use super::source::{DataSource, EntityId, SourceAttribution, SourceIndex};
 use super::CompositionId;
+use crate::abilities::registry::AbilityCategory;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct TrustAssessment {
@@ -16,14 +20,39 @@ impl TrustAssessment {
     pub fn compute(
         sources: &[SourceAttribution],
         children: &[ComposedProvenance],
+        field_attributions: &BTreeMap<FieldPath, FieldAttribution>,
+        category: AbilityCategory,
         has_prompt_fingerprint: bool,
     ) -> Self {
         let mut contributions = Vec::new();
         let mut contains_stored_synthesis = false;
+        let mut has_llm_synthesis_field = false;
+        let mut used_sources = BTreeMap::<SourceIndex, bool>::new();
+
+        for attribution in field_attributions.values() {
+            let is_llm_synthesis = matches!(attribution.derivation, DerivationKind::LlmSynthesis);
+            has_llm_synthesis_field |= is_llm_synthesis;
+
+            for source_ref in &attribution.source_refs {
+                if let SourceRef::Source { source_index } = source_ref {
+                    used_sources
+                        .entry(*source_index)
+                        .and_modify(|value| *value |= is_llm_synthesis)
+                        .or_insert(is_llm_synthesis);
+                }
+            }
+        }
 
         for (index, source) in sources.iter().enumerate() {
             let source_index = SourceIndex(index);
-            let reason = if let Some((entity_id, field)) = source.stored_synthesis_entity_field() {
+            let Some(source_used_for_llm_synthesis) = used_sources.get(&source_index).copied()
+            else {
+                continue;
+            };
+
+            let reason = if source_used_for_llm_synthesis {
+                TrustReason::DirectlyFromLLMSynthesis
+            } else if let Some((entity_id, field)) = source.stored_synthesis_entity_field() {
                 contains_stored_synthesis = true;
                 contributions.push(TrustContribution {
                     source: TrustContributionSource::StoredSynthesisField { entity_id, field },
@@ -63,16 +92,23 @@ impl TrustAssessment {
             });
         }
 
-        let untrusted = has_prompt_fingerprint
-            || contributions.iter().any(|contribution| {
-                matches!(
-                    contribution.reason,
-                    TrustReason::DirectlyFromLLMSynthesis
-                        | TrustReason::ComposedUntrustedChild
-                        | TrustReason::StoredSynthesis
-                        | TrustReason::UnboundedFreeText
-                )
-            });
+        let has_untrusted_contribution = contributions.iter().any(|contribution| {
+            matches!(
+                contribution.reason,
+                TrustReason::DirectlyFromLLMSynthesis
+                    | TrustReason::ComposedUntrustedChild
+                    | TrustReason::StoredSynthesis
+                    | TrustReason::UnboundedFreeText
+            )
+        });
+        let untrusted = match category {
+            AbilityCategory::Transform if has_prompt_fingerprint || has_llm_synthesis_field => {
+                true
+            }
+            AbilityCategory::Read | AbilityCategory::Transform | AbilityCategory::Publish | AbilityCategory::Maintenance => {
+                has_prompt_fingerprint || has_llm_synthesis_field || has_untrusted_contribution
+            }
+        };
 
         Self {
             effective: if untrusted {
@@ -120,6 +156,7 @@ pub enum TrustReason {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abilities::registry::AbilityCategory;
     use crate::abilities::provenance::{
         AbilityExecutionMode, AbilityVersion, Actor, FieldAttribution, FieldPath, InputsSnapshot,
         InvocationId, Provenance, SchemaVersion, SourceIdentifier, SubjectAttribution, SubjectRef,
@@ -134,16 +171,39 @@ mod tests {
             .unwrap()
     }
 
+    fn subject() -> SubjectAttribution {
+        SubjectAttribution::direct_confident(SubjectRef::Account("acct-1".into()))
+    }
+
+    fn direct_fields() -> BTreeMap<FieldPath, FieldAttribution> {
+        BTreeMap::from([(
+            FieldPath::new("/name").unwrap(),
+            FieldAttribution::direct(subject(), SourceIndex(0)),
+        )])
+    }
+
     #[test]
     fn provenance_read_structured_sources_trusted() {
-        let trust = TrustAssessment::compute(&[source(DataSource::Google)], &[], false);
+        let trust = TrustAssessment::compute(
+            &[source(DataSource::Google)],
+            &[],
+            &direct_fields(),
+            AbilityCategory::Read,
+            false,
+        );
 
         assert_eq!(trust.effective, EffectiveTrust::Trusted);
     }
 
     #[test]
     fn provenance_transform_with_prompt_fingerprint_untrusted() {
-        let trust = TrustAssessment::compute(&[source(DataSource::Google)], &[], true);
+        let trust = TrustAssessment::compute(
+            &[source(DataSource::Google)],
+            &[],
+            &direct_fields(),
+            AbilityCategory::Transform,
+            true,
+        );
 
         assert_eq!(trust.effective, EffectiveTrust::Untrusted);
     }
@@ -171,7 +231,13 @@ mod tests {
         )
         .unwrap();
 
-        let trust = TrustAssessment::compute(&[source], &[], false);
+        let trust = TrustAssessment::compute(
+            &[source],
+            &[],
+            &direct_fields(),
+            AbilityCategory::Read,
+            false,
+        );
 
         assert_eq!(trust.effective, EffectiveTrust::Untrusted);
         assert!(trust.contains_stored_synthesis);
@@ -182,7 +248,7 @@ mod tests {
         let observed_at = chrono::Utc
             .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
             .unwrap();
-        let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-1".into()));
+        let subject = subject();
         let child = Provenance {
             provenance_schema_version: crate::abilities::provenance::PROVENANCE_SCHEMA_VERSION,
             ability_name: "transform_child".into(),
@@ -213,7 +279,13 @@ mod tests {
         };
         let children = vec![ComposedProvenance::new(CompositionId::new("child_a"), child)];
 
-        let trust = TrustAssessment::compute(&[], &children, false);
+        let trust = TrustAssessment::compute(
+            &[],
+            &children,
+            &BTreeMap::new(),
+            AbilityCategory::Publish,
+            false,
+        );
 
         assert_eq!(trust.effective, EffectiveTrust::Untrusted);
     }

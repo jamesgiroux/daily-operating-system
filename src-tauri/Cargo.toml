@@ -94,6 +94,7 @@ anyhow = { version = "1", optional = true }
 [dev-dependencies]
 filetime = "0.2.27"
 tracing-test = "0.2"
+trybuild = "1"
 
 [features]
 mcp = ["dep:anyhow"]

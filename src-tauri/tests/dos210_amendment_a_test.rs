@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
-
 use chrono::TimeZone;
 use dailyos_lib::abilities::provenance::{
-    provenance_for_test, AbilityOutput, CompositionId, Diagnostics, ProvenanceWarning,
-    SubjectAttribution, SubjectRef,
+    AbilityOutput, CompositionId, FieldAttribution, FieldPath, ProvenanceBuilder,
+    ProvenanceBuilderConfig, ProvenanceWarning, SubjectAttribution, SubjectRef,
 };
 use dailyos_lib::abilities::registry::{AbilityPolicy, ComposesEntry, SignalPolicy};
 use dailyos_lib::abilities::{
@@ -12,7 +10,7 @@ use dailyos_lib::abilities::{
 };
 use dailyos_lib::services::context::ExecutionMode;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 struct FixtureOutput {
     ok: bool,
 }
@@ -28,20 +26,24 @@ fn empty_schema() -> serde_json::Value {
     serde_json::json!({ "type": "object" })
 }
 
-fn descriptor(name: &'static str, composes: Vec<ComposesEntry>) -> AbilityDescriptor {
+fn static_slice<T>(values: Vec<T>) -> &'static [T] {
+    Box::leak(values.into_boxed_slice())
+}
+
+fn descriptor(name: &'static str, composes: &'static [ComposesEntry]) -> AbilityDescriptor {
     AbilityDescriptor {
         name,
         version: "0.1.0",
         schema_version: 1,
         category: AbilityCategory::Read,
         policy: AbilityPolicy {
-            allowed_actors: vec![Actor::System],
-            allowed_modes: vec![ExecutionMode::Evaluate],
+            allowed_actors: &[Actor::System],
+            allowed_modes: &[ExecutionMode::Evaluate],
             requires_confirmation: false,
             may_publish: false,
         },
         composes,
-        mutates: Vec::new(),
+        mutates: &[],
         experimental: false,
         registered_at: None,
         signal_policy: SignalPolicy::default(),
@@ -54,15 +56,15 @@ fn descriptor(name: &'static str, composes: Vec<ComposesEntry>) -> AbilityDescri
 fn composed_entry(optional: bool) -> ComposesEntry {
     ComposesEntry {
         id: CompositionId::new("b-read"),
-        ability: "child_b".to_string(),
+        ability: "child_b",
         optional,
     }
 }
 
 fn register_pair(optional: bool) -> AbilityRegistry {
     AbilityRegistry::from_descriptors_checked(vec![
-        descriptor("child_b", Vec::new()),
-        descriptor("parent_a", vec![composed_entry(optional)]),
+        descriptor("child_b", &[]),
+        descriptor("parent_a", static_slice(vec![composed_entry(optional)])),
     ])
     .unwrap()
 }
@@ -90,23 +92,18 @@ fn parent_output(warnings: Vec<ProvenanceWarning>) -> AbilityOutput<FixtureOutpu
         .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
         .unwrap();
     let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-fixture".into()));
-    let provenance = provenance_for_test(
-        "parent_a",
-        produced_at,
-        subject,
-        Vec::new(),
-        Vec::new(),
-        BTreeMap::new(),
-        None,
-        warnings,
-    );
-
-    AbilityOutput {
-        data: FixtureOutput { ok: true },
-        ability_version: provenance.ability_version.clone(),
-        diagnostics: Diagnostics::default(),
-        provenance,
+    let mut builder = ProvenanceBuilder::new(ProvenanceBuilderConfig::new("parent_a", produced_at));
+    builder.set_subject(subject.clone());
+    for warning in warnings {
+        builder.add_warning(warning);
     }
+    builder
+        .attribute(
+            FieldPath::new("/ok").unwrap(),
+            FieldAttribution::constant(subject),
+        )
+        .unwrap();
+    builder.finalize(FixtureOutput { ok: true }).unwrap()
 }
 
 fn parent_a_optional() -> AbilityResult<FixtureOutput> {
@@ -133,10 +130,10 @@ fn optional_composed_read_failure_emits_warning_not_error() {
     assert_eq!(registry.iter_for(Actor::System).count(), 2);
 
     let output = parent_a_optional().unwrap();
-    assert!(output.data.ok);
-    assert_eq!(output.provenance.warnings.len(), 1);
+    assert!(output.data().ok);
+    assert_eq!(output.provenance().warnings.len(), 1);
 
-    match &output.provenance.warnings[0] {
+    match &output.provenance().warnings[0] {
         ProvenanceWarning::OptionalComposedReadFailed {
             composition_id,
             reason,

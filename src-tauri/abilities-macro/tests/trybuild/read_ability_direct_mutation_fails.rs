@@ -58,14 +58,20 @@ mod observability {
 mod abilities {
     pub mod provenance {
         #[derive(Debug, Clone, PartialEq, Eq)]
-        pub struct CompositionId(pub String);
+        pub struct CompositionId(pub &'static str);
 
         impl CompositionId {
             pub fn new(value: impl Into<String>) -> Self {
-                Self(value.into())
+                let _ = value.into();
+                Self("fixture")
+            }
+
+            pub const fn from_static(value: &'static str) -> Self {
+                Self(value)
             }
         }
 
+        #[derive(serde::Serialize, schemars::JsonSchema)]
         pub struct AbilityOutput<T> {
             pub data: T,
         }
@@ -94,20 +100,20 @@ mod abilities {
         }
 
         pub struct AbilityPolicy {
-            pub allowed_actors: Vec<Actor>,
-            pub allowed_modes: Vec<ExecutionMode>,
+            pub allowed_actors: &'static [Actor],
+            pub allowed_modes: &'static [ExecutionMode],
             pub requires_confirmation: bool,
             pub may_publish: bool,
         }
 
         pub struct ComposesEntry {
             pub id: CompositionId,
-            pub ability: String,
+            pub ability: &'static str,
             pub optional: bool,
         }
 
         pub struct SignalPolicy {
-            pub emits_on_output_change: Vec<String>,
+            pub emits_on_output_change: &'static [&'static str],
             pub coalesce: bool,
         }
 
@@ -117,8 +123,8 @@ mod abilities {
             pub schema_version: u32,
             pub category: AbilityCategory,
             pub policy: AbilityPolicy,
-            pub composes: Vec<ComposesEntry>,
-            pub mutates: Vec<&'static str>,
+            pub composes: &'static [ComposesEntry],
+            pub mutates: &'static [&'static str],
             pub experimental: bool,
             pub registered_at: Option<&'static str>,
             pub signal_policy: SignalPolicy,

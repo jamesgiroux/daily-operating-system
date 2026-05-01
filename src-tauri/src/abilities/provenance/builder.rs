@@ -6,13 +6,14 @@ use serde_json::Value;
 
 use super::envelope::{
     AbilityExecutionMode, AbilityOutput, AbilityVersion, Actor, ComposedProvenance, CompositionId,
-    Diagnostics, InputsSnapshot, InvocationId, PromptFingerprint, Provenance, ProvenanceWarning,
-    SchemaVersion, SourceTimestampFallback, PROVENANCE_SCHEMA_VERSION,
+    InputsSnapshot, InvocationId, PromptFingerprint, Provenance, ProvenanceWarning, SchemaVersion,
+    SourceTimestampFallback, PROVENANCE_SCHEMA_VERSION,
 };
 use super::field::{FieldAttribution, FieldAttributionError, FieldPath, SourceRef};
 use super::source::{SourceAttribution, SourceIndex};
 use super::subject::{SubjectAttribution, SubjectFitStatus};
 use super::trust::TrustAssessment;
+use crate::abilities::registry::AbilityCategory;
 
 pub const SOFT_PROVENANCE_BUDGET_BYTES: usize = 100 * 1024;
 pub const HARD_PROVENANCE_BUDGET_BYTES: usize = 1024 * 1024;
@@ -27,6 +28,7 @@ pub struct ProvenanceBuilderConfig {
     pub inputs_snapshot: InputsSnapshot,
     pub actor: Actor,
     pub mode: AbilityExecutionMode,
+    pub category: AbilityCategory,
     pub declared_composition_ids: BTreeSet<CompositionId>,
 }
 
@@ -43,6 +45,7 @@ impl ProvenanceBuilderConfig {
                 component: "fixture".into(),
             },
             mode: AbilityExecutionMode::Evaluate,
+            category: AbilityCategory::Read,
             declared_composition_ids: BTreeSet::new(),
         }
     }
@@ -171,6 +174,8 @@ impl ProvenanceBuilder {
         let trust = TrustAssessment::compute(
             &self.sources,
             &self.children,
+            &self.field_attributions,
+            self.config.category,
             self.prompt_fingerprint.is_some(),
         );
 
@@ -196,12 +201,7 @@ impl ProvenanceBuilder {
 
         enforce_size_budget(&mut provenance)?;
 
-        Ok(AbilityOutput {
-            data,
-            ability_version: provenance.ability_version.clone(),
-            diagnostics: Diagnostics::default(),
-            provenance,
-        })
+        Ok(AbilityOutput::new(data, provenance))
     }
 
     fn apply_subtree_attributions(&mut self, serialized: &Value) -> Result<(), ProvenanceError> {

@@ -1,0 +1,13 @@
+error[E0451]: fields `data`, `provenance`, `ability_version` and `diagnostics` of struct `AbilityOutput` are private
+  --> tests/trybuild/external_ability_output_construction_fails.rs:20:9
+   |
+19 |     let _ = AbilityOutput {
+   |             ------------- in this type
+20 |         data: (),
+   |         ^^^^ private field
+21 |         provenance: Provenance,
+   |         ^^^^^^^^^^ private field
+22 |         ability_version: AbilityVersion,
+   |         ^^^^^^^^^^^^^^^ private field
+23 |         diagnostics: Diagnostics,
+   |         ^^^^^^^^^^^ private field
