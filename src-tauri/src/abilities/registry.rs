@@ -74,8 +74,14 @@ pub struct AbilityDescriptor {
     pub experimental: bool,
     pub registered_at: Option<&'static str>,
     pub signal_policy: SignalPolicy,
-    pub invoke_erased:
-        fn(&AbilityContext<'_>, serde_json::Value) -> Result<serde_json::Value, AbilityError>,
+    pub invoke_erased: for<'a> fn(
+        &'a AbilityContext<'a>,
+        serde_json::Value,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a,
+        >,
+    >,
     pub input_schema: fn() -> serde_json::Value,
     pub output_schema: fn() -> serde_json::Value,
 }
@@ -160,6 +166,7 @@ pub enum RegistryViolation {
         ability: String,
         age_days: i64,
     },
+    ExperimentalInProduction,
     MetadataDrift {
         ability: String,
         observed: String,
@@ -240,43 +247,47 @@ impl AbilityRegistry {
         })
     }
 
-    pub fn invoke_read(
+    pub async fn invoke_read(
         &self,
         ctx: &AbilityContext<'_>,
         name: &str,
         input: serde_json::Value,
     ) -> Result<serde_json::Value, AbilityError> {
         self.invoke_with_category(ctx, name, input, AbilityCategory::Read)
+            .await
     }
 
-    pub fn invoke_transform(
+    pub async fn invoke_transform(
         &self,
         ctx: &AbilityContext<'_>,
         name: &str,
         input: serde_json::Value,
     ) -> Result<serde_json::Value, AbilityError> {
         self.invoke_with_category(ctx, name, input, AbilityCategory::Transform)
+            .await
     }
 
-    pub fn invoke_publish(
+    pub async fn invoke_publish(
         &self,
         ctx: &AbilityContext<'_>,
         name: &str,
         input: serde_json::Value,
     ) -> Result<serde_json::Value, AbilityError> {
         self.invoke_with_category(ctx, name, input, AbilityCategory::Publish)
+            .await
     }
 
-    pub fn invoke_maintenance(
+    pub async fn invoke_maintenance(
         &self,
         ctx: &AbilityContext<'_>,
         name: &str,
         input: serde_json::Value,
     ) -> Result<serde_json::Value, AbilityError> {
         self.invoke_with_category(ctx, name, input, AbilityCategory::Maintenance)
+            .await
     }
 
-    pub fn invoke_by_name_json(
+    pub async fn invoke_by_name_json(
         &self,
         ctx: &AbilityContext<'_>,
         name: &str,
@@ -284,7 +295,7 @@ impl AbilityRegistry {
     ) -> Result<serde_json::Value, AbilityError> {
         let descriptor = self.descriptor(name)?;
         validate_invocation_policy(ctx, descriptor)?;
-        (descriptor.invoke_erased)(ctx, input)
+        (descriptor.invoke_erased)(ctx, input).await
     }
 
     /// Render docs to a directory. Deterministic key order, pretty JSON schemas.
@@ -309,7 +320,7 @@ impl AbilityRegistry {
         Ok(())
     }
 
-    fn invoke_with_category(
+    async fn invoke_with_category(
         &self,
         ctx: &AbilityContext<'_>,
         name: &str,
@@ -327,7 +338,7 @@ impl AbilityRegistry {
             });
         }
         validate_invocation_policy(ctx, descriptor)?;
-        (descriptor.invoke_erased)(ctx, input)
+        (descriptor.invoke_erased)(ctx, input).await
     }
 
     fn descriptor(&self, name: &str) -> Result<&AbilityDescriptor, AbilityError> {
@@ -516,6 +527,10 @@ fn validate_experimental(
     for descriptor in descriptors_sorted(by_name) {
         if !descriptor.experimental {
             continue;
+        }
+
+        if !cfg!(feature = "experimental") {
+            violations.push(RegistryViolation::ExperimentalInProduction);
         }
 
         let Some(registered_at) = descriptor.registered_at else {
@@ -763,11 +778,15 @@ mod tests {
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng};
     use chrono::TimeZone;
 
-    fn ok_erased(
-        _ctx: &AbilityContext<'_>,
+    fn ok_erased<'a>(
+        _ctx: &'a AbilityContext<'a>,
         input: serde_json::Value,
-    ) -> Result<serde_json::Value, AbilityError> {
-        Ok(input)
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a,
+        >,
+    > {
+        Box::pin(async move { Ok(input) })
     }
 
     fn empty_schema() -> serde_json::Value {
@@ -968,15 +987,11 @@ mod tests {
     }
 
     #[test]
-    fn registry_iter_for_agent_hides_maintenance_admin_and_experimental() {
+    fn registry_iter_for_agent_hides_maintenance_and_admin() {
         let registry = registry(vec![
             descriptor("agent_read", AbilityCategory::Read),
             descriptor("agent_maintenance", AbilityCategory::Maintenance),
             with_actor_policy(descriptor("admin_read", AbilityCategory::Read), vec![Actor::Admin]),
-            experimental(
-                descriptor("experimental_read", AbilityCategory::Read),
-                "2999-01-01T00:00:00Z",
-            ),
         ]);
 
         let names: HashSet<&str> = registry
@@ -987,6 +1002,33 @@ mod tests {
         assert!(names.contains("agent_read"));
         assert!(!names.contains("agent_maintenance"));
         assert!(!names.contains("admin_read"));
+    }
+
+    #[cfg(not(feature = "experimental"))]
+    #[test]
+    fn registry_rejects_experimental_descriptor_in_production() {
+        let violations = AbilityRegistry::from_descriptors_checked(vec![experimental(
+            descriptor("experimental_read", AbilityCategory::Read),
+            "2999-01-01T00:00:00Z",
+        )])
+        .unwrap_err();
+
+        assert!(violations.contains(&RegistryViolation::ExperimentalInProduction));
+    }
+
+    #[cfg(feature = "experimental")]
+    #[test]
+    fn registry_iter_for_agent_hides_experimental_from_agent_when_feature_enabled() {
+        let registry = registry(vec![experimental(
+            descriptor("experimental_read", AbilityCategory::Read),
+            "2999-01-01T00:00:00Z",
+        )]);
+
+        let names: HashSet<&str> = registry
+            .iter_for(Actor::Agent)
+            .map(|descriptor| descriptor.name)
+            .collect();
+
         assert!(!names.contains("experimental_read"));
     }
 
@@ -1090,8 +1132,8 @@ mod tests {
         )));
     }
 
-    #[test]
-    fn invoke_read_rejects_transform_descriptor() {
+    #[tokio::test]
+    async fn invoke_read_rejects_transform_descriptor() {
         let registry = registry(vec![descriptor("transform", AbilityCategory::Transform)]);
         let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
@@ -1101,13 +1143,14 @@ mod tests {
 
         let err = registry
             .invoke_read(&ctx, "transform", serde_json::json!({}))
+            .await
             .unwrap_err();
 
         assert_eq!(err.kind, AbilityErrorKind::Validation);
     }
 
-    #[test]
-    fn publish_requires_confirmation_token() {
+    #[tokio::test]
+    async fn publish_requires_confirmation_token() {
         let registry = registry(vec![descriptor("publish", AbilityCategory::Publish)]);
         let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
@@ -1117,6 +1160,7 @@ mod tests {
 
         let err = registry
             .invoke_publish(&ctx, "publish", serde_json::json!({}))
+            .await
             .unwrap_err();
 
         assert_eq!(err.kind, AbilityErrorKind::Capability);

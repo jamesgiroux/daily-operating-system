@@ -187,8 +187,8 @@ struct FixtureInput;
 struct FixtureOutput;
 
 #[ability(
-    name = "transform_alias_mutation",
-    category = Transform,
+    name = "read_module_alias_mutation",
+    category = Read,
     version = "0.1.0",
     schema_version = 1,
     allowed_actors = [User],
@@ -199,13 +199,13 @@ struct FixtureOutput;
     experimental = false,
     signal_policy = { emits_on_output_change = [], coalesce = false }
 )]
-async fn transform_alias_mutation(
+async fn read_module_alias_mutation(
     _ctx: &AbilityContext<'_>,
     _input: FixtureInput,
 ) -> AbilityResult<FixtureOutput> {
-    use services::accounts::update_account_field as mutate_account;
+    use crate::services::accounts;
 
-    mutate_account();
+    accounts::update_account_field();
     Ok(AbilityOutput {
         data: FixtureOutput,
     })

@@ -15,11 +15,13 @@ struct FixtureOutput {
     ok: bool,
 }
 
-fn passthrough_erased(
-    _ctx: &AbilityContext<'_>,
+fn passthrough_erased<'a>(
+    _ctx: &'a AbilityContext<'a>,
     input: serde_json::Value,
-) -> Result<serde_json::Value, AbilityError> {
-    Ok(input)
+) -> std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>,
+> {
+    Box::pin(async move { Ok(input) })
 }
 
 fn empty_schema() -> serde_json::Value {

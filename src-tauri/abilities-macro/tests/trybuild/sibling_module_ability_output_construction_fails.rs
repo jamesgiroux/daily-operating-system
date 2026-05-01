@@ -11,15 +11,21 @@ mod abilities {
             pub(in crate::abilities::provenance) diagnostics: Diagnostics,
         }
     }
+
+    pub mod sibling_ability {
+        use super::provenance::{AbilityOutput, AbilityVersion, Diagnostics, Provenance};
+
+        pub fn bypass() {
+            let _ = AbilityOutput {
+                data: (),
+                provenance: Provenance,
+                ability_version: AbilityVersion,
+                diagnostics: Diagnostics,
+            };
+        }
+    }
 }
 
-use abilities::provenance::{AbilityOutput, AbilityVersion, Diagnostics, Provenance};
-
 fn main() {
-    let _ = AbilityOutput {
-        data: (),
-        provenance: Provenance,
-        ability_version: AbilityVersion,
-        diagnostics: Diagnostics,
-    };
+    abilities::sibling_ability::bypass();
 }

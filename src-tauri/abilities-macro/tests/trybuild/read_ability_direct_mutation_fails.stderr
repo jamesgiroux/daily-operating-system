@@ -1,5 +1,5 @@
 error: Read abilities cannot call mutating services; detected: services::accounts::update_account_field
-   --> tests/trybuild/read_ability_direct_mutation_fails.rs:194:10
+   --> tests/trybuild/read_ability_direct_mutation_fails.rs:202:10
     |
-194 | async fn read_direct_mutation(
+202 | async fn read_direct_mutation(
     |          ^^^^^^^^^^^^^^^^^^^^

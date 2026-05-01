@@ -1,5 +1,5 @@
 error: Transform abilities cannot call mutating services; detected: services::accounts::update_account_field
-   --> tests/trybuild/transform_ability_imported_mutation_alias_fails.rs:194:10
+   --> tests/trybuild/transform_ability_imported_mutation_alias_fails.rs:202:10
     |
-194 | async fn transform_alias_mutation(
+202 | async fn transform_alias_mutation(
     |          ^^^^^^^^^^^^^^^^^^^^^^^^

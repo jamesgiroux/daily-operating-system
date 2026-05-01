@@ -97,6 +97,7 @@ tracing-test = "0.2"
 trybuild = "1"
 
 [features]
+experimental = []
 mcp = ["dep:anyhow"]
 
 [[bin]]

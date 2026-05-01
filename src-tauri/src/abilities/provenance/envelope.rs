@@ -252,14 +252,14 @@ impl Default for InputsSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AbilityOutput<T> {
-    pub(in crate::abilities) data: T,
-    pub(in crate::abilities) provenance: Provenance,
-    pub(in crate::abilities) ability_version: AbilityVersion,
-    pub(in crate::abilities) diagnostics: Diagnostics,
+    pub(in crate::abilities::provenance) data: T,
+    pub(in crate::abilities::provenance) provenance: Provenance,
+    pub(in crate::abilities::provenance) ability_version: AbilityVersion,
+    pub(in crate::abilities::provenance) diagnostics: Diagnostics,
 }
 
 impl<T> AbilityOutput<T> {
-    pub(in crate::abilities) fn new(data: T, provenance: Provenance) -> Self {
+    pub(in crate::abilities::provenance) fn new(data: T, provenance: Provenance) -> Self {
         Self {
             data,
             ability_version: provenance.ability_version.clone(),

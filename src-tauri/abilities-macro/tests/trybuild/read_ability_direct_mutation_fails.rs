@@ -128,8 +128,16 @@ mod abilities {
             pub experimental: bool,
             pub registered_at: Option<&'static str>,
             pub signal_policy: SignalPolicy,
-            pub invoke_erased:
-                fn(&AbilityContext<'_>, serde_json::Value) -> Result<serde_json::Value, AbilityError>,
+            pub invoke_erased: for<'a> fn(
+                &'a AbilityContext<'a>,
+                serde_json::Value,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = Result<serde_json::Value, AbilityError>>
+                        + Send
+                        + 'a,
+                >,
+            >,
             pub input_schema: fn() -> serde_json::Value,
             pub output_schema: fn() -> serde_json::Value,
         }

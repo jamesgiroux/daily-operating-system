@@ -128,13 +128,20 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     let mutates_count = mutates_exprs.len();
     let signal_count = signal_exprs.len();
     let signal_coalesce = args.signal_policy.coalesce;
+    let experimental_cfg = if experimental {
+        quote! { #[cfg(feature = "experimental")] }
+    } else {
+        quote! {}
+    };
 
     let expanded = quote! {
         #inner_fn
 
+        #experimental_cfg
         pub static #subscriber_ident: ::std::sync::OnceLock<::std::sync::Arc<crate::observability::EvaluateModeSubscriber>> =
             ::std::sync::OnceLock::new();
 
+        #experimental_cfg
         #(#attrs)*
         #[::tracing::instrument(
             level = "info",
@@ -201,6 +208,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
             __ability_result
         }
 
+        #experimental_cfg
         fn #error_kind_ident(kind: &crate::abilities::registry::AbilityErrorKind) -> String {
             match kind {
                 crate::abilities::registry::AbilityErrorKind::Validation => "Validation".to_string(),
@@ -212,37 +220,41 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
             }
         }
 
-        fn #erased_ident(
-            ctx: &crate::abilities::registry::AbilityContext<'_>,
+        #experimental_cfg
+        fn #erased_ident<'a>(
+            ctx: &'a crate::abilities::registry::AbilityContext<'a>,
             input_json: ::serde_json::Value,
-        ) -> Result<::serde_json::Value, crate::abilities::registry::AbilityError> {
-            let input: #input_ty = ::serde_json::from_value(input_json).map_err(|error| {
-                crate::abilities::registry::AbilityError {
-                    kind: crate::abilities::registry::AbilityErrorKind::Validation,
-                    message: format!("invalid input for ability `{}`: {}", #name, error),
-                }
-            })?;
-            let __runtime = ::tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|error| crate::abilities::registry::AbilityError {
-                    kind: crate::abilities::registry::AbilityErrorKind::HardError("runtime".to_string()),
-                    message: format!("failed to create ability runtime: {}", error),
+        ) -> ::std::pin::Pin<
+            Box<
+                dyn ::std::future::Future<
+                    Output = Result<::serde_json::Value, crate::abilities::registry::AbilityError>
+                > + Send + 'a
+            >
+        > {
+            Box::pin(async move {
+                let input: #input_ty = ::serde_json::from_value(input_json).map_err(|error| {
+                    crate::abilities::registry::AbilityError {
+                        kind: crate::abilities::registry::AbilityErrorKind::Validation,
+                        message: format!("invalid input for ability `{}`: {}", #name, error),
+                    }
                 })?;
-            let output = __runtime.block_on(#fn_ident(ctx, input))?;
-            ::serde_json::to_value(&output).map_err(|error| {
-                crate::abilities::registry::AbilityError {
-                    kind: crate::abilities::registry::AbilityErrorKind::Validation,
-                    message: format!("invalid output for ability `{}`: {}", #name, error),
-                }
+                let output = #fn_ident(ctx, input).await?;
+                ::serde_json::to_value(&output).map_err(|error| {
+                    crate::abilities::registry::AbilityError {
+                        kind: crate::abilities::registry::AbilityErrorKind::Validation,
+                        message: format!("invalid output for ability `{}`: {}", #name, error),
+                    }
+                })
             })
         }
 
+        #experimental_cfg
         fn #input_schema_ident() -> ::serde_json::Value {
             ::serde_json::to_value(::schemars::schema_for!(#input_ty))
                 .expect("schemars input schema should serialize")
         }
 
+        #experimental_cfg
         fn #output_schema_ident() -> ::serde_json::Value {
             ::serde_json::to_value(::schemars::schema_for!(
                 crate::abilities::provenance::AbilityOutput::<#output_ty>
@@ -250,17 +262,23 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                 .expect("schemars output schema should serialize")
         }
 
+        #experimental_cfg
         pub static #actors_ident: [crate::abilities::registry::Actor; #actor_count] =
             [#(#actor_exprs),*];
+        #experimental_cfg
         pub static #modes_ident: [crate::services::context::ExecutionMode; #mode_count] =
             [#(#mode_exprs),*];
+        #experimental_cfg
         pub static #composes_ident: [crate::abilities::registry::ComposesEntry; #compose_count] =
             [#(#compose_exprs),*];
+        #experimental_cfg
         pub static #mutates_ident: [&'static str; #mutates_count] =
             [#(#mutates_exprs),*];
+        #experimental_cfg
         pub static #signals_ident: [&'static str; #signal_count] =
             [#(#signal_exprs),*];
 
+        #experimental_cfg
         #[allow(dead_code)]
         pub fn #full_descriptor_ident() -> crate::abilities::registry::AbilityDescriptor {
             crate::abilities::registry::AbilityDescriptor {
@@ -288,6 +306,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
             }
         }
 
+        #experimental_cfg
         pub static #descriptor_ident: crate::abilities::registry::AbilityDescriptor =
             crate::abilities::registry::AbilityDescriptor {
                 name: #name,
@@ -313,6 +332,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                 output_schema: #output_schema_ident,
             };
 
+        #experimental_cfg
         ::inventory::submit! {
             crate::abilities::registry::AbilityDescriptor {
                 name: #name,
