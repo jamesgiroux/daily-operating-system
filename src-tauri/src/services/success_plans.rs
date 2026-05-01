@@ -886,7 +886,8 @@ pub fn match_commitments_to_milestones(
                 }
 
                 // Emit signal
-                let _ = crate::signals::bus::emit_signal(
+                let _ = crate::services::signals::emit(
+                    ctx,
                     db,
                     "account",
                     account_id,

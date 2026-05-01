@@ -528,7 +528,8 @@ fn auto_link_action_to_objectives(
                 continue;
             }
             // Emit signal (best-effort, no propagation engine needed here)
-            let _ = crate::signals::bus::emit_signal(
+            let _ = crate::services::signals::emit(
+                ctx,
                 db,
                 "account",
                 account_id,

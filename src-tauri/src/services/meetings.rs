@@ -3670,12 +3670,17 @@ pub async fn attach_meeting_transcript(
                                     .find(|e| e.entity_type == crate::entity::EntityType::Account)
                                     .map(|e| e.id)
                             });
+                        let clock = crate::services::context::SystemClock;
+                        let rng = crate::services::context::SystemRng;
+                        let ext = crate::services::context::ExternalClients::default();
+                        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                         if let Some(ref aid) = account_id {
                             let value = format!(
                                 "{{\"meeting_id\":\"{}\",\"wins\":{},\"risks\":{},\"decisions\":{}}}",
                                 mid, wins, risks, decisions
                             );
-                            let _ = crate::signals::bus::emit_signal_and_propagate(
+                            let _ = crate::services::signals::emit_and_propagate(
+                                &ctx,
                                 db,
                                 &engine,
                                 "account",
@@ -3688,29 +3693,29 @@ pub async fn attach_meeting_transcript(
 
                             // I509: Emit sentiment-derived signals
                             if let Some(ref sj) = sentiment_json {
-                                let _ = crate::signals::bus::emit_signal(
-                                    db, "account", aid,
+                                let _ = crate::services::signals::emit(
+                                    &ctx, db, "account", aid,
                                     "transcript_sentiment", "transcript",
                                     Some(sj), 0.8,
                                 );
                             }
                             for competitor in &competitor_mentions {
-                                let _ = crate::signals::bus::emit_signal(
-                                    db, "account", aid,
+                                let _ = crate::services::signals::emit(
+                                    &ctx, db, "account", aid,
                                     "competitor_mentioned", "transcript",
                                     Some(competitor), 0.7,
                                 );
                             }
                             for escalation in &escalation_signals {
-                                let _ = crate::signals::bus::emit_signal(
-                                    db, "account", aid,
+                                let _ = crate::services::signals::emit(
+                                    &ctx, db, "account", aid,
                                     "escalation_detected", "transcript",
                                     Some(escalation), 0.8,
                                 );
                             }
                             if decision_maker_inactive {
-                                let _ = crate::signals::bus::emit_signal(
-                                    db, "account", aid,
+                                let _ = crate::services::signals::emit(
+                                    &ctx, db, "account", aid,
                                     "stakeholder_disengagement", "transcript",
                                     Some("decision_maker_inactive"), 0.6,
                                 );
@@ -3726,8 +3731,8 @@ pub async fn attach_meeting_transcript(
                                                 "champion_status": ch.champion_status,
                                                 "evidence": ch.champion_evidence,
                                             }).to_string();
-                                            let _ = crate::signals::bus::emit_signal_and_propagate(
-                                                db, &engine,
+                                            let _ = crate::services::signals::emit_and_propagate(
+                                                &ctx, db, &engine,
                                                 "person", &champion_pid,
                                                 "negative_sentiment", "transcript",
                                                 Some(&value), confidence,
@@ -3738,8 +3743,8 @@ pub async fn attach_meeting_transcript(
                                                 "champion_status": "strong",
                                                 "evidence": ch.champion_evidence,
                                             }).to_string();
-                                            let _ = crate::signals::bus::emit_signal(
-                                                db, "person", &champion_pid,
+                                            let _ = crate::services::signals::emit(
+                                                &ctx, db, "person", &champion_pid,
                                                 "champion_engagement_confirmed", "transcript",
                                                 Some(&value), 0.8,
                                             );
@@ -3757,8 +3762,8 @@ pub async fn attach_meeting_transcript(
                                 "current_count": current_count,
                                 "previous_count": previous_count,
                             }).to_string();
-                            let _ = crate::signals::bus::emit_signal_and_propagate(
-                                db, &engine,
+                            let _ = crate::services::signals::emit_and_propagate(
+                                &ctx, db, &engine,
                                 "account", aid,
                                 "meeting_frequency", "transcript",
                                 Some(&freq_value), 0.9,
@@ -3779,8 +3784,8 @@ pub async fn attach_meeting_transcript(
                                     "urgency": urgency,
                                     "content": risk,
                                 }).to_string();
-                                let _ = crate::signals::bus::emit_signal_and_propagate(
-                                    db, &engine,
+                                let _ = crate::services::signals::emit_and_propagate(
+                                    &ctx, db, &engine,
                                     "account", aid,
                                     "risk_detected", "transcript",
                                     Some(&risk_value), confidence,
@@ -3794,8 +3799,8 @@ pub async fn attach_meeting_transcript(
                                     "old": old_status,
                                     "new": new_status,
                                 }).to_string();
-                                let _ = crate::signals::bus::emit_signal_and_propagate(
-                                    db, &engine,
+                                let _ = crate::services::signals::emit_and_propagate(
+                                    &ctx, db, &engine,
                                     "account", aid,
                                     "stakeholder_change", "transcript",
                                     Some(&rc_value), 0.8,
