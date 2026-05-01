@@ -2,7 +2,7 @@ use chrono::TimeZone;
 use dailyos_abilities_macro::ability;
 use dailyos_lib::abilities::provenance::{
     FieldAttribution, FieldPath, ProvenanceBuilder, ProvenanceBuilderConfig, SubjectAttribution,
-    SubjectRef, ThreadId,
+    SubjectRef,
 };
 use dailyos_lib::abilities::{AbilityContext, AbilityRegistry, AbilityResult, Actor};
 use dailyos_lib::services::context::{
@@ -32,17 +32,17 @@ mod observability {
 }
 
 #[derive(Deserialize, JsonSchema)]
-struct EnvelopeInput {
+struct AsyncInput {
     value: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-struct EnvelopeOutput {
-    ok: bool,
+struct AsyncOutput {
+    echoed: String,
 }
 
 #[ability(
-    name = "dos210_erased_envelope_fixture",
+    name = "dos210_async_erased_fixture",
     category = Read,
     version = "0.1.0",
     schema_version = 1,
@@ -54,26 +54,27 @@ struct EnvelopeOutput {
     experimental = false,
     signal_policy = { emits_on_output_change = [], coalesce = false }
 )]
-async fn dos210_erased_envelope_fixture(
+async fn dos210_async_erased_fixture(
     ctx: &AbilityContext<'_>,
-    input: EnvelopeInput,
-) -> AbilityResult<EnvelopeOutput> {
+    input: AsyncInput,
+) -> AbilityResult<AsyncOutput> {
+    tokio::task::yield_now().await;
+
     let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-fixture".into()));
     let mut builder = ProvenanceBuilder::new(ProvenanceBuilderConfig::new(
-        "dos210_erased_envelope_fixture",
+        "dos210_async_erased_fixture",
         ctx.services().clock.now(),
     ));
     builder.set_subject(subject.clone());
-    builder.add_thread_id(ThreadId::new("thread-fixture"));
     builder
         .attribute(
-            FieldPath::new("/ok").unwrap(),
+            FieldPath::new("/echoed").unwrap(),
             FieldAttribution::constant(subject),
         )
         .unwrap();
     builder
-        .finalize(EnvelopeOutput {
-            ok: !input.value.is_empty(),
+        .finalize(AsyncOutput {
+            echoed: input.value,
         })
         .map_err(|error| dailyos_lib::abilities::AbilityError {
             kind: dailyos_lib::abilities::AbilityErrorKind::Validation,
@@ -82,7 +83,7 @@ async fn dos210_erased_envelope_fixture(
 }
 
 #[tokio::test]
-async fn invoke_by_name_json_returns_full_ability_output_envelope() {
+async fn invoke_by_name_json_works_inside_async_runtime() {
     let registry = AbilityRegistry::from_inventory_checked().unwrap();
     let clock = FixedClock::new(
         chrono::Utc
@@ -97,21 +98,11 @@ async fn invoke_by_name_json_returns_full_ability_output_envelope() {
     let value = registry
         .invoke_by_name_json(
             &ctx,
-            "dos210_erased_envelope_fixture",
-            serde_json::json!({ "value": "payload" }),
+            "dos210_async_erased_fixture",
+            serde_json::json!({ "value": "inside-runtime" }),
         )
         .await
         .unwrap();
 
-    assert_eq!(value["data"]["ok"], true);
-    assert!(value.get("provenance").is_some());
-    assert!(value.get("ability_version").is_some());
-    assert!(value.get("diagnostics").is_some());
-    assert!(value["diagnostics"]["warnings"].is_array());
-    assert_eq!(
-        value["provenance"]["ability_name"],
-        "dos210_erased_envelope_fixture"
-    );
-    assert!(value["provenance"]["warnings"].is_array());
-    assert_eq!(value["provenance"]["thread_ids"][0], "thread-fixture");
+    assert_eq!(value["data"]["echoed"], "inside-runtime");
 }

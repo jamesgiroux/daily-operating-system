@@ -83,6 +83,40 @@ fn visitor_detects_import_alias_call() {
 }
 
 #[test]
+fn visitor_detects_module_alias_call() {
+    let visitor = scan(syn::parse_quote!({
+        use crate::services::accounts;
+        accounts::update_account_field(db, state, account_id, field, value);
+    }));
+
+    assert_eq!(
+        visitor.module_aliases.get("accounts").map(String::as_str),
+        Some("services::accounts")
+    );
+    assert_eq!(
+        visitor.detected,
+        ["services::accounts::update_account_field"]
+    );
+}
+
+#[test]
+fn visitor_detects_crate_module_alias_call() {
+    let visitor = scan(syn::parse_quote!({
+        use crate::services as svc;
+        svc::accounts::update_account_field(db, state, account_id, field, value);
+    }));
+
+    assert_eq!(
+        visitor.module_aliases.get("svc").map(String::as_str),
+        Some("services")
+    );
+    assert_eq!(
+        visitor.detected,
+        ["services::accounts::update_account_field"]
+    );
+}
+
+#[test]
 fn visitor_detects_alias_even_when_use_follows_call() {
     let visitor = scan(syn::parse_quote!({
         foo(db, state, account_id, field, value);
