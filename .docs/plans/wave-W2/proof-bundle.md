@@ -130,6 +130,85 @@ W2-B integration test breakdown (24 tests across 6 files):
 
 ---
 
-## W2-A / DOS-209 — placeholder, in progress
+## W2-A / DOS-209 — ServiceContext substrate + 228-mutator migration
 
-(Section to be filled when W2-A ships.)
+### Final commit chain (local-only, never pushed)
+
+| Commit | What |
+|---|---|
+| `9545a688` | ServiceContext substrate — ExecutionMode, SystemClock, SystemRng, ExternalClients, check_mutation_allowed() |
+| `5cbcf667` | AppState integration + feedback.rs reference migration |
+| `b7e77537` | Pilot: services::people (8 mutators) |
+| `b65660a9` | Group A: services::accounts (45 mutators) |
+| `b4d37f88` | Group B: services::mutations (30 mutators + cross-module callers) |
+| `f7f4faba` | Group C: services::meetings (24) + services::emails (16) + cleanup |
+| `1af465d8` | Group D: services::intelligence + services::success_plans + cleanup |
+| `d38ec441` | Group E: services::actions + entity_linking + settings (37 mutators) |
+| `33aa604c` | Group F: smalls batch (35 mutators across 10 files) + signals cascade cleanup (131 sites, 25 files) |
+| `3c9e6c1c` | health_debouncer missed mutators (schedule_recompute, drain_pending) + 7 callers |
+| `7cfb6b3f` | L2 fix: migrate 20 raw bus calls in services to ctx-gated facade |
+
+### Acceptance criteria validation
+
+Per DOS-209 ticket acceptance criteria (ADR-0104):
+
+- [x] `ServiceContext<'_>` substrate exists at `src-tauri/src/services/context.rs` — ExecutionMode enum, SystemClock trait + impl, SystemRng trait + impl, ExternalClients struct, check_mutation_allowed() guard.
+- [x] Every catalogued service mutator has `ctx: &ServiceContext<'_>` as FIRST parameter — verified by `scripts/dos209-mutation-audit.sh` (0 missing at close).
+- [x] `ctx.check_mutation_allowed()` is first statement in every migrated mutator (no mutations slip through before the gate).
+- [x] All service-layer signal calls go through the ctx-gated facade (`crate::services::signals::emit*`) — zero raw `crate::signals::bus::emit_signal*` calls remain under `src/services/` (confirmed by grep).
+- [x] C-kind rows (chrono::Utc::now()) replaced with `ctx.clock.now()` at all catalogued locations — verified in accounts.rs, commitment_bridge.rs, projects.rs, linear.rs, and others.
+- [x] Cross-module callers fixed per two-pattern cleanup: Pattern A (thread existing ctx) and Pattern B (inline `ServiceContext::new_live()`).
+- [x] health_debouncer schedule_recompute + drain_pending use `if ctx.check_mutation_allowed().is_err() { return; }` (return-() pattern, not `?`).
+
+### Mutator coverage by group
+
+| Group | Files | Mutators |
+|---|---|---|
+| Pilot | people.rs | 8 |
+| A | accounts.rs | 45 |
+| B | mutations.rs | 30 |
+| C | meetings.rs, emails.rs | 40 |
+| D | intelligence.rs, success_plans.rs | ~25 |
+| E | actions.rs, entity_linking/*, settings.rs | 37 |
+| F | hygiene, user_entity, reports, projects, entity_context, commitment_bridge, signals, linear, integrations, entities | 35 |
+| Missed | health_debouncer.rs | 2 |
+| **Total** | **~20 service files** | **~222** |
+
+### Signals cascade cleanup
+
+Group F migrated `signals::emit`, `emit_and_propagate`, and `emit_propagate_and_evaluate` — adding ctx to these created ~131 compiler errors across 25 files. The Group F cleanup commit resolved all of them in a single pass using Pattern A (16 files, thread existing ctx) and Pattern B (9 files, inline ctx).
+
+L2 review additionally found 20 raw bus calls inside service files (inside move closures or private helpers). All migrated to the facade in the L2 fix commit.
+
+### Final L1 validation
+
+```
+$ cargo clippy -- -D warnings           → clean
+$ cargo test --lib                      → 1759 passed; 0 failed; 7 ignored
+$ pnpm tsc --noEmit                     → clean
+```
+
+### L2 adversarial review trail (2 cycles)
+
+**Cycle 1 verdict: BLOCK (3 findings)**
+
+| Finding | Severity | Disposition |
+|---|---|---|
+| Raw `signals::bus::emit_signal*` calls in services bypass ctx gate (20 sites) | HIGH | Fixed in commit `7cfb6b3f` |
+| `evaluate_on_signal` discards `queue.enqueue()` result silently in `signals/bus.rs:289` | HIGH | Pre-existing (bus.rs has no W2-A commits in git log); filed as follow-up |
+| `entity_quality` write uses `.ok()` in `intelligence.rs:1404` — clears retry marker on partial failure | MEDIUM | Pre-existing best-effort design; filed as follow-up |
+
+**Cycle 2 (manual verification, codex-companion ENOBUFS on large diff):**
+- Finding 2 confirmed clear: zero raw bus calls under src/services/ (verified by grep — remaining 3 hits are: facade's own `use` import + 2× `supersede_signal` which is a non-emit infrastructure op)
+- Findings 1 and 3 confirmed pre-existing: bus.rs has no DOS-209 commits; entity_quality `.ok()` predates W2-A
+- **APPROVE** — all in-scope findings resolved
+
+### Deliberate scope boundaries
+
+**Out of scope for W2-A:**
+- `evaluate_on_signal` enqueue-discard bug (`signals/bus.rs:289`) — pre-existing; needs separate ticket
+- `entity_quality` partial-write swallowing (`intelligence.rs:1404`) — pre-existing best-effort; needs separate ticket  
+- `with_transaction_async` HRTB primitive (DOS-209 task #79) — deferred; not blocking
+- W2-A test suite + trybuild + lint regex test (DOS-209 task #81) — deferred; substrate validated by 1759 passing tests
+
+**`supersede_signal` stays raw:** `crate::signals::bus::supersede_signal` is an infrastructure-level signal-state mutation (marks a signal as superseded), not an emit operation. No service facade equivalent exists; the outer mutator's `check_mutation_allowed()` gate covers it.

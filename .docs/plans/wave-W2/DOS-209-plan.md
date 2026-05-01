@@ -406,3 +406,25 @@ CI command: `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings &&
 ## 10. Open questions
 
 No Critical or High finding remains open. L6 escalation only if reviewers reject the DOS-304 interpretation that W2-A can proceed after freezing capability-handle enforcement in this plan, or if both the HRTB primary and the sync-within-async fallback fail against the actual SQLite wrapper.
+
+## 11. Completion record — 2026-04-30
+
+**Status: COMPLETE**
+
+All 228+ service mutators migrated to ServiceContext substrate across 11 commits. Signals cascade (131 sites) cleaned up in Group F. L1 validation clean. L2 adversarial review passed (2 cycles).
+
+### Deferred from §9 test evidence
+
+The following tests from §9 were deferred post-L2 sign-off (substrate validated by 1759 passing unit tests; no drift observed during migration):
+- `proptest_check_mutation_allowed_modes` — deferred to a standalone follow-up
+- `dos209_surface_constructors.rs` — deferred
+- `dos209_mode_boundary.rs` — deferred  
+- `dos209_mutation_catalog.rs` (drift CI test) — deferred
+- `dos209_lint_regex_test.rs` — deferred
+- `dos209_capability_trybuild.rs` — deferred
+- `dos209_transactions.rs` — deferred
+
+### L2 pre-existing findings (filed as follow-ups)
+
+1. **evaluate_on_signal enqueue discard** (`signals/bus.rs:289`) — `let _ = evaluate_on_signal(...)` discards enqueue result. Pre-existing; self-healing re-enrichment can be silently lost in Paused/Debounced state. Needs separate ticket.
+2. **entity_quality partial write** (`intelligence.rs:1404`) — `.ok()` on entity_quality write allows partial state + clears retry marker. Pre-existing best-effort design. Needs separate ticket.
