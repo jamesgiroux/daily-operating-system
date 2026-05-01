@@ -8,6 +8,7 @@
 pub mod accounts;
 pub mod action_status;
 pub mod activity;
+pub mod abilities;
 mod audit;
 pub mod audit_log;
 mod backfill_meetings;
@@ -41,6 +42,7 @@ pub mod helpers;
 mod hygiene;
 mod intel_queue;
 pub mod intelligence;
+pub mod observability;
 pub mod json_loader;
 mod latency;
 pub mod linear;
