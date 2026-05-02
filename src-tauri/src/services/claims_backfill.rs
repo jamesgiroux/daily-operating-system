@@ -52,6 +52,14 @@ struct RekeyRow {
     text: String,
     dedup_key: String,
     item_hash: Option<String>,
+    // L2 cycle-10 fix #1: read provenance_json + metadata_json so the
+    // rekey pass can validate them too. Pre-cycle-9 m9 writers built
+    // these via raw `format!` interpolation; legacy values with
+    // quotes/backslashes/controls produced malformed JSON. Cutover
+    // must catch them or the substrate ships with structurally
+    // broken claim rows.
+    provenance_json: String,
+    metadata_json: Option<String>,
 }
 
 /// Recompute SQL-backfilled claim identity with the same helpers used by
@@ -74,7 +82,8 @@ pub fn rekey_backfilled_claims_via_runtime_helpers(
     {
         let mut stmt = conn
             .prepare(
-                "SELECT id, subject_ref, claim_type, field_path, text, dedup_key, item_hash \
+                "SELECT id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                        provenance_json, metadata_json \
                  FROM intelligence_claims \
                  WHERE id GLOB 'm[1-9]-*' \
                  ORDER BY id",
@@ -91,6 +100,8 @@ pub fn rekey_backfilled_claims_via_runtime_helpers(
                     text: row.get(4)?,
                     dedup_key: row.get(5)?,
                     item_hash: row.get(6)?,
+                    provenance_json: row.get(7)?,
+                    metadata_json: row.get(8)?,
                 })
             })
             .map_err(|e| format!("DOS-7 L2 rekey query failed: {e}"))?;
@@ -98,13 +109,25 @@ pub fn rekey_backfilled_claims_via_runtime_helpers(
         for row in mapped {
             match row {
                 Ok(row) => rows.push(row),
-                Err(e) => report.errors.push(format!("read m1-m8 claim row: {e}")),
+                Err(e) => report.errors.push(format!("read m1-m9 claim row: {e}")),
             }
         }
     }
 
     for row in rows {
         report.rows_examined += 1;
+
+        // L2 cycle-10 fix #1: validate JSON columns before rekeying
+        // identity. A malformed metadata_json or provenance_json
+        // from a pre-cycle-9 m9 writer would otherwise silently
+        // pass the rekey since the previous version only parsed
+        // subject_ref. Failing here surfaces the bad row so the
+        // cutover refuses to mark complete (cycle-2 fix #2 makes
+        // any rekey error fatal).
+        if let Err(e) = validate_row_json_columns(&row) {
+            report.errors.push(format!("{}: {}", row.id, e));
+            continue;
+        }
 
         let result = runtime_identity_for_rekey(&row).and_then(|(next_dedup_key, next_hash)| {
             if row.dedup_key == next_dedup_key
@@ -130,6 +153,24 @@ pub fn rekey_backfilled_claims_via_runtime_helpers(
     }
 
     Ok(report)
+}
+
+/// L2 cycle-10 fix #1: parse subject_ref, provenance_json, and
+/// metadata_json (if present) to surface any rows whose JSON columns
+/// are structurally malformed. Returns the FIRST parse error, or
+/// `Ok(())` when every column round-trips cleanly through serde_json.
+fn validate_row_json_columns(row: &RekeyRow) -> Result<(), String> {
+    serde_json::from_str::<serde_json::Value>(&row.subject_ref)
+        .map_err(|e| format!("subject_ref is not valid JSON: {e}"))?;
+    serde_json::from_str::<serde_json::Value>(&row.provenance_json)
+        .map_err(|e| format!("provenance_json is not valid JSON: {e}"))?;
+    if let Some(metadata) = row.metadata_json.as_deref() {
+        if !metadata.trim().is_empty() {
+            serde_json::from_str::<serde_json::Value>(metadata)
+                .map_err(|e| format!("metadata_json is not valid JSON: {e}"))?;
+        }
+    }
+    Ok(())
 }
 
 fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String), String> {
@@ -1394,6 +1435,55 @@ mod tests {
             )
             .unwrap();
         assert_eq!(distinct_ids, 3);
+    }
+
+    /// L2 cycle-10 fix #1: rekey must surface a malformed
+    /// `metadata_json` (or `provenance_json`) on a pre-cycle-9 m9
+    /// row that has a valid `subject_ref`. The previous rekey only
+    /// validated subject_ref so structurally-broken legacy rows
+    /// could pass cutover.
+    #[test]
+    fn rekey_fails_on_malformed_metadata_json_with_valid_subject_ref() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        // Seed a pre-cycle-9-style m9 row: valid subject_ref but
+        // malformed metadata_json (raw format!-built with an
+        // unescaped quote).
+        // dos7-allowed: cycle-10 regression-test seed
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, metadata_json, \
+                  claim_state, surfacing_state, retraction_reason, expires_at, \
+                  temporal_scope, sensitivity) \
+                 VALUES \
+                 ('m9-acct-pre9-risks-aaaaaaaaaaaaaaaa', \
+                  '{\"kind\":\"Account\",\"id\":\"acct-pre9\"}', \
+                  'dismissed_item', 'risks', 'whatever', 'k', '', \
+                  'system_backfill', 'legacy_dismissal', \
+                  '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', \
+                  '{\"backfill_mechanism\":\"dismissed_item_json\"}', \
+                  '{\"field\":\"risks\",\"content\":\"unescaped \"quote\" here\"}', \
+                  'tombstoned', 'active', 'user_removal', NULL, \
+                  'state', 'internal')",
+                [],
+            )
+            .unwrap();
+
+        let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert!(
+            report.errors.iter().any(|e| e.contains("metadata_json is not valid JSON")),
+            "rekey must surface malformed metadata_json error, got {:?}",
+            report.errors,
+        );
     }
 
     /// L2 cycle-9 fix: legacy intelligence.json values containing
