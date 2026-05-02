@@ -184,7 +184,7 @@ fn compact_subject_ref(value: &serde_json::Value) -> Result<String, ClaimError> 
 ///
 /// The shape is alphabetical-key JSON with lowercase kind:
 ///   `{"id":"<id>","kind":"<lowercase kind>"}`
-fn canonical_subject_ref(subject: &SubjectRef) -> Result<String, ClaimError> {
+pub(crate) fn canonical_subject_ref(subject: &SubjectRef) -> Result<String, ClaimError> {
     let (kind, id) = match subject {
         SubjectRef::Account { id } => ("account", id.as_str()),
         SubjectRef::Meeting { id } => ("meeting", id.as_str()),
@@ -349,7 +349,7 @@ fn compact_subject_ref_str(subject_ref: &str) -> Result<String, ClaimError> {
     compact_subject_ref(&value)
 }
 
-fn subject_ref_from_json(value: &serde_json::Value) -> Result<SubjectRef, ClaimError> {
+pub(crate) fn subject_ref_from_json(value: &serde_json::Value) -> Result<SubjectRef, ClaimError> {
     let kind_raw = value
         .get("kind")
         .or_else(|| value.get("type"))

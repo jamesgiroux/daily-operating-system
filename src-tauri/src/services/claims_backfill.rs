@@ -194,30 +194,26 @@ fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String), String
         }
     }
 
-    // L2 cycle-12 fix #2: reject subject_kinds that aren't supported
-    // by the SubjectRef enum. Migration 131 m5 fell through unrecognized
-    // owner_types as the literal kind (e.g. 'email_thread'), and
-    // those rows can't participate in bump_for_subject /
-    // is_suppressed_via_claims. Migration 133 withdraws existing
-    // bad rows; this guard catches any new ones surfacing through
-    // rekey.
-    let kind = subject_value
-        .get("kind")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_lowercase();
-    const SUPPORTED_KINDS: &[&str] = &["account", "meeting", "person", "project", "email"];
-    if !SUPPORTED_KINDS.contains(&kind.as_str()) {
-        return Err(format!(
-            "subject_ref kind {:?} is not a supported SubjectRef variant; \
-             migration 133 withdraws m5 rows with unsupported kinds — \
-             this row likely needs the same treatment",
-            kind
-        ));
-    }
-
+    // L2 cycle-12 fix #2 + cycle-16 fix: parse the row's subject_ref
+    // through the SAME SubjectRef parser commit_claim uses, then
+    // serialize via canonical_subject_ref so the rekey-produced
+    // dedup_key is byte-identical to what runtime commit_claim
+    // would produce for the same semantic subject. The parser is
+    // the single source of truth for "supported kind"
+    // (Multi/Global produce a SubjectRef variant the canonical
+    // serializer rejects, and unknown kinds error in the parser),
+    // so the rekey path no longer maintains its own supported-kind
+    // list that could drift from the enum.
+    let subject =
+        crate::services::claims::subject_ref_from_json(&subject_value).map_err(|e| {
+            format!("subject_ref kind not a supported SubjectRef variant: {e}")
+        })?;
     let compact_subject_ref =
-        serde_json::to_string(&subject_value).map_err(|e| format!("compact subject_ref: {e}"))?;
+        crate::services::claims::canonical_subject_ref(&subject).map_err(|e| {
+            format!(
+                "subject cannot be canonicalized for dedup_key (likely Multi/Global per ADR-0125): {e}"
+            )
+        })?;
     let canonical_text = canonicalize_for_dos280(&row.text);
     let next_hash = item_hash(item_kind_for_claim_type(&row.claim_type), &canonical_text);
     let next_dedup_key = compute_dedup_key(
@@ -1035,8 +1031,14 @@ mod tests {
         field_path: Option<&str>,
         text: &str,
     ) -> (String, String) {
+        // L2 cycle-16: mirror runtime_identity_for_rekey's
+        // canonical-subject path so test expectations track the
+        // production canonical form (alphabetical keys, lowercase
+        // kind), not whatever shape the test seed happened to use.
         let subject_value = serde_json::from_str::<serde_json::Value>(subject_ref).unwrap();
-        let compact_subject_ref = serde_json::to_string(&subject_value).unwrap();
+        let subject = crate::services::claims::subject_ref_from_json(&subject_value).unwrap();
+        let compact_subject_ref =
+            crate::services::claims::canonical_subject_ref(&subject).unwrap();
         let canonical_text = crate::services::claims::canonicalize_for_dos280(text);
         let hash = crate::intelligence::canonicalization::item_hash(
             crate::services::claims::item_kind_for_claim_type(claim_type),
@@ -1801,6 +1803,67 @@ mod tests {
     }
 
     #[test]
+    /// L2 cycle-16 fix: rekey + commit_claim must produce
+    /// byte-identical dedup_keys for the same semantic subject,
+    /// regardless of which path's input shape the row started
+    /// with. The previous rekey serialized the row's raw
+    /// subject_ref bytes, so a backfill row with PascalCase kind
+    /// would carry a PascalCase-shaped dedup_key while runtime
+    /// commits produce lowercase-shaped — fracturing same-meaning
+    /// merge across the cutover boundary.
+    #[test]
+    fn rekey_dedup_key_matches_runtime_commit_for_same_subject() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        // Seed a backfill row with PascalCase kind (the SQLite
+        // json_object shape).
+        let pascal_subject = r#"{"kind":"Account","id":"acct-1"}"#;
+        seed_rekey_claim(
+            &db,
+            RekeySeed {
+                id: "m1-pascal",
+                subject_ref: pascal_subject,
+                claim_type: "risk",
+                field_path: Some("risks"),
+                text: "Same risk text",
+                dedup_key: "legacy-shape",
+                item_hash: Some("legacy-hash"),
+            },
+        );
+
+        let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.rows_rewritten, 1);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        // Read back the rekeyed row's dedup_key.
+        let stored_dedup: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT dedup_key FROM intelligence_claims WHERE id = 'm1-pascal'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        // Compute what runtime commit_claim would produce for the
+        // SAME semantic subject given lowercase input.
+        let lowercase_subject = r#"{"kind":"account","id":"acct-1"}"#;
+        let (runtime_dedup, _) =
+            expected_runtime_identity(lowercase_subject, "risk", Some("risks"), "Same risk text");
+
+        assert_eq!(
+            stored_dedup, runtime_dedup,
+            "rekey-produced dedup_key must equal runtime-canonical dedup_key regardless of input casing"
+        );
+    }
+
     /// L2 cycle-13 fix #1: rekey must skip rows already in
     /// claim_state='withdrawn'. Migration 133 transitions
     /// unsupported-kind m5 rows to withdrawn; without this skip,
