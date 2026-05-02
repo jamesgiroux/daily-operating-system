@@ -1001,6 +1001,78 @@ mod tests {
         assert!(second.errors.is_empty(), "{:?}", second.errors);
     }
 
+    /// L2 cycle-4 fix #1: backfilled m3 email rows store the legacy
+    /// `email_dismissals.item_text` verbatim (with whatever whitespace
+    /// anomalies the user typed). Runtime canonicalize_for_dos280
+    /// trims + collapses whitespace + lowercases. The rekey pass
+    /// rewrites `item_hash` to the runtime-canonical hash so PRE-GATE
+    /// hash tier matches a runtime commit_claim with the canonical
+    /// version of the same item — even when the legacy text column
+    /// retains its weird whitespace (text is in the immutability
+    /// allowlist).
+    ///
+    /// This test seeds a backfilled m3 row with `text = "  Reply
+    /// by\tFriday  "`, runs the rekey, then asserts the post-rekey
+    /// item_hash matches what runtime would compute for the
+    /// canonical `"reply by friday"`.
+    #[test]
+    fn rekey_canonicalizes_whitespace_anomaly_legacy_text_for_pre_gate_hash_tier() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        // Legacy m3 backfill writes raw item_text into both `text` and
+        // `item_hash` (item_hash = coalesce(item_text, '') per the
+        // migration). The whitespace + case anomaly survives the
+        // INSERT.
+        let legacy_text = "  Reply by\tFriday  ";
+        let legacy_dedup = format!("{legacy_text}:em-1:email_dismissed:commitment");
+        seed_rekey_claim(
+            &db,
+            RekeySeed {
+                id: "m3-1",
+                subject_ref: r#"{"kind":"Email","id":"em-1"}"#,
+                claim_type: "email_dismissed",
+                field_path: Some("commitment"),
+                text: legacy_text,
+                dedup_key: &legacy_dedup,
+                item_hash: Some(legacy_text),
+            },
+        );
+
+        let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.rows_rewritten, 1, "rekey must rewrite the row");
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        // Post-rekey item_hash must match what runtime would compute
+        // for the canonical text — proving PRE-GATE hash tier will
+        // catch a runtime commit_claim with `text = "Reply by Friday"`
+        // (or any other capitalization / whitespace variant).
+        let (_expected_dedup, expected_runtime_hash) = expected_runtime_identity(
+            r#"{"kind":"Email","id":"em-1"}"#,
+            "email_dismissed",
+            Some("commitment"),
+            "Reply by Friday",
+        );
+        let stored_hash: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT item_hash FROM intelligence_claims WHERE id = 'm3-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            stored_hash, expected_runtime_hash,
+            "post-rekey item_hash must equal hash(canonicalize(legacy_text)) so PRE-GATE hash tier matches"
+        );
+    }
+
     #[test]
     fn rekey_skips_non_backfilled_claims() {
         let conn = fresh_conn();
