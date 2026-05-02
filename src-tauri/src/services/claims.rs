@@ -252,15 +252,27 @@ fn pre_gate_blocking_tombstone_exists(
     // Three independent tier queries. Each is cheap (indexed on
     // claim_state + claim_type) and bounded by the per-key COMMIT_LOCKS
     // serializing concurrent commits for the same identity tuple.
+    // L2 cycle-7 fix #2: filter on `json_valid(subject_ref) = 1`
+    // BEFORE evaluating json_extract. SQLite's WHERE-clause AND
+    // chain doesn't reliably short-circuit, so a malformed
+    // historical tombstone subject_ref would otherwise raise
+    // "malformed JSON" mid-PRE-GATE and the entire commit_claim
+    // would fail. The valid-rows subquery materializes the safe
+    // set first; malformed tombstones are silently skipped (they
+    // can be remediated by an operator-run quarantine pass).
     const TIER_SQL: &str = "\
         SELECT 1 \
         FROM intelligence_claims \
-        WHERE claim_state = 'tombstoned' \
-          AND claim_type = ?1 \
-          AND coalesce(field_path, '') = coalesce(?2, '') \
-          AND lower(json_extract(subject_ref, '$.kind')) = lower(?3) \
-          AND json_extract(subject_ref, '$.id') = ?4 \
-          AND (expires_at IS NULL OR expires_at > ?5) \
+        WHERE id IN ( \
+            SELECT ic.id FROM intelligence_claims ic \
+            WHERE ic.claim_state = 'tombstoned' \
+              AND ic.claim_type = ?1 \
+              AND coalesce(ic.field_path, '') = coalesce(?2, '') \
+              AND json_valid(ic.subject_ref) = 1 \
+              AND lower(json_extract(ic.subject_ref, '$.kind')) = lower(?3) \
+              AND json_extract(ic.subject_ref, '$.id') = ?4 \
+              AND (ic.expires_at IS NULL OR ic.expires_at > ?5) \
+        ) \
           AND TIER_PREDICATE \
         LIMIT 1";
 
@@ -1570,6 +1582,48 @@ mod tests {
         assert!(
             matches!(result, Ok(CommittedClaim::Inserted { .. })),
             "different claim_type must not be blocked, got {result:?}"
+        );
+    }
+
+    /// L2 cycle-7 fix #2: a malformed historical tombstone
+    /// `subject_ref` (not valid JSON) must NOT abort commit_claim.
+    /// Cycle-7 wraps the PRE-GATE query in a json_valid subquery
+    /// filter so SQLite never evaluates `json_extract` on a
+    /// malformed row. Without this, a single bad legacy row blocks
+    /// every subsequent commit_claim call until an operator runs
+    /// remediation.
+    #[test]
+    fn pre_gate_skips_malformed_subject_ref_tombstones() {
+        let db = test_db();
+        seed_account(&db);
+
+        // Seed a malformed-JSON tombstone whose claim_type + field
+        // would otherwise match the proposal we're about to commit.
+        // dos7-allowed: cycle-7 regression-test seed
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, \
+                  claim_state, surfacing_state, retraction_reason, \
+                  temporal_scope, sensitivity) \
+                 VALUES \
+                 ('malformed-1', 'this is not json', 'risk', 'health.risk', \
+                  'something', 'k1', 'h1', 'system_backfill', 'legacy_dismissal', \
+                  ?1, ?1, '{}', 'tombstoned', 'dormant', 'user_removal', \
+                  'state', 'internal')",
+                params![TS],
+            )
+            .unwrap();
+
+        // commit_claim must succeed — the malformed row is silently
+        // skipped by the json_valid subquery filter.
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let result = commit_claim(&ctx, &db, proposal("Procurement blocked renewal"));
+        assert!(
+            matches!(result, Ok(CommittedClaim::Inserted { .. })),
+            "commit_claim must succeed past a malformed tombstone, got {result:?}"
         );
     }
 

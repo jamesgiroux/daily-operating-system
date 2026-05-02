@@ -252,19 +252,6 @@ pub fn backfill_dismissed_items_from_workspace(
                     item.content, subject_id, item.field
                 );
 
-                // Idempotency check: skip if claim with this dedup_key exists.
-                let existing: i64 = db
-                    .conn_ref()
-                    .query_row(
-                        "SELECT count(*) FROM intelligence_claims WHERE dedup_key = ?1",
-                        params![&dedup_key],
-                        |row| row.get(0),
-                    )
-                    .map_err(|e| format!("dedup check failed: {e}"))?;
-                if existing > 0 {
-                    continue;
-                }
-
                 let subject_ref =
                     format!(r#"{{"kind":"{}","id":"{}"}}"#, subject_kind, subject_id);
                 let provenance_json = format!(
@@ -294,9 +281,32 @@ pub fn backfill_dismissed_items_from_workspace(
                     &item_hash_seed[..16.min(item_hash_seed.len())],
                 );
 
+                // L2 cycle-7 fix #1: idempotency check by claim_id, not
+                // dedup_key. The cutover orchestration runs
+                // JSON-blob backfill BEFORE rekey (cycle-5 reorder),
+                // so on a partial-cutover retry path m9 rows may
+                // already exist with their REKEYED dedup_keys. The
+                // claim_id is deterministic from
+                // (subject_id, field, hash(content)) so a re-run
+                // computes the same id; checking by id catches the
+                // already-present row regardless of whether dedup_key
+                // has been rewritten yet. Also use INSERT OR IGNORE
+                // as a belt-and-suspenders for the same hazard.
+                let existing: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT count(*) FROM intelligence_claims WHERE id = ?1",
+                        params![&claim_id],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| format!("idempotency check failed: {e}"))?;
+                if existing > 0 {
+                    continue;
+                }
+
                 db.conn_ref()
                     .execute(
-                        "INSERT INTO intelligence_claims ( \
+                        "INSERT OR IGNORE INTO intelligence_claims ( \
                             id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
                             actor, data_source, observed_at, created_at, \
                             provenance_json, metadata_json, \
@@ -1354,6 +1364,85 @@ mod tests {
             )
             .unwrap();
         assert_eq!(distinct_ids, 3);
+    }
+
+    /// L2 cycle-7 fix #1: simulate a partial cutover where m9 rows
+    /// were inserted AND rekeyed (so their dedup_key is the runtime
+    /// shape, not the original `content:subject:field:dismissed_item`
+    /// shape used by the JSON-blob backfill), then cutover failed
+    /// before writing the completion marker. The next retry must NOT
+    /// abort the JSON-blob backfill on a PK collision — the
+    /// idempotency check now uses claim_id (deterministic via
+    /// content-hash suffix), and the INSERT uses OR IGNORE.
+    #[test]
+    fn m9_backfill_rerun_after_rekey_does_not_pk_collide() {
+        let workspace = tempfile::tempdir().unwrap();
+        let body = serde_json::json!({
+            "version": 4,
+            "entityId": "acct-retry",
+            "entityType": "account",
+            "enrichedAt": "2026-04-01T00:00:00Z",
+            "sourceFileCount": 0,
+            "dismissedItems": [
+                {
+                    "field": "risks",
+                    "content": "Retry-after-rekey item",
+                    "dismissedAt": "2026-04-15T00:00:00Z"
+                }
+            ]
+        });
+        write_intel_json(
+            workspace.path(),
+            "Accounts",
+            "acct-retry",
+            &serde_json::to_string_pretty(&body).unwrap(),
+        );
+
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        // First pass: m9 row inserts with backfill-shape dedup_key.
+        let first =
+            backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
+        assert_eq!(first.claims_inserted, 1);
+
+        // Simulate rekey rewriting the dedup_key + item_hash to the
+        // runtime DOS-280 shape. The claim_id stays the same; only
+        // the lifecycle/identity columns change (allowed by the
+        // immutability lint).
+        db.conn_ref()
+            .execute(
+                "UPDATE intelligence_claims \
+                 SET dedup_key = 'rekeyed-shape:acct-retry:dismissed_item:risks', \
+                     item_hash = 'runtime-canonical-hash' \
+                 WHERE id LIKE 'm9-acct-retry-%'",
+                [],
+            )
+            .unwrap();
+
+        // Second pass (the partial-cutover retry path): must NOT
+        // abort. The original idempotency-by-dedup_key gate would
+        // have missed this row and PK-collided on INSERT.
+        let second = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path())
+            .expect("retry after rekey must not PK-collide");
+        assert_eq!(second.claims_inserted, 0, "row should already exist");
+        assert_eq!(second.items_observed, 1);
+
+        // Still exactly one m9 claim row.
+        let row_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM intelligence_claims WHERE id LIKE 'm9-acct-retry-%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(row_count, 1);
     }
 
     #[test]
