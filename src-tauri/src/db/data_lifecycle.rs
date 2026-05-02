@@ -186,40 +186,66 @@ pub fn purge_aged_email_signals(db: &ActionDb, days: i64) -> Result<usize, DbErr
 /// email_id (PRE-GATE only matches `tombstoned`), and (b) the audit
 /// trail row survives — claim `text`, `subject_ref`, and assertion
 /// columns remain frozen per the immutability allowlist.
+///
+/// L2 cycle-5 fix #3: the cascade UPDATE and the email DELETE run in
+/// a single SQLite transaction (`BEGIN IMMEDIATE` / `COMMIT`) so a
+/// crash or DELETE failure between them no longer leaves still-present
+/// resolved emails with their claims already withdrawn.
 pub fn purge_aged_emails(db: &ActionDb, days: i64) -> Result<usize, DbError> {
     if !table_exists(db, "emails") {
         return Ok(0);
     }
     let cutoff = format!("-{days} days");
+    let claims_table_present = table_exists(db, "intelligence_claims");
     let conn = db.conn_ref();
 
-    // Withdraw Email-subject claims for emails we are about to purge.
-    // Run BEFORE the DELETE so we can still join against `emails` to
-    // identify which email_ids are aging out.
-    if table_exists(db, "intelligence_claims") {
+    conn.execute_batch("BEGIN IMMEDIATE")
+        .map_err(|e| DbError::Migration(format!("purge_aged_emails BEGIN: {e}")))?;
+
+    let result = (|| -> Result<usize, DbError> {
+        // Withdraw Email-subject claims for emails we are about to
+        // purge. Run BEFORE the DELETE so we can still join against
+        // `emails` to identify which email_ids are aging out.
+        if claims_table_present {
+            conn.execute(
+                "UPDATE intelligence_claims \
+                 SET claim_state = 'withdrawn', \
+                     retraction_reason = coalesce(retraction_reason, 'subject_purged') \
+                 WHERE lower(json_extract(subject_ref, '$.kind')) = 'email' \
+                   AND claim_state IN ('active', 'tombstoned', 'dormant') \
+                   AND json_valid(subject_ref) = 1 \
+                   AND json_extract(subject_ref, '$.id') IN ( \
+                       SELECT email_id FROM emails \
+                       WHERE resolved_at IS NOT NULL \
+                         AND resolved_at < datetime('now', ?1) \
+                   )",
+                params![cutoff],
+            )
+            .map_err(|e| {
+                DbError::Migration(format!("purge_aged_emails: withdraw email claims: {e}"))
+            })?;
+        }
+
         conn.execute(
-            "UPDATE intelligence_claims \
-             SET claim_state = 'withdrawn', \
-                 retraction_reason = coalesce(retraction_reason, 'subject_purged') \
-             WHERE lower(json_extract(subject_ref, '$.kind')) = 'email' \
-               AND claim_state IN ('active', 'tombstoned', 'dormant') \
-               AND json_extract(subject_ref, '$.id') IN ( \
-                   SELECT email_id FROM emails \
-                   WHERE resolved_at IS NOT NULL \
-                     AND resolved_at < datetime('now', ?1) \
-               )",
+            "DELETE FROM emails
+             WHERE resolved_at IS NOT NULL
+               AND resolved_at < datetime('now', ?1)",
             params![cutoff],
         )
-        .map_err(|e| DbError::Migration(format!("purge_aged_emails: withdraw email claims: {e}")))?;
-    }
+        .map_err(|e| DbError::Migration(format!("purge_aged_emails: {e}")))
+    })();
 
-    conn.execute(
-        "DELETE FROM emails
-         WHERE resolved_at IS NOT NULL
-           AND resolved_at < datetime('now', ?1)",
-        params![cutoff],
-    )
-    .map_err(|e| DbError::Migration(format!("purge_aged_emails: {e}")))
+    match result {
+        Ok(deleted) => {
+            conn.execute_batch("COMMIT")
+                .map_err(|e| DbError::Migration(format!("purge_aged_emails COMMIT: {e}")))?;
+            Ok(deleted)
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
 }
 
 /// Purge content_embeddings for content_files that no longer exist.
@@ -518,22 +544,33 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             }
             DataSource::Google => {
                 if table_exists(tx, "emails") {
-                    // L2 cycle-4 fix #2: withdraw Email-subject claims
-                    // BEFORE deleting the source emails so the join
-                    // can still identify which email_ids existed. The
-                    // claim rows survive (audit trail) but are no
-                    // longer matched by PRE-GATE / suppression.
+                    // L2 cycle-4 fix #2 + cycle-5 fix #2: withdraw
+                    // Email-subject claims BEFORE deleting the source
+                    // emails so the join can still identify which
+                    // email_ids existed. The claim rows survive (audit
+                    // trail) but are no longer matched by PRE-GATE /
+                    // suppression.
+                    //
+                    // Cycle-5 fix #2: cascade errors propagate via `?`
+                    // so the surrounding `with_transaction` rolls back
+                    // the email DELETE if the cascade UPDATE fails
+                    // (e.g. malformed historical subject_ref JSON).
+                    // The previous `let _ = ...` swallowed errors and
+                    // committed stale Email tombstones after the
+                    // source rows were gone.
                     if table_exists(tx, "intelligence_claims") {
-                        let _ = tx.conn_ref().execute(
+                        tx.conn_ref().execute(
                             "UPDATE intelligence_claims \
                              SET claim_state = 'withdrawn', \
                                  retraction_reason = coalesce(retraction_reason, 'subject_purged') \
                              WHERE lower(json_extract(subject_ref, '$.kind')) = 'email' \
                                AND claim_state IN ('active', 'tombstoned', 'dormant') \
+                               AND json_valid(subject_ref) = 1 \
                                AND json_extract(subject_ref, '$.id') IN \
                                    (SELECT email_id FROM emails)",
                             [],
-                        );
+                        )
+                        .map_err(|e| format!("withdraw email claims before purge failed: {e}"))?;
                     }
                     emails_deleted = tx
                         .conn_ref()

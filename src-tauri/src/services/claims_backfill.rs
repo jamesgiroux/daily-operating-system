@@ -76,7 +76,7 @@ pub fn rekey_backfilled_claims_via_runtime_helpers(
             .prepare(
                 "SELECT id, subject_ref, claim_type, field_path, text, dedup_key, item_hash \
                  FROM intelligence_claims \
-                 WHERE id GLOB 'm[1-8]-*' \
+                 WHERE id GLOB 'm[1-9]-*' \
                  ORDER BY id",
             )
             .map_err(|e| format!("DOS-7 L2 rekey select prepare failed: {e}"))?;
@@ -595,13 +595,33 @@ pub fn run_dos7_cutover(
     report.sql_migrations_applied = applied;
     log::info!("[DOS-7 cutover] migrations applied: {}", applied);
 
-    // Step 4.5: rekey SQL-backfilled claims to the runtime DOS-280 shape.
+    // Step 5: JSON-blob backfill (mechanism 9). Run BEFORE rekey so the
+    // m9- rows are present when we canonicalize hashes — L2 cycle-5
+    // fix #1 caught that the original Step 4.5 ordering only rekeyed
+    // m1-m8, leaving m9 with empty item_hash + raw text.
+    let json_report = backfill_dismissed_items_from_workspace(ctx, db, workspace_root)?;
+    report.json_blob_report = json_report.clone();
+    log::info!(
+        "[DOS-7 cutover] JSON-blob backfill: {} entities scanned, {} items observed, {} claims inserted",
+        json_report.entities_scanned,
+        json_report.items_observed,
+        json_report.claims_inserted,
+    );
+
+    // Step 5.5: rekey ALL backfilled claims (m1-m9) to the runtime
+    // DOS-280 shape.
     //
-    // L2 cycle-2 fix #2: per-row failures are NOW fatal to cutover. The
-    // previous "warn-and-continue" behavior left rows under their old
-    // hash while marking the cutover complete — making the failure
-    // non-retriable on subsequent startups (the
+    // L2 cycle-2 fix #2: per-row failures are fatal to cutover. The
+    // previous "warn-and-continue" behavior left rows under their
+    // old hash while marking the cutover complete — making the
+    // failure non-retriable on subsequent startups (the
     // dos7_cutover_completed_at marker short-circuits the hook).
+    //
+    // L2 cycle-5 fix #1: rekey now scans `m[1-9]-*` (was `m[1-8]-*`),
+    // so m9 rows from the JSON-blob backfill above also get
+    // runtime-canonical hashes. Without this, PRE-GATE text tier
+    // would miss whitespace-anomalous m9 rows since hash tier is
+    // skipped when item_hash is empty.
     let rekey_report = match rekey_backfilled_claims_via_runtime_helpers(ctx, db) {
         Ok(report) => report,
         Err(e) => {
@@ -611,29 +631,19 @@ pub fn run_dos7_cutover(
         }
     };
     log::info!(
-        "[DOS-7 cutover] m1-m8 rekey: {} rows examined, {} rows rewritten, {} error(s)",
+        "[DOS-7 cutover] m1-m9 rekey: {} rows examined, {} rows rewritten, {} error(s)",
         rekey_report.rows_examined,
         rekey_report.rows_rewritten,
         rekey_report.errors.len(),
     );
     if !rekey_report.errors.is_empty() {
         return Err(format!(
-            "DOS-7 cutover: m1-m8 rekey produced {} error(s); refusing to mark cutover complete until they are resolved. First error: {}",
+            "DOS-7 cutover: m1-m9 rekey produced {} error(s); refusing to mark cutover complete until they are resolved. First error: {}",
             rekey_report.errors.len(),
             rekey_report.errors.first().map(String::as_str).unwrap_or("(none)"),
         ));
     }
     report.rekey_report = rekey_report;
-
-    // Step 5: JSON-blob backfill (mechanism 9).
-    let json_report = backfill_dismissed_items_from_workspace(ctx, db, workspace_root)?;
-    report.json_blob_report = json_report.clone();
-    log::info!(
-        "[DOS-7 cutover] JSON-blob backfill: {} entities scanned, {} items observed, {} claims inserted",
-        json_report.entities_scanned,
-        json_report.items_observed,
-        json_report.claims_inserted,
-    );
 
     // Step 6: reconcile pass (D5 stub today; full impl gates on
     // scripts/reconcile_ghost_resurrection.sql findings = 0).
@@ -1070,6 +1080,60 @@ mod tests {
         assert_eq!(
             stored_hash, expected_runtime_hash,
             "post-rekey item_hash must equal hash(canonicalize(legacy_text)) so PRE-GATE hash tier matches"
+        );
+    }
+
+    /// L2 cycle-5 fix #1: rekey now scans `m[1-9]-*`, so m9
+    /// JSON-blob backfill rows also get runtime-canonical hashes.
+    /// Without this, m9 rows would retain empty item_hash + raw text
+    /// and PRE-GATE text tier (NOCASE only) would miss
+    /// whitespace-anomalous re-surfacings.
+    #[test]
+    fn rekey_includes_m9_json_blob_backfill_rows() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let legacy_text = "  Reply by\tFriday  ";
+        let legacy_dedup = format!("{legacy_text}:acct-1:risks:dismissed_item");
+        seed_rekey_claim(
+            &db,
+            RekeySeed {
+                id: "m9-acct1-risks",
+                subject_ref: r#"{"kind":"Account","id":"acct-1"}"#,
+                claim_type: "dismissed_item",
+                field_path: Some("risks"),
+                text: legacy_text,
+                dedup_key: &legacy_dedup,
+                item_hash: Some(""),
+            },
+        );
+
+        let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1, "m9 row must be in the rekey scan");
+        assert_eq!(report.rows_rewritten, 1, "m9 row must get rewritten");
+
+        let (_expected_dedup, expected_runtime_hash) = expected_runtime_identity(
+            r#"{"kind":"Account","id":"acct-1"}"#,
+            "dismissed_item",
+            Some("risks"),
+            "Reply by Friday",
+        );
+        let stored_hash: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT item_hash FROM intelligence_claims WHERE id = 'm9-acct1-risks'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            stored_hash, expected_runtime_hash,
+            "post-rekey m9 item_hash must equal hash(canonicalize(legacy_text))"
         );
     }
 
