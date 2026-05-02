@@ -589,6 +589,12 @@ const MIGRATIONS: &[Migration] = &[
         version: 125,
         sql: include_str!("migrations/124_dos_311_schema_epoch.sql"),
     },
+    // DOS-308: covering index for suppression lookups + quarantine table for
+    // tombstone remediation before DOS-7's claims substrate migration.
+    Migration {
+        version: 126,
+        sql: include_str!("migrations/125_suppression_remediation.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

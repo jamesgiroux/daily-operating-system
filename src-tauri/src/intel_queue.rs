@@ -2377,29 +2377,60 @@ pub fn write_enrichment_results(
     // item against tombstones. Items with newer evidence (sourced_at > dismissed_at)
     // pass through — the is_suppressed function handles that logic.
     if let Ok(feedback_db) = crate::db::ActionDb::open() {
+        use crate::db::intelligence_feedback::SuppressionDecision;
+        use crate::intelligence::canonicalization::{item_hash as canonical_item_hash, ItemKind};
+
         let pre_risk_count = final_intel.risks.len();
         final_intel.risks.retain(|risk| {
             let item_key = Some(risk.text.as_str());
-            !feedback_db
-                .is_suppressed(
-                    &input.entity_id,
-                    "risks",
-                    item_key,
-                    risk.item_source.as_ref().map(|s| s.sourced_at.as_str()),
-                )
-                .unwrap_or(false)
+            let hash = canonical_item_hash(ItemKind::Risk, &risk.text);
+            match feedback_db.is_suppressed(
+                &input.entity_id,
+                "risks",
+                item_key,
+                Some(&hash),
+                risk.item_source.as_ref().map(|s| s.sourced_at.as_str()),
+            ) {
+                SuppressionDecision::Suppressed { .. } => false,
+                SuppressionDecision::NotSuppressed => true,
+                SuppressionDecision::Malformed { record_id, reason } => {
+                    log::error!(
+                        "[is_suppressed] malformed tombstone {:?} for entity {} field risks; \
+                         failing closed: {:?}",
+                        record_id,
+                        input.entity_id,
+                        reason
+                    );
+                    // TODO(DOS-7): emit audit event via claim_repair_job once W3 lands.
+                    false
+                }
+            }
         });
         let pre_win_count = final_intel.recent_wins.len();
         final_intel.recent_wins.retain(|win| {
             let item_key = Some(win.text.as_str());
-            !feedback_db
-                .is_suppressed(
-                    &input.entity_id,
-                    "recentWins",
-                    item_key,
-                    win.item_source.as_ref().map(|s| s.sourced_at.as_str()),
-                )
-                .unwrap_or(false)
+            let hash = canonical_item_hash(ItemKind::Win, &win.text);
+            match feedback_db.is_suppressed(
+                &input.entity_id,
+                "recentWins",
+                item_key,
+                Some(&hash),
+                win.item_source.as_ref().map(|s| s.sourced_at.as_str()),
+            ) {
+                SuppressionDecision::Suppressed { .. } => false,
+                SuppressionDecision::NotSuppressed => true,
+                SuppressionDecision::Malformed { record_id, reason } => {
+                    log::error!(
+                        "[is_suppressed] malformed tombstone {:?} for entity {} field recentWins; \
+                         failing closed: {:?}",
+                        record_id,
+                        input.entity_id,
+                        reason
+                    );
+                    // TODO(DOS-7): emit audit event via claim_repair_job once W3 lands.
+                    false
+                }
+            }
         });
         let risks_suppressed = pre_risk_count - final_intel.risks.len();
         let wins_suppressed = pre_win_count - final_intel.recent_wins.len();
