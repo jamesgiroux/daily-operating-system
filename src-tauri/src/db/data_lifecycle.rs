@@ -179,18 +179,47 @@ pub fn purge_aged_email_signals(db: &ActionDb, days: i64) -> Result<usize, DbErr
 }
 
 /// Purge resolved emails older than `days`.
+///
+/// L2 cycle-4 fix #2: Email-subject `intelligence_claims` rows for the
+/// purged email IDs are transitioned to `claim_state='withdrawn'` so
+/// (a) PRE-GATE no longer blocks future re-imports of the same
+/// email_id (PRE-GATE only matches `tombstoned`), and (b) the audit
+/// trail row survives — claim `text`, `subject_ref`, and assertion
+/// columns remain frozen per the immutability allowlist.
 pub fn purge_aged_emails(db: &ActionDb, days: i64) -> Result<usize, DbError> {
     if !table_exists(db, "emails") {
         return Ok(0);
     }
-    db.conn_ref()
-        .execute(
-            "DELETE FROM emails
-             WHERE resolved_at IS NOT NULL
-               AND resolved_at < datetime('now', ?1)",
-            params![format!("-{days} days")],
+    let cutoff = format!("-{days} days");
+    let conn = db.conn_ref();
+
+    // Withdraw Email-subject claims for emails we are about to purge.
+    // Run BEFORE the DELETE so we can still join against `emails` to
+    // identify which email_ids are aging out.
+    if table_exists(db, "intelligence_claims") {
+        conn.execute(
+            "UPDATE intelligence_claims \
+             SET claim_state = 'withdrawn', \
+                 retraction_reason = coalesce(retraction_reason, 'subject_purged') \
+             WHERE lower(json_extract(subject_ref, '$.kind')) = 'email' \
+               AND claim_state IN ('active', 'tombstoned', 'dormant') \
+               AND json_extract(subject_ref, '$.id') IN ( \
+                   SELECT email_id FROM emails \
+                   WHERE resolved_at IS NOT NULL \
+                     AND resolved_at < datetime('now', ?1) \
+               )",
+            params![cutoff],
         )
-        .map_err(|e| DbError::Migration(format!("purge_aged_emails: {e}")))
+        .map_err(|e| DbError::Migration(format!("purge_aged_emails: withdraw email claims: {e}")))?;
+    }
+
+    conn.execute(
+        "DELETE FROM emails
+         WHERE resolved_at IS NOT NULL
+           AND resolved_at < datetime('now', ?1)",
+        params![cutoff],
+    )
+    .map_err(|e| DbError::Migration(format!("purge_aged_emails: {e}")))
 }
 
 /// Purge content_embeddings for content_files that no longer exist.
@@ -489,6 +518,23 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             }
             DataSource::Google => {
                 if table_exists(tx, "emails") {
+                    // L2 cycle-4 fix #2: withdraw Email-subject claims
+                    // BEFORE deleting the source emails so the join
+                    // can still identify which email_ids existed. The
+                    // claim rows survive (audit trail) but are no
+                    // longer matched by PRE-GATE / suppression.
+                    if table_exists(tx, "intelligence_claims") {
+                        let _ = tx.conn_ref().execute(
+                            "UPDATE intelligence_claims \
+                             SET claim_state = 'withdrawn', \
+                                 retraction_reason = coalesce(retraction_reason, 'subject_purged') \
+                             WHERE lower(json_extract(subject_ref, '$.kind')) = 'email' \
+                               AND claim_state IN ('active', 'tombstoned', 'dormant') \
+                               AND json_extract(subject_ref, '$.id') IN \
+                                   (SELECT email_id FROM emails)",
+                            [],
+                        );
+                    }
                     emails_deleted = tx
                         .conn_ref()
                         .execute("DELETE FROM emails", [])
@@ -811,6 +857,83 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM emails", [], |row| row.get(0))
             .expect("count remaining");
         assert_eq!(remaining, 1, "unresolved email must remain");
+    }
+
+    /// L2 cycle-4 fix #2: aged-email purge must transition Email-subject
+    /// `intelligence_claims` rows for the purged email_ids to
+    /// `claim_state='withdrawn'` so the substrate doesn't carry stale
+    /// suppression for a re-imported email_id. Claim rows survive
+    /// (audit trail); their assertion columns remain frozen.
+    #[test]
+    fn purge_aged_emails_withdraws_email_subject_claim_rows() {
+        let db = test_db();
+
+        // Seed two emails, only em1 resolved+aged → eligible for purge.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO emails (email_id, resolved_at, received_at) \
+                 VALUES ('em1', datetime('now', '-90 days'), datetime('now', '-90 days'))",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO emails (email_id, received_at) \
+                 VALUES ('em2', datetime('now', '-90 days'))",
+                [],
+            )
+            .unwrap();
+
+        // Seed an Email-subject tombstone claim for each email.
+        // dos7-allowed: cycle-4 fix #2 cascade test seed
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, \
+                  claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity) \
+                 VALUES \
+                 ('claim-em1', '{\"kind\":\"Email\",\"id\":\"em1\"}', 'email_dismissed', \
+                  'commitment', 'reply by friday', 'k1', 'h1', 'user', 'user_dismissal', \
+                  '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', '{}', \
+                  'tombstoned', 'dormant', 'user_removal', 'state', 'internal'), \
+                 ('claim-em2', '{\"kind\":\"Email\",\"id\":\"em2\"}', 'email_dismissed', \
+                  'question', 'is this still happening', 'k2', 'h2', 'user', 'user_dismissal', \
+                  '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', '{}', \
+                  'tombstoned', 'dormant', 'user_removal', 'state', 'internal')",
+                [],
+            )
+            .unwrap();
+
+        purge_aged_emails(&db, 60).expect("purge");
+
+        // em1's claim → withdrawn (its email got purged).
+        let em1_state: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_state FROM intelligence_claims WHERE id = 'claim-em1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            em1_state, "withdrawn",
+            "claim for the purged email must be withdrawn so PRE-GATE no longer matches"
+        );
+
+        // em2's claim → unchanged (its email wasn't purged).
+        let em2_state: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_state FROM intelligence_claims WHERE id = 'claim-em2'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            em2_state, "tombstoned",
+            "claim for the surviving email must remain tombstoned"
+        );
     }
 
     #[test]

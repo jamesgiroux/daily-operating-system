@@ -29,7 +29,14 @@ fi
 # db/intelligence_feedback.rs is exempt because the only INSERTs in that
 # file live inside `#[cfg(test)] mod tests` to seed the D5-2 parity tests
 # (see fn seed_pair); production reads from the file are read-only.
-allowed_basename_regex='services/claims\.rs|services/claims_backfill\.rs|migrations/130_dos_7_claims_backfill_a1\.sql|migrations/131_dos_7_claims_backfill_a2\.sql|migrations/129_dos_7_claims_schema\.sql|db/intelligence_feedback\.rs|tests/dos7_d3a1_backfill_test\.rs|tests/dos7_d3a2_backfill_test\.rs|tests/dos7_d1_schema_test\.rs|tests/dos7_d5_ghost_resurrection_test\.rs|tests/dos311_fixtures/'
+# db/data_lifecycle.rs is exempt for the L2 cycle-4 fix #2 cascade:
+# when emails are hard-deleted (purge_aged_emails or DataSource::Google
+# full purge), the corresponding Email-subject claim rows must be
+# transitioned from active/tombstoned/dormant to `withdrawn` so the
+# substrate doesn't carry stale suppression for a re-imported email.
+# Only claim_state + retraction_reason are touched (both in the
+# UPDATE-allowed list per check_claim_immutability_allowlist.sh).
+allowed_basename_regex='services/claims\.rs|services/claims_backfill\.rs|migrations/130_dos_7_claims_backfill_a1\.sql|migrations/131_dos_7_claims_backfill_a2\.sql|migrations/129_dos_7_claims_schema\.sql|db/intelligence_feedback\.rs|db/data_lifecycle\.rs|tests/dos7_d3a1_backfill_test\.rs|tests/dos7_d3a2_backfill_test\.rs|tests/dos7_d1_schema_test\.rs|tests/dos7_d5_ghost_resurrection_test\.rs|tests/dos311_fixtures/'
 
 pattern='(INSERT[[:space:]]+INTO|UPDATE)[[:space:]]+(intelligence_claims|claim_corroborations|claim_contradictions)\b'
 
