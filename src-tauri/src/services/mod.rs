@@ -5,6 +5,7 @@ use crate::state::AppState;
 pub mod accounts;
 pub mod actions;
 pub mod claims;
+pub mod claims_backfill;
 pub mod commitment_bridge;
 pub mod context;
 pub mod entity_linking;
