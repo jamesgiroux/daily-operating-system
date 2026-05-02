@@ -1216,6 +1216,24 @@ pub fn dismiss_account_field_conflict(
         )
         .map_err(|e| format!("create_suppression_tombstone: {e}"))?;
 
+        // DOS-7 D4-1a: shadow-write tombstone claim. Subject is the account;
+        // field carries the field key; item_text is the signal_id (opaque
+        // structural identifier — kept consistent with backfill m1 metadata).
+        let observed_at = ctx.clock.now().to_rfc3339();
+        crate::services::claims::shadow_write_tombstone_claim(
+            tx,
+            crate::services::claims::ShadowTombstoneClaim {
+                subject_kind: "Account",
+                subject_id: account_id,
+                claim_type: "account_field_correction",
+                field_path: Some(field),
+                text: signal_id_str,
+                actor: "user",
+                source_scope: Some(source),
+                observed_at: &observed_at,
+            },
+        );
+
         tx.upsert_signal_weight(
             source,
             "account",
