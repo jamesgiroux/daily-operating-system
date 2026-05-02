@@ -252,18 +252,32 @@ pub fn backfill_dismissed_items_from_workspace(
                     item.content, subject_id, item.field
                 );
 
-                let subject_ref =
-                    format!(r#"{{"kind":"{}","id":"{}"}}"#, subject_kind, subject_id);
-                let provenance_json = format!(
-                    r#"{{"backfill_mechanism":"dismissed_item_json","source_table":"intelligence.json","source_id":"{}:{}"}}"#,
-                    subject_id, item.field
-                );
-                let metadata_json = format!(
-                    r#"{{"field":"{}","content":"{}","dismissed_at":"{}"}}"#,
-                    escape_json_str(&item.field),
-                    escape_json_str(&item.content),
-                    escape_json_str(&item.dismissed_at)
-                );
+                // L2 cycle-9 fix: build the JSON columns via serde_json
+                // so legacy intelligence.json values containing quotes,
+                // backslashes, newlines, or control characters cannot
+                // produce malformed JSON. The previous raw `format!`
+                // interpolation poisoned downstream rekey: a malformed
+                // m9 row would commit, then the rekey pass would fail
+                // to parse `subject_ref` and abort the cutover; on
+                // retry, the same id-keyed idempotency check skipped
+                // the bad row so the failure repeated indefinitely.
+                let subject_ref = serde_json::json!({
+                    "kind": subject_kind,
+                    "id": subject_id,
+                })
+                .to_string();
+                let provenance_json = serde_json::json!({
+                    "backfill_mechanism": "dismissed_item_json",
+                    "source_table": "intelligence.json",
+                    "source_id": format!("{}:{}", subject_id, item.field),
+                })
+                .to_string();
+                let metadata_json = serde_json::json!({
+                    "field": item.field,
+                    "content": item.content,
+                    "dismissed_at": item.dismissed_at,
+                })
+                .to_string();
                 // L2 cycle-6 fix #2 + cycle-8 fix #1: include a stable
                 // hash of `(subject_kind, subject_id, field, content)`
                 // in the claim_id so:
@@ -358,10 +372,6 @@ pub fn backfill_dismissed_items_from_workspace(
     }
 
     Ok(report)
-}
-
-fn escape_json_str(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
 }
 
 fn sanitize_id_segment(s: &str) -> String {
@@ -1384,6 +1394,82 @@ mod tests {
             )
             .unwrap();
         assert_eq!(distinct_ids, 3);
+    }
+
+    /// L2 cycle-9 fix: legacy intelligence.json values containing
+    /// quotes, backslashes, newlines, and control characters must
+    /// produce well-formed JSON in the m9 backfill output. Cycle-9
+    /// switched from raw `format!` interpolation to serde_json,
+    /// closing the JSON-injection hazard that would otherwise
+    /// poison the rekey pass and dead-loop the cutover.
+    #[test]
+    fn m9_backfill_round_trips_malformed_legacy_characters() {
+        let workspace = tempfile::tempdir().unwrap();
+        // Mix of quotes, backslashes, newlines, and a control char.
+        let evil_content = "She said \"hi\".\nWith\\backslash\tand\u{0007}bell.";
+        let evil_field = "risks-with-\"quotes\"";
+        let body = serde_json::json!({
+            "version": 4,
+            "entityId": "acct-evil",
+            "entityType": "account",
+            "enrichedAt": "2026-04-01T00:00:00Z",
+            "sourceFileCount": 0,
+            "dismissedItems": [{
+                "field": evil_field,
+                "content": evil_content,
+                "dismissedAt": "2026-04-15T00:00:00Z"
+            }]
+        });
+        write_intel_json(
+            workspace.path(),
+            "Accounts",
+            "acct-evil",
+            &serde_json::to_string_pretty(&body).unwrap(),
+        );
+
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let report = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path())
+            .expect("malformed-character item must persist");
+        assert_eq!(report.claims_inserted, 1);
+
+        // Verify ALL JSON columns are valid JSON SQLite can parse.
+        let (subject_ref, provenance_json, metadata_json): (String, String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT subject_ref, provenance_json, metadata_json \
+                 FROM intelligence_claims \
+                 WHERE id LIKE 'm9-acct-evil-%'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        for (label, raw) in [
+            ("subject_ref", &subject_ref),
+            ("provenance_json", &provenance_json),
+            ("metadata_json", &metadata_json),
+        ] {
+            serde_json::from_str::<serde_json::Value>(raw).unwrap_or_else(|e| {
+                panic!("{label} must be valid JSON, got {raw:?}: {e}")
+            });
+        }
+
+        // Verify the rekey pass — which parses subject_ref and would
+        // dead-loop on malformed JSON — succeeds.
+        let rekey = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert!(
+            rekey.errors.is_empty(),
+            "rekey must not error on serde_json-built m9 rows: {:?}",
+            rekey.errors,
+        );
+        assert_eq!(rekey.rows_examined, 1);
+        assert_eq!(rekey.rows_rewritten, 1);
     }
 
     /// L2 cycle-8 fix #1: m9 claim_id must namespace by subject_kind
