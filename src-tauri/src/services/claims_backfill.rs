@@ -193,6 +193,28 @@ fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String), String
         }
     }
 
+    // L2 cycle-12 fix #2: reject subject_kinds that aren't supported
+    // by the SubjectRef enum. Migration 131 m5 fell through unrecognized
+    // owner_types as the literal kind (e.g. 'email_thread'), and
+    // those rows can't participate in bump_for_subject /
+    // is_suppressed_via_claims. Migration 133 withdraws existing
+    // bad rows; this guard catches any new ones surfacing through
+    // rekey.
+    let kind = subject_value
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_lowercase();
+    const SUPPORTED_KINDS: &[&str] = &["account", "meeting", "person", "project", "email"];
+    if !SUPPORTED_KINDS.contains(&kind.as_str()) {
+        return Err(format!(
+            "subject_ref kind {:?} is not a supported SubjectRef variant; \
+             migration 133 withdraws m5 rows with unsupported kinds — \
+             this row likely needs the same treatment",
+            kind
+        ));
+    }
+
     let compact_subject_ref =
         serde_json::to_string(&subject_value).map_err(|e| format!("compact subject_ref: {e}"))?;
     let canonical_text = canonicalize_for_dos280(&row.text);
@@ -1775,6 +1797,118 @@ mod tests {
             )
             .unwrap();
         assert_eq!(row_count, 1);
+    }
+
+    #[test]
+    /// L2 cycle-12 fix #2: rekey must reject m5 rows whose
+    /// subject_ref kind is not a supported SubjectRef variant
+    /// (e.g. owner_type='email_thread' from linking_dismissals).
+    /// Migration 133 withdraws existing bad rows; this guard
+    /// catches any new rows that surface through rekey.
+    #[test]
+    fn rekey_rejects_unsupported_subject_kind() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        // Seed an m5 row with kind="email_thread" (unsupported).
+        seed_rekey_claim(
+            &db,
+            RekeySeed {
+                id: "m5-email_thread-thr1-acct1-account",
+                subject_ref: r#"{"kind":"email_thread","id":"thr-1"}"#,
+                claim_type: "linking_dismissed",
+                field_path: Some("account"),
+                text: "acct-1",
+                dedup_key: "acct-1:email_thread:thr-1:linking_dismissed:account",
+                item_hash: Some("acct-1"),
+            },
+        );
+
+        let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert!(
+            report.errors.iter().any(|e| e.contains("not a supported SubjectRef variant")),
+            "rekey must surface unsupported-kind error, got {:?}",
+            report.errors,
+        );
+    }
+
+    /// L2 cycle-12 fix #2: migration 133 withdraws m5 rows with
+    /// unsupported subject_kind so they don't pollute PRE-GATE /
+    /// suppression. After migration, the row's claim_state is
+    /// 'withdrawn' and retraction_reason is 'unsupported_subject_kind'.
+    #[test]
+    fn migration_133_withdraws_m5_unsupported_kind_rows() {
+        // Use the full-migration DB so migration 133 has applied.
+        let conn = fresh_full_db();
+
+        // Seed an m5 row with kind="email_thread" (mimicking what
+        // migration 131 wrote pre-fix).
+        // dos7-allowed: cycle-12 regression seed
+        conn.execute(
+            "INSERT INTO intelligence_claims \
+             (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+              actor, data_source, observed_at, created_at, provenance_json, \
+              claim_state, surfacing_state, retraction_reason, expires_at, \
+              temporal_scope, sensitivity) \
+             VALUES \
+             ('m5-evil', '{\"kind\":\"email_thread\",\"id\":\"thr-1\"}', \
+              'linking_dismissed', 'account', 'acct-1', 'k', 'h', \
+              'system_backfill', 'legacy_dismissal', \
+              '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', '{}', \
+              'tombstoned', 'active', 'user_removal', NULL, \
+              'state', 'internal')",
+            [],
+        )
+        .unwrap();
+
+        // Re-run migration 133 (simulating the migration pass).
+        let migration_sql =
+            include_str!("../migrations/133_dos_7_withdraw_unsupported_m5_kinds.sql");
+        conn.execute_batch(migration_sql).unwrap();
+
+        let (state, reason): (String, String) = conn
+            .query_row(
+                "SELECT claim_state, retraction_reason FROM intelligence_claims \
+                 WHERE id = 'm5-evil'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(state, "withdrawn");
+        assert_eq!(reason, "unsupported_subject_kind");
+
+        // A supported-kind m5 row should NOT be touched.
+        conn.execute(
+            "INSERT INTO intelligence_claims \
+             (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+              actor, data_source, observed_at, created_at, provenance_json, \
+              claim_state, surfacing_state, retraction_reason, expires_at, \
+              temporal_scope, sensitivity) \
+             VALUES \
+             ('m5-ok', '{\"kind\":\"Meeting\",\"id\":\"mtg-1\"}', \
+              'linking_dismissed', 'account', 'acct-1', 'k2', 'h2', \
+              'system_backfill', 'legacy_dismissal', \
+              '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', '{}', \
+              'tombstoned', 'active', 'user_removal', NULL, \
+              'state', 'internal')",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(migration_sql).unwrap();
+        let ok_state: String = conn
+            .query_row(
+                "SELECT claim_state FROM intelligence_claims WHERE id = 'm5-ok'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(ok_state, "tombstoned", "supported-kind row must be untouched");
     }
 
     #[test]
