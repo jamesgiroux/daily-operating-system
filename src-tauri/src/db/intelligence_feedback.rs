@@ -3,8 +3,6 @@
 use super::ActionDb;
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 
-const TOMBSTONE_LOOKUP_LIMIT: i64 = 32;
-
 /// A row from the `intelligence_feedback` table.
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +95,13 @@ struct TombstoneCandidate {
     source_scope: Option<String>,
 }
 
+#[derive(Debug, Default)]
+struct SuppressionCandidateTiers {
+    hash: Vec<TombstoneCandidate>,
+    exact: Vec<TombstoneCandidate>,
+    keyless: Vec<TombstoneCandidate>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RowEvaluation {
     Active { dismissed_at: DateTime<Utc> },
@@ -181,9 +186,7 @@ impl ActionDb {
         let now = Utc::now();
 
         if item_hash.is_some() {
-            let tier = candidates
-                .iter()
-                .filter(|candidate| candidate.item_hash.as_deref() == item_hash);
+            let tier = candidates.hash.iter();
             if let Some(decision) =
                 resolve_suppression_tier(tier, SuppressionReason::HashMatch, sourced_at, now)
             {
@@ -192,9 +195,7 @@ impl ActionDb {
         }
 
         if item_key.is_some() {
-            let tier = candidates
-                .iter()
-                .filter(|candidate| candidate.item_key.as_deref() == item_key);
+            let tier = candidates.exact.iter();
             if let Some(decision) = resolve_suppression_tier(
                 tier,
                 SuppressionReason::ExactTextMatch,
@@ -206,8 +207,9 @@ impl ActionDb {
         }
 
         let tier = candidates
+            .keyless
             .iter()
-            .filter(|candidate| candidate.item_key.is_none() && candidate.item_hash.is_none());
+            .filter(|candidate| candidate.item_hash.is_none());
         if let Some(decision) = resolve_suppression_tier(
             tier,
             SuppressionReason::KeylessFieldSuppression,
@@ -226,40 +228,75 @@ impl ActionDb {
         field_key: &str,
         item_key: Option<&str>,
         item_hash: Option<&str>,
-    ) -> rusqlite::Result<Vec<TombstoneCandidate>> {
-        let mut stmt = self.conn_ref().prepare(
+    ) -> rusqlite::Result<SuppressionCandidateTiers> {
+        let mut candidates = SuppressionCandidateTiers::default();
+
+        if let Some(item_hash) = item_hash {
+            candidates.hash = self.query_suppression_candidates(
+                "SELECT id, dismissed_at, expires_at, superseded_by_evidence_after, \
+                        item_hash, item_key, source_scope \
+                 FROM suppression_tombstones \
+                 WHERE entity_id = ?1 \
+                   AND field_key = ?2 \
+                   AND item_hash IS NOT NULL \
+                   AND item_hash = ?4 \
+                 ORDER BY dismissed_at DESC \
+                 LIMIT 16",
+                rusqlite::params![entity_id, field_key, item_key, item_hash],
+            )?;
+        }
+
+        if let Some(item_key) = item_key {
+            candidates.exact = self.query_suppression_candidates(
+                "SELECT id, dismissed_at, expires_at, superseded_by_evidence_after, \
+                        item_hash, item_key, source_scope \
+                 FROM suppression_tombstones \
+                 WHERE entity_id = ?1 \
+                   AND field_key = ?2 \
+                   AND item_key IS NOT NULL \
+                   AND item_key = ?3 \
+                 ORDER BY dismissed_at DESC \
+                 LIMIT 16",
+                rusqlite::params![entity_id, field_key, item_key],
+            )?;
+        }
+
+        candidates.keyless = self.query_suppression_candidates(
             "SELECT id, dismissed_at, expires_at, superseded_by_evidence_after, \
                     item_hash, item_key, source_scope \
              FROM suppression_tombstones \
              WHERE entity_id = ?1 \
                AND field_key = ?2 \
-               AND (item_key IS NULL \
-                    OR item_key = ?3 \
-                    OR (item_hash IS NOT NULL AND item_hash = ?4)) \
+               AND item_key IS NULL \
              ORDER BY dismissed_at DESC \
-             LIMIT ?5",
+             LIMIT 16",
+            rusqlite::params![entity_id, field_key],
         )?;
-        let rows = stmt.query_map(
-            rusqlite::params![
-                entity_id,
-                field_key,
-                item_key,
-                item_hash,
-                TOMBSTONE_LOOKUP_LIMIT
-            ],
-            |row| {
-                let id: i64 = row.get(0)?;
-                Ok(TombstoneCandidate {
-                    id: TombstoneId(id.to_string()),
-                    dismissed_at: row.get(1)?,
-                    expires_at: row.get(2)?,
-                    superseded_by_evidence_after: row.get(3)?,
-                    item_hash: row.get(4)?,
-                    item_key: row.get(5)?,
-                    source_scope: row.get(6)?,
-                })
-            },
-        )?;
+
+        Ok(candidates)
+    }
+
+    fn query_suppression_candidates<P>(
+        &self,
+        sql: &str,
+        params: P,
+    ) -> rusqlite::Result<Vec<TombstoneCandidate>>
+    where
+        P: rusqlite::Params,
+    {
+        let mut stmt = self.conn_ref().prepare(sql)?;
+        let rows = stmt.query_map(params, |row| {
+            let id: i64 = row.get(0)?;
+            Ok(TombstoneCandidate {
+                id: TombstoneId(id.to_string()),
+                dismissed_at: row.get(1)?,
+                expires_at: row.get(2)?,
+                superseded_by_evidence_after: row.get(3)?,
+                item_hash: row.get(4)?,
+                item_key: row.get(5)?,
+                source_scope: row.get(6)?,
+            })
+        })?;
 
         rows.collect()
     }
@@ -824,6 +861,106 @@ mod tests {
         );
 
         assert_suppressed_reason(decision, SuppressionReason::HashMatch);
+    }
+
+    #[test]
+    fn is_suppressed_more_than_32_keyless_does_not_evict_hash_match() {
+        let db = test_db();
+        let hash = item_hash(ItemKind::Risk, "Hash risk");
+        let expected_id = insert_tombstone(
+            &db,
+            Tombstone {
+                item_key: None,
+                item_hash: Some(&hash),
+                dismissed_at: "2026-01-01T00:00:00Z",
+                ..Tombstone::exact("unused", "2026-01-01T00:00:00Z")
+            },
+        );
+
+        for minute in 0..35 {
+            let dismissed_at = format!("2026-02-01T00:{minute:02}:00Z");
+            insert_tombstone(
+                &db,
+                Tombstone {
+                    item_key: None,
+                    item_hash: None,
+                    dismissed_at: &dismissed_at,
+                    ..Tombstone::exact("unused", "2026-02-01T00:00:00Z")
+                },
+            );
+        }
+
+        let decision = db.is_suppressed("acct-1", "risks", Some("Hash risk"), Some(&hash), None);
+
+        assert_eq!(
+            assert_suppressed_reason(decision, SuppressionReason::HashMatch),
+            expected_id
+        );
+    }
+
+    #[test]
+    fn is_suppressed_more_than_32_keyless_does_not_evict_exact_match() {
+        let db = test_db();
+        let expected_id = insert_tombstone(
+            &db,
+            Tombstone::exact("Exact risk", "2026-01-01T00:00:00Z"),
+        );
+
+        for minute in 0..35 {
+            let dismissed_at = format!("2026-02-01T00:{minute:02}:00Z");
+            insert_tombstone(
+                &db,
+                Tombstone {
+                    item_key: None,
+                    item_hash: None,
+                    dismissed_at: &dismissed_at,
+                    ..Tombstone::exact("unused", "2026-02-01T00:00:00Z")
+                },
+            );
+        }
+
+        let decision = db.is_suppressed("acct-1", "risks", Some("Exact risk"), None, None);
+
+        assert_eq!(
+            assert_suppressed_reason(decision, SuppressionReason::ExactTextMatch),
+            expected_id
+        );
+    }
+
+    #[test]
+    fn is_suppressed_per_tier_limit_does_not_overflow_hash_tier() {
+        let db = test_db();
+        let hash = item_hash(ItemKind::Risk, "Hash tier risk");
+        let mut expected_id = None;
+
+        for second in 0..20 {
+            let dismissed_at = format!("2026-03-01T00:00:{second:02}Z");
+            let tombstone_id = insert_tombstone(
+                &db,
+                Tombstone {
+                    item_key: None,
+                    item_hash: Some(&hash),
+                    dismissed_at: &dismissed_at,
+                    ..Tombstone::exact("unused", "2026-03-01T00:00:00Z")
+                },
+            );
+            if second == 19 {
+                expected_id = Some(tombstone_id);
+            }
+        }
+
+        let decision = db.is_suppressed(
+            "acct-1",
+            "risks",
+            Some("Hash tier risk"),
+            Some(&hash),
+            None,
+        );
+
+        assert_eq!(
+            assert_suppressed_reason(decision, SuppressionReason::HashMatch),
+            expected_id.expect("latest hash tombstone id")
+        );
     }
 
     #[test]
