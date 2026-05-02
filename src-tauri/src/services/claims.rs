@@ -1200,8 +1200,22 @@ pub fn shadow_write_tombstone_claim(
     let ext = crate::services::context::ExternalClients::default();
     let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
-    let subject_ref = format!(r#"{{"kind":"{}","id":"{}"}}"#, normalized_kind, subject_id);
-    let metadata_json = source_scope.map(|s| format!(r#"{{"source_scope":"{}"}}"#, s));
+    // L2 cycle-10 fix #2: build subject_ref + metadata_json via
+    // serde_json so subject_id or source_scope containing quotes,
+    // backslashes, newlines, or control characters can't produce
+    // malformed JSON. The previous `format!` interpolation made
+    // commit_claim's subject_ref parser fail, returning Failed —
+    // and callers treat shadow_write as best-effort, so the claim
+    // tombstone could silently be absent. Equivalent hazard for
+    // metadata_json (commit_claim doesn't validate it).
+    let subject_ref = serde_json::json!({
+        "kind": normalized_kind,
+        "id": subject_id,
+    })
+    .to_string();
+    let metadata_json = source_scope.map(|s| {
+        serde_json::json!({ "source_scope": s }).to_string()
+    });
 
     let proposal = ClaimProposal {
         subject_ref,
@@ -2105,6 +2119,60 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    /// L2 cycle-10 fix #2: shadow_write_tombstone_claim must produce
+    /// well-formed JSON for subject_ref + metadata_json even when
+    /// the caller-supplied subject_id or source_scope contain
+    /// quotes, backslashes, newlines, or control characters. The
+    /// previous `format!`-built JSON would fail commit_claim's
+    /// subject_ref parser → outcome=Failed → callers treating
+    /// shadow_write as best-effort would silently lose the claim.
+    #[test]
+    fn shadow_write_tombstone_claim_handles_weird_subject_id_and_source_scope() {
+        let db = test_db();
+        // Seed an account whose id contains characters that would
+        // break naive JSON interpolation.
+        let evil_id = "acct-with-\"quote\"-and-\\backslash-and-\nnewline";
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                params![evil_id, "Evil Acct", TS],
+            )
+            .unwrap();
+
+        let outcome = shadow_write_tombstone_claim(
+            &db,
+            ShadowTombstoneClaim {
+                subject_kind: "Account",
+                subject_id: evil_id,
+                claim_type: "risk",
+                field_path: Some("health.risk"),
+                text: "Risk for evil-id account",
+                actor: "user",
+                source_scope: Some("scope-with-\"quote\"-and-\\backslash"),
+                observed_at: TS,
+            },
+        );
+        assert_eq!(outcome, ShadowTombstoneOutcome::Committed);
+
+        // Verify subject_ref + metadata_json on the row are valid JSON.
+        let (subject_ref, metadata_json): (String, Option<String>) = db
+            .conn_ref()
+            .query_row(
+                "SELECT subject_ref, metadata_json FROM intelligence_claims \
+                 WHERE claim_type = 'risk' AND text = 'risk for evil-id account'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        serde_json::from_str::<serde_json::Value>(&subject_ref)
+            .unwrap_or_else(|e| panic!("subject_ref must be valid JSON, got {subject_ref:?}: {e}"));
+        if let Some(metadata) = metadata_json.as_deref() {
+            serde_json::from_str::<serde_json::Value>(metadata).unwrap_or_else(|e| {
+                panic!("metadata_json must be valid JSON, got {metadata:?}: {e}")
+            });
+        }
     }
 
     /// L2 cycle-3 fix: Email is now a real SubjectRef variant
