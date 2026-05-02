@@ -222,6 +222,70 @@ impl ActionDb {
         SuppressionDecision::NotSuppressed
     }
 
+    /// DOS-7 D5-2 parallel suppression lookup backed by `intelligence_claims`.
+    ///
+    /// This intentionally lives alongside the legacy `is_suppressed` reader:
+    /// callers continue to read `suppression_tombstones` until a follow-up
+    /// swaps them after parity is proven.
+    pub fn is_suppressed_via_claims(
+        &self,
+        entity_id: &str,
+        field_key: &str,
+        item_key: Option<&str>,
+        item_hash: Option<&str>,
+        sourced_at: Option<&str>,
+    ) -> SuppressionDecision {
+        let candidates = match self.fetch_suppression_claim_candidates(
+            entity_id,
+            field_key,
+            item_key,
+            item_hash,
+        ) {
+            Ok(candidates) => candidates,
+            Err(err) => {
+                return SuppressionDecision::Malformed {
+                    record_id: TombstoneId("database".to_string()),
+                    reason: MalformedReason::DatabaseError(err.to_string()),
+                };
+            }
+        };
+
+        let now = Utc::now();
+
+        if item_hash.is_some() {
+            let tier = candidates.hash.iter();
+            if let Some(decision) =
+                resolve_suppression_tier(tier, SuppressionReason::HashMatch, sourced_at, now)
+            {
+                return decision;
+            }
+        }
+
+        if item_key.is_some() {
+            let tier = candidates.exact.iter();
+            if let Some(decision) = resolve_suppression_tier(
+                tier,
+                SuppressionReason::ExactTextMatch,
+                sourced_at,
+                now,
+            ) {
+                return decision;
+            }
+        }
+
+        let tier = candidates.keyless.iter();
+        if let Some(decision) = resolve_suppression_tier(
+            tier,
+            SuppressionReason::KeylessFieldSuppression,
+            sourced_at,
+            now,
+        ) {
+            return decision;
+        }
+
+        SuppressionDecision::NotSuppressed
+    }
+
     fn fetch_suppression_candidates(
         &self,
         entity_id: &str,
@@ -277,6 +341,63 @@ impl ActionDb {
         Ok(candidates)
     }
 
+    fn fetch_suppression_claim_candidates(
+        &self,
+        entity_id: &str,
+        field_key: &str,
+        item_key: Option<&str>,
+        item_hash: Option<&str>,
+    ) -> rusqlite::Result<SuppressionCandidateTiers> {
+        let mut candidates = SuppressionCandidateTiers::default();
+        let subject_ref = format!(r#"{{"kind":"Account","id":"{}"}}"#, entity_id);
+
+        if let Some(item_hash) = item_hash {
+            candidates.hash = self.query_suppression_claim_candidates(
+                "SELECT id, created_at, expires_at, metadata_json, item_hash, text \
+                 FROM intelligence_claims \
+                 WHERE subject_ref = ?1 \
+                   AND claim_type = 'risk' \
+                   AND field_path = ?2 \
+                   AND claim_state = 'tombstoned' \
+                   AND item_hash IS NOT NULL \
+                   AND item_hash = ?3 \
+                 ORDER BY created_at DESC \
+                 LIMIT 16",
+                rusqlite::params![&subject_ref, field_key, item_hash],
+            )?;
+        }
+
+        if let Some(item_key) = item_key {
+            candidates.exact = self.query_suppression_claim_candidates(
+                "SELECT id, created_at, expires_at, metadata_json, item_hash, text \
+                 FROM intelligence_claims \
+                 WHERE subject_ref = ?1 \
+                   AND claim_type = 'risk' \
+                   AND field_path = ?2 \
+                   AND claim_state = 'tombstoned' \
+                   AND text = ?3 \
+                 ORDER BY created_at DESC \
+                 LIMIT 16",
+                rusqlite::params![&subject_ref, field_key, item_key],
+            )?;
+        }
+
+        candidates.keyless = self.query_suppression_claim_candidates(
+            "SELECT id, created_at, expires_at, metadata_json, item_hash, text \
+             FROM intelligence_claims \
+             WHERE subject_ref = ?1 \
+               AND claim_type = 'risk' \
+               AND field_path = ?2 \
+               AND claim_state = 'tombstoned' \
+               AND text = '<keyless>' \
+             ORDER BY created_at DESC \
+             LIMIT 16",
+            rusqlite::params![&subject_ref, field_key],
+        )?;
+
+        Ok(candidates)
+    }
+
     fn query_suppression_candidates<P>(
         &self,
         sql: &str,
@@ -296,6 +417,33 @@ impl ActionDb {
                 item_hash: row.get(4)?,
                 item_key: row.get(5)?,
                 source_scope: row.get(6)?,
+            })
+        })?;
+
+        rows.collect()
+    }
+
+    fn query_suppression_claim_candidates<P>(
+        &self,
+        sql: &str,
+        params: P,
+    ) -> rusqlite::Result<Vec<TombstoneCandidate>>
+    where
+        P: rusqlite::Params,
+    {
+        let mut stmt = self.conn_ref().prepare(sql)?;
+        let rows = stmt.query_map(params, |row| {
+            let metadata_json: Option<String> = row.get(3)?;
+            let (source_scope, superseded_by_evidence_after) =
+                parse_claim_suppression_metadata(metadata_json.as_deref());
+            Ok(TombstoneCandidate {
+                id: TombstoneId(row.get(0)?),
+                dismissed_at: row.get(1)?,
+                expires_at: row.get(2)?,
+                superseded_by_evidence_after,
+                item_hash: row.get(4)?,
+                item_key: row.get(5)?,
+                source_scope,
             })
         })?;
 
@@ -425,6 +573,28 @@ fn resolve_suppression_tier<'a>(
     None
 }
 
+fn parse_claim_suppression_metadata(
+    metadata_json: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    let Some(metadata_json) = metadata_json else {
+        return (None, None);
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(metadata_json) else {
+        return (None, None);
+    };
+
+    let source_scope = value
+        .get("source_scope")
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
+    let superseded_by_evidence_after = value
+        .get("superseded_by_evidence_after")
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
+
+    (source_scope, superseded_by_evidence_after)
+}
+
 fn evaluate_candidate(
     candidate: &TombstoneCandidate,
     sourced_at: Option<&str>,
@@ -506,7 +676,9 @@ mod tests {
     use crate::db::test_utils::test_db;
     use crate::db::ActionDb;
     use crate::intelligence::canonicalization::{item_hash, ItemKind};
+    use rusqlite::Connection;
 
+    #[derive(Clone, Copy)]
     struct Tombstone<'a> {
         entity_id: &'a str,
         field_key: &'a str,
@@ -553,6 +725,136 @@ mod tests {
             )
             .expect("insert tombstone");
         TombstoneId(db.conn_ref().last_insert_rowid().to_string())
+    }
+
+    fn setup_pair_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&conn).expect("apply migrations");
+        conn.execute_batch("PRAGMA foreign_keys = OFF;")
+            .expect("disable FK for tests");
+        conn
+    }
+
+    fn seed_pair(conn: &Connection, tombstone: Tombstone<'_>) -> TombstoneId {
+        let db = ActionDb::from_conn(conn);
+        let tombstone_id = insert_tombstone(db, tombstone);
+        let claim_id = format!("m1-{}", tombstone_id.0);
+        let source_id = tombstone_id
+            .0
+            .parse::<i64>()
+            .expect("numeric tombstone id");
+        let subject_ref = format!(
+            r#"{{"kind":"Account","id":"{}"}}"#,
+            tombstone.entity_id
+        );
+        let text = tombstone.item_key.unwrap_or("<keyless>");
+        let dedup_item = tombstone
+            .item_hash
+            .or(tombstone.item_key)
+            .unwrap_or("<keyless>");
+        let dedup_key = format!(
+            "{}:{}:risk:{}",
+            dedup_item, tombstone.entity_id, tombstone.field_key
+        );
+        let claim_item_hash = tombstone.item_hash.unwrap_or("");
+        let provenance_json = serde_json::json!({
+            "backfill_mechanism": "suppression_tombstones",
+            "source_table": "suppression_tombstones",
+            "source_id": source_id
+        })
+        .to_string();
+        let metadata_json = serde_json::json!({
+            "item_key": tombstone.item_key,
+            "item_hash": tombstone.item_hash,
+            "source_scope": tombstone.source_scope,
+            "superseded_by_evidence_after": tombstone.superseded_by_evidence_after
+        })
+        .to_string();
+
+        conn.execute(
+            "INSERT INTO intelligence_claims \
+             (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+              actor, data_source, observed_at, created_at, provenance_json, metadata_json, \
+              claim_state, surfacing_state, retraction_reason, expires_at, temporal_scope, \
+              sensitivity) \
+             VALUES (?1, ?2, 'risk', ?3, ?4, ?5, ?6, \
+                     'system_backfill', 'legacy_dismissal', ?7, ?7, ?8, ?9, \
+                     'tombstoned', 'active', 'user_removal', ?10, 'state', \
+                     'internal')",
+            rusqlite::params![
+                claim_id,
+                subject_ref,
+                tombstone.field_key,
+                text,
+                dedup_key,
+                claim_item_hash,
+                tombstone.dismissed_at,
+                provenance_json,
+                metadata_json,
+                tombstone.expires_at,
+            ],
+        )
+        .expect("insert claim tombstone");
+
+        tombstone_id
+    }
+
+    fn assert_decision_parity(
+        legacy: SuppressionDecision,
+        via_claims: SuppressionDecision,
+    ) {
+        match (legacy, via_claims) {
+            (
+                SuppressionDecision::Suppressed {
+                    reason: legacy_reason,
+                    dismissed_at: legacy_dismissed_at,
+                    source_scope: legacy_source_scope,
+                    ..
+                },
+                SuppressionDecision::Suppressed {
+                    reason: claims_reason,
+                    dismissed_at: claims_dismissed_at,
+                    source_scope: claims_source_scope,
+                    ..
+                },
+            ) => {
+                assert_eq!(legacy_reason, claims_reason);
+                assert_eq!(legacy_dismissed_at, claims_dismissed_at);
+                assert_eq!(legacy_source_scope, claims_source_scope);
+            }
+            (
+                SuppressionDecision::Malformed {
+                    reason: legacy_reason,
+                    ..
+                },
+                SuppressionDecision::Malformed {
+                    reason: claims_reason,
+                    ..
+                },
+            ) => {
+                assert_eq!(legacy_reason, claims_reason);
+            }
+            (SuppressionDecision::NotSuppressed, SuppressionDecision::NotSuppressed) => {}
+            (legacy, via_claims) => {
+                panic!("expected parity, legacy={legacy:?}, via_claims={via_claims:?}")
+            }
+        }
+    }
+
+    fn assert_pair_decision(
+        conn: &Connection,
+        entity_id: &str,
+        field_key: &str,
+        item_key: Option<&str>,
+        item_hash: Option<&str>,
+        sourced_at: Option<&str>,
+    ) {
+        let db = ActionDb::from_conn(conn);
+        let legacy = db.is_suppressed(entity_id, field_key, item_key, item_hash, sourced_at);
+        let via_claims =
+            db.is_suppressed_via_claims(entity_id, field_key, item_key, item_hash, sourced_at);
+
+        assert_decision_parity(legacy, via_claims);
     }
 
     fn assert_suppressed_reason(
@@ -1059,5 +1361,244 @@ mod tests {
             assert_suppressed_reason(decision, SuppressionReason::ExactTextMatch),
             expected_id
         );
+    }
+
+    #[test]
+    fn parity_is_suppressed_exact_item_key_match() {
+        let conn = setup_pair_db();
+        seed_pair(
+            &conn,
+            Tombstone::exact("Champion went dark", "2026-01-01T00:00:00Z"),
+        );
+
+        assert_pair_decision(
+            &conn,
+            "acct-1",
+            "risks",
+            Some("Champion went dark"),
+            None,
+            None,
+        );
+    }
+
+    #[test]
+    fn parity_is_suppressed_keyless_field_wide_match() {
+        let conn = setup_pair_db();
+        seed_pair(
+            &conn,
+            Tombstone {
+                item_key: None,
+                dismissed_at: "2026-01-01T00:00:00Z",
+                ..Tombstone::exact("unused", "2026-01-01T00:00:00Z")
+            },
+        );
+
+        assert_pair_decision(&conn, "acct-1", "risks", Some("Any risk"), None, None);
+    }
+
+    #[test]
+    fn parity_is_suppressed_multiple_tombstones_uses_latest() {
+        let conn = setup_pair_db();
+        seed_pair(
+            &conn,
+            Tombstone {
+                source_scope: Some("older"),
+                ..Tombstone::exact("Churn risk", "2026-01-01T00:00:00Z")
+            },
+        );
+        seed_pair(
+            &conn,
+            Tombstone {
+                source_scope: Some("newer"),
+                ..Tombstone::exact("Churn risk", "2026-02-01T00:00:00Z")
+            },
+        );
+
+        assert_pair_decision(&conn, "acct-1", "risks", Some("Churn risk"), None, None);
+    }
+
+    #[test]
+    fn parity_is_suppressed_expired_tombstone_returns_not_suppressed() {
+        let conn = setup_pair_db();
+        seed_pair(
+            &conn,
+            Tombstone {
+                expires_at: Some("2000-01-02T00:00:00Z"),
+                ..Tombstone::exact("Old risk", "2000-01-01T00:00:00Z")
+            },
+        );
+
+        assert_pair_decision(&conn, "acct-1", "risks", Some("Old risk"), None, None);
+    }
+
+    #[test]
+    fn parity_is_suppressed_superseded_by_newer_evidence() {
+        let conn = setup_pair_db();
+        seed_pair(
+            &conn,
+            Tombstone {
+                superseded_by_evidence_after: Some("2026-01-15T00:00:00Z"),
+                ..Tombstone::exact("Pipeline risk", "2026-01-01T00:00:00Z")
+            },
+        );
+
+        assert_pair_decision(
+            &conn,
+            "acct-1",
+            "risks",
+            Some("Pipeline risk"),
+            None,
+            Some("2026-02-01T00:00:00Z"),
+        );
+    }
+
+    #[test]
+    fn parity_is_suppressed_superseded_with_older_evidence_remains_suppressed() {
+        let conn = setup_pair_db();
+        seed_pair(
+            &conn,
+            Tombstone {
+                superseded_by_evidence_after: Some("2026-02-01T00:00:00Z"),
+                ..Tombstone::exact("Pipeline risk", "2026-01-01T00:00:00Z")
+            },
+        );
+
+        assert_pair_decision(
+            &conn,
+            "acct-1",
+            "risks",
+            Some("Pipeline risk"),
+            None,
+            Some("2026-01-15T00:00:00Z"),
+        );
+    }
+
+    #[test]
+    fn parity_is_suppressed_z_vs_offset_timezone_consistent() {
+        let conn = setup_pair_db();
+        seed_pair(
+            &conn,
+            Tombstone {
+                source_scope: Some("offset"),
+                ..Tombstone::exact("Timezone risk", "2099-01-01T00:30:00+01:00")
+            },
+        );
+        seed_pair(
+            &conn,
+            Tombstone {
+                source_scope: Some("z"),
+                ..Tombstone::exact("Timezone risk", "2099-01-01T00:00:00Z")
+            },
+        );
+
+        assert_pair_decision(&conn, "acct-1", "risks", Some("Timezone risk"), None, None);
+    }
+
+    #[test]
+    fn parity_is_suppressed_subsecond_precision_consistent() {
+        let conn = setup_pair_db();
+        seed_pair(
+            &conn,
+            Tombstone {
+                source_scope: Some("whole"),
+                ..Tombstone::exact("Precision risk", "2099-01-01T00:00:00Z")
+            },
+        );
+        seed_pair(
+            &conn,
+            Tombstone {
+                source_scope: Some("subsecond"),
+                ..Tombstone::exact("Precision risk", "2099-01-01T00:00:00.500Z")
+            },
+        );
+
+        assert_pair_decision(&conn, "acct-1", "risks", Some("Precision risk"), None, None);
+    }
+
+    #[test]
+    fn parity_is_suppressed_malformed_tombstone_timestamp_returns_malformed() {
+        let conn = setup_pair_db();
+        seed_pair(&conn, Tombstone::exact("Bad date", "not-a-date"));
+
+        assert_pair_decision(&conn, "acct-1", "risks", Some("Bad date"), None, None);
+    }
+
+    #[test]
+    fn parity_is_suppressed_hash_match_beats_exact_key() {
+        let conn = setup_pair_db();
+        let hash = item_hash(ItemKind::Risk, "Normalized risk");
+        seed_pair(
+            &conn,
+            Tombstone {
+                source_scope: Some("exact"),
+                ..Tombstone::exact("Normalized risk", "2026-03-01T00:00:00Z")
+            },
+        );
+        seed_pair(
+            &conn,
+            Tombstone {
+                item_key: None,
+                item_hash: Some(&hash),
+                source_scope: Some("hash"),
+                ..Tombstone::exact("unused", "2026-01-01T00:00:00Z")
+            },
+        );
+
+        assert_pair_decision(
+            &conn,
+            "acct-1",
+            "risks",
+            Some("Normalized risk"),
+            Some(&hash),
+            None,
+        );
+    }
+
+    #[test]
+    fn parity_is_suppressed_hash_match_with_different_item_key_text() {
+        let conn = setup_pair_db();
+        let hash = item_hash(ItemKind::Risk, "ARR at risk");
+        seed_pair(
+            &conn,
+            Tombstone {
+                item_key: Some("ARR   at risk"),
+                item_hash: Some(&hash),
+                ..Tombstone::exact("unused", "2026-01-01T00:00:00Z")
+            },
+        );
+
+        assert_pair_decision(
+            &conn,
+            "acct-1",
+            "risks",
+            Some("ARR at risk"),
+            Some(&hash),
+            None,
+        );
+    }
+
+    #[test]
+    fn parity_is_suppressed_no_matching_tombstone_returns_not_suppressed() {
+        let conn = setup_pair_db();
+        seed_pair(
+            &conn,
+            Tombstone::exact("Different risk", "2026-01-01T00:00:00Z"),
+        );
+
+        assert_pair_decision(&conn, "acct-1", "risks", Some("Missing risk"), None, None);
+    }
+
+    #[test]
+    fn parity_is_suppressed_inverted_expiry() {
+        let conn = setup_pair_db();
+        seed_pair(
+            &conn,
+            Tombstone {
+                expires_at: Some("2026-01-01T00:00:00Z"),
+                ..Tombstone::exact("Bad expiry", "2026-02-01T00:00:00Z")
+            },
+        );
+
+        assert_pair_decision(&conn, "acct-1", "risks", Some("Bad expiry"), None, None);
     }
 }

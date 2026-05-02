@@ -214,22 +214,176 @@ pub struct CutoverReport {
     pub completed_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// D5 stub: ghost-resurrection reconcile pass per plan §8. Today returns
-/// 0 findings; D5 implements the actual SQL parity check against
-/// scripts/reconcile_ghost_resurrection.sql.
+/// DOS-7 D5-1: post-migration reconcile pass.
+///
+/// For each of the 8 SQL-resident dismissal mechanisms, count the legacy
+/// source rows that the migration WHERE filter would have backfilled and
+/// compare against the population of `m{N}-` prefixed claim rows.
+/// A non-zero legacy count with a zero claim count is a hard finding
+/// (the mechanism's INSERT failed silently or never ran). A claim count
+/// strictly less than the expected count is a soft finding (some rows
+/// failed dedup or filter divergence). Cutover refuses to complete when
+/// `findings > 0`.
+///
+/// Mechanism 9 (DismissedItem JSON-blob) is handled by the in-process
+/// backfill that emits its own report; no additional reconcile here.
 #[derive(Debug, Default, Clone)]
 pub struct ReconcilePostMigrationReport {
     pub findings: usize,
     pub finding_summary: Vec<String>,
+    pub per_mechanism_counts: Vec<MechanismCount>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MechanismCount {
+    pub mechanism: u8,
+    pub label: &'static str,
+    /// Source row count after applying the migration's WHERE filter.
+    /// `None` when the legacy table is absent (fresh DB / test fixture).
+    pub legacy_expected: Option<i64>,
+    /// `m{N}-` prefixed rows present in `intelligence_claims`.
+    pub claims_present: i64,
 }
 
 pub fn reconcile_dos7_post_migration(
-    _db: &ActionDb,
+    db: &ActionDb,
 ) -> Result<ReconcilePostMigrationReport, String> {
-    // TODO(D5): run scripts/reconcile_ghost_resurrection.sql against the
-    // post-cutover DB and return findings. Cutover refuses to complete
-    // when findings > 0.
-    Ok(ReconcilePostMigrationReport::default())
+    let conn = db.conn_ref();
+    let mut report = ReconcilePostMigrationReport::default();
+
+    let checks: [(u8, &str, &str, &str); 8] = [
+        (
+            1,
+            "suppression_tombstones",
+            // Latest dismissed_at wins per (entity_id, field_key, item_key, item_hash);
+            // older rows become claim_corroborations and are not counted as expected
+            // claim rows.
+            "SELECT count(*) FROM suppression_tombstones t1 \
+             WHERE NOT EXISTS ( \
+                 SELECT 1 FROM suppression_tombstones t2 \
+                 WHERE t2.entity_id = t1.entity_id \
+                   AND t2.field_key = t1.field_key \
+                   AND coalesce(t2.item_key, '') = coalesce(t1.item_key, '') \
+                   AND coalesce(t2.item_hash, '') = coalesce(t1.item_hash, '') \
+                   AND t2.dismissed_at > t1.dismissed_at \
+             )",
+            "m1-%",
+        ),
+        (
+            2,
+            "account_stakeholder_roles",
+            "SELECT count(*) FROM account_stakeholder_roles WHERE dismissed_at IS NOT NULL",
+            "m2-%",
+        ),
+        (
+            3,
+            "email_dismissals",
+            "SELECT count(*) FROM email_dismissals",
+            "m3-%",
+        ),
+        (
+            4,
+            "meeting_entity_dismissals",
+            "SELECT count(*) FROM meeting_entity_dismissals",
+            "m4-%",
+        ),
+        (
+            5,
+            "linking_dismissals",
+            // Mechanism 5 backfills rows whose owner is not a meeting OR whose
+            // ld.created_at is newer than the matched meeting_entity_dismissals
+            // dismissed_at. The remainder become m5-m4 corroborations only.
+            "SELECT count(*) FROM linking_dismissals ld \
+             LEFT JOIN meeting_entity_dismissals med \
+               ON ld.owner_type = 'meeting' \
+              AND med.meeting_id = ld.owner_id \
+              AND med.entity_id = ld.entity_id \
+              AND med.entity_type = ld.entity_type \
+             WHERE med.meeting_id IS NULL OR ld.created_at > med.dismissed_at",
+            "m5-%",
+        ),
+        (
+            6,
+            "briefing_callouts",
+            "SELECT count(*) FROM briefing_callouts WHERE dismissed_at IS NOT NULL",
+            "m6-%",
+        ),
+        (
+            7,
+            "nudge_dismissals",
+            "SELECT count(*) FROM nudge_dismissals",
+            "m7-%",
+        ),
+        (
+            8,
+            "triage_snoozes",
+            // Migration filter uses `snoozed_until > datetime('now')`; the
+            // reconcile clock has advanced since migration, so a snooze that
+            // was active at migration time may now be expired. We use the
+            // permissive expected = (resolved OR active-at-migration-or-now)
+            // bound: a row is expected iff resolved_at IS NOT NULL OR
+            // snoozed_until is non-null. This catches "mechanism never ran"
+            // without false-positives from clock drift.
+            "SELECT count(*) FROM triage_snoozes \
+             WHERE resolved_at IS NOT NULL OR snoozed_until IS NOT NULL",
+            "m8-%",
+        ),
+    ];
+
+    for (mechanism, label, legacy_sql, claim_id_prefix) in checks {
+        let legacy_expected: Option<i64> = match conn.query_row(legacy_sql, [], |r| r.get(0)) {
+            Ok(n) => Some(n),
+            Err(rusqlite::Error::SqliteFailure(_, Some(msg))) if msg.contains("no such table") => {
+                None
+            }
+            Err(rusqlite::Error::SqliteFailure(_, None)) => None,
+            Err(e) => {
+                let s = format!("{e}");
+                if s.contains("no such table") {
+                    None
+                } else {
+                    return Err(format!(
+                        "DOS-7 reconcile: legacy count for mechanism {mechanism} ({label}) failed: {e}"
+                    ));
+                }
+            }
+        };
+
+        let claims_present: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM intelligence_claims WHERE id LIKE ?1",
+                [claim_id_prefix],
+                |r| r.get(0),
+            )
+            .map_err(|e| {
+                format!("DOS-7 reconcile: claim count for mechanism {mechanism} ({label}) failed: {e}")
+            })?;
+
+        if let Some(expected) = legacy_expected {
+            if expected > 0 && claims_present == 0 {
+                report.findings += 1;
+                report.finding_summary.push(format!(
+                    "mechanism {mechanism} ({label}): {expected} legacy rows but 0 m{mechanism}- claims — backfill did not run"
+                ));
+            } else if claims_present < expected {
+                report.findings += 1;
+                report.finding_summary.push(format!(
+                    "mechanism {mechanism} ({label}): {expected} legacy rows, {claims_present} m{mechanism}- claims — gap of {} ({} missing)",
+                    expected - claims_present,
+                    expected - claims_present,
+                ));
+            }
+        }
+
+        report.per_mechanism_counts.push(MechanismCount {
+            mechanism,
+            label,
+            legacy_expected,
+            claims_present,
+        });
+    }
+
+    Ok(report)
 }
 
 fn read_schema_epoch(db: &ActionDb) -> Result<i64, String> {
@@ -584,12 +738,73 @@ mod tests {
     }
 
     #[test]
-    fn cutover_reconcile_stub_returns_zero_findings() {
+    fn reconcile_clean_db_returns_zero_findings() {
         let conn = fresh_full_db();
         let db = ActionDb::from_conn(&conn);
         let report = reconcile_dos7_post_migration(db).unwrap();
-        assert_eq!(report.findings, 0);
+        assert_eq!(report.findings, 0, "{:?}", report.finding_summary);
         assert!(report.finding_summary.is_empty());
+        // All 8 mechanisms enumerated even on a clean DB.
+        assert_eq!(report.per_mechanism_counts.len(), 8);
+    }
+
+    #[test]
+    fn reconcile_detects_unbackfilled_mechanism() {
+        // Seed a suppression_tombstones row but DO NOT run the m1 backfill.
+        // Reconcile must surface a finding.
+        let conn = fresh_full_db();
+        conn.execute(
+            "INSERT INTO suppression_tombstones \
+             (entity_id, field_key, item_key, item_hash, source_scope, dismissed_at) \
+             VALUES ('acct-x', 'risks', 'r1', 'h1', 'manual', '2026-04-15T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let db = ActionDb::from_conn(&conn);
+        let report = reconcile_dos7_post_migration(db).unwrap();
+        assert!(report.findings >= 1, "expected at least one finding, got {}", report.findings);
+        assert!(
+            report
+                .finding_summary
+                .iter()
+                .any(|s| s.contains("mechanism 1") && s.contains("suppression_tombstones")),
+            "summary missing mechanism 1 finding: {:?}",
+            report.finding_summary
+        );
+    }
+
+    #[test]
+    fn reconcile_after_backfill_is_clean() {
+        // Seed legacy rows then run the cutover (which runs all backfills),
+        // then reconcile — expect zero findings.
+        let conn = fresh_full_db();
+        conn.execute(
+            "INSERT INTO suppression_tombstones \
+             (entity_id, field_key, item_key, item_hash, source_scope, dismissed_at) \
+             VALUES ('acct-y', 'risks', 'r2', 'h2', 'manual', '2026-04-15T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO email_dismissals \
+             (email_id, sender_domain, email_type, item_type, item_text, dismissed_at, entity_id) \
+             VALUES ('em-1', 'example.com', 'reply', 'risk', 'r3', '2026-04-16T00:00:00Z', NULL)",
+            [],
+        )
+        .unwrap();
+
+        // Run the m1 + m3 backfills (D3a-1 idempotent re-execution against a DB
+        // that already had the migrations applied is the supported pattern).
+        let m1_a1 = include_str!("../migrations/130_dos_7_claims_backfill_a1.sql");
+        conn.execute_batch(m1_a1).unwrap();
+
+        let db = ActionDb::from_conn(&conn);
+        let report = reconcile_dos7_post_migration(db).unwrap();
+        assert_eq!(
+            report.findings, 0,
+            "post-backfill reconcile must be clean: {:?}",
+            report.finding_summary
+        );
     }
 
     #[test]
