@@ -601,23 +601,21 @@ impl ActionDb {
         &self,
         account_id: &str,
     ) -> Result<Vec<DbStakeholderFull>, DbError> {
-        // Step 1: Fetch stakeholder base data + aggregated roles string
         let mut stmt = self.conn.prepare(
             "SELECT as_.person_id, p.name, p.email, p.organization, p.role AS person_role,
-                    COALESCE(
-                        (SELECT GROUP_CONCAT(asr.role, ',')
-                         FROM account_stakeholder_roles asr
-                         WHERE asr.account_id = as_.account_id AND asr.person_id = as_.person_id
-                           AND asr.dismissed_at IS NULL),
-                        'associated'
-                    ) AS stakeholder_roles,
                     as_.data_source, as_.last_seen_in_glean,
                     as_.created_at,
                     p.linkedin_url, p.photo_url, p.meeting_count, p.last_seen,
                     as_.engagement, as_.data_source_engagement,
-                    as_.assessment, as_.data_source_assessment
+                    as_.assessment, as_.data_source_assessment,
+                    asr.role AS stakeholder_role,
+                    asr.data_source AS stakeholder_role_data_source
              FROM account_stakeholders as_
              JOIN people p ON p.id = as_.person_id
+             LEFT JOIN account_stakeholder_roles asr
+               ON asr.account_id = as_.account_id
+              AND asr.person_id = as_.person_id
+              AND asr.dismissed_at IS NULL
              WHERE as_.account_id = ?1
                AND as_.status = 'active'
                AND p.relationship != 'internal'
@@ -627,42 +625,78 @@ impl ActionDb {
                AND length(p.name) > 3
              ORDER BY
                CASE as_.data_source WHEN 'user' THEN 0 WHEN 'glean' THEN 1 ELSE 2 END,
-               p.name",
+               p.name,
+               as_.person_id,
+               asr.role",
         )?;
 
-        let mut stakeholders: Vec<DbStakeholderFull> = stmt
-            .query_map(params![account_id], |row| {
-                let roles_csv: String = row.get(5)?;
-                Ok(DbStakeholderFull {
-                    person_id: row.get(0)?,
-                    person_name: row.get(1)?,
-                    person_email: row.get(2)?,
-                    organization: row.get(3)?,
-                    person_role: row.get(4)?,
-                    stakeholder_role: roles_csv.clone(),
-                    roles: Vec::new(), // populated below
-                    data_source: row
-                        .get::<_, Option<String>>(6)?
-                        .unwrap_or_else(|| "user".to_string()),
-                    last_seen_in_glean: row.get(7)?,
-                    created_at: row.get(8)?,
-                    linkedin_url: row.get(9)?,
-                    photo_url: row.get(10)?,
-                    meeting_count: row.get(11)?,
-                    last_seen: row.get(12)?,
-                    engagement: row.get(13)?,
-                    data_source_engagement: row.get(14)?,
-                    assessment: row.get(15)?,
-                    data_source_assessment: row.get(16)?,
-                })
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
+        let rows = stmt.query_map(params![account_id], |row| {
+            let stakeholder = DbStakeholderFull {
+                person_id: row.get(0)?,
+                person_name: row.get(1)?,
+                person_email: row.get(2)?,
+                organization: row.get(3)?,
+                person_role: row.get(4)?,
+                stakeholder_role: String::new(),
+                roles: Vec::new(),
+                data_source: row
+                    .get::<_, Option<String>>(5)?
+                    .unwrap_or_else(|| "user".to_string()),
+                last_seen_in_glean: row.get(6)?,
+                created_at: row.get(7)?,
+                linkedin_url: row.get(8)?,
+                photo_url: row.get(9)?,
+                meeting_count: row.get(10)?,
+                last_seen: row.get(11)?,
+                engagement: row.get(12)?,
+                data_source_engagement: row.get(13)?,
+                assessment: row.get(14)?,
+                data_source_assessment: row.get(15)?,
+            };
 
-        // Step 2: Fetch typed roles with per-role data_source for each stakeholder
+            let role = row.get::<_, Option<String>>(16)?.map(|role| {
+                Ok::<_, rusqlite::Error>(StakeholderRole {
+                    role,
+                    data_source: row
+                        .get::<_, Option<String>>(17)?
+                        .unwrap_or_else(|| "unknown".to_string()),
+                })
+            }).transpose()?;
+
+            Ok((stakeholder, role))
+        })?;
+
+        let mut stakeholders: Vec<DbStakeholderFull> = Vec::new();
+        let mut stakeholder_index_by_person_id: HashMap<String, usize> = HashMap::new();
+
+        for row in rows {
+            let (stakeholder, role) = row?;
+            let idx = if let Some(idx) = stakeholder_index_by_person_id.get(&stakeholder.person_id)
+            {
+                *idx
+            } else {
+                let idx = stakeholders.len();
+                stakeholder_index_by_person_id.insert(stakeholder.person_id.clone(), idx);
+                stakeholders.push(stakeholder);
+                idx
+            };
+
+            if let Some(role) = role {
+                stakeholders[idx].roles.push(role);
+            }
+        }
+
         for stakeholder in &mut stakeholders {
-            let roles = self.get_stakeholder_roles(account_id, &stakeholder.person_id)?;
-            stakeholder.roles = roles;
+            stakeholder.stakeholder_role = if stakeholder.roles.is_empty() {
+                "associated".to_string()
+            } else {
+                stakeholder
+                    .roles
+                    .iter()
+                    .map(|role| role.role.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
         }
 
         Ok(stakeholders)
@@ -725,16 +759,14 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO account_stakeholders (account_id, person_id, data_source, created_at)
              VALUES (?1, ?2, 'user', ?3)
-             ON CONFLICT(account_id, person_id) DO UPDATE SET
-                data_source = 'user'",
+             ON CONFLICT(account_id, person_id) DO UPDATE SET data_source = 'user'",
             params![account_id, person_id, now],
         )?;
-        // Add the role
+        // Insert the role with user provenance
         self.conn.execute(
             "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
              VALUES (?1, ?2, ?3, 'user', ?4)
-             ON CONFLICT(account_id, person_id, role) DO UPDATE SET
-                data_source = 'user'",
+             ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'user'",
             params![account_id, person_id, role, now],
         )?;
         Ok(())
@@ -3603,6 +3635,85 @@ pub struct DbHealthSparklinePoint {
     pub day: String,
     pub score: f64,
     pub band: String,
+}
+
+#[cfg(test)]
+mod stakeholders_full_tests {
+    use crate::db::test_utils::test_db;
+
+    #[test]
+    fn get_account_stakeholders_full_hydrates_roles_from_join() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at, archived)
+             VALUES ('acc-roles-join', 'Stakeholder Roles Account', '2026-05-01', 0)",
+            [],
+        )
+        .expect("seed account");
+
+        conn.execute(
+            "INSERT INTO people (id, name, email, organization, role, relationship, updated_at)
+             VALUES
+                ('p-alpha', 'Alpha Person', 'alpha@example.com', 'Example', 'VP Success', 'external', '2026-05-01'),
+                ('p-beta', 'Beta Person', 'beta@example.com', 'Example', 'Director', 'external', '2026-05-01'),
+                ('p-internal', 'Internal Person', 'internal@example.com', 'Example', 'Teammate', 'internal', '2026-05-01'),
+                ('p-noise', 'Noise Person', 'noreply@example.com', 'Example', 'Bot', 'external', '2026-05-01')",
+            [],
+        )
+        .expect("seed people");
+
+        conn.execute(
+            "INSERT INTO account_stakeholders
+                (account_id, person_id, data_source, status, confidence, created_at)
+             VALUES
+                ('acc-roles-join', 'p-alpha', 'user', 'active', 1.0, '2026-05-01'),
+                ('acc-roles-join', 'p-beta', 'glean', 'active', 0.8, '2026-05-01'),
+                ('acc-roles-join', 'p-internal', 'user', 'active', 1.0, '2026-05-01'),
+                ('acc-roles-join', 'p-noise', 'user', 'active', 1.0, '2026-05-01')",
+            [],
+        )
+        .expect("seed stakeholders");
+
+        conn.execute(
+            "INSERT INTO account_stakeholder_roles
+                (account_id, person_id, role, data_source, created_at, dismissed_at)
+             VALUES
+                ('acc-roles-join', 'p-alpha', 'champion', 'user', '2026-05-01', NULL),
+                ('acc-roles-join', 'p-alpha', 'technical', 'ai', '2026-05-01', NULL),
+                ('acc-roles-join', 'p-alpha', 'former_champion', 'ai', '2026-05-01', '2026-05-02')",
+            [],
+        )
+        .expect("seed stakeholder roles");
+
+        let stakeholders = db
+            .get_account_stakeholders_full("acc-roles-join")
+            .expect("stakeholders");
+
+        assert_eq!(
+            stakeholders
+                .iter()
+                .map(|stakeholder| stakeholder.person_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["p-alpha", "p-beta"]
+        );
+
+        let alpha = &stakeholders[0];
+        assert_eq!(alpha.stakeholder_role, "champion,technical");
+        assert_eq!(
+            alpha
+                .roles
+                .iter()
+                .map(|role| (role.role.as_str(), role.data_source.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("champion", "user"), ("technical", "ai")]
+        );
+
+        let beta = &stakeholders[1];
+        assert_eq!(beta.stakeholder_role, "associated");
+        assert!(beta.roles.is_empty());
+    }
 }
 
 #[cfg(test)]

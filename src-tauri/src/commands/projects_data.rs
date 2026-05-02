@@ -253,11 +253,6 @@ pub async fn rebuild_database(
         .await
 }
 
-/// Helper: create a default AccountJson from a DbAccount.
-fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::AccountJson {
-    crate::services::accounts::default_account_json(account)
-}
-
 /// Get the latest hygiene scan report
 #[tauri::command]
 pub fn get_hygiene_report(
