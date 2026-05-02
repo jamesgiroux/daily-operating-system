@@ -264,21 +264,30 @@ pub fn backfill_dismissed_items_from_workspace(
                     escape_json_str(&item.content),
                     escape_json_str(&item.dismissed_at)
                 );
-                // L2 cycle-6 fix #2: include a stable hash of the
-                // dismissed item content in the claim_id so multiple
-                // dismissedItems in the same field don't collide on
-                // the PK. Previous shape `m9-{subject}-{field}` would
-                // PK-conflict on the second item in a field, aborting
-                // the entire JSON-blob backfill.
-                let item_hash_seed = crate::intelligence::canonicalization::item_hash(
+                // L2 cycle-6 fix #2 + cycle-8 fix #1: include a stable
+                // hash of `(subject_kind, subject_id, field, content)`
+                // in the claim_id so:
+                //   - multiple dismissedItems in the same field don't
+                //     collide on the PK (cycle-6),
+                //   - and Account/Person/Project subjects sharing the
+                //     same legacy id+field+content don't collide
+                //     across kinds (cycle-8). Without subject_kind
+                //     in the hash, an Account "x-1" tombstone for
+                //     the same field+content as a Person "x-1"
+                //     would silently lose the second one.
+                let id_seed = format!(
+                    "{}\u{1f}{}\u{1f}{}\u{1f}{}",
+                    subject_kind, subject_id, item.field, item.content
+                );
+                let id_hash = crate::intelligence::canonicalization::item_hash(
                     crate::intelligence::canonicalization::ItemKind::_Reserved,
-                    &item.content,
+                    &id_seed,
                 );
                 let claim_id = format!(
                     "m9-{}-{}-{}",
                     subject_id,
                     sanitize_id_segment(&item.field),
-                    &item_hash_seed[..16.min(item_hash_seed.len())],
+                    &id_hash[..16.min(id_hash.len())],
                 );
 
                 // L2 cycle-7 fix #1: idempotency check by claim_id, not
@@ -304,7 +313,16 @@ pub fn backfill_dismissed_items_from_workspace(
                     continue;
                 }
 
-                db.conn_ref()
+                // L2 cycle-8 fix #2: capture the actual affected-row
+                // count from INSERT OR IGNORE so claims_inserted
+                // reflects reality. The pre-check above guards the
+                // common-path race; OR IGNORE catches a concurrent
+                // duplicate snuck in between the check and the
+                // execute. Either way, the report tracks 0 vs 1
+                // honestly so a partial-cutover retry doesn't make
+                // the cutover report claim phantom inserts.
+                let inserted = db
+                    .conn_ref()
                     .execute(
                         "INSERT OR IGNORE INTO intelligence_claims ( \
                             id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
@@ -332,7 +350,9 @@ pub fn backfill_dismissed_items_from_workspace(
                     )
                     .map_err(|e| format!("insert m9 claim: {e}"))?;
 
-                report.claims_inserted += 1;
+                if inserted == 1 {
+                    report.claims_inserted += 1;
+                }
             }
         }
     }
@@ -1364,6 +1384,91 @@ mod tests {
             )
             .unwrap();
         assert_eq!(distinct_ids, 3);
+    }
+
+    /// L2 cycle-8 fix #1: m9 claim_id must namespace by subject_kind
+    /// so an Account "x-1" and a Person "x-1" with the same dismissed
+    /// field+content don't collide on PK. Without subject_kind in the
+    /// hash, the second backfilled tombstone would silently lose.
+    #[test]
+    fn m9_claim_id_namespaced_by_subject_kind() {
+        let workspace = tempfile::tempdir().unwrap();
+        // Account "shared-id" + Person "shared-id" with identical
+        // field + content. Both should get distinct m9 claim_ids.
+        let acct_body = serde_json::json!({
+            "version": 4,
+            "entityId": "shared-id",
+            "entityType": "account",
+            "enrichedAt": "2026-04-01T00:00:00Z",
+            "sourceFileCount": 0,
+            "dismissedItems": [{
+                "field": "risks",
+                "content": "Same content",
+                "dismissedAt": "2026-04-15T00:00:00Z"
+            }]
+        });
+        let person_body = serde_json::json!({
+            "version": 4,
+            "entityId": "shared-id",
+            "entityType": "person",
+            "enrichedAt": "2026-04-01T00:00:00Z",
+            "sourceFileCount": 0,
+            "dismissedItems": [{
+                "field": "risks",
+                "content": "Same content",
+                "dismissedAt": "2026-04-15T00:00:00Z"
+            }]
+        });
+        write_intel_json(
+            workspace.path(),
+            "Accounts",
+            "shared-id",
+            &serde_json::to_string_pretty(&acct_body).unwrap(),
+        );
+        write_intel_json(
+            workspace.path(),
+            "People",
+            "shared-id",
+            &serde_json::to_string_pretty(&person_body).unwrap(),
+        );
+
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let report = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path())
+            .expect("Account + Person sharing id+field+content must not PK-collide");
+        assert_eq!(report.items_observed, 2);
+        assert_eq!(
+            report.claims_inserted, 2,
+            "both Account and Person tombstones must persist"
+        );
+
+        // Verify exactly 2 distinct m9 rows for shared-id, one per kind.
+        let kinds: Vec<String> = {
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT json_extract(subject_ref, '$.kind') \
+                     FROM intelligence_claims \
+                     WHERE id LIKE 'm9-shared-id-%' \
+                     ORDER BY id",
+                )
+                .unwrap();
+            stmt.query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+        assert_eq!(kinds.len(), 2, "two distinct m9 rows expected");
+        assert!(
+            kinds.contains(&"Account".to_string()) && kinds.contains(&"Person".to_string()),
+            "both Account and Person kinds must be present, got {kinds:?}"
+        );
     }
 
     /// L2 cycle-7 fix #1: simulate a partial cutover where m9 rows
