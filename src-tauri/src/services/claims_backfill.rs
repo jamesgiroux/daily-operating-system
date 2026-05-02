@@ -155,20 +155,25 @@ pub fn rekey_backfilled_claims_via_runtime_helpers(
     Ok(report)
 }
 
-/// L2 cycle-10 fix #1: parse subject_ref, provenance_json, and
-/// metadata_json (if present) to surface any rows whose JSON columns
-/// are structurally malformed. Returns the FIRST parse error, or
-/// `Ok(())` when every column round-trips cleanly through serde_json.
+/// L2 cycle-10 fix #1 + cycle-11 fix #1: parse subject_ref,
+/// provenance_json, and metadata_json (if present) to surface any
+/// rows whose JSON columns are structurally malformed. Returns the
+/// FIRST parse error, or `Ok(())` when every column round-trips
+/// cleanly through serde_json.
+///
+/// Cycle-11 fix: metadata_json is parsed strictly when present.
+/// `Some("")` and `Some("   ")` are treated as malformed (empty /
+/// whitespace is not valid JSON). Operators must either NULL the
+/// column or write actual JSON. The previous "trim().is_empty()
+/// → skip" behavior let blank strings slip past the gate.
 fn validate_row_json_columns(row: &RekeyRow) -> Result<(), String> {
     serde_json::from_str::<serde_json::Value>(&row.subject_ref)
         .map_err(|e| format!("subject_ref is not valid JSON: {e}"))?;
     serde_json::from_str::<serde_json::Value>(&row.provenance_json)
         .map_err(|e| format!("provenance_json is not valid JSON: {e}"))?;
     if let Some(metadata) = row.metadata_json.as_deref() {
-        if !metadata.trim().is_empty() {
-            serde_json::from_str::<serde_json::Value>(metadata)
-                .map_err(|e| format!("metadata_json is not valid JSON: {e}"))?;
-        }
+        serde_json::from_str::<serde_json::Value>(metadata)
+            .map_err(|e| format!("metadata_json is not valid JSON: {e}"))?;
     }
     Ok(())
 }
@@ -1442,6 +1447,52 @@ mod tests {
     /// row that has a valid `subject_ref`. The previous rekey only
     /// validated subject_ref so structurally-broken legacy rows
     /// could pass cutover.
+    /// L2 cycle-11 fix #1: a present-but-blank metadata_json
+    /// (empty string OR whitespace) must fail rekey validation.
+    /// The previous "trim().is_empty() → skip" logic let blank
+    /// strings slip past, so a malformed-write-then-blank-out
+    /// path could leave structurally-broken claims that pass
+    /// cutover.
+    #[test]
+    fn rekey_fails_on_blank_string_metadata_json() {
+        for blank in ["", "   ", "\t\n"] {
+            let conn = fresh_conn();
+            let db = ActionDb::from_conn(&conn);
+            let clock =
+                FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+            let rng = SeedableRng::new(42);
+            let ext = ExternalClients::default();
+            let ctx = fixture_ctx(&clock, &rng, &ext);
+
+            // dos7-allowed: cycle-11 regression seed
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO intelligence_claims \
+                     (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                      actor, data_source, observed_at, created_at, provenance_json, metadata_json, \
+                      claim_state, surfacing_state, retraction_reason, expires_at, \
+                      temporal_scope, sensitivity) \
+                     VALUES \
+                     ('m1-blank-meta', \
+                      '{\"kind\":\"Account\",\"id\":\"acct-1\"}', 'risk', 'risks', \
+                      'whatever', 'k', 'h', 'system_backfill', 'legacy_dismissal', \
+                      '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', \
+                      '{}', ?1, \
+                      'tombstoned', 'active', 'user_removal', NULL, \
+                      'state', 'internal')",
+                    rusqlite::params![blank],
+                )
+                .unwrap();
+
+            let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+            assert!(
+                report.errors.iter().any(|e| e.contains("metadata_json is not valid JSON")),
+                "blank metadata_json {:?} must fail validation, got {:?}",
+                blank, report.errors,
+            );
+        }
+    }
+
     #[test]
     fn rekey_fails_on_malformed_metadata_json_with_valid_subject_ref() {
         let conn = fresh_conn();
