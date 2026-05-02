@@ -628,6 +628,22 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                              VALUES ('meeting', ?1, ?2, ?3, ?4)",
                             rusqlite::params![&meeting_id, &entity_id, &entity_type, &now],
                         );
+                        // DOS-7 L2 cycle-1 fix #5: shadow-write the
+                        // mechanism-5 (linking_dismissals) write so
+                        // commit_claim PRE-GATE blocks re-surfacing.
+                        crate::services::claims::shadow_write_tombstone_claim(
+                            db,
+                            crate::services::claims::ShadowTombstoneClaim {
+                                subject_kind: "Meeting",
+                                subject_id: &meeting_id,
+                                claim_type: "linking_dismissed",
+                                field_path: Some(&entity_type),
+                                text: &entity_id,
+                                actor: "user",
+                                source_scope: None,
+                                observed_at: &now,
+                            },
+                        );
                         let _ = db.conn_ref().execute(
                             "UPDATE linked_entities_raw SET source = 'user_dismissed' \
                              WHERE owner_type = 'meeting' AND owner_id = ?1 \
@@ -1865,6 +1881,37 @@ pub async fn dismiss_meeting_entity(
                  VALUES ('meeting', ?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![meeting_id_s, entity_id_s, entity_type_s, dismissed_by_s, now],
             );
+            // DOS-7 L2 cycle-1 fix #5: shadow-write the dismissal as an
+            // intelligence_claims tombstone for both mechanism 4
+            // (meeting_entity_dismissals) and mechanism 5
+            // (linking_dismissals) so commit_claim PRE-GATE blocks
+            // re-surfacing on the next enrichment.
+            crate::services::claims::shadow_write_tombstone_claim(
+                db,
+                crate::services::claims::ShadowTombstoneClaim {
+                    subject_kind: "Meeting",
+                    subject_id: &meeting_id_s,
+                    claim_type: "meeting_entity_dismissed",
+                    field_path: Some(&entity_type_s),
+                    text: &entity_id_s,
+                    actor: "user",
+                    source_scope: None,
+                    observed_at: &now,
+                },
+            );
+            crate::services::claims::shadow_write_tombstone_claim(
+                db,
+                crate::services::claims::ShadowTombstoneClaim {
+                    subject_kind: "Meeting",
+                    subject_id: &meeting_id_s,
+                    claim_type: "linking_dismissed",
+                    field_path: Some(&entity_type_s),
+                    text: &entity_id_s,
+                    actor: "user",
+                    source_scope: None,
+                    observed_at: &now,
+                },
+            );
             let _ = db.conn_ref().execute(
                 "UPDATE linked_entities_raw SET source = 'user_dismissed' \
                  WHERE owner_type = 'meeting' AND owner_id = ?1 \
@@ -1974,6 +2021,21 @@ pub async fn unlink_meeting_entity_with_prep_queue(
                  (owner_type, owner_id, entity_id, entity_type, created_at) \
                  VALUES ('meeting', ?1, ?2, ?3, ?4)",
                 rusqlite::params![meeting_id_s, entity_id_s, entity_type, now],
+            );
+            // DOS-7 L2 cycle-1 fix #5: shadow-write the unlink-as-dismiss
+            // so commit_claim PRE-GATE blocks re-linking on the next pass.
+            crate::services::claims::shadow_write_tombstone_claim(
+                db,
+                crate::services::claims::ShadowTombstoneClaim {
+                    subject_kind: "Meeting",
+                    subject_id: &meeting_id_s,
+                    claim_type: "linking_dismissed",
+                    field_path: Some(&entity_type),
+                    text: &entity_id_s,
+                    actor: "user",
+                    source_scope: None,
+                    observed_at: &now,
+                },
             );
             let _ = db.conn_ref().execute(
                 "UPDATE linked_entities_raw SET source = 'user_dismissed' \

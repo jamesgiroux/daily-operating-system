@@ -1992,6 +1992,18 @@ pub struct TriageSnoozeRow {
     pub resolved_at: Option<String>,
 }
 
+/// DOS-7 L2 cycle-1 fix #5: map a lowercase entity_type column value
+/// (e.g. "account", "person") to the PascalCase `subject_kind` field
+/// the claims substrate uses (e.g. "Account", "Person"). Unknown
+/// values are passed through unchanged.
+fn capitalize_entity_kind(kind: &str) -> String {
+    let mut chars = kind.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 /// DOS-269: Snooze a triage card for N days. `days` must be positive; the
 /// frontend default is 14.
 pub fn snooze_triage_item(
@@ -2006,7 +2018,29 @@ pub fn snooze_triage_item(
     let days = days.max(1);
     let until = ctx.clock.now() + chrono::Duration::days(days);
     db.snooze_triage_item(entity_type, entity_id, triage_key, &until.to_rfc3339())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // DOS-7 L2 cycle-1 fix #5: shadow-write the snooze as an
+    // intelligence_claims tombstone (claim_type='triage_snooze',
+    // retraction_reason='system_snooze' via shadow_write helper's
+    // default user_removal mapping) so PRE-GATE shadows the snoozed
+    // card across enrichment passes.
+    let now = ctx.clock.now().to_rfc3339();
+    let kind = capitalize_entity_kind(entity_type);
+    crate::services::claims::shadow_write_tombstone_claim(
+        db,
+        crate::services::claims::ShadowTombstoneClaim {
+            subject_kind: &kind,
+            subject_id: entity_id,
+            claim_type: "triage_snooze",
+            field_path: Some(entity_type),
+            text: triage_key,
+            actor: "user",
+            source_scope: None,
+            observed_at: &now,
+        },
+    );
+    Ok(())
 }
 
 /// DOS-269: Mark a triage card resolved. Permanent for that card id.
@@ -2023,6 +2057,26 @@ pub fn resolve_triage_item(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.resolve_triage_item(entity_type, entity_id, triage_key)
         .map_err(|e| e.to_string())?;
+
+    // DOS-7 L2 cycle-1 fix #5: shadow-write the resolve as an
+    // intelligence_claims tombstone so PRE-GATE shadows the resolved
+    // card across subsequent enrichment passes.
+    let now = ctx.clock.now().to_rfc3339();
+    let kind = capitalize_entity_kind(entity_type);
+    crate::services::claims::shadow_write_tombstone_claim(
+        db,
+        crate::services::claims::ShadowTombstoneClaim {
+            subject_kind: &kind,
+            subject_id: entity_id,
+            claim_type: "triage_snooze",
+            field_path: Some(entity_type),
+            text: triage_key,
+            actor: "user",
+            source_scope: None,
+            observed_at: &now,
+        },
+    );
+
     // Best-effort signal emit — triage resolution is user-intent evidence
     // the card was accurate + actioned. Failure should not rollback.
     let _ = crate::services::signals::emit_propagate_and_evaluate(
