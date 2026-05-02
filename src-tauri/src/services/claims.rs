@@ -666,16 +666,37 @@ fn load_claims_where(
     claim_type: Option<&str>,
     lifecycle_where: &str,
 ) -> Result<Vec<IntelligenceClaim>, ClaimError> {
-    let subject_ref_compact = compact_subject_ref_str(subject_ref)?;
+    // L2 cycle-13 fix #2: parse the caller's subject_ref into the
+    // typed SubjectRef and query by json_extract on $.kind+$.id
+    // (with json_valid guard) so the reader matches the same
+    // semantic-identity space as PRE-GATE / contradiction
+    // detection / is_suppressed_via_claims. The previous exact
+    // string match made reader-visible claims disagree with
+    // commit-time behavior whenever subject_ref keys were
+    // ordered or cased differently across writers.
+    let subject_value = serde_json::from_str::<serde_json::Value>(subject_ref)
+        .map_err(|e| ClaimError::SubjectRef(format!("not JSON: {e}")))?;
+    let subject = subject_ref_from_json(&subject_value)?;
+    let Some(kind) = subject_kind_label(&subject) else {
+        // Multi/Global readers aren't supported through this path —
+        // they're a future addition (matching commit_claim's
+        // behavior, which also returns no PRE-GATE match for them).
+        return Ok(Vec::new());
+    };
+    let Some(id) = subject_id_for_lookup(&subject) else {
+        return Ok(Vec::new());
+    };
     let sql = format!(
         "SELECT {CLAIM_COLUMNS} FROM intelligence_claims
-         WHERE subject_ref = ?1
-           AND (?2 IS NULL OR claim_type = ?2)
+         WHERE json_valid(subject_ref) = 1
+           AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+           AND json_extract(subject_ref, '$.id') = ?2
+           AND (?3 IS NULL OR claim_type = ?3)
            AND {lifecycle_where}
          ORDER BY created_at DESC"
     );
     let mut stmt = db.conn_ref().prepare(&sql)?;
-    let mut rows = stmt.query(params![subject_ref_compact, claim_type])?;
+    let mut rows = stmt.query(params![kind, id, claim_type])?;
     let mut claims = Vec::new();
     while let Some(row) = rows.next()? {
         claims.push(read_claim_row(row)?);
@@ -1992,6 +2013,47 @@ mod tests {
             )
             .unwrap();
         assert_eq!(reconciled_at, Some(TS.to_string()));
+    }
+
+    /// L2 cycle-13 fix #2: load_claims_active (and the rest of the
+    /// reader family that goes through load_claims_where) must
+    /// return claims regardless of subject_ref JSON key order or
+    /// kind casing. Previously the reader used exact subject_ref
+    /// string equality, so a row written by SQLite json_object
+    /// (insertion order, PascalCase kind) would be invisible to a
+    /// reader called with serde_json-canonical (alphabetical order,
+    /// lowercase kind) input.
+    #[test]
+    fn load_claims_active_matches_across_subject_ref_key_order_and_casing() {
+        let db = test_db();
+
+        // Seed an active claim with insertion-order JSON,
+        // PascalCase kind — the shape SQLite json_object writes.
+        // dos7-allowed: cycle-13 regression seed
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, \
+                  claim_state, surfacing_state, retraction_reason, \
+                  temporal_scope, sensitivity) \
+                 VALUES \
+                 ('insertion-order-active', \
+                  '{\"kind\":\"Account\",\"id\":\"acct-1\"}', 'risk', 'health.risk', \
+                  'first', 'k1', 'h1', 'agent:test', 'unit_test', \
+                  ?1, ?1, '{}', 'active', 'active', NULL, 'state', 'internal')",
+                params![TS],
+            )
+            .unwrap();
+
+        // Reader called with the runtime serde_json shape
+        // (alphabetical, lowercase). The fix's json_extract match
+        // should find it regardless.
+        let reader_input = r#"{"id":"acct-1","kind":"account"}"#;
+        let claims =
+            load_claims_active(&db, reader_input, Some("risk")).expect("reader query");
+        assert_eq!(claims.len(), 1, "reader must find the row across key/case differences");
+        assert_eq!(claims[0].id, "insertion-order-active");
     }
 
     #[test]

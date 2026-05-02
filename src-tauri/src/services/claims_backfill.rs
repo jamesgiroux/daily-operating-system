@@ -86,6 +86,7 @@ pub fn rekey_backfilled_claims_via_runtime_helpers(
                         provenance_json, metadata_json \
                  FROM intelligence_claims \
                  WHERE id GLOB 'm[1-9]-*' \
+                   AND claim_state <> 'withdrawn' \
                  ORDER BY id",
             )
             .map_err(|e| format!("DOS-7 L2 rekey select prepare failed: {e}"))?;
@@ -1800,6 +1801,50 @@ mod tests {
     }
 
     #[test]
+    /// L2 cycle-13 fix #1: rekey must skip rows already in
+    /// claim_state='withdrawn'. Migration 133 transitions
+    /// unsupported-kind m5 rows to withdrawn; without this skip,
+    /// rekey would still scan them, hit the unsupported-kind
+    /// guard, and fail cutover — defeating cycle-12's fix.
+    #[test]
+    fn rekey_skips_withdrawn_rows() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        // Seed an m5 row with unsupported kind already withdrawn
+        // (mimicking post-migration-133 state).
+        // dos7-allowed: cycle-13 regression seed
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, \
+                  claim_state, surfacing_state, retraction_reason, expires_at, \
+                  temporal_scope, sensitivity) \
+                 VALUES \
+                 ('m5-withdrawn', '{\"kind\":\"email_thread\",\"id\":\"thr-1\"}', \
+                  'linking_dismissed', 'account', 'acct-1', 'k', 'h', \
+                  'system_backfill', 'legacy_dismissal', \
+                  '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', '{}', \
+                  'withdrawn', 'dormant', 'unsupported_subject_kind', NULL, \
+                  'state', 'internal')",
+                [],
+            )
+            .unwrap();
+
+        let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(
+            report.rows_examined, 0,
+            "withdrawn row must be skipped by rekey scan"
+        );
+        assert!(report.errors.is_empty(), "rekey must not error: {:?}", report.errors);
+    }
+
     /// L2 cycle-12 fix #2: rekey must reject m5 rows whose
     /// subject_ref kind is not a supported SubjectRef variant
     /// (e.g. owner_type='email_thread' from linking_dismissals).
