@@ -1439,32 +1439,34 @@ pub fn dismiss_email_item(
     )
     .map_err(|e| e.to_string())?;
 
-    // DOS-7 L2 cycle-1 fix #5 + cycle-2 fix #1: shadow-write the
-    // dismissal as an intelligence_claims tombstone so commit_claim
-    // PRE-GATE blocks the AI from re-surfacing this email item on the
-    // next enrichment. Email isn't a SubjectRef variant yet, so we
-    // shadow-write against the associated account when entity_id is
-    // present. When the dismissal isn't anchored to an account, the
-    // legacy email_dismissals row is the only persistence — tracked
-    // as a follow-up to introduce SubjectRef::Email.
+    // DOS-7 L2 cycle-3 fix: shadow-write the dismissal as an
+    // intelligence_claims tombstone with subject_kind=Email. Migration
+    // 132 added emails.claim_version so SubjectRef::Email participates
+    // in per-entity invalidation alongside Account/Meeting/Person/
+    // Project. The (subject_kind=Email, claim_type=email_dismissed,
+    // field_path=item_type, text=item_text) tuple matches the SQL
+    // backfill m3 shape from migration 130, so PRE-GATE per-tier
+    // matching connects backfilled and runtime-written tombstones.
     let now = ctx.clock.now().to_rfc3339();
-    if let Some(account_id) = entity_id {
-        let _ = crate::services::claims::shadow_write_tombstone_claim(
-            db,
-            crate::services::claims::ShadowTombstoneClaim {
-                subject_kind: "Account",
-                subject_id: account_id,
-                claim_type: "email_dismissed",
-                field_path: Some(item_type),
-                // Embed the email_id in the text payload so the
-                // claim row is unique per (account, email, item_type).
-                text: &format!("{email_id}::{item_text}"),
-                actor: "user",
-                source_scope: None,
-                observed_at: &now,
-            },
-        );
-    }
+    let _ = crate::services::claims::shadow_write_tombstone_claim(
+        db,
+        crate::services::claims::ShadowTombstoneClaim {
+            subject_kind: "Email",
+            subject_id: email_id,
+            claim_type: "email_dismissed",
+            field_path: Some(item_type),
+            text: item_text,
+            actor: "user",
+            source_scope: None,
+            observed_at: &now,
+        },
+    );
+    // Note: `entity_id` is intentionally not the subject. The dismissal
+    // is anchored to the email itself; downstream consumers that need
+    // to know which account it belongs to read `metadata_json` (where
+    // entity_id surfaces via the legacy `email_dismissals.entity_id`
+    // column at backfill / read time).
+    let _ = entity_id; // explicitly unused; signal-emit below uses it
 
     let etype = entity_id.map(|_| "account").unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
@@ -2031,6 +2033,71 @@ mod tests {
         .expect("Failed to create test table");
 
         conn
+    }
+
+    /// L2 cycle-3 fix: dismiss_email_item must shadow-write a real
+    /// Email-subject tombstone claim that PRE-GATE can match against
+    /// when the AI tries to re-surface the same item later. Cycle-2's
+    /// Account+prefix workaround was inert at runtime; this test
+    /// proves the cycle-3 SubjectRef::Email path actually persists.
+    #[test]
+    fn dismiss_email_item_persists_email_subject_tombstone_claim() {
+        use crate::db::test_utils::test_db;
+        use crate::services::context::{
+            ExternalClients, FixedClock, SeedableRng, ServiceContext,
+        };
+        use chrono::TimeZone;
+
+        let db = test_db();
+        // Seed an email row so emails.claim_version has a target.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO emails (email_id, subject, received_at) \
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params!["em-cycle3-1", "test", "2026-05-02T00:00:00Z"],
+            )
+            .unwrap();
+
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = ServiceContext::test_live(&clock, &rng, &ext);
+
+        // Path A: entity_id is None — claim row must still persist
+        // because Email is now a real subject (cycle-2's silent-skip
+        // bug is closed).
+        super::dismiss_email_item(
+            &ctx,
+            &db,
+            "commitment",
+            "em-cycle3-1",
+            "Reply by Friday",
+            None,
+            None,
+            None,
+        )
+        .expect("dismissal should not error");
+
+        let count: i64 = db
+            .conn_ref()
+            .query_row::<i64, _, _>(
+                "SELECT count(*) FROM intelligence_claims \
+                 WHERE claim_state = 'tombstoned' \
+                   AND claim_type = 'email_dismissed' \
+                   AND lower(json_extract(subject_ref, '$.kind')) = 'email' \
+                   AND json_extract(subject_ref, '$.id') = 'em-cycle3-1' \
+                   AND text = 'Reply by Friday' COLLATE NOCASE \
+                   AND field_path = 'commitment'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            count, 1,
+            "dismiss_email_item must persist an Email-subject tombstone \
+             even when entity_id is None"
+        );
     }
 
     #[test]

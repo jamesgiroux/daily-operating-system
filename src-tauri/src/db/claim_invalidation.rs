@@ -60,6 +60,12 @@ pub enum SubjectRef {
     Meeting { id: String },
     Person { id: String },
     Project { id: String },
+    /// L2 cycle-3 fix: email-anchored claims (e.g. dismissed email
+    /// commitments/questions per mechanism 3 in migration 130). Bumps
+    /// `emails.claim_version` (added by migration 132). Lock-order
+    /// precedence is `Email = 4` — slots after Project so existing
+    /// Multi orderings remain stable.
+    Email { id: String },
     /// Multiple entities affected by one claim. Sorted before bumping.
     Multi(Vec<SubjectRef>),
     /// v1.4.1+ only; bumps `migration_state.global_claim_epoch` instead of
@@ -90,6 +96,7 @@ impl SubjectRef {
             Self::Meeting { .. } => 1,
             Self::Person { .. } => 2,
             Self::Project { .. } => 3,
+            Self::Email { .. } => 4,
             Self::Multi(_) | Self::Global => {
                 debug_assert!(
                     false,
@@ -105,7 +112,8 @@ impl SubjectRef {
             Self::Account { id }
             | Self::Meeting { id }
             | Self::Person { id }
-            | Self::Project { id } => id.as_str(),
+            | Self::Project { id }
+            | Self::Email { id } => id.as_str(),
             Self::Multi(_) | Self::Global => "",
         }
     }
@@ -128,11 +136,12 @@ impl ActionDb {
         &self,
         subject: &SubjectRef,
     ) -> Result<usize, DbError> {
-        let (table, id) = match subject {
-            SubjectRef::Account { id } => ("accounts", id.as_str()),
-            SubjectRef::Project { id } => ("projects", id.as_str()),
-            SubjectRef::Person { id } => ("people", id.as_str()),
-            SubjectRef::Meeting { id } => ("meetings", id.as_str()),
+        let (table, id_column, id) = match subject {
+            SubjectRef::Account { id } => ("accounts", "id", id.as_str()),
+            SubjectRef::Project { id } => ("projects", "id", id.as_str()),
+            SubjectRef::Person { id } => ("people", "id", id.as_str()),
+            SubjectRef::Meeting { id } => ("meetings", "id", id.as_str()),
+            SubjectRef::Email { id } => ("emails", "email_id", id.as_str()),
             SubjectRef::Multi(_) | SubjectRef::Global => {
                 return Err(DbError::InvalidArgument(
                     "bump_entity_claim_version called with Multi/Global; \
@@ -142,8 +151,8 @@ impl ActionDb {
             }
         };
         let sql = format!(
-            "UPDATE {} SET claim_version = claim_version + 1 WHERE id = ?1",
-            table
+            "UPDATE {} SET claim_version = claim_version + 1 WHERE {} = ?1",
+            table, id_column
         );
         let affected = self.conn_ref().execute(&sql, params![id])?;
         Ok(affected)
@@ -182,7 +191,8 @@ impl ActionDb {
             SubjectRef::Account { .. }
             | SubjectRef::Project { .. }
             | SubjectRef::Person { .. }
-            | SubjectRef::Meeting { .. } => {
+            | SubjectRef::Meeting { .. }
+            | SubjectRef::Email { .. } => {
                 self.bump_entity_claim_version(subject)?;
                 Ok(())
             }
