@@ -1,0 +1,84 @@
+/* DailyOS design system inspector.
+ * Toggle with `?`. Outlines elements with data-ds-name on hover and shows
+ * a floating label with tier / name / variant / spec.
+ */
+
+.ds-inspector-label {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: none;
+  background: rgba(20, 20, 24, 0.95);
+  color: #fff;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  padding: 6px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 320px;
+}
+
+.ds-inspector-tier {
+  display: inline-block;
+  align-self: flex-start;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #fff;
+}
+.ds-inspector-tier-token     { background: #5b6cff; }
+.ds-inspector-tier-primitive { background: #1ea672; }
+.ds-inspector-tier-pattern   { background: #d97a1a; }
+.ds-inspector-tier-surface   { background: #c44569; }
+.ds-inspector-tier-unknown   { background: #888; }
+
+.ds-inspector-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.ds-inspector-variant {
+  opacity: 0.7;
+  font-style: italic;
+}
+.ds-inspector-state {
+  opacity: 0.7;
+  font-size: 11px;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+.ds-inspector-spec {
+  opacity: 0.55;
+  font-size: 11px;
+}
+
+/* Hover treatment when inspect mode is on */
+body.ds-inspect-on [data-ds-name] {
+  cursor: help;
+}
+body.ds-inspect-on [data-ds-name]:hover {
+  outline: 1px dashed rgba(91, 108, 255, 0.6);
+  outline-offset: 1px;
+}
+body.ds-inspect-on [data-ds-tier="token"]:hover     { outline-color: rgba(91, 108, 255, 0.8); }
+body.ds-inspect-on [data-ds-tier="primitive"]:hover { outline-color: rgba(30, 166, 114, 0.8); }
+body.ds-inspect-on [data-ds-tier="pattern"]:hover   { outline-color: rgba(217, 122, 26, 0.8); }
+body.ds-inspect-on [data-ds-tier="surface"]:hover   { outline-color: rgba(196, 69, 105, 0.8); }
+
+/* Persistent hint in the corner when inspect mode is on */
+body.ds-inspect-on::after {
+  content: "inspect on — press ? to exit";
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  z-index: 99998;
+  background: rgba(20, 20, 24, 0.85);
+  color: #fff;
+  font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 6px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+}

@@ -1,0 +1,264 @@
+# Audit 01 — App Design System Inventory (current state)
+
+## Tokens
+
+### `src/styles/design-tokens.css`
+- `--color-paper-cream` — page ground
+- `--color-paper-linen` — secondary paper surface
+- `--color-paper-warm-white` — primary light surface
+- `--color-desk-charcoal` — primary dark ink
+- `--color-desk-ink` — alternate dark ink
+- `--color-surface` — base semantic surface
+- `--color-surface-primary` — primary semantic surface
+- `--color-surface-secondary` — secondary semantic surface
+- `--color-surface-inset` — inset semantic surface
+- `--color-surface-subtle` — subtle semantic tint
+- `--color-spice-turmeric` — primary warm accent
+- `--color-spice-saffron` — secondary warm accent
+- `--color-spice-terracotta` — urgency and error accent
+- `--color-spice-chili` — critical state accent
+- `--color-garden-sage` — success accent
+- `--color-garden-olive` — muted project accent
+- `--color-garden-rosemary` — deep success accent
+- `--color-garden-larkspur` — people and forward-looking accent
+- `--color-garden-eucalyptus` — user/self accent
+- `--color-text-primary` — headline and primary text
+- `--color-text-secondary` — body and secondary text
+- `--color-text-tertiary` — labels and hints
+- `--color-rule-heavy` — primary divider
+- `--color-rule-light` — soft divider
+- `--color-spice-turmeric-8` — turmeric 8% tint
+- `--color-spice-turmeric-12` — turmeric 12% tint
+- `--color-spice-turmeric-30` — turmeric 30% tint
+- `--color-spice-saffron-8` — saffron 8% tint
+- `--color-spice-saffron-12` — saffron 12% tint
+- `--color-spice-terracotta-8` — terracotta 8% tint
+- `--color-spice-terracotta-12` — terracotta 12% tint
+- `--color-garden-sage-12` — sage 12% tint
+- `--color-garden-larkspur-8` — larkspur 8% tint
+- `--color-garden-larkspur-12` — larkspur 12% tint
+- `--color-garden-larkspur-15` — larkspur 15% tint
+- `--color-garden-eucalyptus-6` — eucalyptus 6% tint
+- `--color-garden-eucalyptus-10` — eucalyptus 10% tint
+- `--color-garden-olive-6` — olive 6% tint
+- `--color-garden-olive-8` — olive 8% tint
+- `--color-garden-olive-10` — olive 10% tint
+- `--color-garden-sage-8` — sage 8% tint
+- `--color-garden-sage-10` — sage 10% tint
+- `--color-garden-sage-14` — sage 14% tint
+- `--color-garden-sage-15` — sage 15% tint
+- `--color-garden-sage-20` — sage 20% tint
+- `--color-garden-larkspur-10` — larkspur 10% tint
+- `--color-garden-larkspur-14` — larkspur 14% tint
+- `--color-garden-rosemary-12` — rosemary 12% tint
+- `--color-garden-rosemary-14` — rosemary 14% tint
+- `--color-spice-turmeric-4` — turmeric 4% tint
+- `--color-spice-turmeric-5` — turmeric 5% tint
+- `--color-spice-turmeric-6` — turmeric 6% tint
+- `--color-spice-turmeric-7` — turmeric 7% tint
+- `--color-spice-turmeric-10` — turmeric 10% tint
+- `--color-spice-turmeric-15` — turmeric 15% tint
+- `--color-spice-turmeric-18` — turmeric 18% tint
+- `--color-spice-turmeric-60` — turmeric 60% tint
+- `--color-spice-terracotta-10` — terracotta 10% tint
+- `--color-spice-terracotta-15` — terracotta 15% tint
+- `--color-spice-terracotta-20` — terracotta 20% tint
+- `--color-spice-saffron-10` — saffron 10% tint
+- `--color-desk-charcoal-15` — charcoal 1.5% tint
+- `--color-desk-charcoal-4` — charcoal 4% tint
+- `--color-desk-charcoal-5` — charcoal 5% tint
+- `--color-desk-charcoal-8` — charcoal 8% tint
+- `--color-desk-charcoal-25` — charcoal 25% tint
+- `--color-desk-charcoal-40` — charcoal 40% tint
+- `--color-overlay-light` — light overlay scrim
+- `--color-overlay-medium` — medium overlay scrim
+- `--color-black-2` — black 2% tint
+- `--color-black-3` — black 3% tint
+- `--color-black-4` — black 4% tint
+- `--color-black-8` — black 8% tint
+- `--font-serif` — editorial display family
+- `--font-sans` — UI and body family
+- `--font-mono` — code and time family
+- `--font-mark` — brand mark family
+- `--space-xs` — 4px spacing step
+- `--space-sm` — 8px spacing step
+- `--space-md` — 16px spacing step
+- `--space-lg` — 24px spacing step
+- `--space-xl` — 32px spacing step
+- `--space-2xl` — 48px spacing step
+- `--space-3xl` — 56px spacing step
+- `--space-4xl` — 72px spacing step
+- `--space-5xl` — 80px spacing step
+- `--folio-height` — fixed folio bar height
+- `--folio-padding-top` — folio top padding
+- `--folio-padding-bottom` — folio bottom padding
+- `--folio-padding-left` — folio left padding
+- `--folio-padding-right` — folio right padding
+- `--page-padding-horizontal` — page horizontal padding
+- `--page-padding-bottom` — page bottom padding
+- `--page-margin-top` — fixed folio clearance
+- `--page-max-width` — maximum page width
+- `--page-content-width-standard` — standard editorial width
+- `--page-content-width-reading` — reading editorial width
+- `--nav-island-right` — nav island right offset
+- `--radius-editorial-sm` — small editorial radius
+- `--radius-editorial-md` — medium editorial radius
+- `--radius-editorial-lg` — large editorial radius
+- `--radius-editorial-xl` — extra-large editorial radius
+- `--shadow-sm` — small elevation
+- `--shadow-md` — medium elevation
+- `--shadow-lg` — large elevation
+- `--shadow-xl` — extra-large elevation
+- `--shadow-2xl` — highest elevation
+- `--shadow-modal` — modal elevation
+- `--shadow-dropdown` — dropdown elevation
+- `--transition-fast` — fast motion timing
+- `--transition-normal` — normal motion timing
+- `--backdrop-blur` — glass blur filter
+- `--frosted-glass-background` — folio glass background
+- `--frosted-glass-nav` — nav glass background
+- `--z-atmosphere` — background layer stack
+- `--z-page-content` — page content stack
+- `--z-app-shell` — app shell stack
+- `--z-lock` — lock overlay stack
+
+### `src/index.css`
+- `--color-background` — Tailwind background token
+- `--color-foreground` — Tailwind foreground token
+- `--color-card` — Tailwind card surface
+- `--color-card-foreground` — Tailwind card text
+- `--color-popover` — Tailwind popover surface
+- `--color-popover-foreground` — Tailwind popover text
+- `--color-primary` — Tailwind primary accent
+- `--color-primary-foreground` — Tailwind primary text
+- `--color-secondary` — Tailwind secondary surface
+- `--color-secondary-foreground` — Tailwind secondary text
+- `--color-muted` — Tailwind muted surface
+- `--color-muted-foreground` — Tailwind muted text
+- `--color-accent` — Tailwind accent surface
+- `--color-accent-foreground` — Tailwind accent text
+- `--color-destructive` — Tailwind destructive accent
+- `--color-destructive-foreground` — Tailwind destructive text
+- `--color-success` — Tailwind success accent
+- `--color-success-foreground` — Tailwind success text
+- `--color-border` — Tailwind border color
+- `--color-input` — Tailwind input color
+- `--color-ring` — Tailwind focus ring
+- `--radius-sm` — small radius
+- `--radius-md` — medium radius
+- `--radius-lg` — large radius
+- `--animate-accordion-down` — accordion open animation
+- `--animate-accordion-up` — accordion close animation
+- `--animate-fade-in-up` — fade-in reveal animation
+- `--animate-pulse-gold` — gold pulse animation
+- `--sidebar` — sidebar surface
+- `--sidebar-foreground` — sidebar text
+- `--sidebar-primary` — sidebar primary accent
+- `--sidebar-primary-foreground` — sidebar primary text
+- `--sidebar-accent` — sidebar accent surface
+- `--sidebar-accent-foreground` — sidebar accent text
+- `--sidebar-border` — sidebar divider
+- `--sidebar-ring` — sidebar focus ring
+- `--color-sidebar` — Tailwind sidebar color alias
+- `--color-sidebar-foreground` — Tailwind sidebar text alias
+- `--color-sidebar-primary` — Tailwind sidebar primary alias
+- `--color-sidebar-primary-foreground` — Tailwind sidebar primary text alias
+- `--color-sidebar-accent` — Tailwind sidebar accent alias
+- `--color-sidebar-accent-foreground` — Tailwind sidebar accent text alias
+- `--color-sidebar-border` — Tailwind sidebar border alias
+- `--color-sidebar-ring` — Tailwind sidebar ring alias
+
+### `src/styles/fonts.css`
+- No CSS custom properties defined.
+
+## Primitives in src/components/ui/
+- `AccuracyPrompt.tsx` — `AccuracyPrompt` — inline or meta accuracy confirmation primitive.
+- `Avatar.tsx` — `Avatar` — person avatar with photo, cached image, or initials fallback.
+- `BrandMark.tsx` — `BrandMark` — SVG brand asterisk primitive.
+- `ContaminationWarning.tsx` — `ContaminationWarning` — warning banner or badge for cross-entity intelligence.
+- `EditableList.tsx` — `EditableList` — editable ordered list with drag reorder and add/remove controls.
+- `EditableText.tsx` — `EditableText` — click-to-edit inline text primitive.
+- `IntelligenceCorrection.test.tsx` — no component export captured — test file for intelligence correction behavior.
+- `IntelligenceCorrection.tsx` — export not visible in displayed single-read output — intelligence correction primitive.
+- `IntelligenceFeedback.tsx` — export not visible in displayed single-read output — intelligence feedback primitive.
+- `ProvenanceLabel.tsx` — export not visible in displayed single-read output — provenance label primitive.
+- `ProvenanceTag.tsx` — export not visible in displayed single-read output — provenance tag primitive.
+- `agenda-draft-dialog.tsx` — export not visible in displayed single-read output — agenda draft dialog primitive.
+- `alert-dialog.tsx` — export not visible in displayed single-read output — alert dialog primitive.
+- `badge.tsx` — export not visible in displayed single-read output — badge primitive.
+- `bulk-create-form.tsx` — export not visible in displayed single-read output — bulk create form primitive.
+- `button.tsx` — export not visible in displayed single-read output — button primitive.
+- `calendar.tsx` — export not visible in displayed single-read output — calendar primitive.
+- `card.tsx` — export not visible in displayed single-read output — card primitive.
+- `collapsible.tsx` — export not visible in displayed single-read output — collapsible primitive.
+- `command.tsx` — export not visible in displayed single-read output — command palette primitive.
+- `date-picker.tsx` — export not visible in displayed single-read output — date picker primitive.
+- `dialog.tsx` — export not visible in displayed single-read output — dialog primitive.
+- `editable-date.tsx` — export not visible in displayed single-read output — editable date primitive.
+- `editable-inline.tsx` — export not visible in displayed single-read output — editable inline primitive.
+- `editable-textarea.tsx` — export not visible in displayed single-read output — editable textarea primitive.
+- `email-entity-chip.tsx` — export not visible in displayed single-read output — email entity chip primitive.
+- `entity-picker.tsx` — export not visible in displayed single-read output — entity picker primitive.
+- `folio-refresh-button.tsx` — export not visible in displayed single-read output — folio refresh button primitive.
+- `inline-create-form.tsx` — export not visible in displayed single-read output — inline create form primitive.
+- `input.tsx` — export not visible in displayed single-read output — input primitive.
+- `label.tsx` — export not visible in displayed single-read output — label primitive.
+- `meeting-entity-chips.test.tsx` — no component export captured — test file for meeting entity chips behavior.
+- `meeting-entity-chips.tsx` — export not visible in displayed single-read output — meeting entity chips primitive.
+- `popover.tsx` — export not visible in displayed single-read output — popover primitive.
+- `priority-picker.tsx` — export not visible in displayed single-read output — priority picker primitive.
+- `select.tsx` — export not visible in displayed single-read output — select primitive.
+- `separator.tsx` — export not visible in displayed single-read output — separator primitive.
+- `sheet.tsx` — export not visible in displayed single-read output — sheet primitive.
+- `sidebar.tsx` — `Sidebar`, `SidebarContent`, `SidebarFooter`, `SidebarGroup`, `SidebarGroupAction`, `SidebarGroupContent`, `SidebarGroupLabel`, `SidebarHeader`, `SidebarInput`, `SidebarInset`, `SidebarMenu`, `SidebarMenuAction`, `SidebarMenuBadge`, `SidebarMenuButton`, `SidebarMenuItem`, `SidebarMenuSkeleton`, `SidebarMenuSub`, `SidebarMenuSubButton`, `SidebarMenuSubItem`, `SidebarProvider`, `SidebarRail`, `SidebarSeparator`, `SidebarTrigger`, `useSidebar` — responsive sidebar primitive set.
+- `skeleton.tsx` — `Skeleton` — loading placeholder primitive.
+- `sonner.tsx` — `Toaster` — toast notification primitive.
+- `tooltip.tsx` — `Tooltip`, `TooltipTrigger`, `TooltipContent`, `TooltipProvider` — tooltip primitive set.
+
+## Shared components in src/components/shared/
+- `ActionRow.tsx` — action row pattern; head begins block comment.
+- `BackgroundWorkIndicator.module.css` — ambient status dot styles; head says background work indicator.
+- `BackgroundWorkIndicator.tsx` — background work status pattern; head begins block comment.
+- `DimensionBar.module.css` — relationship health visualization styles; head says 6-dimension relationship health visualization.
+- `DimensionBar.tsx` — relationship dimension bar pattern; head begins block comment.
+- `HealthBadge.module.css` — health score badge styles; head says compact/standard/hero sizes.
+- `HealthBadge.tsx` — health score badge pattern; head begins block comment.
+- `MeetingCard.module.css` — meeting card styles; head begins section comment.
+- `MeetingCard.tsx` — meeting card pattern; head begins block comment.
+- `MeetingRow.module.css` — meeting row styles; head imports design tokens.
+- `MeetingRow.tsx` — meeting row pattern; head imports its CSS module.
+- `StatusDot.module.css` — reusable status indicator styles; head says StatusDot.
+- `StatusDot.tsx` — status dot pattern; head imports its CSS module.
+- `SuggestedActionRow.tsx` — suggested action row pattern; head begins block comment.
+- `TalkBalanceBar.module.css` — talk balance bar styles; head begins section comment.
+- `TalkBalanceBar.tsx` — talk balance bar pattern; head imports its CSS module.
+
+## Editorial components in src/components/editorial/
+- `ChapterFreshness.tsx` — freshness strip pattern under chapter heading; head says monospace strip.
+- `ChapterHeading.module.css` — chapter heading styles; head imports design tokens.
+- `ChapterHeading.tsx` — chapter heading pattern; head says heavy rule and serif title.
+- `EditorialEmpty.tsx` — editorial empty state pattern; head says serif italic empty state.
+- `EditorialError.tsx` — editorial error state pattern; head says terracotta error with retry.
+- `EditorialLoading.tsx` — editorial loading pattern; head says skeleton placeholder.
+- `EditorialPageHeader.module.css` — editorial page header styles; head imports design tokens.
+- `EditorialPageHeader.tsx` — editorial page header pattern; head imports type and CSS module.
+- `EmptyState.tsx` — unified empty state pattern; head says unified empty state component.
+- `EphemeralBriefing.tsx` — one-shot briefing surface; head says editorial rendering.
+- `FinisMarker.tsx` — final marker pattern; head says spaced asterisks and timestamp.
+- `GeneratingProgress.tsx` — generating progress pattern; head says phase-step loading screen.
+- `MarginSection.tsx` — margin section pattern; head imports ReactNode and entity detail styles.
+- `PullQuote.tsx` — pull quote pattern; head says centered italic serif with rules.
+- `QuoteWall.module.css` — quote wall styles; head starts grid wall class.
+- `QuoteWall.tsx` — quote wall pattern; head imports date formatter and quote type.
+- `QuoteWallPlaceholder.tsx` — quote wall empty pattern; head says editorial empty state.
+- `StateBlock.module.css` — state block styles; head says colored left-border callout items.
+- `StateBlock.tsx` — state block pattern; head says colored left-border callout items.
+- `TimelineEntry.module.css` — timeline entry styles; head imports design tokens.
+- `TimelineEntry.tsx` — timeline entry pattern; head says vertical timeline with dots and badges.
+
+## Notes (max 10 bullets)
+- The requested output path was outside the writable sandbox, so this report was written to the repo fallback path.
+- `src/index.css` imports `report-surfaces.css`, but that file was not read because it was outside the requested inventory scope.
+- `src/styles/fonts.css` declares local `@font-face` sources for DM Sans, JetBrains Mono, Montserrat, and Newsreader, with no custom property declarations.
+- The single allowed combined read of `src/components/ui/*.tsx` produced truncated displayed output; no follow-up reads were performed.
+- The UI directory includes primitive source files, CSS modules, and colocated test files; only `.tsx` files were read for the primitive inventory.
