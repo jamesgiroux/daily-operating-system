@@ -2549,9 +2549,30 @@ pub fn set_team_member_role(
     new_role: &str,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let observed_at = ctx.clock.now().to_rfc3339();
     db.with_transaction(|tx| {
         tx.set_team_member_role(account_id, person_id, new_role)
             .map_err(|e| e.to_string())?;
+
+        // DOS-7 D4-1b: shadow-write tombstone claim for the role swap.
+        // The DB-layer fn now soft-deletes user-owned roles (UPDATE
+        // dismissed_at) instead of DELETE; the claim layer carries the
+        // user-intent record. Subject = Person whose role was retracted.
+        // Failure logged + ignored; legacy DB write above is authoritative.
+        crate::services::claims::shadow_write_tombstone_claim(
+            tx,
+            crate::services::claims::ShadowTombstoneClaim {
+                subject_kind: "Person",
+                subject_id: person_id,
+                claim_type: "stakeholder_role",
+                field_path: None,
+                text: new_role,
+                actor: "user",
+                source_scope: Some("team_member_role_change"),
+                observed_at: &observed_at,
+            },
+        );
+
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
@@ -3947,18 +3968,40 @@ mod tests {
             "AI-owned 'technical' role should survive a user role swap"
         );
 
-        // The old user-pinned 'champion' row should be gone (user chose
-        // to swap) and 'economic' should now be user-owned.
-        let champion_gone: i64 = db
+        // DOS-7 D4-1b: the old user-pinned 'champion' row is now SOFT-deleted
+        // (dismissed_at populated) instead of hard-deleted. Reads filter
+        // `WHERE dismissed_at IS NULL` so it stays invisible to enrichment + UI;
+        // the row preservation is what lets the claim layer reason about
+        // the user's retraction in the audit trail.
+        let champion_active: i64 = db
             .conn_ref()
             .query_row(
                 "SELECT COUNT(*) FROM account_stakeholder_roles
-                 WHERE account_id = 'acc-rp' AND person_id = 'p-rp' AND role = 'champion'",
+                 WHERE account_id = 'acc-rp' AND person_id = 'p-rp' AND role = 'champion'
+                   AND dismissed_at IS NULL",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(champion_gone, 0, "Old user-pinned 'champion' should be cleared by the swap");
+        assert_eq!(
+            champion_active, 0,
+            "Old user-pinned 'champion' should be soft-cleared (no active row)"
+        );
+
+        let champion_dismissed: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholder_roles
+                 WHERE account_id = 'acc-rp' AND person_id = 'p-rp' AND role = 'champion'
+                   AND dismissed_at IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            champion_dismissed, 1,
+            "Old user-pinned 'champion' row should be preserved with dismissed_at set"
+        );
 
         let economic: (i64, String) = db
             .conn_ref()
