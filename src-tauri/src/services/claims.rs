@@ -175,6 +175,31 @@ fn compact_subject_ref(value: &serde_json::Value) -> Result<String, ClaimError> 
     Ok(serde_json::to_string(value)?)
 }
 
+/// L2 cycle-15 fix #1: serialize a parsed [`SubjectRef`] into a
+/// byte-stable canonical JSON form for dedup_key + commit_lock
+/// derivation. Two semantically-equal subjects (PascalCase vs
+/// lowercase kind, reordered keys, extra whitespace, etc.) MUST
+/// produce identical output so same-meaning merge fires and the
+/// per-key commit lock serializes their writers.
+///
+/// The shape is alphabetical-key JSON with lowercase kind:
+///   `{"id":"<id>","kind":"<lowercase kind>"}`
+fn canonical_subject_ref(subject: &SubjectRef) -> Result<String, ClaimError> {
+    let (kind, id) = match subject {
+        SubjectRef::Account { id } => ("account", id.as_str()),
+        SubjectRef::Meeting { id } => ("meeting", id.as_str()),
+        SubjectRef::Person { id } => ("person", id.as_str()),
+        SubjectRef::Project { id } => ("project", id.as_str()),
+        SubjectRef::Email { id } => ("email", id.as_str()),
+        SubjectRef::Multi(_) | SubjectRef::Global => {
+            return Err(ClaimError::SubjectRef(
+                "Multi/Global subjects are rejected at commit time per ADR-0125 v1.4.0 spine".to_string(),
+            ));
+        }
+    };
+    Ok(serde_json::json!({ "id": id, "kind": kind }).to_string())
+}
+
 /// Subject kind label used in the `subject_ref` JSON column for both
 /// runtime-written and SQL-backfilled tombstone claims. Returned in the
 /// canonical PascalCase form (e.g. `Account`, `Meeting`) that the
@@ -748,7 +773,16 @@ pub fn commit_claim(
         }
         _ => {}
     }
-    let subject_ref_compact = compact_subject_ref(&subject_value)?;
+    // L2 cycle-15 fix #1: derive subject_ref_compact from the
+    // PARSED SubjectRef enum, not the caller's raw JSON bytes. The
+    // parser case-folds kind (cycle-14), but compact_subject_ref on
+    // the caller's value preserves the original casing — so the
+    // dedup_key + commit_lock keyed on it would differ across two
+    // semantically-identical commits with different kind casing.
+    // Both same-meaning merge AND the per-key lock then break:
+    // the second write would insert a duplicate active row instead
+    // of reinforcing.
+    let subject_ref_compact = canonical_subject_ref(&subject)?;
     if proposal.claim_type.trim().is_empty() {
         return Err(ClaimError::UnknownClaimType("empty".to_string()));
     }
@@ -2083,6 +2117,48 @@ mod tests {
             load_claims_active(&db, pascal_input, Some("risk")).expect("PascalCase reader input must parse");
         assert_eq!(claims.len(), 1);
         assert_eq!(claims[0].id, "pascal-active");
+    }
+
+    /// L2 cycle-15 fix #1: two semantically-equal subjects with
+    /// different kind casing must produce identical dedup_key +
+    /// commit lock so the second commit reinforces (Reinforced)
+    /// instead of inserting an unlinked duplicate active row.
+    #[test]
+    fn commit_claim_canonicalizes_subject_across_kind_casing() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        // First commit: lowercase kind.
+        let mut p1 = proposal("Same risk text");
+        p1.subject_ref = r#"{"kind":"account","id":"acct-1"}"#.to_string();
+        let first = commit_claim(&ctx, &db, p1).unwrap();
+        let first_id = match first {
+            CommittedClaim::Inserted { ref claim } => claim.id.clone(),
+            other => panic!("expected first to insert, got {other:?}"),
+        };
+
+        // Second commit: PascalCase kind, otherwise identical. Must
+        // canonicalize to the same dedup_key and route through
+        // same-meaning merge (Reinforced).
+        let mut p2 = proposal("Same risk text");
+        p2.subject_ref = r#"{"kind":"Account","id":"acct-1"}"#.to_string();
+        p2.data_source = "second-source".to_string();
+        let second = commit_claim(&ctx, &db, p2).unwrap();
+        match second {
+            CommittedClaim::Reinforced { claim, .. } => {
+                assert_eq!(
+                    claim.id, first_id,
+                    "second commit must reinforce the same row, not insert a duplicate"
+                );
+            }
+            other => panic!("expected Reinforced, got {other:?}"),
+        }
+
+        // Exactly one active claim survives.
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 1, "exactly one active claim across casings");
     }
 
     /// L2 cycle-14 fix #2: commit_claim must reject Multi and
