@@ -19,6 +19,15 @@ if ! command -v sqlite3 >/dev/null 2>&1; then
   exit 69
 fi
 
+resolved_at_ddl=""
+quarantine_exists="$(sqlite3 "$db_path" "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'suppression_tombstones_quarantine';")"
+if [[ "$quarantine_exists" == "1" ]]; then
+  has_resolved_at="$(sqlite3 "$db_path" "SELECT count(*) FROM pragma_table_info('suppression_tombstones_quarantine') WHERE name = 'resolved_at';")"
+  if [[ "$has_resolved_at" == "0" ]]; then
+    resolved_at_ddl="ALTER TABLE suppression_tombstones_quarantine ADD COLUMN resolved_at TEXT;"
+  fi
+fi
+
 terminator="ROLLBACK;"
 if [[ "$mode" == "--apply" ]]; then
   terminator="COMMIT;"
@@ -39,8 +48,15 @@ CREATE TABLE IF NOT EXISTS suppression_tombstones_quarantine (
     expires_at TEXT,
     superseded_by_evidence_after TEXT,
     quarantined_at TEXT NOT NULL DEFAULT (datetime('now')),
-    quarantine_reason TEXT NOT NULL
+    quarantine_reason TEXT NOT NULL,
+    resolved_at TEXT
 );
+
+${resolved_at_ddl}
+
+CREATE INDEX IF NOT EXISTS idx_quarantine_unresolved
+    ON suppression_tombstones_quarantine(resolved_at)
+    WHERE resolved_at IS NULL;
 
 CREATE TEMP TABLE remediation_log(action TEXT NOT NULL, row_count INTEGER NOT NULL);
 
@@ -83,7 +99,8 @@ INSERT OR REPLACE INTO suppression_tombstones_quarantine (
     source_scope,
     expires_at,
     superseded_by_evidence_after,
-    quarantine_reason
+    quarantine_reason,
+    resolved_at
 )
 SELECT s.id,
        s.entity_id,
@@ -94,7 +111,8 @@ SELECT s.id,
        s.source_scope,
        s.expires_at,
        s.superseded_by_evidence_after,
-       m.reason
+       m.reason,
+       datetime('now')
 FROM suppression_tombstones AS s
 JOIN malformed_ids AS m ON m.id = s.id;
 
@@ -151,7 +169,8 @@ INSERT OR REPLACE INTO suppression_tombstones_quarantine (
     source_scope,
     expires_at,
     superseded_by_evidence_after,
-    quarantine_reason
+    quarantine_reason,
+    resolved_at
 )
 SELECT s.id,
        s.entity_id,
@@ -170,7 +189,8 @@ SELECT s.id,
          'item_hash', s.item_hash,
          'dismissed_at', s.dismissed_at,
          'source_scope', s.source_scope
-       )
+       ),
+       datetime('now')
 FROM suppression_tombstones AS s
 JOIN ranked AS r ON r.id = s.id
 WHERE r.row_rank > 1;
