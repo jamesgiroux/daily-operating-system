@@ -652,6 +652,84 @@ pub fn load_claims_dormant_only(
     )
 }
 
+// ---------------------------------------------------------------------------
+// DOS-7 D4-1a: runtime shadow-write helper
+// ---------------------------------------------------------------------------
+
+/// Shadow-write a tombstone claim alongside a legacy `create_suppression_tombstone`
+/// call during the DOS-7 transition window.
+///
+/// Existing dismissal callers (services/intelligence.rs::dismiss_intelligence_item,
+/// services/accounts.rs runtime correction paths, services/feedback.rs::apply_correction)
+/// keep writing to the legacy `suppression_tombstones` table — DOS-301 / W3-D
+/// owns the eventual refactor that makes services/derived_state.rs the only
+/// legacy projection writer. Until that lands, we shadow-write a tombstone
+/// claim into intelligence_claims so the new substrate is populated in
+/// parallel and reconcile can verify parity in D5.
+///
+/// Failure of the shadow write is LOGGED but does NOT propagate as Err; the
+/// legacy write above remains authoritative for this release. Once DOS-301
+/// lands and reconcile is clean, follow-up work flips the authority.
+pub struct ShadowTombstoneClaim<'a> {
+    pub subject_kind: &'a str,
+    pub subject_id: &'a str,
+    pub claim_type: &'a str,
+    pub field_path: Option<&'a str>,
+    pub text: &'a str,
+    pub actor: &'a str,
+    pub source_scope: Option<&'a str>,
+    pub observed_at: &'a str,
+}
+
+pub fn shadow_write_tombstone_claim(db: &ActionDb, args: ShadowTombstoneClaim<'_>) {
+    let ShadowTombstoneClaim {
+        subject_kind,
+        subject_id,
+        claim_type,
+        field_path,
+        text,
+        actor,
+        source_scope,
+        observed_at,
+    } = args;
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+
+    let subject_ref = format!(r#"{{"kind":"{}","id":"{}"}}"#, subject_kind, subject_id);
+    let metadata_json = source_scope.map(|s| format!(r#"{{"source_scope":"{}"}}"#, s));
+
+    let proposal = ClaimProposal {
+        subject_ref,
+        claim_type: claim_type.to_string(),
+        field_path: field_path.map(|s| s.to_string()),
+        topic_key: None,
+        text: text.to_string(),
+        actor: actor.to_string(),
+        data_source: "user_dismissal".to_string(),
+        source_ref: None,
+        source_asof: Some(observed_at.to_string()),
+        observed_at: observed_at.to_string(),
+        provenance_json: r#"{"runtime":"dos7_d4_1a_shadow"}"#.to_string(),
+        metadata_json,
+        thread_id: None,
+        temporal_scope: TemporalScope::State,
+        sensitivity: ClaimSensitivity::Internal,
+        tombstone: Some(TombstoneSpec {
+            retraction_reason: "user_removal".to_string(),
+            expires_at: None,
+        }),
+    };
+
+    if let Err(e) = commit_claim(&ctx, db, proposal) {
+        log::warn!(
+            "[dos7-d4-1a] shadow tombstone claim write failed (subject={}:{} field={:?}): {}",
+            subject_kind, subject_id, field_path, e
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;

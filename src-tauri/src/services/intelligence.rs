@@ -1291,6 +1291,35 @@ pub async fn dismiss_intelligence_item(
                 )
                 .map_err(|e| format!("create_suppression_tombstone: {e}"))?;
 
+                // DOS-7 D4-1a: shadow-write tombstone claim into the new substrate.
+                // Failure logged but not propagated; legacy write above remains
+                // authoritative until DOS-301 lands.
+                let subject_kind = match entity_type.as_str() {
+                    "account" => "Account",
+                    "person" => "Person",
+                    "project" => "Project",
+                    "meeting" => "Meeting",
+                    _ => "Account",
+                };
+                let claim_type = match field.as_str() {
+                    "risks" => "risk",
+                    "recentWins" | "wins" => "win",
+                    _ => "intelligence_field_dismissed",
+                };
+                crate::services::claims::shadow_write_tombstone_claim(
+                    tx,
+                    crate::services::claims::ShadowTombstoneClaim {
+                        subject_kind,
+                        subject_id: &entity_id,
+                        claim_type,
+                        field_path: Some(&field),
+                        text: &item_text,
+                        actor: "user",
+                        source_scope: Some("intelligence"),
+                        observed_at: &dismissed_at,
+                    },
+                );
+
                 Ok(())
             })?;
 

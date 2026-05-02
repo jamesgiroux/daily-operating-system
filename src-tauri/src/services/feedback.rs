@@ -435,6 +435,36 @@ pub fn submit_intelligence_correction(
             None,
         )
         .map_err(|e| format!("create_suppression_tombstone: {e}"))?;
+
+        // DOS-7 D4-1a: shadow-write tombstone claim. Subject derived from
+        // entity_type; claim_type maps from field via the same convention
+        // backfill mechanism 1 uses. Failure logged + ignored.
+        let subject_kind = match entity_type {
+            "account" => "Account",
+            "person" => "Person",
+            "project" => "Project",
+            "meeting" => "Meeting",
+            _ => "Account",
+        };
+        let claim_type = match field {
+            "risks" => "risk",
+            "recentWins" | "wins" => "win",
+            _ => "feedback_field_dismissed",
+        };
+        let observed_at = ctx.clock.now().to_rfc3339();
+        crate::services::claims::shadow_write_tombstone_claim(
+            db,
+            crate::services::claims::ShadowTombstoneClaim {
+                subject_kind,
+                subject_id: entity_id,
+                claim_type,
+                field_path: Some(field),
+                text: item_key.unwrap_or("<keyless>"),
+                actor: "user",
+                source_scope: prior_source.as_deref(),
+                observed_at: &observed_at,
+            },
+        );
     }
 
     Ok(())
