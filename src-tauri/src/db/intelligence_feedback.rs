@@ -349,13 +349,31 @@ impl ActionDb {
         item_hash: Option<&str>,
     ) -> rusqlite::Result<SuppressionCandidateTiers> {
         let mut candidates = SuppressionCandidateTiers::default();
-        let subject_ref = format!(r#"{{"kind":"Account","id":"{}"}}"#, entity_id);
+
+        // L2 cycle-11 fix #2: match via json_extract on $.kind+$.id
+        // instead of exact subject_ref string equality. The SQL m1
+        // backfill writes subject_ref via json_object which escapes
+        // quotes/backslashes/controls, so a format!-built lookup
+        // string for an entity_id with weird characters wouldn't
+        // match. json_extract is order-agnostic AND
+        // escape-agnostic, so the lookup parity holds across
+        // legacy + runtime subject_ref shapes.
+        //
+        // Also: json_valid(subject_ref)=1 guard prevents malformed
+        // historical rows from raising "malformed JSON" mid-query
+        // (same hazard cycle-7 fix #2 closed for PRE-GATE).
+        const KIND_ID_PREDICATE: &str =
+            "json_valid(subject_ref) = 1 \
+             AND lower(json_extract(subject_ref, '$.kind')) = 'account' \
+             AND json_extract(subject_ref, '$.id') = ?1";
 
         if let Some(item_hash) = item_hash {
             candidates.hash = self.query_suppression_claim_candidates(
                 "SELECT id, created_at, expires_at, metadata_json, item_hash, text \
                  FROM intelligence_claims \
-                 WHERE subject_ref = ?1 \
+                 WHERE json_valid(subject_ref) = 1 \
+                   AND lower(json_extract(subject_ref, '$.kind')) = 'account' \
+                   AND json_extract(subject_ref, '$.id') = ?1 \
                    AND claim_type = 'risk' \
                    AND field_path = ?2 \
                    AND claim_state = 'tombstoned' \
@@ -363,7 +381,7 @@ impl ActionDb {
                    AND item_hash = ?3 \
                  ORDER BY created_at DESC \
                  LIMIT 16",
-                rusqlite::params![&subject_ref, field_key, item_hash],
+                rusqlite::params![entity_id, field_key, item_hash],
             )?;
         }
 
@@ -371,30 +389,37 @@ impl ActionDb {
             candidates.exact = self.query_suppression_claim_candidates(
                 "SELECT id, created_at, expires_at, metadata_json, item_hash, text \
                  FROM intelligence_claims \
-                 WHERE subject_ref = ?1 \
+                 WHERE json_valid(subject_ref) = 1 \
+                   AND lower(json_extract(subject_ref, '$.kind')) = 'account' \
+                   AND json_extract(subject_ref, '$.id') = ?1 \
                    AND claim_type = 'risk' \
                    AND field_path = ?2 \
                    AND claim_state = 'tombstoned' \
                    AND text = ?3 \
                  ORDER BY created_at DESC \
                  LIMIT 16",
-                rusqlite::params![&subject_ref, field_key, item_key],
+                rusqlite::params![entity_id, field_key, item_key],
             )?;
         }
 
         candidates.keyless = self.query_suppression_claim_candidates(
             "SELECT id, created_at, expires_at, metadata_json, item_hash, text \
              FROM intelligence_claims \
-             WHERE subject_ref = ?1 \
+             WHERE json_valid(subject_ref) = 1 \
+               AND lower(json_extract(subject_ref, '$.kind')) = 'account' \
+               AND json_extract(subject_ref, '$.id') = ?1 \
                AND claim_type = 'risk' \
                AND field_path = ?2 \
                AND claim_state = 'tombstoned' \
                AND text = '<keyless>' \
              ORDER BY created_at DESC \
              LIMIT 16",
-            rusqlite::params![&subject_ref, field_key],
+            rusqlite::params![entity_id, field_key],
         )?;
 
+        // KIND_ID_PREDICATE is documented for clarity but not used
+        // as a SQL fragment (rusqlite doesn't support fragment splicing).
+        let _ = KIND_ID_PREDICATE;
         Ok(candidates)
     }
 
@@ -1600,5 +1625,56 @@ mod tests {
         );
 
         assert_pair_decision(&conn, "acct-1", "risks", Some("Bad expiry"), None, None);
+    }
+
+    /// L2 cycle-11 fix #2: is_suppressed_via_claims must match
+    /// claims whose subject_ref was escape-encoded by SQLite's
+    /// `json_object()` for an entity_id containing quotes or
+    /// backslashes. The previous lookup built subject_ref via raw
+    /// format! and did string-equality match — escaped IDs would
+    /// silently miss, breaking parity with the legacy reader.
+    #[test]
+    fn parity_is_suppressed_with_escaped_entity_id_chars() {
+        let conn = setup_pair_db();
+        let evil_id = r#"acct-with-"quote"-and-\backslash"#;
+
+        // Seed BOTH legacy (suppression_tombstones with the raw
+        // entity_id) and the claims-backed row (subject_ref built
+        // via json_object so quotes/backslashes are escaped).
+        let db = ActionDb::from_conn(&conn);
+        let tombstone_id = db
+            .create_suppression_tombstone(evil_id, "risks", Some("dismissed text"), None, None, None)
+            .expect("seed legacy tombstone");
+        let claim_id = format!("m1-{}", tombstone_id);
+        // dos7-allowed: cycle-11 parity-regression seed
+        conn.execute(
+            "INSERT INTO intelligence_claims \
+             (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+              actor, data_source, observed_at, created_at, provenance_json, \
+              claim_state, surfacing_state, retraction_reason, \
+              temporal_scope, sensitivity) \
+             VALUES (?1, json_object('kind','Account','id',?2), 'risk', 'risks', \
+                     'dismissed text', \
+                     'evil-dedup', '', 'system_backfill', 'legacy_dismissal', \
+                     '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', '{}', \
+                     'tombstoned', 'active', 'user_removal', 'state', 'internal')",
+            rusqlite::params![&claim_id, evil_id],
+        )
+        .expect("seed claims-backed row with escaped subject_ref");
+
+        let db = ActionDb::from_conn(&conn);
+        let legacy = db.is_suppressed(evil_id, "risks", Some("dismissed text"), None, None);
+        let via_claims =
+            db.is_suppressed_via_claims(evil_id, "risks", Some("dismissed text"), None, None);
+
+        assert!(
+            matches!(legacy, SuppressionDecision::Suppressed { .. }),
+            "legacy tombstone reader should suppress for the escaped-id account"
+        );
+        assert!(
+            matches!(via_claims, SuppressionDecision::Suppressed { .. }),
+            "claims-backed reader must suppress for the escaped-id account too \
+             (was missing because of format!-built subject_ref equality)"
+        );
     }
 }
