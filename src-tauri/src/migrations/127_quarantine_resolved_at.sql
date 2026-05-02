@@ -4,13 +4,11 @@
 -- the remediation script; a timestamp means the row is the remediation
 -- audit record.
 --
--- Note: ALTER TABLE ADD COLUMN with DEFAULT NULL is the only safe form
--- under SQLite; rows pre-existing this migration will have NULL, which
--- the gate treats as unresolved (preserves cycle-2 semantics for any
--- operator who created quarantine rows manually before this column
--- existed).
+-- DOS-308 cycle-4: this migration intentionally adds ONLY the column.
+-- The partial index `idx_quarantine_unresolved` lives in migration 128
+-- so a partial-failure retry between ALTER TABLE and CREATE INDEX cannot
+-- record the version complete with the index missing (the runner's
+-- duplicate-column swallow on retry would otherwise skip the index
+-- creation in a single-batch migration).
 
 ALTER TABLE suppression_tombstones_quarantine ADD COLUMN resolved_at TEXT;
-CREATE INDEX IF NOT EXISTS idx_quarantine_unresolved
-    ON suppression_tombstones_quarantine(resolved_at)
-    WHERE resolved_at IS NULL;
