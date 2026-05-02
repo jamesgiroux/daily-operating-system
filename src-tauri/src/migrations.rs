@@ -625,6 +625,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 131,
         sql: include_str!("migrations/130_dos_7_claims_backfill_a1.sql"),
     },
+    // DOS-7 D3a-2: backfill mechanisms 5-8 (linking_dismissals,
+    // briefing_callouts.dismissed_at, nudge_dismissals, triage_snoozes)
+    // + duplicate-pair corroboration between mechanism 4 and 5.
+    Migration {
+        version: 132,
+        sql: include_str!("migrations/131_dos_7_claims_backfill_a2.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -2252,8 +2259,8 @@ mod tests {
     fn quarantine_with_retained_rows_does_not_block_post_126_migrations() {
         let conn = mem_db();
         run_migrations(&conn).expect("apply all migrations");
-        conn.execute("DELETE FROM schema_version WHERE version IN (128, 129, 130, 131)", [])
-            .expect("make v128 through v131 pending");
+        conn.execute("DELETE FROM schema_version WHERE version IN (128, 129, 130, 131, 132)", [])
+            .expect("make v128 through v132 pending");
         conn.execute(
             "INSERT INTO suppression_tombstones_quarantine \
              (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason, resolved_at) \
@@ -2264,16 +2271,16 @@ mod tests {
 
         let applied = run_migrations(&conn).expect("post-126 migration should not be gated");
 
-        assert_eq!(applied, 4);
-        assert_eq!(current_version(&conn).expect("version query"), 131);
+        assert_eq!(applied, 5);
+        assert_eq!(current_version(&conn).expect("version query"), 132);
     }
 
     #[test]
     fn quarantine_blocks_only_when_126_pending() {
         let conn = mem_db();
         run_migrations(&conn).expect("apply all migrations");
-        conn.execute("DELETE FROM schema_version WHERE version IN (126, 127, 128, 129, 130, 131)", [])
-            .expect("make v126 through v131 pending");
+        conn.execute("DELETE FROM schema_version WHERE version IN (126, 127, 128, 129, 130, 131, 132)", [])
+            .expect("make v126 through v132 pending");
         conn.execute(
             "INSERT INTO suppression_tombstones_quarantine \
              (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason) \
