@@ -112,36 +112,6 @@ pub fn create_child_account_record(
     Ok(account)
 }
 
-/// Build a default AccountJson for a newly created account.
-pub fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::AccountJson {
-    crate::accounts::AccountJson {
-        version: 1,
-        entity_type: "account".to_string(),
-        structured: crate::accounts::AccountStructured {
-            arr: account.arr,
-            health: account.health.clone(),
-            lifecycle: account.lifecycle.clone(),
-            renewal_date: account.contract_end.clone(),
-            nps: account.nps,
-            account_team: Vec::new(),
-            csm: None,
-            champion: None,
-        },
-        company_overview: account
-            .company_overview
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok()),
-        strategic_programs: account
-            .strategic_programs
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or_default(),
-        notes: account.notes.clone(),
-        custom_sections: Vec::new(),
-        parent_id: account.parent_id.clone(),
-    }
-}
-
 /// Infer which internal account best matches a meeting by title + attendees.
 pub fn infer_internal_account_for_meeting(
     db: &ActionDb,
@@ -2263,8 +2233,10 @@ pub fn update_account_notes(
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
-    let _ = crate::accounts::write_account_json(workspace, &account, None, db);
-    let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
+    crate::accounts::write_account_json(workspace, &account, None, db)
+        .map_err(|e| format!("failed to write account dashboard.json: {e}"))?;
+    crate::accounts::write_account_markdown(workspace, &account, None, db)
+        .map_err(|e| format!("failed to write account dashboard.md: {e}"))?;
 
     // Emit field update signal (I377)
     crate::services::signals::emit_and_propagate(
@@ -2315,8 +2287,10 @@ pub fn update_account_programs(
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
-    let _ = crate::accounts::write_account_json(workspace, &account, None, db);
-    let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
+    crate::accounts::write_account_json(workspace, &account, None, db)
+        .map_err(|e| format!("failed to write account dashboard.json: {e}"))?;
+    crate::accounts::write_account_markdown(workspace, &account, None, db)
+        .map_err(|e| format!("failed to write account dashboard.md: {e}"))?;
 
     // Emit field update signal (I377)
     crate::services::signals::emit_and_propagate(
@@ -3574,8 +3548,11 @@ mod tests {
     use crate::db::{AccountType, DbAccount};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
+    use crate::state::AppState;
     use chrono::TimeZone;
     use rusqlite::params;
+    use serde_json::json;
+    use std::path::Path;
 
     fn test_ctx<'a>(
         clock: &'a FixedClock,
@@ -3615,6 +3592,81 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap_or(0)
+    }
+
+    fn test_config(workspace_path: &Path) -> crate::types::Config {
+        serde_json::from_value(json!({
+            "workspacePath": workspace_path.to_string_lossy(),
+        }))
+        .expect("minimal config should deserialize with defaults")
+    }
+
+    fn test_state_with_workspace(workspace_path: &Path) -> AppState {
+        let state = AppState::new();
+        *state.config.write() = Some(test_config(workspace_path));
+        state
+    }
+
+    #[test]
+    fn test_update_account_notes_surfaces_dashboard_write_failure() {
+        let db = test_db();
+        let account = make_account("acc-notes-write-failure", "Notes Write Failure Corp");
+        db.upsert_account(&account).expect("upsert account");
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workspace_file = temp.path().join("workspace-file");
+        std::fs::write(&workspace_file, "not a directory").expect("workspace marker file");
+        let state = test_state_with_workspace(&workspace_file);
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        let err = super::update_account_notes(
+            &ctx,
+            &db,
+            &state,
+            "acc-notes-write-failure",
+            "Notes that cannot be mirrored to disk",
+        )
+        .expect_err("dashboard write failure should surface to caller");
+
+        assert!(
+            err.contains("failed to write account dashboard.json"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_update_account_programs_surfaces_dashboard_write_failure() {
+        let db = test_db();
+        let account = make_account("acc-programs-write-failure", "Programs Write Failure Corp");
+        db.upsert_account(&account).expect("upsert account");
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workspace_file = temp.path().join("workspace-file");
+        std::fs::write(&workspace_file, "not a directory").expect("workspace marker file");
+        let state = test_state_with_workspace(&workspace_file);
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        let err = super::update_account_programs(
+            &ctx,
+            &db,
+            &state,
+            "acc-programs-write-failure",
+            r#"[{"name":"Migration","status":"active"}]"#,
+        )
+        .expect_err("dashboard write failure should surface to caller");
+
+        assert!(
+            err.contains("failed to write account dashboard.json"),
+            "unexpected error: {err}"
+        );
     }
 
     /// Test account creation at the DB level (create_account needs AppState for workspace files,

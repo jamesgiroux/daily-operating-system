@@ -11,11 +11,10 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::db::{ActionDb, DbAccount};
-use crate::util::{sanitize_external_field, slugify, wrap_user_data};
+use crate::util::slugify;
 
 // =============================================================================
 // JSON Schema
@@ -864,68 +863,6 @@ fn scan_child_accounts_inner(
 }
 
 // =============================================================================
-// Enrichment (I74 / ADR-0047)
-// =============================================================================
-
-/// Parse Claude's enrichment response into a CompanyOverview.
-///
-/// Expected format:
-/// ```text
-/// ENRICHMENT
-/// DESCRIPTION: one-paragraph company description
-/// INDUSTRY: industry name
-/// SIZE: employee count or range
-/// HQ: headquarters location
-/// END_ENRICHMENT
-/// ```
-pub fn parse_enrichment_response(response: &str) -> Option<CompanyOverview> {
-    let mut in_block = false;
-    let mut description = None;
-    let mut industry = None;
-    let mut size = None;
-    let mut headquarters = None;
-
-    for line in response.lines() {
-        let trimmed = line.trim();
-
-        if trimmed == "ENRICHMENT" {
-            in_block = true;
-            continue;
-        }
-        if trimmed == "END_ENRICHMENT" {
-            break;
-        }
-
-        if !in_block {
-            continue;
-        }
-
-        if let Some(val) = trimmed.strip_prefix("DESCRIPTION:") {
-            description = Some(val.trim().to_string());
-        } else if let Some(val) = trimmed.strip_prefix("INDUSTRY:") {
-            industry = Some(val.trim().to_string());
-        } else if let Some(val) = trimmed.strip_prefix("SIZE:") {
-            size = Some(val.trim().to_string());
-        } else if let Some(val) = trimmed.strip_prefix("HQ:") {
-            headquarters = Some(val.trim().to_string());
-        }
-    }
-
-    // Only return if we got at least a description
-    if description.is_some() {
-        Some(CompanyOverview {
-            description,
-            industry,
-            size,
-            headquarters,
-            enriched_at: Some(Utc::now().to_rfc3339()),
-        })
-    } else {
-        None
-    }
-}
-
-// =============================================================================
 // Content Index (I124)
 // =============================================================================
 
@@ -967,81 +904,11 @@ pub fn sync_all_content_indexes(workspace: &Path, db: &ActionDb) -> Result<usize
     Ok(total)
 }
 
-/// Build file context string for enrichment prompts (I126, updated I139).
-///
-/// Uses pre-computed summaries from SQLite when available, falling back to
-/// text extraction for files without summaries. Priority-ordered (highest first).
-/// Capped at 10K chars total.
-pub fn build_file_context(_workspace: &Path, db: &ActionDb, account_id: &str) -> String {
-    let files = match db.get_entity_files(account_id) {
-        Ok(f) => f,
-        Err(_) => return String::new(),
-    };
-
-    if files.is_empty() {
-        return String::new();
-    }
-
-    let max_chars: usize = 10_000;
-    let mut context_parts: Vec<String> = Vec::new();
-    let mut total_chars: usize = 0;
-
-    for file in &files {
-        if total_chars >= max_chars {
-            break;
-        }
-
-        // Prefer pre-computed summary; fall back to extraction
-        let text = if let Some(ref summary) = file.summary {
-            summary.clone()
-        } else {
-            let path = std::path::Path::new(&file.absolute_path);
-            if !path.exists() {
-                continue;
-            }
-            match crate::processor::extract::extract_text(path) {
-                Ok(t) => {
-                    let summary = crate::intelligence::mechanical_summary(&t, 500);
-                    if summary.is_empty() {
-                        continue;
-                    }
-                    summary
-                }
-                Err(_) => continue,
-            }
-        };
-
-        let remaining = max_chars.saturating_sub(total_chars);
-        let truncated = if text.len() > remaining {
-            &text[..remaining]
-        } else {
-            &text
-        };
-
-        context_parts.push(format!(
-            "--- {} [{}] ---\n{}",
-            sanitize_external_field(&file.filename),
-            file.content_type,
-            wrap_user_data(truncated),
-        ));
-        total_chars += truncated.len();
-    }
-
-    if context_parts.is_empty() {
-        return String::new();
-    }
-
-    format!(
-        "\n\nThe following file summaries exist in this account's workspace (by priority):\n\n{}",
-        context_parts.join("\n\n")
-    )
-}
-
 // Account enrichment via PTY removed per ADR-0086 (I376).
 // Entity intelligence is now enriched solely via intel_queue.
 
 /// Create an AccountJson from a DbAccount, reading narrative fields from DB columns.
-fn default_account_json(account: &DbAccount) -> AccountJson {
+pub fn default_account_json(account: &DbAccount) -> AccountJson {
     AccountJson {
         version: 1,
         entity_type: "account".to_string(),
@@ -1078,6 +945,7 @@ fn default_account_json(account: &DbAccount) -> AccountJson {
 mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
+    use chrono::Utc;
 
     fn sample_account(name: &str) -> DbAccount {
         let now = Utc::now().to_rfc3339();
@@ -1248,50 +1116,6 @@ mod tests {
             result.json.notes,
             Some("Don't lose these notes.".to_string())
         );
-    }
-
-    #[test]
-    fn test_parse_enrichment_response() {
-        let response = "\
-Some preamble text from Claude
-
-ENRICHMENT
-DESCRIPTION: Acme Corp builds enterprise widgets for Fortune 500 companies.
-INDUSTRY: Enterprise Software
-SIZE: 500-1000
-HQ: San Francisco, USA
-END_ENRICHMENT
-
-Some trailing text";
-
-        let overview = parse_enrichment_response(response).unwrap();
-        assert_eq!(
-            overview.description.unwrap(),
-            "Acme Corp builds enterprise widgets for Fortune 500 companies."
-        );
-        assert_eq!(overview.industry.unwrap(), "Enterprise Software");
-        assert_eq!(overview.size.unwrap(), "500-1000");
-        assert_eq!(overview.headquarters.unwrap(), "San Francisco, USA");
-        assert!(overview.enriched_at.is_some());
-    }
-
-    #[test]
-    fn test_parse_enrichment_response_missing_block() {
-        let response = "No enrichment block here, just regular text.";
-        assert!(parse_enrichment_response(response).is_none());
-    }
-
-    #[test]
-    fn test_parse_enrichment_response_partial() {
-        let response = "\
-ENRICHMENT
-DESCRIPTION: Partial data only.
-END_ENRICHMENT";
-
-        let overview = parse_enrichment_response(response).unwrap();
-        assert_eq!(overview.description.unwrap(), "Partial data only.");
-        assert!(overview.industry.is_none());
-        assert!(overview.size.is_none());
     }
 
     #[test]
