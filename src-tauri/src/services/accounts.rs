@@ -2605,27 +2605,56 @@ pub fn set_team_member_role(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let observed_at = ctx.clock.now().to_rfc3339();
     db.with_transaction(|tx| {
+        // DOS-7 L2 cycle-2 fix #4: capture the user-owned roles being
+        // dismissed BEFORE the swap. The original D4-1b shadow write
+        // tombstoned `new_role` — the role the user just pinned —
+        // instead of the roles being retired. That's exactly inverted:
+        // the AI re-surfacing should be blocked for the dismissed
+        // roles, not for the freshly-selected one.
+        let normalized_new_role = new_role.trim().to_lowercase();
+        let dismissed_roles: Vec<String> = {
+            let mut stmt = tx
+                .conn_ref()
+                .prepare(
+                    "SELECT role FROM account_stakeholder_roles \
+                     WHERE account_id = ?1 AND person_id = ?2 \
+                       AND data_source = 'user' \
+                       AND dismissed_at IS NULL",
+                )
+                .map_err(|e| format!("read active user roles: {e}"))?;
+            let rows = stmt
+                .query_map(rusqlite::params![account_id, person_id], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|e| format!("query active user roles: {e}"))?;
+            rows.filter_map(|r| r.ok())
+                // Don't tombstone the role the user is re-pinning;
+                // the swap reactivates it via ON CONFLICT.
+                .filter(|r| r != &normalized_new_role)
+                .collect()
+        };
+
         tx.set_team_member_role(account_id, person_id, new_role)
             .map_err(|e| e.to_string())?;
 
-        // DOS-7 D4-1b: shadow-write tombstone claim for the role swap.
-        // The DB-layer fn now soft-deletes user-owned roles (UPDATE
-        // dismissed_at) instead of DELETE; the claim layer carries the
-        // user-intent record. Subject = Person whose role was retracted.
-        // Failure logged + ignored; legacy DB write above is authoritative.
-        crate::services::claims::shadow_write_tombstone_claim(
-            tx,
-            crate::services::claims::ShadowTombstoneClaim {
-                subject_kind: "Person",
-                subject_id: person_id,
-                claim_type: "stakeholder_role",
-                field_path: None,
-                text: new_role,
-                actor: "user",
-                source_scope: Some("team_member_role_change"),
-                observed_at: &observed_at,
-            },
-        );
+        // DOS-7 L2 cycle-2 fix #4: shadow-write tombstones for each
+        // role that was actually retired. PRE-GATE then blocks the AI
+        // from re-surfacing those specific roles on the next pass.
+        for old_role in &dismissed_roles {
+            let _ = crate::services::claims::shadow_write_tombstone_claim(
+                tx,
+                crate::services::claims::ShadowTombstoneClaim {
+                    subject_kind: "Person",
+                    subject_id: person_id,
+                    claim_type: "stakeholder_role",
+                    field_path: None,
+                    text: old_role,
+                    actor: "user",
+                    source_scope: Some("team_member_role_change"),
+                    observed_at: &observed_at,
+                },
+            );
+        }
 
         crate::services::signals::emit_and_propagate(
             ctx,
@@ -4069,6 +4098,96 @@ mod tests {
             .unwrap();
         assert_eq!(economic.0, 1, "New 'economic' role should be present");
         assert_eq!(economic.1, "user", "New 'economic' role should be user-owned");
+    }
+
+    /// L2 cycle-2 fix #4: the service-level set_team_member_role
+    /// shadow-write must tombstone the role being DISMISSED (e.g.
+    /// 'champion'), not the role being PINNED (e.g. 'economic').
+    /// The original D4-1b implementation tombstoned `new_role` —
+    /// exactly inverted — which would have blocked the AI from
+    /// re-surfacing the freshly-selected role on the next pass while
+    /// leaving the actually-dismissed role unprotected.
+    #[test]
+    fn set_team_member_role_tombstones_dismissed_role_not_new_role() {
+        let db = test_db();
+        let account = make_account("acc-rt", "RoleTombstone Corp");
+        db.upsert_account(&account).unwrap();
+
+        // Seed person + active user-owned 'champion' role.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) \
+                 VALUES ('p-rt', 'rt@example.com', 'RoleT', '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source) \
+                 VALUES ('acc-rt', 'p-rt', 'user')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholder_roles \
+                 (account_id, person_id, role, data_source) \
+                 VALUES ('acc-rt', 'p-rt', 'champion', 'user')",
+                [],
+            )
+            .unwrap();
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let state = test_state_with_workspace(temp.path());
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        // Swap champion → economic via the service wrapper (the path
+        // that does shadow-writes; the prior test went straight to db).
+        super::set_team_member_role(&ctx, &db, &state, "acc-rt", "p-rt", "economic")
+            .expect("service-level role swap");
+
+        // Tombstone claim for OLD role 'champion' must exist.
+        let champion_tombstone: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM intelligence_claims \
+                 WHERE claim_state = 'tombstoned' \
+                   AND claim_type = 'stakeholder_role' \
+                   AND lower(json_extract(subject_ref, '$.kind')) = 'person' \
+                   AND json_extract(subject_ref, '$.id') = 'p-rt' \
+                   AND text = 'champion'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            champion_tombstone, 1,
+            "shadow-write must tombstone the dismissed 'champion' role"
+        );
+
+        // Tombstone claim for NEW role 'economic' must NOT exist —
+        // the user just selected it.
+        let economic_tombstone: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM intelligence_claims \
+                 WHERE claim_state = 'tombstoned' \
+                   AND claim_type = 'stakeholder_role' \
+                   AND lower(json_extract(subject_ref, '$.kind')) = 'person' \
+                   AND json_extract(subject_ref, '$.id') = 'p-rt' \
+                   AND text = 'economic'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            economic_tombstone, 0,
+            "shadow-write must NOT tombstone the freshly-selected 'economic' role"
+        );
     }
 
     /// When the user re-pins a role that the AI had previously surfaced,
