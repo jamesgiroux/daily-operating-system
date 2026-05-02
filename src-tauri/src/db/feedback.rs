@@ -114,6 +114,24 @@ impl ActionDb {
         Ok(self.conn_ref().last_insert_rowid())
     }
 
+    #[must_use = "audit row should be propagated; silent discard hides operator-actionable malformed records"]
+    pub fn record_malformed_suppression(
+        &self,
+        record_id: &str,
+        reason: &str,
+        entity_id: &str,
+        field_key: &str,
+        caller_context: Option<&str>,
+    ) -> Result<i64, DbError> {
+        self.conn_ref().execute(
+            "INSERT INTO suppression_malformed_log \
+             (record_id, reason, entity_id, field_key, caller_context) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![record_id, reason, entity_id, field_key, caller_context],
+        )?;
+        Ok(self.conn_ref().last_insert_rowid())
+    }
+
     /// Get feedback events for an entity, newest first.
     pub fn get_feedback_events(
         &self,
