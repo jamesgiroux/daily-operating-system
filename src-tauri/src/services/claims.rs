@@ -325,14 +325,19 @@ fn compact_subject_ref_str(subject_ref: &str) -> Result<String, ClaimError> {
 }
 
 fn subject_ref_from_json(value: &serde_json::Value) -> Result<SubjectRef, ClaimError> {
-    let kind = value
+    let kind_raw = value
         .get("kind")
         .or_else(|| value.get("type"))
         .or_else(|| value.get("entity_type"))
         .and_then(|v| v.as_str())
         .ok_or_else(|| ClaimError::SubjectRef("missing kind/type".to_string()))?;
+    // L2 cycle-14 fix #1: case-fold so PascalCase callers (the
+    // shape SQLite json_object writes) parse successfully.
+    // Previously only lowercase matched, so a reader called with
+    // {"kind":"Account",...} hit the `other =>` arm and errored.
+    let kind = kind_raw.to_ascii_lowercase();
 
-    match kind {
+    match kind.as_str() {
         "account" | "accounts" => Ok(SubjectRef::Account {
             id: subject_id(value)?,
         }),
@@ -722,6 +727,27 @@ pub fn commit_claim(
     let subject_value = serde_json::from_str::<serde_json::Value>(&proposal.subject_ref)
         .map_err(|e| ClaimError::SubjectRef(format!("not JSON: {e}")))?;
     let subject = subject_ref_from_json(&subject_value)?;
+    // L2 cycle-14 fix #2: reject Multi/Global at commit time per
+    // ADR-0125 v1.4.0 spine restriction. The default reader family
+    // (load_claims_active / _including_dormant / _dormant_only) and
+    // PRE-GATE / contradiction detection / is_suppressed_via_claims
+    // all require a single (kind, id) tuple — so accepting these
+    // subjects at write time would create rows that read-after-write
+    // can't see. v1.4.1+ work that justifies one of these variants
+    // via ADR amendment can lift this guard.
+    match subject {
+        SubjectRef::Multi(_) => {
+            return Err(ClaimError::SubjectRef(
+                "Multi subjects are reserved for v1.4.1+; v1.4.0 spine writers must commit a single (kind, id)".to_string(),
+            ));
+        }
+        SubjectRef::Global => {
+            return Err(ClaimError::SubjectRef(
+                "Global subjects are reserved for v1.4.1+ per ADR-0125; v1.4.0 spine writers must commit a single (kind, id)".to_string(),
+            ));
+        }
+        _ => {}
+    }
     let subject_ref_compact = compact_subject_ref(&subject_value)?;
     if proposal.claim_type.trim().is_empty() {
         return Err(ClaimError::UnknownClaimType("empty".to_string()));
@@ -2023,6 +2049,81 @@ mod tests {
     /// (insertion order, PascalCase kind) would be invisible to a
     /// reader called with serde_json-canonical (alphabetical order,
     /// lowercase kind) input.
+    #[test]
+    /// L2 cycle-14 fix #1: subject_ref_from_json must accept
+    /// PascalCase kinds (the shape SQLite json_object writes).
+    /// Cycle-13 fix #2 made the reader DB-side casing-tolerant
+    /// but left the input-side parser strict, so PascalCase
+    /// caller input regressed.
+    #[test]
+    fn load_claims_active_accepts_pascal_case_caller_input() {
+        let db = test_db();
+
+        // dos7-allowed: cycle-14 regression seed
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, \
+                  claim_state, surfacing_state, retraction_reason, \
+                  temporal_scope, sensitivity) \
+                 VALUES \
+                 ('pascal-active', \
+                  '{\"kind\":\"Account\",\"id\":\"acct-1\"}', 'risk', 'health.risk', \
+                  'first', 'k1', 'h1', 'agent:test', 'unit_test', \
+                  ?1, ?1, '{}', 'active', 'active', NULL, 'state', 'internal')",
+                params![TS],
+            )
+            .unwrap();
+
+        // PascalCase reader input — this is what backfill SQL also
+        // produces. Must NOT error in subject_ref_from_json.
+        let pascal_input = r#"{"kind":"Account","id":"acct-1"}"#;
+        let claims =
+            load_claims_active(&db, pascal_input, Some("risk")).expect("PascalCase reader input must parse");
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].id, "pascal-active");
+    }
+
+    /// L2 cycle-14 fix #2: commit_claim must reject Multi and
+    /// Global subjects per ADR-0125 v1.4.0 spine restriction.
+    /// The reader family doesn't support them; allowing the write
+    /// would create read-invisible rows.
+    #[test]
+    fn commit_claim_rejects_multi_subject_per_v140_spine() {
+        let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut p = proposal("Multi-subject claim attempt");
+        p.subject_ref = r#"{"kind":"multi","subjects":[{"kind":"account","id":"a-1"},{"kind":"person","id":"p-1"}]}"#.to_string();
+        let err = commit_claim(&ctx, &db, p).expect_err("Multi must be rejected");
+        match err {
+            ClaimError::SubjectRef(msg) => {
+                assert!(msg.contains("Multi") || msg.contains("v1.4.1"), "got {msg}");
+            }
+            other => panic!("expected SubjectRef error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn commit_claim_rejects_global_subject_per_v140_spine() {
+        let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut p = proposal("Global claim attempt");
+        p.subject_ref = r#"{"kind":"global"}"#.to_string();
+        let err = commit_claim(&ctx, &db, p).expect_err("Global must be rejected");
+        match err {
+            ClaimError::SubjectRef(msg) => {
+                assert!(
+                    msg.contains("Global") || msg.contains("v1.4.1") || msg.contains("ADR-0125"),
+                    "got {msg}"
+                );
+            }
+            other => panic!("expected SubjectRef error, got {other:?}"),
+        }
+    }
+
     #[test]
     fn load_claims_active_matches_across_subject_ref_key_order_and_casing() {
         let db = test_db();
