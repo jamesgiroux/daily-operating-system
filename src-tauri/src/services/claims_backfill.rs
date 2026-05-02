@@ -130,21 +130,40 @@ pub fn rekey_backfilled_claims_via_runtime_helpers(
             continue;
         }
 
-        let result = runtime_identity_for_rekey(&row).and_then(|(next_dedup_key, next_hash)| {
-            if row.dedup_key == next_dedup_key
-                && row.item_hash.as_deref() == Some(next_hash.as_str())
-            {
-                return Ok(0);
-            }
+        let result = runtime_identity_for_rekey(&row).and_then(
+            |(next_subject_ref, next_dedup_key, next_hash)| {
+                if row.dedup_key == next_dedup_key
+                    && row.item_hash.as_deref() == Some(next_hash.as_str())
+                    && row.subject_ref == next_subject_ref
+                {
+                    return Ok(0);
+                }
 
-            conn.execute(
-                "UPDATE intelligence_claims \
-                 SET dedup_key = ?1, item_hash = ?2 \
-                 WHERE id = ?3",
-                params![&next_dedup_key, &next_hash, &row.id],
-            )
-            .map_err(|e| format!("update dedup_key/item_hash: {e}"))
-        });
+                // L2 cycle-18 fix: also canonicalize subject_ref so
+                // PRE-GATE / contradiction / load_claims_where (which
+                // all match by `json_extract(subject_ref, '$.kind')`
+                // and `'$.id'`) can see this row. Alias-shaped rows
+                // ({"type":...,"entity_id":...}) and PascalCase rows
+                // would otherwise pass rekey but stay invisible to
+                // those readers — defeating the cycle-16 invariant
+                // that backfill and runtime semantic identity match.
+                //
+                // subject_ref is normally an immutable assertion
+                // column, but rekey is an explicit one-time
+                // canonicalization pass that preserves SEMANTIC
+                // meaning while normalizing BYTE shape — the same
+                // justification used for the dedup_key + item_hash
+                // updates above. dos7-allowed: rekey canonical
+                // subject_ref normalization preserves meaning.
+                conn.execute(
+                    "UPDATE intelligence_claims \
+                     SET dedup_key = ?1, item_hash = ?2, subject_ref = ?3 \
+                     WHERE id = ?4",
+                    params![&next_dedup_key, &next_hash, &next_subject_ref, &row.id],
+                )
+                .map_err(|e| format!("update dedup_key/item_hash/subject_ref: {e}"))
+            },
+        );
 
         match result {
             Ok(0) => {}
@@ -179,7 +198,7 @@ fn validate_row_json_columns(row: &RekeyRow) -> Result<(), String> {
     Ok(())
 }
 
-fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String), String> {
+fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String, String), String> {
     let subject_value = serde_json::from_str::<serde_json::Value>(&row.subject_ref)
         .map_err(|e| format!("subject_ref is not JSON: {e}"))?;
 
@@ -214,7 +233,7 @@ fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String), String
         row.field_path.as_deref(),
     );
 
-    Ok((next_dedup_key, next_hash))
+    Ok((compact_subject_ref, next_dedup_key, next_hash))
 }
 
 /// Backfill DismissedItem entries from `<workspace_root>/<EntityKind>/<name>/intelligence.json`
@@ -1794,6 +1813,72 @@ mod tests {
     }
 
     #[test]
+    /// L2 cycle-18 fix: rekey must canonicalize the stored
+    /// subject_ref column (not just dedup_key + item_hash) so
+    /// runtime readers that match via `json_extract($.kind)` and
+    /// `'$.id'` — PRE-GATE, contradiction detection, and
+    /// load_claims_where — can find alias-shaped or PascalCase
+    /// historical rows. Otherwise rekey produces correct
+    /// dedup_keys but the rows stay invisible to those readers.
+    #[test]
+    fn rekey_canonicalizes_subject_ref_so_readers_can_find_alias_rows() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        // Alias keys (`type`, `entity_id`) instead of canonical
+        // (`kind`, `id`). PascalCase value too.
+        let alias_subject = r#"{"type":"Account","entity_id":"acct-1"}"#;
+        seed_rekey_claim(
+            &db,
+            RekeySeed {
+                id: "m1-alias-canon",
+                subject_ref: alias_subject,
+                claim_type: "risk",
+                field_path: Some("risks"),
+                text: "Alias row to be canonicalized",
+                dedup_key: "legacy-shape",
+                item_hash: Some("legacy-hash"),
+            },
+        );
+
+        let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.rows_rewritten, 1);
+
+        // Stored subject_ref must now be the canonical
+        // alphabetical-key, lowercase-kind form. A reader that
+        // queries via json_extract on $.kind/$.id will find it.
+        let stored: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT subject_ref FROM intelligence_claims WHERE id = 'm1-alias-canon'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            stored, r#"{"id":"acct-1","kind":"account"}"#,
+            "rekey must rewrite subject_ref to the canonical shape"
+        );
+
+        // And the canonical $.kind / $.id are now extractable.
+        let kind: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT json_extract(subject_ref, '$.kind') FROM intelligence_claims \
+                 WHERE id = 'm1-alias-canon'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(kind, Some("account".to_string()));
+    }
+
     /// L2 cycle-17 fix: rekey must accept the same alias-shaped
     /// subject_ref keys (`type`/`entity_type`, `entity_id`) that
     /// `subject_ref_from_json` parses for runtime commits. The
