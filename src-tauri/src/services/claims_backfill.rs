@@ -1888,6 +1888,76 @@ mod tests {
     /// suppression. After migration, the row's claim_state is
     /// 'withdrawn' and retraction_reason is 'unsupported_subject_kind'.
     #[test]
+    /// L2 cycle-15 fix #2: migration 133 must withdraw unsupported
+    /// kinds across m6/m7/m8 too, not just m5. Those mechanisms
+    /// (briefing_callouts, nudge_dismissals, triage_snoozes) all
+    /// capitalize raw legacy entity_type without guarding, so a
+    /// legacy row with entity_type='global' or 'multi' produces a
+    /// Global/Multi-shaped subject_ref bypassing the v1.4.0 spine
+    /// restriction.
+    #[test]
+    fn migration_133_withdraws_m6_m7_m8_unsupported_kind_rows() {
+        let conn = fresh_full_db();
+
+        // Seed bad rows for each mechanism prefix.
+        // dos7-allowed: cycle-15 regression seed
+        for (id, kind) in [
+            ("m6-bad", "Global"),
+            ("m7-bad", "Multi"),
+            ("m8-bad", "email_thread"),
+            // Plus a supported one per mechanism that must NOT be withdrawn.
+            ("m6-ok", "Account"),
+            ("m7-ok", "Person"),
+            ("m8-ok", "Meeting"),
+        ] {
+            conn.execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, \
+                  claim_state, surfacing_state, retraction_reason, expires_at, \
+                  temporal_scope, sensitivity) \
+                 VALUES \
+                 (?1, ?2, 'briefing_callout_dismissed', 'risks', 'irrelevant', \
+                  'k', 'h', 'system_backfill', 'legacy_dismissal', \
+                  '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', '{}', \
+                  'tombstoned', 'active', 'user_removal', NULL, \
+                  'state', 'internal')",
+                rusqlite::params![
+                    id,
+                    format!(r#"{{"kind":"{}","id":"e-1"}}"#, kind),
+                ],
+            )
+            .unwrap();
+        }
+
+        // Re-run migration 133.
+        let migration_sql =
+            include_str!("../migrations/133_dos_7_withdraw_unsupported_m5_kinds.sql");
+        conn.execute_batch(migration_sql).unwrap();
+
+        for (id, expected_state) in [
+            ("m6-bad", "withdrawn"),
+            ("m7-bad", "withdrawn"),
+            ("m8-bad", "withdrawn"),
+            ("m6-ok", "tombstoned"),
+            ("m7-ok", "tombstoned"),
+            ("m8-ok", "tombstoned"),
+        ] {
+            let state: String = conn
+                .query_row(
+                    "SELECT claim_state FROM intelligence_claims WHERE id = ?1",
+                    rusqlite::params![id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                state, expected_state,
+                "{id} must end in {expected_state} after migration 133"
+            );
+        }
+    }
+
+    #[test]
     fn migration_133_withdraws_m5_unsupported_kind_rows() {
         // Use the full-migration DB so migration 133 has applied.
         let conn = fresh_full_db();
