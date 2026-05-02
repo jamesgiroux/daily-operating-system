@@ -35,126 +35,44 @@ pub fn item_hash(_kind: ItemKind, text: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// Maps a known content-bearing field to its ItemKind, for callers that
+/// need to compute a suppression hash. Returns None for fields whose
+/// item_key is a structural identifier (e.g., signal_id, action_id).
+///
+/// Adding a new content-bearing field requires registering it here AND
+/// in the writer that emits items into that field, so the reader and
+/// writer agree on hash semantics.
+pub fn item_kind_for_content_field(field: &str) -> Option<ItemKind> {
+    match field {
+        "risks" => Some(ItemKind::Risk),
+        "recentWins" => Some(ItemKind::Win),
+        _ => None,
+    }
+}
+
+/// Convenience: hash the item text if and only if the field is content-bearing.
+/// Returns None for structural-id fields where hash-match doesn't help
+/// (e.g., signal_id, action_id, callout_id) — those rely on exact item_key match.
+pub fn maybe_item_hash_for_field(field: &str, item_text: Option<&str>) -> Option<String> {
+    match (item_kind_for_content_field(field), item_text) {
+        (Some(kind), Some(text)) if !text.is_empty() => Some(item_hash(kind, text)),
+        _ => None,
+    }
+}
+
 fn canonical_text(text: &str) -> String {
     let trimmed = text.trim();
     let nfc = normalize_nfc(trimmed);
     nfc.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-#[cfg(target_os = "macos")]
 fn normalize_nfc(input: &str) -> String {
-    use std::ffi::c_void;
-    use std::ptr;
-
-    type CFIndex = isize;
-    type CFAllocatorRef = *const c_void;
-    type CFStringRef = *const c_void;
-    type CFMutableStringRef = *mut c_void;
-    type CFStringNormalizationForm = CFIndex;
-
-    #[repr(C)]
-    struct CFRange {
-        location: CFIndex,
-        length: CFIndex,
-    }
-
-    #[link(name = "CoreFoundation", kind = "framework")]
-    extern "C" {
-        fn CFStringCreateMutable(
-            alloc: CFAllocatorRef,
-            max_length: CFIndex,
-        ) -> CFMutableStringRef;
-        fn CFStringAppendCharacters(
-            the_string: CFMutableStringRef,
-            chars: *const u16,
-            num_chars: CFIndex,
-        );
-        fn CFStringNormalize(
-            the_string: CFMutableStringRef,
-            the_form: CFStringNormalizationForm,
-        );
-        fn CFStringGetLength(the_string: CFStringRef) -> CFIndex;
-        fn CFStringGetCharacters(
-            the_string: CFStringRef,
-            range: CFRange,
-            buffer: *mut u16,
-        );
-        fn CFRelease(cf: *const c_void);
-    }
-
-    if input.is_empty() {
-        return String::new();
-    }
-
-    let utf16 = input.encode_utf16().collect::<Vec<_>>();
-
-    // SAFETY: CoreFoundation copies the UTF-16 buffer into a mutable CFString,
-    // normalizes it in place, then copies the normalized contents into a Rust
-    // Vec before the CF object is released.
-    unsafe {
-        let cf_string = CFStringCreateMutable(ptr::null(), 0);
-        if cf_string.is_null() {
-            return input.to_string();
-        }
-
-        CFStringAppendCharacters(cf_string, utf16.as_ptr(), utf16.len() as CFIndex);
-        CFStringNormalize(cf_string, 2);
-
-        let len = CFStringGetLength(cf_string as CFStringRef);
-        let mut buffer = vec![0_u16; len as usize];
-        CFStringGetCharacters(
-            cf_string as CFStringRef,
-            CFRange {
-                location: 0,
-                length: len,
-            },
-            buffer.as_mut_ptr(),
-        );
-        CFRelease(cf_string as *const c_void);
-
-        String::from_utf16(&buffer).unwrap_or_else(|_| input.to_string())
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn normalize_nfc(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if matches!(chars.peek(), Some('\u{0301}')) {
-            if let Some(composed) = compose_acute(ch) {
-                let _ = chars.next();
-                output.push(composed);
-                continue;
-            }
-        }
-        output.push(ch);
-    }
-    output
-}
-
-#[cfg(not(target_os = "macos"))]
-fn compose_acute(previous: char) -> Option<char> {
-    match previous {
-        'a' => Some('á'),
-        'A' => Some('Á'),
-        'e' => Some('é'),
-        'E' => Some('É'),
-        'i' => Some('í'),
-        'I' => Some('Í'),
-        'o' => Some('ó'),
-        'O' => Some('Ó'),
-        'u' => Some('ú'),
-        'U' => Some('Ú'),
-        'y' => Some('ý'),
-        'Y' => Some('Ý'),
-        _ => None,
-    }
+    unicode_normalization::UnicodeNormalization::nfc(input).collect::<String>()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{item_hash, ItemKind};
+    use super::{item_hash, item_kind_for_content_field, maybe_item_hash_for_field, ItemKind};
 
     #[test]
     fn canonicalization_basic_ascii() {
@@ -193,5 +111,57 @@ mod tests {
         let first = item_hash(ItemKind::Risk, "Procurement risk?");
         let second = item_hash(ItemKind::Risk, "Procurement risk?");
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn item_hash_is_stable_for_combining_marks() {
+        assert_eq!(
+            item_hash(ItemKind::Risk, "e\u{0301}"),
+            item_hash(ItemKind::Risk, "é")
+        );
+    }
+
+    #[test]
+    fn item_hash_is_stable_for_other_combining_marks() {
+        assert_eq!(
+            item_hash(ItemKind::Risk, "a\u{0308}"),
+            item_hash(ItemKind::Risk, "ä")
+        );
+    }
+
+    #[test]
+    fn item_kind_for_content_field_known_fields_return_kind() {
+        assert_eq!(item_kind_for_content_field("risks"), Some(ItemKind::Risk));
+        assert_eq!(
+            item_kind_for_content_field("recentWins"),
+            Some(ItemKind::Win)
+        );
+    }
+
+    #[test]
+    fn item_kind_for_content_field_unknown_field_returns_none() {
+        assert_eq!(item_kind_for_content_field("signal_id"), None);
+    }
+
+    #[test]
+    fn maybe_item_hash_for_field_risks_with_text() {
+        let text = "ARR at risk";
+        assert_eq!(
+            maybe_item_hash_for_field("risks", Some(text)),
+            Some(item_hash(ItemKind::Risk, text))
+        );
+    }
+
+    #[test]
+    fn maybe_item_hash_for_field_unknown_field_returns_none() {
+        assert_eq!(
+            maybe_item_hash_for_field("accountSignal", Some("opaque-id")),
+            None
+        );
+    }
+
+    #[test]
+    fn maybe_item_hash_for_field_no_text_returns_none() {
+        assert_eq!(maybe_item_hash_for_field("risks", None), None);
     }
 }

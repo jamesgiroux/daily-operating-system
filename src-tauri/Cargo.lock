@@ -1158,6 +1158,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test",
  "trybuild",
+ "unicode-normalization",
  "url",
  "uuid",
  "walkdir",

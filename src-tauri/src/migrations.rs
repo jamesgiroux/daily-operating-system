@@ -595,6 +595,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 126,
         sql: include_str!("migrations/125_suppression_remediation.sql"),
     },
+    // DOS-308: durable operator audit for malformed suppression decisions.
+    Migration {
+        version: 127,
+        sql: include_str!("migrations/126_suppression_malformed_log.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -1020,6 +1025,38 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
     if pending.is_empty() {
         verify_required_schema(conn)?;
         return Ok(0);
+    }
+
+    // DOS-308: structural quarantine gate. Forward migrations in DOS-7
+    // territory require the suppression quarantine to be fully remediated.
+    let highest_pending = pending.iter().map(|m| m.version).max().unwrap_or(0);
+    if highest_pending >= 126 {
+        let quarantine_exists: bool = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master \
+                 WHERE type = 'table' AND name = 'suppression_tombstones_quarantine'",
+                [],
+                |row| row.get::<_, i64>(0).map(|count| count > 0),
+            )
+            .map_err(|e| format!("quarantine gate check: {e}"))?;
+
+        if quarantine_exists {
+            let quarantine_count: i64 = conn
+                .query_row("SELECT count(*) FROM suppression_tombstones_quarantine", [], |row| {
+                    row.get(0)
+                })
+                .map_err(|e| format!("quarantine gate count: {e}"))?;
+
+            if quarantine_count > 0 {
+                return Err(format!(
+                    "DOS-308 quarantine gate: refusing to apply migration >= 126 while {} \
+                     unremediated malformed suppression record(s) remain. Run \
+                     scripts/remediate_suppression_tombstones.sh to resolve, then re-run \
+                     migrations.",
+                    quarantine_count
+                ));
+            }
+        }
     }
 
     // Backup before applying any migrations
