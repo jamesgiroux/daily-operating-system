@@ -207,18 +207,28 @@ pub fn purge_aged_emails(db: &ActionDb, days: i64) -> Result<usize, DbError> {
         // purge. Run BEFORE the DELETE so we can still join against
         // `emails` to identify which email_ids are aging out.
         if claims_table_present {
+            // L2 cycle-6 fix #1: restrict the UPDATE to rows whose
+            // subject_ref is valid JSON BEFORE evaluating
+            // json_extract — SQLite's WHERE-clause AND chain doesn't
+            // reliably short-circuit, so a malformed historical
+            // subject_ref would otherwise raise "malformed JSON"
+            // mid-purge and roll the whole transaction back. The
+            // valid-rows subquery materializes the safe set first.
             conn.execute(
                 "UPDATE intelligence_claims \
                  SET claim_state = 'withdrawn', \
                      retraction_reason = coalesce(retraction_reason, 'subject_purged') \
-                 WHERE lower(json_extract(subject_ref, '$.kind')) = 'email' \
-                   AND claim_state IN ('active', 'tombstoned', 'dormant') \
-                   AND json_valid(subject_ref) = 1 \
-                   AND json_extract(subject_ref, '$.id') IN ( \
-                       SELECT email_id FROM emails \
-                       WHERE resolved_at IS NOT NULL \
-                         AND resolved_at < datetime('now', ?1) \
-                   )",
+                 WHERE id IN ( \
+                     SELECT ic.id FROM intelligence_claims ic \
+                     WHERE json_valid(ic.subject_ref) = 1 \
+                       AND ic.claim_state IN ('active', 'tombstoned', 'dormant') \
+                       AND lower(json_extract(ic.subject_ref, '$.kind')) = 'email' \
+                       AND json_extract(ic.subject_ref, '$.id') IN ( \
+                           SELECT email_id FROM emails \
+                           WHERE resolved_at IS NOT NULL \
+                             AND resolved_at < datetime('now', ?1) \
+                       ) \
+                 )",
                 params![cutoff],
             )
             .map_err(|e| {
@@ -559,15 +569,22 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
                     // committed stale Email tombstones after the
                     // source rows were gone.
                     if table_exists(tx, "intelligence_claims") {
+                        // L2 cycle-6 fix #1: filter via subquery so
+                        // json_extract is only evaluated on rows
+                        // whose subject_ref is valid JSON. See
+                        // purge_aged_emails for the same pattern.
                         tx.conn_ref().execute(
                             "UPDATE intelligence_claims \
                              SET claim_state = 'withdrawn', \
                                  retraction_reason = coalesce(retraction_reason, 'subject_purged') \
-                             WHERE lower(json_extract(subject_ref, '$.kind')) = 'email' \
-                               AND claim_state IN ('active', 'tombstoned', 'dormant') \
-                               AND json_valid(subject_ref) = 1 \
-                               AND json_extract(subject_ref, '$.id') IN \
-                                   (SELECT email_id FROM emails)",
+                             WHERE id IN ( \
+                                 SELECT ic.id FROM intelligence_claims ic \
+                                 WHERE json_valid(ic.subject_ref) = 1 \
+                                   AND ic.claim_state IN ('active', 'tombstoned', 'dormant') \
+                                   AND lower(json_extract(ic.subject_ref, '$.kind')) = 'email' \
+                                   AND json_extract(ic.subject_ref, '$.id') IN \
+                                       (SELECT email_id FROM emails) \
+                             )",
                             [],
                         )
                         .map_err(|e| format!("withdraw email claims before purge failed: {e}"))?;
@@ -971,6 +988,74 @@ mod tests {
             em2_state, "tombstoned",
             "claim for the surviving email must remain tombstoned"
         );
+    }
+
+    /// L2 cycle-6 fix #1: a malformed historical `subject_ref` (not
+    /// valid JSON) must NOT abort the cascade. The previous WHERE
+    /// shape evaluated `json_extract(subject_ref, '$.kind')` before
+    /// `json_valid(subject_ref) = 1` so SQLite raised "malformed
+    /// JSON" mid-purge and rolled back the whole transaction. The
+    /// fix funnels json_extract through a subquery that filters on
+    /// json_valid first.
+    #[test]
+    fn purge_aged_emails_skips_malformed_subject_ref_without_aborting() {
+        let db = test_db();
+
+        // Aged resolved email → eligible for purge.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO emails (email_id, resolved_at, received_at) \
+                 VALUES ('em-purge', datetime('now', '-90 days'), datetime('now', '-90 days'))",
+                [],
+            )
+            .unwrap();
+
+        // Seed a valid Email-subject claim AND a malformed-JSON claim.
+        // dos7-allowed: cycle-6 regression-test seed
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, \
+                  claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity) \
+                 VALUES \
+                 ('claim-valid', '{\"kind\":\"Email\",\"id\":\"em-purge\"}', 'email_dismissed', \
+                  'commitment', 'reply by friday', 'k-v', 'h-v', 'user', 'user_dismissal', \
+                  '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', '{}', \
+                  'tombstoned', 'dormant', 'user_removal', 'state', 'internal'), \
+                 ('claim-malformed', 'this is not json', 'email_dismissed', \
+                  'commitment', 'orphan', 'k-m', 'h-m', 'user', 'user_dismissal', \
+                  '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', '{}', \
+                  'tombstoned', 'dormant', 'user_removal', 'state', 'internal')",
+                [],
+            )
+            .unwrap();
+
+        let purged = purge_aged_emails(&db, 60)
+            .expect("malformed subject_ref must NOT abort the cascade");
+        assert_eq!(purged, 1);
+
+        // Valid claim was withdrawn.
+        let valid_state: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_state FROM intelligence_claims WHERE id = 'claim-valid'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(valid_state, "withdrawn");
+
+        // Malformed claim was untouched (skipped by the json_valid filter).
+        let malformed_state: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_state FROM intelligence_claims WHERE id = 'claim-malformed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(malformed_state, "tombstoned");
     }
 
     #[test]

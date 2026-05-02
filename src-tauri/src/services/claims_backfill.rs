@@ -277,7 +277,22 @@ pub fn backfill_dismissed_items_from_workspace(
                     escape_json_str(&item.content),
                     escape_json_str(&item.dismissed_at)
                 );
-                let claim_id = format!("m9-{}-{}", subject_id, sanitize_id_segment(&item.field));
+                // L2 cycle-6 fix #2: include a stable hash of the
+                // dismissed item content in the claim_id so multiple
+                // dismissedItems in the same field don't collide on
+                // the PK. Previous shape `m9-{subject}-{field}` would
+                // PK-conflict on the second item in a field, aborting
+                // the entire JSON-blob backfill.
+                let item_hash_seed = crate::intelligence::canonicalization::item_hash(
+                    crate::intelligence::canonicalization::ItemKind::_Reserved,
+                    &item.content,
+                );
+                let claim_id = format!(
+                    "m9-{}-{}-{}",
+                    subject_id,
+                    sanitize_id_segment(&item.field),
+                    &item_hash_seed[..16.min(item_hash_seed.len())],
+                );
 
                 db.conn_ref()
                     .execute(
@@ -1268,6 +1283,77 @@ mod tests {
         assert_eq!(claim_type, "dismissed_item");
         assert_eq!(field_path, "risks");
         assert_eq!(text, "Risk that user dismissed");
+    }
+
+    /// L2 cycle-6 fix #2: multiple dismissedItems in the SAME field
+    /// must not cause an m9 PK collision. The original `m9-{subject}-
+    /// {field}` shape collided on the second item, aborting the
+    /// JSON-blob backfill (and the entire cutover). Cycle-6 fix
+    /// includes a content-hash suffix so each item gets a unique
+    /// claim_id.
+    #[test]
+    fn multiple_dismissed_items_in_same_field_get_unique_m9_claim_ids() {
+        let workspace = tempfile::tempdir().unwrap();
+        // Two dismissedItems in the SAME field 'risks'.
+        let body = serde_json::json!({
+            "version": 4,
+            "entityId": "acct-multi",
+            "entityType": "account",
+            "enrichedAt": "2026-04-01T00:00:00Z",
+            "sourceFileCount": 0,
+            "dismissedItems": [
+                {
+                    "field": "risks",
+                    "content": "First dismissed risk",
+                    "dismissedAt": "2026-04-15T00:00:00Z"
+                },
+                {
+                    "field": "risks",
+                    "content": "Second dismissed risk",
+                    "dismissedAt": "2026-04-16T00:00:00Z"
+                },
+                {
+                    "field": "risks",
+                    "content": "Third dismissed risk",
+                    "dismissedAt": "2026-04-17T00:00:00Z"
+                }
+            ]
+        });
+        write_intel_json(
+            workspace.path(),
+            "Accounts",
+            "acct-multi",
+            &serde_json::to_string_pretty(&body).unwrap(),
+        );
+
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let report =
+            backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path())
+                .expect("3 items in same field must not PK-collide");
+        assert_eq!(report.items_observed, 3);
+        assert_eq!(
+            report.claims_inserted, 3,
+            "all 3 same-field dismissed items must persist"
+        );
+
+        // Each row got a unique claim_id.
+        let distinct_ids: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(DISTINCT id) FROM intelligence_claims \
+                 WHERE id LIKE 'm9-acct-multi-%' AND field_path = 'risks'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(distinct_ids, 3);
     }
 
     #[test]
