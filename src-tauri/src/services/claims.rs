@@ -137,7 +137,7 @@ fn commit_lock_for(key: CommitKey) -> Arc<Mutex<()>> {
 
 /// ADR-0113 section 8 dedup_key: content hash + compact subject identity +
 /// claim type + field path. `thread_id` is deliberately excluded.
-fn compute_dedup_key(
+pub(crate) fn compute_dedup_key(
     item_hash: &str,
     subject_ref_compact: &str,
     claim_type: &str,
@@ -152,14 +152,156 @@ fn compute_dedup_key(
     )
 }
 
-/// DOS-280 canonicalization stub. D2 calls this in the write path; full
-/// DOS-280 lands separately.
-fn canonicalize_for_dos280(text: &str) -> String {
-    text.to_string()
+/// L2 cycle-1 fix #6: light canonicalization that catches the most
+/// common drift between byte-different claim texts that mean the same
+/// thing — trailing whitespace, internal whitespace runs (tab/space
+/// mixes from different paste sources), and case variation.
+///
+/// Full DOS-280 canonicalization (Unicode NFC, punctuation folding,
+/// stopword normalization, etc.) lands separately. The DOS-7 substrate
+/// only needs enough canonicalization to make `same-meaning merge`
+/// (commit_claim's de-dupe-via-corroboration branch) catch the obvious
+/// repeats that legacy data and AI re-runs produce in practice.
+pub(crate) fn canonicalize_for_dos280(text: &str) -> String {
+    let trimmed = text.trim();
+    let collapsed: String = trimmed
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    collapsed.to_lowercase()
 }
 
 fn compact_subject_ref(value: &serde_json::Value) -> Result<String, ClaimError> {
     Ok(serde_json::to_string(value)?)
+}
+
+/// Subject kind label used in the `subject_ref` JSON column for both
+/// runtime-written and SQL-backfilled tombstone claims. Returned in the
+/// canonical PascalCase form (e.g. `Account`, `Meeting`) that the
+/// backfill SQL writes via `json_object('kind', 'Account', ...)` and
+/// that production runtime callers serialize via the `SubjectRef` enum.
+fn subject_kind_label(subject: &SubjectRef) -> Option<&'static str> {
+    match subject {
+        SubjectRef::Account { .. } => Some("Account"),
+        SubjectRef::Meeting { .. } => Some("Meeting"),
+        SubjectRef::Person { .. } => Some("Person"),
+        SubjectRef::Project { .. } => Some("Project"),
+        SubjectRef::Multi(_) | SubjectRef::Global => None,
+    }
+}
+
+fn subject_id_for_lookup(subject: &SubjectRef) -> Option<&str> {
+    match subject {
+        SubjectRef::Account { id }
+        | SubjectRef::Meeting { id }
+        | SubjectRef::Person { id }
+        | SubjectRef::Project { id } => Some(id.as_str()),
+        SubjectRef::Multi(_) | SubjectRef::Global => None,
+    }
+}
+
+/// PRE-GATE: returns true if a tombstone claim already shadows the
+/// proposed (subject, claim_type, field_path, content) tuple.
+///
+/// Matches by semantic identity, not by `dedup_key`. The runtime and the
+/// 8 SQL backfill mechanisms each compute `dedup_key` differently, so
+/// matching by `dedup_key` would let pre-DOS-7 backfilled tombstones
+/// slip past the gate and resurrect on the next AI enrichment pass.
+/// Per L2 cycle-1 finding #2: PRE-GATE matches the same canonical
+/// subject/claim/field/hash fields used by every backfill.
+///
+/// Three tiers, evaluated in order:
+///   1. **Hash tier** — `item_hash` equals the proposal's computed hash.
+///      Catches every claim where backfill hash and runtime hash use the
+///      same algorithm (i.e., post-DOS-7 writes; legacy DOS-308-shaped
+///      hashes also coincide).
+///   2. **Exact text tier** — `text` equals the proposal's canonical
+///      text. Catches backfill rows that stored the legacy `item_key`
+///      verbatim into `text`, when the user dismisses by re-typing the
+///      same text the AI surfaces.
+///   3. **Keyless tier** — `text = '<keyless>'`. Catches backfilled
+///      mechanism-1 keyless suppressions (legacy item_key=NULL,
+///      item_hash=NULL): once the user dismissed "everything in this
+///      field," any subsequent claim in that (subject, claim_type,
+///      field) tuple is blocked.
+///
+/// `subject_ref` is matched via `json_extract` on `kind` and `id` so the
+/// query is order-agnostic between runtime-serialized JSON
+/// (alphabetical, BTreeMap) and backfill-serialized JSON
+/// (insertion-order from `json_object()`).
+fn pre_gate_blocking_tombstone_exists(
+    conn: &rusqlite::Connection,
+    subject: &SubjectRef,
+    claim_type: &str,
+    field_path: Option<&str>,
+    item_hash_value: &str,
+    canonical_text: &str,
+    now: &str,
+) -> Result<bool, ClaimError> {
+    let Some(kind) = subject_kind_label(subject) else {
+        // Multi/Global subjects don't participate in single-tombstone
+        // suppression. Fall through to the active-write path.
+        return Ok(false);
+    };
+    let Some(id) = subject_id_for_lookup(subject) else {
+        return Ok(false);
+    };
+
+    // Three independent tier queries. Each is cheap (indexed on
+    // claim_state + claim_type) and bounded by the per-key COMMIT_LOCKS
+    // serializing concurrent commits for the same identity tuple.
+    const TIER_SQL: &str = "\
+        SELECT 1 \
+        FROM intelligence_claims \
+        WHERE claim_state = 'tombstoned' \
+          AND claim_type = ?1 \
+          AND coalesce(field_path, '') = coalesce(?2, '') \
+          AND lower(json_extract(subject_ref, '$.kind')) = lower(?3) \
+          AND json_extract(subject_ref, '$.id') = ?4 \
+          AND (expires_at IS NULL OR expires_at > ?5) \
+          AND TIER_PREDICATE \
+        LIMIT 1";
+
+    let hit = |predicate: &str, params: &[&dyn rusqlite::ToSql]| -> Result<bool, ClaimError> {
+        let sql = TIER_SQL.replace("TIER_PREDICATE", predicate);
+        let mut stmt = conn.prepare(&sql)?;
+        let mut rows = stmt.query(params)?;
+        Ok(rows.next()?.is_some())
+    };
+
+    let field = field_path.unwrap_or("");
+
+    // Hash tier
+    if !item_hash_value.is_empty()
+        && hit(
+            "item_hash IS NOT NULL AND item_hash <> '' AND item_hash = ?6",
+            &[&claim_type, &field, &kind, &id, &now, &item_hash_value],
+        )?
+    {
+        return Ok(true);
+    }
+
+    // Exact text tier — NOCASE so backfilled tombstones with the
+    // legacy mixed-case `text` column still match runtime
+    // canonical_text (which is lowercased by canonicalize_for_dos280).
+    if !canonical_text.is_empty()
+        && hit(
+            "text = ?6 COLLATE NOCASE",
+            &[&claim_type, &field, &kind, &id, &now, &canonical_text],
+        )?
+    {
+        return Ok(true);
+    }
+
+    // Keyless field-wide tier
+    if hit(
+        "text = '<keyless>'",
+        &[&claim_type, &field, &kind, &id, &now],
+    )? {
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 fn compact_subject_ref_str(subject_ref: &str) -> Result<String, ClaimError> {
@@ -219,7 +361,7 @@ fn subject_id(value: &serde_json::Value) -> Result<String, ClaimError> {
         .ok_or_else(|| ClaimError::SubjectRef("missing id/entity_id".to_string()))
 }
 
-fn item_kind_for_claim_type(claim_type: &str) -> ItemKind {
+pub(crate) fn item_kind_for_claim_type(claim_type: &str) -> ItemKind {
     match claim_type {
         "risk" => ItemKind::Risk,
         "win" => ItemKind::Win,
@@ -347,6 +489,143 @@ fn read_claim_row(row: &rusqlite::Row<'_>) -> Result<IntelligenceClaim, ClaimErr
     })
 }
 
+/// L2 cycle-1 fix #6: load the single ACTIVE claim with this exact
+/// dedup_key, if any. Used by commit_claim's same-meaning merge branch
+/// to detect a re-commit of the same logical content and route it
+/// through corroboration instead of inserting a duplicate active row.
+fn load_active_claim_by_dedup_key(
+    conn: &rusqlite::Connection,
+    dedup_key: &str,
+) -> Result<Option<IntelligenceClaim>, ClaimError> {
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS} FROM intelligence_claims \
+         WHERE dedup_key = ?1 AND claim_state = 'active' \
+         ORDER BY created_at DESC LIMIT 1"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(params![dedup_key])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(read_claim_row(row)?))
+    } else {
+        Ok(None)
+    }
+}
+
+/// L2 cycle-1 fix #6: load any ACTIVE claim that contradicts the
+/// proposal — same (subject_ref, claim_type, field_path) but DIFFERENT
+/// canonical text. Used by commit_claim's contradiction-fork branch.
+/// Returns the most recently created contradicting claim (one fork
+/// per commit; subsequent contradictions chain off the new claim).
+///
+/// Skips active claims whose own `dedup_key` has a matching tombstone
+/// in the table — those are "effectively retracted" by a user
+/// dismissal even though their `claim_state` column hasn't been
+/// transitioned (DOS-7 keeps active rows append-only; tombstones
+/// shadow them via PRE-GATE on re-commit). Without this skip, a
+/// paraphrase commit after the user dismissed the original would
+/// fork a contradiction against a claim the user has already
+/// retracted.
+fn load_active_contradicting_claim(
+    conn: &rusqlite::Connection,
+    subject_ref_compact: &str,
+    claim_type: &str,
+    field_path: Option<&str>,
+    canonical_text: &str,
+) -> Result<Option<IntelligenceClaim>, ClaimError> {
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS} FROM intelligence_claims active \
+         WHERE active.subject_ref = ?1 \
+           AND active.claim_type = ?2 \
+           AND coalesce(active.field_path, '') = coalesce(?3, '') \
+           AND active.claim_state = 'active' \
+           AND active.text <> ?4 \
+           AND NOT EXISTS ( \
+               SELECT 1 FROM intelligence_claims tombstone \
+               WHERE tombstone.dedup_key = active.dedup_key \
+                 AND tombstone.claim_state = 'tombstoned' \
+           ) \
+         ORDER BY active.created_at DESC LIMIT 1"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(params![
+        subject_ref_compact,
+        claim_type,
+        field_path,
+        canonical_text
+    ])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(read_claim_row(row)?))
+    } else {
+        Ok(None)
+    }
+}
+
+/// L2 cycle-1 fix #6: in-transaction corroboration helper. Same body
+/// as `record_corroboration` but reuses the caller's transaction so
+/// commit_claim's same-meaning merge branch composes atomically with
+/// the surrounding write. The public `record_corroboration` keeps its
+/// own-transaction shape for direct callers (D5+ source-of-truth flow).
+fn corroborate_in_tx(
+    tx: &ActionDb,
+    claim_id: &str,
+    data_source: &str,
+    source_asof: Option<&str>,
+    source_mechanism: Option<&str>,
+    now: &str,
+) -> Result<String, ClaimError> {
+    let existing: Option<(String, f64, i64)> = tx
+        .conn_ref()
+        .query_row(
+            "SELECT id, strength, reinforcement_count
+             FROM claim_corroborations
+             WHERE claim_id = ?1 AND data_source = ?2",
+            params![claim_id, data_source],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+
+    let id = match existing {
+        Some((id, strength, count)) => {
+            let numerator = (count as f64 + 2.0).ln();
+            let denominator = (count as f64 + 1.0).ln();
+            let increment = if denominator > 0.0 {
+                numerator / denominator
+            } else {
+                1.0
+            };
+            let new_strength = (strength + increment).min(1.0);
+            tx.conn_ref().execute(
+                "UPDATE claim_corroborations
+                 SET strength = ?1,
+                     reinforcement_count = reinforcement_count + 1,
+                     last_reinforced_at = ?2
+                 WHERE id = ?3",
+                params![new_strength, &now, &id],
+            )?;
+            id
+        }
+        None => {
+            let id = uuid::Uuid::new_v4().to_string();
+            tx.conn_ref().execute(
+                "INSERT INTO claim_corroborations (
+                    id, claim_id, data_source, source_asof, source_mechanism,
+                    strength, reinforcement_count, last_reinforced_at, created_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 0.5, 1, ?6, ?6)",
+                params![
+                    &id,
+                    claim_id,
+                    data_source,
+                    source_asof,
+                    source_mechanism,
+                    &now
+                ],
+            )?;
+            id
+        }
+    };
+    Ok(id)
+}
+
 fn load_claims_where(
     db: &ActionDb,
     subject_ref: &str,
@@ -416,27 +695,110 @@ pub fn commit_claim(
 
     with_claim_transaction(db, |tx| {
         let now = ctx.clock.now().to_rfc3339();
-        let tombstone_count: i64 = tx.conn_ref().query_row(
-            "SELECT count(*)
-             FROM intelligence_claims
-             WHERE dedup_key = ?1
-               AND claim_state = 'tombstoned'
-               AND (expires_at IS NULL OR expires_at > ?2)",
-            params![&dedup_key, &now],
-            |row| row.get(0),
-        )?;
-        if tombstone_count > 0 && proposal.tombstone.is_none() {
+        if proposal.tombstone.is_none()
+            && pre_gate_blocking_tombstone_exists(
+                tx.conn_ref(),
+                &subject,
+                &proposal.claim_type,
+                proposal.field_path.as_deref(),
+                &computed_hash,
+                &canonical_text,
+                &now,
+            )?
+        {
             return Err(ClaimError::TombstonedPreGate);
         }
 
-        // TODO(D2-followup): Same-meaning merge. If an active claim with this
-        // dedup_key exists, route through record_corroboration and return
-        // CommittedClaim::Reinforced instead of inserting a duplicate row.
+        // L2 cycle-1 fix #6: same-meaning merge. If an active claim
+        // already exists with this dedup_key (same subject + claim_type
+        // + field + canonical text + hash), route the new evidence
+        // through corroboration instead of inserting a duplicate row.
+        // Tombstone proposals always insert (they intentionally
+        // shadow the active claim).
+        if proposal.tombstone.is_none() {
+            if let Some(existing) =
+                load_active_claim_by_dedup_key(tx.conn_ref(), &dedup_key)?
+            {
+                let corroboration_id = corroborate_in_tx(
+                    tx,
+                    &existing.id,
+                    &proposal.data_source,
+                    proposal.source_asof.as_deref(),
+                    Some("same_meaning_merge"),
+                    &now,
+                )?;
+                tx.bump_for_subject(&subject)?;
+                return Ok(CommittedClaim::Reinforced {
+                    claim: existing,
+                    corroboration_id,
+                });
+            }
 
-        // TODO(D2-followup): Contradiction detection. If an active claim exists
-        // with the same (subject_ref, claim_type, field_path/topic_key) and a
-        // different canonical text with aggregate strength >= 0.4, insert the
-        // new claim plus claim_contradictions and return CommittedClaim::Forked.
+            // L2 cycle-1 fix #6: contradiction detection. If an active
+            // claim exists with the SAME (subject_ref, claim_type,
+            // field_path) but a DIFFERENT canonical text, the
+            // proposal contradicts the existing assertion. Insert the
+            // new claim AND a claim_contradictions edge, then return
+            // Forked. Both claims remain active until the user (or a
+            // reconciliation pass) resolves the fork.
+            if let Some(primary) = load_active_contradicting_claim(
+                tx.conn_ref(),
+                &subject_ref_compact,
+                &proposal.claim_type,
+                proposal.field_path.as_deref(),
+                &canonical_text,
+            )? {
+                let new_id = uuid::Uuid::new_v4().to_string();
+                let contradicting = IntelligenceClaim {
+                    id: new_id.clone(),
+                    subject_ref: subject_ref_compact.clone(),
+                    claim_type: proposal.claim_type.clone(),
+                    field_path: proposal.field_path.clone(),
+                    topic_key: proposal.topic_key.clone(),
+                    text: canonical_text.clone(),
+                    dedup_key: dedup_key.clone(),
+                    item_hash: Some(computed_hash.clone()),
+                    actor: proposal.actor.clone(),
+                    data_source: proposal.data_source.clone(),
+                    source_ref: proposal.source_ref.clone(),
+                    source_asof: proposal.source_asof.clone(),
+                    observed_at: proposal.observed_at.clone(),
+                    created_at: now.clone(),
+                    provenance_json: proposal.provenance_json.clone(),
+                    metadata_json: proposal.metadata_json.clone(),
+                    claim_state: ClaimState::Active,
+                    surfacing_state: SurfacingState::Active,
+                    demotion_reason: None,
+                    reactivated_at: None,
+                    retraction_reason: None,
+                    expires_at: None,
+                    superseded_by: None,
+                    trust_score: None,
+                    trust_computed_at: None,
+                    trust_version: None,
+                    thread_id: proposal.thread_id.clone(),
+                    temporal_scope: proposal.temporal_scope.clone(),
+                    sensitivity: proposal.sensitivity.clone(),
+                };
+                insert_claim_row(tx, &contradicting)?;
+
+                let contradiction_id = uuid::Uuid::new_v4().to_string();
+                tx.conn_ref().execute(
+                    "INSERT INTO claim_contradictions \
+                     (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at) \
+                     VALUES (?1, ?2, ?3, 'contradiction', ?4)",
+                    params![&contradiction_id, &primary.id, &new_id, &now],
+                )?;
+
+                tx.bump_for_subject(&subject)?;
+
+                return Ok(CommittedClaim::Forked {
+                    primary_claim: primary,
+                    contradiction_id,
+                    new_claim_id: new_id,
+                });
+            }
+        }
 
         let id = uuid::Uuid::new_v4().to_string();
         let (claim_state, surfacing_state, retraction_reason, expires_at) =
@@ -521,7 +883,7 @@ pub fn record_corroboration(
             )
             .optional()?;
 
-        match existing {
+        let result_id = match existing {
             Some((id, strength, count)) => {
                 let numerator = (count as f64 + 2.0).ln();
                 let denominator = (count as f64 + 1.0).ln();
@@ -539,7 +901,7 @@ pub fn record_corroboration(
                      WHERE id = ?3",
                     params![new_strength, &now, &id],
                 )?;
-                Ok(id)
+                id
             }
             None => {
                 let id = uuid::Uuid::new_v4().to_string();
@@ -557,9 +919,17 @@ pub fn record_corroboration(
                         &now
                     ],
                 )?;
-                Ok(id)
+                id
             }
-        }
+        };
+
+        // L2 cycle-1 fix #5: bump per-entity claim invalidation so trust /
+        // surfacing readers keyed on per-entity claim_version observe the
+        // strength change. The bump runs in the same transaction as the
+        // corroboration write so observers either see both or neither.
+        bump_invalidation_for_claim_id(tx, claim_id)?;
+
+        Ok(result_id)
     })
 }
 
@@ -598,8 +968,70 @@ pub fn reconcile_contradiction(
                 contradiction_id
             ],
         )?;
+
+        // L2 cycle-1 fix #5: a reconciliation may flip claim_state on the
+        // winner/loser sides (handled by callers) and at minimum changes
+        // the contradiction record observed by trust-band readers. Bump
+        // per-entity invalidation for the contradiction's primary AND
+        // contradicting claim subjects so any reader keyed on per-entity
+        // claim_version refreshes.
+        let (primary_claim_id, contradicting_claim_id): (String, String) = tx
+            .conn_ref()
+            .query_row(
+                "SELECT primary_claim_id, contradicting_claim_id \
+                 FROM claim_contradictions WHERE id = ?1",
+                params![contradiction_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+        // Resolve both claim IDs to subjects, then bump each unique
+        // subject exactly once. (Two claims on the same subject must
+        // not double-bump.)
+        let primary_subject = subject_for_claim_id(tx, &primary_claim_id)?;
+        let contradicting_subject = subject_for_claim_id(tx, &contradicting_claim_id)?;
+        tx.bump_for_subject(&primary_subject)?;
+        if contradicting_subject != primary_subject {
+            tx.bump_for_subject(&contradicting_subject)?;
+        }
+
         Ok(())
     })
+}
+
+/// Lookup a claim's `subject_ref` JSON column by primary key, parse it
+/// into a [`SubjectRef`], and bump the per-entity invalidation counter.
+/// Used by `record_corroboration` so that trust/surfacing readers keyed
+/// on per-entity `claim_version` observe the corroboration effect.
+fn bump_invalidation_for_claim_id(
+    tx: &ActionDb,
+    claim_id: &str,
+) -> Result<(), ClaimError> {
+    let subject = subject_for_claim_id(tx, claim_id)?;
+    tx.bump_for_subject(&subject)?;
+    Ok(())
+}
+
+/// Lookup a claim's `subject_ref` JSON column and parse it to
+/// [`SubjectRef`] without bumping. Used by `reconcile_contradiction`
+/// which needs to dedupe two subjects before bumping each unique one.
+fn subject_for_claim_id(
+    tx: &ActionDb,
+    claim_id: &str,
+) -> Result<SubjectRef, ClaimError> {
+    let subject_ref_json: String = tx
+        .conn_ref()
+        .query_row(
+            "SELECT subject_ref FROM intelligence_claims WHERE id = ?1",
+            params![claim_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                ClaimError::SubjectRef(format!("claim {claim_id} not found"))
+            }
+            other => ClaimError::Db(DbError::Sqlite(other)),
+        })?;
+    let value: serde_json::Value = serde_json::from_str(&subject_ref_json)?;
+    subject_ref_from_json(&value)
 }
 
 // ---------------------------------------------------------------------------
@@ -935,6 +1367,148 @@ mod tests {
         assert!(matches!(err, ClaimError::TombstonedPreGate));
     }
 
+    /// L2 cycle-1 regression: backfilled tombstone with a m1-style
+    /// `dedup_key` (entity_id without compact-JSON wrap, raw item_hash
+    /// passed through) must still block runtime resurrection. PRE-GATE
+    /// matches by per-tier (subject + claim_type + field + hash | text)
+    /// so the dedup_key shape divergence is no longer load-bearing.
+    fn seed_backfill_shaped_tombstone(db: &ActionDb, item_hash_value: &str, text: &str) {
+        // Mirror migration 130's m1 INSERT shape: subject_ref via
+        // json_object('kind', 'Account', 'id', X) (insertion-order JSON,
+        // not the runtime alphabetical form), and dedup_key built per
+        // the migration's idiosyncratic per-mechanism formula. The
+        // PRE-GATE must NOT key off this dedup_key.
+        // dos7-allowed: regression test seed for L2 cycle-1 finding #2
+        db.conn_ref().execute(
+            "INSERT INTO intelligence_claims \
+             (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+              actor, data_source, observed_at, created_at, provenance_json, \
+              claim_state, surfacing_state, retraction_reason, \
+              temporal_scope, sensitivity) \
+             VALUES (?1, ?2, 'risk', 'health.risk', ?3, ?4, ?5, \
+                     'system_backfill', 'legacy_dismissal', ?6, ?6, '{}', \
+                     'tombstoned', 'active', 'user_removal', \
+                     'state', 'internal')",
+            params![
+                "m1-fixture-1",
+                // Backfill shape: kind first, NOT alphabetical
+                r#"{"kind":"Account","id":"acct-1"}"#,
+                text,
+                // Mechanism-1 dedup_key shape (DIFFERENT from runtime).
+                format!(
+                    "{}:acct-1:risk:health.risk",
+                    if item_hash_value.is_empty() { text } else { item_hash_value }
+                ),
+                item_hash_value,
+                TS,
+            ],
+        )
+        .expect("seed backfill-shaped tombstone");
+    }
+
+    #[test]
+    fn pre_gate_blocks_resurrection_via_backfilled_hash_match() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        // Pre-compute the runtime hash for the proposal text and seed a
+        // backfill-shaped tombstone with that hash + a different
+        // (mechanism-1-style) dedup_key. The PRE-GATE must still block.
+        let canonical = canonicalize_for_dos280("Procurement blocked renewal");
+        let hash = item_hash(ItemKind::Risk, &canonical);
+        seed_backfill_shaped_tombstone(&db, &hash, "Procurement blocked renewal");
+
+        let err = commit_claim(&ctx, &db, proposal("Procurement blocked renewal"))
+            .expect_err("backfilled tombstone must block runtime resurrection (hash tier)");
+        assert!(matches!(err, ClaimError::TombstonedPreGate));
+    }
+
+    #[test]
+    fn pre_gate_blocks_resurrection_via_backfilled_exact_text_match() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        // Seed a backfill row with an EMPTY item_hash (legacy NULL → '')
+        // but a `text` column that matches the runtime canonical text.
+        // Hash tier won't fire; exact text tier must.
+        seed_backfill_shaped_tombstone(&db, "", "Procurement blocked renewal");
+
+        let err = commit_claim(&ctx, &db, proposal("Procurement blocked renewal"))
+            .expect_err("backfilled tombstone must block runtime resurrection (text tier)");
+        assert!(matches!(err, ClaimError::TombstonedPreGate));
+    }
+
+    #[test]
+    fn pre_gate_blocks_resurrection_via_backfilled_keyless_sentinel() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        // Mechanism-1 keyless: legacy item_key=NULL, item_hash=NULL →
+        // backfill writes text='<keyless>'. Any subsequent claim in
+        // (Account:acct-1, risk, health.risk) is suppressed.
+        seed_backfill_shaped_tombstone(&db, "", "<keyless>");
+
+        let err = commit_claim(&ctx, &db, proposal("Any new risk text"))
+            .expect_err("backfilled keyless tombstone must block runtime resurrection");
+        assert!(matches!(err, ClaimError::TombstonedPreGate));
+    }
+
+    #[test]
+    fn pre_gate_does_not_block_different_subject() {
+        let db = test_db();
+        seed_account(&db);
+        // Seed a tombstone for acct-1.
+        let canonical = canonicalize_for_dos280("Procurement blocked renewal");
+        let hash = item_hash(ItemKind::Risk, &canonical);
+        seed_backfill_shaped_tombstone(&db, &hash, "Procurement blocked renewal");
+
+        // Different subject (acct-2) must still commit successfully.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                params!["acct-2", "Account 2", TS],
+            )
+            .expect("seed acct-2");
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut other_subject = proposal("Procurement blocked renewal");
+        other_subject.subject_ref =
+            r#"{"kind":"account","id":"acct-2"}"#.to_string();
+        let result = commit_claim(&ctx, &db, other_subject);
+        assert!(
+            matches!(result, Ok(CommittedClaim::Inserted { .. })),
+            "different subject must not be blocked, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn pre_gate_does_not_block_different_claim_type() {
+        let db = test_db();
+        seed_account(&db);
+        // Seed a 'risk' tombstone.
+        let canonical = canonicalize_for_dos280("Procurement blocked renewal");
+        let hash = item_hash(ItemKind::Risk, &canonical);
+        seed_backfill_shaped_tombstone(&db, &hash, "Procurement blocked renewal");
+
+        // Same subject + content but different claim_type = 'win' must
+        // not be blocked by a 'risk' tombstone.
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut other_type = proposal("Procurement blocked renewal");
+        other_type.claim_type = "win".to_string();
+        let result = commit_claim(&ctx, &db, other_type);
+        assert!(
+            matches!(result, Ok(CommittedClaim::Inserted { .. })),
+            "different claim_type must not be blocked, got {result:?}"
+        );
+    }
+
     #[test]
     fn commit_claim_emits_per_entity_invalidation() {
         let db = test_db();
@@ -946,6 +1520,161 @@ mod tests {
         commit_claim(&ctx, &db, proposal("Budget risk increased")).unwrap();
 
         assert_eq!(read_account_claim_version(&db), before + 1);
+    }
+
+    /// L2 cycle-1 fix #5: record_corroboration must bump per-entity
+    /// claim_version so trust/surfacing readers refresh.
+    #[test]
+    fn record_corroboration_emits_per_entity_invalidation() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk for corroboration")).unwrap());
+        // commit_claim already bumped once.
+        let after_commit = read_account_claim_version(&db);
+
+        record_corroboration(&ctx, &db, &claim_id, "glean", Some(TS), Some("backfill")).unwrap();
+
+        assert_eq!(read_account_claim_version(&db), after_commit + 1);
+    }
+
+    /// L2 cycle-1 fix #5: reconcile_contradiction must bump per-entity
+    /// claim_version for both sides of the contradiction.
+    #[test]
+    fn reconcile_contradiction_emits_per_entity_invalidation() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        // First commit inserts the primary; second commit on the same
+        // subject + claim_type + field with DIFFERENT canonical text
+        // forks via fix #6's contradiction-detection branch and
+        // produces both the contradiction edge and the new claim id.
+        let primary_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Renewal risk: red")).unwrap());
+        let forked = commit_claim(&ctx, &db, proposal("Renewal risk: green")).unwrap();
+        let (contradiction_id, contradicting_id) = match forked {
+            CommittedClaim::Forked {
+                contradiction_id,
+                new_claim_id,
+                ..
+            } => (contradiction_id, new_claim_id),
+            other => panic!("expected fork from contradiction detection, got {other:?}"),
+        };
+        let _ = (primary_id, contradicting_id); // referenced via the
+                                                  // contradiction_id
+
+        let before = read_account_claim_version(&db);
+
+        reconcile_contradiction(
+            &ctx,
+            &db,
+            &contradiction_id,
+            ReconciliationKind::UserPickedWinner,
+            Some("user resolved"),
+            None,
+            None,
+        )
+        .unwrap();
+
+        // Both primary and contradicting share subject_ref acct-1 → one
+        // bump (the helper deduplicates via the if-equality guard).
+        assert_eq!(read_account_claim_version(&db), before + 1);
+    }
+
+    /// L2 cycle-1 fix #6: canonicalize_for_dos280 lowercases, trims,
+    /// and collapses internal whitespace runs.
+    #[test]
+    fn canonicalize_for_dos280_lowercases_trims_collapses_whitespace() {
+        assert_eq!(canonicalize_for_dos280("  ARR Risk\trenewal "), "arr risk renewal");
+        assert_eq!(
+            canonicalize_for_dos280("Procurement   Blocked\n\nRenewal"),
+            "procurement blocked renewal"
+        );
+        assert_eq!(canonicalize_for_dos280("already canonical"), "already canonical");
+    }
+
+    /// L2 cycle-1 fix #6: re-committing the same active claim's
+    /// canonical text with a different data_source routes through
+    /// corroboration and returns Reinforced — does NOT insert a
+    /// duplicate active row.
+    #[test]
+    fn commit_claim_same_meaning_merges_via_corroboration() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        // First commit: inserts the active claim.
+        let first_id = inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Procurement blocked renewal")).unwrap(),
+        );
+
+        // Second commit with SAME canonical text but different
+        // data_source → same-meaning merge.
+        let mut p2 = proposal("Procurement blocked renewal");
+        p2.data_source = "second_source".to_string();
+        let result = commit_claim(&ctx, &db, p2).unwrap();
+        match result {
+            CommittedClaim::Reinforced { claim, corroboration_id: _ } => {
+                assert_eq!(claim.id, first_id, "must reinforce existing claim, not insert new");
+            }
+            other => panic!("expected Reinforced, got {other:?}"),
+        }
+
+        // The intelligence_claims table still has exactly ONE active
+        // row for this dedup_key — no duplicate.
+        let active: Vec<_> = load_claims_active(&db, SUBJECT, Some("risk"))
+            .unwrap()
+            .into_iter()
+            .filter(|c| c.text == "procurement blocked renewal")
+            .collect();
+        assert_eq!(active.len(), 1, "exactly one active claim after merge");
+    }
+
+    /// L2 cycle-1 fix #6: committing different canonical text on the
+    /// same (subject, claim_type, field) forks via contradiction
+    /// detection — both claims remain active until reconciled.
+    #[test]
+    fn commit_claim_different_meaning_forks_via_contradiction_detection() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let primary_id = inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Renewal looks healthy")).unwrap(),
+        );
+        let result =
+            commit_claim(&ctx, &db, proposal("Renewal at risk due to procurement")).unwrap();
+        match result {
+            CommittedClaim::Forked {
+                primary_claim,
+                contradiction_id,
+                new_claim_id,
+            } => {
+                assert_eq!(primary_claim.id, primary_id);
+                assert_ne!(new_claim_id, primary_id);
+                // Verify the contradiction edge persists.
+                let edge_count: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT count(*) FROM claim_contradictions WHERE id = ?1",
+                        params![&contradiction_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(edge_count, 1, "contradiction edge must be persisted");
+            }
+            other => panic!("expected Forked, got {other:?}"),
+        }
+
+        // Both claims remain active.
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2, "both claims active until user reconciles");
     }
 
     #[test]

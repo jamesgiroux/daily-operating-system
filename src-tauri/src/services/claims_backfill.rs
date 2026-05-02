@@ -7,7 +7,7 @@
 //! that streams JSON rows. This module owns that pass.
 //!
 //! D3b-2 wires this into the cutover orchestration hook (drain workers
-//! → bump epoch → run SQL backfills → run THIS pass → reconcile →
+//! → bump epoch → run SQL backfills → rekey m1-m8 → run THIS pass → reconcile →
 //! resume).
 
 use std::path::Path;
@@ -15,7 +15,11 @@ use std::path::Path;
 use rusqlite::params;
 
 use crate::db::ActionDb;
+use crate::intelligence::canonicalization::item_hash;
 use crate::intelligence::io::{read_intelligence_json, IntelligenceJson};
+use crate::services::claims::{
+    canonicalize_for_dos280, compute_dedup_key, item_kind_for_claim_type,
+};
 use crate::services::context::ServiceContext;
 
 /// Result of a single workspace backfill pass.
@@ -29,6 +33,132 @@ pub struct DismissedItemBackfillReport {
     pub claims_inserted: usize,
     /// Per-entity-kind item counts for the walkthrough report.
     pub items_by_kind: std::collections::BTreeMap<String, usize>,
+}
+
+/// Report for the DOS-7 L2 rekey pass over SQL-backfilled m1-m8 claims.
+#[derive(Debug, Default, Clone)]
+pub struct RekeyReport {
+    pub rows_examined: usize,
+    pub rows_rewritten: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug)]
+struct RekeyRow {
+    id: String,
+    subject_ref: String,
+    claim_type: String,
+    field_path: Option<String>,
+    text: String,
+    dedup_key: String,
+    item_hash: Option<String>,
+}
+
+/// Recompute SQL-backfilled claim identity with the same helpers used by
+/// `commit_claim`.
+///
+/// Migration 130/131 rows keep their original assertion columns. This pass
+/// only updates the lifecycle/identity columns that the D4 lint allowlist
+/// permits here: `dedup_key` and `item_hash`.
+pub fn rekey_backfilled_claims_via_runtime_helpers(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<RekeyReport, String> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| format!("DOS-7 L2 rekey mutation gate: {e}"))?;
+
+    let conn = db.conn_ref();
+    let mut report = RekeyReport::default();
+    let mut rows = Vec::new();
+
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, subject_ref, claim_type, field_path, text, dedup_key, item_hash \
+                 FROM intelligence_claims \
+                 WHERE id GLOB 'm[1-8]-*' \
+                 ORDER BY id",
+            )
+            .map_err(|e| format!("DOS-7 L2 rekey select prepare failed: {e}"))?;
+
+        let mapped = stmt
+            .query_map([], |row| {
+                Ok(RekeyRow {
+                    id: row.get(0)?,
+                    subject_ref: row.get(1)?,
+                    claim_type: row.get(2)?,
+                    field_path: row.get(3)?,
+                    text: row.get(4)?,
+                    dedup_key: row.get(5)?,
+                    item_hash: row.get(6)?,
+                })
+            })
+            .map_err(|e| format!("DOS-7 L2 rekey query failed: {e}"))?;
+
+        for row in mapped {
+            match row {
+                Ok(row) => rows.push(row),
+                Err(e) => report.errors.push(format!("read m1-m8 claim row: {e}")),
+            }
+        }
+    }
+
+    for row in rows {
+        report.rows_examined += 1;
+
+        let result = runtime_identity_for_rekey(&row).and_then(|(next_dedup_key, next_hash)| {
+            if row.dedup_key == next_dedup_key
+                && row.item_hash.as_deref() == Some(next_hash.as_str())
+            {
+                return Ok(0);
+            }
+
+            conn.execute(
+                "UPDATE intelligence_claims \
+                 SET dedup_key = ?1, item_hash = ?2 \
+                 WHERE id = ?3",
+                params![&next_dedup_key, &next_hash, &row.id],
+            )
+            .map_err(|e| format!("update dedup_key/item_hash: {e}"))
+        });
+
+        match result {
+            Ok(0) => {}
+            Ok(_) => report.rows_rewritten += 1,
+            Err(e) => report.errors.push(format!("{}: {}", row.id, e)),
+        }
+    }
+
+    Ok(report)
+}
+
+fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String), String> {
+    let subject_value = serde_json::from_str::<serde_json::Value>(&row.subject_ref)
+        .map_err(|e| format!("subject_ref is not JSON: {e}"))?;
+
+    for key in ["kind", "id"] {
+        let value = subject_value
+            .get(key)
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        if value.is_none() {
+            return Err(format!("subject_ref missing non-empty {key}"));
+        }
+    }
+
+    let compact_subject_ref =
+        serde_json::to_string(&subject_value).map_err(|e| format!("compact subject_ref: {e}"))?;
+    let canonical_text = canonicalize_for_dos280(&row.text);
+    let next_hash = item_hash(item_kind_for_claim_type(&row.claim_type), &canonical_text);
+    let next_dedup_key = compute_dedup_key(
+        &next_hash,
+        &compact_subject_ref,
+        &row.claim_type,
+        row.field_path.as_deref(),
+    );
+
+    Ok((next_dedup_key, next_hash))
 }
 
 /// Backfill DismissedItem entries from `<workspace_root>/<EntityKind>/<name>/intelligence.json`
@@ -209,6 +339,7 @@ pub struct CutoverReport {
     pub drain_in_flight_remaining: usize,
     pub drain_timed_out: bool,
     pub sql_migrations_applied: usize,
+    pub rekey_report: RekeyReport,
     pub json_blob_report: DismissedItemBackfillReport,
     pub reconcile_findings: usize,
     pub completed_at: chrono::DateTime<chrono::Utc>,
@@ -405,6 +536,7 @@ fn read_schema_epoch(db: &ActionDb) -> Result<i64, String> {
 ///   2. Bump schema_epoch (causes in-flight workers to abort on recheck)
 ///   3. Drain in-flight FenceCycle handles (30s timeout)
 ///   4. Run pending schema/backfill migrations (131 + 132 + any newer)
+///      Rekey SQL-backfilled m1-m8 claims via runtime helpers
 ///   5. Run JSON-blob (mechanism 9) backfill
 ///   6. Reconcile pass (D5 stub today)
 ///   7. Resume — no-op; workers re-capture epoch on next pickup
@@ -463,6 +595,31 @@ pub fn run_dos7_cutover(
     report.sql_migrations_applied = applied;
     log::info!("[DOS-7 cutover] migrations applied: {}", applied);
 
+    // Step 4.5: rekey SQL-backfilled claims to the runtime DOS-280 shape.
+    // Rekey row failures are reported but do not fail cutover; the reconcile
+    // pass remains the hard gate for missing migrated claims.
+    let rekey_report = match rekey_backfilled_claims_via_runtime_helpers(ctx, db) {
+        Ok(report) => report,
+        Err(e) => {
+            let mut report = RekeyReport::default();
+            report.errors.push(e);
+            report
+        }
+    };
+    log::info!(
+        "[DOS-7 cutover] m1-m8 rekey: {} rows examined, {} rows rewritten, {} error(s)",
+        rekey_report.rows_examined,
+        rekey_report.rows_rewritten,
+        rekey_report.errors.len(),
+    );
+    if !rekey_report.errors.is_empty() {
+        log::warn!(
+            "[DOS-7 cutover] m1-m8 rekey completed with errors: {:?}",
+            rekey_report.errors
+        );
+    }
+    report.rekey_report = rekey_report;
+
     // Step 5: JSON-blob backfill (mechanism 9).
     let json_report = backfill_dismissed_items_from_workspace(ctx, db, workspace_root)?;
     report.json_blob_report = json_report.clone();
@@ -492,6 +649,79 @@ pub fn run_dos7_cutover(
     Ok(report)
 }
 
+/// Migration-state key recording the unix timestamp at which
+/// [`run_dos7_cutover`] last completed successfully against this DB.
+/// Persists across runs so startup can be idempotent.
+const DOS7_CUTOVER_COMPLETED_AT_KEY: &str = "dos7_cutover_completed_at";
+
+/// L2 cycle-1 fix #3: idempotently run the DOS-7 cutover (rekey + JSON-blob
+/// backfill + reconcile) on startup.
+///
+/// The cutover MUST run after migrations 130/131 apply, otherwise:
+///   - JSON-blob (mechanism 9) backfill never runs: pre-DOS-7 dismissed
+///     items stored in workspace `intelligence.json` files don't get
+///     promoted into intelligence_claims tombstones.
+///   - The rekey pass never normalizes m1-m8 dedup_keys to the runtime
+///     shape that `compute_dedup_key` produces.
+///   - Reconcile never fires, so a partial backfill silently ships.
+///
+/// Idempotency: once a cutover succeeds, the unix timestamp is recorded in
+/// `migration_state` under [`DOS7_CUTOVER_COMPLETED_AT_KEY`]. Subsequent
+/// startups read that timestamp and skip the work.
+///
+/// Returns `Ok(None)` when the cutover was already complete; `Ok(Some)`
+/// with the report when it just ran. Errors propagate so the caller can
+/// log + continue with degraded behavior or surface to the operator.
+pub fn run_dos7_cutover_if_pending(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    workspace_root: &Path,
+) -> Result<Option<CutoverReport>, String> {
+    // Only run when the DOS-7 schema has been applied (migration 130 → SQL
+    // version 130). On a fresh DB before migrations, this is a no-op.
+    let claims_table_exists: bool = db
+        .conn_ref()
+        .query_row(
+            "SELECT count(*) FROM sqlite_master \
+             WHERE type = 'table' AND name = 'intelligence_claims'",
+            [],
+            |row| row.get::<_, i64>(0).map(|c| c > 0),
+        )
+        .map_err(|e| format!("DOS-7 cutover startup gate: {e}"))?;
+    if !claims_table_exists {
+        return Ok(None);
+    }
+
+    let already_completed: Option<i64> = db
+        .conn_ref()
+        .query_row(
+            "SELECT value FROM migration_state WHERE key = ?1",
+            [DOS7_CUTOVER_COMPLETED_AT_KEY],
+            |row| row.get(0),
+        )
+        .ok();
+    if let Some(ts) = already_completed {
+        log::debug!(
+            "[DOS-7 cutover] already completed at unix={}; skipping startup hook",
+            ts
+        );
+        return Ok(None);
+    }
+
+    log::info!("[DOS-7 cutover] startup hook: cutover not yet recorded — running now");
+    let report = run_dos7_cutover(ctx, db, workspace_root)?;
+
+    // Record completion atomically. INSERT OR REPLACE so re-runs are safe.
+    db.conn_ref()
+        .execute(
+            "INSERT OR REPLACE INTO migration_state (key, value) VALUES (?1, ?2)",
+            rusqlite::params![DOS7_CUTOVER_COMPLETED_AT_KEY, chrono::Utc::now().timestamp()],
+        )
+        .map_err(|e| format!("DOS-7 cutover record completion: {e}"))?;
+
+    Ok(Some(report))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,6 +749,189 @@ mod tests {
         let dir = workspace.join(kind_dir).join(entity_name);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("intelligence.json"), body).unwrap();
+    }
+
+    struct RekeySeed<'a> {
+        id: &'a str,
+        subject_ref: &'a str,
+        claim_type: &'a str,
+        field_path: Option<&'a str>,
+        text: &'a str,
+        dedup_key: &'a str,
+        item_hash: Option<&'a str>,
+    }
+
+    fn seed_rekey_claim(db: &ActionDb, seed: RekeySeed<'_>) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, \
+                  claim_state, surfacing_state, retraction_reason, \
+                  temporal_scope, sensitivity) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, \
+                         'system_backfill', 'legacy_dismissal', ?8, ?8, '{}', \
+                         'tombstoned', 'active', 'user_removal', \
+                         'state', 'internal')",
+                params![
+                    seed.id,
+                    seed.subject_ref,
+                    seed.claim_type,
+                    seed.field_path,
+                    seed.text,
+                    seed.dedup_key,
+                    seed.item_hash,
+                    "2026-04-15T00:00:00Z",
+                ],
+            )
+            .unwrap();
+    }
+
+    fn expected_runtime_identity(
+        subject_ref: &str,
+        claim_type: &str,
+        field_path: Option<&str>,
+        text: &str,
+    ) -> (String, String) {
+        let subject_value = serde_json::from_str::<serde_json::Value>(subject_ref).unwrap();
+        let compact_subject_ref = serde_json::to_string(&subject_value).unwrap();
+        let canonical_text = crate::services::claims::canonicalize_for_dos280(text);
+        let hash = crate::intelligence::canonicalization::item_hash(
+            crate::services::claims::item_kind_for_claim_type(claim_type),
+            &canonical_text,
+        );
+        let dedup_key = crate::services::claims::compute_dedup_key(
+            &hash,
+            &compact_subject_ref,
+            claim_type,
+            field_path,
+        );
+
+        (dedup_key, hash)
+    }
+
+    #[test]
+    fn rekey_rewrites_m1_dedup_key_to_runtime_shape() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let subject_ref = r#"{"kind":"Account","id":"acct-1"}"#;
+        let text = "Procurement blocked renewal";
+        let legacy_dedup = "legacy-hash:acct-1:risk:risks";
+        let legacy_hash = "legacy-hash";
+        let (expected_dedup, expected_hash) =
+            expected_runtime_identity(subject_ref, "risk", Some("risks"), text);
+        assert_ne!(legacy_dedup, expected_dedup);
+        assert_ne!(legacy_hash, expected_hash);
+
+        seed_rekey_claim(
+            &db,
+            RekeySeed {
+                id: "m1-1",
+                subject_ref,
+                claim_type: "risk",
+                field_path: Some("risks"),
+                text,
+                dedup_key: legacy_dedup,
+                item_hash: Some(legacy_hash),
+            },
+        );
+
+        let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.rows_rewritten, 1);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let (dedup_key, item_hash): (String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT dedup_key, item_hash FROM intelligence_claims WHERE id = 'm1-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(dedup_key, expected_dedup);
+        assert_eq!(item_hash, expected_hash);
+    }
+
+    #[test]
+    fn rekey_is_idempotent() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        seed_rekey_claim(
+            &db,
+            RekeySeed {
+                id: "m2-acct-1:person-1:champion",
+                subject_ref: r#"{"kind":"Person","id":"person-1"}"#,
+                claim_type: "stakeholder_role",
+                field_path: None,
+                text: "champion",
+                dedup_key: "champion:acct-1:person-1:stakeholder_role",
+                item_hash: Some("champion"),
+            },
+        );
+
+        let first = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(first.rows_examined, 1);
+        assert_eq!(first.rows_rewritten, 1);
+        assert!(first.errors.is_empty(), "{:?}", first.errors);
+
+        let second = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(second.rows_examined, 1);
+        assert_eq!(second.rows_rewritten, 0);
+        assert!(second.errors.is_empty(), "{:?}", second.errors);
+    }
+
+    #[test]
+    fn rekey_skips_non_backfilled_claims() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        seed_rekey_claim(
+            &db,
+            RekeySeed {
+                id: "runtime-claim-1",
+                subject_ref: r#"{"kind":"Account","id":"acct-1"}"#,
+                claim_type: "risk",
+                field_path: Some("risks"),
+                text: "Runtime claim text",
+                dedup_key: "keep-this-dedup-key",
+                item_hash: Some("keep-this-item-hash"),
+            },
+        );
+
+        let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 0);
+        assert_eq!(report.rows_rewritten, 0);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let (dedup_key, item_hash): (String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT dedup_key, item_hash FROM intelligence_claims \
+                 WHERE id = 'runtime-claim-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(dedup_key, "keep-this-dedup-key");
+        assert_eq!(item_hash, "keep-this-item-hash");
     }
 
     #[test]
@@ -805,6 +1218,58 @@ mod tests {
             "post-backfill reconcile must be clean: {:?}",
             report.finding_summary
         );
+    }
+
+    /// L2 cycle-1 fix #3: the startup-hook wrapper must be idempotent.
+    /// First call runs the cutover; second call short-circuits because
+    /// `migration_state.dos7_cutover_completed_at` is set.
+    #[test]
+    fn run_dos7_cutover_if_pending_is_idempotent_via_migration_state() {
+        let workspace = tempfile::tempdir().unwrap();
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        // First call: runs the cutover.
+        let first =
+            run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("first cutover");
+        assert!(first.is_some(), "first call must run the cutover");
+
+        // Second call: idempotent no-op. The migration_state guard short-circuits.
+        let second =
+            run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("second cutover");
+        assert!(
+            second.is_none(),
+            "second call must skip — already recorded in migration_state"
+        );
+    }
+
+    /// L2 cycle-1 fix #3: when the claims schema has not been applied
+    /// yet (pre-DOS-7 DB), the startup hook must be a no-op rather than
+    /// erroring. Production startup runs migrations FIRST and the hook
+    /// later, but the hook can be invoked on legacy DBs where migration
+    /// 130 hasn't applied yet (e.g. fresh test fixtures).
+    #[test]
+    fn run_dos7_cutover_if_pending_no_op_when_claims_schema_absent() {
+        let workspace = tempfile::tempdir().unwrap();
+        // Bare DB without the claim tables.
+        let conn = Connection::open_in_memory().unwrap();
+        let db = ActionDb::from_conn(&conn);
+
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let result =
+            run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("no-op should not fail");
+        assert!(result.is_none());
     }
 
     #[test]

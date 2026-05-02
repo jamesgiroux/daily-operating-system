@@ -324,7 +324,7 @@ fn raw_active_risk_text_count_for(conn: &Connection, account_id: &str, text: &st
            AND field_path = 'risks'
            AND claim_state = 'active'
            AND surfacing_state = 'active'
-           AND text = ?2",
+           AND text = ?2 COLLATE NOCASE",
         params![subject_ref(account_id), text],
         |row| row.get(0),
     )
@@ -340,7 +340,7 @@ fn tombstone_risk_text_count_for(conn: &Connection, account_id: &str, text: &str
            AND field_path = 'risks'
            AND claim_state = 'tombstoned'
            AND retraction_reason = 'user_removal'
-           AND text = ?2",
+           AND text = ?2 COLLATE NOCASE",
         params![subject_ref(account_id), text],
         |row| row.get(0),
     )
@@ -378,7 +378,7 @@ fn visible_active_risk_text_count_for(conn: &Connection, account_id: &str, text:
            AND active.field_path = 'risks'
            AND active.claim_state = 'active'
            AND active.surfacing_state = 'active'
-           AND active.text = ?2
+           AND active.text = ?2 COLLATE NOCASE
            AND NOT EXISTS (
                SELECT 1
                FROM intelligence_claims tombstone

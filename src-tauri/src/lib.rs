@@ -143,6 +143,64 @@ pub fn run() {
                         let ext = crate::services::context::ExternalClients::default();
                         let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                         crate::services::health_debouncer::drain_pending(&ctx, &init_state).await;
+
+                        // DOS-7 L2 cycle-1 fix #3: run the DOS-7 cutover (rekey
+                        // m1-m8 to runtime dedup_key shape + JSON-blob
+                        // mechanism 9 backfill + reconcile) once after the
+                        // SQL migrations 129-131 land. Idempotent — guarded
+                        // by `migration_state.dos7_cutover_completed_at`.
+                        let workspace_root: std::path::PathBuf = init_state
+                            .config_read_or_recover()
+                            .ok()
+                            .and_then(|c| c.as_ref().map(|cfg| std::path::PathBuf::from(&cfg.workspace_path)))
+                            .unwrap_or_default();
+                        if workspace_root.as_os_str().is_empty() {
+                            log::debug!(
+                                "[DOS-7 cutover] startup hook: workspace_path empty; skipping until configured"
+                            );
+                        } else {
+                            let cutover_result = init_state
+                                .db_write(move |db| {
+                                    let clock = crate::services::context::SystemClock;
+                                    let rng = crate::services::context::SystemRng;
+                                    let ext = crate::services::context::ExternalClients::default();
+                                    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                                    crate::services::claims_backfill::run_dos7_cutover_if_pending(
+                                        &ctx,
+                                        db,
+                                        &workspace_root,
+                                    )
+                                    .map_err(|e| format!("DOS-7 cutover: {e}"))
+                                })
+                                .await;
+                            match cutover_result {
+                                Ok(Some(report)) => {
+                                    log::info!(
+                                        "[DOS-7 cutover] completed at startup: \
+                                         schema_epoch {}→{}, \
+                                         m1-m8 rekey {}/{}, \
+                                         m9 inserted {}, \
+                                         reconcile findings {}",
+                                        report.schema_epoch_before,
+                                        report.schema_epoch_after,
+                                        report.rekey_report.rows_rewritten,
+                                        report.rekey_report.rows_examined,
+                                        report.json_blob_report.claims_inserted,
+                                        report.reconcile_findings,
+                                    );
+                                }
+                                Ok(None) => {
+                                    log::debug!(
+                                        "[DOS-7 cutover] startup hook: already complete or claims schema absent"
+                                    );
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "[DOS-7 cutover] startup hook failed: {e}; legacy is_suppressed remains authoritative until next startup retry"
+                                    );
+                                }
+                            }
+                        }
                     }
                 });
             } else {

@@ -61,3 +61,19 @@ fn lint_claim_immutability_passes_against_current_tree() {
         stdout, stderr
     );
 }
+
+/// L2 cycle-1 fix #5: every runtime legacy-dismissal-table write must
+/// be paired with a `shadow_write_tombstone_claim` call within ±50
+/// lines so the claim substrate stays in parity with legacy storage.
+/// Without the pair, commit_claim PRE-GATE misses the dismissal and
+/// the AI can re-surface the item on the next enrichment.
+#[test]
+fn lint_legacy_dismissal_shadow_write_pairing_passes_against_current_tree() {
+    let (ok, stdout, stderr) =
+        run_lint("src-tauri/scripts/check_legacy_dismissal_shadow_write_pairing.sh");
+    assert!(
+        ok,
+        "shadow-write pairing lint failed:\nstdout: {}\nstderr: {}",
+        stdout, stderr
+    );
+}

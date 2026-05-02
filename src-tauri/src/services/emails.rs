@@ -1439,6 +1439,24 @@ pub fn dismiss_email_item(
     )
     .map_err(|e| e.to_string())?;
 
+    // DOS-7 L2 cycle-1 fix #5: shadow-write the dismissal as an
+    // intelligence_claims tombstone so commit_claim PRE-GATE blocks
+    // the AI from re-surfacing this email item on the next enrichment.
+    let now = ctx.clock.now().to_rfc3339();
+    crate::services::claims::shadow_write_tombstone_claim(
+        db,
+        crate::services::claims::ShadowTombstoneClaim {
+            subject_kind: "Email",
+            subject_id: email_id,
+            claim_type: "email_dismissed",
+            field_path: Some(item_type),
+            text: item_text,
+            actor: "user",
+            source_scope: None,
+            observed_at: &now,
+        },
+    );
+
     let etype = entity_id.map(|_| "account").unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
     let _ = crate::services::signals::emit(
