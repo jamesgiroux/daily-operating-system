@@ -186,6 +186,7 @@ fn subject_kind_label(subject: &SubjectRef) -> Option<&'static str> {
         SubjectRef::Meeting { .. } => Some("Meeting"),
         SubjectRef::Person { .. } => Some("Person"),
         SubjectRef::Project { .. } => Some("Project"),
+        SubjectRef::Email { .. } => Some("Email"),
         SubjectRef::Multi(_) | SubjectRef::Global => None,
     }
 }
@@ -195,7 +196,8 @@ fn subject_id_for_lookup(subject: &SubjectRef) -> Option<&str> {
         SubjectRef::Account { id }
         | SubjectRef::Meeting { id }
         | SubjectRef::Person { id }
-        | SubjectRef::Project { id } => Some(id.as_str()),
+        | SubjectRef::Project { id }
+        | SubjectRef::Email { id } => Some(id.as_str()),
         SubjectRef::Multi(_) | SubjectRef::Global => None,
     }
 }
@@ -329,6 +331,9 @@ fn subject_ref_from_json(value: &serde_json::Value) -> Result<SubjectRef, ClaimE
             id: subject_id(value)?,
         }),
         "project" | "projects" => Ok(SubjectRef::Project {
+            id: subject_id(value)?,
+        }),
+        "email" | "emails" => Ok(SubjectRef::Email {
             id: subject_id(value)?,
         }),
         "multi" => {
@@ -1123,16 +1128,14 @@ pub struct ShadowTombstoneClaim<'a> {
 /// successful tombstone; see `shadow_write_tombstone_claim`'s contract.
 fn normalize_subject_kind_for_claim(kind: &str) -> Option<&'static str> {
     match kind.trim() {
-        // Spine subjects supported by SubjectRef enum.
         k if k.eq_ignore_ascii_case("account") => Some("account"),
         k if k.eq_ignore_ascii_case("meeting") => Some("meeting"),
         k if k.eq_ignore_ascii_case("person") || k.eq_ignore_ascii_case("people") => Some("person"),
         k if k.eq_ignore_ascii_case("project") => Some("project"),
-        // Email subjects are not yet represented in SubjectRef. Email
-        // dismissals shadow-write against the associated account
-        // entity_id when the caller has it; otherwise they skip the
-        // shadow-write. Tracked as a follow-up: introduce SubjectRef::Email.
-        k if k.eq_ignore_ascii_case("email") => None,
+        // L2 cycle-3 fix: Email is now a real SubjectRef variant
+        // (migration 132 added emails.claim_version). Cycle-2's
+        // workaround that mapped Email → Account+prefix is removed.
+        k if k.eq_ignore_ascii_case("email") => Some("email"),
         _ => None,
     }
 }
@@ -2050,9 +2053,23 @@ mod tests {
         assert_eq!(count, 1);
     }
 
+    /// L2 cycle-3 fix: Email is now a real SubjectRef variant
+    /// (migration 132 added `emails.claim_version`). The cycle-2
+    /// behavior — skip with SkippedUnsupportedSubjectKind — is
+    /// removed. Email shadow-writes commit as ordinary tombstone
+    /// claims.
     #[test]
-    fn shadow_write_email_kind_skips_until_substrate_support_lands() {
+    fn shadow_write_email_kind_persists_claim() {
         let db = test_db();
+        // Seed an emails row so the bump_for_subject UPDATE has a target.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO emails (email_id, subject, received_at) \
+                 VALUES (?1, 'subj', ?2)",
+                params!["em-1", TS],
+            )
+            .unwrap();
+
         let outcome = shadow_write_tombstone_claim(
             &db,
             ShadowTombstoneClaim {
@@ -2066,17 +2083,32 @@ mod tests {
                 observed_at: TS,
             },
         );
-        assert_eq!(outcome, ShadowTombstoneOutcome::SkippedUnsupportedSubjectKind);
+        assert_eq!(outcome, ShadowTombstoneOutcome::Committed);
 
-        // No claim row was written.
         let count: i64 = db
             .conn_ref()
             .query_row(
-                "SELECT count(*) FROM intelligence_claims",
+                "SELECT count(*) FROM intelligence_claims \
+                 WHERE claim_state = 'tombstoned' \
+                   AND lower(json_extract(subject_ref, '$.kind')) = 'email' \
+                   AND json_extract(subject_ref, '$.id') = 'em-1' \
+                   AND text = 'blocking item' \
+                   AND field_path = 'commitment'",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 0);
+        assert_eq!(count, 1, "Email shadow-write must persist a tombstone claim");
+
+        // emails.claim_version was bumped.
+        let claim_version: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_version FROM emails WHERE email_id = 'em-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(claim_version, 1);
     }
 }
