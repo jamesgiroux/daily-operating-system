@@ -795,24 +795,32 @@ impl ActionDb {
         new_role: &str,
     ) -> Result<(), DbError> {
         let role = new_role.trim().to_lowercase();
-        // Remove only user-owned roles. AI-surfaced rows are preserved so
-        // a role swap in the UI can't silently drop enrichment-discovered
-        // context.
+        let now = Utc::now().to_rfc3339();
+        // DOS-7 D4-1b: soft-delete user-owned roles instead of hard-deleting.
+        // Row preservation per plan §"Hard-delete role path refactor" so the
+        // claim layer's tombstones survive any rollback. Existing reads
+        // filter `WHERE dismissed_at IS NULL` (migration 107 contract) so
+        // soft-deleted rows are invisible to enrichment + UI by default.
+        // AI-surfaced rows are still preserved untouched.
         self.conn.execute(
-            "DELETE FROM account_stakeholder_roles
-             WHERE account_id = ?1 AND person_id = ?2 AND data_source = 'user'",
-            params![account_id, person_id],
+            "UPDATE account_stakeholder_roles
+             SET dismissed_at = ?3
+             WHERE account_id = ?1 AND person_id = ?2
+               AND data_source = 'user'
+               AND dismissed_at IS NULL",
+            params![account_id, person_id, now],
         )?;
         // Insert the new user-owned role. ON CONFLICT promotes an AI row
-        // to user ownership without churning the row (so if the user
-        // pins the same role AI had surfaced, provenance flips cleanly).
+        // to user ownership AND clears any prior dismissed_at so re-pinning
+        // a previously-dismissed role behaves as the user expects (a fresh
+        // active row, not a stale soft-deleted one).
         if !role.is_empty() {
-            let now = Utc::now().to_rfc3339();
             self.conn.execute(
-                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
-                 VALUES (?1, ?2, ?3, 'user', ?4)
+                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at, dismissed_at)
+                 VALUES (?1, ?2, ?3, 'user', ?4, NULL)
                  ON CONFLICT(account_id, person_id, role) DO UPDATE SET
-                    data_source = 'user'",
+                    data_source = 'user',
+                    dismissed_at = NULL",
                 params![account_id, person_id, role, now],
             )?;
         }
