@@ -1281,7 +1281,11 @@ pub async fn dismiss_intelligence_item(
                     &entity_id,
                     &field,
                     Some(&item_text),
-                    None,
+                    crate::intelligence::canonicalization::maybe_item_hash_for_field(
+                        &field,
+                        Some(&item_text),
+                    )
+                    .as_deref(),
                     Some("intelligence"),
                     None,
                 )

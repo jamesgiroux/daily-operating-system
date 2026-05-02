@@ -44,6 +44,7 @@ tokio-rusqlite = "0.5"
 notify = { version = "7", features = ["macos_fsevent"] }
 regex = "1"
 sha2 = "0.10"
+unicode-normalization = "0.1"
 hex = "0.4"
 walkdir = "2"
 

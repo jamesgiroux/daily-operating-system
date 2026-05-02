@@ -2156,6 +2156,8 @@ fn run_consistency_repair_retry(
 
 /// Phase 3: Write enrichment results to disk and DB.
 /// Opens own DB connection to avoid blocking foreground IPC commands.
+/// DOS-308 suppression filtering is fail-closed: if the feedback DB cannot
+/// open, risks/wins are dropped for that round and the rest of the write continues.
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
 pub fn write_enrichment_results(
     state: &AppState,
@@ -2372,44 +2374,119 @@ pub fn write_enrichment_results(
         }
     }
 
-    // I645: Filter suppressed risks/wins before writing.
-    // If is_suppressed() is available (Agent 1 creates it in db module), check each
-    // item against tombstones. Items with newer evidence (sourced_at > dismissed_at)
-    // pass through — the is_suppressed function handles that logic.
-    if let Ok(feedback_db) = crate::db::ActionDb::open() {
-        let pre_risk_count = final_intel.risks.len();
-        final_intel.risks.retain(|risk| {
-            let item_key = Some(risk.text.as_str());
-            !feedback_db
-                .is_suppressed(
+    // I645 + DOS-308: Filter suppressed risks/wins before writing.
+    // Fail-closed: if we cannot open the feedback DB to check suppression,
+    // drop risks/wins for this round rather than writing potentially-tombstoned
+    // items. One lost enrichment round is recoverable; tombstone resurrection is not.
+    match crate::db::ActionDb::open() {
+        Ok(feedback_db) => {
+            use crate::db::intelligence_feedback::SuppressionDecision;
+            use crate::intelligence::canonicalization::{
+                item_hash as canonical_item_hash, ItemKind,
+            };
+
+            let pre_risk_count = final_intel.risks.len();
+            final_intel.risks.retain(|risk| {
+                let item_key = Some(risk.text.as_str());
+                let hash = canonical_item_hash(ItemKind::Risk, &risk.text);
+                match feedback_db.is_suppressed(
                     &input.entity_id,
                     "risks",
                     item_key,
+                    Some(&hash),
                     risk.item_source.as_ref().map(|s| s.sourced_at.as_str()),
-                )
-                .unwrap_or(false)
-        });
-        let pre_win_count = final_intel.recent_wins.len();
-        final_intel.recent_wins.retain(|win| {
-            let item_key = Some(win.text.as_str());
-            !feedback_db
-                .is_suppressed(
+                ) {
+                    SuppressionDecision::Suppressed { .. } => false,
+                    SuppressionDecision::NotSuppressed => true,
+                    SuppressionDecision::Malformed { record_id, reason } => {
+                        log::error!(
+                            "[is_suppressed] malformed tombstone {:?} for entity {} field risks; \
+                             failing closed: {:?}",
+                            record_id,
+                            input.entity_id,
+                            reason
+                        );
+                        let reason_label = format!("{:?}", reason);
+                        if let Err(audit_err) = feedback_db.record_malformed_suppression(
+                            &record_id.0,
+                            &reason_label,
+                            &input.entity_id,
+                            "risks",
+                            Some("intel_queue.write_enrichment_results.risks"),
+                        ) {
+                            log::warn!(
+                                "[DOS-308] failed to persist malformed suppression audit for entity {}: {}",
+                                input.entity_id,
+                                audit_err
+                            );
+                        }
+                        false
+                    }
+                }
+            });
+            let pre_win_count = final_intel.recent_wins.len();
+            final_intel.recent_wins.retain(|win| {
+                let item_key = Some(win.text.as_str());
+                let hash = canonical_item_hash(ItemKind::Win, &win.text);
+                match feedback_db.is_suppressed(
                     &input.entity_id,
                     "recentWins",
                     item_key,
+                    Some(&hash),
                     win.item_source.as_ref().map(|s| s.sourced_at.as_str()),
-                )
-                .unwrap_or(false)
-        });
-        let risks_suppressed = pre_risk_count - final_intel.risks.len();
-        let wins_suppressed = pre_win_count - final_intel.recent_wins.len();
-        if risks_suppressed > 0 || wins_suppressed > 0 {
-            log::info!(
-                "[I645] Suppression filter for {}: {} risks, {} wins removed",
+                ) {
+                    SuppressionDecision::Suppressed { .. } => false,
+                    SuppressionDecision::NotSuppressed => true,
+                    SuppressionDecision::Malformed { record_id, reason } => {
+                        log::error!(
+                            "[is_suppressed] malformed tombstone {:?} for entity {} field recentWins; \
+                             failing closed: {:?}",
+                            record_id,
+                            input.entity_id,
+                            reason
+                        );
+                        let reason_label = format!("{:?}", reason);
+                        if let Err(audit_err) = feedback_db.record_malformed_suppression(
+                            &record_id.0,
+                            &reason_label,
+                            &input.entity_id,
+                            "recentWins",
+                            Some("intel_queue.write_enrichment_results.recentWins"),
+                        ) {
+                            log::warn!(
+                                "[DOS-308] failed to persist malformed suppression audit for entity {}: {}",
+                                input.entity_id,
+                                audit_err
+                            );
+                        }
+                        false
+                    }
+                }
+            });
+            let risks_suppressed = pre_risk_count - final_intel.risks.len();
+            let wins_suppressed = pre_win_count - final_intel.recent_wins.len();
+            if risks_suppressed > 0 || wins_suppressed > 0 {
+                log::info!(
+                    "[I645] Suppression filter for {}: {} risks, {} wins removed",
+                    input.entity_id,
+                    risks_suppressed,
+                    wins_suppressed,
+                );
+            }
+        }
+        Err(e) => {
+            log::error!(
+                "[I645] DOS-308 fail-closed: cannot open feedback DB to check suppression \
+                 for entity {}: {}; dropping {} risks and {} wins to avoid tombstone resurrection",
                 input.entity_id,
-                risks_suppressed,
-                wins_suppressed,
+                e,
+                final_intel.risks.len(),
+                final_intel.recent_wins.len(),
             );
+            // TODO(DOS-308): add integration coverage once DB-open failure is injectable.
+            // TODO(DOS-7): emit durable audit event so operator sees this.
+            final_intel.risks.clear();
+            final_intel.recent_wins.clear();
         }
     }
 

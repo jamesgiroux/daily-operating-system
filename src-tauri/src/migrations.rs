@@ -589,6 +589,29 @@ const MIGRATIONS: &[Migration] = &[
         version: 125,
         sql: include_str!("migrations/124_dos_311_schema_epoch.sql"),
     },
+    // DOS-308: covering index for suppression lookups + quarantine table for
+    // tombstone remediation before DOS-7's claims substrate migration.
+    Migration {
+        version: 126,
+        sql: include_str!("migrations/125_suppression_remediation.sql"),
+    },
+    // DOS-308: durable operator audit for malformed suppression decisions.
+    Migration {
+        version: 127,
+        sql: include_str!("migrations/126_suppression_malformed_log.sql"),
+    },
+    // DOS-308 cycle-3: mark remediated quarantine rows as resolved audit trail.
+    Migration {
+        version: 128,
+        sql: include_str!("migrations/127_quarantine_resolved_at.sql"),
+    },
+    // DOS-308 cycle-4: partial index for the unresolved-row gate query.
+    // Split from migration 128 so a partial-failure retry cannot leave
+    // the column added but the index missing.
+    Migration {
+        version: 129,
+        sql: include_str!("migrations/128_quarantine_unresolved_index.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -1016,6 +1039,36 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
         return Ok(0);
     }
 
+    // DOS-308: quarantine gate. Refuse to apply migration 126 (the DOS-7
+    // backfill territory) until unresolved quarantine rows are resolved.
+    // Resolved quarantine rows are retained as audit trail and do NOT block
+    // subsequent migrations.
+    let migration_126_pending = pending.iter().any(|m| m.version == 126);
+    if migration_126_pending {
+        let quarantine_exists: bool = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master \
+                 WHERE type = 'table' AND name = 'suppression_tombstones_quarantine'",
+                [],
+                |row| row.get::<_, i64>(0).map(|count| count > 0),
+            )
+            .map_err(|e| format!("quarantine gate check: {e}"))?;
+
+        if quarantine_exists {
+            let unresolved_count = quarantine_gate_blocking_count(conn)?;
+
+            if unresolved_count > 0 {
+                return Err(format!(
+                    "DOS-308 quarantine gate: refusing to apply migration 126 while {} \
+                     unresolved malformed suppression record(s) remain in quarantine. Run \
+                     scripts/remediate_suppression_tombstones.sh to resolve, then re-run \
+                     migrations. (Resolved/audit-trail rows do NOT block migrations.)",
+                    unresolved_count
+                ));
+            }
+        }
+    }
+
     // Backup before applying any migrations
     let backup_path = backup_before_migration(conn)?;
     if backup_path.to_string_lossy() != ":memory:" {
@@ -1086,6 +1139,28 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
 
     verify_required_schema(conn)?;
     Ok(pending.len())
+}
+
+fn quarantine_gate_blocking_count(conn: &Connection) -> Result<i64, String> {
+    // Check if the resolved_at column exists (migration 127). If not, fall
+    // back to counting all rows (cycle-2 semantics, slightly stricter).
+    let has_resolved_at: bool = conn
+        .query_row(
+            "SELECT count(*) FROM pragma_table_info('suppression_tombstones_quarantine') \
+             WHERE name = 'resolved_at'",
+            [],
+            |row| row.get::<_, i64>(0).map(|count| count > 0),
+        )
+        .map_err(|e| format!("quarantine gate column check: {e}"))?;
+
+    let count_query = if has_resolved_at {
+        "SELECT count(*) FROM suppression_tombstones_quarantine WHERE resolved_at IS NULL"
+    } else {
+        "SELECT count(*) FROM suppression_tombstones_quarantine"
+    };
+
+    conn.query_row(count_query, [], |row| row.get(0))
+        .map_err(|e| format!("quarantine gate count: {e}"))
 }
 
 #[cfg(test)]
@@ -2083,6 +2158,123 @@ mod tests {
             true,
             "disk I/O error"
         ));
+    }
+
+    #[test]
+    fn quarantine_resolved_rows_do_not_block_migration_126() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE suppression_tombstones_quarantine (
+                id INTEGER PRIMARY KEY,
+                entity_id TEXT NOT NULL,
+                field_key TEXT NOT NULL,
+                item_key TEXT,
+                item_hash TEXT,
+                dismissed_at TEXT,
+                source_scope TEXT,
+                expires_at TEXT,
+                superseded_by_evidence_after TEXT,
+                quarantined_at TEXT NOT NULL DEFAULT (datetime('now')),
+                quarantine_reason TEXT NOT NULL,
+                resolved_at TEXT
+             );",
+        )
+        .expect("create quarantine table with resolved_at");
+        conn.execute(
+            "INSERT INTO suppression_tombstones_quarantine \
+             (id, entity_id, field_key, dismissed_at, quarantine_reason, resolved_at) \
+             VALUES (1, 'acct-1', 'risks', 'not-a-date', 'resolved audit', datetime('now'))",
+            [],
+        )
+        .expect("seed resolved audit row");
+        conn.execute(
+            "INSERT INTO suppression_tombstones_quarantine \
+             (id, entity_id, field_key, dismissed_at, quarantine_reason, resolved_at) \
+             VALUES (2, 'acct-1', 'risks', 'still-bad', 'unresolved', NULL)",
+            [],
+        )
+        .expect("seed unresolved row");
+
+        let count = quarantine_gate_blocking_count(&conn).expect("gate count");
+
+        assert_eq!(count, 1, "only unresolved quarantine rows should block");
+    }
+
+    #[test]
+    fn quarantine_gate_falls_back_to_all_rows_when_column_missing() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE suppression_tombstones_quarantine (
+                id INTEGER PRIMARY KEY,
+                entity_id TEXT NOT NULL,
+                field_key TEXT NOT NULL,
+                item_key TEXT,
+                item_hash TEXT,
+                dismissed_at TEXT,
+                source_scope TEXT,
+                expires_at TEXT,
+                superseded_by_evidence_after TEXT,
+                quarantined_at TEXT NOT NULL DEFAULT (datetime('now')),
+                quarantine_reason TEXT NOT NULL
+             );",
+        )
+        .expect("create pre-127 quarantine table");
+        conn.execute(
+            "INSERT INTO suppression_tombstones_quarantine \
+             (id, entity_id, field_key, dismissed_at, quarantine_reason) \
+             VALUES (1, 'acct-1', 'risks', 'not-a-date', 'pre-127 row')",
+            [],
+        )
+        .expect("seed pre-127 quarantine row");
+
+        let count = quarantine_gate_blocking_count(&conn).expect("gate count");
+
+        assert_eq!(
+            count, 1,
+            "pre-127 schemas should count every quarantine row"
+        );
+    }
+
+    #[test]
+    fn quarantine_with_retained_rows_does_not_block_post_126_migrations() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("apply all migrations");
+        conn.execute("DELETE FROM schema_version WHERE version IN (128, 129)", [])
+            .expect("make v128 + v129 pending");
+        conn.execute(
+            "INSERT INTO suppression_tombstones_quarantine \
+             (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason, resolved_at) \
+             VALUES (1, 'acct-1', 'risks', NULL, NULL, 'not-a-date', 'retained audit', '2026-05-02T00:00:00Z')",
+            [],
+        )
+        .expect("seed retained quarantine row");
+
+        let applied = run_migrations(&conn).expect("post-126 migration should not be gated");
+
+        assert_eq!(applied, 2);
+        assert_eq!(current_version(&conn).expect("version query"), 129);
+    }
+
+    #[test]
+    fn quarantine_blocks_only_when_126_pending() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("apply all migrations");
+        conn.execute("DELETE FROM schema_version WHERE version IN (126, 127, 128, 129)", [])
+            .expect("make v126 through v129 pending");
+        conn.execute(
+            "INSERT INTO suppression_tombstones_quarantine \
+             (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason) \
+             VALUES (1, 'acct-1', 'risks', NULL, NULL, 'not-a-date', 'unresolved')",
+            [],
+        )
+        .expect("seed quarantine row");
+
+        let err = run_migrations(&conn).expect_err("migration 126 should be gated");
+
+        assert!(
+            err.contains("refusing to apply migration 126"),
+            "error should identify migration 126 gate: {err}"
+        );
     }
 
     /// DOS-258 evidence-hierarchy fix: verify migration 120 shifts every

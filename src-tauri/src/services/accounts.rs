@@ -1201,11 +1201,16 @@ pub fn dismiss_account_field_conflict(
         })
         .map_err(|e| format!("record_feedback_event: {e}"))?;
 
+        let signal_id_str = signal_id;
         tx.create_suppression_tombstone(
             account_id,
             field,
-            Some(signal_id),
-            None,
+            Some(signal_id_str),
+            crate::intelligence::canonicalization::maybe_item_hash_for_field(
+                field,
+                Some(signal_id_str),
+            )
+            .as_deref(),
             Some(source),
             None,
         )
