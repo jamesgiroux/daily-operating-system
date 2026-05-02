@@ -1027,10 +1027,12 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
         return Ok(0);
     }
 
-    // DOS-308: structural quarantine gate. Forward migrations in DOS-7
-    // territory require the suppression quarantine to be fully remediated.
-    let highest_pending = pending.iter().map(|m| m.version).max().unwrap_or(0);
-    if highest_pending >= 126 {
+    // DOS-308: quarantine gate. Refuse to apply migration 126 (the DOS-7
+    // backfill territory) until quarantine table is empty. Once 126 has
+    // been applied, retained quarantine rows are an audit trail and do
+    // NOT block subsequent migrations.
+    let migration_126_pending = pending.iter().any(|m| m.version == 126);
+    if migration_126_pending {
         let quarantine_exists: bool = conn
             .query_row(
                 "SELECT count(*) FROM sqlite_master \
@@ -1049,10 +1051,9 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
 
             if quarantine_count > 0 {
                 return Err(format!(
-                    "DOS-308 quarantine gate: refusing to apply migration >= 126 while {} \
-                     unremediated malformed suppression record(s) remain. Run \
-                     scripts/remediate_suppression_tombstones.sh to resolve, then re-run \
-                     migrations.",
+                    "DOS-308 quarantine gate: refusing to apply migration 126 while {} \
+                     unquarantined malformed suppression record(s) remain. Run \
+                     scripts/remediate_suppression_tombstones.sh to resolve, then re-run migrations.",
                     quarantine_count
                 ));
             }
@@ -2126,6 +2127,48 @@ mod tests {
             true,
             "disk I/O error"
         ));
+    }
+
+    #[test]
+    fn quarantine_with_retained_rows_does_not_block_post_126_migrations() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("apply all migrations");
+        conn.execute("DELETE FROM schema_version WHERE version = 127", [])
+            .expect("make v127 pending");
+        conn.execute(
+            "INSERT INTO suppression_tombstones_quarantine \
+             (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason) \
+             VALUES (1, 'acct-1', 'risks', NULL, NULL, 'not-a-date', 'retained audit')",
+            [],
+        )
+        .expect("seed retained quarantine row");
+
+        let applied = run_migrations(&conn).expect("post-126 migration should not be gated");
+
+        assert_eq!(applied, 1);
+        assert_eq!(current_version(&conn).expect("version query"), 127);
+    }
+
+    #[test]
+    fn quarantine_blocks_only_when_126_pending() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("apply all migrations");
+        conn.execute("DELETE FROM schema_version WHERE version IN (126, 127)", [])
+            .expect("make v126 and v127 pending");
+        conn.execute(
+            "INSERT INTO suppression_tombstones_quarantine \
+             (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason) \
+             VALUES (1, 'acct-1', 'risks', NULL, NULL, 'not-a-date', 'unresolved')",
+            [],
+        )
+        .expect("seed quarantine row");
+
+        let err = run_migrations(&conn).expect_err("migration 126 should be gated");
+
+        assert!(
+            err.contains("refusing to apply migration 126"),
+            "error should identify migration 126 gate: {err}"
+        );
     }
 
     /// DOS-258 evidence-hierarchy fix: verify migration 120 shifts every

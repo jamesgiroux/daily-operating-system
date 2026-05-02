@@ -2406,7 +2406,20 @@ pub fn write_enrichment_results(
                             input.entity_id,
                             reason
                         );
-                        // TODO(DOS-7): emit audit event via claim_repair_job once W3 lands.
+                        let reason_label = format!("{:?}", reason);
+                        if let Err(audit_err) = feedback_db.record_malformed_suppression(
+                            &record_id.0,
+                            &reason_label,
+                            &input.entity_id,
+                            "risks",
+                            Some("intel_queue.write_enrichment_results.risks"),
+                        ) {
+                            log::warn!(
+                                "[DOS-308] failed to persist malformed suppression audit for entity {}: {}",
+                                input.entity_id,
+                                audit_err
+                            );
+                        }
                         false
                     }
                 }
@@ -2432,7 +2445,20 @@ pub fn write_enrichment_results(
                             input.entity_id,
                             reason
                         );
-                        // TODO(DOS-7): emit audit event via claim_repair_job once W3 lands.
+                        let reason_label = format!("{:?}", reason);
+                        if let Err(audit_err) = feedback_db.record_malformed_suppression(
+                            &record_id.0,
+                            &reason_label,
+                            &input.entity_id,
+                            "recentWins",
+                            Some("intel_queue.write_enrichment_results.recentWins"),
+                        ) {
+                            log::warn!(
+                                "[DOS-308] failed to persist malformed suppression audit for entity {}: {}",
+                                input.entity_id,
+                                audit_err
+                            );
+                        }
                         false
                     }
                 }

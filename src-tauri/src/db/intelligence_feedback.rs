@@ -209,7 +209,7 @@ impl ActionDb {
         let tier = candidates
             .keyless
             .iter()
-            .filter(|candidate| candidate.item_hash.is_none());
+            .inspect(|candidate| debug_assert!(candidate.item_hash.is_none()));
         if let Some(decision) = resolve_suppression_tier(
             tier,
             SuppressionReason::KeylessFieldSuppression,
@@ -268,6 +268,7 @@ impl ActionDb {
              WHERE entity_id = ?1 \
                AND field_key = ?2 \
                AND item_key IS NULL \
+               AND item_hash IS NULL \
              ORDER BY dismissed_at DESC \
              LIMIT 16",
             rusqlite::params![entity_id, field_key],
@@ -961,6 +962,38 @@ mod tests {
             assert_suppressed_reason(decision, SuppressionReason::HashMatch),
             expected_id.expect("latest hash tombstone id")
         );
+    }
+
+    #[test]
+    fn is_suppressed_keyless_tier_not_evicted_by_hash_only_rows() {
+        let db = test_db();
+        insert_tombstone(
+            &db,
+            Tombstone {
+                item_key: None,
+                item_hash: None,
+                dismissed_at: "2026-01-01T00:00:00Z",
+                ..Tombstone::exact("unused", "2026-01-01T00:00:00Z")
+            },
+        );
+
+        for second in 0..20 {
+            let dismissed_at = format!("2026-02-01T00:00:{second:02}Z");
+            let hash = format!("hash-only-{second}");
+            insert_tombstone(
+                &db,
+                Tombstone {
+                    item_key: None,
+                    item_hash: Some(&hash),
+                    dismissed_at: &dismissed_at,
+                    ..Tombstone::exact("unused", "2026-02-01T00:00:00Z")
+                },
+            );
+        }
+
+        let decision = db.is_suppressed("acct-1", "risks", Some("Any risk"), None, None);
+
+        assert_suppressed_reason(decision, SuppressionReason::KeylessFieldSuppression);
     }
 
     #[test]
