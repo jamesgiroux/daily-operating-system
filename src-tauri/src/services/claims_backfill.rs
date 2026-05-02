@@ -596,8 +596,12 @@ pub fn run_dos7_cutover(
     log::info!("[DOS-7 cutover] migrations applied: {}", applied);
 
     // Step 4.5: rekey SQL-backfilled claims to the runtime DOS-280 shape.
-    // Rekey row failures are reported but do not fail cutover; the reconcile
-    // pass remains the hard gate for missing migrated claims.
+    //
+    // L2 cycle-2 fix #2: per-row failures are NOW fatal to cutover. The
+    // previous "warn-and-continue" behavior left rows under their old
+    // hash while marking the cutover complete — making the failure
+    // non-retriable on subsequent startups (the
+    // dos7_cutover_completed_at marker short-circuits the hook).
     let rekey_report = match rekey_backfilled_claims_via_runtime_helpers(ctx, db) {
         Ok(report) => report,
         Err(e) => {
@@ -613,10 +617,11 @@ pub fn run_dos7_cutover(
         rekey_report.errors.len(),
     );
     if !rekey_report.errors.is_empty() {
-        log::warn!(
-            "[DOS-7 cutover] m1-m8 rekey completed with errors: {:?}",
-            rekey_report.errors
-        );
+        return Err(format!(
+            "DOS-7 cutover: m1-m8 rekey produced {} error(s); refusing to mark cutover complete until they are resolved. First error: {}",
+            rekey_report.errors.len(),
+            rekey_report.errors.first().map(String::as_str).unwrap_or("(none)"),
+        ));
     }
     report.rekey_report = rekey_report;
 
@@ -653,6 +658,19 @@ pub fn run_dos7_cutover(
 /// [`run_dos7_cutover`] last completed successfully against this DB.
 /// Persists across runs so startup can be idempotent.
 const DOS7_CUTOVER_COMPLETED_AT_KEY: &str = "dos7_cutover_completed_at";
+
+/// Migration-state key holding the unix timestamp at which a cutover
+/// run claimed exclusive responsibility. Used as a process-safe
+/// compare-and-set marker (L2 cycle-2 fix #3): two processes starting
+/// simultaneously cannot both claim it; the loser sees an existing
+/// row and either waits or skips depending on whether the
+/// completed-at marker is also set.
+const DOS7_CUTOVER_STARTED_AT_KEY: &str = "dos7_cutover_started_at";
+
+/// How long to consider a `started_at` marker as "in flight" before
+/// treating it as stale (e.g. crashed mid-cutover) and reclaiming.
+/// 30 minutes covers the worst-case JSON-blob workspace size.
+const DOS7_CUTOVER_STALE_AFTER_SECS: i64 = 30 * 60;
 
 /// L2 cycle-1 fix #3: idempotently run the DOS-7 cutover (rekey + JSON-blob
 /// backfill + reconcile) on startup.
@@ -692,26 +710,103 @@ pub fn run_dos7_cutover_if_pending(
         return Ok(None);
     }
 
-    let already_completed: Option<i64> = db
-        .conn_ref()
-        .query_row(
-            "SELECT value FROM migration_state WHERE key = ?1",
-            [DOS7_CUTOVER_COMPLETED_AT_KEY],
-            |row| row.get(0),
+    // L2 cycle-2 fix #3: process-safe claim/lock. Atomically check
+    // that no other process has completed OR is mid-cutover, and
+    // claim the work via INSERT OR IGNORE on a started marker. The
+    // BEGIN IMMEDIATE upgrades the connection to a write lock so two
+    // concurrent processes serialize at SQLite's lock layer.
+    let now_ts = chrono::Utc::now().timestamp();
+    let conn = db.conn_ref();
+    conn.execute_batch("BEGIN IMMEDIATE")
+        .map_err(|e| format!("DOS-7 cutover claim BEGIN: {e}"))?;
+
+    let claim_decision = (|| -> Result<CutoverClaimDecision, String> {
+        // Already completed by some prior process? Skip.
+        let completed: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM migration_state WHERE key = ?1",
+                [DOS7_CUTOVER_COMPLETED_AT_KEY],
+                |row| row.get(0),
+            )
+            .ok();
+        if completed.is_some() {
+            return Ok(CutoverClaimDecision::AlreadyComplete);
+        }
+
+        // In flight by another process? Wait or reclaim if stale.
+        let in_flight: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM migration_state WHERE key = ?1",
+                [DOS7_CUTOVER_STARTED_AT_KEY],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(started_ts) = in_flight {
+            if now_ts - started_ts < DOS7_CUTOVER_STALE_AFTER_SECS {
+                return Ok(CutoverClaimDecision::InFlightElsewhere {
+                    started_ts,
+                });
+            }
+            // Stale marker — reclaim by overwriting.
+            conn.execute(
+                "UPDATE migration_state SET value = ?2 WHERE key = ?1",
+                rusqlite::params![DOS7_CUTOVER_STARTED_AT_KEY, now_ts],
+            )
+            .map_err(|e| format!("DOS-7 cutover reclaim stale marker: {e}"))?;
+            return Ok(CutoverClaimDecision::Claimed);
+        }
+
+        // No completed, no in-flight → claim it.
+        conn.execute(
+            "INSERT INTO migration_state (key, value) VALUES (?1, ?2)",
+            rusqlite::params![DOS7_CUTOVER_STARTED_AT_KEY, now_ts],
         )
-        .ok();
-    if let Some(ts) = already_completed {
-        log::debug!(
-            "[DOS-7 cutover] already completed at unix={}; skipping startup hook",
-            ts
-        );
-        return Ok(None);
+        .map_err(|e| format!("DOS-7 cutover claim insert: {e}"))?;
+        Ok(CutoverClaimDecision::Claimed)
+    })();
+
+    // Always end the claim transaction. We commit on success even
+    // when the decision is AlreadyComplete / InFlight so the read
+    // is durable; we rollback on error so partial state doesn't
+    // persist.
+    let claim_decision = match claim_decision {
+        Ok(decision) => {
+            conn.execute_batch("COMMIT")
+                .map_err(|e| format!("DOS-7 cutover claim COMMIT: {e}"))?;
+            decision
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(e);
+        }
+    };
+
+    match claim_decision {
+        CutoverClaimDecision::AlreadyComplete => {
+            log::debug!(
+                "[DOS-7 cutover] already completed by a prior process; skipping startup hook"
+            );
+            return Ok(None);
+        }
+        CutoverClaimDecision::InFlightElsewhere { started_ts } => {
+            log::info!(
+                "[DOS-7 cutover] in flight elsewhere since unix={}; this process defers (stale-after={}s)",
+                started_ts, DOS7_CUTOVER_STALE_AFTER_SECS
+            );
+            return Ok(None);
+        }
+        CutoverClaimDecision::Claimed => {
+            log::info!("[DOS-7 cutover] claimed by this process; running now");
+        }
     }
 
-    log::info!("[DOS-7 cutover] startup hook: cutover not yet recorded — running now");
+    // Run the cutover. If it fails, leave the started marker so a
+    // subsequent retry (after the stale-after window OR an operator
+    // clearing the marker) picks up where this attempt left off.
     let report = run_dos7_cutover(ctx, db, workspace_root)?;
 
-    // Record completion atomically. INSERT OR REPLACE so re-runs are safe.
+    // Record completion. INSERT OR REPLACE so a stale-claim reclaim
+    // followed by a successful run still persists the marker.
     db.conn_ref()
         .execute(
             "INSERT OR REPLACE INTO migration_state (key, value) VALUES (?1, ?2)",
@@ -719,7 +814,20 @@ pub fn run_dos7_cutover_if_pending(
         )
         .map_err(|e| format!("DOS-7 cutover record completion: {e}"))?;
 
+    // Clear the started marker so the migration_state reflects only
+    // the completed timestamp going forward.
+    let _ = db.conn_ref().execute(
+        "DELETE FROM migration_state WHERE key = ?1",
+        [DOS7_CUTOVER_STARTED_AT_KEY],
+    );
+
     Ok(Some(report))
+}
+
+enum CutoverClaimDecision {
+    AlreadyComplete,
+    InFlightElsewhere { started_ts: i64 },
+    Claimed,
 }
 
 #[cfg(test)]
@@ -1246,6 +1354,142 @@ mod tests {
         assert!(
             second.is_none(),
             "second call must skip — already recorded in migration_state"
+        );
+    }
+
+    /// L2 cycle-2 fix #3: a stale `dos7_cutover_started_at` marker
+    /// (older than DOS7_CUTOVER_STALE_AFTER_SECS) must be reclaimable
+    /// — otherwise a crashed cutover would leave the substrate
+    /// permanently stuck.
+    #[test]
+    fn run_dos7_cutover_if_pending_reclaims_stale_started_marker() {
+        let workspace = tempfile::tempdir().unwrap();
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+
+        // Plant a stale started-at marker (1 hour ago).
+        let stale_ts = chrono::Utc::now().timestamp() - 60 * 60;
+        conn.execute(
+            "INSERT INTO migration_state (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["dos7_cutover_started_at", stale_ts],
+        )
+        .expect("plant stale marker");
+
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let result =
+            run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("reclaim");
+        assert!(
+            result.is_some(),
+            "stale marker must be reclaimable — got no-op instead"
+        );
+
+        // Completed marker now set.
+        let completed: i64 = conn
+            .query_row(
+                "SELECT value FROM migration_state WHERE key = 'dos7_cutover_completed_at'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("completed marker present");
+        assert!(completed > 0);
+    }
+
+    /// L2 cycle-2 fix #3: a fresh-but-not-yet-stale started_at marker
+    /// from another process must cause the second process to defer
+    /// (return None) instead of running concurrently.
+    #[test]
+    fn run_dos7_cutover_if_pending_defers_when_in_flight_elsewhere() {
+        let workspace = tempfile::tempdir().unwrap();
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+
+        // Plant a fresh started-at marker (1 minute ago — clearly in
+        // flight, not stale).
+        let fresh_ts = chrono::Utc::now().timestamp() - 60;
+        conn.execute(
+            "INSERT INTO migration_state (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["dos7_cutover_started_at", fresh_ts],
+        )
+        .expect("plant in-flight marker");
+
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let result =
+            run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("defer");
+        assert!(
+            result.is_none(),
+            "in-flight marker must cause this process to defer"
+        );
+
+        // No completed marker — the in-flight process is expected to
+        // write it.
+        let completed_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM migration_state WHERE key = 'dos7_cutover_completed_at'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(completed_count, 0);
+    }
+
+    /// L2 cycle-2 fix #2: any rekey error must fail the cutover BEFORE
+    /// the completion marker is written, so a subsequent retry can
+    /// pick up the work.
+    #[test]
+    fn run_dos7_cutover_fails_when_rekey_errors_present() {
+        let workspace = tempfile::tempdir().unwrap();
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+
+        // Seed a malformed m1- claim row that the rekey pass cannot
+        // resolve — empty subject_ref, no kind/id.
+        conn.execute(
+            "INSERT INTO intelligence_claims \
+             (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+              actor, data_source, observed_at, created_at, provenance_json, \
+              claim_state, surfacing_state, retraction_reason, \
+              temporal_scope, sensitivity) \
+             VALUES ('m1-malformed-1', '{}', 'risk', 'risks', 'r1', 'malformed-key', '', \
+                     'system_backfill', 'legacy_dismissal', '2026-04-15T00:00:00Z', \
+                     '2026-04-15T00:00:00Z', '{}', \
+                     'tombstoned', 'active', 'user_removal', 'state', 'internal')",
+            [],
+        )
+        .expect("seed malformed claim");
+
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let result = run_dos7_cutover(&ctx, db, workspace.path());
+        assert!(
+            result.is_err(),
+            "rekey error must propagate as cutover Err, not silent warn"
+        );
+
+        // No completion marker got written.
+        let completed_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM migration_state WHERE key = 'dos7_cutover_completed_at'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            completed_count, 0,
+            "completion marker must NOT be set when rekey produced errors"
         );
     }
 

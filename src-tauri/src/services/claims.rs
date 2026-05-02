@@ -1113,7 +1113,54 @@ pub struct ShadowTombstoneClaim<'a> {
     pub observed_at: &'a str,
 }
 
-pub fn shadow_write_tombstone_claim(db: &ActionDb, args: ShadowTombstoneClaim<'_>) {
+/// L2 cycle-2 fix #1: normalize the caller-supplied subject_kind into
+/// the lowercase form `subject_ref_from_json` accepts. Runtime callers
+/// pass PascalCase ("Account", "Meeting", "Person", "Project", "Email")
+/// — which the parser previously rejected, silently no-op'ing the
+/// shadow write. Returns `None` when the kind has no claim-substrate
+/// representation today (currently: `Email`; tracked as a future
+/// follow-up). Callers MUST handle `None` rather than assuming a
+/// successful tombstone; see `shadow_write_tombstone_claim`'s contract.
+fn normalize_subject_kind_for_claim(kind: &str) -> Option<&'static str> {
+    match kind.trim() {
+        // Spine subjects supported by SubjectRef enum.
+        k if k.eq_ignore_ascii_case("account") => Some("account"),
+        k if k.eq_ignore_ascii_case("meeting") => Some("meeting"),
+        k if k.eq_ignore_ascii_case("person") || k.eq_ignore_ascii_case("people") => Some("person"),
+        k if k.eq_ignore_ascii_case("project") => Some("project"),
+        // Email subjects are not yet represented in SubjectRef. Email
+        // dismissals shadow-write against the associated account
+        // entity_id when the caller has it; otherwise they skip the
+        // shadow-write. Tracked as a follow-up: introduce SubjectRef::Email.
+        k if k.eq_ignore_ascii_case("email") => None,
+        _ => None,
+    }
+}
+
+/// Outcome of attempting to shadow-write a tombstone claim. Used in
+/// regression tests to verify that the claim row actually got written
+/// (or that we correctly skipped when the substrate cannot model the
+/// subject yet).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShadowTombstoneOutcome {
+    /// Tombstone claim was committed.
+    Committed,
+    /// Subject kind cannot be represented in the claim substrate today
+    /// (e.g. `Email` until SubjectRef gains an `Email` variant). The
+    /// caller's legacy dismissal write is still authoritative; the
+    /// gap is a known limitation tracked as a follow-up.
+    SkippedUnsupportedSubjectKind,
+    /// `commit_claim` itself failed (e.g. mutation gate, DB error).
+    /// The caller's legacy write may have already committed; the
+    /// claim substrate will be repaired by the next reconcile pass
+    /// or by retrying via the cutover hook on next startup.
+    Failed(String),
+}
+
+pub fn shadow_write_tombstone_claim(
+    db: &ActionDb,
+    args: ShadowTombstoneClaim<'_>,
+) -> ShadowTombstoneOutcome {
     let ShadowTombstoneClaim {
         subject_kind,
         subject_id,
@@ -1124,12 +1171,21 @@ pub fn shadow_write_tombstone_claim(db: &ActionDb, args: ShadowTombstoneClaim<'_
         source_scope,
         observed_at,
     } = args;
+
+    let Some(normalized_kind) = normalize_subject_kind_for_claim(subject_kind) else {
+        log::debug!(
+            "[dos7-shadow] skipping shadow tombstone — subject_kind {:?} has no claim-substrate representation yet (subject_id={})",
+            subject_kind, subject_id
+        );
+        return ShadowTombstoneOutcome::SkippedUnsupportedSubjectKind;
+    };
+
     let clock = crate::services::context::SystemClock;
     let rng = crate::services::context::SystemRng;
     let ext = crate::services::context::ExternalClients::default();
     let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
-    let subject_ref = format!(r#"{{"kind":"{}","id":"{}"}}"#, subject_kind, subject_id);
+    let subject_ref = format!(r#"{{"kind":"{}","id":"{}"}}"#, normalized_kind, subject_id);
     let metadata_json = source_scope.map(|s| format!(r#"{{"source_scope":"{}"}}"#, s));
 
     let proposal = ClaimProposal {
@@ -1154,11 +1210,16 @@ pub fn shadow_write_tombstone_claim(db: &ActionDb, args: ShadowTombstoneClaim<'_
         }),
     };
 
-    if let Err(e) = commit_claim(&ctx, db, proposal) {
-        log::warn!(
-            "[dos7-d4-1a] shadow tombstone claim write failed (subject={}:{} field={:?}): {}",
-            subject_kind, subject_id, field_path, e
-        );
+    match commit_claim(&ctx, db, proposal) {
+        Ok(_) => ShadowTombstoneOutcome::Committed,
+        Err(e) => {
+            let msg = e.to_string();
+            log::warn!(
+                "[dos7-shadow] tombstone claim write failed (subject={}:{} field={:?}): {}",
+                subject_kind, subject_id, field_path, msg
+            );
+            ShadowTombstoneOutcome::Failed(msg)
+        }
     }
 }
 
@@ -1909,5 +1970,113 @@ mod tests {
         assert!(ids.contains(&"dormant-1".to_string()));
         assert!(ids.contains(&"surfacing-dormant-1".to_string()));
         assert!(!ids.contains(&"active-1".to_string()));
+    }
+
+    /// L2 cycle-2 fix #1: shadow_write_tombstone_claim must actually
+    /// write the claim row when called with a substrate-supported
+    /// subject_kind. Cycle-1 silently no-op'd because PascalCase kinds
+    /// fell through subject_ref_from_json and hit the error arm.
+    #[test]
+    fn shadow_write_pascal_case_subject_kinds_actually_persist_claims() {
+        let db = test_db();
+        seed_account(&db);
+
+        for kind in ["Account", "account", "ACCOUNT"] {
+            let outcome = shadow_write_tombstone_claim(
+                &db,
+                ShadowTombstoneClaim {
+                    subject_kind: kind,
+                    subject_id: "acct-1",
+                    claim_type: "risk",
+                    field_path: Some("risks"),
+                    text: &format!("kind={kind}"),
+                    actor: "user",
+                    source_scope: None,
+                    observed_at: TS,
+                },
+            );
+            assert_eq!(
+                outcome,
+                ShadowTombstoneOutcome::Committed,
+                "shadow_write must commit for kind={kind}"
+            );
+        }
+
+        // Three tombstone rows now persist for acct-1.
+        let count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM intelligence_claims \
+                 WHERE claim_state = 'tombstoned' \
+                   AND lower(json_extract(subject_ref, '$.kind')) = 'account' \
+                   AND json_extract(subject_ref, '$.id') = 'acct-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3, "all three PascalCase variants must produce claim rows");
+    }
+
+    #[test]
+    fn shadow_write_meeting_kind_persists_claim() {
+        let db = test_db();
+        // Meetings table seed not needed for the claim row itself.
+        let outcome = shadow_write_tombstone_claim(
+            &db,
+            ShadowTombstoneClaim {
+                subject_kind: "Meeting",
+                subject_id: "mtg-1",
+                claim_type: "meeting_entity_dismissed",
+                field_path: Some("account"),
+                text: "acct-x",
+                actor: "user",
+                source_scope: None,
+                observed_at: TS,
+            },
+        );
+        assert_eq!(outcome, ShadowTombstoneOutcome::Committed);
+
+        let count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM intelligence_claims \
+                 WHERE claim_state = 'tombstoned' \
+                   AND lower(json_extract(subject_ref, '$.kind')) = 'meeting' \
+                   AND json_extract(subject_ref, '$.id') = 'mtg-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn shadow_write_email_kind_skips_until_substrate_support_lands() {
+        let db = test_db();
+        let outcome = shadow_write_tombstone_claim(
+            &db,
+            ShadowTombstoneClaim {
+                subject_kind: "Email",
+                subject_id: "em-1",
+                claim_type: "email_dismissed",
+                field_path: Some("commitment"),
+                text: "blocking item",
+                actor: "user",
+                source_scope: None,
+                observed_at: TS,
+            },
+        );
+        assert_eq!(outcome, ShadowTombstoneOutcome::SkippedUnsupportedSubjectKind);
+
+        // No claim row was written.
+        let count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM intelligence_claims",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }
