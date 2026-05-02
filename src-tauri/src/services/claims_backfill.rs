@@ -183,27 +183,18 @@ fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String), String
     let subject_value = serde_json::from_str::<serde_json::Value>(&row.subject_ref)
         .map_err(|e| format!("subject_ref is not JSON: {e}"))?;
 
-    for key in ["kind", "id"] {
-        let value = subject_value
-            .get(key)
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        if value.is_none() {
-            return Err(format!("subject_ref missing non-empty {key}"));
-        }
-    }
-
-    // L2 cycle-12 fix #2 + cycle-16 fix: parse the row's subject_ref
-    // through the SAME SubjectRef parser commit_claim uses, then
-    // serialize via canonical_subject_ref so the rekey-produced
-    // dedup_key is byte-identical to what runtime commit_claim
-    // would produce for the same semantic subject. The parser is
-    // the single source of truth for "supported kind"
-    // (Multi/Global produce a SubjectRef variant the canonical
-    // serializer rejects, and unknown kinds error in the parser),
-    // so the rekey path no longer maintains its own supported-kind
-    // list that could drift from the enum.
+    // L2 cycle-12 fix #2 + cycle-16 fix + cycle-17 fix: parse the
+    // row's subject_ref through the SAME SubjectRef parser
+    // commit_claim uses, then serialize via canonical_subject_ref
+    // so the rekey-produced dedup_key is byte-identical to what
+    // runtime commit_claim would produce for the same semantic
+    // subject. The parser is the SINGLE source of truth for
+    // supported kinds AND supported alias keys (it accepts
+    // kind/type/entity_type and id/entity_id) — earlier cycles had
+    // a hand-rolled `$.kind`/`$.id` precheck that was stricter
+    // than the parser, falsely rejecting subjects with the
+    // alternate alias shape that runtime writes accept. Removing
+    // that precheck keeps rekey and commit_claim in lockstep.
     let subject =
         crate::services::claims::subject_ref_from_json(&subject_value).map_err(|e| {
             format!("subject_ref kind not a supported SubjectRef variant: {e}")
@@ -1803,6 +1794,69 @@ mod tests {
     }
 
     #[test]
+    /// L2 cycle-17 fix: rekey must accept the same alias-shaped
+    /// subject_ref keys (`type`/`entity_type`, `entity_id`) that
+    /// `subject_ref_from_json` parses for runtime commits. The
+    /// previous hand-rolled `$.kind`/`$.id` precheck was stricter
+    /// than the parser, so an alias-shaped historical row would
+    /// fail rekey and abort cutover (rekey errors are fatal per
+    /// cycle-2 fix #2).
+    #[test]
+    fn rekey_accepts_alias_shaped_subject_keys() {
+        let conn = fresh_conn();
+        let db = ActionDb::from_conn(&conn);
+        let clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        // Alias-shaped subject_ref: `type` instead of `kind`,
+        // `entity_id` instead of `id`. Parser accepts both.
+        let alias_subject = r#"{"type":"account","entity_id":"acct-1"}"#;
+        seed_rekey_claim(
+            &db,
+            RekeySeed {
+                id: "m1-alias",
+                subject_ref: alias_subject,
+                claim_type: "risk",
+                field_path: Some("risks"),
+                text: "Alias-shaped subject text",
+                dedup_key: "legacy-shape",
+                item_hash: Some("legacy-hash"),
+            },
+        );
+
+        let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.rows_rewritten, 1);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        // The rekey-produced dedup_key must equal what runtime
+        // commit_claim would compute for the canonical-shape input,
+        // proving alias parity.
+        let stored_dedup: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT dedup_key FROM intelligence_claims WHERE id = 'm1-alias'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        let canonical_subject = r#"{"kind":"account","id":"acct-1"}"#;
+        let (runtime_dedup, _) = expected_runtime_identity(
+            canonical_subject,
+            "risk",
+            Some("risks"),
+            "Alias-shaped subject text",
+        );
+        assert_eq!(
+            stored_dedup, runtime_dedup,
+            "rekey of alias-shape row must produce same dedup_key as canonical-shape commit"
+        );
+    }
+
     /// L2 cycle-16 fix: rekey + commit_claim must produce
     /// byte-identical dedup_keys for the same semantic subject,
     /// regardless of which path's input shape the row started
