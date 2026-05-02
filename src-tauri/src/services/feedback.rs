@@ -429,7 +429,8 @@ pub fn submit_intelligence_correction(
             entity_id,
             field,
             item_key,
-            None,
+            crate::intelligence::canonicalization::maybe_item_hash_for_field(field, item_key)
+                .as_deref(),
             prior_source.as_deref(),
             None,
         )
