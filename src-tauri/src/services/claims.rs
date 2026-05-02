@@ -544,18 +544,34 @@ fn load_active_claim_by_dedup_key(
 /// retracted.
 fn load_active_contradicting_claim(
     conn: &rusqlite::Connection,
-    subject_ref_compact: &str,
+    subject: &SubjectRef,
     claim_type: &str,
     field_path: Option<&str>,
     canonical_text: &str,
 ) -> Result<Option<IntelligenceClaim>, ClaimError> {
+    // L2 cycle-12 fix #1: match the active subject by kind+id via
+    // json_extract instead of exact subject_ref string equality.
+    // Two byte-different but semantically-identical subject_refs
+    // (e.g. reversed key order from json_object vs serde_json
+    // serialization) would otherwise miss this contradiction
+    // detector and silently insert an unlinked duplicate active
+    // claim. json_valid guards malformed historical rows from
+    // tripping json_extract mid-query (cycle-7 hazard).
+    let Some(kind) = subject_kind_label(subject) else {
+        return Ok(None);
+    };
+    let Some(id) = subject_id_for_lookup(subject) else {
+        return Ok(None);
+    };
     let sql = format!(
         "SELECT {CLAIM_COLUMNS} FROM intelligence_claims active \
-         WHERE active.subject_ref = ?1 \
-           AND active.claim_type = ?2 \
-           AND coalesce(active.field_path, '') = coalesce(?3, '') \
+         WHERE json_valid(active.subject_ref) = 1 \
+           AND lower(json_extract(active.subject_ref, '$.kind')) = lower(?1) \
+           AND json_extract(active.subject_ref, '$.id') = ?2 \
+           AND active.claim_type = ?3 \
+           AND coalesce(active.field_path, '') = coalesce(?4, '') \
            AND active.claim_state = 'active' \
-           AND active.text <> ?4 \
+           AND active.text <> ?5 \
            AND NOT EXISTS ( \
                SELECT 1 FROM intelligence_claims tombstone \
                WHERE tombstone.dedup_key = active.dedup_key \
@@ -565,7 +581,8 @@ fn load_active_contradicting_claim(
     );
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query(params![
-        subject_ref_compact,
+        kind,
+        id,
         claim_type,
         field_path,
         canonical_text
@@ -760,7 +777,7 @@ pub fn commit_claim(
             // reconciliation pass) resolves the fork.
             if let Some(primary) = load_active_contradicting_claim(
                 tx.conn_ref(),
-                &subject_ref_compact,
+                &subject,
                 &proposal.claim_type,
                 proposal.field_path.as_deref(),
                 &canonical_text,
@@ -1597,6 +1614,62 @@ mod tests {
             matches!(result, Ok(CommittedClaim::Inserted { .. })),
             "different claim_type must not be blocked, got {result:?}"
         );
+    }
+
+    /// L2 cycle-12 fix #1: contradiction detection must match the
+    /// active subject by kind+id, not subject_ref string equality.
+    /// Two byte-different but semantically-identical subject_refs
+    /// (different JSON key order) would otherwise miss the
+    /// contradiction and silently insert an unlinked duplicate.
+    #[test]
+    fn commit_claim_forks_when_subject_ref_key_order_differs_from_existing() {
+        let db = test_db();
+        seed_account(&db);
+
+        // Manually seed an active claim with subject_ref in
+        // INSERTION-order JSON (kind first), the shape SQLite's
+        // json_object writes. dos7-allowed: cycle-12 regression seed
+        let active_id = "preexisting-active-1";
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
+                  actor, data_source, observed_at, created_at, provenance_json, \
+                  claim_state, surfacing_state, retraction_reason, \
+                  temporal_scope, sensitivity) \
+                 VALUES (?1, ?2, 'risk', 'health.risk', \
+                         'first claim text', 'dedup-1', 'hash-1', \
+                         'agent:test', 'unit_test', ?3, ?3, '{}', \
+                         'active', 'active', NULL, 'state', 'internal')",
+                params![
+                    active_id,
+                    // Insertion-order JSON (kind FIRST, id SECOND).
+                    r#"{"kind":"account","id":"acct-1"}"#,
+                    TS,
+                ],
+            )
+            .unwrap();
+
+        // The runtime serializer produces alphabetical-key JSON
+        // ({"id":"acct-1","kind":"account"}). A naive subject_ref =
+        // ?1 match would not find the existing claim. The cycle-12
+        // fix's json_extract-based match should find it and fork.
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let result = commit_claim(&ctx, &db, proposal("Different text — should fork"))
+            .expect("commit should succeed");
+        match result {
+            CommittedClaim::Forked { primary_claim, .. } => {
+                assert_eq!(
+                    primary_claim.id, active_id,
+                    "fork must point at the existing active claim regardless of subject_ref key order"
+                );
+            }
+            other => panic!(
+                "expected Forked (cycle-12 fix should detect the contradiction \
+                 across reversed key order), got {other:?}"
+            ),
+        }
     }
 
     /// L2 cycle-7 fix #2: a malformed historical tombstone
