@@ -642,6 +642,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                                 actor: "user",
                                 source_scope: None,
                                 observed_at: &now,
+                                expires_at: None,
                             },
                         );
                         let _ = db.conn_ref().execute(
@@ -1897,6 +1898,7 @@ pub async fn dismiss_meeting_entity(
                     actor: "user",
                     source_scope: None,
                     observed_at: &now,
+                    expires_at: None,
                 },
             );
             crate::services::claims::shadow_write_tombstone_claim(
@@ -1910,6 +1912,7 @@ pub async fn dismiss_meeting_entity(
                     actor: "user",
                     source_scope: None,
                     observed_at: &now,
+                    expires_at: None,
                 },
             );
             let _ = db.conn_ref().execute(
@@ -2076,6 +2079,7 @@ pub async fn unlink_meeting_entity_with_prep_queue(
                     actor: "user",
                     source_scope: None,
                     observed_at: &now,
+                    expires_at: None,
                 },
             );
             let _ = db.conn_ref().execute(

@@ -1317,6 +1317,7 @@ pub async fn dismiss_intelligence_item(
                         actor: "user",
                         source_scope: Some("intelligence"),
                         observed_at: &dismissed_at,
+                        expires_at: None,
                     },
                 );
 

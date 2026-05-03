@@ -1459,6 +1459,7 @@ pub fn dismiss_email_item(
             actor: "user",
             source_scope: None,
             observed_at: &now,
+            expires_at: None,
         },
     );
     // Note: `entity_id` is intentionally not the subject. The dismissal

@@ -6,29 +6,32 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 
 ## Index
 
-_(populated as patterns are promoted)_
-
 | Name | Status | Job (one line) | Consumers |
 |---|---|---|---|
-| _(awaiting Audit 03 + Audit 04 findings)_ | | | |
+| [`FolioBar`](./FolioBar.md) | canonical | Top frosted bar with crumbs + actions | every editorial surface |
+| [`FloatingNavIsland`](./FloatingNavIsland.md) | canonical | Dual-pill app + chapter nav (the canonical local-nav pattern) | every stable surface |
+| [`AtmosphereLayer`](./AtmosphereLayer.md) | canonical | Page-tinted radial gradient background | every editorial surface |
+| [`MarginGrid`](./MarginGrid.md) | canonical | Two-column section layout (margin label + content) | DailyBriefing, AccountDetail |
+| [`ChapterHeading`](./ChapterHeading.md) | canonical | Section opener (heavy rule + serif title + epigraph) | AccountDetail, ProjectDetail, etc. |
+| [`Lead`](./Lead.md) | proposed | Single-sentence editorial headline | DailyBriefing |
+| [`DayChart`](./DayChart.md) | proposed | Visual day shape (hour ticks + bars + NOW line) | DailyBriefing |
+| [`MeetingSpineItem`](./MeetingSpineItem.md) | proposed | Magazine-style meeting list entry | DailyBriefing |
+| [`EntityPortraitCard`](./EntityPortraitCard.md) | proposed | Color-banded entity portrait with thread | DailyBriefing |
+| [`ThreadMark`](./ThreadMark.md) | proposed | Universal "talk about this" hover affordance | DailyBriefing (cross-version) |
+| [`AskAnythingDock`](./AskAnythingDock.md) | proposed | Multi-line conversational dock | DailyBriefing (cross-version) |
 
-Strong promotion candidates the audits will likely surface (verify before adding):
+_Wave 2 will add: TrustBand, ClaimRow, AboutThisIntelligencePanel, DossierSourceCoveragePanel, ReceiptCallout, StaleReportBanner, ConsistencyFindingBanner._
 
-- `TrustBand` — render claim trust state with appropriate freshness/confidence affordances
-- `ClaimRow` — single-claim display with provenance, value, source
-- `BriefingSpine` — vertical structural rail of the daily/meeting briefing
-- `LocalNavIsland` — floating local-nav for surfaces (current candidate from `_shared/chrome.js`)
-- `AskAnythingDock` — query input from D-spine briefing
-- `ReceiptCallout` — expandable receipt for a claim (v1.4.4)
-- `FreshnessChip` — compact freshness indicator
-- `ProvenancePill` — source attribution
+_Wave 3 will add: FormRow, SurfaceMasthead, GlanceRow._
+
+_Wave 4 will add: MeetingHero, FolioActions, AgendaThreadList, PredictionsVsRealityGrid, SignalGrid, EscalationQuote, FindingsTriad, ChampionHealthBlock, CommitmentRow, SuggestedActionRow, RoleTransitionRow._
 
 ## Conventions
 
-- **Named after the job, not the surface.** `TrustBand` not `BriefingTrustBand`. If a pattern is unique to one surface, it's probably surface-internal and doesn't need promotion yet.
+- **Named after the job, not the surface.** `TrustBand`, not `BriefingTrustBand`. If a pattern is unique to one surface, it's probably surface-internal and doesn't need promotion yet.
 - **PascalCase.** No suffixes like `Component`, `Container`, `Wrapper`.
 - **Composes primitives.** A pattern that doesn't compose primitives is suspicious — it might be a primitive itself.
-- **Has a clear API.** Pattern specs document the input/output/customization surface. Avoid "it works one way at one place."
+- **Has a clear API.** Pattern specs document the input/output/customization surface.
 - **Variants are first-class.** A pattern with 4 variants is fine. A pattern with 4 forks across 4 surfaces is a bug.
 
 ## Adding a pattern
