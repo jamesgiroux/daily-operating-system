@@ -41,16 +41,16 @@ Mockup nav patterns (`DayStrip`, `SectionTabbar`) are **rejected as separate pat
 ### D4 — `src/components/{shared,editorial}/` rename: **A (don't rename)** ✅
 Document the implementation-folder vs. taxonomy mapping in `SYSTEM-MAP.md`. `data-ds-tier` attributes carry the semantic truth.
 
-### D5 — Freshness/quality vocabulary: **Use v1.4.0 trust bands** ⚠️ refines
-Per `.docs/plans/v1.4.0-waves.md:631`, v1.4.0 substrate ships **three trust bands** that bias surface rendering: `likely_current`, `use_with_caution`, `needs_verification`. These are the user-facing trust signals, wired through DOS-320 (render surfaces filter by trust band).
+### D5 — Freshness/quality vocabulary: **Three distinct primitives** ⚠️ refines
+v1.4.0 introduces multiple trust vocabularies. After review, **three are user-facing on Wave 1 surfaces** and each deserves its own primitive (god-component rejected; conflating freshness into trust-band rejected):
 
-These are **distinct from** intelligence-completeness vocabulary (`sparse / developing / ready / fresh` — what `IntelligenceQualityBadge` already represents). Two different concepts, two different primitives:
+- **`TrustBandBadge`** (NEW per v1.4.0 substrate) — `likely_current / use_with_caution / needs_verification`. Wired to DOS-320 render surface filter. The user-facing judgment.
+- **`IntelligenceQualityBadge`** (existing primitive in `src/components/entity/`) — `sparse / developing / ready / fresh`. Intelligence completeness — orthogonal to trust judgment. Document as-is. D-spine's `prep-state` consumes this with the right variant (don't invent a third primitive).
+- **`FreshnessIndicator`** (NEW per v1.4.0 substrate) — timestamp + relative age (e.g., "as of 3h ago", "stale 5d"). Raw recency signal. Renders next to TrustBandBadge often but means something different.
 
-- **`TrustBandBadge`** (NEW primitive) — `likely_current / use_with_caution / needs_verification` — directly maps to v1.4.0's surface render layer.
-- **`IntelligenceQualityBadge`** (existing primitive in `src/components/entity/`) — `sparse / developing / ready / fresh` — intelligence completeness; document as-is.
-- **D-spine `prep-state`** (`ready / building / new / sparse / captured`) — closer to `IntelligenceQualityBadge` than `TrustBandBadge`. Reconcile with `IntelligenceQualityBadge`, not invent a third primitive.
+**Receipts/inspection vocabularies** (`Resolved / ResolvedWithFlag / Suggestion / NoMatch` resolver bands; `ok / corrected / flagged` consistency states) defer to Wave 2 (v1.4.4 Trust UI) where the receipt experience is in scope.
 
-**Wave 1 impact:** entry #6 (was "QualityBadge") splits into two entries — `TrustBandBadge` (new) and `IntelligenceQualityBadge` (existing, document). D-spine's `prep-state` swap when implementing means consuming `IntelligenceQualityBadge` with the right variant.
+**Wave 1 impact:** entry #6 (was "QualityBadge") splits into three entries — 6a `TrustBandBadge` (new), 6b `IntelligenceQualityBadge` (existing, document), 6c `FreshnessIndicator` (new). D-spine's `prep-state` swap when implementing means consuming `IntelligenceQualityBadge` with the right variant.
 
 ### D6 — `AccountViewSwitcher`: **Keep production as-is** ⚠️ override
 Production has `AccountViewSwitcher` (bottom pill bar). Don't migrate to anything else. Document it as the canonical pattern for tri-view account switching. If we change it later, it goes through a versioned design-system update **after testing**, not as a casual reconciliation.
@@ -76,8 +76,9 @@ Reflects D2 (drop DayStrip, FloatingNavIsland is dual-pill production component)
 | 3 | tokens | `spacing` (file) | `_shared/tokens.css` + production | Base unit + xs..5xl scale |
 | 4 | tokens | `motion` (file) | `_shared/tokens.css` + production | Transitions, durations, animations |
 | 5 | primitive | `Pill` | `_shared/.pill` | Generic pill with `tone` variants (D3) |
-| 6a | primitive | `TrustBandBadge` | NEW per D5 + v1.4.0 contract | likely_current / use_with_caution / needs_verification |
+| 6a | primitive | `TrustBandBadge` | NEW per D5 + v1.4.0 contract (DOS-320) | likely_current / use_with_caution / needs_verification |
 | 6b | primitive | `IntelligenceQualityBadge` | `src/components/entity/IntelligenceQualityBadge.tsx` | sparse / developing / ready / fresh; existing, document |
+| 6c | primitive | `FreshnessIndicator` | NEW per D5 + v1.4.0 substrate (`source_asof`, freshness fallback) | Timestamp + relative age ("as of 3h", "stale 5d") |
 | 7 | primitive | `ProvenanceTag` | `src/components/ui/ProvenanceTag.tsx` (already exists) | Source attribution label |
 | 8 | primitive | `EntityChip` | D-spine `.entity-chip` + production refs | Entity reference with entity color (composes Pill per D3) |
 | 9 | primitive | `TypeBadge` | `_shared/.type-badge` | Customer / Internal / Partner badge |
@@ -95,7 +96,7 @@ Reflects D2 (drop DayStrip, FloatingNavIsland is dual-pill production component)
 | 21 | pattern | `AskAnythingDock` | D-spine `.ask-bar` | Multi-line input + suggestions + scope |
 | 22 | surface | `DailyBriefing` | mockup D-spine + `Dashboard.tsx` (rename per D7 deferred) | Surface spec; documents which chapters it provides to `FloatingNavIsland` |
 
-**Total:** 22 entries → 22 (DayStrip dropped, IntelligenceQualityBadge added).
+**Total:** 22 entries → 23 (DayStrip dropped; IntelligenceQualityBadge + FreshnessIndicator added).
 
 ## Linear issues — updated
 
