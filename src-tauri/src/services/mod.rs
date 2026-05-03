@@ -8,6 +8,7 @@ pub mod claims;
 pub mod claims_backfill;
 pub mod commitment_bridge;
 pub mod context;
+pub mod derived_state;
 pub mod entity_linking;
 pub mod dashboard;
 pub mod emails;
