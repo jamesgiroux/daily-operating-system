@@ -1405,14 +1405,14 @@ pub async fn update_stakeholders(
 
                 // Sync scoring-relevant stakeholder roles to account_stakeholders
                 // so health scoring (champion health, stakeholder coverage) picks them up.
+                // Errors propagate to roll back the entire enrichment write — a failed
+                // stakeholder cache rebuild signal must not leave account_stakeholders
+                // partially updated. The B2 contract requires atomicity between the
+                // membership write and the cache invalidation.
                 for (person_id, role) in &scoring_roles {
-                    if let Err(e) = crate::services::accounts::add_team_member_with_cache_rebuild(
+                    crate::services::accounts::add_team_member_with_cache_rebuild(
                         &ctx, tx, &entity_id, person_id, role,
-                    ) {
-                        log::warn!(
-                            "Stakeholder sync to account_stakeholders failed for {person_id}: {e}"
-                        );
-                    }
+                    )?;
                 }
 
                 // Recompute health immediately so stakeholder changes reflect

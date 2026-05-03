@@ -454,6 +454,12 @@ async fn mutate_meeting_entities_and_refresh_briefing(
             let mutation = mutation.clone();
             let mutation_now = mutation_now.clone();
             move |db| {
+                // Wrap entire mutation in a transaction so emit_in_transaction's
+                // subscriber failures (e.g., stakeholder cache rebuild errors) roll
+                // back ALL the cascade writes atomically. Without this wrapper the
+                // db_write writer-connection runs in autocommit per statement, leaving
+                // partial state on subscriber failure.
+                db.with_transaction(|db| {
                 let signal_clock = crate::services::context::SystemClock;
                 let signal_rng = crate::services::context::SystemRng;
                 let signal_ext = crate::services::context::ExternalClients::default();
@@ -716,6 +722,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                 let _ = db.update_intelligence_state(&meeting_id, "refreshing", None, None);
 
                 Ok::<MeetingEntityMutationOutcome, String>(result)
+                })
             }
         })
         .await?;
