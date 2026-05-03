@@ -170,8 +170,8 @@
 }
 
 .addRoleBtn:hover {
-  border-color: var(--color-garden-larkspur);
-  color: var(--color-garden-larkspur);
+  border-color: var(--color-person);
+  color: var(--color-person);
 }
 
 /* ── Role picker dropdown ── */

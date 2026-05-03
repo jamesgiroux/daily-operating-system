@@ -61,15 +61,27 @@ Ghost tokens consumed by `ActionRow`, `Emails`, `DatabaseRecovery`, `ContextSour
 - `--color-surface-inset` → `--color-desk-charcoal-4`
 - `--color-surface-subtle` → `--color-black-4`
 
-### Entity — semantic entity identity (DOS-357, design system D1)
+### Named tokens — surface identity (DOS-357, design system D1)
 
-Use these when the rendered element represents an entity in context (an account hero, a person card, the user's own surface). Direct uses of underlying paint tokens remain valid where the meaning is the paint color rather than the entity identity.
+Use these when the rendered element represents a specific surface kind in context (an account hero, a person card, the user's own `/me` surface). Direct uses of underlying paint tokens remain valid where the meaning is the paint color rather than the surface identity.
 
-- `--color-entity-account` → `--color-spice-turmeric`
-- `--color-entity-project` → `--color-garden-olive`
-- `--color-entity-person` → `--color-garden-larkspur`
-- `--color-entity-action` → `--color-spice-terracotta`
-- `--color-entity-user` → `--color-garden-eucalyptus`
+- `--color-account` → `--color-spice-turmeric`
+- `--color-project` → `--color-garden-olive`
+- `--color-person`  → `--color-garden-larkspur`
+- `--color-action`  → `--color-spice-terracotta`
+- `--color-self`    → `--color-garden-eucalyptus`
+
+Each named token has alpha variants matching the underlying paint's alpha set (e.g. `--color-account-8`, `--color-account-15`). See `src/styles/design-tokens.css` for the exact list per family.
+
+> Renamed from `--color-entity-*` (2026-05-03). "Entity" was internal jargon — surface authors think "account, project, person." `user` → `self` to match the `/me` surface name. Use the named tokens at any callsite where the color carries surface semantics; the indirection lets us swap the underlying paint (e.g., rebrand accounts from turmeric to a different family) without grepping every callsite.
+
+### When named vs paint
+
+| Use named (`--color-account`) | Use paint (`--color-spice-turmeric`) |
+|---|---|
+| The color *means* "this is an account thing" — account hero, account-tinted badge, account-context border | The color is decorative — a turmeric divider, an editorial accent, a warm-paper highlight that has nothing to do with being an account |
+| Swapping the underlying paint should propagate everywhere this color is used | Swapping the underlying paint would feel wrong because "no, this should always be turmeric regardless of branding" |
+| State colors that *also* happen to be used for an entity in some places — health-yellow that's incidentally turmeric | State colors should stay as paint or get their own state token (`--color-trust-*`, `--color-state-*` when added) |
 
 ### Trust band — user-facing trust render bands (per v1.4.0 substrate)
 
@@ -102,14 +114,14 @@ Full tint list lives in `src/styles/design-tokens.css`.
 
 - **Backgrounds:** start with `--color-surface-*` (semantic). Fall through to `--color-paper-*` when the semantic alias doesn't fit.
 - **Text:** always `--color-text-*` (semantic). Never raw hex; never desk tokens directly.
-- **Accents:** prefer entity aliases (`--color-entity-*`) when the color signals entity identity. Use raw spice/garden tokens when the color signals state (success, urgency, warning) without entity meaning.
+- **Accents:** prefer named tokens (`--color-account`, `--color-project`, `--color-person`, `--color-action`, `--color-self`) when the color signals surface identity. Use raw spice/garden tokens when the color signals state (success, urgency, warning) without surface-identity meaning.
 - **Trust UI:** use `--color-trust-*` (when added in Wave 1) for surface-level trust rendering. These are derived from the v1.4.0 substrate trust band contract.
 - **Borders / rules:** `--color-rule-heavy` for primary dividers, `--color-rule-light` for soft.
 - **Modal backdrops:** `--color-overlay-*`.
 
 ## When NOT to use direct paint tokens
 
-- Any UI signaling entity identity → use entity alias.
+- Any UI signaling surface identity (account, project, person, action, self) → use the named token.
 - Trust band rendering → use trust token (when added).
 - Surface backgrounds → use semantic surface alias.
 

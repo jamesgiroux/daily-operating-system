@@ -64,7 +64,7 @@ export function HorizonChapter({
             <div
               style={{
                 background: "var(--color-paper-linen)",
-                borderLeft: "3px solid var(--color-garden-olive)",
+                borderLeft: "3px solid var(--color-project)",
                 borderRadius: "0 8px 8px 0",
                 padding: "24px 28px",
                 marginBottom: 40,
@@ -77,7 +77,7 @@ export function HorizonChapter({
                   fontWeight: 500,
                   textTransform: "uppercase",
                   letterSpacing: "0.1em",
-                  color: "var(--color-garden-olive)",
+                  color: "var(--color-project)",
                   marginBottom: 10,
                 }}
               >
@@ -139,7 +139,7 @@ export function HorizonChapter({
                   color:
                     daysToTarget <= 0
                       ? "var(--color-spice-terracotta)"
-                      : "var(--color-garden-olive)",
+                      : "var(--color-project)",
                   marginBottom: 12,
                 }}
               >

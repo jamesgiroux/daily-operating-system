@@ -65,7 +65,7 @@ function VelocityStrip({ detail }: { detail: ProjectDetail }) {
           <span
             style={{
               color: item.includes("\u2191")
-                ? "var(--color-garden-olive)"
+                ? "var(--color-project)"
                 : item.includes("\u2193")
                   ? "var(--color-spice-terracotta)"
                   : undefined,
@@ -108,7 +108,7 @@ export function TrajectoryChapter({
           <StateBlock
             label="Momentum"
             items={working}
-            labelColor="var(--color-garden-olive)"
+            labelColor="var(--color-project)"
             onItemChange={
               onUpdateField
                 ? (index, value) => onUpdateField(`currentState.working[${index}]`, value)

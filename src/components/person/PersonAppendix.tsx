@@ -156,7 +156,7 @@ export function PersonAppendix({
                       style={{
                         fontFamily: "var(--font-mono)",
                         fontSize: 10,
-                        color: "var(--color-garden-larkspur)",
+                        color: "var(--color-person)",
                         background: "none",
                         border: "none",
                         cursor: merging ? "default" : "pointer",
@@ -217,4 +217,3 @@ function FieldValue({
     </span>
   );
 }
-

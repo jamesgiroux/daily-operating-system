@@ -75,11 +75,52 @@
      Migration of existing direct entity-color references happens gradually
      as surface specs land.
      ───────────────────────────────────────────────────────────────────────── */
-  --color-entity-account: var(--color-spice-turmeric);
-  --color-entity-project: var(--color-garden-olive);
-  --color-entity-person: var(--color-garden-larkspur);
-  --color-entity-action: var(--color-spice-terracotta);
-  --color-entity-user: var(--color-garden-eucalyptus);
+  /* Named tokens — use these when the color carries surface semantics
+     (an account hero, a project badge, a person card, the user's /me surface).
+     Use the underlying spice/garden paint tokens only when the color is pure
+     decoration (a turmeric divider that's just nice-looking).
+
+     Renamed from --color-entity-* (2026-05-03): "entity" was internal jargon;
+     surface authors think "account, project, person." `user` → `self` to match
+     the /me surface name. */
+  --color-account: var(--color-spice-turmeric);
+  --color-project: var(--color-garden-olive);
+  --color-person:  var(--color-garden-larkspur);
+  --color-action:  var(--color-spice-terracotta);
+  --color-self:    var(--color-garden-eucalyptus);
+
+  /* Alpha variants for the named tokens — point to the same alpha values as
+     the underlying paint tokens so tints stay in lockstep. */
+  --color-account-4:  var(--color-spice-turmeric-4);
+  --color-account-5:  var(--color-spice-turmeric-5);
+  --color-account-6:  var(--color-spice-turmeric-6);
+  --color-account-7:  var(--color-spice-turmeric-7);
+  --color-account-8:  var(--color-spice-turmeric-8);
+  --color-account-10: var(--color-spice-turmeric-10);
+  --color-account-12: var(--color-spice-turmeric-12);
+  --color-account-15: var(--color-spice-turmeric-15);
+  --color-account-18: var(--color-spice-turmeric-18);
+  --color-account-30: var(--color-spice-turmeric-30);
+  --color-account-60: var(--color-spice-turmeric-60);
+
+  --color-project-6:  var(--color-garden-olive-6);
+  --color-project-8:  var(--color-garden-olive-8);
+  --color-project-10: var(--color-garden-olive-10);
+
+  --color-person-8:  var(--color-garden-larkspur-8);
+  --color-person-10: var(--color-garden-larkspur-10);
+  --color-person-12: var(--color-garden-larkspur-12);
+  --color-person-14: var(--color-garden-larkspur-14);
+  --color-person-15: var(--color-garden-larkspur-15);
+
+  --color-action-8:  var(--color-spice-terracotta-8);
+  --color-action-10: var(--color-spice-terracotta-10);
+  --color-action-12: var(--color-spice-terracotta-12);
+  --color-action-15: var(--color-spice-terracotta-15);
+  --color-action-20: var(--color-spice-terracotta-20);
+
+  --color-self-6:  var(--color-garden-eucalyptus-6);
+  --color-self-10: var(--color-garden-eucalyptus-10);
 
   /* ─────────────────────────────────────────────────────────────────────────
      OPACITY VARIANTS — Tinted backgrounds, borders, hover states
