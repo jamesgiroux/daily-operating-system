@@ -221,39 +221,300 @@ pub struct ClaimTypeMetadata {
 }
 
 /// Compile-time exhaustive lookup. Adding a new `ClaimType` variant
-/// without a registry entry is a build error because this match is
-/// exhaustive.
+/// without a match arm is a build error; the registry slice used by
+/// persisted-name traversal is checked separately in tests.
 pub const fn metadata_for_claim_type(kind: ClaimType) -> &'static ClaimTypeMetadata {
     match kind {
-        ClaimType::Risk => &CLAIM_TYPE_REGISTRY[0],
-        ClaimType::Win => &CLAIM_TYPE_REGISTRY[1],
-        ClaimType::StakeholderRole => &CLAIM_TYPE_REGISTRY[2],
-        ClaimType::LinkingDismissed => &CLAIM_TYPE_REGISTRY[3],
-        ClaimType::EmailDismissed => &CLAIM_TYPE_REGISTRY[4],
-        ClaimType::IntelligenceFieldDismissed => &CLAIM_TYPE_REGISTRY[5],
-        ClaimType::FeedbackFieldDismissed => &CLAIM_TYPE_REGISTRY[6],
-        ClaimType::TriageSnooze => &CLAIM_TYPE_REGISTRY[7],
-        ClaimType::MeetingEntityDismissed => &CLAIM_TYPE_REGISTRY[8],
-        ClaimType::AccountFieldCorrection => &CLAIM_TYPE_REGISTRY[9],
-        ClaimType::DismissedItem => &CLAIM_TYPE_REGISTRY[10],
-        ClaimType::BriefingCalloutDismissed => &CLAIM_TYPE_REGISTRY[11],
-        ClaimType::NudgeDismissed => &CLAIM_TYPE_REGISTRY[12],
-        ClaimType::EntityIdentity => &CLAIM_TYPE_REGISTRY[13],
-        ClaimType::EntitySummary => &CLAIM_TYPE_REGISTRY[14],
-        ClaimType::EntityCurrentState => &CLAIM_TYPE_REGISTRY[15],
-        ClaimType::EntityRisk => &CLAIM_TYPE_REGISTRY[16],
-        ClaimType::EntityWin => &CLAIM_TYPE_REGISTRY[17],
-        ClaimType::StakeholderEngagement => &CLAIM_TYPE_REGISTRY[18],
-        ClaimType::StakeholderAssessment => &CLAIM_TYPE_REGISTRY[19],
-        ClaimType::ValueDelivered => &CLAIM_TYPE_REGISTRY[20],
-        ClaimType::MeetingReadiness => &CLAIM_TYPE_REGISTRY[21],
-        ClaimType::CompanyContext => &CLAIM_TYPE_REGISTRY[22],
-        ClaimType::OpenLoop => &CLAIM_TYPE_REGISTRY[23],
-        ClaimType::MeetingTopic => &CLAIM_TYPE_REGISTRY[24],
-        ClaimType::MeetingEventNote => &CLAIM_TYPE_REGISTRY[25],
-        ClaimType::AttendeeContext => &CLAIM_TYPE_REGISTRY[26],
-        ClaimType::MeetingChangeMarker => &CLAIM_TYPE_REGISTRY[27],
-        ClaimType::SuggestedOutcome => &CLAIM_TYPE_REGISTRY[28],
+        ClaimType::Risk => &ClaimTypeMetadata {
+            kind: ClaimType::Risk,
+            name: "risk",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Medium,
+            commit_policy_class: CommitPolicyClass::Fork,
+            canonical_subject_types: SUBJECTS_ANY_ENTITY,
+            allowed_actor_classes: ACTORS_ANY,
+        },
+        ClaimType::Win => &ClaimTypeMetadata {
+            kind: ClaimType::Win,
+            name: "win",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Slow,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_ANY_ENTITY,
+            allowed_actor_classes: ACTORS_ANY,
+        },
+        ClaimType::StakeholderRole => &ClaimTypeMetadata {
+            kind: ClaimType::StakeholderRole,
+            name: "stakeholder_role",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Slow,
+            commit_policy_class: CommitPolicyClass::Replace,
+            canonical_subject_types: SUBJECTS_PERSON,
+            allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
+        },
+        ClaimType::LinkingDismissed => &ClaimTypeMetadata {
+            kind: ClaimType::LinkingDismissed,
+            name: "linking_dismissed",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Static,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_LINKING_DISMISSED,
+            allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
+        },
+        ClaimType::EmailDismissed => &ClaimTypeMetadata {
+            kind: ClaimType::EmailDismissed,
+            name: "email_dismissed",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Static,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_EMAIL,
+            allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
+        },
+        ClaimType::IntelligenceFieldDismissed => &ClaimTypeMetadata {
+            kind: ClaimType::IntelligenceFieldDismissed,
+            name: "intelligence_field_dismissed",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Static,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+            allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
+        },
+        ClaimType::FeedbackFieldDismissed => &ClaimTypeMetadata {
+            kind: ClaimType::FeedbackFieldDismissed,
+            name: "feedback_field_dismissed",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Static,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+            allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
+        },
+        ClaimType::TriageSnooze => &ClaimTypeMetadata {
+            kind: ClaimType::TriageSnooze,
+            name: "triage_snooze",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::EventBound,
+            commit_policy_class: CommitPolicyClass::Replace,
+            canonical_subject_types: SUBJECTS_TRIAGE,
+            allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
+        },
+        ClaimType::MeetingEntityDismissed => &ClaimTypeMetadata {
+            kind: ClaimType::MeetingEntityDismissed,
+            name: "meeting_entity_dismissed",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Static,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_MEETING,
+            allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
+        },
+        ClaimType::AccountFieldCorrection => &ClaimTypeMetadata {
+            kind: ClaimType::AccountFieldCorrection,
+            name: "account_field_correction",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Static,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_ACCOUNT,
+            allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
+        },
+        ClaimType::DismissedItem => &ClaimTypeMetadata {
+            kind: ClaimType::DismissedItem,
+            name: "dismissed_item",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Static,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_TRIAGE,
+            allowed_actor_classes: ACTORS_SYSTEM,
+        },
+        ClaimType::BriefingCalloutDismissed => &ClaimTypeMetadata {
+            kind: ClaimType::BriefingCalloutDismissed,
+            name: "briefing_callout_dismissed",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Static,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+            allowed_actor_classes: ACTORS_SYSTEM,
+        },
+        ClaimType::NudgeDismissed => &ClaimTypeMetadata {
+            kind: ClaimType::NudgeDismissed,
+            name: "nudge_dismissed",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Static,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+            allowed_actor_classes: ACTORS_SYSTEM,
+        },
+        ClaimType::EntityIdentity => &ClaimTypeMetadata {
+            kind: ClaimType::EntityIdentity,
+            name: "entity_identity",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Slow,
+            commit_policy_class: CommitPolicyClass::Replace,
+            canonical_subject_types: SUBJECTS_ANY_ENTITY,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::EntitySummary => &ClaimTypeMetadata {
+            kind: ClaimType::EntitySummary,
+            name: "entity_summary",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Slow,
+            commit_policy_class: CommitPolicyClass::Replace,
+            canonical_subject_types: SUBJECTS_ANY_ENTITY,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::EntityCurrentState => &ClaimTypeMetadata {
+            kind: ClaimType::EntityCurrentState,
+            name: "entity_current_state",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Slow,
+            commit_policy_class: CommitPolicyClass::Replace,
+            canonical_subject_types: SUBJECTS_ANY_ENTITY,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::EntityRisk => &ClaimTypeMetadata {
+            kind: ClaimType::EntityRisk,
+            name: "entity_risk",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Medium,
+            commit_policy_class: CommitPolicyClass::Fork,
+            canonical_subject_types: SUBJECTS_ANY_ENTITY,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::EntityWin => &ClaimTypeMetadata {
+            kind: ClaimType::EntityWin,
+            name: "entity_win",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Slow,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_ANY_ENTITY,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::StakeholderEngagement => &ClaimTypeMetadata {
+            kind: ClaimType::StakeholderEngagement,
+            name: "stakeholder_engagement",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Medium,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_PERSON,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::StakeholderAssessment => &ClaimTypeMetadata {
+            kind: ClaimType::StakeholderAssessment,
+            name: "stakeholder_assessment",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Confidential,
+            freshness_decay_class: FreshnessDecayClass::Medium,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_PERSON,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::ValueDelivered => &ClaimTypeMetadata {
+            kind: ClaimType::ValueDelivered,
+            name: "value_delivered",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Slow,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_ANY_ENTITY,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::MeetingReadiness => &ClaimTypeMetadata {
+            kind: ClaimType::MeetingReadiness,
+            name: "meeting_readiness",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Fast,
+            commit_policy_class: CommitPolicyClass::Replace,
+            canonical_subject_types: SUBJECTS_MEETING,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::CompanyContext => &ClaimTypeMetadata {
+            kind: ClaimType::CompanyContext,
+            name: "company_context",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Slow,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_ACCOUNT,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::OpenLoop => &ClaimTypeMetadata {
+            kind: ClaimType::OpenLoop,
+            name: "open_loop",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::Medium,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::MeetingTopic => &ClaimTypeMetadata {
+            kind: ClaimType::MeetingTopic,
+            name: "meeting_topic",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::EventBound,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_MEETING,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::MeetingEventNote => &ClaimTypeMetadata {
+            kind: ClaimType::MeetingEventNote,
+            name: "meeting_event_note",
+            default_temporal_scope: TemporalScope::PointInTime,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::EventBound,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_MEETING,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::AttendeeContext => &ClaimTypeMetadata {
+            kind: ClaimType::AttendeeContext,
+            name: "attendee_context",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::EventBound,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_PERSON,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::MeetingChangeMarker => &ClaimTypeMetadata {
+            kind: ClaimType::MeetingChangeMarker,
+            name: "meeting_change_marker",
+            default_temporal_scope: TemporalScope::PointInTime,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::EventBound,
+            commit_policy_class: CommitPolicyClass::Reinforce,
+            canonical_subject_types: SUBJECTS_MEETING,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
+        ClaimType::SuggestedOutcome => &ClaimTypeMetadata {
+            kind: ClaimType::SuggestedOutcome,
+            name: "suggested_outcome",
+            default_temporal_scope: TemporalScope::State,
+            default_sensitivity: ClaimSensitivity::Internal,
+            freshness_decay_class: FreshnessDecayClass::EventBound,
+            commit_policy_class: CommitPolicyClass::Replace,
+            canonical_subject_types: SUBJECTS_MEETING,
+            allowed_actor_classes: ACTORS_AGENT,
+        },
     }
 }
 
@@ -308,9 +569,9 @@ const ACTORS_USER_OR_SYSTEM: &[ClaimActorClass] =
 const ACTORS_AGENT: &[ClaimActorClass] = &[ClaimActorClass::Agent];
 const ACTORS_SYSTEM: &[ClaimActorClass] = &[ClaimActorClass::System];
 
-/// Closed registry of claim types. Index order MUST match the
-/// `metadata_for_claim_type` match arms above; the
-/// `claim_type_registry_indices_align_with_enum` test catches drift.
+/// Closed registry of claim types for name-based traversal paths.
+/// `metadata_for_claim_type` is independently exhaustive; this slice
+/// backs persisted-name parsing and registry-order drift tests.
 pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
     // --- Production / lifecycle -------------------------------------
     ClaimTypeMetadata {
@@ -717,9 +978,10 @@ mod tests {
 
     #[test]
     fn claim_type_registry_indices_align_with_enum() {
-        // Drift guard: the metadata_for_claim_type match indexes
-        // CLAIM_TYPE_REGISTRY by position. Reordering the registry
-        // without updating the match silently mis-routes lookups.
+        // Drift guard for callers that traverse CLAIM_TYPE_REGISTRY
+        // as a slice. The direct enum lookup above is independent,
+        // but name parsing still depends on every registry row
+        // carrying the expected kind/name pair.
         let cases = [
             (ClaimType::Risk, "risk"),
             (ClaimType::Win, "win"),
@@ -754,10 +1016,10 @@ mod tests {
             (ClaimType::MeetingChangeMarker, "meeting_change_marker"),
             (ClaimType::SuggestedOutcome, "suggested_outcome"),
         ];
-        for (kind, expected) in cases {
-            let m = metadata_for_claim_type(kind);
+        for (idx, (kind, expected)) in cases.iter().copied().enumerate() {
+            let m = &CLAIM_TYPE_REGISTRY[idx];
             assert_eq!(m.kind, kind);
-            assert_eq!(m.name, expected, "registry index mismatch for {kind:?}");
+            assert_eq!(m.name, expected, "registry slice mismatch for {kind:?}");
         }
         assert_eq!(
             cases.len(),
@@ -779,6 +1041,12 @@ mod tests {
     fn try_from_db_str_rejects_unknown() {
         let err = ClaimType::try_from_db_str("not_a_real_type").unwrap_err();
         assert_eq!(err.0, "not_a_real_type");
+    }
+
+    #[test]
+    fn serde_claim_type_rejects_unknown_string() {
+        let parsed: Result<ClaimType, _> = serde_json::from_str("\"not_a_real_type\"");
+        assert!(parsed.is_err());
     }
 
     #[test]

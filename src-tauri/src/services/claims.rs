@@ -26,8 +26,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::abilities::claims::{metadata_for_claim_type, ClaimActorClass};
 use crate::abilities::feedback::{
-    feedback_semantics, transition_for_feedback, ClaimFeedbackMetadata, ClaimRenderPolicy,
-    ClaimVerificationState, FeedbackAction, RepairAction,
+    compute_needs_nuance_trust_effect, feedback_semantics, transition_for_feedback,
+    ClaimFeedbackMetadata, ClaimRenderPolicy, ClaimVerificationState, FeedbackAction, RepairAction,
 };
 use crate::db::claim_invalidation::SubjectRef;
 use crate::db::claims::{
@@ -919,6 +919,40 @@ fn require_payload_string(
     }
 }
 
+fn payload_string(payload_json: Option<&str>, key: &str) -> Result<Option<String>, ClaimError> {
+    let Some(raw) = payload_json
+        .map(str::trim)
+        .filter(|payload| !payload.is_empty())
+    else {
+        return Ok(None);
+    };
+    let payload: serde_json::Value = serde_json::from_str(raw).map_err(|e| {
+        ClaimError::InvalidFeedback(format!("payload_json must be valid JSON: {e}"))
+    })?;
+    Ok(payload
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string))
+}
+
+fn feedback_metadata_for_claim(
+    claim: &IntelligenceClaim,
+    input: &ClaimFeedbackInput,
+    mut metadata: ClaimFeedbackMetadata,
+) -> Result<ClaimFeedbackMetadata, ClaimError> {
+    if matches!(input.action, FeedbackAction::NeedsNuance) {
+        if let Some(corrected_text) =
+            payload_string(input.payload_json.as_deref(), "corrected_text")?
+        {
+            metadata.trust_effect =
+                compute_needs_nuance_trust_effect(&claim.text, &corrected_text);
+        }
+    }
+    Ok(metadata)
+}
+
 fn verification_update_for_feedback(
     claim: &IntelligenceClaim,
     action: FeedbackAction,
@@ -1087,8 +1121,9 @@ pub fn commit_claim(
     // the registry pins it to Person only.
     let kind = crate::abilities::claims::ClaimType::try_from_db_str(&proposal.claim_type)
         .map_err(|e| ClaimError::UnknownClaimType(e.0))?;
-    // subject_kind_label returns PascalCase; the registry compares
-    // against lowercase form (matches canonical_subject_ref output).
+    // The upstream spine guard rejects Multi/Global; this lowers the
+    // remaining single-subject variants to the registry's canonical
+    // subject-kind labels.
     let subject_kind_lc = match &subject {
         SubjectRef::Account { .. } => "account",
         SubjectRef::Meeting { .. } => "meeting",
@@ -1096,9 +1131,7 @@ pub fn commit_claim(
         SubjectRef::Project { .. } => "project",
         SubjectRef::Email { .. } => "email",
         SubjectRef::Multi(_) | SubjectRef::Global => {
-            return Err(ClaimError::SubjectRef(
-                "Multi/Global subjects are rejected at the v1.4.0 spine".to_string(),
-            ));
+            unreachable!("Multi/Global rejected upstream")
         }
     };
     if !crate::abilities::claims::subject_kind_is_canonical_for(kind, subject_kind_lc) {
@@ -1352,6 +1385,7 @@ pub fn record_claim_feedback(
         let claim = load_claim_by_id(tx.conn_ref(), &input.claim_id)?
             .ok_or_else(|| ClaimError::UnknownClaimId(input.claim_id.clone()))?;
         validate_feedback_actor(&input.actor)?;
+        let metadata = feedback_metadata_for_claim(&claim, &input, metadata.clone())?;
         let subject_value: serde_json::Value = serde_json::from_str(&claim.subject_ref)?;
         let subject = subject_ref_from_json(&subject_value)?;
         let (signal_entity_type, signal_entity_id) = signal_target_for_claim(&subject, &claim.id);
@@ -2334,20 +2368,35 @@ mod tests {
 
     #[test]
     fn dedup_key_signature_excludes_thread_id() {
-        // Substrate invariant: thread_id participates in storage but
-        // NOT in claim identity. compute_dedup_key takes only content
-        // hash + subject + claim_type + field_path; same-content
-        // claims that participate in different topic threads MUST
-        // hash to the same dedup_key so they merge as one claim.
-        // This test enforces the structural property — the function
-        // signature has no thread_id parameter — so a future change
-        // adding one would break this call site.
-        let key_a = compute_dedup_key("h1", SUBJECT, "risk", Some("health.risk"));
-        let key_b = compute_dedup_key("h1", SUBJECT, "risk", Some("health.risk"));
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut first = proposal("Procurement blocked renewal");
+        first.thread_id = Some("thread-a".to_string());
+        let first_id = inserted_claim_id(commit_claim(&ctx, &db, first).unwrap());
+
+        let mut second = proposal("Procurement blocked renewal");
+        second.thread_id = Some("thread-b".to_string());
+        second.data_source = "second_source".to_string();
+        let result = commit_claim(&ctx, &db, second).unwrap();
+        match result {
+            CommittedClaim::Reinforced { claim, .. } => {
+                assert_eq!(claim.id, first_id);
+            }
+            other => panic!("expected same-meaning merge, got {other:?}"),
+        }
+
+        let active: Vec<_> = load_claims_active(&db, SUBJECT, Some("risk"))
+            .unwrap()
+            .into_iter()
+            .filter(|claim| claim.text == "procurement blocked renewal")
+            .collect();
         assert_eq!(
-            key_a, key_b,
-            "identical content+subject+claim_type+field_path must produce identical dedup_key \
-             regardless of any topic-thread participation"
+            active.len(),
+            1,
+            "thread_id must not create duplicate active claims"
         );
     }
 
@@ -3229,6 +3278,37 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn feedback_metadata_for_claim_uses_corrected_text_for_needs_nuance() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Renewal risk is elevated")).unwrap(),
+        );
+        let claim = load_claim_by_id(db.conn_ref(), &claim_id)
+            .unwrap()
+            .expect("claim exists");
+        let input = ClaimFeedbackInput {
+            claim_id,
+            action: FeedbackAction::NeedsNuance,
+            actor: "user".to_string(),
+            actor_id: Some("user-fixture".to_string()),
+            payload_json: Some(
+                serde_json::json!({
+                    "corrected_text": "Customer expanded usage across the support organization"
+                })
+                .to_string(),
+            ),
+        };
+
+        let metadata =
+            feedback_metadata_for_claim(&claim, &input, feedback_semantics(input.action)).unwrap();
+        assert_eq!(metadata.trust_effect.claim_alpha_delta, 0.0);
+        assert_eq!(metadata.trust_effect.claim_beta_delta, 0.3);
     }
 
     #[test]

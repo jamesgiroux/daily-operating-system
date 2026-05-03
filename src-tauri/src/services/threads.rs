@@ -84,7 +84,11 @@ where
         Ok(()) => {
             if started {
                 if let Err(err) = db.conn_ref().execute_batch("COMMIT") {
-                    let _ = db.conn_ref().execute_batch("ROLLBACK");
+                    if let Err(rollback_err) = db.conn_ref().execute_batch("ROLLBACK") {
+                        log::warn!(
+                            "thread transaction rollback after commit failure also failed: {rollback_err}"
+                        );
+                    }
                     return Err(ThreadError::Rusqlite(err));
                 }
             }
@@ -92,7 +96,9 @@ where
         }
         Err(err) => {
             if started {
-                let _ = db.conn_ref().execute_batch("ROLLBACK");
+                if let Err(rollback_err) = db.conn_ref().execute_batch("ROLLBACK") {
+                    log::warn!("thread transaction rollback failed: {rollback_err}");
+                }
             }
             Err(err)
         }
@@ -125,7 +131,9 @@ fn parse_created_at(raw: String, column: usize) -> rusqlite::Result<DateTime<Utc
 mod tests {
     use super::*;
     use crate::abilities::threads::create_thread;
+    use crate::db::claims::{ClaimSensitivity, TemporalScope};
     use crate::db::test_utils::test_db;
+    use crate::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
     use crate::services::context::{Clock, ExternalClients, FixedClock, SeedableRng, SeededRng};
     use chrono::TimeZone;
 
@@ -151,27 +159,50 @@ mod tests {
         FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 3, 14, 30, 0).unwrap())
     }
 
-    fn seed_claim(db: &ActionDb, claim_id: &str, thread_id: Option<&ThreadId>) {
+    fn seed_account(db: &ActionDb) {
         db.conn_ref()
             .execute(
-                "INSERT INTO intelligence_claims \
-                 (id, subject_ref, claim_type, text, dedup_key, actor, data_source, \
-                  observed_at, provenance_json, thread_id) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params![
-                    claim_id,
-                    r#"{"kind":"Account","id":"acct-1"}"#,
-                    "account_state",
-                    "Renewal strategy is active",
-                    format!("dedup-{claim_id}"),
-                    "agent:test",
-                    "manual",
-                    "2026-05-03T14:30:00+00:00",
-                    r#"{"provenance_schema_version":1}"#,
-                    thread_id.map(|id| id.0.to_string()),
-                ],
+                "INSERT OR IGNORE INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                params!["acct-1", "Account 1", "2026-05-03T14:30:00+00:00"],
             )
-            .expect("seed claim");
+            .expect("seed account");
+    }
+
+    fn seed_claim(
+        ctx: &ServiceContext<'_>,
+        db: &ActionDb,
+        text: &str,
+        thread_id: Option<&ThreadId>,
+    ) -> String {
+        seed_account(db);
+        let result = commit_claim(
+            ctx,
+            db,
+            ClaimProposal {
+                subject_ref: r#"{"kind":"account","id":"acct-1"}"#.to_string(),
+                claim_type: "risk".to_string(),
+                field_path: Some("health.risk".to_string()),
+                topic_key: None,
+                text: text.to_string(),
+                actor: "agent:test".to_string(),
+                data_source: "manual".to_string(),
+                source_ref: None,
+                source_asof: Some("2026-05-03T14:30:00+00:00".to_string()),
+                observed_at: "2026-05-03T14:30:00+00:00".to_string(),
+                provenance_json: "{}".to_string(),
+                metadata_json: None,
+                thread_id: thread_id.map(|id| id.0.to_string()),
+                temporal_scope: Some(TemporalScope::State),
+                sensitivity: Some(ClaimSensitivity::Internal),
+                tombstone: None,
+            },
+        )
+        .expect("seed claim");
+
+        match result {
+            CommittedClaim::Inserted { claim } => claim.id,
+            other => panic!("expected inserted claim, got {other:?}"),
+        }
     }
 
     #[test]
@@ -224,9 +255,9 @@ mod tests {
         let ctx = test_ctx(&clock, &rng, &ext);
         let thread = create_thread(&ctx, Some("Budget risk"));
         save_thread(&ctx, &db, &thread).expect("save thread");
-        seed_claim(&db, "claim-with-thread", Some(&thread.id));
+        let claim_id = seed_claim(&ctx, &db, "Renewal strategy is active", Some(&thread.id));
 
-        let threads = list_threads_for_claim(&db, "claim-with-thread").expect("list threads");
+        let threads = list_threads_for_claim(&db, &claim_id).expect("list threads");
 
         assert_eq!(threads, vec![thread]);
     }
@@ -234,9 +265,13 @@ mod tests {
     #[test]
     fn list_threads_for_claim_returns_empty_when_no_thread() {
         let db = test_db();
-        seed_claim(&db, "claim-without-thread", None);
+        let clock = fixed_clock();
+        let rng = SeedableRng::new(12);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let claim_id = seed_claim(&ctx, &db, "Renewal strategy has no thread", None);
 
-        let threads = list_threads_for_claim(&db, "claim-without-thread").expect("list threads");
+        let threads = list_threads_for_claim(&db, &claim_id).expect("list threads");
 
         assert!(threads.is_empty());
     }
