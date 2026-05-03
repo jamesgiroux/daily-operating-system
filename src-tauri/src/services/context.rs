@@ -7,7 +7,7 @@
 //! - `Clock` + `SeededRng` traits — injection seams replacing direct
 //!   `Utc::now()` / `rand::thread_rng()` in service + ability code.
 //! - `ServiceContext<'a>` — per-call carrier with public read capabilities
-//!   (`mode`, `clock`, `rng`, `external`) and `pub(in crate::services)`
+//!   (`mode`, `clock`, `rng`, `actor`, `external`) and `pub(in crate::services)`
 //!   service-internal fields.
 //! - `ExternalClients` — named wrapper struct for `glean` / `slack` /
 //!   `gmail` / `salesforce`; live in `Live`, replay/fixture in
@@ -258,7 +258,7 @@ impl From<crate::db::types::DbError> for ServiceError {
 
 /// Per-call service execution context.
 ///
-/// `mode`, `clock`, `rng`, `external` are public read capabilities
+/// `mode`, `clock`, `rng`, `actor`, `external` are public read capabilities
 /// (ability code may read them). `tx` is `pub(in crate::services)` —
 /// service implementation code reads it; ability-facing code does not.
 ///
@@ -272,6 +272,7 @@ pub struct ServiceContext<'a> {
     pub mode: ExecutionMode,
     pub clock: &'a dyn Clock,
     pub rng: &'a dyn SeededRng,
+    pub actor: &'a str,
     pub external: &'a ExternalClients,
     pub(in crate::services) tx: Option<TxHandle>,
 }
@@ -343,6 +344,7 @@ impl<'a> ServiceContext<'a> {
             mode: ExecutionMode::Live,
             clock,
             rng,
+            actor: "system",
             external,
             tx: None,
         }
@@ -360,6 +362,7 @@ impl<'a> ServiceContext<'a> {
             mode: ExecutionMode::Simulate,
             clock,
             rng,
+            actor: "system",
             external,
             tx: None,
         }
@@ -384,9 +387,16 @@ impl<'a> ServiceContext<'a> {
             mode: ExecutionMode::Evaluate,
             clock,
             rng,
+            actor: "system",
             external,
             tx: None,
         }
+    }
+
+    /// Override the actor label associated with this service call.
+    pub fn with_actor(mut self, actor: &'a str) -> Self {
+        self.actor = actor;
+        self
     }
 
     /// Test-only `Live` constructor.
