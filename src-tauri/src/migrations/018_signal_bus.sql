@@ -1,4 +1,4 @@
--- I306: Signal Bus Foundation (ADR-0080 Phase 2)
+-- Signal Bus Foundation (ADR-0080 Phase 2)
 --
 -- Universal signal event log where every data source produces typed,
 -- weighted, time-decaying signals. Signals are fused using weighted

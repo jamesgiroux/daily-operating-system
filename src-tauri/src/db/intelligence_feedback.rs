@@ -1,4 +1,4 @@
-//! Intelligence feedback persistence (I529/I536).
+//! Intelligence feedback persistence.
 
 use super::ActionDb;
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
@@ -80,7 +80,7 @@ pub enum MalformedReason {
 }
 
 /// Opaque tombstone identifier. Legacy rows stringify INTEGER PRIMARY KEY;
-/// DOS-7 can carry UUID claim identifiers through the same surface.
+///  can carry UUID claim identifiers through the same surface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TombstoneId(pub String);
 
@@ -142,7 +142,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// I645: Check if an entity-scoped intelligence item is suppressed.
+    /// Check if an entity-scoped intelligence item is suppressed.
     ///
     /// The lookup is infallible at the type level: storage errors and malformed
     /// tombstones return `SuppressionDecision::Malformed`, forcing callers to
@@ -156,7 +156,7 @@ impl ActionDb {
     /// malformed. Expired and superseded rows are ignored and can fall through
     /// to less-specific tiers.
     ///
-    /// Existing `item_hash` rows may have been written before DOS-308 locked
+    /// Existing `item_hash` rows may have been written before  locked
     /// canonicalization. New writers use `intelligence::canonicalization`;
     /// existing rows are read best-effort and fall through to text/keyless
     /// matching when their stored hash does not match the locked rule.
@@ -222,7 +222,7 @@ impl ActionDb {
         SuppressionDecision::NotSuppressed
     }
 
-    /// DOS-7 D5-2 parallel suppression lookup backed by `intelligence_claims`.
+    /// Parallel suppression lookup backed by `intelligence_claims`.
     ///
     /// This intentionally lives alongside the legacy `is_suppressed` reader:
     /// callers continue to read `suppression_tombstones` until a follow-up

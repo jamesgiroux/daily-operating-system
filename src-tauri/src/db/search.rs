@@ -1,4 +1,4 @@
-//! I427: Full-text search across entities.
+//! Full-text search across entities.
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};

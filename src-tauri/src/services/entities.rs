@@ -305,7 +305,7 @@ pub async fn get_executive_intelligence(
     let workspace = std::path::Path::new(&config.workspace_path);
     let today_dir = workspace.join("_today");
 
-    // Load today's meetings from DB, merge with live calendar (I513)
+    // Load today's meetings from DB, merge with live calendar
     let meetings = {
         let tz_ent: chrono_tz::Tz = config
             .schedules

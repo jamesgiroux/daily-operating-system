@@ -1,4 +1,4 @@
-//! Coherence detection for entity assessment (I407).
+//! Coherence detection for entity assessment.
 //!
 //! Validates that entity assessment is semantically coherent with
 //! the entity's actual meeting history using embedding similarity.

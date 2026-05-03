@@ -1,4 +1,4 @@
--- I633: Health score history for trend computation.
+-- Health score history for trend computation.
 -- Records each recomputed health score so we can derive real trends
 -- instead of the hardcoded "stable" placeholder.
 

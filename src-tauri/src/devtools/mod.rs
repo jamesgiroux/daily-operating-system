@@ -3,7 +3,7 @@
 //! All public functions check `cfg!(debug_assertions)` at runtime so that
 //! `generate_handler!` can resolve them in release builds (where they return
 //! errors immediately). The cost is two string comparisons — negligible.
-//! Note: Config fields like `text_scale_percent` (DOS-45) use serde defaults
+//! Note: Config fields like `text_scale_percent`  use serde defaults
 //! and don't require mock data seeds — they auto-default in all scenarios.
 
 use std::path::Path;
@@ -187,7 +187,7 @@ pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
     // 4. Activate dev DB mode (affects ActionDb::db_path())
     crate::db::set_dev_db_mode(true);
 
-    // 5. (I609) No sync DB handle to reopen — ActionDb::open() respects DEV_DB_MODE.
+    // 5.  No sync DB handle to reopen — ActionDb::open respects DEV_DB_MODE.
 
     // 5b. Clear all in-memory volatile state so production data doesn't
     //     bleed into the dev sandbox. Calendar events, workflow status,
@@ -366,11 +366,11 @@ pub struct DevState {
     pub people_count: usize,
     pub has_today_data: bool,
     pub google_auth_status: String,
-    /// Whether the app is currently using the isolated dev DB (I298).
+    /// Whether the app is currently using the isolated dev DB.
     pub is_dev_db_mode: bool,
-    /// Stale `dailyos-dev.db` file exists on disk (I298).
+    /// Stale `dailyos-dev.db` file exists on disk.
     pub has_dev_db_file: bool,
-    /// `~/Documents/DailyOS-dev/` workspace directory exists (I298).
+    /// `~/Documents/DailyOS-dev/` workspace directory exists.
     pub has_dev_workspace: bool,
 }
 
@@ -569,7 +569,7 @@ pub fn onboarding_scenario(scenario: &str, state: &AppState) -> Result<String, S
     ))
 }
 
-/// Purge all mock data from the current database (I298/I536).
+/// Purge all mock data from the current database.
 ///
 /// All mock IDs use the `mock-` prefix, so a single `WHERE id/entity_id LIKE 'mock-%'`
 /// per table cleans everything. Safe to run against any DB — only mock-prefixed rows are affected.
@@ -608,7 +608,7 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
     let n2 = delete_mock("meeting_entities", "meeting_id");
     summary.push(format!("meeting_entities: {}", n1 + n2));
 
-    // DOS-240: dismissal dictionary — clear by meeting_id / entity_id patterns.
+    // dismissal dictionary — clear by meeting_id / entity_id patterns.
     let n1 = delete_mock("meeting_entity_dismissals", "meeting_id");
     let n2 = delete_mock("meeting_entity_dismissals", "entity_id");
     summary.push(format!("meeting_entity_dismissals: {}", n1 + n2));
@@ -723,7 +723,7 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
     ))
 }
 
-/// Check whether stale dev artifacts exist on disk (I298).
+/// Check whether stale dev artifacts exist on disk.
 ///
 /// Returns indicators for: dev DB file exists, dev workspace dir exists.
 pub fn check_dev_artifacts() -> (bool, bool) {
@@ -733,7 +733,7 @@ pub fn check_dev_artifacts() -> (bool, bool) {
     (dev_db_exists, dev_workspace_exists)
 }
 
-/// Delete stale dev artifacts from disk (I298).
+/// Delete stale dev artifacts from disk.
 ///
 /// Removes `~/.dailyos/dailyos-dev.db` (+ WAL/SHM) and optionally
 /// the `~/Documents/DailyOS-dev/` workspace directory.
@@ -880,7 +880,7 @@ fn reset_all(state: &AppState) -> Result<(), String> {
     };
 
     // 2. Delete config and state files.
-    // I298: When dev DB mode is active, only delete the dev DB — not the live one.
+    // When dev DB mode is active, only delete the dev DB — not the live one.
     let db_files: Vec<std::path::PathBuf> = if crate::db::is_dev_db_mode() {
         vec![
             dailyos_dir.join("dailyos-dev.db"),
@@ -997,7 +997,7 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
     // Plus Initech Onboarding (not in briefing) → it becomes "new".
     seed_calendar_events(state)?;
 
-    // Google auth — set in-memory only, NEVER write to Keychain (I298 fix)
+    // Google auth — set in-memory only, NEVER write to Keychain (fix)
     if with_auth {
         *state.calendar.google_auth.lock() = GoogleAuthStatus::Authenticated {
             email: "dev@dailyos.test".to_string(),
@@ -1458,7 +1458,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params!["mock-initech", "Initech", "onboarding", 350_000.0, "green", "Accounts/Initech/dashboard.md", &today],
     ).map_err(|e| e.to_string())?;
 
-    // I114: Contoso parent with 2 child BUs
+    // Contoso parent with 2 child BUs
     conn.execute(
         "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, contract_end, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         rusqlite::params!["mock-contoso", "Contoso", "steady-state", 2_400_000.0, "green", "2026-06-30", "Accounts/Contoso", &today],
@@ -1482,7 +1482,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // --- Account Domains (inbox-to-account matching) ---
     // Populated here from mock data. In production, domains are populated via:
     // 1. event_trigger.rs: merge_account_domains() after entity linking (forward path)
-    // 2. backfill_account_domains command: walks historical meeting→account links (I660)
+    // 2. backfill_account_domains command: walks historical meeting→account links
     let account_domain_rows: Vec<(&str, &str)> = vec![
         ("mock-acme-corp", "acme.com"),
         ("mock-globex-industries", "globex.com"),
@@ -1591,13 +1591,13 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     )
     .map_err(|e| format!("Acme renewal_stage: {}", e))?;
 
-    // --- Commercial stage (I644) ---
+    // --- Commercial stage  ---
     conn.execute(
         "UPDATE accounts SET commercial_stage = 'Proposal Sent' WHERE id = 'mock-globex-industries'",
         [],
     ).map_err(|e| format!("Globex commercial_stage: {}", e))?;
 
-    // --- Source references (I644) ---
+    // --- Source references  ---
     for (account_id, field, system, kind, value) in [
         ("mock-acme-corp", "arr", "salesforce", "fact", "1200000"),
         (
@@ -1630,7 +1630,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Source ref seed: {}", e))?;
     }
 
-    // --- Technical Footprint (I649) ---
+    // --- Technical Footprint  ---
     conn.execute(
         "INSERT OR IGNORE INTO account_technical_footprint \
          (account_id, usage_tier, adoption_score, active_users, support_tier, csat_score, open_tickets, services_stage, source) \
@@ -1656,7 +1656,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params!["mock-initech", "Initech", "account", "Accounts/Initech/dashboard.md", &today],
     ).map_err(|e| e.to_string())?;
 
-    // I114: Contoso entities (parent + children)
+    // Contoso entities (parent + children)
     conn.execute(
         "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params!["mock-contoso", "Contoso", "account", "Accounts/Contoso", &today],
@@ -1787,7 +1787,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // (see below) to satisfy FK constraint: meeting_entities.meeting_id → meetings.id
     let today_str = date_only(0);
 
-    // I298: Also seed today's customer meetings into meetings table with ISO timestamps
+    // Also seed today's customer meetings into meetings table with ISO timestamps
     // so DailyFocus/compute_focus_capacity() picks them up.
     let today_local = Local::now();
     let make_iso = |hour: u32, min: u32| -> String {
@@ -2002,7 +2002,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         )
         .map_err(|e| format!("Historical meeting transcript: {}", e))?;
 
-        // I298: Also link historical customer meetings to their account entity
+        // Also link historical customer meetings to their account entity
         if let Some(acct) = account_id {
             conn.execute(
                 "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, 'account')",
@@ -2075,7 +2075,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Today meeting-entity link: {}", e))?;
     }
 
-    // DOS-240: seed a meeting-entity dismissal so the fixture scenario exercises
+    // seed a meeting-entity dismissal so the fixture scenario exercises
     // the "dismissed entity stays gone across sync" guard. The Acme Weekly
     // meeting pretends a user dismissed a stray "mock-initech" resolution —
     // any calendar-sync / resolver pass that would re-match Initech against
@@ -3429,10 +3429,10 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ("mock-initech", "mock-priya-sharma", "technical_lead"),
     ];
 
-    // I652: get_person_stakeholder_roles() reads from account_stakeholder_roles above.
+    // get_person_stakeholder_roles reads from account_stakeholder_roles above.
     // No additional mock data needed — roles are already seeded per account_team_rows.
 
-    // I652: Seed engagement/assessment data alongside stakeholder links
+    // Seed engagement/assessment data alongside stakeholder links
     let engagement_seeds: std::collections::HashMap<(&str, &str), (&str, &str)> = [
         (
             ("mock-globex-industries", "mock-sarah-chen"),
@@ -3495,7 +3495,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     }
 
     // =========================================================================
-    // Phase 6b: Stakeholder Suggestions (I652 phase 2)
+    // Phase 6b: Stakeholder Suggestions
     // =========================================================================
     // Test data for get_stakeholder_suggestions() 3-month filter:
     // - Recent suggestions (within 3 months) with pending status
@@ -4527,7 +4527,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Expanded account event {}/{}: {}", account_id, event_type, e))?;
     }
 
-    // ─── I555: Enriched captures with metadata ──────────────────────────────
+    // ─── Enriched captures with metadata ──────────────────────────────
 
     // Enriched captures: RED risks
     let enriched_captures: Vec<(
@@ -4677,7 +4677,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Enriched capture {}: {}", id, e))?;
     }
 
-    // ─── I555: Interaction dynamics ──────────────────────────────────────────
+    // ─── Interaction dynamics ──────────────────────────────────────────
 
     let dynamics_rows: Vec<(&str, i32, i32, &str, &str, &str, i32)> = vec![
         // (meeting_id, customer_pct, internal_pct, question_density, decision_maker_active, forward_looking, monologue_risk)
@@ -4703,7 +4703,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Interaction dynamics {}: {}", meeting_id, e))?;
     }
 
-    // ─── I555: Champion health assessments ───────────────────────────────────
+    // ─── Champion health assessments ───────────────────────────────────
 
     let champion_rows: Vec<(&str, &str, &str, &str, Option<&str>)> = vec![
         // (meeting_id, champion_name, status, evidence, risk)
@@ -4733,7 +4733,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         .map_err(|e| format!("Champion health {}: {}", meeting_id, e))?;
     }
 
-    // ─── I555: Role changes ─────────────────────────────────────────────────
+    // ─── Role changes ─────────────────────────────────────────────────
 
     conn.execute(
         "INSERT OR REPLACE INTO meeting_role_changes
@@ -4750,7 +4750,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     )
     .map_err(|e| format!("Role change: {}", e))?;
 
-    // ─── I555: Captured commitments ─────────────────────────────────────────
+    // ─── Captured commitments ─────────────────────────────────────────
 
     let commitment_rows: Vec<(
         &str,
@@ -4806,14 +4806,14 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Captured commitment {}: {}", id, e))?;
     }
 
-    // ── I555: Seed success_plan_signals_json on mock accounts ──
+    // ── Seed success_plan_signals_json on mock accounts ──
     let signals_json = r#"{"statedObjectives":[{"objective":"Reduce time-to-value by 40% through platform optimization","source":"Acme Weekly Sync, Mar 5","owner":"Sarah Chen","targetDate":"2026-06-15","confidence":"high"},{"objective":"Expand platform adoption to APAC engineering teams","source":"QBR, Feb 28","owner":"Joint","targetDate":"2026-09-01","confidence":"medium"}],"mutualSuccessCriteria":[{"criterion":"Platform adoption exceeds 85% across all teams","ownedBy":"joint","status":"in_progress"},{"criterion":"Deployment velocity sustained above 3x baseline","ownedBy":"them","status":"achieved"}],"milestoneCandidates":[{"milestone":"APAC team onboarding complete","expectedBy":"2026-06-01","detectedFrom":"QBR discussion","autoDetectEvent":"onboarding_complete"},{"milestone":"Executive business review with ROI data","expectedBy":"2026-04-15","detectedFrom":"Commitment from Sarah Chen","autoDetectEvent":"ebr_completed"}]}"#;
     conn.execute(
         "UPDATE entity_assessment SET success_plan_signals_json = ?1 WHERE entity_id = 'mock-acme-corp'",
         rusqlite::params![signals_json],
     ).ok();
 
-    // ── DOS-15: Seed health_outlook_signals_json on mock accounts ──
+    // ── Seed health_outlook_signals_json on mock accounts ──
     // Leading signals that complement base enrichment — champion risk, usage
     // trend, channel sentiment, commercial signals, quote wall. Keeps dev-mode
     // Health & Outlook tab realistic without touching production data.
@@ -6335,10 +6335,10 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Signal weight: {}", e))?;
     }
 
-    // I645: entity_feedback_events and suppression_tombstones are populated
+    // entity_feedback_events and suppression_tombstones are populated
     // by user actions (thumbs/dismiss/accept). No mock seeds — start empty.
 
-    // DOS-228 Fix 3: seed two risk_briefing_jobs rows so dev mode exercises
+    // Regression guard: seed two risk_briefing_jobs rows so dev mode exercises
     // the full UI surface — one successful (complete) and one failed (retry
     // affordance). Globex is the "needs retry" case and Acme is "complete"
     // so engineers can visually diff the two states without running the
@@ -6365,7 +6365,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     )
     .map_err(|e| format!("Seed risk_briefing_jobs (globex): {}", e))?;
 
-    // DOS-228 Wave 0e Fix 2: attempt_id for the two seeded rows. Both are
+    // attempt_id for the two seeded rows. Both are
     // terminal states so no live runner will touch them, but the column is
     // NOT NULL-friendly only after a successful generation; we seed non-NULL
     // values so devtools exercises the same code path production hits.
@@ -6380,7 +6380,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     )
     .map_err(|e| format!("Seed risk_briefing_jobs attempt_id (globex): {}", e))?;
 
-    // DOS-228 Wave 0e Fix 3: seed one health_recompute_pending row so dev
+    // seed one health_recompute_pending row so dev
     // mode exercises the startup-drain path at least once. The drain is
     // idempotent — if a real edit landed before devtools re-seeded, the
     // next schedule_recompute simply re-marks this row.
@@ -6793,7 +6793,7 @@ On hold until Q2. Architecture proposal draft needed first.
     Ok(())
 }
 
-// write_mock_google_token removed (I298 fix) — mock scenarios must NEVER
+// write_mock_google_token removed (fix) — mock scenarios must NEVER
 // persist tokens to Keychain. Use in-memory GoogleAuthStatus::Authenticated instead.
 
 #[cfg(test)]

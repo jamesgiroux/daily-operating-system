@@ -8,7 +8,7 @@ impl ActionDb {
     /// Query pending actions where `due_date` is within `days_ahead` days or is NULL.
     ///
     /// Results are ordered: overdue first, then by priority, then by due date.
-    /// Includes correlated subqueries for the next upcoming meeting per action's account (I342).
+    /// Includes correlated subqueries for the next upcoming meeting per action's account.
     pub fn get_due_actions(&self, days_ahead: i32) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
@@ -243,7 +243,7 @@ impl ActionDb {
         Ok(actions)
     }
 
-    /// Query actions for a specific person using hybrid 1:1 heuristic (I351).
+    /// Query actions for a specific person using hybrid 1:1 heuristic.
     ///
     /// Returns actions where this person is the primary external relationship:
     /// 1. Actions directly assigned via `person_id`
@@ -467,12 +467,12 @@ impl ActionDb {
     ///    - For all other actions, dedup by title + account across sources.
     /// 2. **ID-based guard**: If an action with this exact ID is already completed, skip.
     ///
-    /// This ensures that daily briefing syncs don't resurrect completed actions (I23).
+    /// This ensures that daily briefing syncs don't resurrect completed actions.
     pub fn upsert_action_if_not_completed_with_status(
         &self,
         action: &DbAction,
     ) -> Result<bool, DbError> {
-        // Guard 0: Rejection pattern suppression (DOS-18).
+        // Guard 0: Rejection pattern suppression.
         // Check before dedup so previously rejected patterns are caught early.
         if self.is_action_suppressed(
             &action.title,
@@ -537,7 +537,7 @@ impl ActionDb {
             )
             .ok();
 
-        // Don't overwrite completed, cancelled, or archived actions (DOS-55 dedup guard)
+        // Don't overwrite completed, cancelled, or archived actions (dedup guard)
         if matches!(
             existing_status.as_deref(),
             Some("completed") | Some("cancelled") | Some("archived")
@@ -605,7 +605,7 @@ impl ActionDb {
     ///
     /// These actions live in SQLite but are NOT in `actions.json` (which only
     /// contains briefing-generated actions). Used by `get_dashboard_data()` to
-    /// merge captured actions into the dashboard view (I17).
+    /// merge captured actions into the dashboard view.
     pub fn get_non_briefing_pending_actions(&self) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
@@ -628,7 +628,7 @@ impl ActionDb {
         Ok(actions)
     }
 
-    /// Get counts of pending actions by priority (I513: for DB-built WeekOverview).
+    /// Get counts of pending actions by priority (for DB-built WeekOverview).
     ///
     /// Returns (total_pending, p1_count, p2_count, overdue_count).
     pub fn get_pending_action_counts(&self) -> Result<(i64, i64, i64, i64), DbError> {
@@ -681,7 +681,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Suggested Actions (I256)
+    // Suggested Actions
     // =========================================================================
 
     /// Get all suggested actions (no owner filter).
@@ -820,7 +820,7 @@ impl ActionDb {
     /// Auto-archive stale pending actions older than N days.
     /// Returns the number of actions archived.
     ///
-    /// DOS-12 zero-guilt exemptions: P1/Urgent (priority=1), waiting_on set,
+    ///  zero-guilt exemptions: P1/Urgent (priority=1), waiting_on set,
     /// or objective-linked actions are never auto-archived.
     pub fn archive_stale_actions(&self, days: i64) -> Result<usize, DbError> {
         let now = Utc::now().to_rfc3339();
@@ -932,7 +932,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Intelligence Queries (I42 — Executive Intelligence)
+    // Intelligence Queries (Executive Intelligence)
     // =========================================================================
 
     /// Get pending actions with `waiting_on` set that are older than `stale_days`.
@@ -997,7 +997,7 @@ impl ActionDb {
     /// Get accounts with `contract_end` within `days_ahead` days.
     ///
     /// Returns accounts approaching renewal, ordered by soonest first.
-    /// Archived accounts are excluded (DOS-286).
+    /// Archived accounts are excluded.
     pub fn get_renewal_alerts(&self, days_ahead: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
@@ -1020,7 +1020,7 @@ impl ActionDb {
     ///
     /// Represents accounts that haven't been touched (via meetings, captures,
     /// or manual updates) in a while — a signal to check in.
-    /// Archived accounts are excluded (DOS-286).
+    /// Archived accounts are excluded.
     pub fn get_stale_accounts(&self, stale_days: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
@@ -1037,7 +1037,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Check whether an entity is archived (DOS-286).
+    /// Check whether an entity is archived.
     ///
     /// Returns `true` only if the entity exists and is archived. Unknown entities
     /// or unsupported entity types return `false` — callers should not treat a
@@ -1076,7 +1076,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Resolve a decision: clear needs_decision flag (DOS-17).
+    /// Resolve a decision: clear needs_decision flag.
     pub fn resolve_decision(&self, id: &str) -> Result<bool, DbError> {
         let rows = self.conn.execute(
             "UPDATE actions SET needs_decision = 0 WHERE id = ?1 AND needs_decision = 1",
@@ -1085,7 +1085,7 @@ impl ActionDb {
         Ok(rows > 0)
     }
 
-    /// Scan unstarted actions for decision-indicating keywords and flag matches (DOS-17).
+    /// Scan unstarted actions for decision-indicating keywords and flag matches.
     ///
     /// Returns the number of actions newly flagged.
     pub fn scan_and_flag_decisions(&self) -> Result<usize, DbError> {
@@ -1161,7 +1161,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Rejection Pattern Learning (DOS-18)
+    // Rejection Pattern Learning
     // =========================================================================
 
     /// Check whether a proposed action should be suppressed based on rejection patterns.
@@ -1252,7 +1252,7 @@ impl ActionDb {
         false
     }
 
-    /// Record rejection patterns from a rejected action (DOS-18).
+    /// Record rejection patterns from a rejected action.
     ///
     /// Called by the service layer after a successful rejection. Records:
     /// - `exact_title`: always suppressed after first rejection

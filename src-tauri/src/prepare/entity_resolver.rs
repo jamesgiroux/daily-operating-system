@@ -1,4 +1,4 @@
-//! Confidence-scored entity resolution for meetings (I305 / ADR-0080 Phase 1).
+//! Confidence-scored entity resolution for meetings (ADR-0080 Phase 1).
 //!
 //! Replaces the inline resolution logic in `meeting_context.rs` with a
 //! pluggable signal cascade that produces scored resolution outcomes.
@@ -136,7 +136,7 @@ pub fn resolve_meeting_entities(
     all_signals.extend(crate::signals::patterns::signal_attendee_group_pattern(
         db, meeting,
     ));
-    // DOS-258: keyword/fuzzy signals removed — domain evidence now handled by
+    // keyword/fuzzy signals removed — domain evidence now handled by
     // the deterministic entity_linking engine (P4a/P4b/P4c/P5 rules).
     // signal_keyword_match stub kept for compile compatibility; call removed.
     if let Some(model) = embedding_model {
@@ -270,7 +270,7 @@ fn signal_junction_lookup(
 /// Signal 2: Domain-based matching from attendee email domains.
 /// Extracts domains from attendee emails and matches to accounts via account_domains table.
 ///
-/// DOS-74: When a single domain resolves to multiple accounts (e.g. parent
+/// When a single domain resolves to multiple accounts (e.g. parent
 /// company + subsidiary business units both own `example.com`), we promote
 /// only the first account (ordered by account_type ASC, name ASC — i.e.,
 /// customer before subsidiary before partner; alphabetical within tier) to
@@ -336,7 +336,7 @@ fn signal_attendee_inference(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSi
     let total = attendees.len() as f64;
     let mut entity_votes: HashMap<(String, EntityType), usize> = HashMap::new();
 
-    // I338: Track person matches for 1:1 detection
+    // Track person matches for 1:1 detection
     let mut person_matches: Vec<(String, String)> = Vec::new(); // (person_id, email)
 
     for email in &attendees {
@@ -364,7 +364,7 @@ fn signal_attendee_inference(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSi
         }
     }
 
-    // I338: For 1:1 meetings (2 attendees), emit a person signal for the matched person
+    // For 1:1 meetings (2 attendees), emit a person signal for the matched person
     if attendees.len() == 2 && person_matches.len() == 1 {
         let (person_id, _) = &person_matches[0];
         entity_votes
@@ -393,17 +393,17 @@ fn signal_attendee_inference(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSi
         .collect()
 }
 
-/// Signal 4: Keyword/fuzzy matching — STUBBED (DOS-258).
+/// Signal 4: Keyword/fuzzy matching — STUBBED.
 ///
 /// The fuzzy and keyword signals produced false positives that caused the
-/// entity linking bugs documented in DOS-258 (shared first name collisions,
+/// entity linking bugs documented in (shared first name collisions,
 /// title-slug cross-account matches). This function is kept as a no-op stub
 /// so callers that haven't been migrated yet still compile. The new
 /// deterministic engine (services::entity_linking, P4a/P4b/P4c/P5 rules)
 /// handles domain and title evidence correctly.
 #[allow(unused_variables)]
 fn signal_keyword_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal> {
-    // Intentionally empty — see DOS-258.
+    // Intentionally empty; entity resolution is handled by the deterministic linking path.
     Vec::new()
 }
 
@@ -477,7 +477,7 @@ fn signal_embedding_similarity(
         }
     }
 
-    // I338: Compare against person names
+    // Compare against person names
     if let Ok(people) = db.get_people(None) {
         for person in &people {
             if person.archived {
@@ -597,7 +597,7 @@ fn outcome_confidence(outcome: &ResolutionOutcome) -> f64 {
 }
 
 // normalize_key, build_fuzzy_tokens, fuzzy_matches_tokens, keywords_match_text
-// were removed by DOS-258 (Lane D). The strsim crate is kept for the
+// were removed by (Lane D). The strsim crate is kept for the
 // test_fuzzy_matching_jaro_winkler test below.
 
 // ---------------------------------------------------------------------------
@@ -732,5 +732,5 @@ mod tests {
         assert!(strsim::jaro_winkler("initechco", "initechc") >= 0.85);
     }
 
-    // test_build_fuzzy_tokens and test_fuzzy_matches_tokens removed by DOS-258 Lane D.
+    // test_build_fuzzy_tokens and test_fuzzy_matches_tokens removed by Lane D.
 }

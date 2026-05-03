@@ -1,4 +1,4 @@
-//! DOS-309: regex contract test for `scripts/check_no_let_underscore_feedback.sh`.
+//! regex contract test for `scripts/check_no_let_underscore_feedback.sh`.
 //!
 //! The bash lint catches `let _ = ...` swallows of three protected functions
 //! (`record_feedback_event`, `create_suppression_tombstone`, `write_intelligence_json`)
@@ -7,7 +7,7 @@
 //! form. This test pins the contract so a future regression is loud.
 //!
 //! What the lint deliberately does NOT catch (acceptable for v1.4.0 W0;
-//! structural enforcement via `clippy::let_underscore_must_use` is DOS-342
+//! structural enforcement via `clippy::let_underscore_must_use` is
 //! territory):
 //!   - `.ok();` chained on must-use
 //!   - `match { _ => () }`

@@ -66,7 +66,7 @@ pub async fn evaluate(
 // Manual overrides — all writes go through the shared writer connection
 // ---------------------------------------------------------------------------
 
-/// DOS-258: Build a realistic `LinkingContext` for a manual override.
+/// Build a realistic `LinkingContext` for a manual override.
 ///
 /// Previously all three `manual_*` functions passed `participants: vec![]`
 /// into `run_phases`, which crippled any cascade rule that needs attendee
@@ -228,7 +228,7 @@ pub async fn manual_set_primary(
                 Ok(())
             })?;
 
-            // DOS-258: load the owner's actual attendees/envelope into ctx so
+            // load the owner's actual attendees/envelope into ctx so
             // downstream cascade rules (including the stakeholder-domain
             // backfill in cascade::run_cascade) see real participants.
             let ctx = build_manual_context(db, owner_type, owner_id);
@@ -408,7 +408,7 @@ pub async fn confirm_stakeholder_suggestion(
     person_id: String,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    // DOS-258: after confirming, sweep the whole account's stakeholder graph
+    // after confirming, sweep the whole account's stakeholder graph
     // for domains that aren't yet registered. Catches sibling stakeholders
     // whose domain wasn't registered by an earlier confirmation that
     // predated this code. Supersedes the per-person backfill — the
@@ -461,7 +461,7 @@ mod tests {
     use crate::db::types::DbMeeting;
     use chrono::Utc;
 
-    /// DOS-258: regression — manual_set_primary used to call run_phases with
+    /// regression — manual_set_primary used to call run_phases with
     /// `participants: vec![]`, which meant cascade C6 and the downstream
     /// stakeholder-domain backfill never saw real attendees on user relinks.
     /// This test asserts build_manual_context loads them from the DB.

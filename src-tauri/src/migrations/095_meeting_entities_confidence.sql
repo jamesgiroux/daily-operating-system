@@ -1,4 +1,4 @@
--- DOS-74: Add confidence + is_primary columns to meeting_entities.
+-- Add confidence + is_primary columns to meeting_entities.
 --
 -- Prior behavior: when two accounts (e.g. parent + subsidiary BU) shared a
 -- domain, the entity resolver auto-linked BOTH as equally-resolved entities.

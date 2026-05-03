@@ -104,7 +104,7 @@ pub fn normalize_domains(domains: &[String]) -> Vec<String> {
     out
 }
 
-/// Build entity hints from DB for multi-entity meeting classification (I336).
+/// Build entity hints from DB for multi-entity meeting classification.
 pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
     let mut hints = Vec::new();
 
@@ -171,7 +171,7 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
                     }
                 }
             }
-            // I653 FIX 8: Include linked account IDs for classification-time chaining.
+            // Include linked account IDs for classification-time chaining.
             // When a known stakeholder attends a meeting, their linked account
             // gets a confidence boost in resolve_entities.
             let linked_account_ids: Vec<String> = db
@@ -198,7 +198,7 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
     hints
 }
 
-/// Build account hint set for email classification (backward compat). I336.
+/// Build account hint set for email classification (backward compat).
 /// Extracts account slugs from entity hints for use by email_classify.
 pub fn account_hints_from_entity_hints(entity_hints: &[EntityHint]) -> HashSet<String> {
     entity_hints
@@ -214,7 +214,7 @@ pub fn build_external_account_hints(db: &ActionDb) -> HashSet<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Text similarity (DOS-15: auto-link actions to objectives)
+// Text similarity (auto-link actions to objectives)
 // ---------------------------------------------------------------------------
 
 /// Jaccard word similarity: proportion of shared words between two strings.

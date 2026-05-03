@@ -1,4 +1,4 @@
-//! Monthly Wrapped report (I419).
+//! Monthly Wrapped report.
 //!
 //! Prior calendar month. Spotify Wrapped energy — celebration, not a report.
 //! Personalized to the user's active role preset with a personality type assignment.

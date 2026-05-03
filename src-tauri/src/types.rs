@@ -36,14 +36,14 @@ pub struct Config {
     pub clay: crate::clay::ClayConfig,
     #[serde(default)]
     pub linear: crate::linear::LinearConfig,
-    /// Google Drive connector configuration (I426).
+    /// Google Drive connector configuration.
     #[serde(default)]
     pub drive: DriveConfig,
     #[serde(default)]
     pub features: HashMap<String, bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_domain: Option<String>,
-    /// Multiple user domains for multi-org classification (I171).
+    /// Multiple user domains for multi-org classification.
     /// Takes precedence over `user_domain` when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_domains: Option<Vec<String>>,
@@ -55,7 +55,7 @@ pub struct Config {
     pub user_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_focus: Option<String>,
-    /// UI personality tone: "professional", "friendly", or "playful" (I216).
+    /// UI personality tone: "professional", "friendly", or "playful".
     /// Affects UI chrome only (empty states, loading messages, celebrations).
     /// Never affects intelligence content.
     #[serde(default = "default_personality")]
@@ -72,7 +72,7 @@ pub struct Config {
     /// Show developer tools panel (wrench icon). Only effective in debug builds.
     #[serde(default)]
     pub developer_mode: bool,
-    /// AI model configuration for tiered operations (I174).
+    /// AI model configuration for tiered operations.
     #[serde(default)]
     pub ai_models: AiModelConfig,
     /// Versioned routing policy for AI model defaults and migrations.
@@ -81,16 +81,16 @@ pub struct Config {
     /// Embedding model/runtime configuration for semantic retrieval (Sprint 26).
     #[serde(default)]
     pub embeddings: EmbeddingConfig,
-    /// Active role preset ID (I309). Defaults to "core".
+    /// Active role preset ID. Defaults to "core".
     #[serde(default = "default_role")]
     pub role: String,
-    /// Optional path to a custom preset JSON file (I309).
+    /// Optional path to a custom preset JSON file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_preset_path: Option<String>,
-    /// Whether the user has dismissed the iCloud workspace warning (I464).
+    /// Whether the user has dismissed the iCloud workspace warning.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icloud_warning_dismissed: Option<bool>,
-    /// App lock timeout in minutes. None = disabled. Default: 15. (I465)
+    /// App lock timeout in minutes. None = disabled. Default: 15.
     #[serde(default = "default_lock_timeout")]
     pub app_lock_timeout_minutes: Option<u32>,
     /// Hygiene scan interval in hours (default: 4). Options: 1, 2, 4, 8.
@@ -101,14 +101,14 @@ pub struct Config {
     /// New installs will omit this field; existing configs continue to deserialize.
     #[serde(default, skip_serializing_if = "skip_zero")]
     pub hygiene_ai_budget: u32,
-    /// Daily AI token budget (DOS-279). Covers all AI calls: background enrichment,
+    /// Daily AI token budget. Covers all AI calls: background enrichment,
     /// meeting prep, briefing generation, manual refresh. Options: 50_000, 100_000, 250_000.
     #[serde(default = "default_daily_ai_token_budget")]
     pub daily_ai_token_budget: u32,
     /// Pre-meeting refresh window in hours (default: 12). Options: 2, 4, 12, 24.
     #[serde(default = "default_hygiene_pre_meeting_hours")]
     pub hygiene_pre_meeting_hours: u32,
-    /// Email enrichment timeout per email in seconds (I652 Phase 4).
+    /// Email enrichment timeout per email in seconds.
     /// Default: 90 seconds. Max: 300 seconds. Gracefully times out individual emails
     /// without blocking the briefing workflow. Validated in `validate_config()`.
     #[serde(default = "default_email_enrichment_timeout_seconds")]
@@ -116,7 +116,7 @@ pub struct Config {
     /// User notification preferences (toggles + quiet hours).
     #[serde(default)]
     pub notifications: NotificationConfig,
-    /// UI text scale percentage (DOS-45). Default: 100. Valid range: 80–150.
+    /// UI text scale percentage. Default: 100. Valid range: 80–150.
     /// Applied as CSS zoom on the document root for global text scaling.
     #[serde(default = "default_text_scale_percent")]
     pub text_scale_percent: u32,
@@ -202,7 +202,7 @@ pub fn validate_personality(value: &str) -> Result<(), String> {
 }
 
 // =============================================================================
-// AI Model Configuration (I174)
+// AI Model Configuration
 // =============================================================================
 
 /// AI model configuration for tiered operations.
@@ -369,7 +369,7 @@ impl Config {
         }
     }
 
-    /// Validate email enrichment timeout configuration (I652 Phase 4).
+    /// Validate email enrichment timeout configuration.
     /// Timeout must be 0 < timeout <= 300 seconds.
     /// Returns error if misconfigured, logs warning and uses default (90) if invalid.
     pub fn validate_email_enrichment_timeout(&mut self) -> Result<(), String> {
@@ -417,7 +417,7 @@ pub fn default_features(profile: &str) -> HashMap<String, bool> {
     default_features_for_mode(profile, "account")
 }
 
-/// Entity-mode-aware feature defaults (I53).
+/// Entity-mode-aware feature defaults.
 ///
 /// - `accountTracking`: ON for account or both modes (CS profile)
 /// - `projectTracking`: ON for project or both modes
@@ -437,9 +437,9 @@ pub fn default_features_for_mode(profile: &str, entity_mode: &str) -> HashMap<St
     features.insert("accountTracking".to_string(), is_cs && accounts_on);
     features.insert("projectTracking".to_string(), projects_on);
     features.insert("impactRollup".to_string(), is_cs && accounts_on);
-    // I321: email body access for commitment extraction
+    // email body access for commitment extraction
     features.insert("emailBodyAccess".to_string(), true);
-    // I323: auto-archive low-priority emails
+    // auto-archive low-priority emails
     features.insert("autoArchiveEnabled".to_string(), false);
     features
 }
@@ -886,14 +886,14 @@ pub struct Meeting {
     /// Whether the user has reviewed this prep (ADR-0033)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prep_reviewed: Option<bool>,
-    /// Entities linked via M2M junction table (I52)
+    /// Entities linked via M2M junction table
     #[serde(skip_serializing_if = "Option::is_none")]
     pub linked_entities: Option<Vec<LinkedEntity>>,
-    /// Suggestion to unarchive an account that matched this meeting's domain (I161).
+    /// Suggestion to unarchive an account that matched this meeting's domain.
     /// Set when classification matched an archived account. Frontend shows a banner.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_unarchive_account_id: Option<String>,
-    /// Structured intelligence quality assessment for schedule rows (I329).
+    /// Structured intelligence quality assessment for schedule rows.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence_quality: Option<IntelligenceQuality>,
     /// Raw calendar attendees from Google Calendar (not AI-enriched).
@@ -917,7 +917,7 @@ pub struct CalendarAttendeeEntry {
 }
 
 /// An entity linked to a meeting via the junction table.
-/// DOS-74: carries per-junction confidence and suggestion flag so the UI can
+/// carries per-junction confidence and suggestion flag so the UI can
 /// paint one primary entity + N suggestions instead of co-equal chips.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -936,11 +936,11 @@ pub struct LinkedEntity {
     /// "suggested" affordance rather than as a primary chip.
     #[serde(default)]
     pub suggested: bool,
-    /// DOS-258: deterministic link role from the new engine.
+    /// deterministic link role from the new engine.
     /// Supersedes is_primary/suggested when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
-    /// DOS-258: rule identifier that produced this link (e.g. "P5", "P9").
+    /// rule identifier that produced this link (e.g. "P5", "P9").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub applied_rule: Option<String>,
 }
@@ -980,7 +980,7 @@ impl Priority {
     }
 }
 
-/// Action completion status (Linear-compatible 6-status vocabulary, DOS-55).
+/// Action completion status (Linear-compatible 6-status vocabulary).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ActionStatus {
@@ -1073,7 +1073,7 @@ pub struct EmailSyncStatus {
     pub last_attempt_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_success_at: Option<String>,
-    /// I373: Enrichment progress counts
+    /// Enrichment progress counts
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enrichment_pending: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1112,45 +1112,45 @@ pub struct Email {
     /// Email category from AI classification
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email_type: Option<String>,
-    /// Commitments extracted by AI enrichment (I354)
+    /// Commitments extracted by AI enrichment
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub commitments: Vec<String>,
-    /// Questions extracted by AI enrichment (I354)
+    /// Questions extracted by AI enrichment
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub questions: Vec<String>,
-    /// Sentiment from AI enrichment (I354)
+    /// Sentiment from AI enrichment
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sentiment: Option<String>,
-    /// Urgency from AI enrichment (I369)
+    /// Urgency from AI enrichment
     #[serde(skip_serializing_if = "Option::is_none")]
     pub urgency: Option<String>,
-    /// Resolved entity ID from enrichment (I368)
+    /// Resolved entity ID from enrichment
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity_id: Option<String>,
-    /// Resolved entity type (account, person, project) from enrichment (I368)
+    /// Resolved entity type (account, person, project) from enrichment
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity_type: Option<String>,
-    /// Human-readable resolved entity name from enrichment (I369)
+    /// Human-readable resolved entity name from enrichment
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity_name: Option<String>,
-    /// Relevance score from scoring pipeline (I395)
+    /// Relevance score from scoring pipeline
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relevance_score: Option<f64>,
-    /// Human-readable score reason (I395)
+    /// Human-readable score reason
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score_reason: Option<String>,
-    /// When this email was pinned for triage sort boost (I579)
+    /// When this email was pinned for triage sort boost
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pinned_at: Option<String>,
-    /// Actions created from commitments extracted from this email (I580)
+    /// Actions created from commitments extracted from this email
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub tracked_commitments: Vec<TrackedEmailCommitment>,
-    /// Meeting this email's sender is attending (upcoming only) (I582)
+    /// Meeting this email's sender is attending (upcoming only)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meeting_linked: Option<LinkedMeeting>,
 }
 
-/// An upcoming meeting linked to an email via sender-attendee match (I582).
+/// An upcoming meeting linked to an email via sender-attendee match.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkedMeeting {
@@ -1159,7 +1159,7 @@ pub struct LinkedMeeting {
     pub start_time: String,
 }
 
-/// A tracked action created from a commitment extracted from an email (I580).
+/// A tracked action created from a commitment extracted from an email.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackedEmailCommitment {
@@ -1188,24 +1188,24 @@ pub struct DashboardData {
     pub email_sync: Option<EmailSyncStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub focus: Option<DailyFocus>,
-    /// AI-synthesized email narrative (I322/I355)
+    /// AI-synthesized email narrative
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email_narrative: Option<String>,
-    /// Threads awaiting user reply (I318/I355)
+    /// Threads awaiting user reply
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded>,
     /// User org domains for internal/external attendee grouping.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_domains: Option<Vec<String>>,
-    /// Briefing callouts from signal propagation (I623 AC4).
+    /// Briefing callouts from signal propagation (AC4).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub briefing_callouts: Vec<DashboardBriefingCallout>,
-    /// DOS-53: Count of actions approaching the 30-day auto-archive threshold.
+    /// Count of actions approaching the 30-day auto-archive threshold.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aging_action_count: Option<i64>,
 }
 
-/// A briefing callout surfaced to the daily briefing (I623).
+/// A briefing callout surfaced to the daily briefing.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardBriefingCallout {
@@ -1239,16 +1239,16 @@ pub struct WeekOverview {
     pub focus_areas: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub available_time_blocks: Option<Vec<TimeBlock>>,
-    /// AI-generated narrative overview of the week (I94 — null until AI enrichment)
+    /// AI-generated narrative overview of the week (null until AI enrichment)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub week_narrative: Option<String>,
-    /// AI-identified top priority (I94 — null until AI enrichment)
+    /// AI-identified top priority (null until AI enrichment)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_priority: Option<TopPriority>,
-    /// Proactive readiness checks surfacing prep gaps (I93)
+    /// Proactive readiness checks surfacing prep gaps
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readiness_checks: Option<Vec<ReadinessCheck>>,
-    /// Per-day density and meeting shape (I93)
+    /// Per-day density and meeting shape
     #[serde(skip_serializing_if = "Option::is_none")]
     pub day_shapes: Option<Vec<DayShape>>,
 }
@@ -1273,7 +1273,7 @@ pub struct WeekMeeting {
     #[serde(rename = "type")]
     pub meeting_type: MeetingType,
     pub prep_status: PrepStatus,
-    /// Entities linked via M2M junction table or entity resolution (I339)
+    /// Entities linked via M2M junction table or entity resolution
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked_entities: Option<Vec<LinkedEntity>>,
 }
@@ -1298,15 +1298,15 @@ pub struct WeekActionSummary {
     pub overdue_count: usize,
     pub due_this_week: usize,
     pub critical_items: Vec<String>,
-    /// Actual overdue action items (I93)
+    /// Actual overdue action items
     #[serde(skip_serializing_if = "Option::is_none")]
     pub overdue: Option<Vec<WeekAction>>,
-    /// Actual due-this-week action items (I93)
+    /// Actual due-this-week action items
     #[serde(skip_serializing_if = "Option::is_none")]
     pub due_this_week_items: Option<Vec<WeekAction>>,
 }
 
-/// A single action item for week view (I93)
+/// A single action item for week view
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeekAction {
@@ -1323,7 +1323,7 @@ pub struct WeekAction {
     pub source: Option<String>,
 }
 
-/// Proactive readiness check for the week (I93)
+/// Proactive readiness check for the week
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadinessCheck {
@@ -1336,7 +1336,7 @@ pub struct ReadinessCheck {
     pub account_id: Option<String>,
 }
 
-/// Per-day density shape for the week view (I93)
+/// Per-day density shape for the week view
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DayShape {
@@ -1389,7 +1389,7 @@ pub struct TimeBlock {
     pub meeting_id: Option<String>,
 }
 
-/// AI-identified top priority for the week (I94)
+/// AI-identified top priority for the week
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopPriority {
@@ -1458,12 +1458,12 @@ pub struct FocusMeeting {
     pub account: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prep_file: Option<String>,
-    /// Entities linked via M2M junction table or entity resolution (I339)
+    /// Entities linked via M2M junction table or entity resolution
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked_entities: Option<Vec<LinkedEntity>>,
 }
 
-/// Detailed availability diagnostics and capacity metrics for Focus (I178).
+/// Detailed availability diagnostics and capacity metrics for Focus.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FocusAvailability {
@@ -1476,7 +1476,7 @@ pub struct FocusAvailability {
     pub deep_work_blocks: Vec<TimeBlock>,
 }
 
-/// Ranked action with deterministic feasibility/risk metadata (I179).
+/// Ranked action with deterministic feasibility/risk metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrioritizedFocusAction {
@@ -1488,7 +1488,7 @@ pub struct PrioritizedFocusAction {
     pub reason: String,
 }
 
-/// High-level implications for today's focus capacity vs action load (I179).
+/// High-level implications for today's focus capacity vs action load.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FocusImplications {
@@ -1641,7 +1641,7 @@ pub struct ReplyDebtItem {
     pub sentiment: Option<String>,
 }
 
-/// An account whose email cadence has gone quiet (I581).
+/// An account whose email cadence has gone quiet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoneQuietAccount {
@@ -1667,16 +1667,16 @@ pub struct EmailBriefingData {
     pub entity_threads: Vec<EntityEmailThread>,
     pub stats: EmailBriefingStats,
     pub has_enrichment: bool,
-    /// AI-synthesized email narrative from directive (I322/I355)
+    /// AI-synthesized email narrative from directive
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email_narrative: Option<String>,
-    /// Threads awaiting user reply from directive (I318/I355)
+    /// Threads awaiting user reply from directive
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded>,
-    /// Reply debt: entity-linked emails where someone else sent the last message (I577)
+    /// Reply debt: entity-linked emails where someone else sent the last message
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub reply_debt: Vec<ReplyDebtItem>,
-    /// Accounts whose email cadence has dropped significantly (I581)
+    /// Accounts whose email cadence has dropped significantly
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub gone_quiet: Vec<GoneQuietAccount>,
 }
@@ -1699,19 +1699,19 @@ pub struct FullMeetingPrep {
     pub time_range: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meeting_context: Option<String>,
-    /// Calendar event description from Google Calendar (I185)
+    /// Calendar event description from Google Calendar
     #[serde(skip_serializing_if = "Option::is_none")]
     pub calendar_notes: Option<String>,
-    /// Intelligence-enriched account snapshot (I186)
+    /// Intelligence-enriched account snapshot
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_snapshot: Option<Vec<AccountSnapshotItem>>,
     /// Quick Context metrics (key-value pairs like Ring, ARR, Health) — legacy
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quick_context: Option<Vec<(String, String)>>,
-    /// User-authored agenda items (I194 / ADR-0065)
+    /// User-authored agenda items (ADR-0065)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_agenda: Option<Vec<String>>,
-    /// User-authored notes (I194 / ADR-0065)
+    /// User-authored notes (ADR-0065)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_notes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1732,10 +1732,10 @@ pub struct FullMeetingPrep {
     /// Suggested Talking Points
     #[serde(skip_serializing_if = "Option::is_none")]
     pub talking_points: Option<Vec<String>>,
-    /// Canonical recent wins for meeting prep (I196).
+    /// Canonical recent wins for meeting prep.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recent_wins: Option<Vec<String>>,
-    /// Structured provenance for recent wins (I196).
+    /// Structured provenance for recent wins.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recent_win_sources: Option<Vec<SourceReference>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1746,37 +1746,37 @@ pub struct FullMeetingPrep {
     pub references: Option<Vec<SourceReference>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_markdown: Option<String>,
-    /// Stakeholder relationship signals computed from meeting history (I43)
+    /// Stakeholder relationship signals computed from meeting history
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stakeholder_signals: Option<crate::db::StakeholderSignals>,
-    /// Per-attendee context enriched from people DB (I51)
+    /// Per-attendee context enriched from people DB
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attendee_context: Option<Vec<AttendeeContext>>,
-    /// Proposed agenda synthesized from prep data (I80)
+    /// Proposed agenda synthesized from prep data
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proposed_agenda: Option<Vec<AgendaItem>>,
-    /// Intelligence summary — executive assessment from intelligence.json (I135)
+    /// Intelligence summary — executive assessment from intelligence.json
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence_summary: Option<String>,
-    /// Entity-level risks from intelligence.json (I135)
+    /// Entity-level risks from intelligence.json
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity_risks: Option<Vec<crate::intelligence::IntelRisk>>,
-    /// Entity meeting readiness items from intelligence.json (I135)
+    /// Entity meeting readiness items from intelligence.json
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity_readiness: Option<Vec<String>>,
-    /// Stakeholder insights from intelligence.json (I135)
+    /// Stakeholder insights from intelligence.json
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stakeholder_insights: Option<Vec<crate::intelligence::StakeholderInsight>>,
     /// Recent email signals linked to this meeting's entity context.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
-    /// Structured digest of linked recent correspondence (I582 / I317).
+    /// Structured digest of linked recent correspondence.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email_digest: Option<MeetingEmailDigest>,
-    /// I527: Consistency status derived from deterministic contradiction checks.
+    /// Consistency status derived from deterministic contradiction checks.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consistency_status: Option<crate::intelligence::ConsistencyStatus>,
-    /// I527: Findings retained for transparency in prep surfaces.
+    /// Findings retained for transparency in prep surfaces.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consistency_findings: Vec<crate::intelligence::ConsistencyFinding>,
 }
@@ -1838,7 +1838,7 @@ pub struct MeetingIntelligence {
     pub intelligence_quality: Option<IntelligenceQuality>,
 }
 
-/// Attendee context for meeting prep enrichment (I51).
+/// Attendee context for meeting prep enrichment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttendeeContext {
@@ -1863,7 +1863,7 @@ pub struct AttendeeContext {
     pub person_id: Option<String>,
 }
 
-/// Proposed agenda item for meeting prep (I80)
+/// Proposed agenda item for meeting prep
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgendaItem {
@@ -1874,7 +1874,7 @@ pub struct AgendaItem {
     pub source: Option<String>,
 }
 
-/// Account snapshot item for intelligence-enriched Quick Context (I186)
+/// Account snapshot item for intelligence-enriched Quick Context
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountSnapshotItem {
@@ -1946,7 +1946,7 @@ impl Default for GoogleConfig {
     }
 }
 
-/// Google Drive connector configuration (I426).
+/// Google Drive connector configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DriveConfig {
@@ -2005,16 +2005,16 @@ pub struct CalendarEvent {
     /// subsequent instances inherit it automatically.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub series_id: Option<String>,
-    /// Entities linked via M2M junction table or entity resolution (I339)
+    /// Entities linked via M2M junction table or entity resolution
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked_entities: Option<Vec<LinkedEntity>>,
-    /// Entity IDs resolved at classification time (I653).
+    /// Entity IDs resolved at classification time.
     /// Carried through from ClassifiedMeeting.resolved_entities so callers
     /// can persist entity links without losing the IDs in the conversion.
     /// Default empty — only populated by classify_meeting_multi → to_calendar_event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub classified_entities: Option<Vec<(String, String)>>, // (entity_id, entity_type)
-    /// DOS-224: Scored entity resolutions from classification time. Unlike
+    /// Scored entity resolutions from classification time. Unlike
     /// `classified_entities` which loses confidence + source, this field
     /// carries everything the persistence layer needs to make a principled
     /// primary-vs-suggestion decision (and to refuse weak title-only
@@ -2101,10 +2101,10 @@ pub struct CapturedAction {
 }
 
 // =============================================================================
-// Transcript Processing Types (I44 / ADR-0044)
+// Transcript Processing Types (ADR-0044)
 // =============================================================================
 
-/// Sentiment analysis from transcript processing (I509).
+/// Sentiment analysis from transcript processing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptSentiment {
@@ -2129,24 +2129,24 @@ pub struct TranscriptSentiment {
     /// Whether the champion was actively engaged
     #[serde(skip_serializing_if = "Option::is_none")]
     pub champion_engaged: Option<bool>,
-    /// I554: Ownership language — customer|vendor|mixed
+    /// Ownership language — customer|vendor|mixed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ownership_language: Option<String>,
-    /// I554: Whether customer refers to product in past tense (churn predictor)
+    /// Whether customer refers to product in past tense (churn predictor)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub past_tense_references: Option<bool>,
-    /// I554: Whether customer asked about data export/portability (churn predictor)
+    /// Whether customer asked about data export/portability (churn predictor)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_export_interest: Option<bool>,
-    /// I554: Whether customer mentioned promoting product internally
+    /// Whether customer mentioned promoting product internally
     #[serde(skip_serializing_if = "Option::is_none")]
     pub internal_advocacy_visible: Option<bool>,
-    /// I554: Whether customer asked about roadmap or future features
+    /// Whether customer asked about roadmap or future features
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roadmap_interest: Option<bool>,
 }
 
-/// Per-speaker sentiment from a transcript (I509).
+/// Per-speaker sentiment from a transcript.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpeakerSentiment {
@@ -2156,7 +2156,7 @@ pub struct SpeakerSentiment {
     pub evidence: Option<String>,
 }
 
-/// Engagement quality signals from a transcript (I509).
+/// Engagement quality signals from a transcript.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngagementSignals {
@@ -2170,7 +2170,7 @@ pub struct EngagementSignals {
     pub monologue_risk: Option<bool>,
 }
 
-/// A competitor mentioned during a meeting (I509).
+/// A competitor mentioned during a meeting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompetitorMention {
@@ -2178,7 +2178,7 @@ pub struct CompetitorMention {
     pub context: String,
 }
 
-/// An escalation signal detected in meeting language (I509).
+/// An escalation signal detected in meeting language.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EscalationSignal {
@@ -2187,7 +2187,7 @@ pub struct EscalationSignal {
     pub speaker: Option<String>,
 }
 
-/// I554: Key advocate health assessment from transcript analysis.
+/// Key advocate health assessment from transcript analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyAdvocateHealth {
@@ -2203,7 +2203,7 @@ pub struct KeyAdvocateHealth {
     pub champion_risk: Option<String>,
 }
 
-/// I554: Stakeholder role change detected in transcript.
+/// Stakeholder role change detected in transcript.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleChange {
@@ -2220,7 +2220,7 @@ pub struct RoleChange {
     pub evidence: Option<String>,
 }
 
-/// I554: Strategic commitment extracted from transcript.
+/// Strategic commitment extracted from transcript.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptCommitment {
@@ -2237,7 +2237,7 @@ pub struct TranscriptCommitment {
     pub success_criteria: Option<String>,
 }
 
-/// Interaction dynamics extracted from transcript analysis (I509).
+/// Interaction dynamics extracted from transcript analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InteractionDynamics {
@@ -2276,13 +2276,13 @@ pub struct TranscriptResult {
     pub analysis: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
-    /// Sentiment analysis from transcript (I509)
+    /// Sentiment analysis from transcript
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sentiment: Option<TranscriptSentiment>,
-    /// Interaction dynamics from transcript (I509)
+    /// Interaction dynamics from transcript
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interaction_dynamics: Option<InteractionDynamics>,
-    /// I554: Key advocate health assessment
+    /// Key advocate health assessment
     #[serde(
         default,
         alias = "championHealth",
@@ -2290,10 +2290,10 @@ pub struct TranscriptResult {
         skip_serializing_if = "Option::is_none"
     )]
     pub key_advocate_health: Option<KeyAdvocateHealth>,
-    /// I554: Stakeholder role changes detected
+    /// Stakeholder role changes detected
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub role_changes: Vec<RoleChange>,
-    /// I554: Strategic commitments extracted
+    /// Strategic commitments extracted
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commitments: Vec<TranscriptCommitment>,
 }
@@ -2332,7 +2332,7 @@ pub struct TranscriptRecord {
 }
 
 // =============================================================================
-// User Context for AI Enrichment (I58)
+// User Context for AI Enrichment
 // =============================================================================
 
 /// User context injected into AI enrichment prompts for personalization.
@@ -2412,7 +2412,7 @@ impl UserContext {
 }
 
 // =============================================================================
-// User Entity Types (I411 — ADR-0089/0090)
+// User Entity Types (ADR-0089/0090)
 // =============================================================================
 
 /// The user's professional identity and context, stored as a single-row table.
@@ -2473,7 +2473,7 @@ pub struct EntityContextEntry {
 }
 
 // =============================================================================
-// Success Plans (I551-I553)
+// Success Plans
 // =============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2500,10 +2500,10 @@ pub struct AccountObjective {
     pub linked_action_count: i32,
     pub completed_milestone_count: i32,
     pub total_milestone_count: i32,
-    /// DOS-14: Evidence from AI enrichment matching this objective.
+    /// Evidence from AI enrichment matching this objective.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence_json: Option<String>,
-    /// DOS-14: ID linking to original AI statedObjective (dedup key).
+    /// ID linking to original AI statedObjective (dedup key).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_origin_id: Option<String>,
 }
@@ -2860,7 +2860,7 @@ pub struct ConcreteRequest {
     pub from: Option<String>,
 }
 
-/// Meeting data for the ±7-day week timeline (I330)
+/// Meeting data for the ±7-day week timeline
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineMeeting {
@@ -2875,7 +2875,7 @@ pub struct TimelineMeeting {
     pub entities: Vec<LinkedEntity>,
     pub has_new_signals: bool,
     pub prior_meeting_id: Option<String>,
-    /// Count of follow-up actions linked to this meeting (I342).
+    /// Count of follow-up actions linked to this meeting.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follow_up_count: Option<i32>,
     /// Whether a meeting briefing exists (prep_frozen_json or disk file).
@@ -3037,7 +3037,7 @@ mod tests {
     }
 
     // =========================================================================
-    // UserContext tests (I58)
+    // UserContext tests
     // =========================================================================
 
     #[test]
@@ -3090,7 +3090,7 @@ mod tests {
     }
 
     // =========================================================================
-    // I53: Entity-mode-aware feature defaults
+    // Entity-mode-aware feature defaults
     // =========================================================================
 
     #[test]
@@ -3276,7 +3276,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // DOS-177: Feature flag construction from config.features HashMap
+    // Feature flag construction from config.features HashMap
     // -----------------------------------------------------------------------
 
     /// Simulates the logic inside `get_feature_flags` — construct FeatureFlags
@@ -3339,7 +3339,7 @@ mod tests {
 
     #[test]
     fn affiliates_partnerships_preset_appears_in_available_presets() {
-        // DOS-177: confirm affiliates-partnerships is in the curated 4
+        // confirm affiliates-partnerships is in the curated 4
         let presets = crate::presets::loader::get_available_presets();
         assert_eq!(presets.len(), 4, "should have exactly 4 curated presets");
         let ids: Vec<&str> = presets.iter().map(|(id, _, _)| id.as_str()).collect();

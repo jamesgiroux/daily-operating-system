@@ -1,4 +1,4 @@
--- Migration 019: Correction Learning (I307 / ADR-0080 Phase 3)
+-- Migration 019: Correction Learning (ADR-0080 Phase 3)
 --
 -- Feedback table for user corrections, attendee group patterns,
 -- and context tagging on signal events.

@@ -1,5 +1,5 @@
 /**
- * WorkSurface — component vocabulary for the Work tab (DOS-13).
+ * WorkSurface — component vocabulary for the Work tab.
  *
  * Workbench, not todo list. Zero-guilt execution surface.
  *
@@ -605,8 +605,7 @@ export function NudgeList({ children }: { children: ReactNode }) {
 /**
  * NudgeLeaveAsIs — the zero-guilt exit rendered as italic editorial prose,
  * not a button. Doing nothing IS "leave as-is"; rendering it as an
- * interactive CTA would imply action is required. See DOS-13 Wave 0g
- * Finding 1 (Option B).
+ * interactive CTA would imply action is required.
  */
 export function NudgeLeaveAsIs({ children = "Or leave as-is." }: { children?: ReactNode }) {
   return <span className={s.nudgeLeaveAsIs}>{children}</span>;

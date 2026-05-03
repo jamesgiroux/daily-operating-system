@@ -4,7 +4,7 @@
  * Keyboard navigation: arrow keys for next/prev, number keys 1-6 for direct jump.
  * Scroll-snap settles on slide boundaries.
  *
- * I600: Migrated to reports framework. Uses get_report for reading cached data
+ * Migrated to reports framework. Uses get_report for reading cached data
  * and generate_risk_briefing for generation (risk briefing has its own PTY pipeline).
  * Route: /accounts/$accountId/reports/risk_briefing
  */

@@ -1,4 +1,4 @@
-//! DOS-7 D3a-1: backfill mechanisms 1-4 into intelligence_claims.
+//! Claims backfill D3a-1: backfill mechanisms 1-4 into intelligence_claims.
 //!
 //! Pattern per test: open in-memory DB, apply minimal legacy CREATE
 //! TABLEs needed for each mechanism + D1 claims schema, INSERT mock

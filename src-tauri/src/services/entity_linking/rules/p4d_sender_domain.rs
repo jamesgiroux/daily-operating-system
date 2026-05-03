@@ -1,6 +1,6 @@
 //! P4d — Email surface: sender domain maps to exactly one account_of.
 //!
-//! DOS-258 evidence-hierarchy fix: renamed from P4c.
+//! Evidence-hierarchy fix: renamed from P4c.
 
 use crate::db::ActionDb;
 use super::super::{evidence, primitives, types::{Candidate, EntityRef, LinkRole, LinkingContext, OwnerType, RuleOutcome}};

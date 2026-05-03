@@ -37,7 +37,7 @@ interface BackgroundWorkStatusEvent {
   error?: string;
 }
 
-/** DOS-27: Band steps used to score divergence magnitude. */
+/** Band steps used to score divergence magnitude. */
 const SENTIMENT_RANK: Record<SentimentValue, number> = {
   strong: 4,
   on_track: 3,
@@ -230,7 +230,7 @@ export function useAccountDetail(accountId: string | undefined) {
 
   // ─── Composed sub-hooks ───────────────────────────────────────────────
 
-  // DOS-229 Wave 0e Fix 5: expose setDetail to sub-hooks so commands that
+  // expose setDetail to sub-hooks so commands that
   // return a fresh AccountDetail can apply it directly (no follow-up
   // silentRefresh needed, avoiding SQLite WAL reader-snapshot lag).
   const applyDetail = useCallback((d: AccountDetail) => {
@@ -241,7 +241,7 @@ export function useAccountDetail(accountId: string | undefined) {
   const fields = useAccountFields(detail, load, setError, applyDetail);
   const team = useTeamManagement(accountId, silentRefresh, applyDetail);
 
-  // I575: Progressive enrichment — refresh data as each dimension completes
+  // Progressive enrichment — refresh data as each dimension completes
   const enrichmentProgress = useEnrichmentProgress(accountId, silentRefresh);
   const enrichmentPercentage = enrichmentProgress
     ? Math.round((enrichmentProgress.completed / enrichmentProgress.total) * 100)
@@ -485,13 +485,13 @@ export function useAccountDetail(accountId: string | undefined) {
     }
   }
 
-  // ─── DOS-27: Sentiment journal + divergence ───────────────────────────
+  // ─── Sentiment journal + divergence ───────────────────────────
 
   const sentiment = buildSentimentView(detail);
 
   async function setUserHealthSentiment(value: SentimentValue, note?: string) {
     if (!accountId) return;
-    // DOS-229: Command returns the updated AccountDetail assembled on the
+    // Command returns the updated AccountDetail assembled on the
     // writer connection — apply it directly. Avoids the SQLite WAL reader
     // snapshot lag that made a follow-up silentRefresh() show stale data
     // until a manual reload.
@@ -505,7 +505,7 @@ export function useAccountDetail(accountId: string | undefined) {
   }
 
   /**
-   * DOS-269: "Add more detail" — update the note on the existing journal
+   * "Add more detail" — update the note on the existing journal
    * entry rather than creating a new one. Backs the SentimentHero
    * `onUpdateNote` prop. Falls back to a fresh insert when no journal row
    * exists for the current sentiment value yet.
@@ -533,7 +533,7 @@ export function useAccountDetail(accountId: string | undefined) {
     setPrograms(result.strategicPrograms);
   }
 
-  // ─── DOS-228 Wave 0e Fix 4: risk briefing status + retry ──────────────
+  // ─── risk briefing status + retry ──────────────
 
   const riskBriefingJob = detail?.riskBriefingJob ?? null;
 
@@ -548,7 +548,7 @@ export function useAccountDetail(accountId: string | undefined) {
     if (!accountId) return;
     try {
       await invoke("retry_risk_briefing", { accountId });
-      // Pick up the fresh 'enqueued' row. We can't use the DOS-229 pattern
+      // Pick up the fresh 'enqueued' row. We can't use the return-value refresh pattern
       // here because retry_risk_briefing returns void — the status is
       // persisted on a separate writer call and we already wait for it.
       await silentRefresh();
@@ -559,9 +559,9 @@ export function useAccountDetail(accountId: string | undefined) {
 
   // ─── Flat public API ──────────────────────────────────────────────────
 
-  // DOS-15: Glean leading-signal enrichment bundle for Health & Outlook tab.
+  // Glean leading-signal enrichment bundle for Health & Outlook tab.
   // Namespaced under `gleanSignals` per v121-foundation peer coordination
-  // (does not collide with DOS-27's `sentiment.*` namespace).
+  // (does not collide with the health sentiment `sentiment.*` namespace).
   const gleanSignals = detail?.gleanSignals ?? null;
 
   return {
@@ -641,13 +641,13 @@ export function useAccountDetail(accountId: string | undefined) {
     // id-based handlers + in-flight Sets. See useAccountWorkData.
     work,
 
-    // DOS-27: sentiment journal
+    // sentiment journal
     sentiment,
     setUserHealthSentiment,
     acknowledgeSentimentStale,
     updateSentimentNote,
 
-    // DOS-228 Wave 0e Fix 4: risk briefing status + retry
+    // risk briefing status + retry
     riskBriefingJob,
     retryRiskBriefing,
   };

@@ -1,4 +1,4 @@
--- I390: Replace account-context relationship types with person-to-person types.
+-- Replace account-context relationship types with person-to-person types.
 -- SQLite doesn't support ALTER CHECK, so recreate the table.
 
 CREATE TABLE person_relationships_new (

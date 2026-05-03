@@ -1,4 +1,4 @@
--- DOS-258 rule rename: P4a → P4b, P4b → P4c, P4c → P4d.
+--  rule rename: P4a → P4b, P4b → P4c, P4c → P4d.
 --
 -- Shifts all existing P4 rule identifiers one letter forward so the new
 -- P4a (stakeholder-inference) slot is free. Three rule-identifier columns

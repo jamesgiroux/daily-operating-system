@@ -226,7 +226,7 @@ pub fn assess_intelligence_quality(db: &ActionDb, meeting_id: &str) -> Intellige
     }
 }
 
-// Meeting-level AI enrichment removed per ADR-0086 (I376).
+// Meeting-level AI enrichment removed per ADR-0086.
 // Entity intelligence is enriched via intel_queue; meeting prep is assembled
 // mechanically by MeetingPrepQueue from pre-computed intelligence.json files.
 

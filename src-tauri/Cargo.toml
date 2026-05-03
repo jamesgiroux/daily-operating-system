@@ -68,12 +68,12 @@ fastembed = "5"
 # libc: fd-level stdout suppression during embedding model init (avoids MCP stream corruption)
 libc = "0.2"
 
-# I307: Correction Learning — Thompson Sampling + fuzzy matching
+# Correction Learning — Thompson Sampling + fuzzy matching
 rand = "0.10"
 rand_distr = "0.6"
 strsim = "0.11"
 
-# DOS-259 (W2-B): IntelligenceProvider trait — async fn in dyn-compatible trait
+#  IntelligenceProvider trait — async fn in dyn-compatible trait
 async-trait = "0.1"
 
 # ADR-0095: Glean context provider cache (concurrent hash map)
@@ -110,12 +110,12 @@ name = "dailyos-mcp"
 path = "src/mcp/main.rs"
 required-features = ["mcp"]
 
-# DOS-311: post-migration reconcile + repair binary. Reads
+# post-migration reconcile + repair binary. Reads
 # scripts/reconcile_ghost_resurrection.sql and runs it against the
 # workspace DB. Skeleton form: detects whether intelligence_claims
-# (DOS-7 / W3) exists and either runs the reconcile (if yes) or
+# (W3) exists and either runs the reconcile (if yes) or
 # logs a no-op (if not). Per-finding repair logic that calls
-# services::claims::commit_claim lands when DOS-7 ships that module.
+# services::claims::commit_claim lands when  ships that module.
 [[bin]]
 name = "reconcile_post_migration"
 path = "src/bin/reconcile_post_migration.rs"

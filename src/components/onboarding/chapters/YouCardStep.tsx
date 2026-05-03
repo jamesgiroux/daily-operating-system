@@ -1,7 +1,7 @@
 /**
  * YouCardStep.tsx
  *
- * Simplified wizard step for basic user info (I57).
+ * Simplified wizard step for basic user info.
  * Extracted from AboutYou.tsx — only 4 essential fields:
  * Name, Company, Title, Email Domain(s).
  */

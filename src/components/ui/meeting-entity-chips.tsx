@@ -5,12 +5,12 @@
  * Supports multiple entities per meeting (M2M junction table).
  * Calls add_meeting_entity / dismiss_meeting_entity Tauri commands.
  *
- * DOS-240: chip X invokes `dismiss_meeting_entity` (not the legacy
+ * chip X invokes `dismiss_meeting_entity` (not the legacy
  * `remove_meeting_entity`) so that the dismissal is persisted into
  * `meeting_entity_dismissals` and the entity cannot silently re-link on
  * the next calendar-sync or resolver sweep.
  *
- * DOS-258: Updated to use the new deterministic link model:
+ * Updated to use the new deterministic link model:
  *   - role === 'auto_suggested' renders as a muted dashed chip
  *   - role === 'primary' with appliedRule === 'P5' shows the title-only banner
  *   - primary === null + related.length > 0 shows the "Which account?" picker
@@ -110,7 +110,7 @@ export function MeetingEntityChips({
       setLocalEntities((prev) => prev.filter((e) => e.id !== entityId));
 
       try {
-        // DOS-240: use `dismiss_meeting_entity` so a dismissal row is
+        // use `dismiss_meeting_entity` so a dismissal row is
         // recorded in `meeting_entity_dismissals`. The legacy
         // `remove_meeting_entity` only unlinked + recorded feedback, which
         // let the background resolver silently re-link the same entity on
@@ -139,7 +139,7 @@ export function MeetingEntityChips({
   const chipPadding = compact ? "2px 8px" : "3px 10px";
   const iconSize = compact ? 10 : 12;
 
-  // DOS-258: Derive the P9 LinkOutcome so EntityLinkPicker can decide whether
+  // Derive the P9 LinkOutcome so EntityLinkPicker can decide whether
   // to show. We use the new `role` field when present; otherwise fall back to
   // the legacy `isPrimary`/`suggested` flags so old data still renders.
   const primaryEntity = useMemo(() => getPrimaryEntity(localEntities), [localEntities]);
@@ -226,7 +226,7 @@ export function MeetingEntityChips({
               ? { personId: entity.id }
               : { accountId: entity.id };
 
-          // DOS-258: Render auto_suggested chips muted with a dashed border.
+          // Render auto_suggested chips muted with a dashed border.
           // Falls back to the legacy `suggested` flag for backwards compatibility
           // with data that hasn't been migrated through the new link engine yet.
           const isAutoSuggested =
@@ -303,7 +303,7 @@ export function MeetingEntityChips({
         />
       </div>
 
-      {/* DOS-258 P5: "from title · undo" banner when the primary was matched
+      {/*  P5: "from title · undo" banner when the primary was matched
           by title keyword only (no attendee-domain or calendar-identity). */}
       {showTitleOnlyBanner && primaryEntity && (
         <TitleOnlyBanner
@@ -314,7 +314,7 @@ export function MeetingEntityChips({
         />
       )}
 
-      {/* DOS-258 P9: "Which account is this about?" picker when the link
+      {/*  P9: "Which account is this about?" picker when the link
           engine found multiple candidates but could not elect a primary. */}
       <EntityLinkPicker
         outcome={linkOutcome}

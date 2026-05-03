@@ -1,4 +1,4 @@
--- DOS-228 Wave 0e: two-part schema update bundled into one migration to
+-- two-part schema update bundled into one migration to
 -- minimize collision risk with parallel work in flight.
 --
 -- Part A — `risk_briefing_jobs.attempt_id`:

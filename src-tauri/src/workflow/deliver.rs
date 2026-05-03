@@ -10,7 +10,7 @@
 //! AI enrichment (progressive, fault-tolerant):
 //! - `enrich_emails()` → updates emails.json with summaries/actions/arcs
 //! - `enrich_briefing()` → updates schedule.json with day narrative
-//! - `enrich_week()` → updates week-overview.json with narrative, priority, suggestions (I94/I95)
+//! - `enrich_week` → updates week-overview.json with narrative, priority, suggestions
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -53,7 +53,7 @@ const VALID_MEETING_TYPES: &[&str] = &[
 /// Meeting types that receive prep files (account-based)
 const PREP_ELIGIBLE_TYPES: &[&str] = &["customer", "qbr", "partnership"];
 
-/// Meeting types eligible for person-focused prep (I159).
+/// Meeting types eligible for person-focused prep.
 /// These get lightweight prep built from attendee data in the people DB.
 const PERSON_PREP_TYPES: &[&str] = &["internal", "team_sync", "one_on_one"];
 const EMAILS_FILE: &str = "emails.json";
@@ -222,7 +222,7 @@ fn find_meeting_entry<'a>(
 
 /// Find the meeting context matching an event_id, entity_id, or account.
 ///
-/// I337: Added entity_id matching from primary_entity alongside existing
+/// Added entity_id matching from primary_entity alongside existing
 /// account matching for backward compatibility.
 pub fn find_meeting_context<'a>(
     account: Option<&str>,
@@ -239,7 +239,7 @@ pub fn find_meeting_context<'a>(
         }
     }
 
-    // I337: Match by entity_id from primary_entity
+    // Match by entity_id from primary_entity
     if let Some(acct) = account {
         for ctx in contexts {
             if let Some(ref pe) = ctx.primary_entity {
@@ -657,7 +657,7 @@ fn make_action_id(title: &str, account: &str, due: &str) -> String {
     format!("action-{:010x}", hasher.finish() & 0xFF_FFFF_FFFF)
 }
 
-/// Write JSON to a file with pretty printing (I64: atomic write).
+/// Write JSON to a file with pretty printing (atomic write).
 pub fn write_json(path: &Path, data: &Value) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -826,8 +826,8 @@ pub fn deliver_schedule(
                 obj.insert("calendarAttendees".to_string(), json!(attendee_arr));
             }
 
-            // Embed linked entities from junction table (I52).
-            // DOS-74: emit confidence + isPrimary + suggested so the UI can
+            // Embed linked entities from junction table.
+            // emit confidence + isPrimary + suggested so the UI can
             // paint exactly one primary entity and render lower-confidence
             // siblings as muted suggestions. Results are pre-sorted by
             // (is_primary DESC, confidence DESC) so `linkedEntities[0]` is
@@ -932,7 +932,7 @@ pub fn deliver_actions(
 
     let raw = &directive.actions;
 
-    // Load existing action titles from SQLite to skip duplicates (I23)
+    // Load existing action titles from SQLite to skip duplicates
     let existing_titles: std::collections::HashSet<String> = db
         .and_then(|db| {
             db.get_all_action_titles()
@@ -1104,7 +1104,7 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
             let mc = find_meeting_context(account, event_id, meeting_contexts);
 
             // Only write a prep file if there is meaningful context,
-            // OR if this is a person-prep-eligible type (I159)
+            // OR if this is a person-prep-eligible type
             let is_person_prep = PERSON_PREP_TYPES.contains(&normalised_type);
             if mc.is_none() && account.is_none() && !is_person_prep {
                 continue;
@@ -1154,7 +1154,7 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
         }
     }
 
-    // I66: Clean stale prep files AFTER new writes succeed.
+    // Clean stale prep files AFTER new writes succeed.
     // Only remove .json files not in the new set.
     let new_filenames: std::collections::HashSet<String> = prep_paths
         .iter()
@@ -1175,7 +1175,7 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
     Ok(prep_paths)
 }
 
-/// Check whether a prep JSON file has substantive content beyond stub fields (I166).
+/// Check whether a prep JSON file has substantive content beyond stub fields.
 ///
 /// A prep is "substantive" if it has any content beyond the mechanical fields
 /// (meetingId, title, meetingType, timeRange). Returns false for stubs that
@@ -1218,7 +1218,7 @@ pub fn is_substantive_prep(prep_path: &Path) -> bool {
     })
 }
 
-/// Reconcile `hasPrep` flags in schedule.json to reflect actual prep content (I166).
+/// Reconcile `hasPrep` flags in schedule.json to reflect actual prep content.
 ///
 /// Called after `deliver_preps` and `enrich_preps` to ensure "View Prep" buttons
 /// only appear when the prep file has substantive content.
@@ -1264,7 +1264,7 @@ pub fn reconcile_prep_flags(data_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Build a compact account snapshot for meeting prep (I186).
+/// Build a compact account snapshot for meeting prep.
 ///
 /// Keep this intentionally short and operational so the prep page can render
 /// board-style metadata without long narrative fields.
@@ -1525,7 +1525,7 @@ fn build_prep_json(
     meeting_id: &str,
     ctx: Option<&DirectiveMeetingContext>,
 ) -> Value {
-    // I337: Use primary_entity name when available, fall back to account.
+    // Use primary_entity name when available, fall back to account.
     // If context exists but has neither, the resolver determined this meeting
     // isn't account-linked (e.g., linked to a project or person instead).
     let account = if let Some(c) = ctx {
@@ -1537,7 +1537,7 @@ fn build_prep_json(
         meeting.account.as_deref()
     };
 
-    // Account snapshot: intelligence-enriched Quick Context (I186)
+    // Account snapshot: intelligence-enriched Quick Context
     let account_snapshot = build_account_snapshot(ctx);
 
     // Attendees
@@ -1589,7 +1589,7 @@ fn build_prep_json(
         if let Some(acct) = account {
             obj.insert("account".to_string(), json!(acct));
         }
-        // I159: Mark person-prep-eligible meetings so is_substantive_prep recognises them
+        // Mark person-prep-eligible meetings so is_substantive_prep recognises them
         if PERSON_PREP_TYPES.contains(&meeting_type) {
             obj.insert("personPrep".to_string(), json!(true));
         }
@@ -1600,7 +1600,7 @@ fn build_prep_json(
             obj.insert("attendees".to_string(), json!(attendees));
         }
 
-        // I339: Write resolved entities array from directive context
+        // Write resolved entities array from directive context
         if let Some(ctx) = ctx {
             if let (Some(ref eid), Some(ref etype)) = (&ctx.entity_id, &ctx.entity_type) {
                 let ename = ctx
@@ -1756,7 +1756,7 @@ fn build_prep_json(
                 obj.insert("references".to_string(), json!(refs_json));
             }
 
-            // I135: Entity intelligence fields (from intelligence.json via meeting context)
+            // Entity intelligence fields (from intelligence.json via meeting context)
             if let Some(ref assessment) = ctx.executive_assessment {
                 obj.insert("intelligenceSummary".to_string(), json!(assessment));
             }
@@ -1789,7 +1789,7 @@ fn build_prep_json(
                 }
             }
 
-            // I317: Pre-meeting email context → emailDigest
+            // Pre-meeting email context → emailDigest
             if let Some(ref email_ctx) = ctx.pre_meeting_email_context {
                 if !email_ctx.is_empty() {
                     // Build structured email digest from raw email context
@@ -1894,7 +1894,7 @@ fn synthesize_prep_intelligence_summary(
     }
 }
 
-/// I317: Build a structured email digest from pre-meeting email context.
+/// Build a structured email digest from pre-meeting email context.
 ///
 /// Structures raw email context items into a digest with thread summary,
 /// key senders, and recent snippets. This is a mechanical structuring pass;
@@ -2774,11 +2774,11 @@ pub struct EmailEnrichment {
     pub action: Option<String>,
     pub arc: Option<String>,
     pub signals: Vec<crate::types::EmailSignal>,
-    /// Commitments extracted from the email (I354).
+    /// Commitments extracted from the email.
     pub commitments: Vec<String>,
-    /// Questions requiring a response (I354).
+    /// Questions requiring a response.
     pub questions: Vec<String>,
-    /// Overall sentiment: positive, neutral, negative, urgent (I354).
+    /// Overall sentiment: positive, neutral, negative, urgent.
     pub sentiment: Option<String>,
 }
 
@@ -2842,7 +2842,7 @@ pub fn parse_email_enrichment(response: &str) -> HashMap<String, EmailEnrichment
     result
 }
 
-/// AI-enrich high-priority emails via PTY-spawned Claude (I652 Phase 5).
+/// AI-enrich high-priority emails via PTY-spawned Claude.
 ///
 /// Refactored to use three-gate filtering, apply per-email timeouts,
 /// and write results immediately to DB without blocking Phase 1 return.
@@ -3044,7 +3044,7 @@ pub fn enrich_emails(
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude enrichment failed: {}", e))?;
 
-    // Audit trail (I297)
+    // Audit trail
     let date_id = data_dir
         .file_name()
         .and_then(|n| n.to_str())
@@ -3185,7 +3185,7 @@ pub fn parse_briefing_focus(response: &str) -> Option<String> {
     }
 }
 
-/// Classify meeting density for briefing tone adaptation (I37).
+/// Classify meeting density for briefing tone adaptation.
 ///
 /// Returns a density label based on meeting count:
 /// - 0–2: "light"
@@ -3201,7 +3201,7 @@ fn classify_meeting_density(count: usize) -> &'static str {
     }
 }
 
-/// I137/I52: Build entity intelligence context for meetings in a schedule.
+//: Build entity intelligence context for meetings in a schedule.
 ///
 /// Extracts unique entity IDs from schedule meetings (via linkedEntities + accountId
 /// fallback), looks up cached intelligence from the DB, returns a formatted context
@@ -3366,7 +3366,7 @@ pub fn enrich_briefing(
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
-    // Density classification (I37)
+    // Density classification
     let density = classify_meeting_density(meetings);
 
     // First meeting time for context
@@ -3400,7 +3400,7 @@ pub fn enrich_briefing(
         _ => "",
     };
 
-    // I137: Gather entity intelligence for accounts with meetings today (brief DB lock)
+    // Gather entity intelligence for accounts with meetings today (brief DB lock)
     let intel_context = {
         let db_guard = crate::db::ActionDb::open().ok();
         match db_guard.as_ref() {
@@ -3412,7 +3412,7 @@ pub fn enrich_briefing(
     let user_fragment = user_ctx.prompt_fragment();
     let role_label = user_ctx.title_or_default();
 
-    // I313: Read vocabulary and briefing emphasis from active preset
+    // Read vocabulary and briefing emphasis from active preset
     let preset_guard = state.active_preset.read();
     let preset_ref = preset_guard.as_ref();
     let vocab_context = preset_ref
@@ -3472,7 +3472,7 @@ pub fn enrich_briefing(
         ));
     }
 
-    // I147: Include overnight maintenance summary if available
+    // Include overnight maintenance summary if available
     let maintenance_path = data_dir.join("maintenance.json");
     if let Ok(maintenance_raw) = fs::read_to_string(&maintenance_path) {
         if let Ok(maintenance) =
@@ -3516,7 +3516,7 @@ pub fn enrich_briefing(
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude briefing failed: {}", e))?;
 
-    // Audit trail (I297)
+    // Audit trail
     let date_id = data_dir
         .file_name()
         .and_then(|n| n.to_str())
@@ -3900,7 +3900,7 @@ pub fn enrich_preps(
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude prep enrichment failed: {}", e))?;
 
-    // Audit trail (I297)
+    // Audit trail
     let date_id = data_dir
         .file_name()
         .and_then(|n| n.to_str())
@@ -4372,7 +4372,7 @@ pub fn deliver_manifest(
 
     write_json(&data_dir.join("manifest.json"), &manifest)?;
 
-    // I513: Also store manifest in app_state_kv for DB-based freshness checks
+    // Also store manifest in app_state_kv for DB-based freshness checks
     if let Ok(db) = crate::db::ActionDb::open() {
         let manifest_str = serde_json::to_string(&manifest).unwrap_or_default();
         let clock = crate::services::context::SystemClock;
@@ -4398,7 +4398,7 @@ pub fn deliver_manifest(
 }
 
 // ============================================================================
-// Week AI Enrichment (I94 + I95)
+// Week AI Enrichment
 // ============================================================================
 
 /// Parse a week narrative from Claude output.
@@ -4475,7 +4475,7 @@ pub fn parse_top_priority(response: &str) -> Option<crate::types::TopPriority> {
     serde_json::from_str(&json_str).ok()
 }
 
-/// A time-block suggestion from AI enrichment (I95).
+/// A time-block suggestion from AI enrichment.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimeSuggestion {
@@ -4523,7 +4523,7 @@ pub fn parse_time_suggestions(response: &str) -> Vec<TimeSuggestion> {
     serde_json::from_str(&json_str).unwrap_or_default()
 }
 
-/// I137: Build entity intelligence context for accounts with meetings this week.
+/// Build entity intelligence context for accounts with meetings this week.
 ///
 /// Walks dayShapes[].meetings[] to find unique account IDs, looks up cached
 /// intelligence from the DB. Same pattern as daily but over the whole week.
@@ -4629,7 +4629,7 @@ fn build_entity_intel_for_week(overview: &Value, db: &crate::db::ActionDb) -> St
     parts.join("\n")
 }
 
-/// AI-generate a week narrative, top priority, and time-block suggestions (I94 + I95).
+/// AI-generate a week narrative, top priority, and time-block suggestions.
 ///
 /// Reads week-overview.json, builds context, asks Claude for structured output,
 /// patches the fields back into week-overview.json.
@@ -4852,7 +4852,7 @@ pub fn enrich_week(
         .filter_map(|line| line.split(':').next().map(|s| s.to_string()))
         .collect();
 
-    // I137: Gather entity intelligence for accounts with meetings this week (brief DB lock)
+    // Gather entity intelligence for accounts with meetings this week (brief DB lock)
     let week_intel_context = {
         let db_guard = crate::db::ActionDb::open().ok();
         match db_guard.as_ref() {
@@ -4864,7 +4864,7 @@ pub fn enrich_week(
     let user_fragment = user_ctx.prompt_fragment();
     let role_label = user_ctx.title_or_default();
 
-    // I313: Read vocabulary and briefing emphasis from active preset
+    // Read vocabulary and briefing emphasis from active preset
     let week_preset_guard = state.active_preset.read();
     let week_preset_ref = week_preset_guard.as_ref();
     let week_vocab_context = week_preset_ref
@@ -5002,7 +5002,7 @@ pub fn enrich_week(
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude week enrichment failed: {}", e))?;
 
-    // Audit trail (I297)
+    // Audit trail
     let _ =
         crate::audit::write_audit_entry(workspace, "week_forecast", week_number, &output.stdout);
 
@@ -5413,7 +5413,7 @@ mod tests {
             .as_array()
             .and_then(|arr| arr.first())
             .expect("expected one meeting");
-        // Legacy account/accountId fields are removed (I335); entity data comes from linkedEntities.
+        // Legacy account/accountId fields are removed; entity data comes from linkedEntities.
         assert!(meeting.get("account").is_none());
         assert!(meeting.get("accountId").is_none());
     }
@@ -6399,7 +6399,7 @@ END_AGENDA
     }
 
     // ================================================================
-    // Week enrichment parser tests (I94 + I95)
+    // Week enrichment parser tests
     // ================================================================
 
     #[test]
@@ -6560,7 +6560,7 @@ END_SUGGESTIONS
     }
 
     // =========================================================================
-    // Phase 5 (I652) Integration Tests
+    // Phase 5  Integration Tests
     // =========================================================================
 
     #[test]

@@ -1,4 +1,4 @@
--- DOS-258 follow-up: complete entity_graph_version trigger coverage.
+-- complete entity_graph_version trigger coverage.
 --
 -- Migration 113 added triggers for account_domains, account_stakeholders,
 -- and keyword column updates on accounts/projects. It was missing INSERT,

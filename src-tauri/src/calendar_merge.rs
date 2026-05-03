@@ -47,7 +47,7 @@ pub fn merge_meetings(briefing: Vec<Meeting>, live: &[CalendarEvent], tz: &Tz) -
     let mut result: Vec<Meeting> = Vec::new();
 
     // Today's date in the given timezone — only merge events for today.
-    // live events now span ±7 days (I386); without this gate every future
+    // live events now span ±7 days; without this gate every future
     // meeting would appear on the daily briefing as OverlayStatus::New.
     let today_date = chrono::Utc::now().with_timezone(tz).date_naive();
 

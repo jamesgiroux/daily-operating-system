@@ -1,4 +1,4 @@
-//! I662: Archive recovery — re-route stranded transcripts and meeting records.
+//! Archive recovery — re-route stranded transcripts and meeting records.
 //!
 //! Walks `_archive/` date directories, finds files with valid meeting_id in
 //! their YAML frontmatter, looks up entity links in the DB, and moves files

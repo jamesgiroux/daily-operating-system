@@ -1,4 +1,4 @@
-//! Semantic retrieval of user context entries and attachments for enrichment prompts (I417, I413).
+//! Semantic retrieval of user context entries and attachments for enrichment prompts.
 //!
 //! Searches `user_context_entries` and file attachments in `content_embeddings` by cosine similarity
 //! against embedded content, returning top-K matches above a threshold for injection into intelligence prompts.
@@ -107,7 +107,7 @@ pub fn get_entity_context_for_prompt(
     }
 }
 
-/// Search user attachment files by semantic similarity to a query string (I413 AC4).
+/// Search user attachment files by semantic similarity to a query string (AC4).
 ///
 /// Queries `content_embeddings` joined to `content_index` where `entity_type = 'user_context'`.
 /// Returns up to `limit` chunks with cosine similarity >= `threshold`.

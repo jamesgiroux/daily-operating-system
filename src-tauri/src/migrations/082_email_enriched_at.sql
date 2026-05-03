@@ -1,4 +1,4 @@
--- I652: Email enrichment filtering & workflow optimization.
+-- Email enrichment filtering & workflow optimization.
 -- Add enriched_at column to track when emails were last enriched.
 -- Gate 0 (primary deduplication) uses this to skip already-enriched emails.
 

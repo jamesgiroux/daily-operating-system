@@ -1280,7 +1280,7 @@ details[open] .detailsChevron {
   color: var(--color-text-tertiary);
 }
 
-/* I477 — Briefing updating banner during entity mutation */
+/* Briefing updating banner during entity mutation */
 .updatingBanner {
   display: inline-flex;
   align-items: center;

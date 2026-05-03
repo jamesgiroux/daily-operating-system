@@ -1,4 +1,4 @@
-//! Pattern detectors for proactive surfacing (I260).
+//! Pattern detectors for proactive surfacing.
 //!
 //! Each detector is a pure function that queries the database for a specific
 //! pattern and returns zero or more `RawInsight` values. Detectors do no AI

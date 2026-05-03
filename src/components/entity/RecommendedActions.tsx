@@ -1,5 +1,5 @@
 /**
- * DOS-13: RecommendedActions — AI-recommended actions from intelligence enrichment.
+ * RecommendedActions — AI-recommended actions from intelligence enrichment.
  *
  * Renders recommended actions with Track (accept) and Dismiss buttons.
  * Each card shows title, rationale, priority label, and optional suggested due date.

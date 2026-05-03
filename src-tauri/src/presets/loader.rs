@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn test_cs_preset_signal_keywords_include_renewal_and_adoption() {
-        // The DOS-178/DOS-176 merge moved keyword merging into
+        // The merge moved keyword merging into
         // `state::build_merged_signal_config`. Here we just verify the CS
         // preset carries the expected keywords at the preset level.
         let preset = load_preset("customer-success").unwrap();

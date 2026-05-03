@@ -1,5 +1,5 @@
 /**
- * GleanConnect.tsx — Wizard step: Connect company knowledge via Glean (I561).
+ * GleanConnect.tsx — Wizard step: Connect company knowledge via Glean.
  *
  * Optional connector. When connected, enables account discovery and
  * profile pre-fill from enterprise tools (Salesforce, Zendesk, Gong, Slack).

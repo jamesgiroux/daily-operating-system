@@ -1,6 +1,6 @@
 use super::*;
 // =============================================================================
-// I194: User Agenda + Notes Editability (ADR-0065)
+// User Agenda + Notes Editability (ADR-0065)
 // =============================================================================
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -869,7 +869,7 @@ pub async fn backfill_historical_meetings(
 
 // ==================== Domain Backfill ====================
 
-/// I660: Backfill account_domains from historical meeting→account links.
+/// Backfill account_domains from historical meeting→account links.
 ///
 /// Walks all meeting_entities where entity_type='account', extracts attendee
 /// email domains, and merges them into account_domains. This populates the
@@ -942,7 +942,7 @@ pub async fn backfill_account_domains(
 
 // ==================== Archive Recovery ====================
 
-/// I662: Re-route stranded transcripts and meeting records from _archive/
+/// Re-route stranded transcripts and meeting records from _archive
 /// to their correct entity directories.
 #[tauri::command]
 pub async fn recover_archived_transcripts(
@@ -999,11 +999,11 @@ pub async fn get_risk_briefing(
 }
 
 // =============================================================================
-// Reports (v0.15.0 — I397)
+// Reports (v0.15.0)
 // =============================================================================
 
 /// Generate a report for an entity (async, PTY enrichment).
-/// I547: AppHandle passed through for BoB progressive event emission.
+/// AppHandle passed through for BoB progressive event emission.
 #[tauri::command]
 pub async fn generate_report(
     state: State<'_, Arc<AppState>>,

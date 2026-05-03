@@ -180,7 +180,7 @@
   transition: color 0.15s ease;
 }
 
-/* ── Pull Quote (I550) ── */
+/* ── Pull Quote  ── */
 
 /*
  * Thesis chapter — Context-tab Chapter 1 ("The thesis").
@@ -287,7 +287,7 @@
   font-style: normal;
 }
 
-/* ── Relationship Health Hero (I550) ── */
+/* ── Relationship Health Hero  ── */
 
 .healthHero {
   display: grid;
@@ -572,7 +572,7 @@
   gap: 4px;
 }
 
-/* ── Technical Footprint (I649) ── */
+/* ── Technical Footprint  ── */
 
 .technicalFootprint {
   margin-top: var(--space-lg);
@@ -626,4 +626,4 @@
   margin-top: var(--space-xs);
 }
 
-/* ── Engagement Cadence (I557) ── */
+/* ── Engagement Cadence  ── */

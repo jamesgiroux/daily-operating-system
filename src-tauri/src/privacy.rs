@@ -1,4 +1,4 @@
-//! I430: Privacy controls — data summary, clear intelligence, delete all.
+//! Privacy controls — data summary, clear intelligence, delete all.
 
 use serde::{Deserialize, Serialize};
 

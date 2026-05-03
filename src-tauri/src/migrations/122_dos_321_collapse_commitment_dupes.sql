@@ -1,4 +1,4 @@
--- DOS-321: Collapse duplicate commitment-typed actions and rewire bridge rows.
+-- Collapse duplicate commitment-typed actions and rewire bridge rows.
 --
 -- Background: the AI emits the same commitment text under different
 -- commitment_id values (one per source — Gong call, meeting transcript,

@@ -62,14 +62,17 @@ jobs:
       - name: Enforce service-layer mutation boundary
         run: ./scripts/check_service_layer_boundary.sh
 
-      - name: Enforce no-let-underscore on feedback/tombstone/file-write (DOS-309)
+      - name: Enforce no-let-underscore on feedback/tombstone/file-write
         run: ./scripts/check_no_let_underscore_feedback.sh
 
-      - name: Enforce write_intelligence_json fence usage (DOS-311)
+      - name: Enforce write_intelligence_json fence usage
         run: ./scripts/check_write_fence_usage.sh
 
-      - name: Enforce SubjectRef::Global spine restriction (DOS-310)
+      - name: Enforce SubjectRef::Global spine restriction
         run: ./scripts/check_no_global_subject_in_spine.sh
+
+      - name: Enforce durable source comments
+        run: ./scripts/check_no_ephemeral_issue_refs_in_comments.sh
 
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings

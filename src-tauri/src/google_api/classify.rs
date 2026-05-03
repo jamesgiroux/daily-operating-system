@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::calendar::GoogleCalendarEvent;
 
-/// Intelligence tier determines enrichment depth (ADR-0081, I328).
+/// Intelligence tier determines enrichment depth (ADR-0081).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IntelligenceTier {
@@ -31,7 +31,7 @@ pub enum IntelligenceTier {
 /// All-hands attendee threshold (per MEETING-TYPES.md).
 pub const ALL_HANDS_THRESHOLD: usize = 50;
 
-/// Entity hint for classification (built from DB). I336.
+/// Entity hint for classification (built from DB).
 #[derive(Debug, Clone)]
 pub struct EntityHint {
     pub id: String,
@@ -42,12 +42,12 @@ pub struct EntityHint {
     pub keywords: Vec<String>,
     pub emails: Vec<String>,
     pub account_type: Option<String>,
-    /// Account IDs this person is linked to via account_stakeholders (I653).
+    /// Account IDs this person is linked to via account_stakeholders.
     /// Enables classification-time confidence boost when known stakeholders attend.
     pub linked_account_ids: Vec<String>,
 }
 
-/// Resolved entity from classification. I336.
+/// Resolved entity from classification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedMeetingEntity {
@@ -84,13 +84,13 @@ pub struct ClassifiedMeeting {
     pub recurring_event_id: Option<String>,
     pub is_all_day: bool,
     pub meeting_type: String,
-    /// Resolved entities from multi-entity classification (I336).
+    /// Resolved entities from multi-entity classification.
     pub resolved_entities: Vec<ResolvedMeetingEntity>,
     /// External domains found in attendees.
     pub external_domains: Vec<String>,
-    /// Calendar event description (I185).
+    /// Calendar event description.
     pub description: String,
-    /// Intelligence tier for enrichment depth (I328).
+    /// Intelligence tier for enrichment depth.
     pub intelligence_tier: IntelligenceTier,
 }
 
@@ -99,8 +99,8 @@ pub struct ClassifiedMeeting {
 /// Arguments:
 /// - `event`: The raw calendar event.
 /// - `user_domain`: The user's primary email domain (e.g., "company.com").
-///   For multi-domain support (I171), use `classify_meeting_multi`.
-/// - `entity_hints`: Entity hints from DB for multi-entity resolution (I336).
+///   For multi-domain support, use `classify_meeting_multi`.
+/// - `entity_hints`: Entity hints from DB for multi-entity resolution.
 pub fn classify_meeting(
     event: &GoogleCalendarEvent,
     user_domain: &str,
@@ -114,7 +114,7 @@ pub fn classify_meeting(
     classify_meeting_multi(event, &domains, entity_hints)
 }
 
-/// Multi-domain meeting classification with entity resolution (I171 + I336).
+/// Multi-domain meeting classification with entity resolution.
 ///
 /// Classifies attendees as internal if their domain matches ANY of `user_domains`.
 /// Resolves meetings to accounts, projects, and people via entity hints.
@@ -180,7 +180,7 @@ pub fn classify_meeting_multi(
         None
     };
 
-    // ---- Step 4: Domain classification (I171: multi-domain) ----
+    // ---- Step 4: Domain classification (multi-domain) ----
     let (external, _internal): (Vec<&String>, Vec<&String>) = if !user_domains.is_empty() {
         event
             .attendees
@@ -216,7 +216,7 @@ pub fn classify_meeting_multi(
     // (domain match OR stakeholder attendance), treat this as an account
     // meeting regardless of attendee domains.
     //
-    // DOS-206 + DOS-258 evidence hierarchy: Title-slug AND title-keyword
+    // Evidence hierarchy: Title-slug AND title-keyword
     // matches are too weak to promote an all-internal meeting to customer
     // tier, because a meeting mentioning an account in the title doesn't
     // prove that account is the subject of the meeting. Only direct
@@ -233,9 +233,9 @@ pub fn classify_meeting_multi(
                 || e.source == "stakeholder_attendee")
     });
 
-    // Resolve the best-matched account hint for type checks (I382, DOS-206).
+    // Resolve the best-matched account hint for type checks.
     // Tie-breaking: when two accounts share the same confidence, prefer the
-    // internal-typed account so the DOS-206 guard reliably fires for
+    // internal-typed account so the internal-account guard reliably fires for
     // all-internal meetings. Customer beats internal only when it has strictly
     // higher confidence.
     let best_account_hint = result
@@ -249,7 +249,7 @@ pub fn classify_meeting_multi(
             if conf_cmp != std::cmp::Ordering::Equal {
                 return conf_cmp;
             }
-            // On equal confidence: internal account wins so the DOS-206 guard
+            // On equal confidence: internal account wins so the internal-account guard
             // fires and we never mis-promote an all-internal meeting to "customer".
             let a_internal = entity_hints
                 .iter()
@@ -267,11 +267,11 @@ pub fn classify_meeting_multi(
         })
         .and_then(|best| entity_hints.iter().find(|h| h.id == best.entity_id));
 
-    // Check if best-matched account entity is a partner (I382)
+    // Check if best-matched account entity is a partner
     let best_account_is_partner =
         best_account_hint.and_then(|h| h.account_type.as_deref()) == Some("partner");
 
-    // DOS-206: Check if best-matched account entity is itself internal.
+    // Check if best-matched account entity is itself internal.
     // An internal account is one that belongs to the same organisation as the
     // user (e.g. a subsidiary tracked as an account). When every attendee is
     // also internal, meeting the internal account is just an internal meeting —
@@ -286,7 +286,7 @@ pub fn classify_meeting_multi(
         // promote this meeting to account-level intelligence even though all
         // attendees are internal (e.g., "Acme Corp 1:1" with internal attendees).
         //
-        // DOS-206 guard: skip promotion entirely when the matched account is
+        // Internal-account guard: skip promotion entirely when the matched account is
         // itself marked internal. An all-internal team meeting about an internal
         // account should never become a "customer" meeting.
         if has_account_entity && !best_account_is_internal {
@@ -380,7 +380,7 @@ pub fn classify_meeting_multi(
     result
 }
 
-/// Resolve entities from hints against meeting signals. I336.
+/// Resolve entities from hints against meeting signals.
 fn resolve_entities(
     result: &mut ClassifiedMeeting,
     entity_hints: &[EntityHint],
@@ -519,7 +519,7 @@ fn resolve_entities(
         }
     }
 
-    // I653 FIX 8: Person→account chaining at classification time.
+    // Person→account chaining at classification time.
     // If known stakeholders attend, boost their linked accounts' confidence.
     // This enables deterministic auto-linking without AI: 3 CloudCo stakeholders
     // attending a meeting boosts CloudCo's confidence via attendee vote signal.
@@ -540,7 +540,7 @@ fn resolve_entities(
     // Apply attendee vote boosts to account entities that ALREADY matched
     // via title/domain/keyword. Stakeholder chaining boosts existing
     // resolutions and — when the title ALSO matched the same account —
-    // relabels the source as "stakeholder" so the DOS-258 entity-aware
+    // relabels the source as "stakeholder" so the entity-aware
     // promotion check treats it as strong evidence. Stakeholder attendance
     // alone never introduces new accounts from nothing (to avoid flooding
     // a meeting with every unrelated account an attendee happens to be
@@ -586,7 +586,7 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
 // ============================================================================
 
 impl ClassifiedMeeting {
-    /// Extract account name from resolved entities (backward compat helper). I336.
+    /// Extract account name from resolved entities (backward compat helper).
     pub fn account(&self) -> Option<&str> {
         self.resolved_entities
             .iter()
@@ -622,7 +622,7 @@ impl ClassifiedMeeting {
             .find(|e| e.entity_type == "account")
             .map(|e| e.name.clone());
 
-        // Carry entity IDs through so callers can persist links (I653 FIX 1)
+        // Carry entity IDs through so callers can persist links.
         let classified_entities: Option<Vec<(String, String)>> = if self
             .resolved_entities
             .is_empty()
@@ -637,7 +637,7 @@ impl ClassifiedMeeting {
             )
         };
 
-        // DOS-224: also carry full scored resolutions so the calendar-sync
+        // Also carry full scored resolutions so the calendar-sync
         // persistence path can make primary-vs-suggestion decisions instead
         // of defaulting every link to confidence 0.95 / is_primary 1.
         let scored_classified_entities = if self.resolved_entities.is_empty() {
@@ -956,7 +956,7 @@ mod tests {
         assert_eq!(cal_event.title, "Acme sync");
     }
 
-    // ---- I336: Entity-generic classification tests ----
+    // ---- Entity-generic classification tests ----
 
     #[test]
     fn test_classify_account_domain_match() {
@@ -1072,7 +1072,7 @@ mod tests {
 
     #[test]
     fn test_classify_internal_1on1_with_account_in_title() {
-        // DOS-206: A domain hint that does NOT match any attendee (attendees
+        // A domain hint that does NOT match any attendee (attendees
         // are all @company.com, account owns @acmecorp.com) gives us only
         // a title-slug resolution at 0.50/source=title. That's below the
         // entity-aware promotion threshold (0.70 or non-title source), so
@@ -1098,7 +1098,7 @@ mod tests {
 
     #[test]
     fn test_classify_internal_meeting_with_account_in_title() {
-        // DOS-206: A title-slug-only match on an all-internal meeting is
+        // A title-slug-only match on an all-internal meeting is
         // too weak to promote to Entity tier. The resolver still records
         // the low-confidence resolution (so downstream suggestion UI can
         // surface it), but the meeting type stays internal and the tier
@@ -1120,7 +1120,7 @@ mod tests {
         assert!(!result.resolved_entities.is_empty());
     }
 
-    /// DOS-206 regression: all-internal meeting whose title happens to
+    /// Regression: all-internal meeting whose title happens to
     /// contain a known account slug must NOT be promoted to "customer".
     /// Title-only slug matches produce confidence 0.50 via source="title",
     /// which is below the 0.70 threshold for the entity-aware override.
@@ -1152,7 +1152,7 @@ mod tests {
         assert_eq!(result.intelligence_tier, IntelligenceTier::Person);
     }
 
-    /// DOS-258 evidence-hierarchy tightening: a keyword-only signal in an
+    /// Evidence-hierarchy tightening: a keyword-only signal in an
     /// all-internal meeting is NOT strong enough to promote to entity tier.
     /// Only direct relationship evidence (attendee domain maps to the
     /// account OR an attendee is an active stakeholder) justifies the
@@ -1178,7 +1178,7 @@ mod tests {
         assert_eq!(result.intelligence_tier, IntelligenceTier::Person);
     }
 
-    /// DOS-258 evidence-hierarchy tightening: stakeholder attendance IS
+    /// Evidence-hierarchy tightening: stakeholder attendance IS
     /// strong enough to promote an all-internal meeting to entity tier.
     /// The linked_account_ids chaining surfaces the stakeholder signal, and
     /// the classifier relabels the account's entity-match source to
@@ -1207,7 +1207,7 @@ mod tests {
         );
     }
 
-    /// DOS-258 evidence hierarchy: domain match promotes to entity tier.
+    /// Evidence hierarchy: domain match promotes to entity tier.
     /// Three+ attendees including at least one external on the account's
     /// domain → customer + Entity tier.
     #[test]
@@ -1224,11 +1224,11 @@ mod tests {
         assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
     }
 
-    /// DOS-206 regression: an all-internal meeting against an account that is
+    /// Regression: an all-internal meeting against an account that is
     /// itself typed "internal" (e.g. a subsidiary tracked in the accounts
     /// table) must NOT be promoted to "customer", even when the entity match
     /// is strong (keyword / domain).  The internal-account guard added in
-    /// DOS-206 must fire here.
+    ///  must fire here.
     #[test]
     fn test_dos206_internal_account_type_never_promotes_to_customer() {
         let mut hint = account_hint_with_domain("sub-id", "InternalUser1 Subsidiary", &["subsidiary.com"]);

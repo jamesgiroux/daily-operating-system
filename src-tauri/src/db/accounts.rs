@@ -130,7 +130,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Walk the parent_id chain to get all ancestors (I316: n-level nesting).
+    /// Walk the parent_id chain to get all ancestors (n-level nesting).
     pub fn get_account_ancestors(&self, account_id: &str) -> Result<Vec<DbAccount>, DbError> {
         let sql = format!(
             "WITH RECURSIVE ancestors(id) AS (
@@ -149,7 +149,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Get all descendants using recursive CTE with depth limit (I316: n-level nesting).
+    /// Get all descendants using recursive CTE with depth limit (n-level nesting).
     pub fn get_descendant_accounts(&self, ancestor_id: &str) -> Result<Vec<DbAccount>, DbError> {
         let sql = format!(
             "WITH RECURSIVE descendants(id, depth) AS (
@@ -190,7 +190,7 @@ impl ActionDb {
 
     /// Additively merge domains from meeting attendee inference. Uses the
     /// default source='inferred', meaning these can be purged by
-    /// `raw_rebuild_account_domains` before the DOS-258 cutover.
+    /// `raw_rebuild_account_domains` before the account-domain rebuild cutover.
     pub fn merge_account_domains(
         &self,
         account_id: &str,
@@ -234,7 +234,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// DOS-258: Return all distinct active external stakeholder emails for an account,
+    /// Return all distinct active external stakeholder emails for an account,
     /// excluding internal-relationship people. Used to derive account_domains from
     /// the stakeholder graph.
     pub fn get_active_external_stakeholder_emails(
@@ -254,7 +254,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// DOS-258: Return every (account_id, email) tuple for active external stakeholders
+    /// Return every (account_id, email) tuple for active external stakeholders
     /// across all non-archived customer/partner accounts. Used by the boot sweep.
     pub fn get_all_active_external_stakeholder_emails(
         &self,
@@ -332,7 +332,7 @@ impl ActionDb {
 
     /// Lookup non-archived account candidates by email domain.
     ///
-    /// DOS-258 Tier 4 domain hierarchy: if the domain matches an account that
+    /// Tier 4 domain hierarchy: if the domain matches an account that
     /// has `parent_id` set (i.e. a subsidiary), the parent account is
     /// surfaced alongside it as a second candidate. P9 then lets the user
     /// pick between "Subsidiary BU" and "Parent Corp" rather than blindly
@@ -594,7 +594,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Full stakeholder data with data_source for the DB-first read model (I652).
+    /// Full stakeholder data with data_source for the DB-first read model.
     /// Returns ALL stakeholders (user-confirmed + Glean-suggested + Google-sourced)
     /// plus linked people from entity_members. Roles come from account_stakeholder_roles.
     pub fn get_account_stakeholders_full(
@@ -725,7 +725,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Get typed roles for a specific stakeholder (I652).
+    /// Get typed roles for a specific stakeholder.
     pub fn get_stakeholder_roles(
         &self,
         account_id: &str,
@@ -745,7 +745,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Add an account team member with a role (idempotent, I652).
+    /// Add an account team member with a role (idempotent).
     /// Inserts into account_stakeholders (the link) + account_stakeholder_roles (the role).
     pub fn add_account_team_member(
         &self,
@@ -796,7 +796,7 @@ impl ActionDb {
     ) -> Result<(), DbError> {
         let role = new_role.trim().to_lowercase();
         let now = Utc::now().to_rfc3339();
-        // DOS-7 D4-1b: soft-delete user-owned roles instead of hard-deleting.
+        // Soft-delete user-owned roles instead of hard-deleting.
         // Row preservation per plan §"Hard-delete role path refactor" so the
         // claim layer's tombstones survive any rollback. Existing reads
         // filter `WHERE dismissed_at IS NULL` (migration 107 contract) so
@@ -827,7 +827,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Link a person to an account with explicit data source (I505, updated I652).
+    /// Link a person to an account with explicit data source (updated).
     ///
     /// Sets `last_seen_in_glean` on insert/update. Does NOT overwrite `data_source`
     /// on the role if the existing role was user-owned (`data_source = 'user'`).
@@ -862,7 +862,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Remove an account team member link and all their roles (I652).
+    /// Remove an account team member link and all their roles.
     pub fn remove_account_team_member(
         &self,
         account_id: &str,
@@ -907,7 +907,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Get pending stakeholder suggestions for an account (I652 phase 2).
+    /// Get pending stakeholder suggestions for an account.
     pub fn get_stakeholder_suggestions(
         &self,
         account_id: &str,
@@ -946,7 +946,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Get a single stakeholder suggestion by ID (I652 phase 2).
+    /// Get a single stakeholder suggestion by ID.
     pub fn get_stakeholder_suggestion(
         &self,
         suggestion_id: i64,
@@ -977,7 +977,7 @@ impl ActionDb {
         }
     }
 
-    /// Aggregate child account signals for a parent account (I114).
+    /// Aggregate child account signals for a parent account.
     ///
     /// Returns total ARR, worst health, nearest renewal, and BU count.
     pub fn get_parent_aggregate(&self, parent_id: &str) -> Result<ParentAggregate, DbError> {
@@ -1013,7 +1013,7 @@ impl ActionDb {
 
     /// Get meetings for an account, most recent first.
     ///
-    /// DOS-232 Codex follow-up: apply the same 0.70 accepted-confidence
+    ///  Codex follow-up: apply the same 0.70 accepted-confidence
     /// floor used by `get_meetings_for_account_with_prep` and the
     /// `get_total_meeting_count_for_account` helpers. Without it, the
     /// account chat LLM context, dossier markdown generation, and email
@@ -1073,7 +1073,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// DOS-233 Codex fix: total count of meetings linked to an account above
+    /// total count of meetings linked to an account above
     /// the accepted-confidence floor (0.70). Used by the About-this-dossier
     /// counts so active accounts don't stall at "10 meetings on record" —
     /// the preview list still caps at 10, but totals come from COUNT(*)
@@ -1094,7 +1094,7 @@ impl ActionDb {
             .map_err(DbError::from)
     }
 
-    /// DOS-233 Codex fix: total count of transcripts for meetings linked to
+    /// total count of transcripts for meetings linked to
     /// an account above the accepted-confidence floor. Joined through
     /// meeting_transcripts (a meeting only counts when it has a transcript
     /// row AND a non-null transcript_path).
@@ -1122,10 +1122,10 @@ impl ActionDb {
         account_id: &str,
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
-        // DOS-232 Codex fix: account-specific The Record / recentMeetings
+        // account-specific The Record / recentMeetings
         // queries must include EVERY meeting whose junction to this account
         // is above the accepted-confidence floor (0.70), regardless of the
-        // `is_primary` flag. DOS-224 intentionally persists exactly one
+        // `is_primary` flag. The persistence path intentionally persists exactly one
         // primary per meeting even when multiple accounts share that meeting
         // — so a secondary account at confidence 0.80 on a meeting where
         // another account is the primary would previously be hidden from its
@@ -1769,7 +1769,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// I651: Upsert product classification from Glean/Salesforce.
+    /// Upsert product classification from Glean/Salesforce.
     /// Uses (account_id, product_type, data_source) as the upsert key.
     /// Idempotent: calling twice with same data produces one row.
     pub fn upsert_product_classification(
@@ -1842,7 +1842,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Entity Metadata (I311)
+    // Entity Metadata
     // =========================================================================
 
     /// Update JSON metadata for an entity (account or project).
@@ -1885,7 +1885,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Domain reclassification (I184 — reclassify on domain change)
+    // Domain reclassification (reclassify on domain change)
     // =========================================================================
 
     /// Reclassify all people's relationship based on current user domains.
@@ -1937,7 +1937,7 @@ impl ActionDb {
     pub fn reclassify_meeting_types_from_attendees(&self) -> Result<usize, DbError> {
         let mut total = 0;
 
-        // DOS-225: Path A — flip meetings to internal only when EVERY attendee
+        // Path A — flip meetings to internal only when EVERY attendee
         // is accounted for as internal.
         //
         // The prior version joined `meeting_attendees` → `people` and required
@@ -2032,7 +2032,7 @@ impl ActionDb {
             }
         }
 
-        // DOS-206: Path B — via raw attendee email strings vs user_domains.
+        // Path B — via raw attendee email strings vs user_domains.
         // The people-join query above misses meetings where attendees are
         // stored only in the `meetings.attendees` JSON / CSV blob and have
         // never been materialized into the `people` table. We need a second
@@ -2113,7 +2113,7 @@ impl ActionDb {
             [],
         )?;
 
-        // DOS-258 Tier 2: weak-primary flip. If a meeting is still labelled
+        // Tier 2: weak-primary flip. If a meeting is still labelled
         // `customer` but its linked primary account has ZERO stakeholder or
         // domain evidence connecting the attendee list to that account,
         // the primary was elected on weak signal (e.g. a pre-fix P5 title
@@ -2358,7 +2358,7 @@ impl ActionDb {
         })
     }
 
-    /// The column list shared by all account SELECT queries (I644).
+    /// The column list shared by all account SELECT queries.
     const ACCOUNT_COLUMNS: &'static str =
         "id, name, lifecycle, arr, health, contract_start, contract_end, \
          nps, tracker_path, parent_id, account_type, updated_at, archived, \
@@ -2407,7 +2407,7 @@ impl ActionDb {
             keywords_extracted_at: row.get(14).unwrap_or(None),
             metadata: row.get(15).unwrap_or(None),
             commercial_stage: row.get(16).unwrap_or(None),
-            // I644 fact columns (migration 082)
+            //  fact columns (migration 082)
             arr_range_low: row.get(17).unwrap_or(None),
             arr_range_high: row.get(18).unwrap_or(None),
             renewal_likelihood: row.get(19).unwrap_or(None),
@@ -2427,11 +2427,11 @@ impl ActionDb {
             customer_status: row.get(33).unwrap_or(None),
             customer_status_source: row.get(34).unwrap_or(None),
             customer_status_updated_at: row.get(35).unwrap_or(None),
-            // I644: dashboard.json fields promoted to DB (migration 083)
+            // dashboard.json fields promoted to DB (migration 083)
             company_overview: row.get(36).unwrap_or(None),
             strategic_programs: row.get(37).unwrap_or(None),
             notes: row.get(38).unwrap_or(None),
-            // DOS-110: User health sentiment
+            // User health sentiment
             user_health_sentiment: row.get(39).unwrap_or(None),
             sentiment_set_at: row.get(40).unwrap_or(None),
         })
@@ -2463,7 +2463,7 @@ impl ActionDb {
         Ok(changed)
     }
 
-    /// Archive or unarchive a project. Cascade: archiving a parent archives all children (I388).
+    /// Archive or unarchive a project. Cascade: archiving a parent archives all children.
     pub fn archive_project(&self, id: &str, archived: bool) -> Result<usize, DbError> {
         let val = if archived { 1 } else { 0 };
         let now = Utc::now().to_rfc3339();
@@ -2518,7 +2518,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // I198: Account Merge
+    // Account Merge
     // =========================================================================
 
     /// Merge source account into target account.
@@ -2735,7 +2735,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Account Events (I143 — renewal tracking)
+    // Account Events (renewal tracking)
     // =========================================================================
 
     /// Record a lifecycle event for an account.
@@ -2795,7 +2795,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Source References (I644)
+    // Source References
     // =========================================================================
 
     /// Get all source references for an account, ordered by field then most recent.
@@ -2824,7 +2824,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Technical Footprint (I649)
+    // Technical Footprint
     // =========================================================================
 
     /// Upsert the technical footprint row for an account.
@@ -2877,7 +2877,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// DOS-231 Codex fix: update a single column on `account_technical_footprint`.
+    /// update a single column on `account_technical_footprint`.
     /// Whitelisted to the gap-row fields surfaced by `AccountTechnicalFootprint`
     /// in chapter variant — other columns (source, timestamps, integrations_json)
     /// are not user-editable through this path.
@@ -2923,7 +2923,7 @@ impl ActionDb {
         // `open_tickets = excluded.open_tickets` unconditionally, so the
         // sentinel `0` passed here would silently wipe real support data
         // whenever a user edits `usage_tier`, `csat_score`, or any other
-        // non-`open_tickets` gap field — DOS-231 Codex follow-up).
+        // non-`open_tickets` gap field — Codex follow-up).
         let bootstrap_now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
         self.conn.execute(
             "INSERT OR IGNORE INTO account_technical_footprint
@@ -3019,7 +3019,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Account fact upserts (I644)
+    // Account fact upserts
     // =========================================================================
 
     /// Source priority for fact writes: user > salesforce > zendesk > glean > ai.
@@ -3034,7 +3034,7 @@ impl ActionDb {
         }
     }
 
-    /// Allowed field names for `upsert_account_fact` (I644).
+    /// Allowed field names for `upsert_account_fact`.
     /// Each entry is (field, has_source, has_updated_at).
     const FACT_FIELDS: &'static [(&'static str, bool, bool)] = &[
         ("arr_range_low", false, false),
@@ -3052,7 +3052,7 @@ impl ActionDb {
         ("renewal_stage", false, false),
     ];
 
-    /// Update a single account fact field with source tracking (I644).
+    /// Update a single account fact field with source tracking.
     ///
     /// Only overwrites if the new source priority >= existing source priority.
     /// Source priority: user (4) > salesforce (3) > zendesk (2) > glean (1) > ai (0).
@@ -3139,7 +3139,7 @@ impl ActionDb {
         Ok(rows_changed > 0)
     }
 
-    /// Write a source reference row (I644).
+    /// Write a source reference row.
     ///
     /// Records provenance for a fact value: which system provided it, when it was
     /// observed, and an optional reference to the source record.
@@ -3168,7 +3168,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // DOS-27: Sentiment journal
+    // Sentiment journal
     // =========================================================================
 
     /// Insert a sentiment journal entry (value + optional note + timestamp).
@@ -3231,7 +3231,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// DOS-228 Fix 1: Most recent note attached to the account's CURRENT
+    /// Regression guard: Most recent note attached to the account's CURRENT
     /// sentiment value. If the account has no current sentiment, or no note
     /// has ever been recorded against that sentiment value, returns None.
     ///
@@ -3274,7 +3274,7 @@ impl ActionDb {
         }
     }
 
-    /// DOS-269: Update the note on the newest sentiment journal row whose
+    /// Update the note on the newest sentiment journal row whose
     /// `sentiment` matches the account's current `user_health_sentiment`.
     /// This is the "Add more detail" path — user is augmenting the existing
     /// journal entry rather than creating a new one. Returns `true` if a row
@@ -3326,7 +3326,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // DOS-269: triage_snoozes — per-card dismissal persistence for Health tab
+    // triage_snoozes — per-card dismissal persistence for Health tab
     // Snooze / Confirm-resolved actions. Keyed on (entity, triage_key).
     // =========================================================================
 
@@ -3429,7 +3429,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // DOS-228 Fix 3: risk_briefing_jobs — persisted status for async risk
+    // Regression guard: risk_briefing_jobs — persisted status for async risk
     // briefing generation. One row per account; the row is upserted at each
     // lifecycle transition (enqueued → running → complete|failed).
     // =========================================================================
@@ -3439,7 +3439,7 @@ impl ActionDb {
     /// retained. The caller (service layer) owns the returned attempt_id and
     /// must present it on every subsequent transition for compare-and-set.
     ///
-    /// DOS-228 Wave 0e Fix 2: the attempt_id column lets a superseding
+    /// the attempt_id column lets a superseding
     /// retry invalidate a prior lifecycle runner's updates instead of
     /// last-write-wins corruption when two retries race.
     pub fn upsert_risk_briefing_job_enqueued(
@@ -3564,7 +3564,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // DOS-228 Wave 0e Fix 3: health_recompute_pending — durable debounce
+    // health_recompute_pending — durable debounce
     // marker. Scheduling a recompute writes a row; a successful recompute
     // clears it. Startup drains whatever survived a crash so committed
     // field edits never silently lose their health recompute.
@@ -3604,7 +3604,7 @@ impl ActionDb {
     }
 }
 
-/// DOS-228 Fix 3: Status of a risk-briefing generation job.
+/// Regression guard: Status of a risk-briefing generation job.
 /// Exposed via `get_account_detail` so the UI can render a "generating…"
 /// indicator, a "retry" affordance on failure, or the timestamp of the last
 /// successful generation.
@@ -3619,7 +3619,7 @@ pub struct DbRiskBriefingJob {
     pub error_message: Option<String>,
 }
 
-// Note: `attempt_id` is an internal CAS token (DOS-228 Wave 0e Fix 2) and is
+// Note: `attempt_id` is an internal CAS token  and is
 // intentionally NOT exposed on `DbRiskBriefingJob` — the frontend only needs
 // `status`/`enqueuedAt`/`completedAt`/`errorMessage` to render progress and
 // retry affordance, and hiding the token prevents UI code from accidentally
@@ -3729,7 +3729,7 @@ mod dos258_reclassify_tests {
     use crate::db::test_utils::test_db;
     use rusqlite::params;
 
-    /// DOS-258 Tier 2: a meeting labelled `customer` whose linked primary
+    /// Tier 2: a meeting labelled `customer` whose linked primary
     /// account has zero attendee-level evidence (no domain match, no active
     /// stakeholder) must flip back to `internal` on re-classification.
     #[test]
@@ -3752,7 +3752,7 @@ mod dos258_reclassify_tests {
             .expect("seed account_domains");
 
         // Meeting classified as customer but attendee list has no wpvip.com
-        // domain and no stakeholder on acc-wp. Pre-DOS-258 P5 title-only
+        // domain and no stakeholder on acc-wp. Pre- P5 title-only
         // could have elected this — the reclassifier must correct it.
         db.conn_ref()
             .execute(

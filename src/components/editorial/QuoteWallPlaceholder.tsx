@@ -2,7 +2,7 @@
  * QuoteWallPlaceholder — editorial empty state for the "Their voice" chapter.
  *
  * The full quote wall (filter bar + verbatim transcript quotes + copy/use actions)
- * is tracked in DOS-205. Until schema + prompt land, this chapter announces the
+ * is tracked in. Until schema + prompt land, this chapter announces the
  * coming surface with an editorial empty rather than hiding it entirely — gaps
  * are first-class content per PRINCIPLES.md.
  */

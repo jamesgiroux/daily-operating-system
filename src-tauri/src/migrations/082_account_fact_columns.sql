@@ -1,4 +1,4 @@
--- I644: Account fact columns for Outlook chapter commercial intelligence.
+-- Account fact columns for Outlook chapter commercial intelligence.
 
 -- ARR range (low/high bounds from Salesforce or Glean)
 ALTER TABLE accounts ADD COLUMN arr_range_low REAL;

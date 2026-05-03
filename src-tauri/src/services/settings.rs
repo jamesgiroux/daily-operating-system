@@ -1,4 +1,4 @@
-// Settings service — extracted from commands.rs (I454)
+// Settings service — extracted from commands.rs
 // Business logic for configuration and settings mutations.
 
 use crate::state::AppState;
@@ -172,10 +172,10 @@ pub fn set_google_poll_settings(
     })
 }
 
-/// Set hygiene configuration (I271).
+/// Set hygiene configuration.
 ///
 /// `ai_budget` is accepted but ignored — the hygiene call-count budget has been
-/// replaced by the single daily AI token budget (DOS-279). Callers should use
+/// replaced by the single daily AI token budget. Callers should use
 /// `set_daily_ai_budget` instead.
 pub fn set_hygiene_config(
     ctx: &ServiceContext<'_>,
@@ -221,7 +221,7 @@ pub(super) fn set_daily_ai_budget_validate(budget: u32) -> bool {
     VALID_TIERS.contains(&budget)
 }
 
-/// Set the daily AI token budget (DOS-279).
+/// Set the daily AI token budget.
 ///
 /// Valid tiers: 50_000, 100_000, 250_000.
 /// Persists to config and syncs to KV store for the preflight gate.
@@ -279,7 +279,7 @@ pub fn set_notification_config(
     })
 }
 
-/// Set UI text scale percentage (DOS-45).
+/// Set UI text scale percentage.
 pub fn set_text_scale(
     ctx: &ServiceContext<'_>,
     percent: u32,
@@ -343,7 +343,7 @@ pub fn set_schedule(
 }
 
 /// Save user profile fields with internal org entity sync.
-// DOS-209: ServiceContext adds 1 arg; request-object refactor deferred.
+// ServiceContext adds 1 arg; request-object refactor deferred.
 #[allow(clippy::too_many_arguments)]
 pub async fn set_user_profile(
     ctx: &ServiceContext<'_>,
@@ -401,7 +401,7 @@ pub async fn set_user_profile(
         })?;
     }
 
-    // Write identity fields to user_entity table only (I411 AC2: no dual storage)
+    // Write identity fields to user_entity table only (AC2: no dual storage)
     let _ = state.db_write(move |db| {
         // Upsert: create row if missing, then update
         let _ = db.conn_ref().execute(
@@ -443,7 +443,7 @@ mod tests {
         assert!(validate_ai_model_choice("invalid", "haiku").is_err());
     }
 
-    // DOS-279: Daily AI budget settings validation
+    // Daily AI budget settings validation
     #[test]
     fn daily_ai_budget_accepts_valid_tiers() {
         // These are the only valid tiers
@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn migration_existing_config_with_old_hygiene_budget_deserializes() {
-        // Simulate a config JSON from before DOS-279: has hygiene_ai_budget=10
+        // Simulate a config JSON from before has hygiene_ai_budget=10
         // but no daily_ai_token_budget. Should deserialize with the serde default.
         let json = r#"{
             "workspacePath": "/tmp/test",
@@ -518,7 +518,7 @@ pub async fn set_user_domains(
                     Err(e) => log::warn!("People reclassification failed: {}", e),
                 }
 
-                // DOS-206: Always run meeting reclassification after a domain
+                // Always run meeting reclassification after a domain
                 // save, regardless of whether any *people* rows changed. When
                 // people are already correctly classified but meetings were
                 // previously mis-typed (e.g., a past all-internal meeting

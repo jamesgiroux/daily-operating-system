@@ -1,4 +1,4 @@
-//! Thompson Sampling for signal weight learning (I307 / ADR-0080 Phase 3).
+//! Thompson Sampling for signal weight learning (ADR-0080 Phase 3).
 //!
 //! Uses Beta distribution sampling to balance exploration/exploitation when
 //! learning signal source reliability from user corrections.

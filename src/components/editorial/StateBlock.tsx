@@ -3,8 +3,8 @@
  * Used in State of Play chapter for "Working" and "Struggling" sections.
  * Each item gets a 3px left border in the label color with padding.
  *
- * I261: Optional onItemChange prop wraps items in EditableText for inline editing.
- * I550: Per-item dismiss (x) and feedback (thumbs up/down) controls.
+ * Optional onItemChange prop wraps items in EditableText for inline editing.
+ * Per-item dismiss (x) and feedback (thumbs up/down) controls.
  */
 import { X } from "lucide-react";
 import { EditableText } from "@/components/ui/EditableText";

@@ -1,9 +1,9 @@
-//! Production demo data for first-run experience (I56).
+//! Production demo data for first-run experience.
 //!
 //! Seeds a curated dataset into the live database with `is_demo = 1` markers
 //! so it can be cleanly removed when the user connects real data.
 //! Unlike devtools, this runs in release builds and writes to the real workspace.
-//! I633: health_score_history seeds + email_signals populated via enrichment pipeline.
+//! health_score_history seeds + email_signals populated via enrichment pipeline.
 
 use std::path::Path;
 
@@ -241,7 +241,7 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         ),
     ];
 
-    // Build prep_frozen_json — must include risks/recentWins arrays for I635 scorecard.
+    // Build prep_frozen_json — must include risks/recentWins arrays for scorecard.
     // Structure: { "prep": { "risks": [...], "recentWins": [...], ... } }
     let build_prep_json =
         |meeting_id: &str, account_name: Option<&str>, summary: Option<&str>| -> Option<String> {
@@ -429,7 +429,7 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
             rusqlite::params![id, summary],
         )
         .map_err(|e| format!("Demo historical meeting transcript: {}", e))?;
-        // I635: Historical meetings need prep_frozen_json for prediction scorecard
+        // Historical meetings need prep_frozen_json for prediction scorecard
         let hist_prep = account_id.and_then(|acct| {
             let acct_name = account_names.get(acct).copied();
             build_prep_json(id, acct_name, *summary)
@@ -711,7 +711,7 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
          ('demo-act-g2', 'Draft champion transition plan for Casey Kim', 'unstarted', 3, 'transcript', 'demo-mh-globex-14d', 'demo-globex', datetime('now', '-14 days'), datetime('now', '-14 days'), 1);"
     ).ok();
 
-    // I633: Seed health score history for trend computation demo
+    // Seed health score history for trend computation demo
     for (acct, scores) in &[
         (
             "demo-acme",

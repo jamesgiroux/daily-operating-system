@@ -1,4 +1,4 @@
-/* YouCard — Restructured identity settings (I541) */
+/* YouCard — Restructured identity settings  */
 
 /* ── Subsection groups ── */
 
@@ -225,7 +225,7 @@
   margin-top: 2px;
 }
 
-/* ── Shared editorial patterns (migrated from styles.ts inline spreads — I541) ── */
+/* ── Shared editorial patterns (migrated from styles.ts inline spreads) ── */
 
 .subsectionLabel {
   font-family: var(--font-mono);

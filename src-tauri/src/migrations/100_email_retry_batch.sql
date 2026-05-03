@@ -1,4 +1,4 @@
--- DOS-226 (Codex finding 2): scope retry transitions to a single batch so
+--  scope retry transitions to a single batch so
 -- concurrent refreshes and crash-recovery can tell "our rows" apart from
 -- "someone else's rows stuck in pending_retry".
 --

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 
 /**
- * Shared hook for updating intelligence fields via Tauri invoke (I352).
+ * Shared hook for updating intelligence fields via Tauri invoke.
  *
  * Text edits show locally via EditableText. Successful saves trigger a parent
  * refresh callback so authoritative detail state catches up after async writes.

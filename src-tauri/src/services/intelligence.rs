@@ -1,4 +1,4 @@
-// Intelligence service — extracted from commands.rs (I402)
+// Intelligence service — extracted from commands.rs
 // Business logic for entity intelligence CRUD, enrichment, and risk briefings.
 
 use std::path::Path;
@@ -13,7 +13,7 @@ use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 use tauri::Emitter;
 
-/// DOS-12: Preserve user-confirmed value_delivered items during re-enrichment.
+/// Preserve user-confirmed value_delivered items during re-enrichment.
 ///
 /// Items with `item_source.source == "user_correction"` are user-confirmed and must
 /// survive re-enrichment. New AI items are merged in, deduplicating by fuzzy statement match.
@@ -137,7 +137,7 @@ pub async fn enrich_entity(
         );
     }
 
-    // Manual refresh: clear circuit breaker so enrichment proceeds (I410)
+    // Manual refresh: clear circuit breaker so enrichment proceeds
     let entity_id_for_reset = request.entity_id.clone();
     let _ = state
         .db_write(move |db| {
@@ -174,9 +174,9 @@ pub async fn enrich_entity(
         .map(|c| c.ai_models.clone())
         .unwrap_or_default();
 
-    // I535/ADR-0100: Glean-first enrichment for manual refresh.
+    // /ADR-0100: Glean-first enrichment for manual refresh.
     // Try Glean chat if connected, fall back to PTY on failure.
-    // I566: Timeout on user-facing permit acquisition — return a friendly message
+    // Timeout on user-facing permit acquisition — return a friendly message
     // instead of blocking indefinitely when background enrichment is running.
     let _permit = match tokio::time::timeout(
         std::time::Duration::from_secs(10),
@@ -213,7 +213,7 @@ pub async fn enrich_entity(
         }
     };
 
-    // DOS-259 (W2-B cycle 3): single coherent snapshot of context state —
+    //  single coherent snapshot of context state —
     // is_remote + Glean Arc captured under one read-lock acquisition.
     // Avoids the L2 codex race where a Local switch between separate
     // getters could leave callers in a mixed-state world.
@@ -233,7 +233,7 @@ pub async fn enrich_entity(
         // Try Glean-first path
         let mut glean_result = None;
         if let (Some(_endpoint), Some(ref ctx)) = (&glean_endpoint, &input.intelligence_context) {
-            // DOS-259 (W2-B cycle 3): route through the snapshot's Glean Arc
+            //  route through the snapshot's Glean Arc
             // per ADR-0091. Falls through to PTY when the snapshot shows
             // None (bridge cleared by atomic Local swap). The snapshot
             // captured above is immutable here, so a concurrent settings
@@ -529,7 +529,7 @@ pub fn upsert_assessment_from_enrichment(
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    // DOS-12: Merge value_delivered — preserve user-confirmed items during re-enrichment.
+    // Merge value_delivered — preserve user-confirmed items during re-enrichment.
     let mut intel = intel.clone();
     if let Ok(Some(existing)) = db.get_entity_intelligence(entity_id) {
         merge_user_confirmed_values(&mut intel, &existing);
@@ -552,7 +552,7 @@ pub fn upsert_assessment_from_enrichment(
         Ok(())
     })?;
 
-    // DOS-14: After enrichment, reconcile AI objectives with user objectives
+    // After enrichment, reconcile AI objectives with user objectives
     if entity_type == "account" {
         if let Err(e) = crate::services::success_plans::reconcile_objectives(ctx, db, entity_id) {
             log::warn!("Objective reconciliation failed for {entity_id}: {e}");
@@ -625,7 +625,7 @@ pub fn upsert_assessment_snapshot(
     Ok(())
 }
 
-/// DOS-15: Persist the Glean leading-signals JSON blob on `entity_assessment`
+/// Persist the Glean leading-signals JSON blob on `entity_assessment`
 /// and emit the four callout-worthy signals derived from it.
 ///
 /// Wrapped in a transaction so the blob write and signal emissions either all
@@ -646,7 +646,7 @@ pub fn upsert_health_outlook_signals(
         .map_err(|e| format!("Failed to serialize health_outlook_signals: {e}"))?;
 
     db.with_transaction(|tx| {
-        // DOS-249: INSERT OR IGNORE ensures a row exists before the UPDATE so
+        // INSERT OR IGNORE ensures a row exists before the UPDATE so
         // that Glean leading-signals writes that race the main enrichment write
         // are not silently dropped. entity_type is required NOT NULL.
         tx.conn_ref()
@@ -729,7 +729,7 @@ pub fn upsert_health_outlook_signals(
     })
 }
 
-/// Persist AI-inferred person relationships for an enrichment run (I504).
+/// Persist AI-inferred person relationships for an enrichment run.
 ///
 /// - Skips invalid/self edges.
 /// - Never overwrites strong user-confirmed edges.
@@ -885,8 +885,8 @@ pub async fn update_intelligence_field(
                 account.as_ref(),
             )?;
 
-            // I644: DB is sole source of truth — no filesystem fallback.
-            // DOS-309: propagate DB read errors instead of collapsing them into "no row".
+            // DB is sole source of truth — no filesystem fallback.
+            // propagate DB read errors instead of collapsing them into "no row".
             let existing_intel = db
                 .get_entity_intelligence(&entity_id)
                 .map_err(|e| format!("DB read failed for entity {entity_id}: {e}"))?;
@@ -904,12 +904,12 @@ pub async fn update_intelligence_field(
                 }
             };
 
-            // I530: Distinguish curation (delete/clear) from correction (edit).
+            // Distinguish curation (delete/clear) from correction (edit).
             // Empty value = user removed the item → curation, no source penalty.
             // Non-empty value = user corrected the item → correction, source penalized.
             let is_curation = value.trim().is_empty() || value == "[]" || value == "null";
 
-            // DOS-309: DB-first ordering. Commit canonical state first; the
+            // DB-first ordering. Commit canonical state first; the
             // legacy file cache is written AFTER commit as best-effort.
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
@@ -938,7 +938,7 @@ pub async fn update_intelligence_field(
             })?;
 
             // Post-commit file write — best-effort cache. DB is canonical from here.
-            // DOS-311: routed through the schema-epoch fence so a concurrent
+            // routed through the schema-epoch fence so a concurrent
             // migration can preempt stale cache writes.
             crate::intelligence::write_fence::post_commit_fenced_write(
                 db,
@@ -1053,7 +1053,7 @@ pub async fn update_stakeholders(
             };
 
             // DB-first: prefer intelligence from DB over disk
-            // DOS-309: propagate DB read errors instead of collapsing them.
+            // propagate DB read errors instead of collapsing them.
             let existing_intel = db
                 .get_entity_intelligence(&entity_id)
                 .map_err(|e| format!("DB read failed for entity {entity_id}: {e}"))?;
@@ -1063,7 +1063,7 @@ pub async fn update_stakeholders(
                 crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?
             };
 
-            // DOS-309: DB-first ordering. The legacy file cache is written AFTER
+            // DB-first ordering. The legacy file cache is written AFTER
             // the transaction commits.
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
@@ -1131,7 +1131,7 @@ pub async fn update_stakeholders(
             })?;
 
             // Post-commit file write — best-effort cache. DB is canonical from here.
-            // DOS-311: routed through the schema-epoch fence.
+            // routed through the schema-epoch fence.
             crate::intelligence::write_fence::post_commit_fenced_write(
                 db,
                 &dir,
@@ -1144,7 +1144,7 @@ pub async fn update_stakeholders(
         .await
 }
 
-/// I576: Dismiss an intelligence item, creating a tombstone to prevent re-creation.
+/// Dismiss an intelligence item, creating a tombstone to prevent re-creation.
 ///
 /// Removes the item from the specified Vec field and adds a `DismissedItem`
 /// tombstone that prevents future enrichment from re-creating it.
@@ -1198,9 +1198,9 @@ pub async fn dismiss_intelligence_item(
                 account.as_ref(),
             )?;
 
-            // I644: DB is sole source of truth — no filesystem fallback.
-            // DOS-309: propagate DB read errors instead of collapsing them into "no row";
-            // the previous `.ok().flatten()` masked connection failures behind the I644 message.
+            // DB is sole source of truth — no filesystem fallback.
+            // propagate DB read errors instead of collapsing them into "no row";
+            // the previous `.ok.flatten` masked connection failures behind the "no row" message.
             let existing_intel = db
                 .get_entity_intelligence(&entity_id)
                 .map_err(|e| format!("DB read failed for entity {entity_id}: {e}"))?;
@@ -1252,17 +1252,17 @@ pub async fn dismiss_intelligence_item(
                 _ => return Err(format!("Cannot dismiss items from field: {}", field)),
             }
 
-            // DOS-309: DB-first ordering. The transaction commits the canonical
+            // DB-first ordering. The transaction commits the canonical
             // state; the legacy `intelligence.json` cache is written AFTER commit
             // and treated as best-effort. A file write failure does not roll back
-            // DB state — DOS-301's projection writer will repair file drift on
+            // DB state — the projection writer will repair file drift on
             // the next claim touch.
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
                     .map_err(|e| e.to_string())?;
 
-                // I645: Record feedback event + suppression tombstone.
-                // DOS-309: propagate errors so a failed insert no longer leaves
+                // Record feedback event + suppression tombstone.
+                // propagate errors so a failed insert no longer leaves
                 // a ghost-resurrectable item.
                 tx.record_feedback_event(&crate::db::feedback::FeedbackEventInput {
                     entity_id: &entity_id,
@@ -1291,9 +1291,9 @@ pub async fn dismiss_intelligence_item(
                 )
                 .map_err(|e| format!("create_suppression_tombstone: {e}"))?;
 
-                // DOS-7 D4-1a: shadow-write tombstone claim into the new substrate.
+                // Shadow-write tombstone claim into the new substrate.
                 // Failure logged but not propagated; legacy write above remains
-                // authoritative until DOS-301 lands.
+                // authoritative until the claim-read gate migration lands.
                 let subject_kind = match entity_type.as_str() {
                     "account" => "Account",
                     "person" => "Person",
@@ -1353,7 +1353,7 @@ pub async fn dismiss_intelligence_item(
             }
 
             // Post-commit file write — best-effort cache. DB is canonical from here.
-            // DOS-311: routed through the schema-epoch fence.
+            // routed through the schema-epoch fence.
             crate::intelligence::write_fence::post_commit_fenced_write(
                 db,
                 &dir,
@@ -1405,7 +1405,7 @@ pub fn recompute_entity_health_with_preset(
         None => return Ok(()), // No intelligence yet, nothing to recompute
     };
 
-    // I633: Pass org_health from existing intelligence so the 40/60 baseline
+    // Pass org_health from existing intelligence so the 40/60 baseline
     // blend fires consistently (previously passed None, diverging from enrichment scores)
     let org_health_ref = intel.org_health.as_ref();
     let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
@@ -1451,7 +1451,7 @@ pub fn recompute_entity_health_with_preset(
     Ok(())
 }
 
-/// I633: Bulk recompute health scores for all accounts.
+/// Bulk recompute health scores for all accounts.
 /// Called once after deploying formula fixes to ensure consistency.
 pub fn bulk_recompute_health(db: &crate::db::ActionDb) -> Result<usize, String> {
     let accounts = db.get_all_accounts().map_err(|e| e.to_string())?;
@@ -1510,7 +1510,7 @@ pub async fn generate_risk_briefing(
 
         let briefing = crate::risk_briefing::run_risk_enrichment(&input, progress_handle.as_ref())?;
 
-        // Store in reports table for unified tracking (I398)
+        // Store in reports table for unified tracking
         if let Ok(db) = crate::db::ActionDb::open() {
             let _ =
                 crate::reports::risk::store_risk_briefing_in_reports(&db, &account_id, &briefing);
@@ -1531,7 +1531,7 @@ pub fn get_risk_briefing(
     state: &AppState,
     account_id: &str,
 ) -> Result<crate::types::RiskBriefing, String> {
-    // Try reports table first (I398 — DB-backed storage)
+    // Try reports table first (DB-backed storage)
     if let Some(briefing) = crate::reports::risk::load_risk_briefing_from_reports(db, account_id) {
         return Ok(briefing);
     }
@@ -1551,10 +1551,10 @@ pub fn get_risk_briefing(
 }
 
 // =============================================================================
-// DOS-13: Recommended Action Track / Dismiss
+// Recommended Action Track / Dismiss
 // =============================================================================
 
-/// DOS-13: Track (accept) a recommended action — creates a real action with
+/// Track (accept) a recommended action — creates a real action with
 /// source_type "intelligence" and emits a recommendation_accepted signal.
 pub async fn track_recommendation(
     ctx: &ServiceContext<'_>,
@@ -1659,7 +1659,7 @@ pub async fn track_recommendation(
         .await
 }
 
-/// DOS-13: Dismiss a recommended action — removes it from intelligence and
+/// Dismiss a recommended action — removes it from intelligence and
 /// emits a recommendation_rejected signal (low confidence correction).
 pub async fn dismiss_recommendation(
     ctx: &ServiceContext<'_>,
@@ -1708,7 +1708,7 @@ pub async fn dismiss_recommendation(
                 account.as_ref(),
             )?;
 
-            // DOS-92: DB is sole source of truth — no filesystem fallback.
+            // DB is sole source of truth — no filesystem fallback.
             let mut intel = db
                 .get_entity_intelligence(&entity_id)
                 .map_err(|e| e.to_string())?
@@ -1725,7 +1725,7 @@ pub async fn dismiss_recommendation(
 
             let removed = intel.recommended_actions.remove(index);
 
-            // DOS-309: DB-first ordering. Commit DB state; file write + signal
+            // DB-first ordering. Commit DB state; file write + signal
             // emission run after as best-effort post-commit work.
             db.upsert_entity_intelligence(&intel)
                 .map_err(|e| e.to_string())?;
@@ -1757,7 +1757,7 @@ pub async fn dismiss_recommendation(
             }
 
             // Post-commit file write — best-effort cache.
-            // DOS-311: routed through the schema-epoch fence.
+            // routed through the schema-epoch fence.
             crate::intelligence::write_fence::post_commit_fenced_write(
                 db,
                 &dir,
@@ -1770,7 +1770,7 @@ pub async fn dismiss_recommendation(
         .await
 }
 
-/// DOS-13 / Wave 0e: Mark an open commitment as done.
+///  / Wave 0e: Mark an open commitment as done.
 ///
 /// Removes the commitment at `index` from `openCommitments`, promotes it
 /// into `valueDelivered` as a completion record, persists the updated
@@ -1867,7 +1867,7 @@ pub async fn mark_commitment_done(
                     discrepancy: None,
                 });
 
-            // DOS-309: DB-first ordering. Commit canonical state; file + signal
+            // DB-first ordering. Commit canonical state; file + signal
             // run after as best-effort post-commit work.
             db.upsert_entity_intelligence(&intel)
                 .map_err(|e| e.to_string())?;
@@ -1897,7 +1897,7 @@ pub async fn mark_commitment_done(
                 );
             }
 
-            // DOS-311: routed through the schema-epoch fence.
+            // routed through the schema-epoch fence.
             crate::intelligence::write_fence::post_commit_fenced_write(
                 db,
                 &dir,
@@ -1910,7 +1910,7 @@ pub async fn mark_commitment_done(
         .await
 }
 
-/// DOS-13: Get recommended actions for all entities (for use in the actions page).
+/// Get recommended actions for all entities (for use in the actions page).
 pub fn get_all_recommended_actions(
     db: &ActionDb,
 ) -> Result<Vec<crate::intelligence::io::RecommendedAction>, String> {
@@ -2130,7 +2130,7 @@ mod mutation_smoke_tests {
     }
 }
 
-/// DOS-15 end-to-end: parse Glean JSON → normalize → upsert to DB column → re-read.
+///  end-to-end: parse Glean JSON → normalize → upsert to DB column → re-read.
 ///
 /// This test exercises the full path from Glean's raw response through
 /// `parse_leading_signals`, `upsert_health_outlook_signals`, and the SELECT
@@ -2529,7 +2529,7 @@ mod live_acceptance_tests {
     };
     use crate::state::AppState;
 
-    /// Live acceptance check for I527 using the user's real local dataset.
+    /// Live acceptance check for using the user's real local dataset.
     /// Run manually:
     /// `cargo test --lib services::intelligence::live_acceptance_tests::i527_live_end_to_end_data_flow -- --ignored --nocapture`
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2667,7 +2667,7 @@ mod live_acceptance_tests {
         );
     }
 
-    /// Live deterministic-guardrail validation for I527 acceptance criteria:
+    /// Live deterministic-guardrail validation for acceptance criteria:
     /// - contradiction auto-correction/flagging
     /// - refresh overwrite (not stuck on corrected/flagged state)
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2990,7 +2990,7 @@ mod live_acceptance_tests {
         );
     }
 
-    /// Wave 1 live acceptance (I503 + I528) on an encrypted snapshot of the
+    /// Wave 1 live acceptance  on an encrypted snapshot of the
     /// user's real DB. Safe: mutates backup only.
     #[test]
     #[ignore = "Live validation: uses real DB snapshot and performs destructive purge checks on snapshot only"]
@@ -3001,7 +3001,7 @@ mod live_acceptance_tests {
             ActionDb::open_at(PathBuf::from(&backup_path)).expect("open snapshot backup DB");
 
         // ---------------------------------------------------------------------
-        // I503: structured health write/read + legacy compatibility
+        // structured health write/read + legacy compatibility
         // ---------------------------------------------------------------------
         let structured = IntelligenceJson {
             version: 1,
@@ -3111,7 +3111,7 @@ mod live_acceptance_tests {
         assert_eq!(file_health.trend.direction, "stable");
 
         // ---------------------------------------------------------------------
-        // I528: purge semantics (glean + google) against snapshot
+        // purge semantics (glean + google) against snapshot
         // ---------------------------------------------------------------------
         let marker = format!("wave1-i528-{}", Utc::now().timestamp());
         let account_id: String = snapshot_db
@@ -3513,7 +3513,7 @@ mod live_acceptance_tests {
         );
     }
 
-    /// Wave 1 live acceptance (I504) against real data enrichment path.
+    /// Wave 1 live acceptance  against real data enrichment path.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "Live validation: runs real AI enrichment and checks inferred relationships in local DB"]
     async fn wave1_live_i504_end_to_end_relationship_acceptance() {

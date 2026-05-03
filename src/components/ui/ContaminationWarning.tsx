@@ -1,5 +1,5 @@
 /**
- * DOS-83: Visual warning for cross-entity contaminated intelligence fields.
+ * Visual warning for cross-entity contaminated intelligence fields.
  *
  * Renders an inline warning banner when intelligence text is flagged as
  * potentially describing a different entity (cross-entity bleed).

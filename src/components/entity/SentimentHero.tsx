@@ -1,5 +1,5 @@
 /**
- * SentimentHero — DOS-27 journal-entry sentiment treatment for Health view.
+ * SentimentHero — journal-entry sentiment treatment for Health view.
  *
  * Renders the current sentiment value, a 90-day computed-health sparkline
  * (bucketed to 7 bars to match the editorial mockup), the latest journal
@@ -21,7 +21,7 @@ interface SentimentHeroProps {
   onSetSentiment: (value: SentimentValue, note?: string) => Promise<void>;
   onAcknowledgeStale: () => Promise<void>;
   /**
-   * DOS-269: Update the note on the CURRENT (latest) journal entry rather
+   * Update the note on the CURRENT (latest) journal entry rather
    * than creating a new one. Used by the "Add more detail" affordance on
    * the divergence flag — the user is augmenting context, not changing
    * their sentiment. When absent, "Add more detail" falls back to
@@ -221,7 +221,7 @@ export function SentimentHero({
   );
   const [draftNote, setDraftNote] = useState("");
   const [saving, setSaving] = useState(false);
-  /** DOS-269: when true, Save calls `onUpdateNote` instead of `onSetSentiment`
+  /** when true, Save calls `onUpdateNote` instead of `onSetSentiment`
    *  so we amend the latest journal entry instead of creating a new one. */
   const [addDetailMode, setAddDetailMode] = useState(false);
 
@@ -232,7 +232,7 @@ export function SentimentHero({
     setEditing(true);
   }
 
-  /** DOS-269: Open the editor pre-populated with the existing note so the
+  /** Open the editor pre-populated with the existing note so the
    *  user can extend rather than replace it. */
   function openAddDetailEditor() {
     setDraftValue(view.current);
@@ -251,7 +251,7 @@ export function SentimentHero({
     if (!draftValue) return;
     setSaving(true);
     try {
-      // DOS-269: "Add more detail" path updates the existing entry iff the
+      // "Add more detail" path updates the existing entry iff the
       // user didn't also change the sentiment value. If they did, fall
       // through to a fresh entry so the value transition is recorded.
       const valueUnchanged = draftValue === view.current;
@@ -332,7 +332,7 @@ export function SentimentHero({
             <span className={css.sparklineLabel}>90d</span>
           </>
         ) : (
-          // DOS-249: Ghost bars — reserves the layout slot so row geometry
+          // Ghost bars — reserves the layout slot so row geometry
           // doesn't collapse; subtle opacity reassures the user the sparkline
           // isn't broken, it just has no computed history yet.
           <span className={css.sparklineEmpty} aria-hidden="true">

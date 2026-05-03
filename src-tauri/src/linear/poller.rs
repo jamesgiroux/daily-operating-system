@@ -1,4 +1,4 @@
-//! Background Linear sync poller (I346).
+//! Background Linear sync poller.
 //!
 //! Follows the Clay poller architectural pattern.
 

@@ -136,7 +136,7 @@ function RootLayout() {
           workspacePath?: string;
           textScalePercent?: number;
         }>("get_config");
-        // Apply persisted text scale (DOS-45)
+        // Apply persisted text scale
         const scale = config.textScalePercent ?? 100;
         if (scale !== 100) {
           document.documentElement.style.zoom = `${scale / 100}`;
@@ -316,14 +316,14 @@ function RootLayout() {
     };
   }, [startupGate]);
 
-  // I599: Dismiss the pre-React HTML welcome screen once the React overlay is active.
+  // Dismiss the pre-React HTML welcome screen once the React overlay is active.
   useEffect(() => {
     if (!showWelcomeShellOnly && !showWelcomeOverlay) return;
     const htmlWelcome = document.getElementById("welcome-screen");
     if (htmlWelcome) htmlWelcome.remove();
   }, [showWelcomeOverlay, showWelcomeShellOnly]);
 
-  // I614: DB size warning removed from user-facing UI.
+  // DB size warning removed from user-facing UI.
   // Auto-purge handles large databases silently. Size info
   // is available in Settings > Diagnostics for developers.
 

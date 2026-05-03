@@ -1,4 +1,4 @@
--- DOS-258 Lane A: entity_linking_evaluations — append-only provenance audit.
+-- entity_linking_evaluations — append-only provenance audit.
 --
 -- One row per evaluate() call. Records: which owner was evaluated, which
 -- trigger fired, which rule matched (rule_id), what entity was chosen
@@ -9,8 +9,7 @@
 -- This makes every link debuggable: acceptance criterion #17 requires that
 -- any specific link can be explained in < 5 seconds. The evidence_json blob
 -- carries matched_text, rejected_candidates, parent_email_id, rule inputs,
--- and per-phase decisions — see DOS-258 Codex finding 14 + eng-review note
--- on promoted fields.
+-- and per-phase decisions, with promoted fields for high-traffic debugging paths.
 --
 -- Nightly cron trims rows older than 30 days:
 --   DELETE FROM entity_linking_evaluations WHERE created_at < datetime('now', '-30 days');

@@ -1,4 +1,4 @@
--- Migration 026: Attendee display names for hygiene name resolution (I342)
+-- Migration 026: Attendee display names for hygiene name resolution
 --
 -- Stores display names from Google Calendar attendees so the hygiene scanner
 -- can resolve unnamed people (e.g., "jgiroux" → "James Giroux").

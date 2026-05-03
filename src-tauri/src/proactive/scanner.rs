@@ -1,4 +1,4 @@
-//! Background proactive scanner (I260).
+//! Background proactive scanner.
 //!
 //! Piggybacks on the hygiene scanner's timing — runs after each hygiene scan
 //! completes, and also before `prepare_today()` runs.

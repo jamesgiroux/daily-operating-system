@@ -1,4 +1,4 @@
-//! Embedding-based signal relevance scoring (I308 — ADR-0080 Phase 4).
+//! Embedding-based signal relevance scoring (ADR-0080 Phase 4).
 //!
 //! Ranks signals by cosine similarity to a meeting context string using
 //! the local embedding model.

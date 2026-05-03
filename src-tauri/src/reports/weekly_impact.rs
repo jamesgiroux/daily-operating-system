@@ -1,4 +1,4 @@
-//! Weekly Impact Report (I418).
+//! Weekly Impact Report.
 //!
 //! Covers the prior Mon–Sun work week. Gathers user priorities,
 //! signal events, meetings history, and completed actions.

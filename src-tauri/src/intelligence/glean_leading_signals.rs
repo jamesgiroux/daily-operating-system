@@ -1,4 +1,4 @@
-//! DOS-15: Glean leading-signal enrichment for the Health & Outlook tab.
+//! Glean leading-signal enrichment for the Health & Outlook tab.
 //!
 //! Supplemental enrichment pass that runs after the main per-dimension Glean
 //! enrichment. Extracts high-leverage leading signals (champion risk, usage
@@ -34,7 +34,7 @@ pub struct HealthOutlookSignals {
     pub quote_wall: Vec<QuoteWallEntry>,
     /// Trend signals from a separate PTY pass over usage telemetry and
     /// per-message sentiment. Populated by chapter-by-chapter enrichment
-    /// (DOS-204); left as `None` when that pass has not produced output.
+    //; left as `None` when that pass has not produced output.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub trends: Option<TrendSignals>,
 }
@@ -383,7 +383,7 @@ pub struct QuoteWallEntry {
 }
 
 /// Populated by a separate PTY pass reading usage telemetry and per-message
-/// sentiment (DOS-204 chapter-by-chapter enrichment). Empty vectors when no
+/// sentiment (chapter-by-chapter enrichment). Empty vectors when no
 /// pass has run for the entity yet.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -397,7 +397,7 @@ pub struct TrendSignals {
 /// Build the supplemental leading-signals prompt, parameterised on account name
 /// and structured disambiguators.
 ///
-/// DOS-287: Prefixes the prompt with an `## Entity disambiguation`,
+/// Prefixes the prompt with an `## Entity disambiguation`,
 /// `## Retrieval scope`, and `## Grounding rule` block — same shape as
 /// `build_glean_dimension_prompt` — so Glean's retrieval is biased toward
 /// documents that reference at least one explicit identifier.
@@ -408,7 +408,7 @@ pub fn build_leading_signals_prompt(
     account_name: &str,
     disambiguators: Option<&crate::intelligence::prompts::EntityDisambiguators>,
 ) -> String {
-    // DOS-287: Build the structured disambiguation preamble up-front.
+    // Build the structured disambiguation preamble up-front.
     let preamble = build_disambiguation_preamble(account_name, disambiguators);
 
     format!(
@@ -502,7 +502,7 @@ Your response begins with `{{` and ends with `}}`. Nothing else."#,
     )
 }
 
-/// DOS-287: Render the structured disambiguation preamble shared with
+/// Render the structured disambiguation preamble shared with
 /// dimension prompts. Returns an empty string (no extra newlines) when no
 /// disambiguator data is available, so the prompt gracefully degrades.
 fn build_disambiguation_preamble(
@@ -898,7 +898,7 @@ mod tests {
         assert!(signals.derive_signals().budget_cycle_locked.is_some());
     }
 
-    /// The real DOS-15 correctness gate: parse Glean's snake_case, serialize
+    /// The real  correctness gate: parse Glean's snake_case, serialize
     /// as camelCase for storage, then deserialize that camelCase blob back
     /// into the same struct. Every populated field must survive the full
     /// round-trip. Regression guard for the write→read data-loss bug where

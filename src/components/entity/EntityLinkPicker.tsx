@@ -1,5 +1,5 @@
 /**
- * EntityLinkPicker — DOS-258 Lane G
+ * EntityLinkPicker — Lane G
  *
  * "Which account is this about?" picker for the P9 ambiguous case.
  *

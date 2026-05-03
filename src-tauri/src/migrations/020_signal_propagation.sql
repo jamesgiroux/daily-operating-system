@@ -1,4 +1,4 @@
--- Migration 020: Signal propagation tables (I308 — ADR-0080 Phase 4)
+-- Migration 020: Signal propagation tables (ADR-0080 Phase 4)
 --
 -- signal_derivations: tracks which signals were derived from which source signals
 -- post_meeting_emails: correlates emails received after meetings with meeting context

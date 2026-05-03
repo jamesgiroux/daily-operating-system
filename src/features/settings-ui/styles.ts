@@ -1,6 +1,6 @@
 /**
  * Shared editorial styles for Settings components.
- * Extracted from the original SettingsPage monolith (I349).
+ * Extracted from the original SettingsPage monolith.
  */
 
 export const styles = {

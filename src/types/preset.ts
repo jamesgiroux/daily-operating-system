@@ -1,5 +1,5 @@
 /**
- * Frontend types for role presets (I312).
+ * Frontend types for role presets.
  * Mirrors the Rust RolePreset schema from src-tauri/src/presets/schema.rs.
  */
 

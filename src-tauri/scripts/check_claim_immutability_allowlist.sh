@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DOS-7 D4-2 lint: assertion columns on intelligence_claims are immutable
+# Claims-substrate lint: assertion columns on intelligence_claims are immutable
 # after insert. Per plan §"Memory substrate amendments — D. Immutability
 # allowlist (formalized)":
 #

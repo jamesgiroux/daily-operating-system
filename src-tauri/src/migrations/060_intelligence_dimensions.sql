@@ -1,4 +1,4 @@
--- I508a: Add dimensions_json column for 6-dimension intelligence schema.
+-- Add dimensions_json column for the 6-dimension intelligence schema.
 -- Stores CompetitiveInsight, StrategicPriority, CoverageAssessment, OrgChange,
 -- InternalTeamMember, CadenceAssessment, ResponsivenessAssessment, Blocker,
 -- ContractContext, ExpansionSignal, AgreementOutlook, SupportHealth,

@@ -1,4 +1,4 @@
-//! Attendee group pattern detection (I307 / ADR-0080 Phase 3).
+//! Attendee group pattern detection (ADR-0080 Phase 3).
 //!
 //! Learns which attendee groups map to which entities by scanning
 //! historical meetings. When the same set of attendees appears in

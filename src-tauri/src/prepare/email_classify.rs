@@ -98,7 +98,7 @@ pub fn classify_email_priority(
     )
 }
 
-/// Urgency keywords that override dismissal penalty (I374).
+/// Urgency keywords that override dismissal penalty.
 const URGENCY_OVERRIDE_KEYWORDS: &[&str] = &[
     "urgent",
     "asap",
@@ -133,7 +133,7 @@ pub fn classify_email_priority_with_extras(
     )
 }
 
-/// Full classifier with dismissal learning (I374).
+/// Full classifier with dismissal learning.
 ///
 /// `dismissed_domains` contains sender domains with >= threshold dismissals.
 /// Emails from these domains are downgraded one priority tier unless the
@@ -178,7 +178,7 @@ pub fn classify_email_priority_full(
         return "high";
     }
 
-    // HIGH: Role-preset keywords in subject (I313)
+    // HIGH: Role-preset keywords in subject
     if extra_high_keywords
         .iter()
         .any(|kw| subject_lower.contains(&kw.to_lowercase()))
@@ -198,23 +198,23 @@ pub fn classify_email_priority_full(
         return "low";
     }
 
-    // LOW: List-Unsubscribe header present (bulk/marketing mail) — I21
+    // LOW: List-Unsubscribe header present (bulk/marketing mail) —
     if !list_unsubscribe.is_empty() {
         return "low";
     }
 
-    // LOW: Precedence: bulk or list — I21
+    // LOW: Precedence: bulk or list —
     let precedence_lower = precedence.to_lowercase();
     if precedence_lower == "bulk" || precedence_lower == "list" {
         return "low";
     }
 
-    // LOW: Sender domain is a known bulk/marketing sender — I21
+    // LOW: Sender domain is a known bulk/marketing sender —
     if BULK_SENDER_DOMAINS.contains(&domain.as_str()) {
         return "low";
     }
 
-    // LOW: Noreply local-part (checked AFTER customer/account domain) — I21
+    // LOW: Noreply local-part (checked AFTER customer/account domain) —
     if let Some(at_pos) = from_addr.find('@') {
         let local_part = &from_addr[..at_pos];
         if NOREPLY_LOCAL_PARTS.contains(&local_part) {
@@ -239,7 +239,7 @@ pub fn classify_email_priority_full(
 }
 
 /// Apply dismissal penalty: downgrade one tier if domain is in dismissed set,
-/// unless subject contains urgency keywords (I374).
+/// unless subject contains urgency keywords.
 fn apply_dismissal_penalty(
     base_priority: &'static str,
     domain: &str,
@@ -267,7 +267,7 @@ fn apply_dismissal_penalty(
 }
 
 // ============================================================================
-// I320: Signal-context boosting (Layer 1 of hybrid classification)
+// Signal-context boosting (Layer 1 of hybrid classification)
 // ============================================================================
 
 /// A boost result explaining why an email was elevated.
@@ -283,7 +283,7 @@ pub struct BoostResult {
 /// an entity with active high-confidence signals. If so, boost "medium" → "high".
 ///
 /// `merged_email_signal_types` is the pre-merged list of signal type strings from
-/// `AppState::get_merged_signal_config().email_signal_types` (DOS-176). Callers
+/// `AppState::get_merged_signal_config.email_signal_types`. Callers
 /// must pass this list — this function does not reach into global state.
 ///
 /// Returns `Some(BoostResult)` if the email should be boosted, `None` otherwise.
@@ -374,7 +374,7 @@ pub fn boost_with_entity_context(
 }
 
 // ============================================================================
-// DOS-242: Hard-drop noise suppression
+// Hard-drop noise suppression
 // ============================================================================
 
 /// Decide whether an inbound email should be suppressed entirely
@@ -387,14 +387,14 @@ pub fn boost_with_entity_context(
 ///    receipts, digests, verification codes, etc.
 /// 3. `List-Unsubscribe` header present AND another automation marker is
 ///    also present (noreply local-part, "newsletter" in sender, or noisy
-///    subject pattern). DOS-247: List-Unsubscribe alone over-fires —
+///    subject pattern). List-Unsubscribe alone over-fires —
 ///    legitimate 1:1 customer email sent via Salesforce/HubSpot/Outreach
 ///    or Google Groups carries this header. Require corroboration.
 ///
 /// `account_domains` are lowercase customer domains from `account_domains`
 /// table — domain-level match (any email from a customer's domain is spared).
 /// `person_emails_full` are lowercase EXACT email addresses from
-/// `person_emails` + `people.email`. DOS-248: matching on full address (not
+/// `person_emails` + `people.email`. matching on full address (not
 /// domain) prevents internal-org bulk notifications (e.g.
 /// `no-reply@gainsightapp.com`, `notifications@wordpress.com`) from getting
 /// a free pass just because a colleague's address shares the domain.
@@ -410,7 +410,7 @@ pub fn should_suppress_email(
 
     // Customer correspondence (domain in account_domains) and known
     // 1:1 contacts (exact email in person_emails) are never suppressed.
-    // DOS-248: the previous check used domain-only match against
+    // the previous check used domain-only match against
     // person_emails, which let any noreply@<colleague-domain> through.
     if !domain.is_empty() && account_domains.contains(&domain) {
         return false;
@@ -433,7 +433,7 @@ pub fn should_suppress_email(
         return true;
     }
 
-    // Rule 2b (DOS-248): noreply local-part is bulk by definition.
+    // Rule 2b: noreply local-part is bulk by definition.
     // Suppress unconditionally — these are never 1:1 correspondence.
     let local_part = from_addr.split('@').next().unwrap_or("");
     let local_part_noisy = NOREPLY_LOCAL_PARTS
@@ -443,7 +443,7 @@ pub fn should_suppress_email(
         return true;
     }
 
-    // DOS-249: List-Unsubscribe heuristic is intentionally dropped.
+    // List-Unsubscribe heuristic is intentionally dropped.
     // The AI enrichment pass (`prepare/email_enrich.rs`) judges noise
     // for everything that survives the deterministic rules above. The
     // LLM has the full body context and can distinguish a genuine
@@ -726,7 +726,7 @@ mod tests {
         assert_eq!(extract_display_name("<jane@co.com>"), None);
     }
 
-    // --- I374: Dismissal penalty tests ---
+    // --- Dismissal penalty tests ---
 
     #[test]
     fn test_dismissal_penalty_downgrades_medium_to_low() {
@@ -816,7 +816,7 @@ mod tests {
         );
     }
 
-    // --- DOS-242: should_suppress_email tests ---
+    // --- should_suppress_email tests ---
 
     #[test]
     fn test_suppress_bulk_sender_linkedin() {
@@ -842,7 +842,7 @@ mod tests {
 
     #[test]
     fn dos_249_no_deterministic_suppress_for_list_unsubscribe_alone() {
-        // DOS-249: List-Unsubscribe heuristic dropped from the
+        // List-Unsubscribe heuristic dropped from the
         // deterministic pre-filter — LLM enrichment now classifies
         // these. should_suppress_email returns false; the email
         // enters the enrichment pipeline where Claude judges noise.
@@ -872,7 +872,7 @@ mod tests {
 
     #[test]
     fn test_no_suppress_person_exact_email_bulk_sender_overridden() {
-        // DOS-248: matching is now exact-email (not domain). A tracked
+        // matching is now exact-email (not domain). A tracked
         // contact at a bulk-sender domain still gets through.
         let mut persons = HashSet::new();
         persons.insert("alex@github.com".to_string());
@@ -889,7 +889,7 @@ mod tests {
     fn dos_248_suppress_internal_org_noreply_when_colleague_same_domain() {
         // Even though a colleague (alice@automattic.com) is tracked,
         // notifications@automattic.com is NOT spared. Domain-only match
-        // (the pre-DOS-248 behavior) would have let this through.
+        // (the pre- behavior) would have let this through.
         let mut persons = HashSet::new();
         persons.insert("alice@automattic.com".to_string());
         assert!(should_suppress_email(
@@ -1008,7 +1008,7 @@ mod tests {
     }
 
     // =========================================================================
-    // DOS-176: Preset-aware email signal type tests
+    // Preset-aware email signal type tests
     // =========================================================================
 
     fn merged_signal_types_for_preset(role: &str) -> Vec<String> {

@@ -572,7 +572,7 @@ pub fn build_intelligence_hygiene_status(
         fixes,
         fix_details,
         gaps,
-        // DOS-279: budget view now reflects token budget, not call count.
+        // budget view now reflects token budget, not call count.
         budget: {
             let (used_today, daily_limit) = if let Ok(db) = crate::db::ActionDb::open() {
                 let budget = crate::pty::read_configured_daily_budget(&db);
@@ -598,7 +598,7 @@ pub fn run_overnight_scan(
     workspace: &Path,
     queue: &crate::intel_queue::IntelligenceQueue,
 ) -> OvernightReport {
-    // DOS-279: Call-count budget replaced by token budget enforced at PTY time.
+    // Call-count budget replaced by token budget enforced at PTY time.
     // Use an unlimited enqueue budget so overnight doesn't self-throttle; the
     // token budget gate handles actual enforcement.
     let _ = OVERNIGHT_AI_BUDGET; // kept to avoid unused-const warning
@@ -629,7 +629,7 @@ mod tests {
     use crate::db::test_utils::test_db;
     use crate::hygiene::tests_common::default_test_config;
 
-    // --- Hygiene Narrative tests (I273) ---
+    // --- Hygiene Narrative tests  ---
 
     #[test]
     fn test_join_prose_list_empty() {
@@ -729,7 +729,7 @@ mod tests {
 
     #[test]
     fn test_overnight_budget_uses_unlimited_enqueue() {
-        // DOS-279: Overnight scan uses unlimited enqueue budget;
+        // Overnight scan uses unlimited enqueue budget;
         // token enforcement happens at PTY call time.
         let unlimited = crate::state::HygieneBudget::unlimited();
         assert_eq!(unlimited.daily_limit, u32::MAX);

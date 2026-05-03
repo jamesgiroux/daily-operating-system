@@ -1,4 +1,4 @@
-//! DOS-7 D2: claims commit substrate service layer.
+//! Claims commit substrate service layer.
 //!
 //! `commit_claim` is the only writer for intelligence_claims. All
 //! mutation paths route through this function so the tombstone PRE-GATE,
@@ -157,8 +157,8 @@ pub(crate) fn compute_dedup_key(
 /// thing — trailing whitespace, internal whitespace runs (tab/space
 /// mixes from different paste sources), and case variation.
 ///
-/// Full DOS-280 canonicalization (Unicode NFC, punctuation folding,
-/// stopword normalization, etc.) lands separately. The DOS-7 substrate
+/// Full canonicalization (Unicode NFC, punctuation folding,
+/// stopword normalization, etc.) lands separately. The claims substrate
 /// only needs enough canonicalization to make `same-meaning merge`
 /// (commit_claim's de-dupe-via-corroboration branch) catch the obvious
 /// repeats that legacy data and AI re-runs produce in practice.
@@ -232,7 +232,7 @@ fn subject_id_for_lookup(subject: &SubjectRef) -> Option<&str> {
 ///
 /// Matches by semantic identity, not by `dedup_key`. The runtime and the
 /// 8 SQL backfill mechanisms each compute `dedup_key` differently, so
-/// matching by `dedup_key` would let pre-DOS-7 backfilled tombstones
+/// matching by `dedup_key` would let legacy backfilled tombstones
 /// slip past the gate and resurrect on the next AI enrichment pass.
 /// Per L2 cycle-1 finding #2: PRE-GATE matches the same canonical
 /// subject/claim/field/hash fields used by every backfill.
@@ -240,7 +240,7 @@ fn subject_id_for_lookup(subject: &SubjectRef) -> Option<&str> {
 /// Three tiers, evaluated in order:
 ///   1. **Hash tier** — `item_hash` equals the proposal's computed hash.
 ///      Catches every claim where backfill hash and runtime hash use the
-///      same algorithm (i.e., post-DOS-7 writes; legacy DOS-308-shaped
+///      same algorithm (i.e., post-claims-cutover writes; legacy audit-trail-shaped
 ///      hashes also coincide).
 ///   2. **Exact text tier** — `text` equals the proposal's canonical
 ///      text. Catches backfill rows that stored the legacy `item_key`
@@ -567,7 +567,7 @@ fn load_active_claim_by_dedup_key(
 /// Skips active claims whose own `dedup_key` has a matching tombstone
 /// in the table — those are "effectively retracted" by a user
 /// dismissal even though their `claim_state` column hasn't been
-/// transitioned (DOS-7 keeps active rows append-only; tombstones
+/// transitioned (the claims substrate keeps active rows append-only; tombstones
 /// shadow them via PRE-GATE on re-commit). Without this skip, a
 /// paraphrase commit after the user dismissed the original would
 /// fork a contradiction against a claim the user has already
@@ -1200,22 +1200,22 @@ pub fn load_claims_dormant_only(
 }
 
 // ---------------------------------------------------------------------------
-// DOS-7 D4-1a: runtime shadow-write helper
+// Runtime shadow-write helper
 // ---------------------------------------------------------------------------
 
 /// Shadow-write a tombstone claim alongside a legacy `create_suppression_tombstone`
-/// call during the DOS-7 transition window.
+/// call during the claims transition window.
 ///
 /// Existing dismissal callers (services/intelligence.rs::dismiss_intelligence_item,
 /// services/accounts.rs runtime correction paths, services/feedback.rs::apply_correction)
-/// keep writing to the legacy `suppression_tombstones` table — DOS-301 / W3-D
+/// keep writing to the legacy `suppression_tombstones` table. The follow-up
 /// owns the eventual refactor that makes services/derived_state.rs the only
 /// legacy projection writer. Until that lands, we shadow-write a tombstone
 /// claim into intelligence_claims so the new substrate is populated in
 /// parallel and reconcile can verify parity in D5.
 ///
 /// Failure of the shadow write is LOGGED but does NOT propagate as Err; the
-/// legacy write above remains authoritative for this release. Once DOS-301
+/// legacy write above remains authoritative for this release. Once the follow-up
 /// lands and reconcile is clean, follow-up work flips the authority.
 pub struct ShadowTombstoneClaim<'a> {
     pub subject_kind: &'a str,
@@ -1389,7 +1389,7 @@ pub struct WithdrawTombstoneFilter<'a> {
 /// `retraction_reason`) — never assertion-identity columns. The
 /// `claim_type` / `text` references in the WHERE clause are filters,
 /// not mutations; the `dos7-allowed:` markers below exist only because
-/// the immutability lint is clause-blind (cf. DOS-362 follow-up).
+/// the immutability lint is clause-blind.
 ///
 /// Errors propagate to the caller. The cycle-25 `let _ =` swallow
 /// pattern is the exact split-brain failure cycle-26 closed: legacy

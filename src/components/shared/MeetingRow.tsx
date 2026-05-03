@@ -4,7 +4,7 @@ import styles from "./MeetingRow.module.css";
  * MeetingRow — Entity meeting row (grid layout with date, title, type badge).
  *
  * Used by TheWork.tsx for entity detail pages.
- * Timeline variant removed in I364 — WeekPage now uses MeetingCard.
+ * Timeline variant removed in WeekPage now uses MeetingCard.
  */
 
 export interface MeetingRowProps {

@@ -1,4 +1,4 @@
-//! I367: Mandatory email enrichment pipeline.
+//! Mandatory email enrichment pipeline.
 //!
 //! Resolves email sender → entity, then runs AI enrichment via PTY
 //! to produce contextual_summary, sentiment, and urgency for each email.
@@ -28,7 +28,7 @@ pub struct EnrichmentResult {
     pub contextual_summary: Option<String>,
     pub sentiment: Option<String>,
     pub urgency: Option<String>,
-    /// DOS-249: AI's noise verdict. None = AI didn't return a value
+    /// AI's noise verdict. None = AI didn't return a value
     /// (treat as "no opinion"); Some(true) = noise; Some(false) = signal.
     pub is_noise: Option<bool>,
 }
@@ -72,7 +72,7 @@ fn resolve_entity(db: &ActionDb, email: &DbEmail) -> (Option<String>, Option<Str
     (None, None)
 }
 
-/// Build the AI enrichment prompt for a single email with relationship context (I369).
+/// Build the AI enrichment prompt for a single email with relationship context.
 fn build_enrichment_prompt(
     db: &ActionDb,
     email: &DbEmail,
@@ -88,7 +88,7 @@ fn build_enrichment_prompt(
         crate::util::encode_high_risk_field(email.subject.as_deref().unwrap_or("(no subject)"));
     let snippet = crate::util::sanitize_external_field(email.snippet.as_deref().unwrap_or(""));
 
-    // I369: Gather relationship context for the resolved entity
+    // Gather relationship context for the resolved entity
     let relationship_context = build_relationship_context(db, entity_id, entity_type);
     let system_role = preset
         .map(|p| p.intelligence.system_role.as_str())
@@ -138,7 +138,7 @@ fn build_enrichment_prompt(
     prompt
 }
 
-/// Build relationship context string from entity intelligence, meetings, and signals (I369).
+/// Build relationship context string from entity intelligence, meetings, and signals.
 fn build_relationship_context(
     db: &ActionDb,
     entity_id: Option<&str>,
@@ -233,7 +233,7 @@ fn parse_enrichment_response(
 
     let json_str = &trimmed[start..=end];
 
-    // I470: Validate structure and run anomaly detection
+    // Validate structure and run anomaly detection
     if let Err(e) = crate::intelligence::validation::validate_email_enrichment_response(json_str) {
         log::debug!("email_enrich: validation failed: {e}");
         return (None, None, None, None);
@@ -261,7 +261,7 @@ fn parse_enrichment_response(
         .and_then(|v| v.as_str())
         .filter(|s| matches!(*s, "high" | "medium" | "low"))
         .map(|s| s.to_string());
-    // DOS-249: AI noise verdict. Optional — older responses won't have it.
+    // AI noise verdict. Optional — older responses won't have it.
     let is_noise = parsed.get("is_noise").and_then(|v| v.as_bool());
     if let Some(reason) = parsed.get("noise_reason").and_then(|v| v.as_str()) {
         log::debug!("email_enrich: AI is_noise={is_noise:?} reason={reason}");
@@ -314,7 +314,7 @@ pub fn enrich_pending_emails_two_phase(
 
     // Step 2: AI enrichment via PTY (no DB lock held)
     for (email, entity_id, entity_type) in &pending {
-        // Check for injection attempts in email fields (I466)
+        // Check for injection attempts in email fields
         let fields_to_check: [(&str, &str); 4] = [
             ("subject", email.subject.as_deref().unwrap_or("")),
             ("snippet", email.snippet.as_deref().unwrap_or("")),
@@ -486,7 +486,7 @@ mod tests {
         assert!(n.is_none());
     }
 
-    /// DOS-249: AI emits is_noise=true for marketing/automation.
+    /// AI emits is_noise=true for marketing/automation.
     #[test]
     fn dos_249_parse_is_noise_true() {
         let output = r#"{"contextual_summary":"Marketing email","sentiment":"neutral","urgency":"low","is_noise":true,"noise_reason":"product newsletter"}"#;
@@ -494,7 +494,7 @@ mod tests {
         assert_eq!(is_noise, Some(true));
     }
 
-    /// DOS-249: AI emits is_noise=false for genuine 1:1 correspondence,
+    /// AI emits is_noise=false for genuine 1:1 correspondence,
     /// even when deterministic rules might have flagged it.
     #[test]
     fn dos_249_parse_is_noise_false() {

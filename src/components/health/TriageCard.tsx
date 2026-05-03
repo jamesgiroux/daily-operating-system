@@ -1,5 +1,5 @@
 /**
- * TriageCard — single "Needs attention" row (DOS-203).
+ * TriageCard — single "Needs attention" row.
  *
  * Layout per `.docs/mockups/account-health-outlook-globex.html` lines 649-671:
  *   [spine] [body: kind · headline · evidence · sources] [actions + feedback]

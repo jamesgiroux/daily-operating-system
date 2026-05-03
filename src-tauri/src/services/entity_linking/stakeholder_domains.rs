@@ -6,7 +6,7 @@
 //!
 //! Production DB audit (2026-04-24) discovered 28/30 active customer accounts
 //! had ZERO `account_domains` rows even though their stakeholder graphs were
-//! populated — DOS-258's domain-based P4 rules couldn't fire. This module
+//! populated — domain-based P4 rules couldn't fire. This module
 //! closes the loop by deriving domains from `account_stakeholders` at every
 //! mutation path (confirm, cascade c3, calendar-poll cascade epilogue,
 //! manual overrides) plus a boot sweep for legacy data.

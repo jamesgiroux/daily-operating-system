@@ -1,5 +1,5 @@
 /**
- * OnTrackChapter — fine-state chapter (DOS-203).
+ * OnTrackChapter — fine-state chapter.
  *
  * Renders when `hasTriageContent() === false && hasDivergenceContent() === false`.
  * Mirrors `.docs/mockups/account-health-fine-globex.html`: "On track" heading,

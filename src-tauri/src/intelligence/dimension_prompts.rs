@@ -1,4 +1,4 @@
-//! I576/Phase 5b: Per-dimension prompt builders and merge logic.
+//! /Phase 5b: Per-dimension prompt builders and merge logic.
 //!
 //! Instead of one monolithic prompt requesting all ~30 fields, this module
 //! produces 6 focused prompts — one per dimension group — each requesting
@@ -58,7 +58,7 @@ pub fn build_dimension_prompt(
         role_desc, entity_label, entity_name
     ));
 
-    // DOS-287: Structured entity disambiguation + grounding rule.
+    // Structured entity disambiguation + grounding rule.
     // Same concern applies to PTY as Glean — the model must not bleed
     // adjacent-customer context into this entity's output.
     push_disambiguation_block(&mut prompt, entity_name, entity_type, ctx);
@@ -80,7 +80,7 @@ pub fn build_dimension_prompt(
     // Inject only the context relevant to this dimension
     inject_dimension_context(&mut prompt, dimension, ctx);
 
-    // Extra blocks (I555 engagement patterns, champion health, commitments)
+    // Extra blocks (engagement patterns, champion health, commitments)
     if matches!(
         dimension,
         "stakeholder_champion" | "engagement_signals" | "value_success"
@@ -91,7 +91,7 @@ pub fn build_dimension_prompt(
         }
     }
 
-    // I576: Source-tagged existing intelligence injection
+    // Source-tagged existing intelligence injection
     inject_existing_intelligence(&mut prompt, dimension, ctx);
 
     // JSON schema for this dimension's fields
@@ -112,7 +112,7 @@ pub fn build_dimension_prompt(
          ```\n\n",
     );
 
-    // I576: Reconciliation rules
+    // Reconciliation rules
     prompt.push_str(RECONCILIATION_RULES_PTY);
 
     // Format anchor — last thing the model sees
@@ -151,7 +151,7 @@ pub fn build_glean_dimension_prompt(
         role_desc, entity_label, entity_name,
     ));
 
-    // DOS-287: Structured entity disambiguation — replaces the soft
+    // Structured entity disambiguation — replaces the soft
     // "do not include other companies" instruction with an inclusion filter
     // keyed on explicit identifiers (domains, stakeholder emails, parent,
     // Salesforce ID). Followed by an explicit retrieval-scope exclusion
@@ -197,7 +197,7 @@ pub fn build_glean_dimension_prompt(
         }
     }
 
-    // I576: Source-tagged existing intelligence injection
+    // Source-tagged existing intelligence injection
     inject_existing_intelligence(&mut prompt, dimension, ctx);
 
     // Task instruction
@@ -213,7 +213,7 @@ pub fn build_glean_dimension_prompt(
         }
     ));
 
-    // I651: Dimension-specific instructions for commercial_financial
+    // Dimension-specific instructions for commercial_financial
     if dimension == "commercial_financial" && entity_type == "account" {
         prompt.push_str(
             "## Product Classification (Salesforce)\n\n\
@@ -254,7 +254,7 @@ pub fn build_glean_dimension_prompt(
          ```\n\n",
     );
 
-    // I576: Reconciliation rules
+    // Reconciliation rules
     prompt.push_str(RECONCILIATION_RULES_GLEAN);
 
     prompt.push_str("IMPORTANT:\n");
@@ -339,7 +339,7 @@ pub fn merge_dimension_into(
             if !partial.blockers.is_empty() {
                 existing.blockers = partial.blockers.clone();
             }
-            // I651: Product classification from Glean
+            // Product classification from Glean
             if partial.product_classification.is_some() {
                 existing.product_classification = partial.product_classification.clone();
             }
@@ -358,7 +358,7 @@ pub fn merge_dimension_into(
             if !partial.market_context.is_empty() {
                 existing.market_context = partial.market_context.clone();
             }
-            // DOS-207: Merge regulatory items emitted by strategic_context.
+            // Merge regulatory items emitted by strategic_context.
             if !partial.regulatory_context.is_empty() {
                 existing.regulatory_context = partial.regulatory_context.clone();
             }
@@ -413,7 +413,7 @@ pub fn merge_dimension_into(
 // =============================================================================
 
 // =============================================================================
-// DOS-287: Structured disambiguation + grounding blocks
+// Structured disambiguation + grounding blocks
 // =============================================================================
 //
 // These three blocks ship together as the preamble for every dimension prompt:
@@ -426,7 +426,7 @@ pub fn merge_dimension_into(
 //                                    that mentions at least one known identifier
 //
 // The validated shape (2026-04-24 A/B test against Glean chat) produced zero
-// cross-customer bleed. See Linear DOS-287 for the reference prompt.
+// cross-customer bleed. See Linear  for the reference prompt.
 //
 // Each field degrades gracefully: empty Vec → skip the line entirely, never
 // emit `Known domains: (none)` which has been shown to confuse retrieval.
@@ -742,7 +742,7 @@ fn push_opt_section(prompt: &mut String, heading: &str, content: &Option<String>
 }
 
 // =============================================================================
-// I576: Reconciliation rules injected into prompts
+// Reconciliation rules injected into prompts
 // =============================================================================
 
 const RECONCILIATION_RULES_PTY: &str = "\
@@ -767,7 +767,7 @@ ACCOUNT TRUTH rules:\n\
 - Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
 - You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n";
 
-/// I576: Inject source-tagged existing intelligence items into the prompt.
+/// Inject source-tagged existing intelligence items into the prompt.
 ///
 /// When `prior_intelligence` is available, deserializes it and formats each
 /// item with source/confidence tags so the LLM knows what to preserve.
@@ -1414,7 +1414,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // DOS-287: Structured disambiguation + grounding tests
+    // Structured disambiguation + grounding tests
     // -----------------------------------------------------------------------
 
     use super::super::prompts::{EntityDisambiguators, ParentContext};
@@ -1595,7 +1595,7 @@ mod tests {
 }
 
 // ==========================================================================
-// I619 — Prompt Evaluation Suite: dimension prompt + merge tests
+// Prompt Evaluation Suite: dimension prompt + merge tests
 // ==========================================================================
 
 #[cfg(test)]

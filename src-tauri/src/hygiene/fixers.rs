@@ -6,7 +6,7 @@ use crate::db::ActionDb;
 
 use super::HygieneFixDetail;
 
-/// Reclassify people with "unknown" relationship using the user's domains (I171).
+/// Reclassify people with "unknown" relationship using the user's domains.
 pub(super) fn fix_unknown_relationships(
     db: &ActionDb,
     user_domains: &[String],
@@ -542,7 +542,7 @@ mod tests {
         assert_eq!(fixed, 0);
     }
 
-    // --- Renewal auto-rollover tests (I143) ---
+    // --- Renewal auto-rollover tests  ---
 
     #[test]
     fn test_renewal_rollover_advances_date_and_records_event() {

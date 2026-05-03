@@ -1,4 +1,4 @@
--- DOS-247 follow-up: defensive ALTER for the `is_noise` column.
+-- defensive ALTER for the `is_noise` column.
 --
 -- Some users hit "no such column: is_noise" when migration v105 (the
 -- recovery UPDATE) ran — schema_version said v103 was applied but the

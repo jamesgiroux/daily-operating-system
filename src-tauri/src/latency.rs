@@ -1,4 +1,4 @@
-//! Lightweight in-memory latency rollups for hot command diagnostics (I197).
+//! Lightweight in-memory latency rollups for hot command diagnostics.
 //!
 //! This keeps a bounded sample window per command so we can surface p95
 //! diagnostics without introducing persistent storage or production UI coupling.

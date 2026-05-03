@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# INTERIM — DOS-349 (separate crate split) is the structural fix; this script
+# INTERIM — (separate crate split) is the structural fix; this script
 # is best-effort enforcement until then.
 
 if [[ -d "src-tauri" ]]; then

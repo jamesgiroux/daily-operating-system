@@ -166,7 +166,7 @@ pub fn get_cowork_plugins_status(app_handle: tauri::AppHandle) -> Vec<CoworkPlug
 }
 
 // =============================================================================
-// Intelligence Field Editing (I261)
+// Intelligence Field Editing
 // =============================================================================
 
 /// Update a single field in an entity's intelligence.json.
@@ -195,7 +195,7 @@ pub async fn update_intelligence_field(
     .await
 }
 
-/// I576: Dismiss an intelligence item, creating a tombstone to prevent re-creation.
+/// Dismiss an intelligence item, creating a tombstone to prevent re-creation.
 #[tauri::command]
 pub async fn dismiss_intelligence_item(
     entity_id: String,
@@ -217,7 +217,7 @@ pub async fn dismiss_intelligence_item(
     .await
 }
 
-/// DOS-13: Track (accept) a recommended action — creates a real action.
+/// Track (accept) a recommended action — creates a real action.
 #[tauri::command]
 pub async fn track_recommendation(
     entity_id: String,
@@ -237,7 +237,7 @@ pub async fn track_recommendation(
         .await
 }
 
-/// DOS-13: Dismiss a recommended action — removes it from intelligence.
+/// Dismiss a recommended action — removes it from intelligence.
 #[tauri::command]
 pub async fn dismiss_recommendation(
     entity_id: String,
@@ -257,7 +257,7 @@ pub async fn dismiss_recommendation(
         .await
 }
 
-/// DOS-13 / Wave 0e: Mark an open commitment as done. Promotes the
+///  / Wave 0e: Mark an open commitment as done. Promotes the
 /// commitment into value-delivered and emits `commitment_completed`.
 #[tauri::command]
 pub async fn mark_commitment_done(
@@ -618,7 +618,7 @@ pub async fn get_quill_sync_states(
 }
 
 // =============================================================================
-// Granola Integration (I226)
+// Granola Integration
 // =============================================================================
 
 /// Granola integration status for the frontend.
@@ -728,7 +728,7 @@ pub async fn trigger_granola_sync_for_meeting(
     .await
     .map_err(|e| format!("Granola sync task failed: {}", e))??;
 
-    // Re-run entity linking with the post-transcript context (DOS-258).
+    // Re-run entity linking with the post-transcript context.
     // Best-effort — failure here never blocks the manual-sync response.
     if let Some(event) = attached_event {
         let clock = crate::services::context::SystemClock;
@@ -835,7 +835,7 @@ pub fn test_granola_cache(state: State<'_, Arc<AppState>>) -> Result<usize, Stri
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// I229: Gravatar MCP Integration
+// Gravatar MCP Integration
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Gravatar integration status for the settings UI.
@@ -1072,7 +1072,7 @@ pub async fn get_person_avatar(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// I228: Clay Contact & Company Enrichment
+// Clay Contact & Company Enrichment
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Clay integration status for the settings UI.
@@ -1235,7 +1235,7 @@ pub async fn enrich_account_from_clay(
     state: State<'_, Arc<AppState>>,
 ) -> Result<EnrichmentResultData, String> {
     // Find a linked person for this account, enrich them, company data follows
-    // I568: Use async db_read to avoid blocking Tokio threads.
+    // Use async db_read to avoid blocking Tokio threads.
     let acct_id = account_id.clone();
     let person_id: Option<String> = state
         .db_read(move |db| {
@@ -1371,7 +1371,7 @@ pub async fn get_enrichment_log(
 }
 
 // ---------------------------------------------------------------------------
-// Clay — Smithery Connect (I422)
+// Clay — Smithery Connect
 // ---------------------------------------------------------------------------
 
 /// Auto-detect Smithery settings and Clay connection from CLI config + API.
@@ -1516,7 +1516,7 @@ pub fn get_smithery_status(state: State<'_, Arc<AppState>>) -> serde_json::Value
 }
 
 // =============================================================================
-// I346: Linear Integration
+// Linear Integration
 // =============================================================================
 
 /// Linear integration status for the frontend.
@@ -1612,7 +1612,7 @@ pub fn start_linear_sync(state: State<'_, Arc<AppState>>) -> Result<(), String> 
     Ok(())
 }
 
-/// I425: Get the 5 most recently synced Linear issues.
+/// Get the 5 most recently synced Linear issues.
 #[tauri::command]
 pub async fn get_linear_recent_issues(
     state: State<'_, Arc<AppState>>,
@@ -1642,7 +1642,7 @@ pub async fn get_linear_recent_issues(
     }).await
 }
 
-/// I425: Get all Linear entity links with project and entity names.
+/// Get all Linear entity links with project and entity names.
 #[tauri::command]
 pub async fn get_linear_entity_links(
     state: State<'_, Arc<AppState>>,
@@ -1684,7 +1684,7 @@ pub async fn get_linear_entity_links(
         .await
 }
 
-/// DOS-56: Jaccard word-token similarity for fuzzy name matching.
+/// Jaccard word-token similarity for fuzzy name matching.
 fn fuzzy_name_similarity(a: &str, b: &str) -> f64 {
     let a_lower = a.to_lowercase();
     let b_lower = b.to_lowercase();
@@ -1699,7 +1699,7 @@ fn fuzzy_name_similarity(a: &str, b: &str) -> f64 {
     }
 }
 
-/// DOS-56: Auto-detect entity links by fuzzy-matching Linear project names to entity names,
+/// Auto-detect entity links by fuzzy-matching Linear project names to entity names,
 /// plus domain-based suggestions from account_domains.
 #[tauri::command]
 pub async fn run_linear_auto_link(
@@ -1889,7 +1889,7 @@ pub async fn run_linear_auto_link(
         .await
 }
 
-/// I425: Delete a Linear entity link.
+/// Delete a Linear entity link.
 #[tauri::command]
 pub async fn delete_linear_entity_link(
     state: State<'_, Arc<AppState>>,
@@ -1958,7 +1958,7 @@ pub async fn create_linear_entity_link(
 }
 
 // =============================================================================
-// DOS-50/51: Push Action to Linear
+// /51: Push Action to Linear
 // =============================================================================
 
 /// Fetch teams from Linear for the push dialog.
@@ -1977,7 +1977,7 @@ pub async fn get_linear_teams(
     client.fetch_teams().await
 }
 
-/// Push a DailyOS action to Linear as a new issue (DOS-51).
+/// Push a DailyOS action to Linear as a new issue.
 #[tauri::command]
 pub async fn push_action_to_linear(
     action_id: String,
@@ -1999,7 +1999,7 @@ pub async fn push_action_to_linear(
 }
 
 // =============================================================================
-// I309: Role Presets
+// Role Presets
 // =============================================================================
 
 /// Set the active role preset.
@@ -2018,7 +2018,7 @@ pub async fn set_role(
         c.profile = crate::types::profile_for_entity_mode(&c.entity_mode);
     })?;
 
-    // DOS-176: update active preset and recompute merged signal/email config cache.
+    // update active preset and recompute merged signal/email config cache.
     state.set_active_preset(preset);
 
     let _ = app_handle.emit("config-updated", ());
@@ -2040,7 +2040,7 @@ pub async fn get_available_presets() -> Result<Vec<(String, String, String)>, St
 }
 
 // =============================================================================
-// I311: Entity Metadata
+// Entity Metadata
 // =============================================================================
 
 /// Update JSON metadata for an entity (account or project).
@@ -2084,10 +2084,10 @@ pub async fn get_entity_metadata(
 }
 
 // =============================================================================
-// I323: Email Disposition Correction
+// Email Disposition Correction
 // =============================================================================
 
-/// Correct an email disposition (I323).
+/// Correct an email disposition.
 /// Records a feedback signal for Thompson Sampling priority recalibration.
 /// Does NOT un-archive the email (user can find it in Gmail "All Mail").
 #[tauri::command]
@@ -2143,7 +2143,7 @@ pub async fn correct_email_disposition(
 }
 
 // =============================================================================
-// I330: Meeting Timeline (±7 days)
+// Meeting Timeline (±7 days)
 // =============================================================================
 
 /// Return meetings for +/-N days around today with intelligence quality data.
@@ -2369,7 +2369,7 @@ pub async fn get_meeting_timeline(
 }
 
 // =============================================================================
-// I390: Person Relationships (ADR-0088)
+// Person Relationships (ADR-0088)
 // =============================================================================
 
 #[derive(serde::Deserialize)]
@@ -2470,7 +2470,7 @@ pub async fn get_person_relationships(
 }
 
 // =========================================================================
-// Google Drive Connector (I426)
+// Google Drive Connector
 // =========================================================================
 
 #[derive(serde::Serialize)]
@@ -2683,7 +2683,7 @@ pub struct DriveWatchData {
 }
 
 // =============================================================================
-// I471: Audit Log Commands
+// Audit Log Commands
 // =============================================================================
 
 /// Get recent audit log records, optionally filtered by category.
@@ -2789,7 +2789,7 @@ pub async fn set_context_mode(
         );
     }
 
-    // DOS-259 (W2-B cycle 4): `build_context_provider` already installs
+    //  `build_context_provider` already installs
     // the full atomic bundle (context_provider + intelligence_provider Arc
     // + glean_intelligence_provider Arc) in one write-lock acquisition
     // via `set_context_mode_atomic`. Calling `swap_context_provider` after
@@ -2875,7 +2875,7 @@ pub async fn start_glean_auth(
                 log::error!("Failed to save Glean context mode: {}", e);
             }
 
-            // DOS-259 (W2-B cycle 4): `build_context_provider` performs
+            //  `build_context_provider` performs
             // the full atomic transition; redundant single-field swap
             // removed (would reopen the L2 race window).
             let _ = state.build_context_provider(&glean_mode);
@@ -2890,7 +2890,7 @@ pub async fn start_glean_auth(
                 );
             }
 
-            // I568: Enqueue all entities for re-enrichment — use db_read to avoid blocking Tokio.
+            // Enqueue all entities for re-enrichment — use db_read to avoid blocking Tokio.
             {
                 let entities_to_enqueue: Vec<(String, String)> = state
                     .db_read(|db| {
@@ -2986,7 +2986,7 @@ pub async fn disconnect_glean(
     {
         log::error!("Failed to save Local context mode on disconnect: {}", e);
     }
-    // DOS-259 (W2-B cycle 4): atomic transition; redundant single-field
+    //  atomic transition; redundant single-field
     // swap removed (would reopen the L2 race window).
     let _ = state.build_context_provider(&local_mode);
 
@@ -3008,12 +3008,12 @@ pub async fn disconnect_glean(
 }
 
 // ---------------------------------------------------------------------------
-// I559 — Glean Agent Validation Spike (temporary exploration command)
+// Glean Agent Validation Spike (temporary exploration command)
 // ---------------------------------------------------------------------------
 
 /// Explore what tools the Glean MCP server exposes and test structured output.
 ///
-/// This is a temporary dev command for the I559 validation spike.
+/// This is a temporary dev command for the Glean Agent validation spike.
 /// It calls `tools/list` to discover available tools, then optionally
 /// tests a structured query if an account name is provided.
 ///
@@ -3409,7 +3409,7 @@ pub async fn dev_explore_glean_tools(
 }
 
 // ---------------------------------------------------------------------------
-// I495 — Ephemeral Account Query via Glean
+// Ephemeral Account Query via Glean
 // ---------------------------------------------------------------------------
 
 /// A one-shot briefing about an account, produced from Glean without requiring
@@ -3629,7 +3629,7 @@ async fn import_account_from_glean_internal(
         }
     }
 
-    // DOS-311: this path runs at Manual or Onboarding priority (see callers
+    // this path runs at Manual or Onboarding priority (see callers
     // at lines 3627 and 3918). User-facing Glean import; surface
     // EnqueueError::Paused as a retry message rather than silently dropping.
     crate::intel_queue::enqueue_user_facing(
@@ -3793,7 +3793,7 @@ fn parse_ephemeral_response(
     })
 }
 
-// I535 Step 9 — Discover accounts from Glean
+// Discover accounts from Glean
 // ---------------------------------------------------------------------------
 
 /// Use Glean's MCP chat tool to discover accounts the user is involved with.
@@ -3880,7 +3880,7 @@ pub async fn discover_accounts_from_glean(
 }
 
 // =============================================================================
-// I561 — Onboarding: Three Connectors
+// Onboarding: Three Connectors
 // =============================================================================
 
 /// Result of batch account import during onboarding.

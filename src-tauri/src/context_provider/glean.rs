@@ -23,7 +23,7 @@ use crate::intelligence::IntelligenceJson;
 /// read_document). 30s leaves headroom for internet latency + Glean
 /// backend variance without letting a dead endpoint stall forever.
 const GLEAN_CALL_TIMEOUT: Duration = Duration::from_secs(30);
-/// I535: Longer timeout for Glean `chat` tool — AI synthesis takes 10-30s.
+/// Longer timeout for Glean `chat` tool — AI synthesis takes 10-30s.
 // 240s: Glean chat is agentic — runs internal search tool-calls before
 // returning the final answer. For well-documented accounts (lots of Gong
 // transcripts / SFDC records / Zendesk tickets), chat can take minutes.
@@ -149,7 +149,7 @@ impl GleanMcpClient {
     ///
     /// Transparently refreshes expired tokens via Keychain + token endpoint.
     fn get_token(&self) -> Result<String, ContextError> {
-        // I569: Never refresh tokens on the caller's Tokio worker. Use a
+        // Never refresh tokens on the caller's Tokio worker. Use a
         // dedicated OS thread + single-thread runtime for the async refresh.
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         std::thread::spawn(move || {
@@ -335,7 +335,7 @@ impl GleanMcpClient {
         Ok(content)
     }
 
-    /// I535: AI-powered chat for structured intelligence queries.
+    /// AI-powered chat for structured intelligence queries.
     ///
     /// Calls the Glean MCP `chat` tool which synthesizes across all connected
     /// data sources (Salesforce, Zendesk, Gong, Slack, etc.) with multi-step
@@ -356,7 +356,7 @@ impl GleanMcpClient {
             .map(|resp| resp.text)
     }
 
-    /// DOS-204: AI-powered chat that also returns citation metadata.
+    /// AI-powered chat that also returns citation metadata.
     ///
     /// Same wire call as [`chat`], but extracts the citation count from the
     /// response envelope so callers (e.g., the peer-benchmark cell) can
@@ -515,7 +515,7 @@ impl GleanMcpClient {
     }
 }
 
-/// DOS-204: Response from a Glean chat call including citation metadata.
+/// Response from a Glean chat call including citation metadata.
 ///
 /// `source_count` is the number of distinct sources Glean cited when
 /// producing `text`. A value of 0 means either Glean returned no citations
@@ -526,7 +526,7 @@ pub struct ChatResponse {
     pub source_count: u32,
 }
 
-/// DOS-204: Count citations attached to a GLEAN_AI content message.
+/// Count citations attached to a GLEAN_AI content message.
 ///
 /// Glean's MCP envelope shape for citations is not formally documented and
 /// has varied across versions. We probe the most likely locations in
@@ -611,10 +611,10 @@ fn count_citations(msg: &serde_json::Value, envelope: &serde_json::Value) -> u32
 }
 
 // ---------------------------------------------------------------------------
-// I500: Org Health Data Parsing
+// Org Health Data Parsing
 // ---------------------------------------------------------------------------
 
-/// I500: Parse org-level health data from Glean search results.
+/// Parse org-level health data from Glean search results.
 ///
 /// Looks for health signals in Salesforce, Zendesk, and other CRM-type documents.
 /// Priority: salesforce_account > zendesk_organization > other doc types.
@@ -806,7 +806,7 @@ impl GleanContextProvider {
 
     /// Gather Glean-sourced context for file_contents and stakeholders.
     ///
-    /// `gap_queries`: I508c dimension-aware gap queries for fan-out search.
+    /// `gap_queries`: dimension-aware gap queries for fan-out search.
     async fn gather_glean_context(
         &self,
         db: &ActionDb,
@@ -817,7 +817,7 @@ impl GleanContextProvider {
         let client = GleanMcpClient::new(&self.endpoint);
 
         let mut queries = self.entity_search_queries(db, entity_id, entity_type);
-        // I508c: Append gap queries for dimension-aware Glean fan-out (cap at 3)
+        // Append gap queries for dimension-aware Glean fan-out (cap at 3).
         for q in gap_queries.iter().take(3) {
             queries.push(q.query.clone());
         }
@@ -872,7 +872,7 @@ impl GleanContextProvider {
 
         let all_results = prioritize_recent_results(all_results);
 
-        // I487: Emit Glean document signals for new/updated results
+        // Emit Glean document signals for new/updated results
         for result in &all_results {
             let Some(ref snippet) = result.snippet else {
                 continue;
@@ -922,7 +922,7 @@ impl GleanContextProvider {
             );
         }
 
-        // I500: Parse org health data from CRM-type documents (accounts only)
+        // Parse org health data from CRM-type documents (accounts only)
         let org_health = if entity_type == "account" {
             let account_name = db
                 .get_account(entity_id)
@@ -1007,7 +1007,7 @@ impl GleanContextProvider {
 }
 
 // ---------------------------------------------------------------------------
-// I569: Standalone Glean context gather — runs on a separate OS thread with its
+// Standalone Glean context gather — runs on a separate OS thread with its
 // own DB connection to avoid blocking Tokio worker threads.
 // ---------------------------------------------------------------------------
 
@@ -1026,7 +1026,7 @@ async fn gather_glean_context_standalone(
     let client = GleanMcpClient::new(endpoint);
 
     let mut queries: Vec<String> = pre_queries.to_vec();
-    // I508c: Append gap queries for dimension-aware Glean fan-out (cap at 3)
+    // Append gap queries for dimension-aware Glean fan-out (cap at 3).
     for q in gap_queries.iter().take(3) {
         queries.push(q.query.clone());
     }
@@ -1075,7 +1075,7 @@ async fn gather_glean_context_standalone(
 
     let all_results = prioritize_recent_results(all_results);
 
-    // I487: Emit Glean document signals for new/updated results
+    // Emit Glean document signals for new/updated results
     for result in &all_results {
         let Some(ref snippet) = result.snippet else {
             continue;
@@ -1124,7 +1124,7 @@ async fn gather_glean_context_standalone(
         );
     }
 
-    // I500: Parse org health data from CRM-type documents (accounts only)
+    // Parse org health data from CRM-type documents (accounts only)
     let org_health = if entity_type == "account" {
         let account_name = db
             .get_account(entity_id)
@@ -1208,7 +1208,7 @@ async fn gather_glean_context_standalone(
 }
 
 // ---------------------------------------------------------------------------
-// I505: Glean contact processing — DB writes from Glean people results
+// Glean contact processing — DB writes from Glean people results
 // ---------------------------------------------------------------------------
 
 /// Map a Glean title to an account stakeholder role context.
@@ -1228,7 +1228,7 @@ fn map_glean_role(glean_title: &str) -> String {
     }
 }
 
-/// Process Glean people results into DB records (I505).
+/// Process Glean people results into DB records.
 ///
 /// Two-pass approach:
 /// - Pass 1: Create/update all people, link to account, detect internal team
@@ -1431,7 +1431,7 @@ struct GleanEntityData {
     file_contents: String,
     people: Vec<GleanPersonResult>,
     search_results: Vec<GleanSearchResult>,
-    /// I500: Parsed org-level health data from CRM docs.
+    /// Parsed org-level health data from CRM docs.
     org_health: Option<crate::intelligence::io::OrgHealthData>,
 }
 
@@ -1450,7 +1450,7 @@ impl ContextProvider for GleanContextProvider {
                 .gather_entity_context(db, entity_id, entity_type, prior)?;
 
         // Phase B: Glean-sourced data (network calls).
-        // I569: Use std::thread::spawn + oneshot to move network calls off Tokio threads
+        // Use std::thread::spawn + oneshot to move network calls off Tokio threads
         // entirely, avoiding block_in_place deadlock risk under contention.
         let glean_data = {
             // Pre-extract DB-dependent search queries on the current thread
@@ -1533,7 +1533,7 @@ impl ContextProvider for GleanContextProvider {
                 }
             }
 
-            // I505: Process Glean contacts into DB (person records, account links, relationships)
+            // Process Glean contacts into DB (person records, account links, relationships)
             if !glean.people.is_empty()
                 && entity_type == "account"
                 && !has_recent_local_stakeholder_context
@@ -1575,7 +1575,7 @@ impl ContextProvider for GleanContextProvider {
                 }
             }
 
-            // I500: Store org health in DB and make available on context
+            // Store org health in DB and make available on context
             if let Some(ref org_health) = glean.org_health {
                 if let Ok(json) = serde_json::to_string(org_health) {
                     // Write to entity_assessment.org_health column
@@ -1594,10 +1594,10 @@ impl ContextProvider for GleanContextProvider {
                         org_health.source,
                     );
                 }
-                // Make org_health available on context for I499 health scoring
+                // Make org_health available on context for health scoring
                 ctx.org_health = Some(org_health.clone());
 
-                // I625: Emit conflict signal when Glean CRM values differ from
+                // Emit conflict signal when Glean CRM values differ from
                 // current account fields. build_account_field_conflicts() in
                 // services/accounts reads these signals to surface conflicts.
                 if entity_type == "account" {

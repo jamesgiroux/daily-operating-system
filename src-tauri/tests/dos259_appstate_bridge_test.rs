@@ -1,4 +1,4 @@
-//! DOS-259 (W2-B follow-up): AppState-Arc bridge swap semantics + settings-race regression.
+//!  AppState-Arc bridge swap semantics + settings-race regression.
 //!
 //! Per L2 codex review 2026-04-30 finding #1 + #3: the original parity
 //! tests used `ReplayProvider` only and never exercised the AppState
@@ -316,7 +316,7 @@ async fn replay_provider_through_appstate_bridge_returns_canned_text() {
     );
 }
 
-/// L2 cycle-26 (DOS-259) F3 regression: a settings change between two
+/// Regression: a settings change between two
 /// dequeues must take effect on the SECOND entity, not the next batch.
 /// Models the per-entity snapshot pattern in
 /// `intel_queue::run_glean_enrichment_with_fallback`'s for-loop:

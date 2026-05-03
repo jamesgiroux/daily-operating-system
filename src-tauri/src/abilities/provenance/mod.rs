@@ -1,4 +1,4 @@
-//! DOS-211 provenance substrate.
+//!  provenance substrate.
 
 pub mod builder;
 pub mod envelope;

@@ -6,7 +6,7 @@ impl From<String> for DbError {
     }
 }
 
-/// DOS-31 / DOS-29: Cumulative cap on automatic stale-failed retries. Defined
+//: Cumulative cap on automatic stale-failed retries. Defined
 /// at the DB layer because `get_email_sync_stats` needs it to compute the
 /// `permanently_failed` subset, but the actual retry call lives in
 /// `services::emails` (which references this same constant). Keeping a single
@@ -16,13 +16,13 @@ pub const STALE_FAILED_MAX_AUTO_RETRIES: i32 = 5;
 
 impl ActionDb {
     // =========================================================================
-    // Emails (I368)
+    // Emails
     // =========================================================================
 
     /// Insert or update an email record. Sets `last_seen_at` to now on every upsert.
     /// Preserves existing `enriched_at` timestamp if present, does not overwrite.
     ///
-    /// DOS-229: After the per-row INSERT/UPDATE, this method also syncs the
+    /// After the per-row INSERT/UPDATE, this method also syncs the
     /// row's `entity_id` / `entity_type` / `sentiment` to whatever any other
     /// unresolved sibling in the same `thread_id` already has. The inbox is
     /// thread-collapsed by `received_at`, so a brand-new sibling carrying the
@@ -71,7 +71,7 @@ impl ActionDb {
                         updated_at = excluded.updated_at,
                         to_recipients = COALESCE(excluded.to_recipients, to_recipients),
                         cc_recipients = COALESCE(excluded.cc_recipients, cc_recipients),
-                        -- DOS-242: never silently re-noise an email the user has rescued.
+                        -- never silently re-noise an email the user has rescued.
                         -- Once is_noise is cleared (via unsuppress_email), keep it cleared.
                         is_noise = MIN(emails.is_noise, excluded.is_noise)",
                     params![
@@ -107,7 +107,7 @@ impl ActionDb {
                 )
                 .map_err(|e| format!("Failed to upsert email {}: {e}", email.email_id))?;
 
-            // DOS-229: backward thread-cascade. If any other unresolved sibling
+            // backward thread-cascade. If any other unresolved sibling
             // in the same thread differs on entity_id / entity_type / sentiment,
             // adopt the sibling's most-recently-updated value. This is what
             // catches a freshly polled message that arrived AFTER a user
@@ -197,9 +197,9 @@ impl ActionDb {
         .map_err(Into::into)
     }
 
-    /// DOS-242 rescue: clear the noise flag on an email so it surfaces again in
+    ///  rescue: clear the noise flag on an email so it surfaces again in
     /// inbox / Records. Used by the user-facing "this isn't noise" affordance
-    /// (DOS-41 will wire the UI). Idempotent.
+    /// (will wire the UI). Idempotent.
     pub fn unsuppress_email(&self, email_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn
@@ -301,7 +301,7 @@ impl ActionDb {
         enrichment: EmailEnrichmentUpdate<'_>,
     ) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
-        // DOS-249: is_noise gets COALESCE-style "only update if AI gave a
+        // is_noise gets COALESCE-style "only update if AI gave a
         // verdict" semantics via a CASE expression — Some(bool) -> 0/1,
         // None -> keep existing column value.
         let is_noise_param: Option<i32> = enrichment.is_noise.map(|b| if b { 1 } else { 0 });
@@ -418,7 +418,7 @@ impl ActionDb {
             .query_row("SELECT MAX(last_seen_at) FROM emails", [], |row| row.get(0))
             .map_err(|e| format!("Failed to query last fetch time: {e}"))?;
 
-        // DOS-242: noise emails are hidden from inbox/Records — counts must
+        // noise emails are hidden from inbox/Records — counts must
         // reflect what the user sees, not the raw fetch volume.
         let total: i32 = self
             .conn
@@ -447,7 +447,7 @@ impl ActionDb {
             )
             .map_err(|e| format!("Failed to count pending emails: {e}"))?;
 
-        // DOS-226: `pending_retry` is a transitional state owned by the retry
+        // `pending_retry` is a transitional state owned by the retry
         // service. It represents rows that were `failed` until the user
         // clicked Retry; they stay counted as failed in the UI so the
         // "Retry" notice remains visible until the in-flight refresh
@@ -462,17 +462,17 @@ impl ActionDb {
             )
             .map_err(|e| format!("Failed to count failed emails: {e}"))?;
 
-        // DOS-31: fetch the last successful Gmail fetch timestamp (separate from
+        // fetch the last successful Gmail fetch timestamp (separate from
         // per-row last_seen_at so the UI can tell "fetch healthy, enrichment stuck"
         // apart from "we can't reach Gmail").
-        // DOS-226: propagate unexpected errors — swallowing them previously
+        // propagate unexpected errors — swallowing them previously
         // masked schema drift (e.g. migration 094 never applied) as a silent
         // "never fetched" state.
         let last_successful_fetch_at = self.get_last_successful_fetch_at()?;
 
-        // DOS-29: subset of `failed` that the system has stopped auto-retrying.
+        // subset of `failed` that the system has stopped auto-retrying.
         // The `failed` count above includes rows still eligible for the next
-        // refresh's stale-recovery promotion (DOS-31) — those don't need
+        // refresh's stale-recovery promotion  — those don't need
         // user intervention. `permanently_failed` is what the user-facing
         // "couldn't be enriched" UX should display + act on.
         let permanently_failed: i32 = self
@@ -498,10 +498,10 @@ impl ActionDb {
         })
     }
 
-    /// DOS-31 / DOS-226: Record that a Gmail fetch just completed successfully.
+    //: Record that a Gmail fetch just completed successfully.
     /// Writes to the singleton `email_sync_meta` row (migration 093/094).
     ///
-    /// DOS-226: Previously this used a bare `UPDATE WHERE id = 1` without
+    /// Previously this used a bare `UPDATE WHERE id = 1` without
     /// checking affected rows, so if the singleton seed row was ever missing
     /// (fresh install racing migrations, partial restore, manual DB edit),
     /// the write silently no-op'd and the UI showed "never fetched" forever.
@@ -531,7 +531,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// DOS-31: Read the last successful Gmail fetch timestamp. `Ok(None)` means
+    /// Read the last successful Gmail fetch timestamp. `Ok(None)` means
     /// we've never completed a successful fetch (fresh install or the meta row
     /// was never seeded — which shouldn't happen post-migration-094).
     pub fn get_last_successful_fetch_at(&self) -> Result<Option<String>, DbError> {
@@ -547,11 +547,11 @@ impl ActionDb {
         }
     }
 
-    /// Update the entity assignment for an email (I395 — user correction).
+    /// Update the entity assignment for an email (user correction).
     /// Also cascades the change to `email_signals`: moves signals to the new entity,
     /// or deactivates them if entity_id is cleared.
     ///
-    /// DOS-229: Cascades the entity assignment to every UNRESOLVED row in the
+    /// Cascades the entity assignment to every UNRESOLVED row in the
     /// same `thread_id`. The inbox UI is thread-collapsed (see
     /// `services::emails::collapse_to_latest_thread_emails`) and picks the row
     /// with the newest `received_at` as the visible representative. Without
@@ -625,7 +625,7 @@ impl ActionDb {
                 None => vec![email_id.to_string()],
             };
 
-            // DOS-229: cascade the entity assignment to every unresolved row in
+            // cascade the entity assignment to every unresolved row in
             // the thread. Bounded by `resolved_at IS NULL` so archived rows
             // keep their historical entity.
             tx.conn
@@ -692,7 +692,7 @@ impl ActionDb {
         .map_err(Into::into)
     }
 
-    /// DOS-229: Update the sentiment of an email and cascade the same value to
+    /// Update the sentiment of an email and cascade the same value to
     /// every unresolved row in the thread. See `update_email_entity` for the
     /// thread-collapse rationale — the same reversion pattern applies to
     /// sentiment, which is also a per-row column read through the
@@ -741,7 +741,7 @@ impl ActionDb {
         .map_err(Into::into)
     }
 
-    /// Mark an email as replied to by the user (I577 reply debt).
+    /// Mark an email as replied to by the user (reply debt).
     /// Sets `user_is_last_sender = 1` on the email row and the corresponding
     /// email_threads row (if any).
     pub fn mark_reply_sent(&self, email_id: &str) -> Result<Option<(String, String)>, DbError> {
@@ -857,7 +857,7 @@ impl ActionDb {
             .map_err(|e| format!("Failed to load thread for {email_id}: {e}").into())
     }
 
-    /// Toggle pin on an email (I579). If pinned, clears; if not pinned, sets to now.
+    /// Toggle pin on an email. If pinned, clears; if not pinned, sets to now.
     /// Returns the new pinned state (true = pinned).
     pub fn toggle_pin_email(&self, email_id: &str) -> Result<bool, DbError> {
         let now = Utc::now().to_rfc3339();
@@ -889,7 +889,7 @@ impl ActionDb {
         Ok(is_now_pinned)
     }
 
-    /// Set the relevance score and reason for an email (I395).
+    /// Set the relevance score and reason for an email.
     pub fn set_relevance_score(
         &self,
         email_id: &str,
@@ -974,13 +974,13 @@ impl ActionDb {
         Ok(results)
     }
 
-    /// DOS-226: Transition `failed` emails to the transitional `pending_retry`
+    /// Transition `failed` emails to the transitional `pending_retry`
     /// state while a user-initiated retry is in flight. Stamps `retry_batch_id`
     /// and `retry_started_at` so concurrent refreshes and crash-recovery can
     /// tell this batch's rows apart from any rows stranded by a prior run
     /// (Codex finding 2).
     ///
-    /// Unlike a direct `failed -> pending` reset (the pre-DOS-226 behaviour),
+    /// Unlike a direct `failed -> pending` reset (the pre- behaviour),
     /// this keeps `enrichment_attempts` intact so we can roll back cleanly
     /// if the subsequent Gmail refresh fails, and the UI failed-count query
     /// continues to include these rows so the "Retry" notice stays visible
@@ -988,7 +988,7 @@ impl ActionDb {
     ///
     /// Returns the number of rows transitioned.
     pub fn mark_failed_for_retry(&self, batch_id: &str) -> Result<usize, DbError> {
-        // DOS-226: wrap in `with_transaction` so the state flip + batch_id stamp
+        // wrap in `with_transaction` so the state flip + batch_id stamp
         // + started_at stamp commit atomically. Today this is a single UPDATE so
         // SQLite's implicit transaction is sufficient, but the retry primitive
         // is the documented seam where future signal emissions / audit rows
@@ -1011,7 +1011,7 @@ impl ActionDb {
         .map_err(Into::into)
     }
 
-    /// DOS-226 (Codex finding 1): Promote this batch's `pending_retry` rows
+    ///  Promote this batch's `pending_retry` rows
     /// to `pending` and zero `enrichment_attempts` so the enrichment pipeline
     /// can pick them up. MUST be called BEFORE the enrichment pass that is
     /// meant to process the retried rows — `get_pending_enrichment` filters
@@ -1024,7 +1024,7 @@ impl ActionDb {
     ///
     /// Returns the number of rows transitioned.
     pub fn finalize_pending_retry_success(&self, batch_id: &str) -> Result<usize, DbError> {
-        // DOS-226: transactional so the state flip + attempts reset + batch_id
+        // transactional so the state flip + attempts reset + batch_id
         // clear commit together. Splitting these would let a crash mid-finalize
         // leave a row at state=pending with a stale batch_id pointing at this
         // refresh — invisible to both the retry and the stale-recovery passes.
@@ -1048,7 +1048,7 @@ impl ActionDb {
         .map_err(Into::into)
     }
 
-    /// DOS-226: Roll this batch's `pending_retry` rows back to `failed` after
+    /// Roll this batch's `pending_retry` rows back to `failed` after
     /// the Gmail refresh failed. The user's "Retry" notice reappears and they
     /// can try again. `enrichment_attempts` was never touched, so the row
     /// returns to exactly its pre-retry state. Scoped to `batch_id` (Codex
@@ -1056,7 +1056,7 @@ impl ActionDb {
     ///
     /// Returns the number of rows transitioned.
     pub fn rollback_pending_retry(&self, batch_id: &str) -> Result<usize, DbError> {
-        // DOS-226: transactional rollback. If we're going to surface the
+        // transactional rollback. If we're going to surface the
         // rollback error to the caller (Codex finding 2), the rollback itself
         // must be atomic — a partial rollback that reports failure would leave
         // some rows in `failed` and others in `pending_retry`, confusing both
@@ -1080,7 +1080,7 @@ impl ActionDb {
         .map_err(Into::into)
     }
 
-    /// DOS-226 (Codex finding 2): Roll back `pending_retry` rows stranded by
+    ///  Roll back `pending_retry` rows stranded by
     /// a crashed or never-finalized refresh. Called at the start of every
     /// refresh so stale batches from a previous process are recovered before
     /// the current batch is stamped.
@@ -1111,7 +1111,7 @@ impl ActionDb {
             .map_err(|e| format!("Failed to roll back stale retries: {e}").into())
     }
 
-    /// DOS-31: Auto-retry stale `failed` emails on every refresh.
+    /// Auto-retry stale `failed` emails on every refresh.
     ///
     /// The original failure mode: an enrichment error (PTY hiccup, transient
     /// API failure, classification edge case) bumped a row to `failed` and
@@ -1128,7 +1128,7 @@ impl ActionDb {
     /// it up automatically — no user action, no UI notice.
     ///
     /// Rows at or above the cap stay in `failed` and surface in the
-    /// "couldn't be enriched" UX (DOS-29) where the user decides between
+    /// "couldn't be enriched" UX  where the user decides between
     /// one more manual retry or skipping permanently.
     ///
     /// Staleness is measured against `last_enrichment_at` so we don't
@@ -1164,7 +1164,7 @@ impl ActionDb {
         .map_err(Into::into)
     }
 
-    /// DOS-29: Count failed rows that have exhausted automatic retries
+    /// Count failed rows that have exhausted automatic retries
     /// (`auto_retry_count >= cap`). These are the rows the user-facing
     /// "couldn't be enriched" UX surfaces — rows the system has stopped
     /// trying to fix on its own. Distinct from the broader failed-count
@@ -1184,7 +1184,7 @@ impl ActionDb {
             .map_err(|e| format!("Failed to count permanently failed emails: {e}").into())
     }
 
-    /// DOS-29: Return a small preview of permanently-failed emails so the
+    /// Return a small preview of permanently-failed emails so the
     /// "View details" affordance can show subjects + senders without the
     /// caller having to fetch the full email list. Capped at `limit` rows.
     pub fn list_permanently_failed_previews(
@@ -1224,7 +1224,7 @@ impl ActionDb {
         Ok(out)
     }
 
-    /// DOS-29: User-initiated "Skip" — mark these failed rows resolved so
+    /// User-initiated "Skip" — mark these failed rows resolved so
     /// they leave the failed-count entirely. The Gmail message stays in
     /// the inbox; we just stop trying to enrich it and stop surfacing it
     /// as a failure. Returns rows affected.
@@ -1257,7 +1257,7 @@ impl ActionDb {
         .map_err(Into::into)
     }
 
-    /// DOS-226 (Codex finding 2): Count rows that are either `failed` or
+    ///  Count rows that are either `failed` or
     /// stuck in `pending_retry`. Used by `retry_failed_emails` so a user
     /// clicking Retry still triggers a refresh even if all their rows
     /// were orphaned by a prior crashed refresh (the pre-fix count
@@ -1275,7 +1275,7 @@ impl ActionDb {
             .map_err(|e| format!("Failed to count retriable emails: {e}").into())
     }
 
-    /// Mark an email as enriched, setting `enriched_at` to now (I652 Phase 5).
+    /// Mark an email as enriched, setting `enriched_at` to now.
     /// Used after successful enrichment to support Gate 0 deduplication.
     pub fn mark_email_enriched(&self, email_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
@@ -1333,7 +1333,7 @@ pub struct EmailEnrichmentUpdate<'a> {
     pub entity_type: Option<&'a str>,
     pub sentiment: Option<&'a str>,
     pub urgency: Option<&'a str>,
-    /// DOS-249: LLM-determined noise verdict. None = no opinion (don't
+    /// LLM-determined noise verdict. None = no opinion (don't
     /// change the deterministic value); Some(true) = AI says noise;
     /// Some(false) = AI says signal (overrides any prior is_noise=1).
     pub is_noise: Option<bool>,
@@ -1372,9 +1372,9 @@ fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
         pinned_at: row.get(27).ok(),
         commitments: row.get(28).ok(),
         questions: row.get(29).ok(),
-        // DOS-242: column added by migration 092. Default false on legacy rows.
+        // column added by migration 092. Default false on legacy rows.
         is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
-        // DOS-258: columns added by migration 120. Default None on legacy rows.
+        // columns added by migration 120. Default None on legacy rows.
         to_recipients: row.get(31).ok(),
         cc_recipients: row.get(32).ok(),
     })

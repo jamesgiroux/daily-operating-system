@@ -1,5 +1,5 @@
 /**
- * RegulatoryContextCard — Chapter in the Context tab (DOS-207).
+ * RegulatoryContextCard — Chapter in the Context tab.
  *
  * Renders regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR) as a
  * stacked list with per-status chip colors. Populated by the

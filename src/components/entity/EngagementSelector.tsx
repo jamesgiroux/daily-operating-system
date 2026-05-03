@@ -1,6 +1,6 @@
 /**
  * EngagementSelector — Clickable badge that opens a dropdown to change
- * stakeholder engagement level. I652: options are now actual engagement
+ * stakeholder engagement level. options are now actual engagement
  * levels (strong_advocate, engaged, neutral, disengaged, unknown), not
  * roles. Roles are handled separately via multi-role badges.
  *

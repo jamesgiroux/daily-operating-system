@@ -150,7 +150,7 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
   const emails = data.emails ?? [];
   const lifecycleUpdates = data.lifecycleUpdates ?? [];
 
-  // I395: Score-based email selection — scored emails first, then enriched fill.
+  // Score-based email selection — scored emails first, then enriched fill.
   // Shows up to 5 emails: high-scored ones first, then enriched emails with summaries
   // that didn't meet the score threshold (avoids hiding useful intelligence).
   // Cached emails shown immediately even when briefing is stale — background
@@ -413,7 +413,7 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
 
               <div className={s.scheduleRows}>
                 {scheduleMeetings.map((meeting) => {
-                  // I502: Find health data for first linked account
+                  // Find health data for first linked account
                   const healthMap = data.entityHealthMap;
                   const linkedAccountHealth = healthMap && meeting.linkedEntities
                     ? meeting.linkedEntities
@@ -777,7 +777,7 @@ function AttentionSection({
             </div>
           )}
 
-          {/* DOS-53: Aging awareness — subtle line when actions approach auto-archive */}
+          {/* Aging awareness — subtle line when actions approach auto-archive */}
           {hasAging && (
             <div className={briefingStyles.agingNotice}>
               {agingActionCount} {agingActionCount === 1 ? "item" : "items"} aging toward auto-archive

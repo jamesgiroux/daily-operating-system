@@ -1,4 +1,4 @@
--- Sprint 21: Account team model (I207)
+-- Sprint 21: Account team model
 -- - Introduce account_team + account_team_import_notes
 -- - Backfill legacy accounts.csm/champion to account_team where exact person match exists
 -- - Drop legacy csm/champion columns by rebuilding accounts table

@@ -152,7 +152,7 @@ export default function ProjectDetailEditorial() {
   const preset = useActivePreset();
   useRevealObserver(!proj.loading && !!proj.detail);
 
-  // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
+  // Shared intelligence field update hook (must be before shellConfig useMemo)
   const {
     updateField: handleUpdateIntelField,
     saveStatus,
@@ -196,7 +196,7 @@ export default function ProjectDetailEditorial() {
     }
   };
 
-  // I388: Fetch ancestor projects for FolioBar breadcrumb navigation.
+  // Fetch ancestor projects for FolioBar breadcrumb navigation.
   const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
     if (!projectId) return;
@@ -238,7 +238,7 @@ export default function ProjectDetailEditorial() {
 
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
-  // I312: Preset metadata state
+  // Preset metadata state
   const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!projectId) return;
@@ -252,7 +252,7 @@ export default function ProjectDetailEditorial() {
       });
   }, [projectId]);
 
-  // I529: Intelligence quality feedback
+  // Intelligence quality feedback
   const feedback = useIntelligenceFeedback(projectId, "project");
 
   // Context entries — must be before early returns (React hooks rule)
@@ -311,7 +311,7 @@ export default function ProjectDetailEditorial() {
         </div>
       </section>
 
-      {/* I388: Portfolio chapter — only for parent projects */}
+      {/* Portfolio chapter — only for parent projects */}
       {detail.isParent && detail.children.length > 0 && (
         <section id="portfolio" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
           <ChapterHeading title="Portfolio" />
@@ -494,7 +494,7 @@ export default function ProjectDetailEditorial() {
         />
       </div>
 
-      {/* Chapter 7: The Work (I351) */}
+      {/* Chapter 7: The Work  */}
       <div id="the-work" className={`editorial-reveal ${shared.chapterSection}`}>
         {intelligence?.recommendedActions && intelligence.recommendedActions.length > 0 && (
           <RecommendedActions entityId={detail.id} entityType="project"
@@ -544,7 +544,7 @@ export default function ProjectDetailEditorial() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* I388: Sub-Project Creation Dialog */}
+      {/* Sub-Project Creation Dialog */}
       <Dialog open={proj.createChildOpen} onOpenChange={proj.setCreateChildOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

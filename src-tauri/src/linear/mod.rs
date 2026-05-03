@@ -1,4 +1,4 @@
-//! Linear issue tracker integration (I346).
+//! Linear issue tracker integration.
 //!
 //! Syncs assigned issues and projects from Linear via their GraphQL API.
 //! Follows the same architectural pattern as Clay (clay/mod.rs).

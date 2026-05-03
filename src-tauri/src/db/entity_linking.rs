@@ -81,7 +81,7 @@ impl ActionDb {
     }
 
     /// Batch read linked entities for a list of meetings from the `linked_entities`
-    /// view (DOS-258). Mirrors the single-owner query used by the meeting detail
+    /// view. Mirrors the single-owner query used by the meeting detail
     /// page so the three list/dashboard surfaces no longer read stale rows from
     /// the legacy `meeting_entities` junction table.
     ///
@@ -843,7 +843,7 @@ impl ActionDb {
                         commitments:         None,
                         questions:           None,
                         is_noise:            false,
-                        // DOS-258: populated so manual_set_primary can rebuild a
+                        // populated so manual_set_primary can rebuild a
                         // LinkingContext with real email participants (P4b/P4c/P4d
                         // fire, and the stakeholder-domain backfill sees real
                         // attendee domains).

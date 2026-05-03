@@ -1,4 +1,4 @@
--- DOS-269 (v1.2.1 Health tab action wiring): persist triage snooze and
+-- Health tab action wiring: persist triage snooze and
 -- resolution state per card.
 --
 -- Triage cards on the Health tab carry Snooze and "Confirm resolved" actions.

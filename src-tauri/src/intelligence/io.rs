@@ -1,4 +1,4 @@
-//! Entity Intelligence I/O and types (I130 / ADR-0057).
+//! Entity Intelligence I/O and types (ADR-0057).
 //!
 //! Three-file entity pattern: dashboard.json (mechanical) + intelligence.json
 //! (synthesized) + dashboard.md (artifact). This module owns the intelligence
@@ -18,10 +18,10 @@ use crate::db::{ActionDb, DbAccount};
 use crate::util::atomic_write_str;
 
 // =============================================================================
-// I576: Source Attribution Types
+// Source Attribution Types
 // =============================================================================
 
-/// I576: Source attribution for individual intelligence items.
+/// Source attribution for individual intelligence items.
 /// Every risk, win, stakeholder insight, etc. can carry provenance metadata
 /// indicating where the intelligence came from and how confident we are.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,7 +40,7 @@ pub struct ItemSource {
     pub reference: Option<String>,
 }
 
-/// DOS-13: A recommended action produced by intelligence enrichment.
+/// A recommended action produced by intelligence enrichment.
 /// Richer than the `Vec<String>` health recommended_actions — includes rationale,
 /// priority (0-4 integer), and optional suggested due date.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,7 +62,7 @@ fn default_recommended_priority() -> i32 {
     3
 }
 
-/// I576: Tombstone for user-dismissed intelligence items.
+/// Tombstone for user-dismissed intelligence items.
 /// Prevents enrichment from re-creating items the user explicitly removed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,7 +92,7 @@ pub struct UserEdit {
     pub edited_at: String,
 }
 
-/// Consistency verification result status for intelligence output (I527).
+/// Consistency verification result status for intelligence output.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ConsistencyStatus {
@@ -101,7 +101,7 @@ pub enum ConsistencyStatus {
     Flagged,
 }
 
-/// Severity classification for a consistency finding (I527).
+/// Severity classification for a consistency finding.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ConsistencySeverity {
@@ -110,7 +110,7 @@ pub enum ConsistencySeverity {
     Low,
 }
 
-/// A deterministic consistency finding with evidence (I527).
+/// A deterministic consistency finding with evidence.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsistencyFinding {
@@ -129,7 +129,7 @@ pub struct ConsistencyFinding {
 }
 
 // =============================================================================
-// Portfolio Intelligence (I384 — parent account hierarchy)
+// Portfolio Intelligence (parent account hierarchy)
 // =============================================================================
 
 /// A child account flagged as a hotspot in the parent's portfolio assessment.
@@ -144,7 +144,7 @@ pub struct PortfolioHotspot {
     pub reason: String,
 }
 
-/// Portfolio-level intelligence for parent accounts (I384).
+/// Portfolio-level intelligence for parent accounts.
 ///
 /// Synthesized from children's intelligence data. Only present on accounts
 /// that have child accounts — leaf-node accounts never get this field.
@@ -164,7 +164,7 @@ pub struct PortfolioIntelligence {
 }
 
 // =============================================================================
-// Network Intelligence (I391 — person relationship graph)
+// Network Intelligence (person relationship graph)
 // =============================================================================
 
 /// A key relationship in a person's network graph.
@@ -179,7 +179,7 @@ pub struct NetworkKeyRelationship {
     pub signal_summary: Option<String>,
 }
 
-/// Network intelligence for person entities (I391, ADR-0088).
+/// Network intelligence for person entities (ADR-0088).
 ///
 /// Only present on persons with relationship edges — sparse but always
 /// defined for persons during enrichment. File-only (no DB cache column).
@@ -205,7 +205,7 @@ pub(crate) fn default_network_health() -> String {
 }
 
 // =============================================================================
-// I396: Intelligence Report Types
+// Intelligence Report Types
 // =============================================================================
 
 /// ADR-0097: Structured account health representation.
@@ -223,7 +223,7 @@ pub struct AccountHealth {
     /// 0.0-1.0
     #[serde(default)]
     pub confidence: f64,
-    /// DOS-84: true when >= 3 of 6 health dimensions have data (weight > 0).
+    /// true when >= 3 of 6 health dimensions have data (weight > 0).
     /// When false, frontend should show "Insufficient Data" instead of the score.
     #[serde(default)]
     pub sufficient_data: bool,
@@ -241,7 +241,7 @@ pub struct AccountHealth {
 
 /// A short directional tag for the health trend signal line.
 ///
-/// DOS-249: The mockup's Signal-trend meta renders as a bullet list like
+/// The mockup's Signal-trend meta renders as a bullet list like
 /// "Infra drift ▲ · Defensive Mode unsettled · Headless ▲ · Compliance persistent".
 /// These are populated by `compute_trend_from_history` and emitted as structured
 /// data so the frontend renders bullets instead of leaving the meta line empty.
@@ -266,12 +266,12 @@ pub struct HealthTrend {
     pub timeframe: String,
     #[serde(default)]
     pub confidence: f64,
-    /// DOS-249: Integer score delta over the trend window. Positive = improving,
+    /// Integer score delta over the trend window. Positive = improving,
     /// negative = declining. Used by SupportingTension to render "▲ +12 in 30d".
     /// Computed from health score history; `None` when fewer than 2 data points exist.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delta: Option<i32>,
-    /// DOS-249: Structured signal tags for the trend meta line. Derived from
+    /// Structured signal tags for the trend meta line. Derived from
     /// dimension evidence; frontend renders as "Label ▲ · Label · Label ▼".
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<HealthTrendTag>,
@@ -329,7 +329,7 @@ pub struct HealthDivergence {
     pub leading_indicator: bool,
 }
 
-/// I500 pluggability surface for external org-health data.
+///  pluggability surface for external org-health data.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OrgHealthData {
@@ -353,7 +353,7 @@ pub struct OrgHealthData {
     pub gathered_at: String,
 }
 
-/// I509 local transcript sentiment signal shape (owned by I503 types).
+///  local transcript sentiment signal shape (owned by types).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptSentiment {
@@ -371,19 +371,19 @@ pub struct TranscriptSentiment {
     pub champion_present: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub champion_engaged: Option<String>,
-    /// I554: Ownership language — customer|vendor|mixed
+    /// Ownership language — customer|vendor|mixed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ownership_language: Option<String>,
-    /// I554: Past-tense product references (churn predictor)
+    /// Past-tense product references (churn predictor)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub past_tense_references: Option<bool>,
-    /// I554: Data export interest (churn predictor)
+    /// Data export interest (churn predictor)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_export_interest: Option<bool>,
-    /// I554: Internal advocacy visible
+    /// Internal advocacy visible
     #[serde(skip_serializing_if = "Option::is_none")]
     pub internal_advocacy_visible: Option<bool>,
-    /// I554: Roadmap interest
+    /// Roadmap interest
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roadmap_interest: Option<bool>,
 }
@@ -404,7 +404,7 @@ fn default_dimension_trend() -> String {
     "stable".to_string()
 }
 
-/// A success metric / KPI tracked for an entity (I396).
+/// A success metric / KPI tracked for an entity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SuccessMetric {
@@ -419,7 +419,7 @@ pub struct SuccessMetric {
     pub owner: Option<String>,
 }
 
-/// An open commitment — a promise made to/from the account (I396).
+/// An open commitment — a promise made to/from the account.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenCommitment {
@@ -438,15 +438,15 @@ pub struct OpenCommitment {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
-    /// I576: Structured source attribution with confidence.
+    /// Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
-    /// I576: True if multiple sources disagree on this item.
+    /// True if multiple sources disagree on this item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
 }
 
-/// Relationship depth assessment (I396).
+/// Relationship depth assessment.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RelationshipDepth {
@@ -461,7 +461,7 @@ pub struct RelationshipDepth {
 }
 
 // =============================================================================
-// I508a: Intelligence Dimension Sub-Structs
+// Intelligence dimension sub-structs
 // =============================================================================
 
 // -- Dimension 1: Strategic Assessment --
@@ -480,10 +480,10 @@ pub struct CompetitiveInsight {
     pub source: Option<String>,
     /// When this was detected (ISO date).
     pub detected_at: Option<String>,
-    /// I576: Structured source attribution with confidence.
+    /// Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
-    /// I576: True if multiple sources disagree on this item.
+    /// True if multiple sources disagree on this item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
 }
@@ -541,15 +541,15 @@ pub struct MarketContextItem {
     /// raised the requirement).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_date: Option<String>,
-    /// I576: structured source attribution + confidence.
+    /// structured source attribution + confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
-    /// I576: true if multiple sources disagree on the framing.
+    /// true if multiple sources disagree on the framing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
 }
 
-/// DOS-207: Regulatory context item (DORA, SOC 2, HIPAA, GDPR, etc).
+/// Regulatory context item (DORA, SOC 2, HIPAA, GDPR, etc).
 ///
 /// Emitted by the `strategic_context` dimension prompt when the AI detects
 /// a compliance requirement from transcripts, emails, or Glean output.
@@ -573,10 +573,10 @@ pub struct RegulatoryItem {
     pub source_reference: Option<String>,
     /// RFC3339 timestamp of first detection.
     pub detected_at: String,
-    /// I576: structured source attribution + confidence.
+    /// structured source attribution + confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
-    /// I576: true if multiple sources disagree on status.
+    /// true if multiple sources disagree on status.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
 }
@@ -615,10 +615,10 @@ pub struct OrgChange {
     pub detected_at: Option<String>,
     /// Source: "glean" | "meeting" | "email" | "user"
     pub source: Option<String>,
-    /// I576: Structured source attribution with confidence.
+    /// Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
-    /// I576: True if multiple sources disagree on this item.
+    /// True if multiple sources disagree on this item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
 }
@@ -727,21 +727,21 @@ pub struct ExpansionSignal {
     pub source: Option<String>,
     /// exploring | evaluating | committed | blocked
     pub stage: Option<String>,
-    /// I554: Signal strength classification — strong | moderate | early
+    /// Signal strength classification — strong | moderate | early
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strength: Option<String>,
-    /// I576: Structured source attribution with confidence.
+    /// Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
-    /// I576: True if multiple sources disagree on this item.
+    /// True if multiple sources disagree on this item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
 }
 
 /// Agreement outlook assessment for an account (renamed from RenewalOutlook
-/// in DOS-179; serde alias preserves backward compat).
+/// in; serde alias preserves backward compat).
 ///
-/// DOS-249: `renewal_narrative` is the one-paragraph editorial read that
+/// `renewal_narrative` is the one-paragraph editorial read that
 /// appears as a pull-quote below the Confidence/Recommended-start grid in
 /// the Health tab. Previously the UI overloaded `expansion_potential` for
 /// this; the dedicated field removes that coupling.
@@ -755,7 +755,7 @@ pub struct AgreementOutlook {
     pub risk_factors: Vec<String>,
     /// Is there upsell/expansion potential tied to the renewal conversation?
     pub expansion_potential: Option<String>,
-    /// DOS-249: One-paragraph editorial read on the renewal — rendered as a
+    /// One-paragraph editorial read on the renewal — rendered as a
     /// pull-quote below the outlook grid. Distinct from `expansion_potential`.
     /// The AI emits this from the commercial_financial dimension prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -768,7 +768,7 @@ pub struct AgreementOutlook {
     /// What weakens our position.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub negotiation_risk: Vec<String>,
-    /// DOS-204: Peer-cohort renewal benchmark for the Outlook panel's
+    /// Peer-cohort renewal benchmark for the Outlook panel's
     /// Benchmark cell. Optional — the cell collapses to the 2-col layout
     /// when absent. Populated by a separate Glean chat pass; the field is
     /// added by the orchestrator after the main intelligence pass returns.
@@ -776,7 +776,7 @@ pub struct AgreementOutlook {
     pub peer_benchmark: Option<PeerBenchmark>,
 }
 
-/// DOS-204: Peer-cohort renewal benchmark for an account.
+/// Peer-cohort renewal benchmark for an account.
 ///
 /// Sourced from a dedicated Glean chat pass that asks for the typical
 /// renewal rate of accounts with a comparable industry, ARR band, and
@@ -797,7 +797,7 @@ pub struct PeerBenchmark {
     pub source_count: u32,
 }
 
-/// DOS-204: Peer benchmark band — where this account sits relative to the cohort.
+/// Peer benchmark band — where this account sits relative to the cohort.
 ///
 /// Parsed from the AI's free-form answer by lowercase-prefix match on
 /// "above" / "at" / "below". Anything else falls back to `Unknown`,
@@ -865,7 +865,7 @@ pub struct SatisfactionData {
     pub source: Option<String>,
 }
 
-/// I651: Product classification from Salesforce via Glean.
+/// Product classification from Salesforce via Glean.
 /// Contains current product subscriptions and tier information.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -875,7 +875,7 @@ pub struct ProductClassification {
     pub products: Vec<ProductInfo>,
 }
 
-/// I651: Individual product information from Salesforce.
+/// Individual product information from Salesforce.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductInfo {
@@ -891,7 +891,7 @@ pub struct ProductInfo {
     pub billing_terms: Option<String>,
 }
 
-/// A Gong call summary produced by Glean enrichment (I535).
+/// A Gong call summary produced by Glean enrichment.
 ///
 /// Contains key metadata from a recorded call — title, date, participants,
 /// topic summary, and overall sentiment. Used as supplementary context
@@ -933,7 +933,7 @@ pub struct IntelligenceJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executive_assessment: Option<String>,
 
-    /// I576: Concise editorial pull quote for visual storytelling.
+    /// Concise editorial pull quote for visual storytelling.
     /// One impactful sentence — the single thing a reader should remember.
     /// Distinct from executiveAssessment which is a multi-paragraph narrative.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -964,12 +964,12 @@ pub struct IntelligenceJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub company_context: Option<CompanyContext>,
 
-    /// Portfolio intelligence for parent accounts (I384).
+    /// Portfolio intelligence for parent accounts.
     /// Only present on accounts with child accounts — leaf nodes never get this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub portfolio: Option<PortfolioIntelligence>,
 
-    /// Network intelligence for person entities (I391, ADR-0088).
+    /// Network intelligence for person entities (ADR-0088).
     /// Only present on persons with relationship edges — sparse.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network: Option<NetworkIntelligence>,
@@ -983,36 +983,36 @@ pub struct IntelligenceJson {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health: Option<AccountHealth>,
 
-    /// I500: Optional external/org health baseline payload.
+    /// Optional external/org health baseline payload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub org_health: Option<OrgHealthData>,
 
-    /// I396: Success metrics / KPIs tracked for this entity.
+    /// Success metrics / KPIs tracked for this entity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub success_metrics: Option<Vec<SuccessMetric>>,
 
-    /// I396: Open commitments (promises made to/from the account).
+    /// Open commitments (promises made to/from the account).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub open_commitments: Option<Vec<OpenCommitment>>,
 
-    /// I396: Relationship depth assessment.
+    /// Relationship depth assessment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relationship_depth: Option<RelationshipDepth>,
 
-    /// I527: Consistency pass status (ok/corrected/flagged).
+    /// Consistency pass status (ok/corrected/flagged).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub consistency_status: Option<ConsistencyStatus>,
 
-    /// I527: Contradiction findings produced by deterministic checks.
+    /// Contradiction findings produced by deterministic checks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consistency_findings: Vec<ConsistencyFinding>,
 
-    /// I527: Timestamp of the most recent consistency pass.
+    /// Timestamp of the most recent consistency pass.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub consistency_checked_at: Option<String>,
 
     // =========================================================================
-    // I508a: Intelligence Dimension Fields
+    // Intelligence dimension fields
     // =========================================================================
 
     // Dimension 1: Strategic Assessment
@@ -1026,7 +1026,7 @@ pub struct IntelligenceJson {
     /// did that; this field replaces the hijack).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub market_context: Vec<MarketContextItem>,
-    /// DOS-207: Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR, ...).
+    /// Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR,...).
     /// Emitted by `strategic_context` dimension; items with `status: "gap"`
     /// emit `regulatory_gap_detected` signals on enrichment write, which
     /// feed `financial_proximity` dimension scoring.
@@ -1063,7 +1063,7 @@ pub struct IntelligenceJson {
         skip_serializing_if = "Option::is_none"
     )]
     pub agreement_outlook: Option<AgreementOutlook>,
-    /// I651: Product classification from Salesforce (Glean-only)
+    /// Product classification from Salesforce (Glean-only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_classification: Option<ProductClassification>,
 
@@ -1075,15 +1075,15 @@ pub struct IntelligenceJson {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nps_csat: Option<SatisfactionData>,
 
-    // Cross-cutting: source attribution (I507)
+    // Cross-cutting: source attribution
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
 
-    // I535: Gong call summaries from Glean enrichment (Glean-only field)
+    // Gong call summaries from Glean enrichment (Glean-only field)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gong_call_summaries: Vec<GongCallSummary>,
 
-    // I554: Success plan signals synthesized from aggregate context
+    // Success plan signals synthesized from aggregate context
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub success_plan_signals: Option<crate::types::SuccessPlanSignals>,
 
@@ -1093,23 +1093,23 @@ pub struct IntelligenceJson {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub domains: Vec<String>,
 
-    /// I576: Tombstones for dismissed items — prevents re-creation on enrichment.
+    /// Tombstones for dismissed items — prevents re-creation on enrichment.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dismissed_items: Vec<DismissedItem>,
 
-    /// DOS-13: AI-recommended actions from intelligence enrichment.
+    /// AI-recommended actions from intelligence enrichment.
     /// Rich structured recommendations with title, rationale, priority, and optional due date.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recommended_actions: Vec<RecommendedAction>,
 }
 
-/// I508a: Serialization wrapper for all dimension fields stored in `dimensions_json`.
+/// Serialization wrapper for all dimension fields stored in `dimensions_json`.
 /// One blob column instead of 15 individual columns — these fields are always
 /// loaded/saved together and rarely queried individually.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DimensionsBlob {
-    /// I576: Concise editorial pull quote.
+    /// Concise editorial pull quote.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull_quote: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1118,7 +1118,7 @@ pub(crate) struct DimensionsBlob {
     pub strategic_priorities: Vec<StrategicPriority>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub market_context: Vec<MarketContextItem>,
-    /// DOS-207: Regulatory / compliance items.
+    /// Regulatory / compliance items.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub regulatory_context: Vec<RegulatoryItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1144,7 +1144,7 @@ pub(crate) struct DimensionsBlob {
         skip_serializing_if = "Option::is_none"
     )]
     pub agreement_outlook: Option<AgreementOutlook>,
-    /// I651: Product classification from Salesforce (Glean-only)
+    /// Product classification from Salesforce (Glean-only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_classification: Option<ProductClassification>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1155,13 +1155,13 @@ pub(crate) struct DimensionsBlob {
     pub nps_csat: Option<SatisfactionData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
-    /// DOS-13: AI-recommended actions from intelligence enrichment.
+    /// AI-recommended actions from intelligence enrichment.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recommended_actions: Vec<RecommendedAction>,
 }
 
 impl IntelligenceJson {
-    /// Pack I508a dimension fields into a single JSON blob for DB storage.
+    /// Pack dimension fields into a single JSON blob for DB storage.
     pub(crate) fn dimensions_blob(&self) -> DimensionsBlob {
         DimensionsBlob {
             pull_quote: self.pull_quote.clone(),
@@ -1187,7 +1187,7 @@ impl IntelligenceJson {
         }
     }
 
-    /// Unpack I508a dimension fields from DB blob into self.
+    /// Unpack dimension fields from DB blob into self.
     pub(crate) fn apply_dimensions_blob(&mut self, blob: &DimensionsBlob) {
         self.pull_quote = blob.pull_quote.clone();
         self.competitive_context = blob.competitive_context.clone();
@@ -1217,10 +1217,10 @@ fn default_version() -> u32 {
 }
 
 // =============================================================================
-// I576: HasSource trait for source-attributed items
+// HasSource trait for source-attributed items
 // =============================================================================
 
-/// I576: Trait for intelligence items that carry source attribution.
+/// Trait for intelligence items that carry source attribution.
 pub trait HasSource {
     fn item_source(&self) -> Option<&ItemSource>;
 
@@ -1318,24 +1318,24 @@ pub struct IntelRisk {
     pub source: Option<String>,
     #[serde(default = "default_urgency")]
     pub urgency: String,
-    /// DOS-249: Punchy 1-liner headline for the triage card (≤80 chars).
+    /// Punchy 1-liner headline for the triage card (≤80 chars).
     /// When present, the frontend renders this in the 21px serif slot rather
     /// than splitting `text` on punctuation. Falls back to client-side split
     /// of `text` when absent (backward compat with existing enriched accounts).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headline: Option<String>,
-    /// DOS-249: Evidence body — multi-sentence supporting detail.
+    /// Evidence body — multi-sentence supporting detail.
     /// When present, rendered as the sans-serif paragraph below the headline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence: Option<String>,
-    /// DOS-249: Specific kind label emitted by the AI (e.g. "Renewal drag · compliance gap").
+    /// Specific kind label emitted by the AI (e.g. "Renewal drag · compliance gap").
     /// When present, replaces the generic urgency-derived label in the triage card spine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind_label: Option<String>,
-    /// I576: Structured source attribution with confidence.
+    /// Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
-    /// I576: True if multiple sources disagree on this item.
+    /// True if multiple sources disagree on this item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
 }
@@ -1352,10 +1352,10 @@ pub struct IntelWin {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub impact: Option<String>,
-    /// I576: Structured source attribution with confidence.
+    /// Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
-    /// I576: True if multiple sources disagree on this item.
+    /// True if multiple sources disagree on this item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
 }
@@ -1383,28 +1383,28 @@ pub struct StakeholderInsight {
     pub engagement: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// Deterministic link to a Person entity (I420: reconciliation).
+    /// Deterministic link to a Person entity (reconciliation).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub person_id: Option<String>,
-    /// Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420).
+    /// Suggested Person link (0.6–0.85 confidence) awaiting user confirmation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested_person_id: Option<String>,
-    /// DOS-207: Whether this assessment was verified from an actual
+    /// Whether this assessment was verified from an actual
     /// customer-conversation transcript (vs inferred from meeting attendance).
     /// Set by the `stakeholder_champion` dimension prompt; user corrections
-    /// via the DOS-41 correction UX override.
+    /// via the intelligence correction UX override.
     #[serde(default)]
     pub verified: bool,
-    /// DOS-207: How the verification was established — "meeting" | "glean" | "user".
+    /// How the verification was established — "meeting" | "glean" | "user".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verified_source: Option<String>,
-    /// DOS-207: RFC3339 timestamp when verification was established.
+    /// RFC3339 timestamp when verification was established.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verified_at: Option<String>,
-    /// I576: Structured source attribution with confidence.
+    /// Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
-    /// I576: True if multiple sources disagree on this item.
+    /// True if multiple sources disagree on this item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
 }
@@ -1419,10 +1419,10 @@ pub struct ValueItem {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub impact: Option<String>,
-    /// I576: Structured source attribution with confidence.
+    /// Structured source attribution with confidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_source: Option<ItemSource>,
-    /// I576: True if multiple sources disagree on this item.
+    /// True if multiple sources disagree on this item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discrepancy: Option<bool>,
 }
@@ -1463,7 +1463,7 @@ const INTEL_FILENAME: &str = "intelligence.json";
 /// Keeps prompt size manageable (~10KB) while preserving the most relevant signals.
 /// Read intelligence.json from an entity directory.
 ///
-/// I513: Deprecated for Tauri app call sites — DB is the sole source of truth.
+/// Deprecated for Tauri app call sites — DB is the sole source of truth.
 /// Remaining callers: MCP sidecar (mcp/main.rs), internal io.rs (apply_stakeholders_update).
 /// Do NOT add new callers — use `db.get_entity_intelligence()` instead.
 pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
@@ -1685,7 +1685,7 @@ pub fn apply_intelligence_field_update(
         .unwrap_or_else(|_| serde_json::Value::String(value.to_string()));
     set_json_path(&mut json_val, field_path, new_value)?;
 
-    // I576: Tag edited items with user_correction source attribution.
+    // Tag edited items with user_correction source attribution.
     // If the edited path points to an item in a Vec (e.g., "risks[0]"),
     // set the itemSource on that item.
     if let Ok(segments) = parse_path_segments(field_path) {
@@ -1735,7 +1735,7 @@ pub fn apply_intelligence_field_update(
 ///
 /// Same logic as `apply_intelligence_field_update` but operates on a struct
 /// instead of reading from disk. Used when the DB is the source of truth
-/// (post-I513, Glean enrichment writes directly to DB).
+/// (post-, Glean enrichment writes directly to DB).
 pub fn apply_intelligence_field_update_in_memory(
     existing: IntelligenceJson,
     field_path: &str,
@@ -1751,7 +1751,7 @@ pub fn apply_intelligence_field_update_in_memory(
         .unwrap_or_else(|_| serde_json::Value::String(value.to_string()));
     set_json_path(&mut json_val, field_path, new_value)?;
 
-    // I576: Tag edited items with user_correction source attribution.
+    // Tag edited items with user_correction source attribution.
     if let Ok(segments) = parse_path_segments(field_path) {
         if let Some(PathSegment::Index(arr_name, idx)) = segments.last() {
             if let Some(arr) = json_val
@@ -1882,7 +1882,7 @@ pub fn preserve_user_edits(new_intel: &mut IntelligenceJson, existing: &Intellig
 
     for edit in &existing.user_edits {
         let field_path = normalize_legacy_intelligence_path(&edit.field_path);
-        // I633: Array-indexed paths like "stakeholderInsights[0].role" break when
+        // Array-indexed paths like "stakeholderInsights[0].role" break when
         // enrichment reorders the array. Match by identity ("name") instead of index.
         if let Some(resolved) =
             resolve_array_path_by_identity(&existing_val, &new_val, &field_path)
@@ -2214,7 +2214,7 @@ impl ActionDb {
             )?;
         }
 
-        // DOS-207: Emit regulatory_gap_detected and stakeholder_verified
+        // Emit regulatory_gap_detected and stakeholder_verified
         // signals so the Intelligence Loop (callouts, propagation rules,
         // health scoring) can react without waiting for the next enrichment.
         // The 24-hour callout window dedupes repeat emissions of the same gap.
@@ -2377,7 +2377,7 @@ impl ActionDb {
                 pull_quote,
                 ..Default::default()
             };
-            // Unpack I508a dimensions blob if present
+            // Unpack dimensions blob if present.
             if let Some(ref dj) = dimensions_json_raw {
                 if let Ok(blob) = serde_json::from_str::<DimensionsBlob>(dj) {
                     intel.apply_dimensions_blob(&blob);
@@ -2404,7 +2404,7 @@ impl ActionDb {
     }
 }
 // =============================================================================
-// Markdown Generation (I134 — three-file dashboard.md)
+// Markdown Generation (three-file dashboard.md)
 // =============================================================================
 
 /// Format intelligence sections as markdown for inclusion in dashboard.md.
@@ -2641,7 +2641,7 @@ pub(crate) fn collect_content_files(
 }
 
 // =============================================================================
-// Content Classification + Mechanical Summary (I139)
+// Content Classification + Mechanical Summary
 // =============================================================================
 
 /// Classify content type from filename and format. Returns `(content_type, priority)`.
@@ -2968,7 +2968,7 @@ pub(crate) fn sync_content_index_for_entity(
 }
 
 // =============================================================================
-// Keyword extraction from enrichment response (I305)
+// Keyword extraction from enrichment response
 // =============================================================================
 
 /// Extract keywords from an AI intelligence response.
@@ -3368,7 +3368,7 @@ mod tests {
         let db = test_db();
         let mut intel = sample_intel();
 
-        // Populate I508a dimension fields across all 6 dimensions
+        // Populate dimension fields across all 6 dimensions.
         intel.competitive_context = vec![CompetitiveInsight {
             competitor: "Rival Corp".to_string(),
             threat_level: Some("high".to_string()),
@@ -3496,7 +3496,7 @@ mod tests {
             .expect("get")
             .expect("should exist");
 
-        // Verify all 15 I508a fields survived the roundtrip
+        // Verify all 15 dimension fields survived the roundtrip.
         assert_eq!(fetched.competitive_context.len(), 1);
         assert_eq!(fetched.competitive_context[0].competitor, "Rival Corp");
         assert_eq!(fetched.strategic_priorities.len(), 1);
@@ -3552,7 +3552,7 @@ mod tests {
     }
 
     // =========================================================================
-    // I134: format_intelligence_markdown
+    // format_intelligence_markdown
     // =========================================================================
 
     #[test]
@@ -3699,7 +3699,7 @@ mod tests {
     }
 
     // =========================================================================
-    // I139: Content classification + mechanical summary tests
+    // Content classification + mechanical summary tests
     // =========================================================================
 
     #[test]

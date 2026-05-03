@@ -1,4 +1,4 @@
--- Migration 024: Linear issue/project sync tables (I346)
+-- Migration 024: Linear issue/project sync tables
 CREATE TABLE IF NOT EXISTS linear_issues (
     id TEXT PRIMARY KEY,
     identifier TEXT NOT NULL,

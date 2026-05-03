@@ -1,4 +1,4 @@
-//! Clay.earth MCP integration for contact and company enrichment (I228).
+//! Clay.earth MCP integration for contact and company enrichment.
 //!
 //! Connects to Clay via Smithery Connect — Smithery manages Clay OAuth and
 //! credentials. DailyOS sends JSON-RPC over HTTP to the Smithery endpoint.
