@@ -24,29 +24,31 @@ else
   roots=("src" "tests")
 fi
 
-# Match UPDATE intelligence_claims followed by SET <forbidden_column>.
-# Multi-line UPDATEs are common; we run a 3-line context grep first then
-# filter for forbidden columns.
-forbidden_pattern='UPDATE[[:space:]]+intelligence_claims[[:space:]]+SET[[:space:]]+("?)(text|claim_type|subject_ref|source_asof|created_at)("?)[[:space:]]*='
-
-# Also catch the multi-line case where UPDATE is on one line and SET <col> is on the next.
-# A simple grep -A 2 followed by per-block matching is robust enough for the audit.
-
+# L2 cycle-19 fix: catch forbidden columns ANYWHERE in the SET clause,
+# not just immediately after `SET`. The previous regex
+# `SET[[:space:]]+(forbidden)` matched only the FIRST SET target,
+# so a multi-column UPDATE like
+#   `UPDATE intelligence_claims SET dedup_key = ?, subject_ref = ?`
+# bypassed the gate because `dedup_key` was matched first and
+# `subject_ref` slipped past as a non-leading column.
+#
+# New approach: get a window of context lines after each
+# `UPDATE intelligence_claims` (covers multi-line UPDATEs), then
+# scan each line in the window for `<forbidden_col>[[:space:]]*=`
+# regardless of position. The dos7-allowed marker still exempts
+# legitimate canonicalization rewrites (rekey path).
+#
+# 7 lines covers the longest UPDATE in the codebase plus margin.
 matches="$(
-  grep -rEni --include='*.rs' --include='*.sql' -A 2 "UPDATE[[:space:]]+intelligence_claims" "${roots[@]}" 2>/dev/null \
-    | grep -E "SET[[:space:]]+(text|claim_type|subject_ref|source_asof|created_at)[[:space:]]*=" \
+  grep -rEni --include='*.rs' --include='*.sql' -A 7 \
+    "UPDATE[[:space:]]+intelligence_claims" "${roots[@]}" 2>/dev/null \
+    | grep -E "\b(text|claim_type|subject_ref|source_asof|created_at)[[:space:]]*=" \
+    | grep -Ev "(text|claim_type|subject_ref|source_asof|created_at)[[:space:]]*=[[:space:]]*=" \
     | grep -v 'dos7-allowed:' \
     || true
 )"
 
-# Single-line UPDATE pattern
-single_line="$(
-  grep -rEni --include='*.rs' --include='*.sql' "$forbidden_pattern" "${roots[@]}" 2>/dev/null \
-    | grep -v 'dos7-allowed:' \
-    || true
-)"
-
-combined="$(printf '%s\n%s\n' "$matches" "$single_line" | sort -u | sed '/^$/d' || true)"
+combined="$(printf '%s\n' "$matches" | sort -u | sed '/^$/d' || true)"
 
 if [[ -n "$combined" ]]; then
   echo "UPDATE on assertion-identity columns of intelligence_claims is forbidden."
