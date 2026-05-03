@@ -74,7 +74,7 @@ DailyBriefing (per-meeting recency), AccountDetail (claim-level + chapter-level)
 
 ## Naming notes
 
-Distinct from `FreshnessChip` proposed in Wave 2 (Audit 04) — likely the same primitive; reconcile during Wave 2 spec writing (see DS-WAVE-2 issue acceptance criteria). If they consolidate, this is the canonical name; `FreshnessChip` becomes the alias / dropped.
+`FreshnessChip` from the Wave 2 audit candidate list (Audit 04) is **consolidated into this primitive** — same concept, single canonical name. `FreshnessChip` is dropped from Wave 2 spec scope. The chip-shaped visual treatment is the default render of `FreshnessIndicator` (compact format).
 
 ## History
 
