@@ -159,9 +159,15 @@ impl PromptInput {
 
 /// Provider error surface per ADR-0091.
 ///
-/// Variants cover the three failure modes downstream callers branch on:
-/// transient (retryable), permanent (configuration / auth), and
-/// mode-routing (Simulate/Evaluate fail-closed).
+/// Variants cover the failure modes downstream callers branch on. The
+/// L2 cycle-26 (DOS-259) review flagged the original surface as too
+/// coarse — ADR-0106 §3 + the DOS-259 acceptance criteria call out
+/// `Unavailable` (provider offline / disconnected), `MalformedResponse`
+/// (parse failure on a successful HTTP/PTY round-trip),
+/// `TierUnavailable` (tier-specific capability missing), and
+/// `PromptTooLarge` (length-budget exceeded) as distinct cases callers
+/// may want to handle differently from the generic Permanent/Transient
+/// bucket.
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
     /// Transient failure — caller may retry or fall back to another provider.
@@ -176,16 +182,45 @@ pub enum ProviderError {
     #[error("provider timed out after {seconds}s")]
     Timeout { seconds: u64 },
 
-    /// Provider rejected the prompt (parse / length / policy).
+    /// Provider rejected the prompt at parse/length/policy time.
     #[error("provider rejected prompt: {0}")]
     InvalidPrompt(String),
+
+    /// Provider is reachable in principle but currently offline / unconfigured.
+    /// Distinct from `Permanent`: a `Permanent` failure means "this prompt
+    /// will never succeed against this provider"; `Unavailable` means
+    /// "this provider can't talk right now, try another or retry later."
+    #[error("provider unavailable: {0}")]
+    Unavailable(String),
+
+    /// Successful round-trip but the provider returned an unparseable
+    /// response. Distinct from `InvalidPrompt` (caller's fault) and
+    /// `Transient` (network glitch); a malformed response means the
+    /// provider itself produced output we can't consume.
+    #[error("provider returned malformed response: {0}")]
+    MalformedResponse(String),
+
+    /// The provider does not support the requested `ModelTier` (e.g. a
+    /// remote provider configured without a Synthesis-tier model).
+    #[error("provider does not support tier {tier:?}: {message}")]
+    TierUnavailable {
+        tier: ModelTier,
+        message: String,
+    },
+
+    /// Prompt exceeded the provider's accepted length budget. Distinct
+    /// from `InvalidPrompt`: length is structural, not policy.
+    #[error("prompt too large for provider ({tokens} tokens > {limit} limit)")]
+    PromptTooLarge { tokens: u32, limit: u32 },
 
     /// Replay fixture did not contain a matching completion.
     /// Used by `ReplayProvider` in `Evaluate` mode; never falls through to live.
     #[error("replay fixture missing for prompt hash {0}")]
     ReplayFixtureMissing(String),
 
-    /// Mode routing rejected the call (e.g., `Simulate` invoked a generative path).
+    /// Mode routing rejected the call (e.g., `Simulate` invoked a
+    /// generative path, or `Evaluate` was requested with no replay
+    /// fixture available). Always fail-closed — never falls through.
     #[error("provider not supported in current execution mode")]
     ModeNotSupported,
 }
@@ -306,23 +341,50 @@ impl IntelligenceProvider for ReplayProvider {
     }
 }
 
-/// Forward-looking `select_provider` hook for ability-execution contexts.
+/// Execution mode per ADR-0104. Controls whether the provider
+/// selector returns the live provider, a replay provider, or
+/// fail-closes. Wider mode-aware-services routing lands with
+/// `AbilityContext` in W3-A; this enum is the W2-B-local form
+/// the selector consumes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionMode {
+    /// Production execution against the configured live provider.
+    Live,
+    /// Deterministic replay against a fixture corpus. The selector
+    /// MUST refuse to fall through to a live path even if the
+    /// fixture is missing — that's the structural Evaluate
+    /// invariant per ADR-0104.
+    Evaluate,
+    /// Fail-closed — no provider is invoked. Used by dry-run /
+    /// audit paths that must not produce side effects.
+    Simulate,
+}
+
+/// L2 cycle-26 (DOS-259) fix #2: real mode-bearing provider selector.
 ///
-/// `AbilityContext` lands in W3-A (DOS-210 ability registry). Until then
-/// this signature exists in source but is unreferenced — early callers
-/// route via `AppState`'s configured provider `Arc` per ADR-0091.
+/// Replaces the prior `select_provider_stub` that always returned
+/// `Err(ModeNotSupported)`. This signature is forward-compatible with
+/// the W3-A `AbilityContext`-bearing form: when DOS-210 lands the
+/// caller migrates from `(mode, live, replay, tier)` to
+/// `(ability_ctx, tier)` while the routing semantics stay identical.
 ///
-/// The L6 2026-04-29 ruling pinned this signature on `&AbilityContext`,
-/// not `&ServiceContext` (per ADR-0104 split: provider lives on
-/// `AbilityContext`, mode-routing is the only thing the factory reads
-/// from `ServiceContext`-adjacent context).
-///
-/// Stub returns `Err(ProviderError::ModeNotSupported)` — calling this
-/// before W3-A is a programming error.
-#[allow(dead_code)]
-pub fn select_provider_stub(_tier: ModelTier) -> Result<Arc<dyn IntelligenceProvider>, ProviderError>
-{
-    Err(ProviderError::ModeNotSupported)
+/// Routing per ADR-0104:
+/// - `Live` → returns the supplied live provider
+/// - `Evaluate` → returns the supplied replay provider, or
+///   `Err(ModeNotSupported)` if no fixture is configured (NEVER falls
+///   through to live)
+/// - `Simulate` → always `Err(ModeNotSupported)` (fail-closed)
+pub fn select_provider(
+    mode: ExecutionMode,
+    live_provider: Arc<dyn IntelligenceProvider>,
+    replay_provider: Option<Arc<dyn IntelligenceProvider>>,
+    _tier: ModelTier,
+) -> Result<Arc<dyn IntelligenceProvider>, ProviderError> {
+    match mode {
+        ExecutionMode::Live => Ok(live_provider),
+        ExecutionMode::Evaluate => replay_provider.ok_or(ProviderError::ModeNotSupported),
+        ExecutionMode::Simulate => Err(ProviderError::ModeNotSupported),
+    }
 }
 
 #[cfg(test)]
@@ -430,12 +492,61 @@ mod tests {
         assert_eq!(ProviderKind::Other("glean").as_str(), "glean");
     }
 
-    #[test]
-    fn select_provider_stub_returns_mode_not_supported_until_w3a() {
-        match select_provider_stub(ModelTier::Synthesis) {
-            Err(ProviderError::ModeNotSupported) => {}
-            Err(other) => panic!("expected ModeNotSupported, got {other}"),
-            Ok(_) => panic!("stub must error until W3-A wires AbilityContext"),
-        }
+    #[tokio::test]
+    async fn select_provider_routes_modes_to_correct_arc() {
+        // L2 cycle-26 (DOS-259) F2: replaced the prior
+        // select_provider_stub with a real mode-bearing selector.
+        // Live → live; Evaluate → replay (or fail-closed if unset);
+        // Simulate → fail-closed.
+        let live: Arc<dyn IntelligenceProvider> = Arc::new(
+            ReplayProvider::from_prompt_pairs([("p", "live")]),
+        );
+        let replay: Arc<dyn IntelligenceProvider> = Arc::new(
+            ReplayProvider::from_prompt_pairs([("p", "replay")]),
+        );
+
+        let chosen = select_provider(
+            ExecutionMode::Live,
+            Arc::clone(&live),
+            Some(Arc::clone(&replay)),
+            ModelTier::Synthesis,
+        )
+        .expect("Live must resolve");
+        let got = chosen
+            .complete(PromptInput::new("p"), ModelTier::Synthesis)
+            .await
+            .unwrap();
+        assert_eq!(got.text, "live");
+
+        let chosen = select_provider(
+            ExecutionMode::Evaluate,
+            Arc::clone(&live),
+            Some(Arc::clone(&replay)),
+            ModelTier::Synthesis,
+        )
+        .expect("Evaluate with replay configured must resolve");
+        let got = chosen
+            .complete(PromptInput::new("p"), ModelTier::Synthesis)
+            .await
+            .unwrap();
+        assert_eq!(got.text, "replay");
+
+        // Evaluate without replay → fail-closed (NEVER falls through).
+        let res = select_provider(
+            ExecutionMode::Evaluate,
+            Arc::clone(&live),
+            None,
+            ModelTier::Synthesis,
+        );
+        assert!(matches!(res, Err(ProviderError::ModeNotSupported)));
+
+        // Simulate → always fail-closed.
+        let res = select_provider(
+            ExecutionMode::Simulate,
+            live,
+            Some(replay),
+            ModelTier::Synthesis,
+        );
+        assert!(matches!(res, Err(ProviderError::ModeNotSupported)));
     }
 }
