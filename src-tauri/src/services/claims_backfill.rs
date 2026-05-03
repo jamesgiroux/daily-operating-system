@@ -472,6 +472,8 @@ pub struct CutoverReport {
     pub rekey_report: RekeyReport,
     pub json_blob_report: DismissedItemBackfillReport,
     pub reconcile_findings: usize,
+    pub source_asof_backfill_summary:
+        Option<crate::services::source_asof_backfill::BackfillSummary>,
     pub completed_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -785,6 +787,31 @@ pub fn run_dos7_cutover(
             reconcile.findings
         ));
     }
+
+    let source_asof_summary =
+        match crate::services::source_asof_backfill::backfill_source_asof_for_legacy_claims(
+            ctx,
+            db,
+            ctx.clock.now(),
+        ) {
+            Ok(summary) => summary,
+            Err(crate::services::source_asof_backfill::BackfillError::MigrationGate(
+                message,
+            )) => {
+                return Err(format!("DOS-7 cutover: source_asof backfill gate: {message}"));
+            }
+            Err(crate::services::source_asof_backfill::BackfillError::Rusqlite(error)) => {
+                return Err(format!("DOS-7 cutover: source_asof backfill database error: {error}"));
+            }
+            Err(crate::services::source_asof_backfill::BackfillError::Mode(message)) => {
+                return Err(format!("DOS-7 cutover: source_asof backfill mode error: {message}"));
+            }
+        };
+    log::info!(
+        "[DOS-7 cutover] source_asof backfill summary: {:?}",
+        source_asof_summary
+    );
+    report.source_asof_backfill_summary = Some(source_asof_summary);
 
     // Step 7: resume is a no-op — the next FenceCycle::capture() reads the
     // new epoch and proceeds normally; any in-flight write that sees the
