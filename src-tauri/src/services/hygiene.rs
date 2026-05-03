@@ -143,8 +143,9 @@ pub fn merge_people(
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
-        tx.merge_people(keep_id, remove_id)
-            .map_err(|e| e.to_string())?;
+        crate::services::people::merge_people_with_stakeholder_cache_rebuild(
+            ctx, tx, keep_id, remove_id,
+        )?;
         crate::services::signals::emit(
             ctx,
             tx,
@@ -171,8 +172,13 @@ pub fn link_person_to_entity(
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
-        tx.link_person_to_entity(person_id, entity_id, relationship_type)
-            .map_err(|e| e.to_string())?;
+        crate::services::people::link_person_to_entity_with_stakeholder_cache_rebuild(
+            ctx,
+            tx,
+            person_id,
+            entity_id,
+            relationship_type,
+        )?;
         crate::services::signals::emit(
             ctx,
             tx,

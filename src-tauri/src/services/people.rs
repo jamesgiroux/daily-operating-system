@@ -7,6 +7,7 @@ use crate::commands::{EntitySummary, MeetingSummary, PersonDetailResult};
 use crate::db::ActionDb;
 use crate::services::context::ServiceContext;
 use crate::state::AppState;
+use rusqlite::OptionalExtension;
 
 /// Merge two people: transfer all references from `remove_id` to `keep_id`,
 /// then delete the removed person. Also cleans up filesystem directories
@@ -25,9 +26,7 @@ pub fn merge_people(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Person not found: {}", remove_id))?;
 
-    // Perform DB merge
-    db.merge_people(keep_id, remove_id)
-        .map_err(|e| e.to_string())?;
+    merge_people_with_stakeholder_cache_rebuild(ctx, db, keep_id, remove_id)?;
 
     // Filesystem cleanup
     let config = state.config.read();
@@ -124,6 +123,73 @@ pub(crate) fn delete_person_with_stakeholder_cache_rebuild(
     })
 }
 
+pub(crate) fn merge_people_with_stakeholder_cache_rebuild(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    keep_id: &str,
+    remove_id: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        let mut affected_entities = affected_stakeholder_entities_for_person(tx, remove_id)?;
+        affected_entities.extend(affected_stakeholder_entities_for_person(tx, keep_id)?);
+        affected_entities.sort();
+        affected_entities.dedup();
+
+        tx.merge_people(keep_id, remove_id)
+            .map_err(|e| e.to_string())?;
+
+        for (entity_id, entity_type) in affected_entities {
+            crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+                ctx,
+                tx,
+                &entity_id,
+                &entity_type,
+            )
+            .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        }
+        Ok(())
+    })
+}
+
+pub(crate) fn link_person_to_entity_with_stakeholder_cache_rebuild(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    person_id: &str,
+    entity_id: &str,
+    relationship_type: &str,
+) -> Result<String, String> {
+    let entity_type = stakeholder_entity_type_for_id(tx, entity_id)?;
+    tx.link_person_to_entity(person_id, entity_id, relationship_type)
+        .map_err(|e| e.to_string())?;
+    crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+        ctx,
+        tx,
+        entity_id,
+        &entity_type,
+    )
+    .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+    Ok(entity_type)
+}
+
+pub(crate) fn unlink_person_from_entity_with_stakeholder_cache_rebuild(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    person_id: &str,
+    entity_id: &str,
+) -> Result<String, String> {
+    let entity_type = stakeholder_entity_type_for_id(tx, entity_id)?;
+    tx.unlink_person_from_entity(person_id, entity_id)
+        .map_err(|e| e.to_string())?;
+    crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+        ctx,
+        tx,
+        entity_id,
+        &entity_type,
+    )
+    .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+    Ok(entity_type)
+}
+
 fn affected_stakeholder_entities_for_person(
     db: &ActionDb,
     person_id: &str,
@@ -149,6 +215,30 @@ fn affected_stakeholder_entities_for_person(
         .map_err(|e| format!("query affected stakeholder entities: {e}"))?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("read affected stakeholder entity: {e}"))
+}
+
+fn stakeholder_entity_type_for_id(db: &ActionDb, entity_id: &str) -> Result<String, String> {
+    let is_account: bool = db
+        .conn_ref()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1)",
+            rusqlite::params![entity_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("lookup account stakeholder entity: {e}"))?;
+    if is_account {
+        return Ok("account".to_string());
+    }
+
+    db.conn_ref()
+        .query_row(
+            "SELECT entity_type FROM entities WHERE id = ?1",
+            rusqlite::params![entity_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("lookup stakeholder entity type: {e}"))
+        .map(|entity_type| entity_type.unwrap_or_else(|| "project".to_string()))
 }
 
 /// Get full detail for a person (person + signals + entities + recent meetings).
@@ -324,8 +414,16 @@ pub fn link_person_entity(
     relationship_type: &str,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    db.link_person_to_entity(person_id, entity_id, relationship_type)
-        .map_err(|e| e.to_string())?;
+    db.with_transaction(|tx| {
+        link_person_to_entity_with_stakeholder_cache_rebuild(
+            ctx,
+            tx,
+            person_id,
+            entity_id,
+            relationship_type,
+        )?;
+        Ok(())
+    })?;
 
     // Emit person linked signal
     let _ = crate::services::signals::emit_and_propagate(
@@ -362,8 +460,10 @@ pub fn unlink_person_entity(
     entity_id: &str,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    db.unlink_person_from_entity(person_id, entity_id)
-        .map_err(|e| e.to_string())?;
+    db.with_transaction(|tx| {
+        unlink_person_from_entity_with_stakeholder_cache_rebuild(ctx, tx, person_id, entity_id)?;
+        Ok(())
+    })?;
 
     // Emit person unlinked signal
     let _ = crate::services::signals::emit_and_propagate(
