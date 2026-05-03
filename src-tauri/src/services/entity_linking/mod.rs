@@ -312,6 +312,7 @@ pub async fn manual_dismiss(
                         actor: "user",
                         source_scope: Some("manual_dismiss"),
                         observed_at: &observed_at,
+                        expires_at: None,
                     },
                 );
                 Ok(())
@@ -341,6 +342,45 @@ pub async fn manual_undismiss(
                 &entity.entity_id,
                 &entity.entity_type,
             )?;
+            // L2 cycle-25 fix #1: withdraw the shadow m5 tombstone
+            // claim that manual_dismiss wrote, so the substrate
+            // tracks the restore. Without this, legacy says
+            // "restored" while the claim substrate still records
+            // user_removal — PRE-GATE / readers continue
+            // suppressing the link. EmailThread is rejected at
+            // manual_dismiss entry per cycle-23, so any tombstone
+            // here is for Meeting or Email subjects (skip
+            // EmailThread; no claim ever existed for it).
+            // dos7-allowed: cycle-25 restore semantics — claim_state
+            // + retraction_reason are lifecycle columns.
+            if let Some(owner_kind) = match owner_type {
+                OwnerType::Meeting => Some("meeting"),
+                OwnerType::Email => Some("email"),
+                OwnerType::EmailThread => None,
+            } {
+                let _ = db.conn_ref().execute(
+                    "UPDATE intelligence_claims /* dos7-allowed: cycle-25 restore semantics */ \
+                     SET claim_state = 'withdrawn', \
+                         surfacing_state = 'dormant', \
+                         retraction_reason = 'restored_by_user' \
+                     WHERE id IN ( \
+                         SELECT ic.id FROM intelligence_claims ic \
+                         WHERE ic.claim_state = 'tombstoned' \
+                           AND ic.claim_type = 'linking_dismissed' /* dos7-allowed: WHERE-filter, not SET */ \
+                           AND json_valid(ic.subject_ref) = 1 \
+                           AND lower(json_extract(ic.subject_ref, '$.kind')) = ?1 \
+                           AND json_extract(ic.subject_ref, '$.id') = ?2 \
+                           AND coalesce(ic.field_path, '') = coalesce(?3, '') \
+                           AND ic.text = ?4 /* dos7-allowed: WHERE-filter, not SET */ \
+                     )",
+                    rusqlite::params![
+                        owner_kind,
+                        owner_id,
+                        entity.entity_type,
+                        entity.entity_id,
+                    ],
+                );
+            }
             // Restore the raw row to the rule-derived source so it becomes
             // visible in the linked_entities view again.
             db.conn_ref()

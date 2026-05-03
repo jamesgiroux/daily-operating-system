@@ -193,6 +193,7 @@ pub fn apply_repair(db: &ActionDb, opts: &RepairOptions) -> Result<RepairReport,
                     actor: "system",
                     source_scope: Some("repair:dos345"),
                     observed_at: &now,
+                    expires_at: None,
                 },
             );
         }
